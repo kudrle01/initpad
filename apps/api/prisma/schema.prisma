@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  templateId   String
+  repoPath     String
+  repoUrl      String?
+  lastCommit   String
+  createdAt    DateTime      @default(now())
+  environments Environment[]
+}
+
+model Environment {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  name      String
+  order     Int
+  provider  String
+  status    String
+  version   String?
+  url       String?
+
+  @@unique([projectId, name])
+}
