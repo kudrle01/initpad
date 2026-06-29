@@ -1,0 +1,19 @@
+name: ci
+on: [push]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install
+        run: npm install
+      - name: test
+        run: npm test
+      - name: docker build
+        run: docker build -t ${{ github.repository }}:${{ github.sha }} .
+      - name: deploy dev
+        run: echo "deploy do dev prostředí (řídí platforma přes DeploymentProvider)"

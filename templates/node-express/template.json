@@ -1,0 +1,9 @@
+{
+  "id": "node-express",
+  "name": "Node.js API (Express)",
+  "language": "JavaScript",
+  "artifact": "runtime",
+  "compatibleProviders": ["docker", "ssh"],
+  "port": 8080,
+  "description": "REST API na Expressu s Dockerfile a CI/CD pipeline. Prod: Docker / SSH-VPS."
+}

@@ -1,0 +1,37 @@
+# Simulované prostředí „firmy" na jednom stroji.
+# Stav: kostra (F2). platform-api/web jedou i bez compose přes `npm run dev`.
+# Služby gitea/postgres/fake-* se zapojují postupně (F2–F3).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+    networks: [platform]
+
+  gitea:
+    image: gitea/gitea:1.22
+    environment:
+      GITEA__server__ROOT_URL: http://localhost:3001/
+    ports:
+      - "3001:3000"
+    networks: [platform]
+
+  # --- simulované cíle nasazení (stand-iny za reálné) ---
+  fake-sftp:
+    image: atmoz/sftp
+    command: deploy:deploy:::www
+    networks: [net-prod]
+
+  fake-vps:
+    # build kontejneru se sshd + runtime (Node/PHP) – viz infra/fake-vps/Dockerfile (TODO)
+    image: lscr.io/linuxserver/openssh-server:latest
+    networks: [net-prod]
+
+networks:
+  platform: {}
+  net-dev: {}
+  net-test: {}
+  net-prod: {}

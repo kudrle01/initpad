@@ -1,0 +1,17 @@
+{
+  "name": "initpad",
+  "version": "0.1.0",
+  "private": true,
+  "description": "InitPad – interní platforma pro vývojáře (IDP), prototyp k diplomové práci",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev --workspace @initpad/api",
+    "dev:web": "npm run dev --workspace @initpad/web",
+    "build": "npm run build --workspace @initpad/api && npm run build --workspace @initpad/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
