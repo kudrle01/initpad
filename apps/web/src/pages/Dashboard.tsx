@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/api';
-import type { Project } from '@/types';
+import { Icon } from '@/components/Icon';
+import type { Project, TemplateManifest } from '@/types';
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [templates, setTemplates] = useState<Record<string, TemplateManifest>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.listProjects().then(setProjects).catch((e) => setError(e.message));
+    api
+      .listTemplates()
+      .then((all) => setTemplates(Object.fromEntries(all.map((t) => [t.id, t]))))
+      .catch(() => {});
   }, []);
 
   const running = projects.reduce(
@@ -19,15 +25,15 @@ export default function Dashboard() {
   return (
     <div>
       <div className="page-head">
-        <h1>Přehled</h1>
+        <h1>Projekty</h1>
         <Link to="/new" className="btn btn-primary">
-          + Nový projekt
+          <Icon name="plus" size={16} /> Nový projekt
         </Link>
       </div>
 
       {error && <p className="error">{error}</p>}
 
-      <div className="stat-grid">
+      <div className="stats">
         <div className="stat">
           <div className="stat-label">Projekty</div>
           <div className="stat-value">{projects.length}</div>
@@ -42,24 +48,35 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <h2 className="section-title">Poslední projekty</h2>
+      <p className="eyebrow">Poslední projekty</p>
       {projects.length === 0 ? (
-        <p className="muted">Zatím žádné projekty. Vytvoř první přes „Nový projekt“.</p>
+        <div className="empty-state">
+          Zatím žádné projekty. Vytvoř první přes „Nový projekt".
+        </div>
       ) : (
-        <div className="list">
+        <div className="proj-list">
           {projects.map((p) => (
-            <Link key={p.id} to={`/projects/${p.id}`} className="row">
-              <div>
-                <div className="row-title">{p.name}</div>
-                <div className="row-sub">{p.templateId}</div>
+            <Link key={p.id} to={`/projects/${p.id}`} className="proj">
+              <span className="proj-icon">
+                <Icon name="box" size={19} />
+              </span>
+              <div className="proj-body">
+                <div className="proj-name">{p.name}</div>
+                <div className="proj-sub">
+                  {templates[p.templateId]?.name ?? p.templateId}
+                </div>
               </div>
-              <div className="env-badges">
+              <div className="proj-envs">
                 {p.environments.map((e) => (
-                  <span key={e.name} className={`pill pill-${e.status}`}>
+                  <span key={e.name} className="badge">
+                    <span className={`dot ${e.status}`} />
                     {e.name} {e.version ? `v${e.version}` : '—'}
                   </span>
                 ))}
               </div>
+              <span className="proj-chevron">
+                <Icon name="chevronRight" size={18} />
+              </span>
             </Link>
           ))}
         </div>

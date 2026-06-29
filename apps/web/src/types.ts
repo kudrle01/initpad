@@ -24,7 +24,23 @@ export interface Project {
   name: string;
   templateId: string;
   repoPath: string;
+  repoUrl: string | null;
   createdAt: string;
   lastCommit: string;
   environments: Environment[];
+}
+
+export type StageStatus = 'pending' | 'running' | 'success' | 'failed';
+
+export interface PipelineStage {
+  name: string;
+  status: StageStatus;
+}
+
+export interface Commit {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  pipeline: PipelineStage[];
 }

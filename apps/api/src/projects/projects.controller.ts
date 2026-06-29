@@ -17,6 +17,11 @@ export class ProjectsController {
     return this.projects.get(id);
   }
 
+  @Get(':id/commits')
+  commits(@Param('id') id: string) {
+    return this.projects.getCommits(id);
+  }
+
   @Post()
   create(@Body() dto: CreateProjectDto) {
     return this.projects.create(dto);

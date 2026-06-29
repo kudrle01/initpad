@@ -1,4 +1,4 @@
-import type { Project, TemplateManifest, EnvName } from '@/types';
+import type { Project, TemplateManifest, EnvName, Commit } from '@/types';
 
 const BASE = '/api';
 
@@ -17,6 +17,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listProjects: () => http<Project[]>('/projects'),
   getProject: (id: string) => http<Project>(`/projects/${id}`),
+  getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
   createProject: (name: string, templateId: string) =>
     http<Project>('/projects', {
