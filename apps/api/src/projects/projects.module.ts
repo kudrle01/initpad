@@ -4,9 +4,10 @@ import { ProjectsController } from './projects.controller';
 import { TemplatesModule } from '../templates/templates.module';
 import { GeneratorModule } from '../generator/generator.module';
 import { DeploymentModule } from '../deployment/deployment.module';
+import { ScmModule } from '../scm/scm.module';
 
 @Module({
-  imports: [TemplatesModule, GeneratorModule, DeploymentModule],
+  imports: [TemplatesModule, GeneratorModule, DeploymentModule, ScmModule],
   providers: [ProjectsService],
   controllers: [ProjectsController],
 })
