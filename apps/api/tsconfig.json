@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "nodenext",
     "target": "ES2021",
-    "moduleResolution": "node",
+    "moduleResolution": "nodenext",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "declaration": false,
@@ -15,7 +15,6 @@
     "forceConsistentCasingInFileNames": true,
     "rootDir": "./src",
     "outDir": "./dist",
-    "baseUrl": "./",
     "sourceMap": true
   },
   "include": ["src/**/*"],
