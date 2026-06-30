@@ -26,6 +26,15 @@ export const config = {
     frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
   },
+  // Platforma jako OIDC provider (SSO do Gitey). Gitea se registruje jako klient.
+  // issuer = adresa, na kterou chodí Gitea SERVER (z kontejneru přes
+  // host.docker.internal). publicUrl = adresa pro PROHLÍŽEČ (authorize redirect).
+  oidc: {
+    issuer: process.env.INITPAD_OIDC_ISSUER || 'http://host.docker.internal:3000/api',
+    publicUrl: process.env.INITPAD_OIDC_PUBLIC_URL || 'http://localhost:3000/api',
+    clientId: process.env.INITPAD_OIDC_CLIENT_ID || 'gitea',
+    clientSecret: process.env.INITPAD_OIDC_CLIENT_SECRET || 'gitea-oidc-secret-change-me',
+  },
 };
 
 export const isAuthConfigured = (): boolean =>

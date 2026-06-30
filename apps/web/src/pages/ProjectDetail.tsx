@@ -41,6 +41,19 @@ function commitStatus(pipeline: { status: string }[]): { label: string; dot: str
   return { label: 'awaiting CI', dot: 'pending' };
 }
 
+// Odkazy do Gitey vede přes /user/login?redirect_to=… – odhlášený dostane login
+// stránku s tlačítkem „Sign in with InitPad" (SSO) místo 404 u privátního repa,
+// přihlášený se rovnou prokliká na cíl.
+function giteaLink(targetUrl: string | null): string | undefined {
+  if (!targetUrl) return undefined;
+  try {
+    const u = new URL(targetUrl);
+    return `${u.origin}/user/login?redirect_to=${encodeURIComponent(u.pathname + u.search)}`;
+  } catch {
+    return targetUrl;
+  }
+}
+
 function CopyableCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -164,7 +177,7 @@ export default function ProjectDetail() {
         </div>
         <div className="head-actions">
           {project.repoUrl && (
-            <a href={project.repoUrl} target="_blank" rel="noreferrer" className="btn">
+            <a href={giteaLink(project.repoUrl)} target="_blank" rel="noreferrer" className="btn">
               <Icon name="git" size={16} /> Open repo
             </a>
           )}
@@ -206,7 +219,7 @@ export default function ProjectDetail() {
       <div className="section">
         <p className="eyebrow">Repository</p>
         {project.repoUrl && (
-          <a href={project.repoUrl} target="_blank" rel="noreferrer" className="repo-link">
+          <a href={giteaLink(project.repoUrl)} target="_blank" rel="noreferrer" className="repo-link">
             <Icon name="git" size={15} /> {project.repoUrl}
           </a>
         )}
@@ -305,7 +318,7 @@ export default function ProjectDetail() {
                           {s.url ? (
                             <a
                               className="stage stage-link"
-                              href={s.url}
+                              href={giteaLink(s.url)}
                               target="_blank"
                               rel="noreferrer"
                               title="View job log in Gitea"
@@ -342,7 +355,7 @@ export default function ProjectDetail() {
                       return runUrl ? (
                         <a
                           className="stages-link"
-                          href={runUrl}
+                          href={giteaLink(runUrl)}
                           target="_blank"
                           rel="noreferrer"
                         >

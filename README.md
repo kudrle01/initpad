@@ -87,6 +87,36 @@ Vzniklé `Client ID` a `Client Secret` vyplň do `apps/api/.env`
 Po `npm run db:migrate` (vytvoří tabulku uživatelů) se na `:5173` zobrazí
 přihlašovací obrazovka; projekty patří přihlášenému uživateli.
 
+## SSO do Gitey (platforma jako OIDC provider)
+Aby přihlášený uživatel viděl svá (privátní) repa po prokliku, aniž by se zvlášť
+loginoval do Gitey, je platforma **OIDC provider** a Gitea její klient. Po
+nastavení stačí na Gitea login stránce kliknout „Sign in with InitPad" – protože
+už jsi přihlášený na platformě, je to jen automatický redirect.
+
+Backend vystavuje: `/.well-known/openid-configuration`, `/oauth/authorize`,
+`/oauth/token`, `/oauth/userinfo`, `/oauth/jwks` (vše pod `/api`). Hodnoty
+nastav v `apps/api/.env` (`INITPAD_OIDC_CLIENT_ID/SECRET/ISSUER`).
+
+V Gitee jako admin: **Site Administration → Authentication Sources → Add Source**:
+- Authentication Type: **OAuth2**
+- Authentication Name: `initpad` (callback bude `<gitea>/user/oauth2/initpad/callback`)
+- OAuth2 Provider: **OpenID Connect**
+- Client ID / Secret: stejné jako `INITPAD_OIDC_CLIENT_ID/SECRET`
+- Auto Discovery URL: `http://host.docker.internal:3000/api/.well-known/openid-configuration`
+  (Gitea běží v kontejneru – `localhost:3000` by ukázal na Giteu samotnou, proto
+  `host.docker.internal`. Browser-facing `authorize` zůstává na `localhost`,
+  to řeší `INITPAD_OIDC_PUBLIC_URL`.)
+
+Account linking **není v tom formuláři** – je to globální nastavení Gitey. Je
+zapnuté přes env v `infra/docker-compose.yml` (služba `gitea`):
+`GITEA__oauth2_client__ACCOUNT_LINKING=auto` (+ `ENABLE_AUTO_REGISTRATION=true`,
+`USERNAME=nickname`). Díky tomu se přihlášení přes platformu spáruje s existujícím
+účtem podle e-mailu (řízená registrace ho vytvořila se stejným e-mailem). Po
+úpravě env Giteu znovu nasaď: `docker compose -f infra/docker-compose.yml up -d gitea`.
+
+Pozn.: podpisový klíč (RS256) se generuje při startu API do paměti – po restartu
+se mění, což pro prototyp stačí (Gitea si JWKS načítá při každém loginu).
+
 ## Co už funguje
 - **Přihlášení přes Gitea** (OAuth2 SSO), projekty patří uživateli (PostgreSQL)
 - katalog šablon z disku (`/api/templates`)
@@ -95,6 +125,8 @@ přihlašovací obrazovka; projekty patří přihlášenému uživateli.
 - **Docker**: reálný build image a běh kontejneru v dev (s fallbackem bez Dockeru)
 - **Gitea Actions CI**: workflow build → test → docker build na push reálně proběhne;
   stav pipeline se zobrazuje u commitů v detailu projektu
+- **Řízená registrace**: platforma zakládá Gitea účet + token (formulář na login)
+- **SSO**: platforma jako OIDC provider, Gitea se přihlašuje přes ni
 - prostředí dev/test/prod s providerem, auto-deploy do dev, promote dev → test → prod
 - dashboard, formulář, detail s promotion pipeline
 

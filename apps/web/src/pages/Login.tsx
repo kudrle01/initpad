@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { api, loginUrl } from '@/api';
 import { useAuth } from '@/auth';
@@ -10,6 +10,8 @@ export default function Login() {
   const { user, loading, signIn } = useAuth();
   const [params] = useSearchParams();
   const oauthError = params.get('error');
+  // Cíl po přihlášení – typicky OIDC authorize URL (SSO do Gitey).
+  const next = params.get('next');
 
   const [mode, setMode] = useState<Mode>('signin');
   const [username, setUsername] = useState('');
@@ -18,7 +20,13 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Po přihlášení pokračuj na ?next (plná URL na backendu) – dokončí SSO.
+  useEffect(() => {
+    if (user && next) window.location.assign(next);
+  }, [user, next]);
+
   if (loading) return <div className="login-screen" />;
+  if (user && next) return <div className="login-screen" />;
   if (user) return <Navigate to="/" replace />;
 
   async function submit(e: React.FormEvent) {

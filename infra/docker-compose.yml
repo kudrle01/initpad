@@ -23,10 +23,21 @@ services:
       GITEA__server__ROOT_URL: http://localhost:3001/
       # Zapne Gitea Actions (CI). Runner se registruje níže (profil "ci").
       GITEA__actions__ENABLED: "true"
+      # SSO: přihlášení přes platformu (OIDC) se automaticky spáruje s existujícím
+      # účtem podle e-mailu; pro neznámé e-maily založí účet (username = claim).
+      GITEA__oauth2_client__ACCOUNT_LINKING: auto
+      GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
+      GITEA__oauth2_client__USERNAME: nickname
     ports:
       - "3001:3000"
     volumes:
       - gitea-data:/data
+    # Gitea (z kontejneru) volá API platformy na hostu přes host.docker.internal
+    # (SSO discovery/token/userinfo). Na Docker Desktop (Mac/Windows) je k dispozici
+    # nativně – NEPŘIDÁVAT extra_hosts host-gateway, to ho na Macu rozbije.
+    # (Na čistém Linuxu odkomentuj:)
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
     networks: [platform]
 
   # Gitea Actions runner – spouští vygenerovaný .gitea/workflows/ci.yml na push.
