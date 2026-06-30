@@ -5,5 +5,6 @@
   "artifact": "runtime",
   "compatibleProviders": ["docker", "ssh"],
   "port": 8080,
-  "description": "REST API na Expressu s Dockerfile a CI/CD pipeline. Prod: Docker / SSH-VPS."
+  "healthPath": "/health",
+  "description": "Express REST API with Dockerfile and CI/CD pipeline. Prod: Docker / SSH-VPS."
 }

@@ -14,9 +14,11 @@
   "dependencies": {
     "@nestjs/common": "^10.4.0",
     "@nestjs/core": "^10.4.0",
+    "@nestjs/jwt": "^10.2.0",
     "@nestjs/platform-express": "^10.4.0",
     "@prisma/client": "^5.19.0",
     "class-transformer": "^0.5.1",
+    "cookie-parser": "^1.4.6",
     "class-validator": "^0.14.1",
     "dockerode": "^4.0.2",
     "handlebars": "^4.7.8",
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",
+    "@types/cookie-parser": "^1.4.7",
     "@types/dockerode": "^3.3.31",
     "@types/node": "^22.5.0",
     "@types/tar-fs": "^2.0.4",

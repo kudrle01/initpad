@@ -21,9 +21,38 @@ services:
     image: gitea/gitea:1.22
     environment:
       GITEA__server__ROOT_URL: http://localhost:3001/
+      # Zapne Gitea Actions (CI). Runner se registruje níže (profil "ci").
+      GITEA__actions__ENABLED: "true"
     ports:
       - "3001:3000"
+    volumes:
+      - gitea-data:/data
     networks: [platform]
+
+  # Gitea Actions runner – spouští vygenerovaný .gitea/workflows/ci.yml na push.
+  # Profil "ci": startuje zvlášť po vygenerování registračního tokenu, viz README.
+  #   1) docker compose up -d gitea postgres
+  #   2) infra/register-runner.sh            # vytiskne a uloží token do .env
+  #   3) docker compose --profile ci up -d act_runner
+  act_runner:
+    image: gitea/act_runner:0.2.11
+    profiles: ["ci"]
+    depends_on: [gitea]
+    environment:
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${INITPAD_RUNNER_TOKEN:-}
+      GITEA_RUNNER_NAME: initpad-runner
+      # Labely se zapisují PŘI REGISTRACI a image je bere odsud (ne z config.yaml).
+      # Musí obsahovat "ubuntu-latest", protože workflow má runs-on: ubuntu-latest.
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
+      CONFIG_FILE: /config.yaml
+    volumes:
+      - ./act_runner/config.yaml:/config.yaml:ro
+      - runner-data:/data
+      # Sdílený Docker daemon – aby krok "docker build" v CI reálně postavil image.
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [platform]
+    restart: unless-stopped
 
   # --- simulované cíle nasazení (stand-iny za reálné) ---
   fake-sftp:
@@ -38,6 +67,8 @@ services:
 
 volumes:
   pgdata: {}
+  gitea-data: {}
+  runner-data: {}
 
 networks:
   platform: {}

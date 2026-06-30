@@ -1,14 +1,45 @@
-import { Fragment, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/api';
+import { useToast } from '@/toast';
 import { Icon } from '@/components/Icon';
 import type { Commit, EnvName, Project, TemplateManifest } from '@/types';
 
+// Projekt se po vytvoření dotahuje na pozadí (dev: deploying → running) a CI
+// běží asynchronně – dokud něco "pracuje", detail se sám periodicky obnovuje.
+function isLive(project: Project | null, commits: Commit[]): boolean {
+  const envBusy = project?.environments.some((e) => e.status === 'deploying') ?? false;
+  const ciBusy = commits.some((c) => c.pipeline.some((s) => s.status === 'running'));
+  return envBusy || ciBusy;
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="skeleton">
+      <div className="skel skel-line" style={{ width: 180, height: 26 }} />
+      <div className="skel skel-line" style={{ width: 260 }} />
+      <div className="skel-pipeline">
+        <div className="skel skel-card" />
+        <div className="skel skel-card" />
+        <div className="skel skel-card" />
+      </div>
+      <div className="skel skel-line" style={{ width: 120, marginTop: 24 }} />
+      <div className="skel skel-line" style={{ width: '100%' }} />
+      <div className="skel skel-line" style={{ width: '100%' }} />
+    </div>
+  );
+}
+
 const NEXT: Record<string, EnvName | null> = { dev: 'test', test: 'prod', prod: null };
-const ARTIFACT_LABEL: Record<string, string> = {
-  static: 'statický build',
-  runtime: 'běžící proces',
-};
+
+// Souhrnný stav commitu z jeho pipeline stagí (zobrazený v hlavičce commitu).
+function commitStatus(pipeline: { status: string }[]): { label: string; dot: string } {
+  if (pipeline.some((s) => s.status === 'failed')) return { label: 'failed', dot: 'failed' };
+  if (pipeline.length > 0 && pipeline.every((s) => s.status === 'success'))
+    return { label: 'passed', dot: 'success' };
+  if (pipeline.some((s) => s.status === 'running')) return { label: 'running', dot: 'running' };
+  return { label: 'awaiting CI', dot: 'pending' };
+}
 
 function CopyableCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
@@ -24,7 +55,7 @@ function CopyableCommand({ command }: { command: string }) {
         }}
       >
         <Icon name={copied ? 'check' : 'copy'} size={13} />
-        {copied ? 'zkopírováno' : 'kopírovat'}
+        {copied ? 'copied' : 'copy'}
       </button>
     </div>
   );
@@ -38,15 +69,43 @@ export default function ProjectDetail() {
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const toast = useToast();
+  const navigate = useNavigate();
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!id) return;
-    api.getProject(id).then(setProject).catch((e) => setError(e.message));
-    api.getCommits(id).then((c) => {
+    try {
+      const [p, c] = await Promise.all([
+        api.getProject(id),
+        api.getCommits(id).catch(() => [] as Commit[]),
+      ]);
+      setProject(p);
       setCommits(c);
-      if (c[0]) setOpenSha(c[0].sha);
-    }).catch(() => {});
+      setOpenSha((cur) => cur ?? c[0]?.sha ?? null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  // První načtení (se skeletonem).
+  useEffect(() => {
+    setLoading(true);
+    load();
+  }, [load]);
+
+  // Dokud něco "žije" (deploying / CI running), periodicky obnovuj.
+  useEffect(() => {
+    if (!isLive(project, commits)) return;
+    const t = setTimeout(load, 2500);
+    return () => clearTimeout(t);
+  }, [project, commits, load]);
 
   useEffect(() => {
     if (!project) return;
@@ -59,26 +118,41 @@ export default function ProjectDetail() {
   async function promote(target: EnvName) {
     if (!id) return;
     setBusy(target);
-    setError(null);
     try {
       setProject(await api.promote(id, target));
+      toast.success(`Promoted to ${target}`);
     } catch (e) {
-      setError((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setBusy(null);
     }
   }
 
-  if (error) return <p className="error">{error}</p>;
-  if (!project) return <div className="empty-state">Načítám…</div>;
+  async function doDelete() {
+    if (!id || !project) return;
+    setDeleting(true);
+    try {
+      await api.deleteProject(id);
+      toast.success(`Deleted ${project.name}`);
+      navigate('/');
+    } catch (e) {
+      toast.error((e as Error).message);
+      setDeleting(false);
+    }
+  }
 
-  const created = new Date(project.createdAt).toLocaleString('cs-CZ');
+  if (error) return <p className="error">{error}</p>;
+  if (loading && !project) return <DetailSkeleton />;
+  if (!project) return <div className="empty-state">Loading…</div>;
+
+  const created = new Date(project.createdAt).toLocaleDateString('en-GB');
   const cloneUrl = project.repoUrl ? `${project.repoUrl}.git` : null;
+  const byEnv = Object.fromEntries(project.environments.map((e) => [e.name, e]));
 
   return (
     <div>
       <Link to="/" className="back">
-        <Icon name="arrowLeft" size={16} /> Projekty
+        <Icon name="arrowLeft" size={16} /> Projects
       </Link>
 
       <div className="page-head">
@@ -88,61 +162,66 @@ export default function ProjectDetail() {
           </span>
           <h1>{project.name}</h1>
         </div>
-        {project.repoUrl && (
-          <a href={project.repoUrl} target="_blank" rel="noreferrer" className="btn">
-            <Icon name="git" size={16} /> Otevřít repo
-          </a>
-        )}
-      </div>
-      {template && <p className="lead" style={{ marginTop: '-16px' }}>{template.description}</p>}
-
-      <div className="section">
-        <p className="eyebrow">O projektu</p>
-        <div className="card">
-          <div className="meta-grid">
-            <div className="meta-row">
-              <span className="k">Šablona</span>
-              <span className="v">{template ? template.name : project.templateId}</span>
-            </div>
-            <div className="meta-row">
-              <span className="k">Jazyk</span>
-              <span className="v">{template?.language ?? '—'}</span>
-            </div>
-            <div className="meta-row">
-              <span className="k">Typ artefaktu</span>
-              <span className="v">
-                {template ? ARTIFACT_LABEL[template.artifact] ?? template.artifact : '—'}
-              </span>
-            </div>
-            <div className="meta-row">
-              <span className="k">Vytvořeno</span>
-              <span className="v">{created}</span>
-            </div>
+        <div className="head-actions">
+          {project.repoUrl && (
+            <a href={project.repoUrl} target="_blank" rel="noreferrer" className="btn">
+              <Icon name="git" size={16} /> Open repo
+            </a>
+          )}
+          <div className="menu-wrap">
+            <button
+              className="btn btn-icon"
+              aria-label="More actions"
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              <Icon name="more" size={16} />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+                <div className="menu">
+                  <button
+                    className="menu-item danger"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setConfirmText('');
+                      setConfirmOpen(true);
+                    }}
+                  >
+                    <Icon name="trash" size={15} /> Delete project
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
+      {template && (
+        <p className="lead" style={{ marginTop: '-10px' }}>
+          {template.name} · created {created}
+        </p>
+      )}
+
       <div className="section">
-        <p className="eyebrow">Repozitář</p>
-        {project.repoUrl ? (
-          <>
-            <a href={project.repoUrl} target="_blank" rel="noreferrer" className="repo-link">
-              <Icon name="git" size={15} /> {project.repoUrl}
-            </a>
-            {cloneUrl && <CopyableCommand command={`git clone ${cloneUrl}`} />}
-          </>
-        ) : (
-          <p className="muted" style={{ fontSize: 13 }}>
-            Lokální složka (Gitea nenakonfigurována): <span className="mono">{project.repoPath}</span>
-          </p>
+        <p className="eyebrow">Repository</p>
+        {project.repoUrl && (
+          <a href={project.repoUrl} target="_blank" rel="noreferrer" className="repo-link">
+            <Icon name="git" size={15} /> {project.repoUrl}
+          </a>
         )}
+        {cloneUrl && <CopyableCommand command={`git clone ${cloneUrl}`} />}
       </div>
 
       <div className="section">
-        <p className="eyebrow">Prostředí</p>
+        <p className="eyebrow">Environments</p>
         <div className="pipeline">
           {project.environments.map((env, i) => {
             const next = NEXT[env.name];
+            const target = next ? byEnv[next] : undefined;
+            const synced =
+              !!target && !!env.version && target.status === 'running' && target.version === env.version;
+            const canPromote = busy === null && env.status === 'running' && !synced;
             return (
               <Fragment key={env.name}>
                 <div className={`env ${env.name}`}>
@@ -155,26 +234,35 @@ export default function ProjectDetail() {
                   </div>
                   <div className="env-version">{env.version ? `v${env.version}` : '—'}</div>
                   <div className="env-meta">{env.provider}</div>
-                  {env.url && (
-                    <a className="env-url" href={env.url} target="_blank" rel="noreferrer">
-                      <Icon name="external" size={12} /> {env.url.replace(/^https?:\/\//, '')}
-                    </a>
-                  )}
-                  {next && (
-                    <div className="env-foot">
-                      <button
-                        className="btn btn-sm btn-block"
-                        disabled={busy !== null || env.status !== 'running'}
-                        onClick={() => promote(next)}
-                      >
-                        {busy === next ? '…' : (
-                          <>
-                            promote <Icon name="arrowRight" size={14} /> {next}
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
+                  <a
+                    className="env-url"
+                    href={env.url ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ visibility: env.url ? 'visible' : 'hidden' }}
+                  >
+                    <Icon name="external" size={12} /> {env.url?.replace(/^https?:\/\//, '') ?? '—'}
+                  </a>
+                  <div className="env-foot">
+                    {next &&
+                      (synced ? (
+                        <span className="env-synced">
+                          <Icon name="check" size={14} /> deployed to {next}
+                        </span>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-block"
+                          disabled={!canPromote}
+                          onClick={() => promote(next)}
+                        >
+                          {busy === next ? 'deploying…' : (
+                            <>
+                              promote <Icon name="arrowRight" size={14} /> {next}
+                            </>
+                          )}
+                        </button>
+                      ))}
+                  </div>
                 </div>
                 {i < project.environments.length - 1 && (
                   <span className="pipe-arrow">
@@ -192,6 +280,7 @@ export default function ProjectDetail() {
         <div className="commits">
           {commits.map((c) => {
             const open = openSha === c.sha;
+            const ci = commitStatus(c.pipeline);
             return (
               <div className="commit" key={c.sha}>
                 <button
@@ -204,7 +293,7 @@ export default function ProjectDetail() {
                   <span className="commit-sha">{c.sha.slice(0, 7)}</span>
                   <span className="commit-msg">{c.message}</span>
                   <span className="badge">
-                    <span className="dot pending" /> čeká na CI
+                    <span className={`dot ${ci.dot}`} /> {ci.label}
                   </span>
                   <span className="commit-author">{c.author}</span>
                 </button>
@@ -213,10 +302,24 @@ export default function ProjectDetail() {
                     <div className="stages">
                       {c.pipeline.map((s, i) => (
                         <Fragment key={s.name}>
-                          <span className="stage">
-                            <span className={`dot ${s.status}`} />
-                            {s.name}
-                          </span>
+                          {s.url ? (
+                            <a
+                              className="stage stage-link"
+                              href={s.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="View job log in Gitea"
+                            >
+                              <span className={`dot ${s.status}`} />
+                              {s.name}
+                              <Icon name="external" size={11} />
+                            </a>
+                          ) : (
+                            <span className="stage">
+                              <span className={`dot ${s.status}`} />
+                              {s.name}
+                            </span>
+                          )}
                           {i < c.pipeline.length - 1 && (
                             <span className="stage-arrow">
                               <Icon name="chevronRight" size={13} />
@@ -225,9 +328,28 @@ export default function ProjectDetail() {
                         </Fragment>
                       ))}
                     </div>
-                    <p className="stages-note">
-                      Pipeline se spustí po zapojení CI/CD (Gitea Actions).
-                    </p>
+                    {(() => {
+                      const runUrl =
+                        c.pipeline.find((s) => s.url)?.url ??
+                        (project.repoUrl ? `${project.repoUrl}/actions` : null);
+                      if (ci.label === 'awaiting CI') {
+                        return (
+                          <p className="stages-note">
+                            Waiting for the Gitea Actions runner to pick up this commit.
+                          </p>
+                        );
+                      }
+                      return runUrl ? (
+                        <a
+                          className="stages-link"
+                          href={runUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View run &amp; logs in Gitea <Icon name="external" size={12} />
+                        </a>
+                      ) : null;
+                    })()}
                   </>
                 )}
               </div>
@@ -235,6 +357,55 @@ export default function ProjectDetail() {
           })}
         </div>
       </div>
+
+      {confirmOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => !deleting && setConfirmOpen(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">
+              <Icon name="trash" size={18} /> Delete project
+            </div>
+            <p className="modal-text">
+              This permanently stops and removes all containers and images,
+              deletes the Git repository in Gitea, and removes the project. This
+              action cannot be undone.
+            </p>
+            <p className="modal-text">
+              Type <strong>{project.name}</strong> to confirm:
+            </p>
+            <input
+              className="modal-input"
+              value={confirmText}
+              autoFocus
+              placeholder={project.name}
+              onChange={(e) => setConfirmText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && confirmText === project.name) doDelete();
+                if (e.key === 'Escape' && !deleting) setConfirmOpen(false);
+              }}
+            />
+            <div className="modal-actions">
+              <button
+                className="btn"
+                onClick={() => setConfirmOpen(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={doDelete}
+                disabled={confirmText !== project.name || deleting}
+              >
+                <Icon name="trash" size={15} />{' '}
+                {deleting ? 'deleting…' : 'Delete project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

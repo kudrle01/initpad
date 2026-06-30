@@ -1,16 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '@/api';
+import { api, type EnvConfig } from '@/api';
+import { useToast } from '@/toast';
 import { Icon } from '@/components/Icon';
-import type { TemplateManifest } from '@/types';
+import type { EnvName, ProviderKind, TemplateManifest } from '@/types';
+
+const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
+
+function defaultProvider(env: EnvName, template: TemplateManifest): ProviderKind {
+  const wanted: ProviderKind = env === 'prod' ? (template.artifact === 'static' ? 'sftp' : 'ssh') : 'docker';
+  return template.compatibleProviders.includes(wanted) ? wanted : template.compatibleProviders[0];
+}
 
 export default function NewProject() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
-  const [name, setName] = useState('muj-projekt');
+  const [name, setName] = useState('my-project');
   const [templateId, setTemplateId] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
+  const [envs, setEnvs] = useState<EnvConfig[]>([]);
   const [busy, setBusy] = useState(false);
+
+  const template = useMemo(
+    () => templates.find((t) => t.id === templateId),
+    [templates, templateId],
+  );
 
   useEffect(() => {
     api.listTemplates().then((t) => {
@@ -19,14 +33,24 @@ export default function NewProject() {
     });
   }, []);
 
+  // Reset environment providers to defaults whenever the template changes.
+  useEffect(() => {
+    if (!template) return;
+    setEnvs(ENV_ORDER.map((envName) => ({ name: envName, provider: defaultProvider(envName, template) })));
+  }, [template]);
+
+  function setProvider(envName: EnvName, provider: ProviderKind) {
+    setEnvs((cur) => cur.map((e) => (e.name === envName ? { ...e, provider } : e)));
+  }
+
   async function submit() {
     setBusy(true);
-    setError(null);
     try {
-      const project = await api.createProject(name, templateId);
+      const project = await api.createProject(name, templateId, envs);
+      toast.success('Project created');
       navigate(`/projects/${project.id}`);
     } catch (e) {
-      setError((e as Error).message);
+      toast.error((e as Error).message);
       setBusy(false);
     }
   }
@@ -34,19 +58,19 @@ export default function NewProject() {
   return (
     <div>
       <div className="page-head">
-        <h1>Nový projekt</h1>
+        <h1>New project</h1>
       </div>
       <p className="lead" style={{ marginTop: '-18px', marginBottom: '28px' }}>
-        Vyber šablonu a platforma připraví repozitář, kód, CI/CD i běžící aplikaci.
+        Pick a template and the platform sets up the repository, code, CI/CD and a running app.
       </p>
 
       <div className="field">
-        <label className="label">Název projektu</label>
+        <label className="label">Project name</label>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
       </div>
 
       <div className="field">
-        <label className="label">Šablona</label>
+        <label className="label">Template</label>
         <div className="templates">
           {templates.map((t) => (
             <button
@@ -65,20 +89,60 @@ export default function NewProject() {
         </div>
       </div>
 
+      <div className="field">
+        <label className="label">Environments</label>
+        <div className="env-config">
+          {envs.map((e, i) => (
+            <div key={e.name} className="env-config-row">
+              <span className={`env-tag env-tag-${e.name}`}>{e.name}</span>
+              <select
+                className="input env-select"
+                value={e.provider}
+                onChange={(ev) => setProvider(e.name, ev.target.value as ProviderKind)}
+              >
+                {template?.compatibleProviders.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+              {i < envs.length - 1 && (
+                <span className="env-config-arrow">
+                  <Icon name="arrowRight" size={14} />
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="note" style={{ marginBottom: 24 }}>
         <Icon name="rocket" size={18} />
         <span>
-          Projekt projde prostředími <b>dev → test → prod</b>. Po vytvoření se nasadí
-          do <b>dev</b>; do test a prod se povyšuje ručně z detailu.
+          The project moves through <b>dev → test → prod</b>. After creation it is deployed
+          to <b>dev</b>; promote to test and prod manually from the detail page.
         </span>
       </div>
 
-      {error && <p className="error" style={{ marginBottom: 16 }}>{error}</p>}
-
       <button className="btn btn-primary" disabled={busy || !templateId} onClick={submit}>
         <Icon name="rocket" size={16} />
-        {busy ? 'Vytvářím…' : 'Vytvořit projekt'}
+        {busy ? 'Creating…' : 'Create project'}
       </button>
+
+      {busy && (
+        <div className="create-overlay">
+          <div className="create-card">
+            <div className="spinner" />
+            <div className="create-title">Setting up “{name}”</div>
+            <ul className="create-steps">
+              <li>Creating Git repository</li>
+              <li>Generating project scaffold</li>
+              <li>Booting the dev environment</li>
+            </ul>
+            <p className="create-note">Redirecting to your project…</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

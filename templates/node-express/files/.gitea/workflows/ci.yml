@@ -1,19 +1,42 @@
 name: ci
 on: [push]
 
+# Pipeline je rozdělená na joby, aby každý odpovídal jedné stage v platformě
+# (build → test → docker build → deploy). Gitea pro každý job vytvoří commit
+# status, který platforma čte a zobrazuje v detailu projektu.
+#
+# Pozn.: Node i npm jsou už v runner image (catthehacker/ubuntu:act-latest),
+# proto nepoužíváme actions/setup-node (to se tahá z github.com a bývá
+# nejčastější příčina selhání na nestabilní síti).
 jobs:
-  build-test-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: install
-        run: npm install
-      - name: test
-        run: npm test
+      - run: node --version && npm --version
+      - run: npm install
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install
+      - run: npm test
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
       - name: docker build
-        run: docker build -t ${{ github.repository }}:${{ github.sha }} .
-      - name: deploy dev
-        run: echo "deploy do dev prostředí (řídí platforma přes DeploymentProvider)"
+        run: docker build -t initpad-ci:${{ github.sha }} .
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: docker
+    steps:
+      # Placeholder – reálné nasazení image platformou (DeploymentProvider)
+      # napojí další iterace (CI → deploy webhook).
+      - run: echo "build OK – deploy řídí platforma přes DeploymentProvider"

@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ProviderKind } from '../domain/types';
-import { DeployInput, DeploymentProvider } from './deployment-provider.interface';
+import {
+  DeployInput,
+  DeploymentProvider,
+  TeardownInput,
+} from './deployment-provider.interface';
 import { DockerProvider } from './providers/docker.provider';
 import { SftpProvider } from './providers/sftp.provider';
 import { SshProvider } from './providers/ssh.provider';
@@ -24,7 +28,11 @@ export class DeploymentService {
 
   deploy(provider: ProviderKind, input: DeployInput) {
     const impl = this.registry.get(provider);
-    if (!impl) throw new BadRequestException(`Neznámý provider '${provider}'`);
+    if (!impl) throw new BadRequestException(`Unknown provider '${provider}'`);
     return impl.deploy(input);
+  }
+
+  async teardown(provider: ProviderKind, input: TeardownInput): Promise<void> {
+    await this.registry.get(provider)?.teardown?.(input);
   }
 }

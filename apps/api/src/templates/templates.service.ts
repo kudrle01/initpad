@@ -19,7 +19,7 @@ export class TemplatesService {
 
   get(id: string): TemplateManifest {
     const found = this.list().find((t) => t.id === id);
-    if (!found) throw new NotFoundException(`Šablona '${id}' nenalezena`);
+    if (!found) throw new NotFoundException(`Template '${id}' not found`);
     return found;
   }
 

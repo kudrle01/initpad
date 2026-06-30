@@ -9,9 +9,24 @@ export const config = {
     url: process.env.INITPAD_GITEA_URL || '',
     user: process.env.INITPAD_GITEA_USER || '',
     token: process.env.INITPAD_GITEA_TOKEN || '',
+    // Token Gitea admina – platforma jím zakládá uživatelské účty (řízená
+    // registrace). Když není zvlášť, použije se hlavní token.
+    adminToken:
+      process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
   },
   git: {
     authorName: process.env.INITPAD_GIT_AUTHOR_NAME || 'DevPlatform',
     authorEmail: process.env.INITPAD_GIT_AUTHOR_EMAIL || 'platform@local',
   },
+  auth: {
+    clientId: process.env.INITPAD_OAUTH_CLIENT_ID || '',
+    clientSecret: process.env.INITPAD_OAUTH_CLIENT_SECRET || '',
+    callbackUrl:
+      process.env.INITPAD_OAUTH_CALLBACK_URL || 'http://localhost:3000/api/auth/callback',
+    frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
+    jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
+  },
 };
+
+export const isAuthConfigured = (): boolean =>
+  Boolean(config.auth.clientId && config.auth.clientSecret && config.gitea.url);

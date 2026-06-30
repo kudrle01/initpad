@@ -1,4 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { rmSync } from 'fs';
 import { Prisma } from '@prisma/client';
 import {
   Commit,
@@ -7,6 +14,7 @@ import {
   PipelineStage,
   Project,
   ProviderKind,
+  StageStatus,
   TemplateManifest,
 } from '../domain/types';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -14,7 +22,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
 import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
-import { GiteaService } from '../scm/gitea.service';
+import { GiteaService, GiteaActor } from '../scm/gitea.service';
+import { config } from '../config';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -24,6 +33,8 @@ type ProjectRow = Prisma.ProjectGetPayload<{ include: { environments: true } }>;
 // Stav je perzistentní v PostgreSQL (Prisma).
 @Injectable()
 export class ProjectsService {
+  private readonly logger = new Logger('ProjectsService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly templates: TemplatesService,
@@ -32,8 +43,9 @@ export class ProjectsService {
     private readonly gitea: GiteaService,
   ) {}
 
-  async list(): Promise<Project[]> {
+  async list(ownerId: string): Promise<Project[]> {
     const rows = await this.prisma.project.findMany({
+      where: { ownerId },
       include: { environments: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -45,64 +57,149 @@ export class ProjectsService {
       where: { id },
       include: { environments: true },
     });
-    if (!row) throw new NotFoundException(`Projekt '${id}' nenalezen`);
+    if (!row) throw new NotFoundException(`Project '${id}' not found`);
     return this.toDomain(row);
   }
 
-  async create(dto: CreateProjectDto): Promise<Project> {
+  async create(dto: CreateProjectDto, ownerId: string): Promise<Project> {
     if (await this.prisma.project.findUnique({ where: { name: dto.name } })) {
-      throw new BadRequestException(`Projekt '${dto.name}' už existuje`);
+      throw new BadRequestException(`Project '${dto.name}' already exists`);
     }
     const template = this.templates.get(dto.templateId);
+    const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
+    const actor: GiteaActor = { username: owner.username, token: owner.accessToken };
+
     const { repoPath } = this.generator.generate(template.id, dto.name);
-    const repo = await this.gitea.provision(dto.name, repoPath);
+    await this.gitea.initLocal(repoPath, {
+      name: owner.name ?? owner.username,
+      email: owner.email ?? `${owner.username}@users.noreply.local`,
+    });
+
+    let repo: { repoUrl: string };
+    try {
+      repo = await this.gitea.provision(dto.name, repoPath, actor);
+    } catch (e) {
+      throw new BadRequestException(
+        `Repository could not be created in Gitea: ${(e as Error).message}`,
+      );
+    }
 
     const created = await this.prisma.project.create({
       data: {
         name: dto.name,
         templateId: template.id,
         repoPath,
-        repoUrl: repo?.repoUrl ?? null,
-        lastCommit: 'init: scaffold ze šablony',
+        repoUrl: repo.repoUrl,
+        lastCommit: 'init: scaffold from template',
+        ownerId,
         environments: {
           create: ENV_ORDER.map((name, order) => ({
             name,
             order,
-            provider: this.defaultProvider(name, template),
-            status: 'empty',
+            provider:
+              dto.environments?.find((e) => e.name === name)?.provider ??
+              this.defaultProvider(name, template),
+            // dev rovnou ukazuje "deploying" – nasazení doběhne na pozadí.
+            status: name === 'dev' ? 'deploying' : 'empty',
           })),
         },
       },
     });
 
-    await this.deployEnv(created.id, 'dev', '0.1.0');
+    // Nasazení do dev běží na pozadí: uživatele hned přesměrujeme na detail,
+    // kde se stav dotahuje real-time (deploying → running/failed).
+    void this.deployEnvInBackground(created.id, 'dev', '0.1.0');
     return this.get(created.id);
+  }
+
+  // Obalí deployEnv tak, aby případná chyba nezůstala "viset" jako unhandled
+  // a prostředí se označilo jako failed.
+  private async deployEnvInBackground(
+    projectId: string,
+    envName: EnvName,
+    version: string,
+  ): Promise<void> {
+    try {
+      await this.deployEnv(projectId, envName, version);
+    } catch (e) {
+      this.logger.error(`Deploy ${envName} selhal: ${(e as Error).message}`);
+      await this.prisma.environment
+        .update({
+          where: { projectId_name: { projectId, name: envName } },
+          data: { status: 'failed' },
+        })
+        .catch(() => undefined);
+    }
   }
 
   async promote(id: string, target: EnvName): Promise<Project> {
     const project = await this.get(id);
     const idx = ENV_ORDER.indexOf(target);
     if (idx <= 0) {
-      throw new BadRequestException(`Do '${target}' nelze povyšovat`);
+      throw new BadRequestException(`Cannot promote to '${target}'`);
     }
     const source = project.environments.find((e) => e.name === ENV_ORDER[idx - 1]);
     if (!source || source.status !== 'running' || !source.version) {
       throw new BadRequestException(
-        `Zdrojové prostředí '${ENV_ORDER[idx - 1]}' nemá co povýšit`,
+        `Source environment '${ENV_ORDER[idx - 1]}' has nothing to promote`,
       );
     }
     await this.deployEnv(id, target, source.version);
     return this.get(id);
   }
 
+  // Smaže projekt: zastaví kontejnery všech prostředí, smaže repo v Gitee,
+  // workspace složku i DB záznam (prostředí padají kaskádou).
+  async remove(id: string, ownerId: string): Promise<void> {
+    const row = await this.prisma.project.findUnique({
+      where: { id },
+      include: { environments: true, owner: true },
+    });
+    if (!row) throw new NotFoundException(`Project '${id}' not found`);
+    if (row.ownerId && row.ownerId !== ownerId) {
+      throw new ForbiddenException('Not your project');
+    }
+
+    for (const env of row.environments) {
+      await this.deployment.teardown(env.provider as ProviderKind, {
+        projectName: row.name,
+        env: env.name,
+      });
+    }
+    await this.gitea.deleteRepo(row.name, this.actorFromOwner(row.owner));
+    rmSync(row.repoPath, { recursive: true, force: true });
+    await this.prisma.project.delete({ where: { id } });
+  }
+
+  // Identita vlastníka pro operace s jeho repem; fallback na platformní účet.
+  private actorFromOwner(
+    owner: { username: string; accessToken: string } | null,
+  ): GiteaActor {
+    if (owner) return { username: owner.username, token: owner.accessToken };
+    return { username: config.gitea.user, token: config.gitea.token };
+  }
+
+  private async actorForProject(projectId: string): Promise<GiteaActor> {
+    const row = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { owner: true },
+    });
+    return this.actorFromOwner(row?.owner ?? null);
+  }
+
   async getCommits(id: string): Promise<Commit[]> {
     const project = await this.get(id);
     const template = this.templates.get(project.templateId);
-    const stages = this.pipelineStages(template);
+    const actor = await this.actorForProject(id);
 
-    const fromGitea = await this.gitea.listCommits(project.name);
+    const fromGitea = await this.gitea.listCommits(project.name, actor);
     if (fromGitea && fromGitea.length > 0) {
-      return fromGitea.map((c) => ({ ...c, pipeline: stages }));
+      return Promise.all(
+        fromGitea.map(async (c) => {
+          const statuses = await this.gitea.listCommitStatuses(project.name, c.sha, actor);
+          return { ...c, pipeline: this.pipelineStages(template, statuses) };
+        }),
+      );
     }
     return [
       {
@@ -110,7 +207,7 @@ export class ProjectsService {
         message: project.lastCommit,
         author: 'DevPlatform',
         date: project.createdAt,
-        pipeline: stages,
+        pipeline: this.pipelineStages(template, null),
       },
     ];
   }
@@ -132,6 +229,7 @@ export class ProjectsService {
       env: envName,
       repoPath: project.repoPath,
       port: template.port,
+      healthPath: template.healthPath ?? '/health',
     });
     await this.prisma.environment.update({
       where: { projectId_name: { projectId, name: envName } },
@@ -147,13 +245,58 @@ export class ProjectsService {
     return 'docker';
   }
 
-  // CI stagey podle typu artefaktu; status 'pending' dokud není zapojené CI (bod 3).
-  private pipelineStages(template: TemplateManifest): PipelineStage[] {
-    const names =
+  // CI stagey podle typu artefaktu. Stav se skládá z commit statusů z Gitey
+  // (jeden status na job ci.yml); 'pending' = CI pro commit ještě neproběhlo.
+  private pipelineStages(
+    template: TemplateManifest,
+    statuses: { context: string; status: string; targetUrl: string | null }[] | null,
+  ): PipelineStage[] {
+    // label = co se zobrazí; tokens = možné názvy/id jobu v commit statusu.
+    const defs: { label: string; tokens: string[] }[] =
       template.artifact === 'static'
-        ? ['build', 'test', 'deploy']
-        : ['build', 'test', 'docker build', 'deploy'];
-    return names.map((name) => ({ name, status: 'pending' as const }));
+        ? [
+            { label: 'build', tokens: ['build'] },
+            { label: 'test', tokens: ['test'] },
+            { label: 'deploy', tokens: ['deploy'] },
+          ]
+        : [
+            { label: 'build', tokens: ['build'] },
+            { label: 'test', tokens: ['test'] },
+            { label: 'docker build', tokens: ['docker', 'docker build'] },
+            { label: 'deploy', tokens: ['deploy'] },
+          ];
+
+    // Nejnovější stav + odkaz na job (statusy chodí seřazené od nejnovějšího).
+    const latest = new Map<string, { status: string; url: string | null }>();
+    for (const s of statuses ?? []) {
+      const job = this.jobFromContext(s.context);
+      if (job && !latest.has(job)) latest.set(job, { status: s.status, url: s.targetUrl });
+    }
+
+    return defs.map((d) => {
+      const hit = d.tokens.map((t) => latest.get(t)).find((v) => v !== undefined);
+      return {
+        name: d.label,
+        status: hit ? this.mapCiStatus(hit.status) : 'pending',
+        url: hit?.url ?? null,
+      };
+    });
+  }
+
+  // Gitea commit status kontext má tvar "<workflow> / <job> (<event>)".
+  private jobFromContext(context: string): string | null {
+    if (!context) return null;
+    const noEvent = context.replace(/\s*\([^)]*\)\s*$/, '');
+    const job = noEvent.includes('/')
+      ? noEvent.slice(noEvent.lastIndexOf('/') + 1)
+      : noEvent;
+    return job.trim().toLowerCase();
+  }
+
+  private mapCiStatus(state: string): StageStatus {
+    if (state === 'success') return 'success';
+    if (state === 'failure' || state === 'error') return 'failed';
+    return 'running'; // pending = job běží / je ve frontě
   }
 
   private toDomain(row: ProjectRow): Project {

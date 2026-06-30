@@ -5,9 +5,10 @@ import { TemplatesModule } from '../templates/templates.module';
 import { GeneratorModule } from '../generator/generator.module';
 import { DeploymentModule } from '../deployment/deployment.module';
 import { ScmModule } from '../scm/scm.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [TemplatesModule, GeneratorModule, DeploymentModule, ScmModule],
+  imports: [TemplatesModule, GeneratorModule, DeploymentModule, ScmModule, AuthModule],
   providers: [ProjectsService],
   controllers: [ProjectsController],
 })

@@ -13,6 +13,8 @@ export interface TemplateManifest {
   artifact: ArtifactKind;
   compatibleProviders: ProviderKind[];
   port?: number;
+  // Cesta pro post-deploy health check (default '/health').
+  healthPath?: string;
   description: string;
 }
 
@@ -40,6 +42,8 @@ export type StageStatus = 'pending' | 'running' | 'success' | 'failed';
 export interface PipelineStage {
   name: string;
   status: StageStatus;
+  // Odkaz na konkrétní job/run v Gitee (z commit statusu), pokud existuje.
+  url?: string | null;
 }
 
 export interface Commit {

@@ -1,17 +1,25 @@
-import type { Project, TemplateManifest, EnvName, Commit } from '@/types';
+import type { Project, TemplateManifest, EnvName, Commit, User, ProviderKind } from '@/types';
+
+export interface EnvConfig {
+  name: EnvName;
+  provider: ProviderKind;
+}
 
 const BASE = '/api';
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     ...init,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message || `HTTP ${res.status}`);
   }
-  return res.json() as Promise<T>;
+  // 204 / prázdné tělo (např. DELETE) – nic neparsuj.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const api = {
@@ -19,11 +27,27 @@ export const api = {
   getProject: (id: string) => http<Project>(`/projects/${id}`),
   getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
-  createProject: (name: string, templateId: string) =>
+  createProject: (name: string, templateId: string, environments: EnvConfig[]) =>
     http<Project>('/projects', {
       method: 'POST',
-      body: JSON.stringify({ name, templateId }),
+      body: JSON.stringify({ name, templateId, environments }),
     }),
   promote: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/promote/${env}`, { method: 'POST' }),
+  deleteProject: (id: string) =>
+    http<void>(`/projects/${id}`, { method: 'DELETE' }),
+  me: () => http<User>('/auth/me'),
+  register: (username: string, email: string, password: string) =>
+    http<User>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, email, password }),
+    }),
+  signin: (username: string, password: string) =>
+    http<User>('/auth/signin', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => http<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 };
+
+export const loginUrl = `${BASE}/auth/login`;

@@ -1,3 +1,11 @@
+export interface User {
+  id: string;
+  username: string;
+  name: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+}
+
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';
 export type EnvName = 'dev' | 'test' | 'prod';
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed';
@@ -35,6 +43,7 @@ export type StageStatus = 'pending' | 'running' | 'success' | 'failed';
 export interface PipelineStage {
   name: string;
   status: StageStatus;
+  url?: string | null;
 }
 
 export interface Commit {
