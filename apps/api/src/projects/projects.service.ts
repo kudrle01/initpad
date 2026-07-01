@@ -113,9 +113,9 @@ export class ProjectsService {
       },
     });
 
-    // Nasazení do dev běží na pozadí: uživatele hned přesměrujeme na detail,
-    // kde se stav dotahuje real-time (deploying → running/failed).
-    void this.deployEnvInBackground(created.id, 'dev', '0.1.0');
+    // Žádný lokální bootstrap: dev zůstává "deploying" a naskočí až s reálným
+    // otestovaným image, který postaví a nasadí CI (build once, deploy many).
+    // Úvodní push scaffoldu CI spustí; webhook pak dev nasadí.
     return this.get(created.id);
   }
 
@@ -125,15 +125,16 @@ export class ProjectsService {
     projectId: string,
     envName: EnvName,
     version: string,
+    useRegistry: boolean,
   ): Promise<void> {
     try {
-      await this.deployEnv(projectId, envName, version);
+      await this.deployEnv(projectId, envName, version, useRegistry);
     } catch (e) {
       this.logger.error(`Deploy ${envName} selhal: ${(e as Error).message}`);
       await this.prisma.environment
         .update({
           where: { projectId_name: { projectId, name: envName } },
-          data: { status: 'failed' },
+          data: { status: 'failed', statusReason: (e as Error).message },
         })
         .catch(() => undefined);
     }
@@ -161,13 +162,15 @@ export class ProjectsService {
     } catch (e) {
       this.logger.error(`CI deploy: sync selhal: ${(e as Error).message}`);
     }
-    const version = sha ? sha.slice(0, 7) : '0.1.0';
+    // Verze = plný hash commitu (jednoznačný, sedí s tagem image z CI).
+    const version = sha || '0.1.0';
     await this.prisma.project.update({
       where: { id: project.id },
-      data: { lastCommit: `ci: deploy ${version}` },
+      data: { lastCommit: `ci: deploy ${version.slice(0, 7)}` },
     });
-    // Na pozadí – webhook z CI se hned vrátí, deploy (build+run) doběhne pak.
-    void this.deployEnvInBackground(project.id, 'dev', version);
+    // Na pozadí – webhook z CI se hned vrátí, deploy (pull+run) doběhne pak.
+    // useRegistry=true: nasadí přesně ten image, který CI postavilo a otestovalo.
+    void this.deployEnvInBackground(project.id, 'dev', version, true);
     this.logger.log(`CI deploy: ${repo} → dev (${version})`);
   }
 
@@ -183,7 +186,37 @@ export class ProjectsService {
         `Source environment '${ENV_ORDER[idx - 1]}' has nothing to promote`,
       );
     }
-    await this.deployEnv(id, target, source.version);
+    // Promote = spustit v cíli TEN SAMÝ image z registru (build once, deploy
+    // many). Když daná verze v registru není (např. jen bootstrap bez CI),
+    // deploy selže místo přebudování.
+    await this.deployEnv(id, target, source.version, true);
+    return this.get(id);
+  }
+
+  // Posledních N řádků logu běžícího/spadlého nasazení daného prostředí.
+  async envLogs(id: string, envName: EnvName): Promise<string> {
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const env = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId: id, name: envName } },
+    });
+    if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
+    return this.deployment.logs(env.provider as ProviderKind, {
+      projectName: this.deploySlug(project.repoUrl, project.name),
+      env: envName,
+    });
+  }
+
+  // Znovu nasadí prostředí jeho aktuální verzí. Verze-hash = z registru (build
+  // once), bootstrap verze (0.1.0) = rebuild z repa.
+  async redeploy(id: string, envName: EnvName): Promise<Project> {
+    const env = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId: id, name: envName } },
+    });
+    if (!env || !env.version) {
+      throw new BadRequestException(`Environment '${envName}' has nothing to redeploy`);
+    }
+    const useRegistry = /^[0-9a-f]{7,40}$/.test(env.version);
+    void this.deployEnvInBackground(id, envName, env.version, useRegistry);
     return this.get(id);
   }
 
@@ -239,6 +272,13 @@ export class ProjectsService {
       .replace(/^-+|-+$/g, '');
   }
 
+  // Tag image v registru: <registry>/<owner>/<name>:<version>. Musí sedět s tím,
+  // co pushne CI (viz ci.yml). Vše lowercase (požadavek registru).
+  private imageRef(repoUrl: string | null, name: string, version: string): string {
+    const owner = this.ownerFromRepoUrl(repoUrl) ?? config.gitea.user;
+    return `${config.registry.host}/${owner}/${name}:${version}`.toLowerCase();
+  }
+
   private ownerFromRepoUrl(repoUrl: string | null): string | null {
     if (!repoUrl) return null;
     try {
@@ -282,7 +322,14 @@ export class ProjectsService {
     ];
   }
 
-  private async deployEnv(projectId: string, envName: EnvName, version: string) {
+  // useRegistry=true → nasadí OTESTOVANÝ image z registru (build once); když
+  // chybí, deploy selže. useRegistry=false → bootstrap build z repa.
+  private async deployEnv(
+    projectId: string,
+    envName: EnvName,
+    version: string,
+    useRegistry: boolean,
+  ) {
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
     const template = this.templates.get(project.templateId);
     const env = await this.prisma.environment.findUniqueOrThrow({
@@ -291,7 +338,7 @@ export class ProjectsService {
 
     await this.prisma.environment.update({
       where: { projectId_name: { projectId, name: envName } },
-      data: { status: 'deploying' },
+      data: { status: 'deploying', statusReason: null },
     });
     const result = await this.deployment.deploy(env.provider as ProviderKind, {
       projectName: this.deploySlug(project.repoUrl, project.name),
@@ -300,10 +347,19 @@ export class ProjectsService {
       repoPath: project.repoPath,
       port: template.port,
       healthPath: template.healthPath ?? '/health',
+      imageRef: useRegistry
+        ? this.imageRef(project.repoUrl, project.name, version)
+        : undefined,
+      allowBuildFallback: !useRegistry,
     });
     await this.prisma.environment.update({
       where: { projectId_name: { projectId, name: envName } },
-      data: { status: result.status, version, url: result.url },
+      data: {
+        status: result.status,
+        version,
+        url: result.url,
+        statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
+      },
     });
   }
 
@@ -386,6 +442,7 @@ export class ProjectsService {
           status: e.status as DeployStatus,
           version: e.version,
           url: e.url,
+          statusReason: e.statusReason,
         })),
     };
   }

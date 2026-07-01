@@ -277,7 +277,7 @@ h1 { font-size: 24px; font-weight: 680; letter-spacing: -0.021em; margin: 0; }
 /* ---------- badges / status ---------- */
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 500; line-height: 1.55; padding: 3px 9px; border-radius: 999px;
   background: var(--surface-2); color: var(--text-2); border: 1px solid transparent;
 }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
@@ -368,6 +368,36 @@ h1 { font-size: 24px; font-weight: 680; letter-spacing: -0.021em; margin: 0; }
 .env.prod::before { background: #5f7a3e; }
 .pipe-arrow { display: flex; align-items: center; color: var(--text-3); padding: 0 8px; }
 .env-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.env-top-right { display: inline-flex; align-items: center; gap: 6px; }
+.badge-btn { cursor: pointer; margin: 0; appearance: none; -webkit-appearance: none; transition: background 0.12s; }
+.badge-btn:hover { background: var(--border-strong); color: var(--text); }
+.env-redeploy {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border-strong); color: var(--text-3);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.env-redeploy:hover:not(:disabled) { background: var(--surface-2); color: var(--text); border-color: var(--text-3); }
+.env-redeploy:disabled { opacity: 0.45; cursor: default; }
+.env-reason {
+  display: inline-flex; align-items: flex-start; gap: 6px; margin-top: 8px;
+  text-align: left; background: var(--red-weak); color: var(--red);
+  border: none; border-radius: var(--radius-sm); padding: 7px 9px;
+  font-size: 11.5px; line-height: 1.4; cursor: pointer; width: 100%;
+}
+.env-reason svg { flex-shrink: 0; margin-top: 1px; }
+.env-reason:hover { filter: brightness(0.97); }
+
+/* --- logs modal --- */
+.logs-modal { max-width: 720px; }
+.logs-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.logs-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.logs-body {
+  margin: 0 0 14px; padding: 14px; max-height: 52vh; overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-family: var(--mono); font-size: 12px;
+  line-height: 1.55; color: var(--text); white-space: pre-wrap; word-break: break-word;
+}
 .env-name { font-size: 13px; font-weight: 600; text-transform: lowercase; }
 .env-version { font-size: 16px; font-weight: 600; letter-spacing: -0.3px; }
 .env-meta { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }

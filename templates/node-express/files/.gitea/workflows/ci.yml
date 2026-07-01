@@ -30,8 +30,17 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
-      - name: docker build
-        run: docker build -t initpad-ci:${{ github.sha }} .
+      # Build once, deploy many: image se postaví JEDNOU a pushne do Gitea
+      # registru pod tagem = hash commitu. Platforma ho pak jen stáhne a spustí
+      # (dev/test/prod = ten samý image). Registr = localhost:3001 (dosažitelný
+      # z hostitelského Docker daemonu), přihlášení přes secrets bota.
+      - name: build & push image
+        run: |
+          IMAGE=$(echo "localhost:3001/${{ github.repository }}:${{ github.sha }}" | tr '[:upper:]' '[:lower:]')
+          echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \
+            docker login localhost:3001 -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
 
   deploy:
     runs-on: ubuntu-latest

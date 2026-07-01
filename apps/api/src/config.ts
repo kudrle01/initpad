@@ -38,6 +38,14 @@ export const config = {
   ci: {
     deployToken: process.env.INITPAD_CI_DEPLOY_TOKEN || 'ci-deploy-secret-change-me',
   },
+  // Gitea container registry (OCI). Host musí být dosažitelný z hostitelského
+  // Docker daemonu (ten dělá push i pull). Přihlášení = bot účet.
+  registry: {
+    host: process.env.INITPAD_REGISTRY_HOST || 'localhost:3001',
+    user: process.env.INITPAD_GITEA_USER || '',
+    password:
+      process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
+  },
   // Platforma jako OIDC provider (SSO do Gitey). Gitea se registruje jako klient.
   // issuer = adresa, na kterou chodí Gitea SERVER (z kontejneru přes
   // host.docker.internal). publicUrl = adresa pro PROHLÍŽEČ (authorize redirect).

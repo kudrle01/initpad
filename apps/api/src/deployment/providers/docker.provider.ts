@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Docker from 'dockerode';
 import * as tar from 'tar-fs';
 import { ProviderKind } from '../../domain/types';
+import { config } from '../../config';
 import {
   DeployInput,
   DeployResult,
@@ -31,11 +32,35 @@ export class DockerProvider implements DeploymentProvider {
     }
 
     const network = `net-${input.env}`;
-    const image = `initpad/${input.projectName}:${input.env}`;
     const containerName = `initpad-${input.projectName}-${input.env}`;
 
     await this.ensureNetwork(network);
-    await this.buildImage(input.repoPath, image);
+    // Build once, deploy many: když CI postavilo image do registru, stáhneme ho
+    // a spustíme (žádný rebuild).
+    let image: string;
+    if (input.imageRef) {
+      if (await this.tryPull(input.imageRef)) {
+        image = input.imageRef;
+        this.logger.log(`Používám image z registru: ${image}`);
+      } else if (input.allowBuildFallback) {
+        image = `initpad/${input.projectName}:${input.env}`;
+        await this.buildImage(input.repoPath, image);
+      } else {
+        // Přísné build-once: otestovaný image v registru není → nebuildovat
+        // jiný (možná odlišný) artefakt, radši selhat.
+        this.logger.warn(
+          `Image ${input.imageRef} není v registru – deploy zastaven (build-once).`,
+        );
+        return {
+          status: 'failed',
+          url: '',
+          reason: `Image ${input.imageRef} was not found in the registry — CI probably didn't build or push it.`,
+        };
+      }
+    } else {
+      image = `initpad/${input.projectName}:${input.env}`;
+      await this.buildImage(input.repoPath, image);
+    }
     await this.removeContainer(containerName);
     const hostPort = await this.runContainer(image, containerName, network, port);
 
@@ -45,7 +70,11 @@ export class DockerProvider implements DeploymentProvider {
     const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
     if (!healthy) {
       this.logger.warn(`${containerName} nenaběhl zdravě (health check selhal)`);
-      return { status: 'failed', url };
+      return {
+        status: 'failed',
+        url,
+        reason: `Health check at ${input.healthPath ?? '/health'} did not return 2xx within ~10s.`,
+      };
     }
     this.logger.log(`Nasazeno a zdravé: ${containerName} → ${url}`);
     return { status: 'running', url };
@@ -76,6 +105,34 @@ export class DockerProvider implements DeploymentProvider {
     await this.removeContainer(containerName);
     await this.removeImage(image);
     this.logger.log(`Odstraněn kontejner ${containerName} i image ${image}`);
+  }
+
+  // Posledních ~200 řádků logu kontejneru daného prostředí.
+  async logs(input: TeardownInput): Promise<string> {
+    if (!(await this.isAvailable())) return '';
+    const name = `initpad-${input.projectName}-${input.env}`;
+    try {
+      const buf = (await this.docker.getContainer(name).logs({
+        stdout: true,
+        stderr: true,
+        tail: 200,
+      })) as unknown as Buffer;
+      return this.demuxLogs(buf).trim();
+    } catch (e) {
+      return `Logs unavailable: ${(e as Error).message}`;
+    }
+  }
+
+  // Docker vrací u kontejnerů bez TTY multiplexovaný stream (8B hlavička/frame).
+  private demuxLogs(buf: Buffer): string {
+    let out = '';
+    let i = 0;
+    while (i + 8 <= buf.length) {
+      const len = buf.readUInt32BE(i + 4);
+      out += buf.subarray(i + 8, i + 8 + len).toString('utf8');
+      i += 8 + len;
+    }
+    return out || buf.toString('utf8');
   }
 
   private async removeImage(tag: string): Promise<void> {
@@ -113,6 +170,26 @@ export class DockerProvider implements DeploymentProvider {
         err ? reject(err) : resolve(),
       );
     });
+  }
+
+  // Stáhne image z registru (přihlášen jako bot). Vrací false, když image
+  // neexistuje / registr nedostupný → volající se vrátí k lokálnímu buildu.
+  private async tryPull(ref: string): Promise<boolean> {
+    try {
+      const auth = {
+        username: config.registry.user,
+        password: config.registry.password,
+        serveraddress: config.registry.host,
+      };
+      const stream = (await this.docker.pull(ref, { authconfig: auth })) as NodeJS.ReadableStream;
+      await new Promise<void>((resolve, reject) => {
+        this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+      });
+      return true;
+    } catch (e) {
+      this.logger.warn(`pull ${ref} selhal: ${(e as Error).message}`);
+      return false;
+    }
   }
 
   private async removeContainer(name: string): Promise<void> {

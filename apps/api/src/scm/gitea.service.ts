@@ -24,7 +24,7 @@ export class GiteaService {
   ): Promise<{ repoUrl: string }> {
     const { url, adminToken } = config.gitea;
     if (!url || !adminToken) {
-      throw new Error('Gitea admin není nakonfigurován (INITPAD_GITEA_URL/TOKEN)');
+      throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
     await this.createRepo(name, actor);
     await this.pushScaffold(name, dir, actor);
@@ -42,7 +42,7 @@ export class GiteaService {
   }): Promise<{ id: number; login: string }> {
     const { url, adminToken } = config.gitea;
     if (!url || !adminToken) {
-      throw new Error('Gitea admin není nakonfigurován (INITPAD_GITEA_URL/TOKEN)');
+      throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
     const res = await fetch(`${url}/api/v1/admin/users`, {
       method: 'POST',
@@ -55,7 +55,7 @@ export class GiteaService {
       }),
     });
     if (res.status === 422) {
-      throw new Error('Uživatel s tímto jménem nebo e-mailem už v Gitee existuje');
+      throw new Error('A user with this username or e-mail already exists in Gitea');
     }
     if (!res.ok) {
       throw new Error(`Gitea user creation failed (HTTP ${res.status})`);
@@ -191,15 +191,30 @@ export class GiteaService {
       body: JSON.stringify({ has_actions: true }),
     }).catch(() => undefined);
 
-    // Nastaví Actions secret, kterým CI deploy job zavolá webhook platformy.
-    await fetch(
-      `${url}/api/v1/repos/${actor.username}/${name}/actions/secrets/INITPAD_DEPLOY_TOKEN`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
-        body: JSON.stringify({ data: config.ci.deployToken }),
-      },
-    ).catch(() => undefined);
+    // Actions secrets: token pro deploy webhook + přihlášení do registru
+    // (build once, deploy many – CI image pushne, platforma stáhne).
+    await this.setRepoSecret(actor.username, name, 'INITPAD_DEPLOY_TOKEN', config.ci.deployToken);
+    await this.setRepoSecret(actor.username, name, 'INITPAD_REGISTRY_USER', config.registry.user);
+    await this.setRepoSecret(
+      actor.username,
+      name,
+      'INITPAD_REGISTRY_PASSWORD',
+      config.registry.password,
+    );
+  }
+
+  private async setRepoSecret(
+    owner: string,
+    repo: string,
+    key: string,
+    value: string,
+  ): Promise<void> {
+    const { url, adminToken } = config.gitea;
+    await fetch(`${url}/api/v1/repos/${owner}/${repo}/actions/secrets/${key}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
+      body: JSON.stringify({ data: value }),
+    }).catch(() => undefined);
   }
 
   // Stáhne poslední stav větve do lokální workspace složky (fetch + hard reset),

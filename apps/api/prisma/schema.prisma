@@ -48,6 +48,8 @@ model Environment {
   status    String
   version   String?
   url       String?
+  // Důvod posledního selhání (health check / chybějící image …), jinak null.
+  statusReason String?
 
   @@unique([projectId, name])
 }

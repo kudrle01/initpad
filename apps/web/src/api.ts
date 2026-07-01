@@ -34,6 +34,10 @@ export const api = {
     }),
   promote: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/promote/${env}`, { method: 'POST' }),
+  redeploy: (id: string, env: EnvName) =>
+    http<Project>(`/projects/${id}/redeploy/${env}`, { method: 'POST' }),
+  getLogs: (id: string, env: EnvName) =>
+    http<{ logs: string }>(`/projects/${id}/logs/${env}`),
   deleteProject: (id: string) =>
     http<void>(`/projects/${id}`, { method: 'DELETE' }),
   me: () => http<User>('/auth/me'),

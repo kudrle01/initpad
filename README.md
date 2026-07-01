@@ -127,6 +127,9 @@ se mění, což pro prototyp stačí (Gitea si JWKS načítá při každém logi
   stav pipeline se zobrazuje u commitů v detailu projektu
 - **CI → deploy**: po úspěšném buildu CI zavolá webhook platformy (`/api/ci/deploy`),
   ta stáhne commit a nasadí dev → uzavřený E2E: commit → build → běžící dev
+- **Build once, deploy many**: CI pushne image do Gitea registru (tag = commit),
+  platforma ho jen stáhne a spustí; promote do test/prod = ten samý image
+  (viz `DECISIONS.md`, ADR-008)
 - **Řízená registrace**: platforma zakládá Gitea účet + token (formulář na login)
 - **SSO**: platforma jako OIDC provider, Gitea se přihlašuje přes ni
 - prostředí dev/test/prod s providerem, auto-deploy do dev, promote dev → test → prod

@@ -35,4 +35,8 @@ export class DeploymentService {
   async teardown(provider: ProviderKind, input: TeardownInput): Promise<void> {
     await this.registry.get(provider)?.teardown?.(input);
   }
+
+  async logs(provider: ProviderKind, input: TeardownInput): Promise<string> {
+    return (await this.registry.get(provider)?.logs?.(input)) ?? '';
+  }
 }

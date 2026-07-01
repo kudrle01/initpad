@@ -87,8 +87,23 @@ export default function ProjectDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [logsEnv, setLogsEnv] = useState<EnvName | null>(null);
+  const [logsText, setLogsText] = useState('');
+  const [logsLoading, setLogsLoading] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
+
+  function openLogs(envName: EnvName) {
+    if (!id) return;
+    setLogsEnv(envName);
+    setLogsText('');
+    setLogsLoading(true);
+    api
+      .getLogs(id, envName)
+      .then((r) => setLogsText(r.logs || '(no output)'))
+      .catch((e) => setLogsText(`Error: ${(e as Error).message}`))
+      .finally(() => setLogsLoading(false));
+  }
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -134,6 +149,19 @@ export default function ProjectDetail() {
     try {
       setProject(await api.promote(id, target));
       toast.success(`Promoted to ${target}`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function redeploy(envName: EnvName) {
+    if (!id) return;
+    setBusy(`redeploy-${envName}`);
+    try {
+      setProject(await api.redeploy(id, envName));
+      toast.success(`Redeploying ${envName}`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -242,12 +270,35 @@ export default function ProjectDetail() {
                 <div className={`env ${env.name}`}>
                   <div className="env-top">
                     <span className="env-name">{env.name}</span>
-                    <span className="badge">
-                      <span className={`dot ${env.status}`} />
-                      {env.status}
+                    <span className="env-top-right">
+                      {env.version ? (
+                        <button
+                          className="badge badge-btn"
+                          title="View deploy detail & logs"
+                          onClick={() => openLogs(env.name)}
+                        >
+                          <span className={`dot ${env.status}`} />
+                          {env.status}
+                        </button>
+                      ) : (
+                        <span className="badge">
+                          <span className={`dot ${env.status}`} />
+                          {env.status}
+                        </span>
+                      )}
+                      {env.version && (
+                        <button
+                          className="env-redeploy"
+                          disabled={busy !== null}
+                          title="Redeploy this environment"
+                          onClick={() => redeploy(env.name)}
+                        >
+                          <Icon name="refresh" size={13} />
+                        </button>
+                      )}
                     </span>
                   </div>
-                  <div className="env-version">{env.version ? `v${env.version}` : '—'}</div>
+                  <div className="env-version">{env.version ? `v${env.version.slice(0, 7)}` : '—'}</div>
                   <div className="env-meta">{env.provider}</div>
                   <a
                     className="env-url"
@@ -258,6 +309,11 @@ export default function ProjectDetail() {
                   >
                     <Icon name="external" size={12} /> {env.url?.replace(/^https?:\/\//, '') ?? '—'}
                   </a>
+                  {env.status === 'failed' && env.statusReason && (
+                    <button className="env-reason" onClick={() => openLogs(env.name)}>
+                      <Icon name="alert" size={12} /> {env.statusReason}
+                    </button>
+                  )}
                 </div>
 
                 {next && (
@@ -444,6 +500,32 @@ export default function ProjectDetail() {
                 <Icon name="trash" size={15} />{' '}
                 {deleting ? 'deleting…' : 'Delete project'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {logsEnv && (
+        <div className="modal-overlay" onClick={() => setLogsEnv(null)}>
+          <div className="modal logs-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="logs-head">
+              <div className="logs-title">
+                <Icon name="terminal" size={16} /> {project.name} · {logsEnv} · logs
+              </div>
+              <button
+                className="env-redeploy"
+                title="Refresh"
+                disabled={logsLoading}
+                onClick={() => openLogs(logsEnv)}
+              >
+                <Icon name="refresh" size={13} />
+              </button>
+            </div>
+            <pre className="logs-body">
+              {logsLoading ? 'Loading…' : logsText}
+            </pre>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setLogsEnv(null)}>Close</button>
             </div>
           </div>
         </div>

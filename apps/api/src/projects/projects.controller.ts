@@ -44,6 +44,16 @@ export class ProjectsController {
     return this.projects.promote(id, env);
   }
 
+  @Post(':id/redeploy/:env')
+  redeploy(@Param('id') id: string, @Param('env') env: EnvName) {
+    return this.projects.redeploy(id, env);
+  }
+
+  @Get(':id/logs/:env')
+  async logs(@Param('id') id: string, @Param('env') env: EnvName) {
+    return { logs: await this.projects.envLogs(id, env) };
+  }
+
   @Delete(':id')
   @HttpCode(204)
   remove(@Param('id') id: string, @CurrentUser() userId: string) {

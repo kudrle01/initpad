@@ -49,7 +49,7 @@ export default function Projects() {
                 {p.environments.map((e) => (
                   <span key={e.name} className="badge">
                     <span className={`dot ${e.status}`} />
-                    {e.name} {e.version ? `v${e.version}` : '—'}
+                    {e.name} {e.version ? `v${e.version.slice(0, 7)}` : '—'}
                   </span>
                 ))}
               </div>

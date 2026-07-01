@@ -24,6 +24,7 @@ export interface Environment {
   status: DeployStatus;
   version: string | null;
   url: string | null;
+  statusReason: string | null;
 }
 
 export interface Project {
