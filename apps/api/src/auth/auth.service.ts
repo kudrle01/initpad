@@ -10,6 +10,7 @@ import { GiteaService } from '../scm/gitea.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { hashPassword, verifyPassword } from './password';
+import { encryptSecret } from '../common/secret';
 
 interface GiteaUser {
   id: number;
@@ -59,7 +60,7 @@ export class AuthService {
         username: giteaUser.login,
         email: dto.email,
         passwordHash: hashPassword(dto.password),
-        accessToken,
+        accessToken: encryptSecret(accessToken),
       },
     });
     return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };
@@ -110,12 +111,13 @@ export class AuthService {
 
     const user = await this.prisma.user.upsert({
       where: { giteaId: profile.id },
+      // Pozn.: accessToken zde ZÁMĚRNĚ nepřepisujeme – git operace jedou přes
+      // admin token + Sudo, takže OAuth login nesmí přemazat uložený token.
       update: {
         username: profile.login,
         name: profile.full_name || null,
         email: profile.email || null,
         avatarUrl: profile.avatar_url || null,
-        accessToken,
       },
       create: {
         giteaId: profile.id,
@@ -123,7 +125,7 @@ export class AuthService {
         name: profile.full_name || null,
         email: profile.email || null,
         avatarUrl: profile.avatar_url || null,
-        accessToken,
+        accessToken: encryptSecret(accessToken),
       },
     });
 

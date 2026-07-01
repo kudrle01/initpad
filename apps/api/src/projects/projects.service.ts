@@ -24,6 +24,7 @@ import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { GiteaService, GiteaActor } from '../scm/gitea.service';
 import { config } from '../config';
+import { decryptSecret } from '../common/secret';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -62,18 +63,24 @@ export class ProjectsService {
   }
 
   async create(dto: CreateProjectDto, ownerId: string): Promise<Project> {
-    if (await this.prisma.project.findUnique({ where: { name: dto.name } })) {
-      throw new BadRequestException(`Project '${dto.name}' already exists`);
+    // Název je unikátní jen v rámci účtu – kontrola per vlastník.
+    if (await this.prisma.project.findFirst({ where: { ownerId, name: dto.name } })) {
+      throw new BadRequestException(`You already have a project named '${dto.name}'`);
     }
     const template = this.templates.get(dto.templateId);
     const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
     const actor: GiteaActor = { username: owner.username, token: owner.accessToken };
 
-    const { repoPath } = this.generator.generate(template.id, dto.name);
-    await this.gitea.initLocal(repoPath, {
-      name: owner.name ?? owner.username,
-      email: owner.email ?? `${owner.username}@users.noreply.local`,
-    });
+    // Workspace složku namespacujeme vlastníkem (.workspace/<owner>/<name>),
+    // aby dva stejnojmenné projekty různých uživatelů nekolidovaly.
+    const { repoPath } = this.generator.generate(
+      template.id,
+      dto.name,
+      `${owner.username}/${dto.name}`,
+    );
+    // Scaffold commit dělá servisní účet platformy (bot) – viz config.git.
+    // Reálné commity vývojáře pak nesou jeho identitu.
+    await this.gitea.initLocal(repoPath);
 
     let repo: { repoUrl: string };
     try {
@@ -160,23 +167,54 @@ export class ProjectsService {
       throw new ForbiddenException('Not your project');
     }
 
+    const slug = this.deploySlug(row.repoUrl, row.name);
     for (const env of row.environments) {
       await this.deployment.teardown(env.provider as ProviderKind, {
-        projectName: row.name,
+        projectName: slug,
         env: env.name,
       });
     }
-    await this.gitea.deleteRepo(row.name, this.actorFromOwner(row.owner));
+    await this.gitea.deleteRepo(
+      row.name,
+      this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
+    );
     rmSync(row.repoPath, { recursive: true, force: true });
     await this.prisma.project.delete({ where: { id } });
   }
 
-  // Identita vlastníka pro operace s jeho repem; fallback na platformní účet.
-  private actorFromOwner(
-    owner: { username: string; accessToken: string } | null,
-  ): GiteaActor {
-    if (owner) return { username: owner.username, token: owner.accessToken };
-    return { username: config.gitea.user, token: config.gitea.token };
+  // Identita pro operace s repem: username = SKUTEČNÝ vlastník repa z repoUrl
+  // (.../<owner>/<name>), token = vlastníkův (nebo platformní fallback).
+  private actorForRepo(row: {
+    repoUrl: string | null;
+    owner: { username: string; accessToken: string } | null;
+  }): GiteaActor {
+    const token = row.owner?.accessToken
+      ? decryptSecret(row.owner.accessToken)
+      : config.gitea.token;
+    const username =
+      this.ownerFromRepoUrl(row.repoUrl) ?? row.owner?.username ?? config.gitea.user;
+    return { username, token };
+  }
+
+  // Docker-safe klíč nasazení, namespacovaný vlastníkem repa: <owner>-<name>.
+  // Zajišťuje unikátní jména image/kontejnerů i pro stejnojmenné projekty
+  // různých uživatelů.
+  private deploySlug(repoUrl: string | null, name: string): string {
+    const owner = this.ownerFromRepoUrl(repoUrl) ?? 'anon';
+    return `${owner}-${name}`
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  private ownerFromRepoUrl(repoUrl: string | null): string | null {
+    if (!repoUrl) return null;
+    try {
+      const parts = new URL(repoUrl).pathname.split('/').filter(Boolean);
+      return parts[0] ?? null; // /<owner>/<name>
+    } catch {
+      return null;
+    }
   }
 
   private async actorForProject(projectId: string): Promise<GiteaActor> {
@@ -184,7 +222,7 @@ export class ProjectsService {
       where: { id: projectId },
       include: { owner: true },
     });
-    return this.actorFromOwner(row?.owner ?? null);
+    return this.actorForRepo({ repoUrl: row?.repoUrl ?? null, owner: row?.owner ?? null });
   }
 
   async getCommits(id: string): Promise<Commit[]> {
@@ -224,7 +262,7 @@ export class ProjectsService {
       data: { status: 'deploying' },
     });
     const result = await this.deployment.deploy(env.provider as ProviderKind, {
-      projectName: project.name,
+      projectName: this.deploySlug(project.repoUrl, project.name),
       version,
       env: envName,
       repoPath: project.repoPath,

@@ -23,7 +23,7 @@ model User {
 
 model Project {
   id           String        @id @default(uuid())
-  name         String        @unique
+  name         String
   templateId   String
   repoPath     String
   repoUrl      String?
@@ -32,6 +32,10 @@ model Project {
   owner        User?         @relation(fields: [ownerId], references: [id])
   ownerId      String?
   environments Environment[]
+
+  // Název je unikátní jen v rámci účtu – dva uživatelé můžou mít projekt
+  // stejného jména.
+  @@unique([ownerId, name])
 }
 
 model Environment {

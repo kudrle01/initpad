@@ -15,8 +15,8 @@ export const config = {
       process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
   },
   git: {
-    authorName: process.env.INITPAD_GIT_AUTHOR_NAME || 'DevPlatform',
-    authorEmail: process.env.INITPAD_GIT_AUTHOR_EMAIL || 'platform@local',
+    authorName: process.env.INITPAD_GIT_AUTHOR_NAME || 'InitPad Bot',
+    authorEmail: process.env.INITPAD_GIT_AUTHOR_EMAIL || 'bot@initpad.local',
   },
   auth: {
     clientId: process.env.INITPAD_OAUTH_CLIENT_ID || '',
@@ -25,6 +25,13 @@ export const config = {
       process.env.INITPAD_OAUTH_CALLBACK_URL || 'http://localhost:3000/api/auth/callback',
     frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
+  },
+  // Klíč pro šifrování citlivých hodnot v DB (tokeny). Fallback na JWT secret.
+  security: {
+    encryptionKey:
+      process.env.INITPAD_ENCRYPTION_KEY ||
+      process.env.INITPAD_JWT_SECRET ||
+      'dev-secret-zmen-me',
   },
   // Platforma jako OIDC provider (SSO do Gitey). Gitea se registruje jako klient.
   // issuer = adresa, na kterou chodí Gitea SERVER (z kontejneru přes

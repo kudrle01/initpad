@@ -235,6 +235,8 @@ export default function ProjectDetail() {
             const synced =
               !!target && !!env.version && target.status === 'running' && target.version === env.version;
             const canPromote = busy === null && env.status === 'running' && !synced;
+            const deploying = busy === next;
+            const state = synced ? 'is-synced' : deploying ? 'is-busy' : canPromote ? 'is-ready' : 'is-idle';
             return (
               <Fragment key={env.name}>
                 <div className={`env ${env.name}`}>
@@ -256,31 +258,40 @@ export default function ProjectDetail() {
                   >
                     <Icon name="external" size={12} /> {env.url?.replace(/^https?:\/\//, '') ?? '—'}
                   </a>
-                  <div className="env-foot">
-                    {next &&
-                      (synced ? (
-                        <span className="env-synced">
-                          <Icon name="check" size={14} /> deployed to {next}
-                        </span>
-                      ) : (
+                </div>
+
+                {next && (
+                  <div className={`promote ${state}`}>
+                    {synced ? (
+                      <>
+                        <span className="promote-node"><Icon name="check" size={16} /></span>
+                        <span className="promote-cap">in sync</span>
+                      </>
+                    ) : deploying ? (
+                      <>
+                        <span className="promote-node"><span className="promote-spin" /></span>
+                        <span className="promote-cap">deploying…</span>
+                      </>
+                    ) : (
+                      <>
                         <button
-                          className="btn btn-sm btn-block"
+                          className="promote-node"
                           disabled={!canPromote}
                           onClick={() => promote(next)}
+                          title={
+                            canPromote
+                              ? `Deploy v${env.version} from ${env.name} to ${next}`
+                              : `Deploy to ${env.name} first`
+                          }
                         >
-                          {busy === next ? 'deploying…' : (
-                            <>
-                              promote <Icon name="arrowRight" size={14} /> {next}
-                            </>
-                          )}
+                          <Icon name="arrowRight" size={16} />
                         </button>
-                      ))}
+                        <span className="promote-cap">
+                          {canPromote ? `Deploy to ${next}` : next}
+                        </span>
+                      </>
+                    )}
                   </div>
-                </div>
-                {i < project.environments.length - 1 && (
-                  <span className="pipe-arrow">
-                    <Icon name="chevronRight" size={18} />
-                  </span>
                 )}
               </Fragment>
             );
@@ -296,20 +307,38 @@ export default function ProjectDetail() {
             const ci = commitStatus(c.pipeline);
             return (
               <div className="commit" key={c.sha}>
-                <button
+                <div
                   className="commit-head"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setOpenSha(open ? null : c.sha)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setOpenSha(open ? null : c.sha);
+                  }}
                 >
                   <span className={`commit-chevron ${open ? 'open' : ''}`}>
                     <Icon name="chevronRight" size={16} />
                   </span>
-                  <span className="commit-sha">{c.sha.slice(0, 7)}</span>
+                  {project.repoUrl && c.sha !== 'initial' ? (
+                    <a
+                      className="commit-sha commit-sha-link"
+                      href={giteaLink(`${project.repoUrl}/commit/${c.sha}`)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title="View commit in Gitea"
+                    >
+                      {c.sha.slice(0, 7)}
+                    </a>
+                  ) : (
+                    <span className="commit-sha">{c.sha.slice(0, 7)}</span>
+                  )}
                   <span className="commit-msg">{c.message}</span>
                   <span className="badge">
                     <span className={`dot ${ci.dot}`} /> {ci.label}
                   </span>
                   <span className="commit-author">{c.author}</span>
-                </button>
+                </div>
                 {open && (
                   <>
                     <div className="stages">

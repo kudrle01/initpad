@@ -15,9 +15,12 @@ export interface GenerateResult {
 export class GeneratorService {
   constructor(private readonly templates: TemplatesService) {}
 
-  generate(templateId: string, projectName: string): GenerateResult {
+  // projectName = proměnná do šablony (Handlebars). destSubpath = cesta ve
+  // workspace (default = projectName); namespacuje se vlastníkem, aby dva
+  // uživatelé mohli mít projekt stejného jména bez kolize složek.
+  generate(templateId: string, projectName: string, destSubpath?: string): GenerateResult {
     const srcDir = this.templates.filesDir(templateId);
-    const destDir = join(config.workspaceDir, projectName);
+    const destDir = join(config.workspaceDir, destSubpath ?? projectName);
     const vars = {
       projectName,
       year: new Date().getFullYear(),
