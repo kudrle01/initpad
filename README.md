@@ -125,6 +125,8 @@ se mění, což pro prototyp stačí (Gitea si JWKS načítá při každém logi
 - **Docker**: reálný build image a běh kontejneru v dev (s fallbackem bez Dockeru)
 - **Gitea Actions CI**: workflow build → test → docker build na push reálně proběhne;
   stav pipeline se zobrazuje u commitů v detailu projektu
+- **CI → deploy**: po úspěšném buildu CI zavolá webhook platformy (`/api/ci/deploy`),
+  ta stáhne commit a nasadí dev → uzavřený E2E: commit → build → běžící dev
 - **Řízená registrace**: platforma zakládá Gitea účet + token (formulář na login)
 - **SSO**: platforma jako OIDC provider, Gitea se přihlašuje přes ni
 - prostředí dev/test/prod s providerem, auto-deploy do dev, promote dev → test → prod
@@ -132,8 +134,6 @@ se mění, což pro prototyp stačí (Gitea si JWKS načítá při každém logi
 
 ## Zatím simulováno (další iterace)
 - SftpProvider / SshProvider vracejí výsledek bez reálného uploadu/SSH
-- CI → deploy: deploy job v CI je zatím placeholder; nasazení image po úspěšném
-  buildu řídí platforma in-process (napojení CI → DeploymentProvider je další krok)
 
 ## Mapování na plán
 Viz `../PLAN.md` (fáze, providery, šablony, evaluace).

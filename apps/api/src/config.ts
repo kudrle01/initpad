@@ -33,6 +33,11 @@ export const config = {
       process.env.INITPAD_JWT_SECRET ||
       'dev-secret-zmen-me',
   },
+  // CI → deploy: sdílený token, kterým se CI job autentizuje proti webhooku
+  // platformy. Platforma ho nastaví jako Actions secret repa (musí sedět).
+  ci: {
+    deployToken: process.env.INITPAD_CI_DEPLOY_TOKEN || 'ci-deploy-secret-change-me',
+  },
   // Platforma jako OIDC provider (SSO do Gitey). Gitea se registruje jako klient.
   // issuer = adresa, na kterou chodí Gitea SERVER (z kontejneru přes
   // host.docker.internal). publicUrl = adresa pro PROHLÍŽEČ (authorize redirect).

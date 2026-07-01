@@ -190,6 +190,24 @@ export class GiteaService {
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({ has_actions: true }),
     }).catch(() => undefined);
+
+    // Nastaví Actions secret, kterým CI deploy job zavolá webhook platformy.
+    await fetch(
+      `${url}/api/v1/repos/${actor.username}/${name}/actions/secrets/INITPAD_DEPLOY_TOKEN`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
+        body: JSON.stringify({ data: config.ci.deployToken }),
+      },
+    ).catch(() => undefined);
+  }
+
+  // Stáhne poslední stav větve do lokální workspace složky (fetch + hard reset),
+  // aby platforma nasadila reálně pushnutý kód, ne původní scaffold.
+  async syncFromRemote(dir: string, branch = 'main'): Promise<void> {
+    const git = (args: string[]) => exec('git', args, { cwd: dir });
+    await git(['fetch', 'origin', branch]);
+    await git(['reset', '--hard', `origin/${branch}`]);
   }
 
   // Gitea generuje target_url s interním hostem (http://gitea:3000), který

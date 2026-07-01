@@ -139,6 +139,38 @@ export class ProjectsService {
     }
   }
 
+  // CI → deploy: po úspěšném buildu v CI stáhne poslední commit a nasadí dev.
+  // Uzavírá E2E: commit → CI build/test/docker → běžící dev s reálným kódem.
+  async deployFromCi(repo: string, sha: string, ref: string): Promise<void> {
+    const [owner, name] = repo.split('/');
+    if (!owner || !name) throw new BadRequestException('Invalid repo');
+    // Nasazujeme jen z hlavní větve.
+    if (ref && ref !== 'main' && ref !== 'refs/heads/main') return;
+
+    const user = await this.prisma.user.findFirst({ where: { username: owner } });
+    const project = await this.prisma.project.findFirst({
+      where: { name, ownerId: user?.id ?? undefined },
+    });
+    if (!project) {
+      this.logger.warn(`CI deploy: projekt '${repo}' nenalezen`);
+      return;
+    }
+
+    try {
+      await this.gitea.syncFromRemote(project.repoPath);
+    } catch (e) {
+      this.logger.error(`CI deploy: sync selhal: ${(e as Error).message}`);
+    }
+    const version = sha ? sha.slice(0, 7) : '0.1.0';
+    await this.prisma.project.update({
+      where: { id: project.id },
+      data: { lastCommit: `ci: deploy ${version}` },
+    });
+    // Na pozadí – webhook z CI se hned vrátí, deploy (build+run) doběhne pak.
+    void this.deployEnvInBackground(project.id, 'dev', version);
+    this.logger.log(`CI deploy: ${repo} → dev (${version})`);
+  }
+
   async promote(id: string, target: EnvName): Promise<Project> {
     const project = await this.get(id);
     const idx = ENV_ORDER.indexOf(target);
