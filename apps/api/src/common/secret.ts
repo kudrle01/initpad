@@ -17,11 +17,18 @@ export function encryptSecret(plaintext: string): string {
 
 export function decryptSecret(stored: string): string {
   if (!stored.startsWith(PREFIX)) return stored; // legacy plaintext
-  const raw = Buffer.from(stored.slice(PREFIX.length), 'base64');
-  const iv = raw.subarray(0, 12);
-  const tag = raw.subarray(12, 28);
-  const data = raw.subarray(28);
-  const decipher = createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+  try {
+    const raw = Buffer.from(stored.slice(PREFIX.length), 'base64');
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const data = raw.subarray(28);
+    const decipher = createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+  } catch {
+    // Šifrováno jiným klíčem (změnil se INITPAD_ENCRYPTION_KEY). Token je dnes
+    // jen fallback – git operace jedou přes admin token + Sudo, takže vracíme
+    // prázdno místo pádu.
+    return '';
+  }
 }
