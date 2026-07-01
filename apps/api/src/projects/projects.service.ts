@@ -239,6 +239,11 @@ export class ProjectsService {
         env: env.name,
       });
     }
+    // Až po zastavení všech kontejnerů smaž i stažené registrové image projektu.
+    await this.deployment.removeImages(this.imageRepo(row.repoUrl, row.name));
+    // Smaž i image v Gitea registru (Packages), ať nezůstanou orphan artefakty.
+    const owner = this.ownerFromRepoUrl(row.repoUrl) ?? config.gitea.user;
+    await this.gitea.deletePackages(owner, row.name);
     await this.gitea.deleteRepo(
       row.name,
       this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
@@ -275,8 +280,13 @@ export class ProjectsService {
   // Tag image v registru: <registry>/<owner>/<name>:<version>. Musí sedět s tím,
   // co pushne CI (viz ci.yml). Vše lowercase (požadavek registru).
   private imageRef(repoUrl: string | null, name: string, version: string): string {
+    return `${this.imageRepo(repoUrl, name)}:${version}`;
+  }
+
+  // Registrové repo bez tagu: <registry>/<owner>/<name> (lowercase).
+  private imageRepo(repoUrl: string | null, name: string): string {
     const owner = this.ownerFromRepoUrl(repoUrl) ?? config.gitea.user;
-    return `${config.registry.host}/${owner}/${name}:${version}`.toLowerCase();
+    return `${config.registry.host}/${owner}/${name}`.toLowerCase();
   }
 
   private ownerFromRepoUrl(repoUrl: string | null): string | null {

@@ -143,6 +143,23 @@ export class DockerProvider implements DeploymentProvider {
     }
   }
 
+  // Smaže všechny lokální image z registru daného repa (všechny stažené verze).
+  async removeImages(repo: string): Promise<void> {
+    if (!(await this.isAvailable())) return;
+    try {
+      const images = await this.docker.listImages();
+      const targets = images.filter((img) =>
+        (img.RepoTags ?? []).some((t) => t.startsWith(`${repo}:`)),
+      );
+      for (const img of targets) {
+        await this.docker.getImage(img.Id).remove({ force: true }).catch(() => undefined);
+      }
+      if (targets.length) this.logger.log(`Smazáno ${targets.length} image (${repo})`);
+    } catch (e) {
+      this.logger.warn(`removeImages ${repo} selhalo: ${(e as Error).message}`);
+    }
+  }
+
   private async isAvailable(): Promise<boolean> {
     try {
       await this.docker.ping();

@@ -91,6 +91,31 @@ export class GiteaService {
     return data.sha1;
   }
 
+  // Smaže všechny verze container package (image v Gitea registru) pro daný
+  // projekt – aby po smazání projektu nezůstaly artefakty ve skladu.
+  async deletePackages(owner: string, name: string): Promise<void> {
+    const { url, adminToken } = config.gitea;
+    if (!url || !adminToken) return;
+    const pkgName = name.toLowerCase();
+    try {
+      const res = await fetch(
+        `${url}/api/v1/packages/${owner}?type=container&q=${encodeURIComponent(pkgName)}&limit=100`,
+        { headers: { Authorization: `token ${adminToken}` } },
+      );
+      if (!res.ok) return;
+      const pkgs = (await res.json()) as Array<{ type: string; name: string; version: string }>;
+      for (const p of pkgs) {
+        if (p.type !== 'container' || p.name.toLowerCase() !== pkgName) continue;
+        await fetch(
+          `${url}/api/v1/packages/${owner}/container/${p.name}/${encodeURIComponent(p.version)}`,
+          { method: 'DELETE', headers: { Authorization: `token ${adminToken}` } },
+        ).catch(() => undefined);
+      }
+    } catch {
+      // best-effort úklid
+    }
+  }
+
   // Smaže repo v Gitee (best-effort; admin má právo do všech rep).
   async deleteRepo(name: string, actor: GiteaActor): Promise<void> {
     const { url, adminToken } = config.gitea;

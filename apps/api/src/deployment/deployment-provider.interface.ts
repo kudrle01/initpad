@@ -40,4 +40,6 @@ export interface DeploymentProvider {
   teardown?(input: TeardownInput): Promise<void>;
   // Vrátí posledních N řádků logu běžícího nasazení; volitelné.
   logs?(input: TeardownInput): Promise<string>;
+  // Smaže všechny lokální image daného repa (<registry>/<owner>/<name>:*).
+  removeImages?(repo: string): Promise<void>;
 }

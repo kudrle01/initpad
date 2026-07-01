@@ -39,4 +39,11 @@ export class DeploymentService {
   async logs(provider: ProviderKind, input: TeardownInput): Promise<string> {
     return (await this.registry.get(provider)?.logs?.(input)) ?? '';
   }
+
+  // Úklid lokálních image repa (napříč providery, které to umí – Docker).
+  async removeImages(repo: string): Promise<void> {
+    for (const impl of this.registry.values()) {
+      await impl.removeImages?.(repo);
+    }
+  }
 }
