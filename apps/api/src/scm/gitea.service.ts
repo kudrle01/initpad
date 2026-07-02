@@ -143,7 +143,10 @@ export class GiteaService {
         headers: { Authorization: `token ${readToken}` },
       });
       if (!res.ok) {
-        this.logger.warn(`listCommits ${actor.username}/${name} → HTTP ${res.status}`);
+        // 409 = repo empty
+        if (res.status !== 409) {
+          this.logger.warn(`listCommits ${actor.username}/${name} → HTTP ${res.status}`);
+        }
         return null;
       }
       const data = (await res.json()) as Array<{
