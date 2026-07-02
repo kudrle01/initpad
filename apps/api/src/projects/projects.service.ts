@@ -409,14 +409,25 @@ export class ProjectsService {
       if (job && !latest.has(job)) latest.set(job, { status: s.status, url: s.targetUrl });
     }
 
-    return defs.map((d) => {
+    const stages = defs.map((d) => {
       const hit = d.tokens.map((t) => latest.get(t)).find((v) => v !== undefined);
       return {
         name: d.label,
-        status: hit ? this.mapCiStatus(hit.status) : 'pending',
+        status: hit ? this.mapCiStatus(hit.status) : ('pending' as StageStatus),
         url: hit?.url ?? null,
       };
     });
+
+    // Joby na sebe navazují (needs), takže reálně běží vždy jen první
+    // nedokončená stage. Gitea ale při startu runu vytvoří "pending" status
+    // všem jobům najednou → vše by svítilo jako běžící. Stavy za první
+    // aktivní/neúspěšnou stagí proto srážíme na 'pending' (čeká ve frontě).
+    let blocked = false;
+    for (const s of stages) {
+      if (blocked && s.status === 'running') s.status = 'pending';
+      if (s.status !== 'success') blocked = true;
+    }
+    return stages;
   }
 
   // Gitea commit status kontext má tvar "<workflow> / <job> (<event>)".

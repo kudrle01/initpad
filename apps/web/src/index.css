@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokeny (earthy paleta) v shadcn konvenci. Hodnoty jsou HSL kanály
+   (bez `hsl()`), aby fungovaly Tailwind alpha modifikátory jako `bg-primary/10`
+   – mapování je v tailwind.config.ts přes `hsl(var(--x) / <alpha-value>)`. */
+:root {
+  --background: 44 58% 96%; /* krémový papír (#fbf8f0) */
+  --foreground: 18 68% 18%; /* espresso ink (#4e220f) */
+  --card: 0 0% 100%;
+  --card-foreground: 18 68% 18%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 18 68% 18%;
+  --primary: 127 30% 32%; /* tmavě zelená (#3a6b40) */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 45 36% 91%; /* (#f1ede1) */
+  --secondary-foreground: 18 68% 18%;
+  --muted: 45 36% 91%;
+  --muted-foreground: 24 28% 37%; /* (#7a5a44) */
+  --accent: 45 36% 91%;
+  --accent-foreground: 18 68% 18%;
+  --destructive: 11 59% 44%; /* terakota (#b4472e) */
+  --destructive-foreground: 0 0% 100%;
+  --border: 42 31% 87%; /* (#e9e3d5) */
+  --input: 42 27% 81%; /* (#dbd3c1) */
+  --ring: 127 30% 32%;
+  --success: 87 33% 36%; /* running (#5f7a3e) */
+  --warning: 27 47% 42%; /* deploying (#9d6638) */
+  --radius: 0.625rem; /* 10px */
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scrollbar-gutter: stable;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.22);
+  }
+}

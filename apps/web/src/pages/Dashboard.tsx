@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowRight, Layers, Play, Plus, Server } from 'lucide-react';
 import { api } from '@/api';
-import { Icon } from '@/components/Icon';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/molecules/PageHeader';
+import { StatCard } from '@/components/molecules/StatCard';
+import { ProjectRow } from '@/components/molecules/ProjectRow';
+import { EmptyState } from '@/components/molecules/EmptyState';
 import type { Project, TemplateManifest } from '@/types';
+
+const RECENT_LIMIT = 6;
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -21,63 +28,65 @@ export default function Dashboard() {
     (n, p) => n + p.environments.filter((e) => e.status === 'running').length,
     0,
   );
+  const recent = projects.slice(0, RECENT_LIMIT);
 
   return (
     <div>
-      <div className="page-head">
-        <h1>Projects</h1>
-        <Link to="/new" className="btn btn-primary">
-          <Icon name="plus" size={16} /> New project
-        </Link>
-      </div>
-
-      {error && <p className="error">{error}</p>}
-
-      <div className="stats">
-        <div className="stat">
-          <div className="stat-label">Projects</div>
-          <div className="stat-value">{projects.length}</div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">Running deploys</div>
-          <div className="stat-value">{running}</div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">Environments</div>
-          <div className="stat-value">3</div>
-        </div>
-      </div>
-
-      <p className="eyebrow">Recent projects</p>
-      {projects.length === 0 ? (
-        <div className="empty-state">
-          No projects yet. Create your first one via “New project”.
-        </div>
-      ) : (
-        <div className="proj-list">
-          {projects.map((p) => (
-            <Link key={p.id} to={`/projects/${p.id}`} className="proj">
-              <span className="proj-icon">
-                <Icon name="box" size={19} />
-              </span>
-              <div className="proj-body">
-                <div className="proj-name">{p.name}</div>
-                <div className="proj-sub">
-                  {templates[p.templateId]?.name ?? p.templateId}
-                </div>
-              </div>
-              <div className="proj-envs">
-                {p.environments.map((e) => (
-                  <span key={e.name} className="badge">
-                    <span className={`dot ${e.status}`} />
-                    {e.name} {e.version ? `v${e.version.slice(0, 7)}` : '—'}
-                  </span>
-                ))}
-              </div>
-              <span className="proj-chevron">
-                <Icon name="chevronRight" size={18} />
-              </span>
+      <PageHeader
+        title="Dashboard"
+        subtitle="Overview of your projects and their environments."
+        actions={
+          <Button asChild>
+            <Link to="/new">
+              <Plus className="h-4 w-4" /> New project
             </Link>
+          </Button>
+        }
+      />
+
+      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+
+      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard label="Projects" value={projects.length} icon={Layers} />
+        <StatCard label="Running deploys" value={running} icon={Play} />
+        <StatCard label="Environments" value={3} icon={Server} />
+      </div>
+
+      <div className="mb-3 flex items-baseline justify-between gap-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Recent projects
+        </p>
+        {projects.length > 0 && (
+          <Link
+            to="/projects"
+            className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            View all <ArrowRight className="h-3 w-3" />
+          </Link>
+        )}
+      </div>
+
+      {projects.length === 0 ? (
+        <EmptyState
+          icon={Layers}
+          title="No projects yet"
+          description="Create your first project from a template — you'll get a Git repository, CI/CD pipeline and a running dev environment out of the box."
+          action={
+            <Button asChild>
+              <Link to="/new">
+                <Plus className="h-4 w-4" /> New project
+              </Link>
+            </Button>
+          }
+        />
+      ) : (
+        <div className="flex flex-col gap-2">
+          {recent.map((p) => (
+            <ProjectRow
+              key={p.id}
+              project={p}
+              templateName={templates[p.templateId]?.name ?? p.templateId}
+            />
           ))}
         </div>
       )}

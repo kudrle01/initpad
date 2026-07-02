@@ -1,5 +1,16 @@
 import type { ReactNode } from 'react';
-import { Icon } from '@/components/Icon';
+import { Server, Activity, Network, Settings, Layers } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { PageHeader } from '@/components/molecules/PageHeader';
+import { EmptyState } from '@/components/molecules/EmptyState';
+
+const ICONS: Record<string, LucideIcon> = {
+  server: Server,
+  activity: Activity,
+  network: Network,
+  settings: Settings,
+  layers: Layers,
+};
 
 // Jednotný placeholder pro sekce, které jsou navržené, ale ještě nemají obsah.
 export function ComingSoon({
@@ -13,16 +24,16 @@ export function ComingSoon({
 }) {
   return (
     <div>
-      <div className="page-head">
-        <h1>{title}</h1>
-      </div>
-      <div className="coming-soon">
-        <span className="coming-soon-icon">
-          <Icon name={icon} size={26} />
-        </span>
-        <p className="coming-soon-lead">{children}</p>
-        <span className="coming-soon-badge">Coming soon</span>
-      </div>
+      <PageHeader title={title} />
+      <EmptyState
+        icon={ICONS[icon] ?? Layers}
+        description={children}
+        action={
+          <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-muted-foreground">
+            Coming soon
+          </span>
+        }
+      />
     </div>
   );
 }

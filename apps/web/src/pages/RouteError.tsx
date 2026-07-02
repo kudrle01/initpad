@@ -1,5 +1,6 @@
 import { Link, isRouteErrorResponse, useRouteError } from 'react-router-dom';
-import { Icon } from '@/components/Icon';
+import { ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 // errorElement routeru – zachytí 404 i neočekávané chyby a ukáže přívětivou stránku.
 export default function RouteError() {
@@ -12,18 +13,20 @@ export default function RouteError() {
       : 'Something went wrong';
 
   return (
-    <div className="error-page">
-      <div className="error-card">
-        <div className="error-code">{is404 ? '404' : 'Oops'}</div>
-        <div className="error-title">
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-lg border border-border bg-card p-9 text-center shadow-sm">
+        <div className="text-4xl font-bold text-primary">{is404 ? '404' : 'Oops'}</div>
+        <div className="text-base font-semibold">
           {is404 ? 'Page not found' : 'Something went wrong'}
         </div>
-        <p className="error-msg">
+        <p className="text-sm text-muted-foreground">
           {is404 ? 'This page doesn’t exist or may have moved.' : message}
         </p>
-        <Link to="/" className="btn btn-primary">
-          <Icon name="arrowLeft" size={16} /> Back to dashboard
-        </Link>
+        <Button asChild>
+          <Link to="/">
+            <ArrowLeft className="h-4 w-4" /> Back to dashboard
+          </Link>
+        </Button>
       </div>
     </div>
   );

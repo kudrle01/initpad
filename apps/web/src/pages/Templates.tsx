@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Plus, ArrowRight } from 'lucide-react';
 import { api } from '@/api';
-import { Icon } from '@/components/Icon';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { PageHeader } from '@/components/molecules/PageHeader';
+import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import type { TemplateManifest } from '@/types';
 
 export default function Templates() {
@@ -14,44 +18,51 @@ export default function Templates() {
 
   return (
     <div>
-      <div className="page-head">
-        <h1>Templates</h1>
-        <Link to="/new" className="btn btn-primary">
-          <Icon name="plus" size={16} /> New project
-        </Link>
-      </div>
-      <p className="lead" style={{ marginTop: '-18px', marginBottom: 26 }}>
-        Catalog of project templates. Each one ships with code, a Dockerfile and a
-        CI/CD pipeline, so a new project is ready to build and deploy.
-      </p>
+      <PageHeader
+        title="Templates"
+        subtitle="Catalog of project templates. Each one ships with code, a Dockerfile and a CI/CD pipeline, so a new project is ready to build and deploy."
+        actions={
+          <Button asChild>
+            <Link to="/new">
+              <Plus className="h-4 w-4" /> New project
+            </Link>
+          </Button>
+        }
+      />
 
-      {error && <p className="error">{error}</p>}
+      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
-      <div className="tpl-grid">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {templates.map((t) => (
-          <div key={t.id} className="tpl-card">
-            <div className="tpl-card-head">
-              <span className="proj-icon">
-                <Icon name="box" size={20} />
-              </span>
-              <div>
-                <div className="tpl-card-name">{t.name}</div>
-                <div className="tpl-card-lang">{t.language}</div>
+          <Card key={t.id} className="flex flex-col p-5">
+            <div className="flex items-center gap-3">
+              <TemplateIcon templateId={t.id} language={t.language} />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{t.name}</div>
+                <div className="text-xs text-muted-foreground">{t.language}</div>
               </div>
             </div>
-            <p className="tpl-card-desc">{t.description}</p>
-            <div className="tpl-card-meta">
-              <span className="chip">{t.artifact}</span>
+            <p className="mt-3 flex-1 text-sm text-muted-foreground">{t.description}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                {t.artifact}
+              </span>
               {t.compatibleProviders.map((p) => (
-                <span key={p} className="chip chip-muted">
+                <span
+                  key={p}
+                  className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+                >
                   {p}
                 </span>
               ))}
             </div>
-            <Link to="/new" className="tpl-card-use">
-              Use template <Icon name="arrowRight" size={14} />
+            <Link
+              to={`/new?template=${encodeURIComponent(t.id)}`}
+              className="mt-4 inline-flex items-center gap-1 self-start rounded-sm text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              Use template <ArrowRight className="h-3.5 w-3.5" />
             </Link>
-          </div>
+          </Card>
         ))}
       </div>
     </div>

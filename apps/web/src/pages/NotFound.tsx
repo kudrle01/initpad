@@ -1,24 +1,25 @@
 import { Link } from 'react-router-dom';
-import { Icon } from '@/components/Icon';
+import { ArrowLeft, Layers } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/molecules/PageHeader';
+import { EmptyState } from '@/components/molecules/EmptyState';
 
 // Zobrazí se uvnitř layoutu pro neznámé cesty (catch-all route).
 export default function NotFound() {
   return (
     <div>
-      <div className="page-head">
-        <h1>Page not found</h1>
-      </div>
-      <div className="coming-soon">
-        <span className="coming-soon-icon">
-          <Icon name="layers" size={26} />
-        </span>
-        <p className="coming-soon-lead">
-          This page doesn’t exist or may have moved.
-        </p>
-        <Link to="/" className="btn btn-primary">
-          <Icon name="arrowLeft" size={16} /> Back to dashboard
-        </Link>
-      </div>
+      <PageHeader title="Page not found" />
+      <EmptyState
+        icon={Layers}
+        description="This page doesn’t exist or may have moved."
+        action={
+          <Button asChild>
+            <Link to="/">
+              <ArrowLeft className="h-4 w-4" /> Back to dashboard
+            </Link>
+          </Button>
+        }
+      />
     </div>
   );
 }

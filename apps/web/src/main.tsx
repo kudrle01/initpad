@@ -16,7 +16,7 @@ import NewProject from '@/pages/NewProject';
 import ProjectDetail from '@/pages/ProjectDetail';
 import NotFound from '@/pages/NotFound';
 import RouteError from '@/pages/RouteError';
-import '@/styles.css';
+import '@/index.css';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },

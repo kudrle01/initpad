@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
+import { GitBranch } from 'lucide-react';
 import { api, loginUrl } from '@/api';
 import { useAuth } from '@/auth';
-import { Icon } from '@/components/Icon';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 type Mode = 'signin' | 'register';
 
@@ -10,7 +13,6 @@ export default function Login() {
   const { user, loading, signIn } = useAuth();
   const [params] = useSearchParams();
   const oauthError = params.get('error');
-  // Cíl po přihlášení – typicky OIDC authorize URL (SSO do Gitey).
   const next = params.get('next');
 
   const [mode, setMode] = useState<Mode>('signin');
@@ -20,13 +22,12 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Po přihlášení pokračuj na ?next (plná URL na backendu) – dokončí SSO.
   useEffect(() => {
     if (user && next) window.location.assign(next);
   }, [user, next]);
 
-  if (loading) return <div className="login-screen" />;
-  if (user && next) return <div className="login-screen" />;
+  if (loading) return <div className="min-h-screen bg-background" />;
+  if (user && next) return <div className="min-h-screen bg-background" />;
   if (user) return <Navigate to="/" replace />;
 
   async function submit(e: React.FormEvent) {
@@ -46,36 +47,38 @@ export default function Login() {
   }
 
   return (
-    <div className="login-screen">
-      <div className="login-card">
-        <span className="brand-mark login-mark">IP</span>
-        <h1>InitPad</h1>
-        <p className="muted">Internal developer platform</p>
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-9 text-center shadow-[0_6px_24px_hsl(var(--foreground)/0.09)]">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-lg font-bold text-primary-foreground">
+          IP
+        </span>
+        <h1 className="mt-4 text-[22px] font-semibold tracking-tight">InitPad</h1>
+        <p className="text-sm text-muted-foreground">Internal developer platform</p>
 
-        <div className="login-tabs">
-          <button
-            className={`login-tab ${mode === 'signin' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('signin');
-              setError(null);
-            }}
-          >
-            Sign in
-          </button>
-          <button
-            className={`login-tab ${mode === 'register' ? 'active' : ''}`}
-            onClick={() => {
-              setMode('register');
-              setError(null);
-            }}
-          >
-            Create account
-          </button>
+        <div className="mb-4 mt-6 flex gap-1 rounded-md bg-secondary p-1">
+          {(['signin', 'register'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setMode(m);
+                setError(null);
+              }}
+              className={cn(
+                'flex-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                mode === m
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {m === 'signin' ? 'Sign in' : 'Create account'}
+            </button>
+          ))}
         </div>
 
-        <form className="login-form" onSubmit={submit}>
-          <input
-            className="input"
+        <form className="flex flex-col gap-2.5 text-left" onSubmit={submit}>
+          <Input
             placeholder="Username"
             autoComplete="username"
             value={username}
@@ -83,8 +86,7 @@ export default function Login() {
             required
           />
           {mode === 'register' && (
-            <input
-              className="input"
+            <Input
               type="email"
               placeholder="E-mail"
               autoComplete="email"
@@ -93,8 +95,7 @@ export default function Login() {
               required
             />
           )}
-          <input
-            className="input"
+          <Input
             type="password"
             placeholder="Password"
             autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
@@ -104,23 +105,27 @@ export default function Login() {
           />
 
           {(error || oauthError) && (
-            <p className="error" style={{ margin: 0 }}>
+            <p className="text-sm text-destructive">
               {error ?? 'Sign-in failed, please try again.'}
             </p>
           )}
 
-          <button className="btn btn-primary btn-block" disabled={busy} type="submit">
+          <Button type="submit" disabled={busy} className="mt-1 w-full">
             {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
-          </button>
+          </Button>
         </form>
 
-        <div className="login-divider">
+        <div className="my-[18px] flex items-center gap-2.5 text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" />
           <span>or</span>
+          <span className="h-px flex-1 bg-border" />
         </div>
 
-        <a className="btn btn-block" href={loginUrl}>
-          <Icon name="git" size={16} /> Continue with Gitea
-        </a>
+        <Button asChild variant="secondary" className="w-full">
+          <a href={loginUrl}>
+            <GitBranch className="h-4 w-4" /> Continue with Gitea
+          </a>
+        </Button>
       </div>
     </div>
   );
