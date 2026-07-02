@@ -119,7 +119,11 @@ export class DockerProvider implements DeploymentProvider {
       })) as unknown as Buffer;
       return this.demuxLogs(buf).trim();
     } catch (e) {
-      return `Logs unavailable: ${(e as Error).message}`;
+      const msg = (e as Error).message;
+      if (/no such container/i.test(msg)) {
+        return 'No container running yet — the deployment is in progress or waiting for CI to build the image.';
+      }
+      return `Logs unavailable: ${msg}`;
     }
   }
 

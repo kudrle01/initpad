@@ -93,17 +93,34 @@ export default function ProjectDetail() {
   const toast = useToast();
   const navigate = useNavigate();
 
+  const fetchLogs = useCallback(
+    (envName: EnvName, silent: boolean) => {
+      if (!id) return;
+      if (!silent) {
+        setLogsText('');
+        setLogsLoading(true);
+      }
+      api
+        .getLogs(id, envName)
+        .then((r) => setLogsText(r.logs || '(no output)'))
+        .catch((e) => setLogsText(`Error: ${(e as Error).message}`))
+        .finally(() => {
+          if (!silent) setLogsLoading(false);
+        });
+    },
+    [id],
+  );
+
   function openLogs(envName: EnvName) {
-    if (!id) return;
     setLogsEnv(envName);
-    setLogsText('');
-    setLogsLoading(true);
-    api
-      .getLogs(id, envName)
-      .then((r) => setLogsText(r.logs || '(no output)'))
-      .catch((e) => setLogsText(`Error: ${(e as Error).message}`))
-      .finally(() => setLogsLoading(false));
+    fetchLogs(envName, false);
   }
+
+  useEffect(() => {
+    if (!logsEnv) return;
+    const t = setInterval(() => fetchLogs(logsEnv, true), 2500);
+    return () => clearInterval(t);
+  }, [logsEnv, fetchLogs]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -122,13 +139,11 @@ export default function ProjectDetail() {
     }
   }, [id]);
 
-  // První načtení (se skeletonem).
   useEffect(() => {
     setLoading(true);
     load();
   }, [load]);
 
-  // Dokud něco "žije" (deploying / CI running), periodicky obnovuj.
   useEffect(() => {
     if (!isLive(project, commits)) return;
     const t = setTimeout(load, 2500);
@@ -271,7 +286,7 @@ export default function ProjectDetail() {
                   <div className="env-top">
                     <span className="env-name">{env.name}</span>
                     <span className="env-top-right">
-                      {env.version ? (
+                      {env.status !== 'empty' ? (
                         <button
                           className="badge badge-btn"
                           title="View deploy detail & logs"
@@ -510,7 +525,16 @@ export default function ProjectDetail() {
           <div className="modal logs-modal" onClick={(e) => e.stopPropagation()}>
             <div className="logs-head">
               <div className="logs-title">
-                <Icon name="terminal" size={16} /> {project.name} · {logsEnv} · logs
+                <Icon name="terminal" size={16} /> {project.name} · {logsEnv}
+                {(() => {
+                  const e = project.environments.find((x) => x.name === logsEnv);
+                  return e ? (
+                    <span className="badge">
+                      <span className={`dot ${e.status}`} />
+                      {e.status}
+                    </span>
+                  ) : null;
+                })()}
               </div>
               <button
                 className="env-redeploy"

@@ -3,6 +3,16 @@ const express = require('express');
 const app = express();
 const port = process.env.PORT || 8080;
 
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    console.log(
+      `${new Date().toISOString()} ${req.method} ${req.url} ${res.statusCode} ${Date.now() - start}ms`,
+    );
+  });
+  next();
+});
+
 app.get('/', (req, res) => {
   res.json({ service: '{{projectName}}', status: 'ok' });
 });
@@ -12,5 +22,6 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`{{projectName}} listening on port ${port}`);
+  console.log(`[{{projectName}}] started on port ${port} (node ${process.version})`);
+  console.log(`[{{projectName}}] routes: GET /  ·  GET /health`);
 });
