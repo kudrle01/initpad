@@ -282,7 +282,7 @@ export default function ProjectDetail() {
             const state = synced ? 'is-synced' : deploying ? 'is-busy' : canPromote ? 'is-ready' : 'is-idle';
             return (
               <Fragment key={env.name}>
-                <div className={`env ${env.name}`}>
+                <div className={`env ${env.name} st-${env.status}`}>
                   <div className="env-top">
                     <span className="env-name">{env.name}</span>
                     <span className="env-top-right">

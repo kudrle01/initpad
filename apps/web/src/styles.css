@@ -362,10 +362,14 @@ h1 { font-size: 24px; font-weight: 680; letter-spacing: -0.021em; margin: 0; }
   border-radius: var(--radius); padding: 14px 15px; position: relative;
   display: flex; flex-direction: column;
 }
-.env::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; }
-.env.dev::before { background: #7e8a66; }
-.env.test::before { background: #b07c3a; }
-.env.prod::before { background: #5f7a3e; }
+.env::before {
+  content: ""; position: absolute; left: 0; top: 12px; bottom: 12px;
+  width: 3px; border-radius: 3px; background: #cfc6af; /* default = empty (šedá) */
+}
+.env.st-running::before { background: #5f7a3e; }   /* zelená */
+.env.st-deploying::before { background: #9d6638; animation: initpad-pulse 1s ease-in-out infinite; } /* oranžová, pulzuje */
+.env.st-failed::before { background: #b4472e; }    /* terakota */
+.env.st-empty::before { background: #cfc6af; }     /* šedá */
 .pipe-arrow { display: flex; align-items: center; color: var(--text-3); padding: 0 8px; }
 .env-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .env-top-right { display: inline-flex; align-items: center; gap: 6px; }
