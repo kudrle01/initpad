@@ -46,6 +46,36 @@ export const config = {
     password:
       process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
   },
+  // Cíle nasazení mimo Docker (simulace firemní infrastruktury). Musí sedět
+  // s infra/docker-compose.yml (publikované porty fake-vps / fake-sftp / nginx).
+  providers: {
+    // Runtime app přes SSH → kontejner fake-vps (sshd + Node).
+    ssh: {
+      host: process.env.INITPAD_SSH_HOST || 'localhost',
+      port: Number(process.env.INITPAD_SSH_PORT || 2200),
+      username: process.env.INITPAD_SSH_USER || 'deploy',
+      password: process.env.INITPAD_SSH_PASSWORD || 'deploy',
+      // Kořen pro release adresáře na vzdáleném hostu (domov ssh uživatele).
+      remoteRoot: process.env.INITPAD_SSH_REMOTE_ROOT || '/config/deploys',
+      // Rozsah host portů namapovaných 1:1 na fake-vps. App poslouchá na
+      // <appPortBase + slot> a stejný port je publikovaný na host → funkční URL.
+      appPortBase: Number(process.env.INITPAD_SSH_APP_PORT_BASE || 8090),
+      appPortSlots: Number(process.env.INITPAD_SSH_APP_PORT_SLOTS || 10),
+    },
+    // Statická/PHP aplikace přes SFTP → kontejner fake-sftp; servíruje nginx.
+    sftp: {
+      host: process.env.INITPAD_SFTP_HOST || 'localhost',
+      port: Number(process.env.INITPAD_SFTP_PORT || 2222),
+      username: process.env.INITPAD_SFTP_USER || 'deploy',
+      password: process.env.INITPAD_SFTP_PASSWORD || 'deploy',
+      // Zapisovatelný kořen v chrootu SFTP uživatele (atmoz: /<dir>).
+      remoteRoot: process.env.INITPAD_SFTP_REMOTE_ROOT || '/www',
+      // Podadresář se statickým buildem, pokud ho šablona produkuje (jinak celý repo).
+      artifactSubdir: process.env.INITPAD_SFTP_ARTIFACT_DIR || '',
+      // Veřejná adresa, na které nginx servíruje symlink `current`.
+      publicUrl: process.env.INITPAD_SFTP_PUBLIC_URL || 'http://localhost:8085',
+    },
+  },
   // Platforma jako OIDC provider (SSO do Gitey). Gitea se registruje jako klient.
   // issuer = adresa, na kterou chodí Gitea SERVER (z kontejneru přes
   // host.docker.internal). publicUrl = adresa pro PROHLÍŽEČ (authorize redirect).

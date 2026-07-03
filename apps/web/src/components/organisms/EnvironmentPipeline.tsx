@@ -1,11 +1,31 @@
 import { Fragment } from 'react';
-import { ArrowRight, Check, Cloud, Container, ExternalLink, RefreshCw, Server, AlertTriangle } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  Cloud,
+  Container,
+  ExternalLink,
+  MoreVertical,
+  Play,
+  RefreshCw,
+  Server,
+  Square,
+  Trash2,
+  AlertTriangle,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
 import { cn } from '@/lib/utils';
-import type { EnvName, Environment, Project, ProviderKind } from '@/types';
+import type { Commit, EnvName, Environment, Project, ProviderKind } from '@/types';
 
 const NEXT: Record<EnvName, EnvName | null> = { dev: 'test', test: 'prod', prod: null };
 
@@ -13,6 +33,7 @@ const STRIPE: Record<string, string> = {
   running: 'bg-success',
   deploying: 'bg-warning',
   failed: 'bg-destructive',
+  stopped: 'bg-muted-foreground/50',
   empty: 'bg-muted-foreground/25',
 };
 
@@ -25,12 +46,26 @@ const PROVIDER_ICON: Record<ProviderKind, LucideIcon> = {
 interface Props {
   project: Project;
   busy: string | null;
+  commitsBySha: Record<string, Commit>;
   onPromote: (target: EnvName) => void;
   onRedeploy: (env: EnvName) => void;
+  onStop: (env: EnvName) => void;
+  onStart: (env: EnvName) => void;
+  onRemoveEnv: (env: EnvName) => void;
   onOpenLogs: (env: EnvName) => void;
 }
 
-export function EnvironmentPipeline({ project, busy, onPromote, onRedeploy, onOpenLogs }: Props) {
+export function EnvironmentPipeline({
+  project,
+  busy,
+  commitsBySha,
+  onPromote,
+  onRedeploy,
+  onStop,
+  onStart,
+  onRemoveEnv,
+  onOpenLogs,
+}: Props) {
   const byEnv = Object.fromEntries(project.environments.map((e) => [e.name, e])) as Record<
     EnvName,
     Environment
@@ -46,6 +81,10 @@ export function EnvironmentPipeline({ project, busy, onPromote, onRedeploy, onOp
         const canPromote = busy === null && env.status === 'running' && !synced;
         const deploying = busy === next;
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
+        const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
+        // Stop/Start dává smysl jen u běžících cílů (Docker/SSH), ne u statiky (SFTP).
+        const canStopStart = env.provider !== 'sftp';
+        const hasDeployment = env.status !== 'empty' && !!env.version;
 
         return (
           <Fragment key={env.name}>
@@ -65,16 +104,41 @@ export function EnvironmentPipeline({ project, busy, onPromote, onRedeploy, onOp
                   ) : (
                     <StatusBadge status={env.status} />
                   )}
-                  {env.version && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      disabled={busy !== null}
-                      onClick={() => onRedeploy(env.name)}
-                      title="Redeploy this environment"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    </Button>
+                  {hasDeployment && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={busy !== null}
+                          aria-label="Environment actions"
+                        >
+                          <MoreVertical className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
+                          <RefreshCw className="h-4 w-4" /> Redeploy
+                        </DropdownMenuItem>
+                        {canStopStart &&
+                          (env.status === 'stopped' ? (
+                            <DropdownMenuItem onSelect={() => onStart(env.name)}>
+                              <Play className="h-4 w-4" /> Start
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onSelect={() => onStop(env.name)}
+                              disabled={env.status !== 'running'}
+                            >
+                              <Square className="h-4 w-4" /> Stop
+                            </DropdownMenuItem>
+                          ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem destructive onSelect={() => onRemoveEnv(env.name)}>
+                          <Trash2 className="h-4 w-4" /> Remove deployment
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </div>
               </div>
@@ -82,6 +146,11 @@ export function EnvironmentPipeline({ project, busy, onPromote, onRedeploy, onOp
               <div className="mt-2 font-mono text-sm">
                 {env.version ? `v${env.version.slice(0, 7)}` : '—'}
               </div>
+              {deployedCommit && (
+                <div className="truncate text-xs text-muted-foreground" title={deployedCommit.message}>
+                  {deployedCommit.message}
+                </div>
+              )}
               <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                 <ProviderIcon className="h-3.5 w-3.5 shrink-0" /> {env.provider}
               </div>

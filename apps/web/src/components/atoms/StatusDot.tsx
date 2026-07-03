@@ -10,6 +10,7 @@ const DEPLOY_CLASS: Record<string, string> = {
   deploying: 'bg-warning animate-pulse',
   pending: 'bg-warning',
   failed: 'bg-destructive',
+  stopped: 'bg-muted-foreground/70',
   empty: 'bg-muted-foreground/40',
   idle: 'bg-muted-foreground/40',
 };

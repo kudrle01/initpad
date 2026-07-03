@@ -173,6 +173,29 @@ export default function ProjectDetail() {
     }
   }
 
+  async function envAction(
+    key: string,
+    envName: EnvName,
+    fn: (id: string, env: EnvName) => Promise<Project>,
+    okMsg: string,
+  ) {
+    if (!id) return;
+    setBusy(`${key}-${envName}`);
+    try {
+      setProject(await fn(id, envName));
+      toast.success(okMsg);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const stopEnvironment = (env: EnvName) => envAction('stop', env, api.stopEnv, `Stopped ${env}`);
+  const startEnvironment = (env: EnvName) => envAction('start', env, api.startEnv, `Starting ${env}`);
+  const removeEnvironment = (env: EnvName) =>
+    envAction('remove', env, api.removeEnv, `Removed ${env} deployment`);
+
   async function doDelete() {
     if (!id || !project) return;
     setDeleting(true);
@@ -195,6 +218,7 @@ export default function ProjectDetail() {
   const logsStatus = logsEnv
     ? project.environments.find((x) => x.name === logsEnv)?.status
     : undefined;
+  const commitsBySha = Object.fromEntries(commits.map((c) => [c.sha, c] as const));
 
   return (
     <div>
@@ -250,14 +274,25 @@ export default function ProjectDetail() {
           </a>
         )}
         {cloneUrl && <CopyField command={`git clone ${cloneUrl}`} />}
+        <p className="mt-2 text-xs text-muted-foreground">
+          Private repository — first time?{' '}
+          <Link to="/settings" className="text-primary hover:underline">
+            Connect Git
+          </Link>{' '}
+          once and cloning works without a password.
+        </p>
       </Section>
 
       <Section title="Environments">
         <EnvironmentPipeline
           project={project}
           busy={busy}
+          commitsBySha={commitsBySha}
           onPromote={promote}
           onRedeploy={redeploy}
+          onStop={stopEnvironment}
+          onStart={startEnvironment}
+          onRemoveEnv={removeEnvironment}
           onOpenLogs={openLogs}
         />
       </Section>

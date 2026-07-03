@@ -134,9 +134,21 @@ se mění, což pro prototyp stačí (Gitea si JWKS načítá při každém logi
 - **SSO**: platforma jako OIDC provider, Gitea se přihlašuje přes ni
 - prostředí dev/test/prod s providerem, auto-deploy do dev, promote dev → test → prod
 - dashboard, formulář, detail s promotion pipeline
+- **Reálné SSH/SFTP nasazení**: prod jede přes SSH na `fake-vps` (Node runtime,
+  release + symlink `current`, health check) nebo přes SFTP na `fake-sftp`
+  (statika, servíruje nginx) – tři heterogenní cíle (Docker/SSH/SFTP), viz
+  `DECISIONS.md`, ADR-009
+
+### Spuštění cílů nasazení (prod)
+```bash
+cd infra
+docker compose up -d --build fake-vps fake-sftp static-web
+# SSH cíl:  localhost:2200 (deploy/deploy), app porty 8090–8099
+# SFTP cíl: localhost:2222 (deploy/deploy), servíruje http://localhost:8085
+```
 
 ## Zatím simulováno (další iterace)
-- SftpProvider / SshProvider vracejí výsledek bez reálného uploadu/SSH
+- statická šablona (React build) pro plné vyzkoušení SFTP cíle
 
 ## Mapování na plán
 Viz `../PLAN.md` (fáze, providery, šablony, evaluace).

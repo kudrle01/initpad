@@ -49,6 +49,21 @@ export class ProjectsController {
     return this.projects.redeploy(id, env);
   }
 
+  @Post(':id/stop/:env')
+  stopEnv(@Param('id') id: string, @Param('env') env: EnvName) {
+    return this.projects.stopEnv(id, env);
+  }
+
+  @Post(':id/start/:env')
+  startEnv(@Param('id') id: string, @Param('env') env: EnvName) {
+    return this.projects.startEnv(id, env);
+  }
+
+  @Post(':id/teardown/:env')
+  removeEnv(@Param('id') id: string, @Param('env') env: EnvName) {
+    return this.projects.removeEnv(id, env);
+  }
+
   @Get(':id/logs/:env')
   async logs(@Param('id') id: string, @Param('env') env: EnvName) {
     return { logs: await this.projects.envLogs(id, env) };

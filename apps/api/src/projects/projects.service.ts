@@ -220,6 +220,88 @@ export class ProjectsService {
     return this.get(id);
   }
 
+  // Pozastaví běžící prostředí (zastaví kontejner/proces). Verze zůstává, aby
+  // bylo pořád vidět, co tam je; jde znovu Start.
+  async stopEnv(id: string, envName: EnvName): Promise<Project> {
+    const { env, slug } = await this.envContext(id, envName);
+    if (env.status !== 'running') {
+      throw new BadRequestException(`Environment '${envName}' is not running`);
+    }
+    await this.deployment.stop(env.provider as ProviderKind, { projectName: slug, env: envName });
+    await this.prisma.environment.update({
+      where: { projectId_name: { projectId: id, name: envName } },
+      data: { status: 'stopped', statusReason: null },
+    });
+    return this.get(id);
+  }
+
+  // Znovu spustí pozastavené prostředí ve stejné verzi (na pozadí; UI ukáže
+  // „deploying" a pak výsledek).
+  async startEnv(id: string, envName: EnvName): Promise<Project> {
+    const env = await this.prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId: id, name: envName } },
+    });
+    if (!env.version) {
+      throw new BadRequestException(`Environment '${envName}' has nothing to start`);
+    }
+    await this.prisma.environment.update({
+      where: { projectId_name: { projectId: id, name: envName } },
+      data: { status: 'deploying', statusReason: null },
+    });
+    void this.startEnvInBackground(id, envName);
+    return this.get(id);
+  }
+
+  // Zruší nasazení v prostředí (teardown kontejneru/procesu). Prostředí přejde
+  // na „empty" a jde znovu nasadit (Redeploy/promote). Repo ani projekt se nemění.
+  async removeEnv(id: string, envName: EnvName): Promise<Project> {
+    const { env, slug } = await this.envContext(id, envName);
+    await this.deployment.teardown(env.provider as ProviderKind, { projectName: slug, env: envName });
+    await this.prisma.environment.update({
+      where: { projectId_name: { projectId: id, name: envName } },
+      data: { status: 'empty', version: null, url: null, statusReason: null },
+    });
+    return this.get(id);
+  }
+
+  private async startEnvInBackground(id: string, envName: EnvName): Promise<void> {
+    try {
+      const { template, env, slug } = await this.envContext(id, envName);
+      const result = await this.deployment.start(env.provider as ProviderKind, {
+        projectName: slug,
+        env: envName,
+        port: template.port,
+        healthPath: template.healthPath ?? '/health',
+      });
+      await this.prisma.environment.update({
+        where: { projectId_name: { projectId: id, name: envName } },
+        data: {
+          status: result.status,
+          url: result.url,
+          statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
+        },
+      });
+    } catch (e) {
+      await this.prisma.environment
+        .update({
+          where: { projectId_name: { projectId: id, name: envName } },
+          data: { status: 'failed', statusReason: (e as Error).message },
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  // Společný kontext pro operace nad prostředím: projekt, šablona, env, deploy slug.
+  private async envContext(id: string, envName: EnvName) {
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const template = this.templates.get(project.templateId);
+    const env = await this.prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId: id, name: envName } },
+    });
+    const slug = this.deploySlug(project.repoUrl, project.name);
+    return { project, template, env, slug };
+  }
+
   // Smaže projekt: zastaví kontejnery všech prostředí, smaže repo v Gitee,
   // workspace složku i DB záznam (prostředí padají kaskádou).
   async remove(id: string, ownerId: string): Promise<void> {

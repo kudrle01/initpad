@@ -36,6 +36,12 @@ export const api = {
     http<Project>(`/projects/${id}/promote/${env}`, { method: 'POST' }),
   redeploy: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/redeploy/${env}`, { method: 'POST' }),
+  stopEnv: (id: string, env: EnvName) =>
+    http<Project>(`/projects/${id}/stop/${env}`, { method: 'POST' }),
+  startEnv: (id: string, env: EnvName) =>
+    http<Project>(`/projects/${id}/start/${env}`, { method: 'POST' }),
+  removeEnv: (id: string, env: EnvName) =>
+    http<Project>(`/projects/${id}/teardown/${env}`, { method: 'POST' }),
   getLogs: (id: string, env: EnvName) =>
     http<{ logs: string }>(`/projects/${id}/logs/${env}`),
   deleteProject: (id: string) =>
@@ -52,6 +58,8 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => http<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
+  getGitAccess: () =>
+    http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
 };
 
 export const loginUrl = `${BASE}/auth/login`;

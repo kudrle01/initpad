@@ -7,6 +7,7 @@ import {
   DeployInput,
   DeployResult,
   DeploymentProvider,
+  StartInput,
   TeardownInput,
 } from '../deployment-provider.interface';
 
@@ -105,6 +106,55 @@ export class DockerProvider implements DeploymentProvider {
     await this.removeContainer(containerName);
     await this.removeImage(image);
     this.logger.log(`Odstraněn kontejner ${containerName} i image ${image}`);
+  }
+
+  // Pozastaví běžící kontejner (bez smazání – image i vazby zůstávají).
+  async stop(input: TeardownInput): Promise<void> {
+    if (!(await this.isAvailable())) return;
+    const name = `initpad-${input.projectName}-${input.env}`;
+    try {
+      await this.docker.getContainer(name).stop();
+      this.logger.log(`Pozastaven kontejner ${name}`);
+    } catch {
+      // neběží / neexistuje – nic k zastavení
+    }
+  }
+
+  // Znovu spustí pozastavený kontejner a ověří health (stejná verze).
+  async start(input: StartInput): Promise<DeployResult> {
+    if (!(await this.isAvailable())) {
+      return { status: 'failed', url: '', reason: 'Docker daemon is not available.' };
+    }
+    const name = `initpad-${input.projectName}-${input.env}`;
+    const port = input.port ?? 8080;
+    const container = this.docker.getContainer(name);
+    try {
+      await container.start();
+    } catch {
+      // 304 = už běží; jiná chyba se projeví v inspect níže
+    }
+    let info: Docker.ContainerInspectInfo;
+    try {
+      info = await container.inspect();
+    } catch {
+      return {
+        status: 'failed',
+        url: '',
+        reason: 'No container to start — it was removed. Use Redeploy.',
+      };
+    }
+    if (!info.State?.Running) {
+      return { status: 'failed', url: '', reason: 'Container could not be started.' };
+    }
+    const mapping = info.NetworkSettings.Ports?.[`${port}/tcp`];
+    const hostPort = mapping && mapping[0] ? mapping[0].HostPort : String(port);
+    const url = `http://localhost:${hostPort}`;
+    const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
+    if (!healthy) {
+      return { status: 'failed', url, reason: 'Health check did not pass after start.' };
+    }
+    this.logger.log(`Spuštěn kontejner ${name} → ${url}`);
+    return { status: 'running', url };
   }
 
   // Posledních ~200 řádků logu kontejneru daného prostředí.

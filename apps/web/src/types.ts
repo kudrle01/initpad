@@ -8,7 +8,7 @@ export interface User {
 
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';
 export type EnvName = 'dev' | 'test' | 'prod';
-export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed';
+export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
 
 export interface TemplateManifest {
   id: string;

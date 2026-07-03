@@ -31,6 +31,15 @@ export interface TeardownInput {
   env: string;
 }
 
+// Spuštění dříve nasazeného prostředí (po Stop). Verze se nemění – jen se znovu
+// rozběhne to, co už bylo nasazené.
+export interface StartInput {
+  projectName: string;
+  env: string;
+  port?: number;
+  healthPath?: string;
+}
+
 // Zásuvný adaptér nasazení: platforma deleguje "kam a jak" na konkrétní
 // implementaci (Docker, SFTP, SSH). Nový cíl = nová implementace tohoto rozhraní.
 export interface DeploymentProvider {
@@ -42,4 +51,8 @@ export interface DeploymentProvider {
   logs?(input: TeardownInput): Promise<string>;
   // Smaže všechny lokální image daného repa (<registry>/<owner>/<name>:*).
   removeImages?(repo: string): Promise<void>;
+  // Pozastaví běžící prostředí (zastaví kontejner/proces), verze zůstává.
+  stop?(input: TeardownInput): Promise<void>;
+  // Znovu spustí dříve nasazené (pozastavené) prostředí ve stejné verzi.
+  start?(input: StartInput): Promise<DeployResult>;
 }

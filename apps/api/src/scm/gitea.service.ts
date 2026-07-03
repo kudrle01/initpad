@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { randomBytes } from 'crypto';
 import { config } from '../config';
 
 const exec = promisify(execFile);
@@ -89,6 +90,40 @@ export class GiteaService {
     }
     const data = (await res.json()) as { sha1: string };
     return data.sha1;
+  }
+
+  // Vydá uživateli osobní přístupový token (PAT) pro git-over-HTTP klonování.
+  // Gitea vytvoří token JEN přes Basic auth (username+heslo) – ne přes admin
+  // token ani Sudo. SSO uživatelé svoje Gitea heslo neznají, takže mu platforma
+  // (Gitea admin) nastaví dočasné náhodné heslo a tím token založí. V tomto
+  // modelu se do Gitey přihlašuje přes platformu (SSO/OIDC), takže Gitea heslo
+  // se jinak nepoužívá a jeho přenastavení nic nerozbije.
+  async issueCloneToken(username: string): Promise<string> {
+    const { url, adminToken } = config.gitea;
+    if (!url || !adminToken) {
+      throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
+    }
+    // Silné heslo (upper/lower/digit/special) kvůli případné kontrole složitosti.
+    const tempPassword = `Ip1!${randomBytes(20).toString('hex')}`;
+    // Gitea EditUserOption vyžaduje login_name + source_id (jinak 422). source_id 0
+    // = lokální účet; login_name u lokálního účtu = username.
+    const edit = await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
+      body: JSON.stringify({
+        login_name: username,
+        source_id: 0,
+        password: tempPassword,
+        must_change_password: false,
+      }),
+    });
+    if (!edit.ok) {
+      const body = await edit.text().catch(() => '');
+      throw new Error(
+        `Could not provision a git token (set-password HTTP ${edit.status}) ${body.slice(0, 120)}`,
+      );
+    }
+    return this.createUserToken(username, tempPassword);
   }
 
   // Smaže všechny verze container package (image v Gitea registru) pro daný

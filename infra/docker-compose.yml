@@ -65,21 +65,52 @@ services:
     networks: [platform]
     restart: unless-stopped
 
-  # --- simulované cíle nasazení (stand-iny za reálné) ---
+  # --- simulované cíle nasazení (reálné protokoly proti stand-in kontejnerům) ---
+
+  # SFTP cíl pro statické/PHP aplikace. Platforma sem přes SFTP nahraje release;
+  # obsah (symlink `current`) servíruje nginx níže. Volume sdílí s nginxem.
   fake-sftp:
     image: atmoz/sftp
     command: deploy:deploy:::www
+    ports:
+      - "2222:22" # SFTP dosažitelné z API na hostu (config.providers.sftp.port)
+    volumes:
+      - sftp-www:/home/deploy/www
     networks: [net-prod]
 
+  # Servíruje nahraný statický obsah (release přepnutý symlinkem `current`).
+  static-web:
+    image: nginx:alpine
+    depends_on: [fake-sftp]
+    ports:
+      - "8085:80" # config.providers.sftp.publicUrl
+    volumes:
+      - sftp-www:/usr/share/nginx/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [net-prod]
+
+  # SSH cíl pro runtime aplikace (Node). Vlastní image = openssh-server + Node.
   fake-vps:
-    # build kontejneru se sshd + runtime (Node/PHP) – viz infra/fake-vps/Dockerfile (TODO)
-    image: lscr.io/linuxserver/openssh-server:latest
+    build: ./fake-vps
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      USER_NAME: deploy
+      USER_PASSWORD: deploy
+      PASSWORD_ACCESS: "true"
+      SUDO_ACCESS: "false"
+    ports:
+      - "2200:2222" # SSH dosažitelné z API na hostu (config.providers.ssh.port)
+      # App porty publikované 1:1 → funkční URL a health check z hostu
+      # (config.providers.ssh.appPortBase/appPortSlots).
+      - "8090-8099:8090-8099"
     networks: [net-prod]
 
 volumes:
   pgdata: {}
   gitea-data: {}
   runner-data: {}
+  sftp-www: {}
 
 networks:
   platform: {}

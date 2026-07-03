@@ -7,6 +7,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { GeneratorModule } from './generator/generator.module';
 import { DeploymentModule } from './deployment/deployment.module';
 import { OidcModule } from './oauth/oidc.module';
+import { MeModule } from './me/me.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { OidcModule } from './oauth/oidc.module';
     GeneratorModule,
     DeploymentModule,
     ProjectsModule,
+    MeModule,
   ],
   controllers: [HealthController],
 })
