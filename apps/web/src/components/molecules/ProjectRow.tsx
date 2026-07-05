@@ -4,7 +4,7 @@ import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import type { Project } from '@/types';
 
-// Molekula: řádek projektu v seznamu (ikona šablony, název, badge prostředí).
+// Molecule: project row in a list (template icon, name, environment badges).
 export function ProjectRow({ project, templateName }: { project: Project; templateName: string }) {
   return (
     <Link

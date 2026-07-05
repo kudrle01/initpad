@@ -1,7 +1,8 @@
 import type { LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
-// Molekula: jedna statistika (popisek + velké číslo) v kartě, volitelně s ikonou.
+// Molecule: a single statistic (label + large number) in a card, with an
+// optional icon.
 export function StatCard({
   label,
   value,

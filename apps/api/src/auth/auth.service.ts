@@ -28,8 +28,11 @@ export interface SessionUser {
   avatarUrl: string | null;
 }
 
-// Identita platformy: řízená registrace (platforma zakládá Gitea účet) i
-// přihlášení přes Gitea OAuth2 (SSO).
+/**
+ * Platform identity. Supports managed registration (the platform provisions
+ * the Gitea account on the user's behalf) as well as sign-in via Gitea
+ * OAuth2 (SSO).
+ */
 @Injectable()
 export class AuthService {
   constructor(
@@ -38,7 +41,7 @@ export class AuthService {
     private readonly gitea: GiteaService,
   ) {}
 
-  // Řízená registrace: založí Gitea účet + token, uloží uživatele do DB.
+  /** Managed registration: provisions a Gitea account + token, persists the user. */
   async register(dto: RegisterDto): Promise<{ token: string; user: SessionUser }> {
     const existing = await this.prisma.user.findFirst({
       where: { OR: [{ username: dto.username }, { email: dto.email }] },
@@ -66,7 +69,7 @@ export class AuthService {
     return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };
   }
 
-  // Přihlášení vlastním účtem platformy (heslo ověřené lokálně).
+  /** Sign-in with a platform-native account (password verified locally). */
   async login(dto: LoginDto): Promise<{ token: string; user: SessionUser }> {
     const user = await this.prisma.user.findFirst({
       where: { OR: [{ username: dto.username }, { email: dto.username }] },
@@ -104,15 +107,19 @@ export class AuthService {
     return `${config.gitea.url}/login/oauth/authorize?${params}`;
   }
 
-  // Vymění code za token, načte uživatele z Gitey, upsertne ho a vrátí JWT.
+  /**
+   * OAuth callback: exchanges the code for a token, loads the Gitea profile,
+   * upserts the local user and returns a session JWT.
+   */
   async handleCallback(code: string): Promise<string> {
     const accessToken = await this.exchangeCode(code);
     const profile = await this.fetchGiteaUser(accessToken);
 
     const user = await this.prisma.user.upsert({
       where: { giteaId: profile.id },
-      // Pozn.: accessToken zde ZÁMĚRNĚ nepřepisujeme – git operace jedou přes
-      // admin token + Sudo, takže OAuth login nesmí přemazat uložený token.
+      // Note: accessToken is intentionally NOT updated here. Git operations
+      // run through the service account (admin token + Sudo), so an OAuth
+      // login must not overwrite a stored personal access token.
       update: {
         username: profile.login,
         name: profile.full_name || null,

@@ -4,9 +4,12 @@ import { readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import * as tar from 'tar-fs';
 
-// Sdílené helpery pro SSH/SFTP providery: promisifikované připojení, exec,
-// SFTP, upload adresáře jako tar a rekurzivní upload souborů. Držíme je mimo
-// providery, ať jsou samotné adaptéry čitelné.
+/**
+ * Shared helpers for the SSH/SFTP providers: promisified connect/exec/SFTP,
+ * directory upload (as a tar stream or file-by-file) and remote file-system
+ * utilities. Kept outside the providers so the adapters themselves stay
+ * focused on deployment logic.
+ */
 
 export interface SshTarget {
   host: string;
@@ -38,7 +41,8 @@ export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client
   return conn;
 }
 
-// Spustí příkaz a posbírá výstup. Neselže na nenulovém exit kódu – to řeší volající.
+// Runs a command and collects its output. Does not throw on a non-zero exit
+// code — that decision belongs to the caller.
 export function sshExec(conn: Client, cmd: string): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     conn.exec(cmd, (err, stream) => {
@@ -61,8 +65,8 @@ export function getSftp(conn: Client): Promise<SFTPWrapper> {
   );
 }
 
-// Zabalí lokální adresář do tar streamu a nahraje ho do vzdáleného souboru
-// (bez node_modules/.git). Na druhé straně se rozbalí přes `tar xf` (fake-vps).
+// Packs a local directory into a tar stream and uploads it to a remote file
+// (node_modules/.git excluded). The remote side extracts it with `tar xf`.
 export function uploadTar(
   sftp: SFTPWrapper,
   localDir: string,
@@ -81,8 +85,8 @@ export function uploadTar(
   });
 }
 
-// Rekurzivně nahraje soubory (pro SFTP cíl bez shellu – atmoz/sftp). Vytváří
-// vzdálené adresáře a přenáší jednotlivé soubory přes fastPut.
+// Recursively uploads files one by one — required for SFTP-only targets with
+// no shell access (atmoz/sftp), where a remote tar extract is not possible.
 export async function uploadDir(
   sftp: SFTPWrapper,
   localDir: string,
@@ -108,20 +112,33 @@ export function fastPut(sftp: SFTPWrapper, local: string, remote: string): Promi
   );
 }
 
-// mkdir -p přes SFTP: zkouší vytvořit každou úroveň, existující ignoruje.
+// `mkdir -p` over SFTP: attempts to create each path level. A mkdir error is
+// tolerated only when the directory actually exists (verified via stat);
+// other failures (permissions, read-only FS) propagate immediately instead of
+// surfacing later as a confusing upload error.
 export async function mkdirp(sftp: SFTPWrapper, remoteDir: string): Promise<void> {
   const parts = remoteDir.split('/').filter(Boolean);
   let path = remoteDir.startsWith('/') ? '' : '.';
   for (const part of parts) {
     path += '/' + part;
-    await new Promise<void>((resolve) => sftp.mkdir(path, () => resolve()));
+    const current = path;
+    await new Promise<void>((resolve, reject) =>
+      sftp.mkdir(current, (err) => {
+        if (!err) return resolve();
+        sftp.stat(current, (statErr) =>
+          statErr
+            ? reject(new Error(`mkdir ${current} failed: ${err.message}`))
+            : resolve(),
+        );
+      }),
+    );
   }
 }
 
 export function sftpSymlink(sftp: SFTPWrapper, target: string, linkPath: string): Promise<void> {
   return new Promise((resolve, reject) =>
-    // ssh2: symlink(targetPath, linkPath). Volající předává linkPath, na který
-    // se target odkazuje.
+    // ssh2 signature: symlink(targetPath, linkPath) — linkPath is the symlink
+    // being created, target is what it points to.
     sftp.symlink(target, linkPath, (err) => (err ? reject(err) : resolve())),
   );
 }
@@ -148,7 +165,7 @@ export function sftpReaddir(sftp: SFTPWrapper, path: string): Promise<RemoteEntr
       resolve(
         list.map((e) => ({
           name: e.filename,
-          // mode & S_IFDIR (0o040000) → adresář
+          // mode & S_IFMT (0o170000) === S_IFDIR (0o040000) → directory
           isDir: (e.attrs.mode & 0o170000) === 0o040000,
         })),
       );
@@ -160,7 +177,8 @@ export function sftpRmdir(sftp: SFTPWrapper, path: string): Promise<void> {
   return new Promise((resolve) => sftp.rmdir(path, () => resolve()));
 }
 
-// Rekurzivní smazání vzdáleného adresáře (jen SFTP, bez shellu – pro atmoz/sftp).
+// Recursive removal of a remote directory using SFTP operations only
+// (no shell available on atmoz/sftp targets).
 export async function sftpRmrf(sftp: SFTPWrapper, path: string): Promise<void> {
   const entries = await sftpReaddir(sftp, path);
   for (const e of entries) {
@@ -175,11 +193,12 @@ export function sshEnd(conn: Client): void {
   try {
     conn.end();
   } catch {
-    // spojení už mohlo spadnout – nevadí
+    // The connection may already be gone — nothing to do.
   }
 }
 
-// Deterministický „slot" (0..slots-1) z názvu → stabilní port pro daný projekt.
+// Deterministic slot (0..slots-1) derived from a key — gives each project a
+// stable port on the shared SSH target.
 export function portSlot(key: string, slots: number): number {
   const hash = createHash('sha1').update(key).digest();
   return hash[0] % Math.max(1, slots);

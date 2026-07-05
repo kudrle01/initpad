@@ -11,7 +11,10 @@ import { DockerProvider } from './providers/docker.provider';
 import { SftpProvider } from './providers/sftp.provider';
 import { SshProvider } from './providers/ssh.provider';
 
-// Registr providerů – vybere podle ProviderKind a deleguje nasazení.
+/**
+ * Provider registry. Picks the implementation by ProviderKind and delegates
+ * the deployment operation to it.
+ */
 @Injectable()
 export class DeploymentService {
   private readonly registry: Map<ProviderKind, DeploymentProvider>;
@@ -58,7 +61,7 @@ export class DeploymentService {
     return (await this.registry.get(provider)?.logs?.(input)) ?? '';
   }
 
-  // Úklid lokálních image repa (napříč providery, které to umí – Docker).
+  // Removes local images of the repository (across providers that support it).
   async removeImages(repo: string): Promise<void> {
     for (const impl of this.registry.values()) {
       await impl.removeImages?.(repo);

@@ -6,13 +6,16 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 
-// Gitea PAT je 40 hex znaků. Cokoli jiného (např. OAuth2 JWT z SSO přihlášení)
-// není použitelné pro git-over-HTTP.
+// A Gitea personal access token (PAT) is 40 hex characters. Anything else
+// (e.g. an OAuth2 JWT stored after an SSO login) cannot be used for
+// git-over-HTTP authentication.
 const isPat = (t: string) => /^[0-9a-f]{40}$/i.test(t);
 
-// Účet přihlášeného uživatele. „git access" vydá osobní Gitea token (PAT) pro
-// git-over-HTTP, aby si vývojář jednorázově nastavil credentials a klonoval
-// privátní repozitáře bez zadávání hesla.
+/**
+ * Account endpoints for the signed-in user. "git-access" issues a personal
+ * Gitea token (PAT) for git-over-HTTP, so the developer can configure
+ * credentials once and clone private repositories without password prompts.
+ */
 @Controller('me')
 @UseGuards(JwtAuthGuard)
 export class MeController {
@@ -28,8 +31,9 @@ export class MeController {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     let token = decryptSecret(user.accessToken);
 
-    // Uložený token nemusí být použitelný PAT (SSO účty mají OAuth2 JWT, který
-    // git HTTP nepřijme). V tom případě vydáme čerstvý PAT a uložíme ho.
+    // The stored token may not be a usable PAT (SSO accounts store an OAuth2
+    // JWT, which git-over-HTTP rejects). In that case issue a fresh PAT and
+    // persist it for next time.
     if (!isPat(token)) {
       try {
         token = await this.gitea.issueCloneToken(user.username);

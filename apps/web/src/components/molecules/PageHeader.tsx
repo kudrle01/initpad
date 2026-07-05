@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
-// Molekula: hlavička stránky – titulek vlevo, akce vpravo, volitelný podtitulek.
+// Molecule: page header — title on the left, actions on the right, optional
+// subtitle below.
 export function PageHeader({
   title,
   actions,

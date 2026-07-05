@@ -22,11 +22,23 @@ import {
   sshEnd,
   uploadDir,
 } from './ssh-utils';
+import { exportVersion } from './source-export';
 
-// Nasazení statické / PHP aplikace přes SFTP – reálný upload do kontejneru
-// fake-sftp (atmoz/sftp, jen SFTP subsystém, bez shellu). Obsah servíruje nginx
-// přes symlink `current`. Vzor „releases + current": nahraj do releases/<version>,
-// pak přehoď symlink → atomické přepnutí verze bez výpadku rozpracovaného uploadu.
+/**
+ * Deploys a static / PHP application over SFTP — a real upload to the
+ * fake-sftp container (atmoz/sftp: SFTP subsystem only, no shell). The
+ * uploaded content is served by nginx.
+ *
+ * The remote layout is namespaced per project+environment so deployments
+ * never overwrite each other:
+ *
+ *   <root>/<slug>-releases/<version>/…   uploaded releases
+ *   <root>/<slug>                        symlink → <slug>-releases/<version>
+ *
+ * The public URL is <publicUrl>/<slug>/. nginx serves the volume root, so
+ * swapping the symlink atomically switches the published version — the
+ * classic "releases + current" deployment pattern.
+ */
 @Injectable()
 export class SftpProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'sftp';
@@ -34,19 +46,24 @@ export class SftpProvider implements DeploymentProvider {
   private readonly cfg = config.providers.sftp;
 
   async deploy(input: DeployInput): Promise<DeployResult> {
-    const root = this.cfg.remoteRoot; // např. /www (chroot SFTP uživatele)
-    const version = this.safe(input.version) || 'latest';
-    const release = `${root}/releases/${version}`;
-    // Zdroj: buď podadresář se statickým buildem, nebo celý repo.
-    const localDir = this.cfg.artifactSubdir
-      ? join(input.repoPath, this.cfg.artifactSubdir)
-      : input.repoPath;
+    const slug = this.slug(input);
+    const version = this.sanitize(input.version) || 'latest';
+    const releasesDir = `${this.cfg.remoteRoot}/${slug}-releases`;
+    const release = `${releasesDir}/${version}`;
+
+    // Deploy exactly the version being promoted — not the working tree.
+    const exported = await exportVersion(input.repoPath, input.version);
+    const sourceRoot = exported?.dir ?? input.repoPath;
+    // Source: the template's artifact subdirectory, or the repository root.
+    const artifactDir = input.artifactDir ?? this.cfg.artifactSubdir;
+    const localDir = artifactDir ? join(sourceRoot, artifactDir) : sourceRoot;
 
     if (!existsSync(localDir)) {
+      exported?.cleanup();
       return {
         status: 'failed',
         url: '',
-        reason: `Artifact directory '${localDir}' does not exist.`,
+        reason: `Artifact directory '${artifactDir || '.'}' does not exist in the deployed version.`,
       };
     }
 
@@ -54,6 +71,7 @@ export class SftpProvider implements DeploymentProvider {
     try {
       conn = await sshConnect(this.cfg);
     } catch (e) {
+      exported?.cleanup();
       const reason = `Cannot reach SFTP host ${this.cfg.host}:${this.cfg.port} — is fake-sftp running? (${(e as Error).message})`;
       this.logger.warn(reason);
       return { status: 'failed', url: '', reason };
@@ -62,18 +80,19 @@ export class SftpProvider implements DeploymentProvider {
     try {
       const sftp = await getSftp(conn);
 
-      // Nahraj nový release (bez node_modules/.git).
+      // Upload the new release (node_modules/.git excluded).
       await mkdirp(sftp, release);
       await uploadDir(sftp, localDir, release);
 
-      // Atomické přepnutí: symlink current → releases/<version> (relativní cíl,
-      // ať sedí i uvnitř mountu nginxu). Starý symlink nejdřív odstraníme.
-      await this.swapCurrent(sftp, root, `releases/${version}`);
+      // Atomic switch: symlink <slug> → <slug>-releases/<version>. The target
+      // is relative so it also resolves inside the nginx volume mount. The old
+      // link is removed first (SFTP cannot atomically replace a symlink).
+      await this.swapLink(sftp, slug, `${slug}-releases/${version}`);
 
-      const url = this.cfg.publicUrl;
-      const reachable = await this.ping(url);
+      const url = this.publicUrl(slug);
+      const reachable = await this.waitReachable(url);
       if (!reachable) {
-        this.logger.warn(`SFTP upload OK, ale ${url} neodpovídá (běží nginx?).`);
+        this.logger.warn(`SFTP upload succeeded but ${url} is not responding (is nginx up?).`);
         return {
           status: 'failed',
           url,
@@ -86,11 +105,13 @@ export class SftpProvider implements DeploymentProvider {
     } catch (e) {
       return { status: 'failed', url: '', reason: (e as Error).message };
     } finally {
+      exported?.cleanup();
       sshEnd(conn);
     }
   }
 
   async teardown(input: TeardownInput): Promise<void> {
+    const slug = this.slug(input);
     let conn: Client;
     try {
       conn = await sshConnect(this.cfg);
@@ -99,8 +120,9 @@ export class SftpProvider implements DeploymentProvider {
     }
     try {
       const sftp = await getSftp(conn);
-      await sftpUnlink(sftp, `${this.cfg.remoteRoot}/current`);
-      await sftpRmrf(sftp, `${this.cfg.remoteRoot}/releases`);
+      // Only this project's subtree — other deployments are untouched.
+      await sftpUnlink(sftp, `${this.cfg.remoteRoot}/${slug}`);
+      await sftpRmrf(sftp, `${this.cfg.remoteRoot}/${slug}-releases`);
       this.logger.log(`Torn down SFTP deploy: ${input.projectName} (${input.env})`);
     } finally {
       sshEnd(conn);
@@ -108,13 +130,14 @@ export class SftpProvider implements DeploymentProvider {
   }
 
   async logs(): Promise<string> {
-    // Statické hostování nemá běhové logy procesu (na rozdíl od Dockeru/SSH).
-    return 'Static hosting has no process logs. Files are served by nginx from the `current` release.';
+    // Static hosting has no process to produce runtime logs (unlike Docker/SSH).
+    return 'Static hosting has no process logs. Files are served by nginx from the published release.';
   }
 
-  // „Stop" statiky = odpojit symlink `current` → web přestane servírovat (soubory
-  // release zůstanou). „Start" ho zase napojí na nejnovější release.
-  async stop(): Promise<void> {
+  // "Stop" for a static site = unlink the public symlink (the site stops being
+  // served; release files stay). "Start" re-links it to the deployed version.
+  async stop(input: TeardownInput): Promise<void> {
+    const slug = this.slug(input);
     let conn: Client;
     try {
       conn = await sshConnect(this.cfg);
@@ -123,14 +146,15 @@ export class SftpProvider implements DeploymentProvider {
     }
     try {
       const sftp = await getSftp(conn);
-      await sftpUnlink(sftp, `${this.cfg.remoteRoot}/current`);
-      this.logger.log('SFTP site unpublished (current symlink removed).');
+      await sftpUnlink(sftp, `${this.cfg.remoteRoot}/${slug}`);
+      this.logger.log(`SFTP site unpublished: ${slug}`);
     } finally {
       sshEnd(conn);
     }
   }
 
-  async start(): Promise<DeployResult> {
+  async start(input: StartInput): Promise<DeployResult> {
+    const slug = this.slug(input);
     let conn: Client;
     try {
       conn = await sshConnect(this.cfg);
@@ -139,14 +163,20 @@ export class SftpProvider implements DeploymentProvider {
     }
     try {
       const sftp = await getSftp(conn);
-      const entries = await sftpReaddir(sftp, `${this.cfg.remoteRoot}/releases`);
-      const dirs = entries.filter((e) => e.isDir).map((e) => e.name).sort();
-      if (dirs.length === 0) {
+      // Prefer the version the platform recorded as deployed; fall back to the
+      // lexicographically last release (hashes → only a best-effort guess).
+      let version = input.version ? this.sanitize(input.version) : '';
+      if (!version) {
+        const entries = await sftpReaddir(sftp, `${this.cfg.remoteRoot}/${slug}-releases`);
+        const dirs = entries.filter((e) => e.isDir).map((e) => e.name).sort();
+        version = dirs[dirs.length - 1] ?? '';
+      }
+      if (!version) {
         return { status: 'failed', url: '', reason: 'No release to start — use Redeploy first.' };
       }
-      await this.swapCurrent(sftp, this.cfg.remoteRoot, `releases/${dirs[dirs.length - 1]}`);
-      const url = this.cfg.publicUrl;
-      const reachable = await this.ping(url);
+      await this.swapLink(sftp, slug, `${slug}-releases/${version}`);
+      const url = this.publicUrl(slug);
+      const reachable = await this.waitReachable(url);
       return reachable
         ? { status: 'running', url }
         : { status: 'failed', url, reason: `${url} is not serving — is nginx running?` };
@@ -155,27 +185,39 @@ export class SftpProvider implements DeploymentProvider {
     }
   }
 
-  // Přehodí symlink `current` na nový cíl (relativní k rootu).
-  private async swapCurrent(sftp: SFTPWrapper, root: string, target: string): Promise<void> {
-    const link = `${root}/current`;
-    await sftpUnlink(sftp, link); // best-effort, když ještě neexistuje
+  // Re-points the <root>/<name> symlink at a new target (relative to root).
+  private async swapLink(sftp: SFTPWrapper, name: string, target: string): Promise<void> {
+    const link = `${this.cfg.remoteRoot}/${name}`;
+    await sftpUnlink(sftp, link); // best-effort; the link may not exist yet
     await sftpSymlink(sftp, target, link);
   }
 
-  private async ping(url: string): Promise<boolean> {
+  // Deployment key <owner>-<name>-<env> → separate sites even for the test
+  // and prod environments of the same project.
+  private slug(input: { projectName: string; env: string }): string {
+    return this.sanitize(`${input.projectName}-${input.env}`).toLowerCase();
+  }
+
+  private publicUrl(slug: string): string {
+    return `${this.cfg.publicUrl.replace(/\/+$/, '')}/${slug}/`;
+  }
+
+  private async waitReachable(url: string): Promise<boolean> {
     for (let i = 0; i < 10; i++) {
       try {
         const res = await fetch(url);
-        if (res.status < 500) return true;
+        // Require actually served content (2xx), not just a running nginx —
+        // a 404 would mask a broken symlink or a wrong document root.
+        if (res.ok) return true;
       } catch {
-        // nginx ještě nenaběhl / nedostupný
+        // nginx not up yet / unreachable — retry.
       }
       await new Promise((r) => setTimeout(r, 500));
     }
     return false;
   }
 
-  private safe(v: string): string {
+  private sanitize(v: string): string {
     return v.replace(/[^a-zA-Z0-9._-]/g, '');
   }
 }

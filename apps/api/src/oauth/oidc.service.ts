@@ -16,8 +16,12 @@ interface AuthCode {
   expiresAt: number;
 }
 
-// OIDC provider platformy: drží podpisový klíč, vydává autorizační kódy,
-// access tokeny a podepisuje id_token (RS256). Stav je in-memory (prototyp).
+/**
+ * The platform's OIDC provider: holds the signing key pair, issues
+ * authorization codes and access tokens, and signs id_tokens (RS256).
+ * State is kept in memory — acceptable for the prototype, but codes and
+ * tokens do not survive a restart.
+ */
 @Injectable()
 export class OidcService {
   private readonly privateKey: KeyObject;
@@ -45,7 +49,8 @@ export class OidcService {
     const pub = config.oidc.publicUrl; // browser-facing (localhost)
     return {
       issuer: iss,
-      // authorize jde přes prohlížeč → veřejná adresa; ostatní volá Gitea server.
+      // The authorize endpoint is visited by the browser → public URL;
+      // all other endpoints are called by the Gitea server directly.
       authorization_endpoint: `${pub}/oauth/authorize`,
       token_endpoint: `${iss}/oauth/token`,
       userinfo_endpoint: `${iss}/oauth/userinfo`,
@@ -66,7 +71,7 @@ export class OidcService {
     };
   }
 
-  // --- klient (Gitea) ---
+  // --- client validation (Gitea) ---
 
   validateClient(clientId: string, clientSecret: string): boolean {
     return clientId === config.oidc.clientId && clientSecret === config.oidc.clientSecret;
@@ -76,13 +81,13 @@ export class OidcService {
     return clientId === config.oidc.clientId;
   }
 
-  // Redirect URI musí mířit na Giteu (zabrání zneužití jako open redirector).
+  // The redirect URI must point at Gitea (prevents open-redirector abuse).
   isAllowedRedirect(redirectUri: string): boolean {
     const gitea = config.gitea.url?.replace(/\/$/, '');
     return Boolean(gitea && redirectUri.startsWith(gitea));
   }
 
-  // --- autorizační kódy ---
+  // --- authorization codes ---
 
   issueCode(input: Omit<AuthCode, 'expiresAt'>): string {
     const code = randomBytes(24).toString('base64url');
@@ -97,7 +102,7 @@ export class OidcService {
     return entry;
   }
 
-  // --- access tokeny (pro userinfo) ---
+  // --- access tokens (for the userinfo endpoint) ---
 
   issueAccessToken(userId: string): string {
     const token = randomBytes(32).toString('base64url');
@@ -111,7 +116,7 @@ export class OidcService {
     return entry.userId;
   }
 
-  // --- id_token (RS256 JWT, podepsaný ručně přes crypto) ---
+  // --- id_token (RS256 JWT, signed manually via node:crypto) ---
 
   signIdToken(claims: Record<string, unknown>): string {
     const header = { alg: 'RS256', typ: 'JWT', kid: this.kid };

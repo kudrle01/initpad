@@ -4,7 +4,8 @@ import { config } from '../config';
 import { OidcService } from './oidc.service';
 import { OidcController } from './oidc.controller';
 
-// Platforma jako OIDC provider (SSO). JwtModule slouží k ověření session cookie.
+// The platform acts as an OIDC identity provider (SSO into Gitea).
+// JwtModule is used to verify the platform session cookie.
 @Module({
   imports: [
     JwtModule.register({

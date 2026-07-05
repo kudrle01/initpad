@@ -30,8 +30,11 @@ const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
 type ProjectRow = Prisma.ProjectGetPayload<{ include: { environments: true } }>;
 
-// Orchestruje generování ze šablony, založení prostředí a nasazení.
-// Stav je perzistentní v PostgreSQL (Prisma).
+/**
+ * The platform's core orchestrator: template scaffolding, repository
+ * provisioning, environment lifecycle and deployments. State is persisted
+ * in PostgreSQL via Prisma.
+ */
 @Injectable()
 export class ProjectsService {
   private readonly logger = new Logger('ProjectsService');
@@ -62,8 +65,22 @@ export class ProjectsService {
     return this.toDomain(row);
   }
 
+  // Verifies the project belongs to the signed-in user. Called at the start
+  // of every user-facing operation (IDOR protection); internal flows (the CI
+  // webhook) bypass it and authenticate differently.
+  async assertOwner(id: string, ownerId: string): Promise<void> {
+    const row = await this.prisma.project.findUnique({
+      where: { id },
+      select: { ownerId: true },
+    });
+    if (!row) throw new NotFoundException(`Project '${id}' not found`);
+    if (row.ownerId && row.ownerId !== ownerId) {
+      throw new ForbiddenException('Not your project');
+    }
+  }
+
   async create(dto: CreateProjectDto, ownerId: string): Promise<Project> {
-    // Název je unikátní jen v rámci účtu – kontrola per vlastník.
+    // Project names are unique per account, not globally.
     if (await this.prisma.project.findFirst({ where: { ownerId, name: dto.name } })) {
       throw new BadRequestException(`You already have a project named '${dto.name}'`);
     }
@@ -71,15 +88,15 @@ export class ProjectsService {
     const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
     const actor: GiteaActor = { username: owner.username, token: owner.accessToken };
 
-    // Workspace složku namespacujeme vlastníkem (.workspace/<owner>/<name>),
-    // aby dva stejnojmenné projekty různých uživatelů nekolidovaly.
+    // The workspace directory is namespaced by owner (.workspace/<owner>/<name>)
+    // so same-named projects of different users cannot collide.
     const { repoPath } = this.generator.generate(
       template.id,
       dto.name,
       `${owner.username}/${dto.name}`,
     );
-    // Scaffold commit dělá servisní účet platformy (bot) – viz config.git.
-    // Reálné commity vývojáře pak nesou jeho identitu.
+    // The scaffold commit is authored by the platform's service account (bot),
+    // see config.git. The developer's own commits carry their identity.
     await this.gitea.initLocal(repoPath);
 
     let repo: { repoUrl: string };
@@ -106,21 +123,22 @@ export class ProjectsService {
             provider:
               dto.environments?.find((e) => e.name === name)?.provider ??
               this.defaultProvider(name, template),
-            // dev rovnou ukazuje "deploying" – nasazení doběhne na pozadí.
+            // dev immediately shows "deploying" — the deployment completes
+            // in the background once CI builds the image.
             status: name === 'dev' ? 'deploying' : 'empty',
           })),
         },
       },
     });
 
-    // Žádný lokální bootstrap: dev zůstává "deploying" a naskočí až s reálným
-    // otestovaným image, který postaví a nasadí CI (build once, deploy many).
-    // Úvodní push scaffoldu CI spustí; webhook pak dev nasadí.
+    // No local bootstrap build: dev stays "deploying" until CI builds and
+    // tests the real image (build once, deploy many). Pushing the scaffold
+    // triggers CI; the webhook then deploys dev.
     return this.get(created.id);
   }
 
-  // Obalí deployEnv tak, aby případná chyba nezůstala "viset" jako unhandled
-  // a prostředí se označilo jako failed.
+  // Wraps deployEnv so a failure never escapes as an unhandled rejection —
+  // the environment is marked as failed with the reason instead.
   private async deployEnvInBackground(
     projectId: string,
     envName: EnvName,
@@ -130,7 +148,7 @@ export class ProjectsService {
     try {
       await this.deployEnv(projectId, envName, version, useRegistry);
     } catch (e) {
-      this.logger.error(`Deploy ${envName} selhal: ${(e as Error).message}`);
+      this.logger.error(`Deploy to ${envName} failed: ${(e as Error).message}`);
       await this.prisma.environment
         .update({
           where: { projectId_name: { projectId, name: envName } },
@@ -140,12 +158,13 @@ export class ProjectsService {
     }
   }
 
-  // CI → deploy: po úspěšném buildu v CI stáhne poslední commit a nasadí dev.
-  // Uzavírá E2E: commit → CI build/test/docker → běžící dev s reálným kódem.
+  // CI → deploy: after a successful CI build, sync the latest commit and
+  // deploy it to dev. Closes the E2E loop: commit → CI build/test/docker →
+  // a running dev environment with the real code.
   async deployFromCi(repo: string, sha: string, ref: string): Promise<void> {
     const [owner, name] = repo.split('/');
     if (!owner || !name) throw new BadRequestException('Invalid repo');
-    // Nasazujeme jen z hlavní větve.
+    // Deploy from the main branch only.
     if (ref && ref !== 'main' && ref !== 'refs/heads/main') return;
 
     const user = await this.prisma.user.findFirst({ where: { username: owner } });
@@ -153,23 +172,24 @@ export class ProjectsService {
       where: { name, ownerId: user?.id ?? undefined },
     });
     if (!project) {
-      this.logger.warn(`CI deploy: projekt '${repo}' nenalezen`);
+      this.logger.warn(`CI deploy: project '${repo}' not found`);
       return;
     }
 
     try {
       await this.gitea.syncFromRemote(project.repoPath);
     } catch (e) {
-      this.logger.error(`CI deploy: sync selhal: ${(e as Error).message}`);
+      this.logger.error(`CI deploy: sync failed: ${(e as Error).message}`);
     }
-    // Verze = plný hash commitu (jednoznačný, sedí s tagem image z CI).
+    // Version = the full commit hash (unambiguous, matches the CI image tag).
     const version = sha || '0.1.0';
     await this.prisma.project.update({
       where: { id: project.id },
       data: { lastCommit: `ci: deploy ${version.slice(0, 7)}` },
     });
-    // Na pozadí – webhook z CI se hned vrátí, deploy (pull+run) doběhne pak.
-    // useRegistry=true: nasadí přesně ten image, který CI postavilo a otestovalo.
+    // Runs in the background — the CI webhook returns immediately, the deploy
+    // (pull + run) finishes afterwards. useRegistry=true: run exactly the
+    // image CI built and tested.
     void this.deployEnvInBackground(project.id, 'dev', version, true);
     this.logger.log(`CI deploy: ${repo} → dev (${version})`);
   }
@@ -186,14 +206,14 @@ export class ProjectsService {
         `Source environment '${ENV_ORDER[idx - 1]}' has nothing to promote`,
       );
     }
-    // Promote = spustit v cíli TEN SAMÝ image z registru (build once, deploy
-    // many). Když daná verze v registru není (např. jen bootstrap bez CI),
-    // deploy selže místo přebudování.
+    // Promote = run THE SAME registry image in the target environment (build
+    // once, deploy many). If the version is missing from the registry (e.g.
+    // bootstrap without CI), the deployment fails rather than rebuilding.
     await this.deployEnv(id, target, source.version, true);
     return this.get(id);
   }
 
-  // Posledních N řádků logu běžícího/spadlého nasazení daného prostředí.
+  // Last ~N log lines of the environment's running (or failed) deployment.
   async envLogs(id: string, envName: EnvName): Promise<string> {
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
     const env = await this.prisma.environment.findUnique({
@@ -206,8 +226,9 @@ export class ProjectsService {
     });
   }
 
-  // Znovu nasadí prostředí jeho aktuální verzí. Verze-hash = z registru (build
-  // once), bootstrap verze (0.1.0) = rebuild z repa.
+  // Re-deploys the environment at its current version. A hash version comes
+  // from the registry (build once); a bootstrap version (0.1.0) rebuilds
+  // from the repository.
   async redeploy(id: string, envName: EnvName): Promise<Project> {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
@@ -220,8 +241,8 @@ export class ProjectsService {
     return this.get(id);
   }
 
-  // Pozastaví běžící prostředí (zastaví kontejner/proces). Verze zůstává, aby
-  // bylo pořád vidět, co tam je; jde znovu Start.
+  // Suspends a running environment (stops the container/process). The version
+  // is kept so it remains visible what is deployed; Start resumes it.
   async stopEnv(id: string, envName: EnvName): Promise<Project> {
     const { env, slug } = await this.envContext(id, envName);
     if (env.status !== 'running') {
@@ -235,8 +256,8 @@ export class ProjectsService {
     return this.get(id);
   }
 
-  // Znovu spustí pozastavené prostředí ve stejné verzi (na pozadí; UI ukáže
-  // „deploying" a pak výsledek).
+  // Re-starts a stopped environment at the same version (in the background;
+  // the UI shows "deploying" and then the outcome).
   async startEnv(id: string, envName: EnvName): Promise<Project> {
     const env = await this.prisma.environment.findUniqueOrThrow({
       where: { projectId_name: { projectId: id, name: envName } },
@@ -252,14 +273,16 @@ export class ProjectsService {
     return this.get(id);
   }
 
-  // Zruší nasazení v prostředí (teardown kontejneru/procesu). Prostředí přejde
-  // na „empty" a jde znovu nasadit (Redeploy/promote). Repo ani projekt se nemění.
+  // Removes the environment's deployment (container/process teardown). The
+  // environment becomes "empty" and can be deployed again (redeploy/promote).
+  // The repository and the project itself are untouched.
   async removeEnv(id: string, envName: EnvName): Promise<Project> {
     const { env, slug } = await this.envContext(id, envName);
     await this.deployment.teardown(env.provider as ProviderKind, { projectName: slug, env: envName });
     await this.prisma.environment.update({
       where: { projectId_name: { projectId: id, name: envName } },
-      data: { status: 'empty', version: null, url: null, statusReason: null },
+      // Releasing allocatedPort returns the port to the pool.
+      data: { status: 'empty', version: null, url: null, statusReason: null, allocatedPort: null },
     });
     return this.get(id);
   }
@@ -267,11 +290,16 @@ export class ProjectsService {
   private async startEnvInBackground(id: string, envName: EnvName): Promise<void> {
     try {
       const { template, env, slug } = await this.envContext(id, envName);
+      const appPort =
+        env.provider === 'ssh' ? await this.allocateSshPort(id, envName) : undefined;
       const result = await this.deployment.start(env.provider as ProviderKind, {
         projectName: slug,
         env: envName,
         port: template.port,
         healthPath: template.healthPath ?? '/health',
+        startCommand: template.startCommand,
+        version: env.version ?? undefined,
+        appPort,
       });
       await this.prisma.environment.update({
         where: { projectId_name: { projectId: id, name: envName } },
@@ -291,7 +319,43 @@ export class ProjectsService {
     }
   }
 
-  // Společný kontext pro operace nad prostředím: projekt, šablona, env, deploy slug.
+  // Allocates a unique application port for an SSH deployment. Ports come
+  // from the configured range and are persisted in Environment.allocatedPort;
+  // the unique constraint on that column rules out collisions even under
+  // concurrent deployments (a losing writer just retries the next port).
+  private async allocateSshPort(projectId: string, envName: EnvName): Promise<number> {
+    const env = await this.prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId, name: envName } },
+    });
+    if (env.allocatedPort) return env.allocatedPort;
+
+    const { appPortBase, appPortSlots } = config.providers.ssh;
+    const used = await this.prisma.environment.findMany({
+      where: { allocatedPort: { not: null } },
+      select: { allocatedPort: true },
+    });
+    const taken = new Set(used.map((u) => u.allocatedPort));
+    for (let port = appPortBase; port < appPortBase + appPortSlots; port++) {
+      if (taken.has(port)) continue;
+      try {
+        await this.prisma.environment.update({
+          where: { projectId_name: { projectId, name: envName } },
+          data: { allocatedPort: port },
+        });
+        return port;
+      } catch {
+        // Unique violation — another deployment grabbed this port between
+        // our read and write. Try the next candidate.
+      }
+    }
+    throw new Error(
+      `No free application ports on the SSH target (range ${appPortBase}–${appPortBase + appPortSlots - 1} is full). ` +
+        'Remove unused deployments or widen INITPAD_SSH_APP_PORT_SLOTS.',
+    );
+  }
+
+  // Shared context for environment operations: project, template, environment
+  // row and the deployment slug.
   private async envContext(id: string, envName: EnvName) {
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
     const template = this.templates.get(project.templateId);
@@ -302,8 +366,9 @@ export class ProjectsService {
     return { project, template, env, slug };
   }
 
-  // Smaže projekt: zastaví kontejnery všech prostředí, smaže repo v Gitee,
-  // workspace složku i DB záznam (prostředí padají kaskádou).
+  // Deletes the project: tears down all environment deployments, removes the
+  // Gitea repository, the workspace directory and the DB row (environments
+  // are removed by cascade).
   async remove(id: string, ownerId: string): Promise<void> {
     const row = await this.prisma.project.findUnique({
       where: { id },
@@ -321,9 +386,11 @@ export class ProjectsService {
         env: env.name,
       });
     }
-    // Až po zastavení všech kontejnerů smaž i stažené registrové image projektu.
+    // Only after all containers are stopped, remove the locally pulled
+    // registry images of the project.
     await this.deployment.removeImages(this.imageRepo(row.repoUrl, row.name));
-    // Smaž i image v Gitea registru (Packages), ať nezůstanou orphan artefakty.
+    // Also delete the images from the Gitea registry (Packages) so no
+    // orphaned artifacts remain.
     const owner = this.ownerFromRepoUrl(row.repoUrl) ?? config.gitea.user;
     await this.gitea.deletePackages(owner, row.name);
     await this.gitea.deleteRepo(
@@ -334,8 +401,9 @@ export class ProjectsService {
     await this.prisma.project.delete({ where: { id } });
   }
 
-  // Identita pro operace s repem: username = SKUTEČNÝ vlastník repa z repoUrl
-  // (.../<owner>/<name>), token = vlastníkův (nebo platformní fallback).
+  // Identity for repository operations: username = the ACTUAL repo owner
+  // parsed from repoUrl (.../<owner>/<name>), token = the owner's token
+  // (with the platform token as fallback).
   private actorForRepo(row: {
     repoUrl: string | null;
     owner: { username: string; accessToken: string } | null;
@@ -348,9 +416,9 @@ export class ProjectsService {
     return { username, token };
   }
 
-  // Docker-safe klíč nasazení, namespacovaný vlastníkem repa: <owner>-<name>.
-  // Zajišťuje unikátní jména image/kontejnerů i pro stejnojmenné projekty
-  // různých uživatelů.
+  // Docker-safe deployment key namespaced by repo owner: <owner>-<name>.
+  // Guarantees unique image/container names even for same-named projects of
+  // different users.
   private deploySlug(repoUrl: string | null, name: string): string {
     const owner = this.ownerFromRepoUrl(repoUrl) ?? 'anon';
     return `${owner}-${name}`
@@ -359,13 +427,13 @@ export class ProjectsService {
       .replace(/^-+|-+$/g, '');
   }
 
-  // Tag image v registru: <registry>/<owner>/<name>:<version>. Musí sedět s tím,
-  // co pushne CI (viz ci.yml). Vše lowercase (požadavek registru).
+  // Registry image tag: <registry>/<owner>/<name>:<version>. Must match what
+  // CI pushes (see ci.yml). Everything lowercase (registry requirement).
   private imageRef(repoUrl: string | null, name: string, version: string): string {
     return `${this.imageRepo(repoUrl, name)}:${version}`;
   }
 
-  // Registrové repo bez tagu: <registry>/<owner>/<name> (lowercase).
+  // Registry repository without a tag: <registry>/<owner>/<name> (lowercase).
   private imageRepo(repoUrl: string | null, name: string): string {
     const owner = this.ownerFromRepoUrl(repoUrl) ?? config.gitea.user;
     return `${config.registry.host}/${owner}/${name}`.toLowerCase();
@@ -414,8 +482,9 @@ export class ProjectsService {
     ];
   }
 
-  // useRegistry=true → nasadí OTESTOVANÝ image z registru (build once); když
-  // chybí, deploy selže. useRegistry=false → bootstrap build z repa.
+  // useRegistry=true → deploy the TESTED image from the registry (build
+  // once); if it is missing, the deployment fails. useRegistry=false →
+  // bootstrap build from the repository.
   private async deployEnv(
     projectId: string,
     envName: EnvName,
@@ -432,6 +501,10 @@ export class ProjectsService {
       where: { projectId_name: { projectId, name: envName } },
       data: { status: 'deploying', statusReason: null },
     });
+    // SSH targets share one host — the platform allocates a unique app port
+    // from the database before handing the deployment to the provider.
+    const appPort =
+      env.provider === 'ssh' ? await this.allocateSshPort(projectId, envName) : undefined;
     const result = await this.deployment.deploy(env.provider as ProviderKind, {
       projectName: this.deploySlug(project.repoUrl, project.name),
       version,
@@ -439,6 +512,9 @@ export class ProjectsService {
       repoPath: project.repoPath,
       port: template.port,
       healthPath: template.healthPath ?? '/health',
+      startCommand: template.startCommand,
+      artifactDir: template.artifactDir,
+      appPort,
       imageRef: useRegistry
         ? this.imageRef(project.repoUrl, project.name, version)
         : undefined,
@@ -455,7 +531,7 @@ export class ProjectsService {
     });
   }
 
-  // dev/test běží na Dockeru, prod se volí podle typu artefaktu šablony.
+  // dev/test run on Docker; prod is chosen by the template's artifact kind.
   private defaultProvider(name: EnvName, template: TemplateManifest): ProviderKind {
     if (name === 'prod') {
       return template.artifact === 'static' ? 'sftp' : 'ssh';
@@ -463,13 +539,14 @@ export class ProjectsService {
     return 'docker';
   }
 
-  // CI stagey podle typu artefaktu. Stav se skládá z commit statusů z Gitey
-  // (jeden status na job ci.yml); 'pending' = CI pro commit ještě neproběhlo.
+  // CI stages derived from the artifact kind. The state is assembled from
+  // Gitea commit statuses (one per ci.yml job); 'pending' = CI has not
+  // reported for this commit yet.
   private pipelineStages(
     template: TemplateManifest,
     statuses: { context: string; status: string; targetUrl: string | null }[] | null,
   ): PipelineStage[] {
-    // label = co se zobrazí; tokens = možné názvy/id jobu v commit statusu.
+    // label = display name; tokens = possible job names in the commit status.
     const defs: { label: string; tokens: string[] }[] =
       template.artifact === 'static'
         ? [
@@ -484,7 +561,7 @@ export class ProjectsService {
             { label: 'deploy', tokens: ['deploy'] },
           ];
 
-    // Nejnovější stav + odkaz na job (statusy chodí seřazené od nejnovějšího).
+    // Latest state + job link per job (statuses arrive newest-first).
     const latest = new Map<string, { status: string; url: string | null }>();
     for (const s of statuses ?? []) {
       const job = this.jobFromContext(s.context);
@@ -500,10 +577,11 @@ export class ProjectsService {
       };
     });
 
-    // Joby na sebe navazují (needs), takže reálně běží vždy jen první
-    // nedokončená stage. Gitea ale při startu runu vytvoří "pending" status
-    // všem jobům najednou → vše by svítilo jako běžící. Stavy za první
-    // aktivní/neúspěšnou stagí proto srážíme na 'pending' (čeká ve frontě).
+    // Jobs are chained via `needs`, so only the first unfinished stage can
+    // actually be executing. Gitea, however, creates a "pending" status for
+    // ALL jobs when the run starts — everything would light up as running.
+    // Demote stages behind the first active/unsuccessful one to 'pending'
+    // (queued) so the UI shows real progression.
     let blocked = false;
     for (const s of stages) {
       if (blocked && s.status === 'running') s.status = 'pending';
@@ -512,7 +590,7 @@ export class ProjectsService {
     return stages;
   }
 
-  // Gitea commit status kontext má tvar "<workflow> / <job> (<event>)".
+  // Gitea commit status context has the form "<workflow> / <job> (<event>)".
   private jobFromContext(context: string): string | null {
     if (!context) return null;
     const noEvent = context.replace(/\s*\([^)]*\)\s*$/, '');
@@ -525,7 +603,7 @@ export class ProjectsService {
   private mapCiStatus(state: string): StageStatus {
     if (state === 'success') return 'success';
     if (state === 'failure' || state === 'error') return 'failed';
-    return 'running'; // pending = job běží / je ve frontě
+    return 'running'; // Gitea 'pending' = job is executing or queued
   }
 
   private toDomain(row: ProjectRow): Project {

@@ -11,8 +11,11 @@ import {
   TeardownInput,
 } from '../deployment-provider.interface';
 
-// Postaví image z vygenerovaného Dockerfile a spustí kontejner v síti net-<env>.
-// Bez běžícího daemonu degraduje na simulovaný výsledek (vývoj bez Dockeru).
+/**
+ * Container deployment target. Builds an image from the generated Dockerfile
+ * (or pulls a pre-built one from the registry) and runs a container attached
+ * to the per-environment network (net-<env>).
+ */
 @Injectable()
 export class DockerProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'docker';
@@ -22,13 +25,14 @@ export class DockerProvider implements DeploymentProvider {
   async deploy(input: DeployInput): Promise<DeployResult> {
     const port = input.port ?? 8080;
 
+    // No fake "running": without a daemon the deployment honestly fails with
+    // a reason (consistent with the SSH/SFTP providers).
     if (!(await this.isAvailable())) {
-      this.logger.warn(
-        'Docker daemon nedostupný – vracím simulovaný výsledek (spusť Docker pro reálné nasazení)',
-      );
+      this.logger.warn('Docker daemon unavailable — deployment failed');
       return {
-        status: 'running',
-        url: `http://${input.projectName}.${input.env}.local`,
+        status: 'failed',
+        url: '',
+        reason: 'Docker daemon is not available — start Docker and redeploy.',
       };
     }
 
@@ -36,21 +40,21 @@ export class DockerProvider implements DeploymentProvider {
     const containerName = `initpad-${input.projectName}-${input.env}`;
 
     await this.ensureNetwork(network);
-    // Build once, deploy many: když CI postavilo image do registru, stáhneme ho
-    // a spustíme (žádný rebuild).
+    // Build once, deploy many: when CI has pushed the image to the registry,
+    // pull and run exactly that image (no rebuild).
     let image: string;
     if (input.imageRef) {
       if (await this.tryPull(input.imageRef)) {
         image = input.imageRef;
-        this.logger.log(`Používám image z registru: ${image}`);
+        this.logger.log(`Using registry image: ${image}`);
       } else if (input.allowBuildFallback) {
         image = `initpad/${input.projectName}:${input.env}`;
         await this.buildImage(input.repoPath, image);
       } else {
-        // Přísné build-once: otestovaný image v registru není → nebuildovat
-        // jiný (možná odlišný) artefakt, radši selhat.
+        // Strict build-once: the tested image is missing from the registry —
+        // do not build a different (possibly diverging) artifact; fail instead.
         this.logger.warn(
-          `Image ${input.imageRef} není v registru – deploy zastaven (build-once).`,
+          `Image ${input.imageRef} not found in the registry — deployment stopped (build-once).`,
         );
         return {
           status: 'failed',
@@ -65,23 +69,24 @@ export class DockerProvider implements DeploymentProvider {
     await this.removeContainer(containerName);
     const hostPort = await this.runContainer(image, containerName, network, port);
 
-    // Post-deploy verifikace: stejný artefakt může v jednom prostředí naběhnout
-    // a v jiném ne (config, síť, závislosti). Proto ověříme, že to TADY odpovídá.
+    // Post-deploy verification: the same artifact may come up in one
+    // environment and fail in another (config, network, dependencies), so the
+    // health check runs HERE, against this concrete deployment.
     const url = `http://localhost:${hostPort}`;
     const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
     if (!healthy) {
-      this.logger.warn(`${containerName} nenaběhl zdravě (health check selhal)`);
+      this.logger.warn(`${containerName} failed its health check`);
       return {
         status: 'failed',
         url,
         reason: `Health check at ${input.healthPath ?? '/health'} did not return 2xx within ~10s.`,
       };
     }
-    this.logger.log(`Nasazeno a zdravé: ${containerName} → ${url}`);
+    this.logger.log(`Deployed and healthy: ${containerName} → ${url}`);
     return { status: 'running', url };
   }
 
-  // Opakovaně zkouší health endpoint, dokud nevrátí 2xx (nebo nevyprší limit).
+  // Polls the health endpoint until it returns 2xx or the deadline passes.
   private async waitHealthy(hostPort: string, path: string): Promise<boolean> {
     const target = `http://localhost:${hostPort}${path.startsWith('/') ? '' : '/'}${path}`;
     const attempts = 20; // ~10 s (20 × 500 ms)
@@ -90,37 +95,37 @@ export class DockerProvider implements DeploymentProvider {
         const res = await fetch(target);
         if (res.ok) return true;
       } catch {
-        // appka ještě nestartuje – zkus znovu
+        // App still starting — retry.
       }
       await new Promise((r) => setTimeout(r, 500));
     }
     return false;
   }
 
-  // Zastaví a odstraní kontejner i postavený image daného prostředí
-  // (bez daemonu no-op).
+  // Stops and removes the environment's container and its locally built image
+  // (no-op without a daemon).
   async teardown(input: TeardownInput): Promise<void> {
     if (!(await this.isAvailable())) return;
     const containerName = `initpad-${input.projectName}-${input.env}`;
     const image = `initpad/${input.projectName}:${input.env}`;
     await this.removeContainer(containerName);
     await this.removeImage(image);
-    this.logger.log(`Odstraněn kontejner ${containerName} i image ${image}`);
+    this.logger.log(`Removed container ${containerName} and image ${image}`);
   }
 
-  // Pozastaví běžící kontejner (bez smazání – image i vazby zůstávají).
+  // Suspends a running container (keeps the image and configuration).
   async stop(input: TeardownInput): Promise<void> {
     if (!(await this.isAvailable())) return;
     const name = `initpad-${input.projectName}-${input.env}`;
     try {
       await this.docker.getContainer(name).stop();
-      this.logger.log(`Pozastaven kontejner ${name}`);
+      this.logger.log(`Stopped container ${name}`);
     } catch {
-      // neběží / neexistuje – nic k zastavení
+      // Not running / does not exist — nothing to stop.
     }
   }
 
-  // Znovu spustí pozastavený kontejner a ověří health (stejná verze).
+  // Re-starts a stopped container and verifies health (same version).
   async start(input: StartInput): Promise<DeployResult> {
     if (!(await this.isAvailable())) {
       return { status: 'failed', url: '', reason: 'Docker daemon is not available.' };
@@ -131,7 +136,7 @@ export class DockerProvider implements DeploymentProvider {
     try {
       await container.start();
     } catch {
-      // 304 = už běží; jiná chyba se projeví v inspect níže
+      // 304 = already running; any other problem shows up in inspect below.
     }
     let info: Docker.ContainerInspectInfo;
     try {
@@ -153,11 +158,11 @@ export class DockerProvider implements DeploymentProvider {
     if (!healthy) {
       return { status: 'failed', url, reason: 'Health check did not pass after start.' };
     }
-    this.logger.log(`Spuštěn kontejner ${name} → ${url}`);
+    this.logger.log(`Started container ${name} → ${url}`);
     return { status: 'running', url };
   }
 
-  // Posledních ~200 řádků logu kontejneru daného prostředí.
+  // Last ~200 log lines of the environment's container.
   async logs(input: TeardownInput): Promise<string> {
     if (!(await this.isAvailable())) return '';
     const name = `initpad-${input.projectName}-${input.env}`;
@@ -177,7 +182,8 @@ export class DockerProvider implements DeploymentProvider {
     }
   }
 
-  // Docker vrací u kontejnerů bez TTY multiplexovaný stream (8B hlavička/frame).
+  // Containers without a TTY return a multiplexed stream (8-byte frame
+  // headers); strip the framing to get plain text.
   private demuxLogs(buf: Buffer): string {
     let out = '';
     let i = 0;
@@ -193,11 +199,11 @@ export class DockerProvider implements DeploymentProvider {
     try {
       await this.docker.getImage(tag).remove({ force: true });
     } catch {
-      // image už neexistuje / je používán jiným kontejnerem
+      // Image already gone or still used by another container.
     }
   }
 
-  // Smaže všechny lokální image z registru daného repa (všechny stažené verze).
+  // Removes all locally pulled images of the given registry repository.
   async removeImages(repo: string): Promise<void> {
     if (!(await this.isAvailable())) return;
     try {
@@ -208,9 +214,9 @@ export class DockerProvider implements DeploymentProvider {
       for (const img of targets) {
         await this.docker.getImage(img.Id).remove({ force: true }).catch(() => undefined);
       }
-      if (targets.length) this.logger.log(`Smazáno ${targets.length} image (${repo})`);
+      if (targets.length) this.logger.log(`Removed ${targets.length} image(s) (${repo})`);
     } catch (e) {
-      this.logger.warn(`removeImages ${repo} selhalo: ${(e as Error).message}`);
+      this.logger.warn(`removeImages ${repo} failed: ${(e as Error).message}`);
     }
   }
 
@@ -243,8 +249,9 @@ export class DockerProvider implements DeploymentProvider {
     });
   }
 
-  // Stáhne image z registru (přihlášen jako bot). Vrací false, když image
-  // neexistuje / registr nedostupný → volající se vrátí k lokálnímu buildu.
+  // Pulls an image from the registry authenticated as the service account.
+  // Returns false when the image is missing or the registry is unreachable —
+  // the caller decides whether a local build fallback is allowed.
   private async tryPull(ref: string): Promise<boolean> {
     try {
       const auth = {
@@ -258,7 +265,7 @@ export class DockerProvider implements DeploymentProvider {
       });
       return true;
     } catch (e) {
-      this.logger.warn(`pull ${ref} selhal: ${(e as Error).message}`);
+      this.logger.warn(`pull ${ref} failed: ${(e as Error).message}`);
       return false;
     }
   }
@@ -267,7 +274,7 @@ export class DockerProvider implements DeploymentProvider {
     try {
       await this.docker.getContainer(name).remove({ force: true });
     } catch {
-      // kontejner zatím neexistuje
+      // Container does not exist yet.
     }
   }
 

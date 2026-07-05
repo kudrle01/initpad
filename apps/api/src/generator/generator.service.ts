@@ -10,14 +10,20 @@ export interface GenerateResult {
   files: string[];
 }
 
-// Zkopíruje scaffold šablony; soubory .hbs projde Handlebars a příponu odstraní.
+/**
+ * Project scaffolding. Copies the template's files tree; files with the .hbs
+ * extension are rendered through Handlebars and the extension is stripped.
+ */
 @Injectable()
 export class GeneratorService {
   constructor(private readonly templates: TemplatesService) {}
 
-  // projectName = proměnná do šablony (Handlebars). destSubpath = cesta ve
-  // workspace (default = projectName); namespacuje se vlastníkem, aby dva
-  // uživatelé mohli mít projekt stejného jména bez kolize složek.
+  /**
+   * @param projectName Template variable available to Handlebars files.
+   * @param destSubpath Path inside the workspace (defaults to projectName).
+   *   Namespaced by owner so two users can have same-named projects without
+   *   directory collisions.
+   */
   generate(templateId: string, projectName: string, destSubpath?: string): GenerateResult {
     const srcDir = this.templates.filesDir(templateId);
     const destDir = join(config.workspaceDir, destSubpath ?? projectName);

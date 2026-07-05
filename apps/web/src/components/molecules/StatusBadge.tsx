@@ -2,7 +2,8 @@ import { Badge, badgeVariants } from '@/components/ui/badge';
 import { StatusDot, type StatusDotKind } from '@/components/atoms/StatusDot';
 import { cn } from '@/lib/utils';
 
-// Molekula: badge se stavovou tečkou + popiskem. Volitelně jako tlačítko (onClick).
+// Molecule: badge with a status dot + label. Optionally rendered as a button
+// (when onClick is provided).
 interface StatusBadgeProps {
   status: string;
   label?: string;
@@ -20,7 +21,7 @@ export function StatusBadge({ status, label, kind, onClick, className, title }: 
     </>
   );
   if (onClick) {
-    // Ploché tlačítko se vzhledem badge (žádný badge zanořený v buttonu).
+    // A flat button styled as a badge (no badge nested inside a button).
     return (
       <button
         type="button"

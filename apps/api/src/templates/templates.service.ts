@@ -4,8 +4,11 @@ import { join } from 'path';
 import { config } from '../config';
 import { TemplateManifest } from '../domain/types';
 
-// Šablona = složka s manifestem template.json a scaffoldem ve files/.
-// Přidání šablony je jen přidání složky, bez zásahu do kódu (data-driven).
+/**
+ * Template catalog. A template is a directory with a template.json manifest
+ * and the project scaffold under files/. Adding a template means adding a
+ * directory — no code changes required (data-driven catalog).
+ */
 @Injectable()
 export class TemplatesService {
   list(): TemplateManifest[] {

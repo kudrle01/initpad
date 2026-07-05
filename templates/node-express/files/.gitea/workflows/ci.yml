@@ -1,13 +1,14 @@
 name: ci
 on: [push]
 
-# Pipeline je rozdělená na joby, aby každý odpovídal jedné stage v platformě
-# (build → test → docker build → deploy). Gitea pro každý job vytvoří commit
-# status, který platforma čte a zobrazuje v detailu projektu.
+# The pipeline is split into jobs so that each maps to one stage in the
+# platform (build → test → docker build → deploy). Gitea creates a commit
+# status per job; the platform reads these to render the pipeline view.
 #
-# Pozn.: Node i npm jsou už v runner image (catthehacker/ubuntu:act-latest),
-# proto nepoužíváme actions/setup-node (to se tahá z github.com a bývá
-# nejčastější příčina selhání na nestabilní síti).
+# Note: Node and npm ship inside the runner image
+# (catthehacker/ubuntu:act-latest), so actions/setup-node is intentionally
+# not used — it downloads from github.com and is the most common source of
+# failures on an unstable network.
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,10 +31,11 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
-      # Build once, deploy many: image se postaví JEDNOU a pushne do Gitea
-      # registru pod tagem = hash commitu. Platforma ho pak jen stáhne a spustí
-      # (dev/test/prod = ten samý image). Registr = localhost:3001 (dosažitelný
-      # z hostitelského Docker daemonu), přihlášení přes secrets bota.
+      # Build once, deploy many: the image is built ONCE and pushed to the
+      # Gitea registry tagged with the commit hash. The platform then only
+      # pulls and runs it (dev/test/prod = the same image). Registry =
+      # localhost:3001 (reachable from the host's Docker daemon); credentials
+      # come from the bot's Actions secrets.
       - name: build & push image
         run: |
           IMAGE=$(echo "localhost:3001/${{ github.repository }}:${{ github.sha }}" | tr '[:upper:]' '[:lower:]')
@@ -46,9 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: docker
     steps:
-      # Po úspěšném buildu řekne platformě, ať stáhne tento commit a nasadí dev.
-      # host.docker.internal = API platformy na hostu; token = Actions secret,
-      # který platforma nastavila při založení repa.
+      # After a successful build, tell the platform to sync this commit and
+      # deploy dev. host.docker.internal = the platform API on the host;
+      # token = the Actions secret set by the platform at repo creation.
       - name: notify platform
         run: |
           curl -fsS -X POST http://host.docker.internal:3000/api/ci/deploy \

@@ -18,24 +18,32 @@ import {
   uploadTar,
   type ExecResult,
 } from './ssh-utils';
+import { exportVersion } from './source-export';
 
-// Nasazení runtime aplikace (Node) na vzdálený host přes SSH – reálné spojení
-// proti kontejneru fake-vps (sshd + Node), který simuluje firemní VPS.
-// Postup: nahraj zdroj (tar) → rozbal do releases/<version> → npm install →
-// přepni symlink `current` → (re)start procesu → health check přes publikovaný port.
+// Fallback for templates that predate the startCommand manifest field.
+const DEFAULT_START = 'node src/index.js';
+
+/**
+ * Deploys a runtime (Node) application to a remote host over SSH — a real
+ * protocol conversation with the fake-vps container (sshd + Node) that stands
+ * in for a company VPS.
+ *
+ * Flow: upload source (tar) → extract into releases/<version> → npm install →
+ * switch the `current` symlink → (re)start the process → health check via the
+ * published port.
+ */
 @Injectable()
 export class SshProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'ssh';
   private readonly logger = new Logger('SshProvider');
   private readonly cfg = config.providers.ssh;
-  // Node/npm nemusí být na neinteraktivním PATH – nastavíme ho explicitně.
+  // node/npm may be missing from the non-interactive PATH — set it explicitly.
   private readonly PATH = 'PATH=/usr/local/bin:/usr/bin:/bin:$PATH';
 
   async deploy(input: DeployInput): Promise<DeployResult> {
-    const slot = portSlot(`${input.projectName}-${input.env}`, this.cfg.appPortSlots);
-    const appPort = this.cfg.appPortBase + slot;
+    const appPort = this.resolvePort(input);
     const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
-    const version = this.safe(input.version) || 'latest';
+    const version = this.sanitize(input.version) || 'latest';
     const release = `${base}/releases/${version}`;
     const url = `http://localhost:${appPort}`;
 
@@ -48,8 +56,13 @@ export class SshProvider implements DeploymentProvider {
       return { status: 'failed', url: '', reason };
     }
 
+    // Deploy exactly the version being promoted — not the working tree,
+    // which is synced to the latest main and may be newer.
+    const exported = await exportVersion(input.repoPath, input.version);
+    const sourceDir = exported?.dir ?? input.repoPath;
+
     try {
-      // Node na hostu? Bez runtime nemá smysl pokračovat.
+      // Without a Node runtime on the host there is nothing to run.
       const node = await sshExec(conn, `${this.PATH} command -v node`);
       if (node.code !== 0) {
         return {
@@ -59,35 +72,39 @@ export class SshProvider implements DeploymentProvider {
         };
       }
 
-      await this.check(conn, `mkdir -p ${release}`, 'prepare release dir');
+      await this.execOrFail(conn, `mkdir -p ${release}`, 'prepare release dir');
 
-      // Nahraj zdroj jako tar a rozbal (bez node_modules/.git).
+      // Upload the source as a tarball and extract it (node_modules/.git excluded).
       const sftp = await getSftp(conn);
-      await uploadTar(sftp, input.repoPath, `${base}/app.tar`);
-      await this.check(
+      await uploadTar(sftp, sourceDir, `${base}/app.tar`);
+      await this.execOrFail(
         conn,
         `tar xf ${base}/app.tar -C ${release} && rm -f ${base}/app.tar`,
         'extract source',
       );
 
-      // Instalace závislostí (bez lockfile → install, ne ci).
-      await this.check(
+      // Install dependencies (no lockfile in scaffolds → install, not ci).
+      await this.execOrFail(
         conn,
         `cd ${release} && ${this.PATH} npm install --omit=dev --no-audit --no-fund`,
         'npm install',
       );
 
-      // Zastav předchozí instanci (pokud běží) a přepni symlink current → release.
+      // Stop the previous instance (if any) and atomically switch the
+      // `current` symlink to the new release.
       await sshExec(
         conn,
         `[ -f ${base}/app.pid ] && kill "$(cat ${base}/app.pid)" 2>/dev/null; ln -sfn ${release} ${base}/current; true`,
       );
 
-      // Start na pevném portu (publikovaný 1:1 na host). Subshell + nohup: proces
-      // přežije zavření SSH kanálu a do pidfile jde PID samotného node.
-      await this.check(
+      // Start on a fixed port (published 1:1 to the host). Subshell + nohup:
+      // the process survives the SSH channel closing, and the pidfile records
+      // the PID of the app process itself. The start command is a property of
+      // the template (manifest.startCommand), not of this provider.
+      const startCmd = input.startCommand ?? DEFAULT_START;
+      await this.execOrFail(
         conn,
-        `cd ${base}/current && ( ${this.PATH} PORT=${appPort} nohup node src/index.js > ${base}/app.log 2>&1 & echo $! > ${base}/app.pid )`,
+        `cd ${base}/current && ( ${this.PATH} PORT=${appPort} nohup ${startCmd} > ${base}/app.log 2>&1 & echo $! > ${base}/app.pid )`,
         'start app',
       );
 
@@ -109,6 +126,7 @@ export class SshProvider implements DeploymentProvider {
     } catch (e) {
       return { status: 'failed', url: '', reason: (e as Error).message };
     } finally {
+      exported?.cleanup();
       sshEnd(conn);
     }
   }
@@ -119,7 +137,7 @@ export class SshProvider implements DeploymentProvider {
     try {
       conn = await sshConnect(this.cfg);
     } catch {
-      return; // host nedostupný – nic k úklidu
+      return; // Host unreachable — nothing to clean up.
     }
     try {
       await sshExec(
@@ -132,7 +150,7 @@ export class SshProvider implements DeploymentProvider {
     }
   }
 
-  // Zastaví běžící proces (release na disku zůstává, jde znovu Start).
+  // Stops the running process; the release stays on disk so Start can resume it.
   async stop(input: TeardownInput): Promise<void> {
     const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
     let conn: Client;
@@ -152,10 +170,10 @@ export class SshProvider implements DeploymentProvider {
     }
   }
 
-  // Znovu spustí naposledy nasazený release (symlink current) na stejném portu.
+  // Re-starts the most recently deployed release (the `current` symlink) on
+  // the same port.
   async start(input: StartInput): Promise<DeployResult> {
-    const slot = portSlot(`${input.projectName}-${input.env}`, this.cfg.appPortSlots);
-    const appPort = this.cfg.appPortBase + slot;
+    const appPort = this.resolvePort(input);
     const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
     const url = `http://localhost:${appPort}`;
 
@@ -174,11 +192,12 @@ export class SshProvider implements DeploymentProvider {
       if (!has.stdout.includes('ok')) {
         return { status: 'failed', url: '', reason: 'No release to start — use Redeploy first.' };
       }
-      // Pro jistotu zabij případný běžící proces a spusť znovu.
+      // Defensively kill any leftover process, then start fresh.
       await sshExec(conn, `[ -f ${base}/app.pid ] && kill "$(cat ${base}/app.pid)" 2>/dev/null; true`);
-      await this.check(
+      const startCmd = input.startCommand ?? DEFAULT_START;
+      await this.execOrFail(
         conn,
-        `cd ${base}/current && ( ${this.PATH} PORT=${appPort} nohup node src/index.js > ${base}/app.log 2>&1 & echo $! > ${base}/app.pid )`,
+        `cd ${base}/current && ( ${this.PATH} PORT=${appPort} nohup ${startCmd} > ${base}/app.log 2>&1 & echo $! > ${base}/app.pid )`,
         'start app',
       );
       const healthy = await this.waitHealthy(appPort, input.healthPath ?? '/health');
@@ -210,8 +229,17 @@ export class SshProvider implements DeploymentProvider {
     }
   }
 
-  // Spustí příkaz a vyhodí chybu s kontextem, když skončí nenulově.
-  private async check(conn: Client, cmd: string, label: string): Promise<ExecResult> {
+  // The application port is allocated by the platform from the database
+  // (unique across all environments). The hash-slot fallback only covers
+  // callers that do not supply a port (e.g. provider used standalone).
+  private resolvePort(input: { projectName: string; env: string; appPort?: number }): number {
+    if (input.appPort) return input.appPort;
+    const slot = portSlot(`${input.projectName}-${input.env}`, this.cfg.appPortSlots);
+    return this.cfg.appPortBase + slot;
+  }
+
+  // Runs a command and throws a labelled error when it exits non-zero.
+  private async execOrFail(conn: Client, cmd: string, label: string): Promise<ExecResult> {
     const res = await sshExec(conn, cmd);
     if (res.code !== 0) {
       const detail = (res.stderr || res.stdout).trim().split('\n').slice(-5).join('\n');
@@ -227,15 +255,15 @@ export class SshProvider implements DeploymentProvider {
         const res = await fetch(target);
         if (res.ok) return true;
       } catch {
-        // ještě nestartuje
+        // App still starting — retry.
       }
       await new Promise((r) => setTimeout(r, 500));
     }
     return false;
   }
 
-  // Jen bezpečné znaky pro cestu release adresáře.
-  private safe(v: string): string {
+  // Restrict to filesystem-safe characters for the release directory name.
+  private sanitize(v: string): string {
     return v.replace(/[^a-zA-Z0-9._-]/g, '');
   }
 }

@@ -1,9 +1,9 @@
 import { cn } from '@/lib/utils';
 
-// Atom: barevná tečka stavu. Stejné slovo znamená v každém kontextu něco
-// jiného, proto dvě mapy: u prostředí (deploy) je `running` = aplikace běží
-// (zelená), u CI jobu je `running` = právě se vykonává (oranžová, pulzuje)
-// a `pending` = čeká ve frontě (šedá).
+// Atom: colored status dot. The same word means different things in different
+// contexts, hence two maps: for environments (deploy) `running` means the app
+// is up (green); for a CI job `running` means it is executing right now
+// (orange, pulsing) and `pending` means queued (gray).
 const DEPLOY_CLASS: Record<string, string> = {
   running: 'bg-success',
   success: 'bg-success',

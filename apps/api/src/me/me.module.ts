@@ -3,8 +3,9 @@ import { MeController } from './me.controller';
 import { AuthModule } from '../auth/auth.module';
 import { ScmModule } from '../scm/scm.module';
 
-// AuthModule dodává JwtAuthGuard + JwtModule (ověření session cookie),
-// ScmModule dodává GiteaService (vydání PAT). PrismaService je globální.
+// AuthModule provides JwtAuthGuard + JwtModule (session cookie verification),
+// ScmModule provides GiteaService (personal access token issuance).
+// PrismaService is registered globally.
 @Module({
   imports: [AuthModule, ScmModule],
   controllers: [MeController],

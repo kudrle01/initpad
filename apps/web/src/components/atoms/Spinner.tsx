@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-// Atom: točící se kroužek (loading indikátor).
+// Atom: spinning circle (loading indicator).
 export function Spinner({ className }: { className?: string }) {
   return (
     <span

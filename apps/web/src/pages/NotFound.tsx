@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { EmptyState } from '@/components/molecules/EmptyState';
 
-// Zobrazí se uvnitř layoutu pro neznámé cesty (catch-all route).
+// Rendered inside the layout for unknown paths (catch-all route).
 export default function NotFound() {
   return (
     <div>

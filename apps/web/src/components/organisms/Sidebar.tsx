@@ -69,8 +69,8 @@ function Item({ to, label, icon: I, end }: { to: string; label: string; icon: Lu
   );
 }
 
-// Organismus: navigace aplikace. Na úzkých oknech se zúží na ikonový rail,
-// od breakpointu lg má plnou šířku s popisky.
+// Organism: application navigation. Collapses to an icon rail on narrow
+// viewports; full width with labels from the lg breakpoint up.
 export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }) {
   const display = user.name || user.username;
   return (

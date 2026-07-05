@@ -19,13 +19,14 @@ import { EnvLogsDialog } from '@/components/organisms/EnvLogsDialog';
 import { giteaLink } from '@/lib/utils';
 import type { Commit, EnvName, Project, TemplateManifest } from '@/types';
 
-// Projekt se po vytvoření dotahuje na pozadí (dev: deploying → running) a CI
-// běží asynchronně – dokud něco „pracuje", detail se sám periodicky obnovuje.
+// After creation the project finishes in the background (dev: deploying →
+// running) and CI runs asynchronously — while anything is "working", the
+// detail refreshes itself periodically.
 function isLive(project: Project | null, commits: Commit[]): boolean {
   const envBusy = project?.environments.some((e) => e.status === 'deploying') ?? false;
   const ciBusy = commits.some((c) => c.pipeline.some((s) => s.status === 'running'));
-  // Poslední commit čeká na runner (pending, nic neselhalo) → taky obnovovat,
-  // ať se stavy rozjedou samy bez ručního refreshe.
+  // The head commit is waiting for the runner (pending, nothing failed) →
+  // keep refreshing so the stages start moving without a manual reload.
   const head = commits[0];
   const ciQueued =
     !!head &&

@@ -4,7 +4,7 @@ export type ProviderKind = 'docker' | 'sftp' | 'ssh';
 
 export type EnvName = 'dev' | 'test' | 'prod';
 
-export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed';
+export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
 
 export interface TemplateManifest {
   id: string;
@@ -13,8 +13,15 @@ export interface TemplateManifest {
   artifact: ArtifactKind;
   compatibleProviders: ProviderKind[];
   port?: number;
-  // Cesta pro post-deploy health check (default '/health').
+  // Path used for the post-deploy health check (defaults to '/health').
   healthPath?: string;
+  // Command that starts the app for source-based deployments (SSH). This is
+  // a property of the template, not of the provider (e.g. 'node src/index.js',
+  // 'node dist/main.js').
+  startCommand?: string;
+  // Subdirectory containing the build artifact for static deployments
+  // (e.g. 'dist'). When omitted, the repository root is deployed.
+  artifactDir?: string;
   description: string;
 }
 
@@ -43,7 +50,7 @@ export type StageStatus = 'pending' | 'running' | 'success' | 'failed';
 export interface PipelineStage {
   name: string;
   status: StageStatus;
-  // Odkaz na konkrétní job/run v Gitee (z commit statusu), pokud existuje.
+  // Link to the concrete job/run in Gitea (from the commit status), if any.
   url?: string | null;
 }
 

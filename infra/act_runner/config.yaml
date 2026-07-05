@@ -1,19 +1,20 @@
-# Konfigurace Gitea Actions runneru (act_runner).
-# Docker socket si runner do job kontejnerů přimountuje SÁM (proto ho tu
-# neuvádíme – jinak by docker hlásil "Duplicate mount point"). Díky tomu
-# krok `docker build` ve vygenerovaném ci.yml staví image na hostiteli.
+# Gitea Actions runner (act_runner) configuration.
+# The runner mounts the Docker socket into job containers BY ITSELF — do not
+# list it here, or docker reports "Duplicate mount point". Thanks to the
+# socket, the `docker build` step in the generated ci.yml builds images on
+# the host daemon.
 log:
   level: info
 
 runner:
-  # Label "ubuntu-latest" musí odpovídat `runs-on:` ve workflow.
-  # Image catthehacker obsahuje Docker CLI (potřeba pro `docker build`).
+  # The "ubuntu-latest" label must match `runs-on:` in the workflows.
+  # The catthehacker image ships the Docker CLI (needed for `docker build`).
   labels:
     - "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
 
 container:
-  # Job kontejnery připoj do stejné sítě jako Gitea, aby rozchodily interní
-  # hostname "gitea" (checkout klonuje z http://gitea:3000). Název sítě =
-  # <compose project>_<network> = initpad_platform.
+  # Attach job containers to the same network as Gitea so the internal
+  # hostname "gitea" resolves (checkout clones from http://gitea:3000).
+  # Network name = <compose project>_<network> = initpad_platform.
   network: "initpad_platform"
   privileged: false

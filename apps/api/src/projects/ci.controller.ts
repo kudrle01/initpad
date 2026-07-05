@@ -15,8 +15,9 @@ interface CiDeployDto {
   ref?: string;
 }
 
-// Webhook volaný z CI (Gitea Actions) po úspěšném buildu. Autentizace sdíleným
-// tokenem (Actions secret repa), ne uživatelskou session.
+// Webhook called from CI (Gitea Actions) after a successful build.
+// Authenticated with a shared token (the repo's Actions secret), not a user
+// session.
 @Controller('ci')
 export class CiController {
   constructor(private readonly projects: ProjectsService) {}
@@ -29,7 +30,7 @@ export class CiController {
       throw new UnauthorizedException('Invalid CI token');
     }
     if (!body.repo) return { accepted: false };
-    // Nečekáme na build – deploy běží na pozadí.
+    // Do not block the CI job — the deployment runs in the background.
     void this.projects.deployFromCi(body.repo, body.sha ?? '', body.ref ?? '');
     return { accepted: true };
   }

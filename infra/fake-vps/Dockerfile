@@ -1,9 +1,11 @@
-# Simulovaná firemní VPS pro nasazení runtime aplikací přes SSH.
-# openssh-server (Alpine, s6) + Node.js runtime + nástroje pro deploy.
+# Simulated company VPS for deploying runtime applications over SSH.
+# openssh-server (Alpine, s6) + the Node.js runtime + deployment tooling.
 FROM lscr.io/linuxserver/openssh-server:latest
 
-# Node/npm (běh aplikace), curl (health uvnitř), tar (rozbalení nahraného zdroje).
+# node/npm (application runtime), curl (in-container health checks),
+# tar (extracting the uploaded source archive).
 RUN apk add --no-cache nodejs npm curl tar
 
-# Konfigurace uživatele/hesla i portů se předává přes environment v compose
-# (USER_NAME, USER_PASSWORD, PASSWORD_ACCESS). sshd naslouchá na 2222.
+# User/password and port configuration is provided via environment variables
+# in docker-compose (USER_NAME, USER_PASSWORD, PASSWORD_ACCESS).
+# sshd listens on 2222.

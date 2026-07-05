@@ -12,8 +12,9 @@ interface GitAccess {
   giteaUrl: string;
 }
 
-// Sestaví jednorázový příkaz: git přepíše každou http URL Gitey tak, že do ní
-// vloží uživatele + token → následné clone/pull/push jedou bez zadávání hesla.
+// Builds the one-time setup command: git rewrites every Gitea http URL to
+// embed user + token, so subsequent clone/pull/push work without password
+// prompts.
 function setupCommand(a: GitAccess): string {
   const base = a.giteaUrl.replace(/\/+$/, '');
   const creds = base.replace('://', `://${encodeURIComponent(a.username)}:${a.token}@`);

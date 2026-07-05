@@ -6,7 +6,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TOKEN_COOKIE } from '../auth/jwt-auth.guard';
 import { OidcService } from './oidc.service';
 
-// OIDC provider endpointy. Globální prefix 'api' → reálné cesty /api/...
+// OIDC provider endpoints. The global 'api' prefix applies, so the real
+// paths are /api/.well-known/... and /api/oauth/...
 @Controller()
 export class OidcController {
   private readonly logger = new Logger('OidcController');
@@ -27,7 +28,8 @@ export class OidcController {
     return this.oidc.jwks();
   }
 
-  // Autorizační endpoint: ověří session platformy (cookie) a vydá kód.
+  // Authorization endpoint: verifies the platform session (cookie) and
+  // issues an authorization code.
   @Get('oauth/authorize')
   authorize(@Query() q: Record<string, string>, @Req() req: Request, @Res() res: Response) {
     try {
@@ -44,7 +46,8 @@ export class OidcController {
 
       const userId = this.sessionUserId(req);
       if (!userId) {
-        // Nepřihlášen na platformě → na login a po něm zpět sem (browser-facing URL).
+        // Not signed in on the platform → redirect to login, then back here
+        // (browser-facing URL).
         const self = `${config.oidc.publicUrl}/oauth/authorize?${new URLSearchParams(q).toString()}`;
         res.redirect(`${config.auth.frontendUrl}/login?next=${encodeURIComponent(self)}`);
         return;
@@ -61,7 +64,8 @@ export class OidcController {
     }
   }
 
-  // Token endpoint: výměna kódu za access_token + id_token.
+  // Token endpoint: exchanges the authorization code for an access_token
+  // and a signed id_token.
   @Post('oauth/token')
   async token(@Body() body: Record<string, string>, @Req() req: Request, @Res() res: Response) {
     const creds = this.clientCreds(body, req);
@@ -103,7 +107,7 @@ export class OidcController {
     });
   }
 
-  // UserInfo endpoint (Bearer access_token).
+  // UserInfo endpoint (authenticated with a Bearer access_token).
   @Get('oauth/userinfo')
   async userinfo(@Req() req: Request, @Res() res: Response) {
     const auth = req.headers.authorization ?? '';

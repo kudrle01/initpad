@@ -12,7 +12,7 @@ const ICONS: Record<string, LucideIcon> = {
   layers: Layers,
 };
 
-// Jednotný placeholder pro sekce, které jsou navržené, ale ještě nemají obsah.
+// Unified placeholder for sections that are designed but not built yet.
 export function ComingSoon({
   icon,
   title,

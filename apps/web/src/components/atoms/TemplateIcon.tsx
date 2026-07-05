@@ -2,11 +2,11 @@ import { Atom, Box, Braces, Coffee, FileCode2, Globe, Hexagon } from 'lucide-rea
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Atom: barevná ikona technologie šablony (návrat k barevné identitě z mockupu).
-// Mapuje se podle id šablony / jazyka; neznámé technologie dostanou neutrální Box.
+// Atom: colored technology icon of a template. Matched by template id /
+// language; unknown technologies fall back to a neutral box.
 interface Tech {
   icon: LucideIcon;
-  color: string; // barva ikony; pozadí = tatáž barva s nízkou alfou
+  color: string; // icon color; the chip background is the same color at low alpha
   match: RegExp;
 }
 

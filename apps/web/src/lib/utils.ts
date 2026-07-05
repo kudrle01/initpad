@@ -1,13 +1,14 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-// Spojí a „domerguje" Tailwind třídy (poslední vyhrává) – standardní shadcn helper.
+// Joins and merges Tailwind classes (last one wins) — the standard shadcn helper.
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Odkazy do Gitey vede přes /user/login?redirect_to=… – odhlášený dostane login
-// stránku (SSO) místo 404 u privátního repa, přihlášený se rovnou prokliká na cíl.
+// Routes Gitea links through /user/login?redirect_to=… — a signed-out user
+// gets the (SSO) login page instead of a 404 on a private repo; a signed-in
+// user clicks straight through to the target.
 export function giteaLink(targetUrl: string | null): string | undefined {
   if (!targetUrl) return undefined;
   try {

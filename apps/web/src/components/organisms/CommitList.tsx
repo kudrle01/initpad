@@ -5,7 +5,7 @@ import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { cn, giteaLink } from '@/lib/utils';
 import type { Commit } from '@/types';
 
-// Souhrnný stav commitu z jeho pipeline stagí.
+// Aggregated commit state derived from its pipeline stages.
 function commitStatus(pipeline: { status: string }[]): { label: string; dot: string } {
   if (pipeline.some((s) => s.status === 'failed')) return { label: 'failed', dot: 'failed' };
   if (pipeline.length > 0 && pipeline.every((s) => s.status === 'success'))

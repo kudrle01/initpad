@@ -82,7 +82,7 @@ export function EnvironmentPipeline({
         const deploying = busy === next;
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
         const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
-        // Stop/Start dává smysl jen u běžících cílů (Docker/SSH), ne u statiky (SFTP).
+        // Stop/Start only makes sense for process targets (Docker/SSH), not static hosting (SFTP).
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
 

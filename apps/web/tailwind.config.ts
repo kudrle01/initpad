@@ -1,8 +1,8 @@
 import type { Config } from 'tailwindcss';
 import animate from 'tailwindcss-animate';
 
-// Tokeny jsou HSL kanály v CSS proměnných (viz index.css). Zápis
-// `hsl(var(--x) / <alpha-value>)` umožňuje alpha modifikátory (bg-primary/10).
+// Tokens are HSL channels stored in CSS variables (see index.css). The
+// `hsl(var(--x) / <alpha-value>)` form enables alpha modifiers (bg-primary/10).
 export default {
   darkMode: ['class'],
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -42,7 +42,7 @@ export default {
           DEFAULT: 'hsl(var(--popover) / <alpha-value>)',
           foreground: 'hsl(var(--popover-foreground) / <alpha-value>)',
         },
-        // stavové barvy (deploy)
+        // deployment status colors
         success: 'hsl(var(--success) / <alpha-value>)',
         warning: 'hsl(var(--warning) / <alpha-value>)',
       },

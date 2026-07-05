@@ -16,6 +16,9 @@ export interface TemplateManifest {
   language: string;
   artifact: 'static' | 'runtime';
   compatibleProviders: ProviderKind[];
+  // Template properties for source-based deployments (informational in the UI).
+  startCommand?: string;
+  artifactDir?: string;
   description: string;
 }
 

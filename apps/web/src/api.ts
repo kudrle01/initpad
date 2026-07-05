@@ -17,7 +17,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message || `HTTP ${res.status}`);
   }
-  // 204 / prázdné tělo (např. DELETE) – nic neparsuj.
+  // 204 / empty body (e.g. DELETE) — nothing to parse.
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }

@@ -2,7 +2,7 @@ import { Link, isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-// errorElement routeru – zachytí 404 i neočekávané chyby a ukáže přívětivou stránku.
+// Router errorElement — catches 404s and unexpected errors and shows a friendly page.
 export default function RouteError() {
   const error = useRouteError();
   const is404 = isRouteErrorResponse(error) && error.status === 404;

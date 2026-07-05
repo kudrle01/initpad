@@ -6,14 +6,17 @@ import { config } from '../config';
 
 const exec = promisify(execFile);
 
-// Identita, pod kterou se provádí operace s repem (vlastník projektu).
+// Identity used for repository operations (the project owner).
 export interface GiteaActor {
   username: string;
   token: string;
 }
 
-// Zakládá repa a pushuje scaffold pod identitou vlastníka. Účty zakládá
-// admin tokenem (řízená registrace).
+/**
+ * Integration with the Gitea SCM. Creates repositories and pushes scaffolds
+ * on behalf of the owning user, provisions accounts via the admin API
+ * (managed registration) and reads commits / CI commit statuses.
+ */
 @Injectable()
 export class GiteaService {
   private readonly logger = new Logger('GiteaService');
@@ -30,12 +33,12 @@ export class GiteaService {
     await this.createRepo(name, actor);
     await this.pushScaffold(name, dir, actor);
     const repoUrl = `${url}/${actor.username}/${name}`;
-    this.logger.log(`Repo vytvořeno a nahráno: ${repoUrl}`);
+    this.logger.log(`Repository created and pushed: ${repoUrl}`);
     return { repoUrl };
   }
 
-  // Založí uživatelský účet v Gitee přes admin API (řízená registrace).
-  // Vrací Gitea ID a login nově vytvořeného uživatele.
+  // Creates a Gitea user account via the admin API (managed registration).
+  // Returns the Gitea ID and login of the newly created user.
   async createUser(input: {
     username: string;
     email: string;
@@ -65,8 +68,8 @@ export class GiteaService {
     return { id: data.id, login: data.login };
   }
 
-  // Vytvoří osobní access token nového uživatele (basic auth jeho heslem).
-  // Token si platforma uloží a jedná jím za uživatele (git operace).
+  // Creates the user's personal access token (Basic auth with their
+  // password). The platform stores it and can act on the user's behalf.
   async createUserToken(username: string, password: string): Promise<string> {
     const { url } = config.gitea;
     const basic = Buffer.from(`${username}:${password}`).toString('base64');
@@ -92,21 +95,22 @@ export class GiteaService {
     return data.sha1;
   }
 
-  // Vydá uživateli osobní přístupový token (PAT) pro git-over-HTTP klonování.
-  // Gitea vytvoří token JEN přes Basic auth (username+heslo) – ne přes admin
-  // token ani Sudo. SSO uživatelé svoje Gitea heslo neznají, takže mu platforma
-  // (Gitea admin) nastaví dočasné náhodné heslo a tím token založí. V tomto
-  // modelu se do Gitey přihlašuje přes platformu (SSO/OIDC), takže Gitea heslo
-  // se jinak nepoužívá a jeho přenastavení nic nerozbije.
+  // Issues a personal access token (PAT) for git-over-HTTP cloning. Gitea
+  // only creates tokens through Basic auth (username + password) — not via
+  // the admin token or Sudo. SSO users don't know their Gitea password, so
+  // the platform (as Gitea admin) sets a temporary random password and uses
+  // it to create the token. In this model users sign in to Gitea through the
+  // platform (SSO/OIDC), so the Gitea password is otherwise unused and
+  // resetting it breaks nothing.
   async issueCloneToken(username: string): Promise<string> {
     const { url, adminToken } = config.gitea;
     if (!url || !adminToken) {
       throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
-    // Silné heslo (upper/lower/digit/special) kvůli případné kontrole složitosti.
+    // Strong password (upper/lower/digit/special) to satisfy complexity checks.
     const tempPassword = `Ip1!${randomBytes(20).toString('hex')}`;
-    // Gitea EditUserOption vyžaduje login_name + source_id (jinak 422). source_id 0
-    // = lokální účet; login_name u lokálního účtu = username.
+    // Gitea's EditUserOption requires login_name + source_id (422 otherwise).
+    // source_id 0 = local account; login_name of a local account = username.
     const edit = await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
@@ -126,8 +130,8 @@ export class GiteaService {
     return this.createUserToken(username, tempPassword);
   }
 
-  // Smaže všechny verze container package (image v Gitea registru) pro daný
-  // projekt – aby po smazání projektu nezůstaly artefakty ve skladu.
+  // Deletes all versions of the project's container package (images in the
+  // Gitea registry), so no orphaned artifacts remain after project removal.
   async deletePackages(owner: string, name: string): Promise<void> {
     const { url, adminToken } = config.gitea;
     if (!url || !adminToken) return;
@@ -147,11 +151,11 @@ export class GiteaService {
         ).catch(() => undefined);
       }
     } catch {
-      // best-effort úklid
+      // Best-effort cleanup.
     }
   }
 
-  // Smaže repo v Gitee (best-effort; admin má právo do všech rep).
+  // Deletes the repository in Gitea (best-effort; admin can access any repo).
   async deleteRepo(name: string, actor: GiteaActor): Promise<void> {
     const { url, adminToken } = config.gitea;
     if (!url || !adminToken) return;
@@ -161,15 +165,16 @@ export class GiteaService {
     }).catch(() => undefined);
   }
 
-  // Vrátí commity z repa vlastníka, nebo null když není dostupné.
+  // Returns commits of the owner's repository, or null when unavailable.
   async listCommits(
     name: string,
     actor: GiteaActor,
     limit = 20,
   ): Promise<{ sha: string; message: string; author: string; date: string }[] | null> {
     const { url, adminToken } = config.gitea;
-    // Čtení jde admin tokenem – admin vidí všechna repa, takže nezáleží na
-    // stavu per-user tokenu (např. přepsaný OAuth token). Cesta = vlastník repa.
+    // Reads use the admin token — the admin sees all repositories, so the
+    // state of the per-user token (e.g. overwritten by an OAuth login) does
+    // not matter. The path is still namespaced by the repository owner.
     const readToken = adminToken || actor.token;
     if (!url || !readToken) return null;
     try {
@@ -199,8 +204,9 @@ export class GiteaService {
     }
   }
 
-  // Vrátí commit statusy (jeden na CI job) pro daný commit – z nich platforma
-  // skládá stav pipeline. Nejnovější status na daný kontext je první.
+  // Returns commit statuses (one per CI job) for the given commit — the
+  // platform assembles the pipeline view from them. Statuses arrive sorted
+  // most-recently-updated first.
   async listCommitStatuses(
     name: string,
     sha: string,
@@ -232,8 +238,9 @@ export class GiteaService {
 
   private async createRepo(name: string, actor: GiteaActor): Promise<void> {
     const { url, adminToken } = config.gitea;
-    // Platforma zakládá repo JMÉNEM uživatele přes admin token + Sudo header –
-    // repo tak patří uživateli, ale nepotřebujeme jeho (křehký) osobní token.
+    // The repository is created ON BEHALF of the user via the admin token +
+    // Sudo header — the repo belongs to the user, without relying on their
+    // (fragile) personal token.
     const res = await fetch(`${url}/api/v1/user/repos`, {
       method: 'POST',
       headers: {
@@ -247,15 +254,15 @@ export class GiteaService {
     if (!res.ok && res.status !== 409) {
       throw new Error(`repository creation failed (HTTP ${res.status})`);
     }
-    // Zapne Actions (CI) pro repo (admin může editovat jakékoli repo).
+    // Enables Actions (CI) for the repository (admin can edit any repo).
     await fetch(`${url}/api/v1/repos/${actor.username}/${name}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({ has_actions: true }),
     }).catch(() => undefined);
 
-    // Actions secrets: token pro deploy webhook + přihlášení do registru
-    // (build once, deploy many – CI image pushne, platforma stáhne).
+    // Actions secrets: the deploy-webhook token + registry credentials
+    // (build once, deploy many — CI pushes the image, the platform pulls it).
     await this.setRepoSecret(actor.username, name, 'INITPAD_DEPLOY_TOKEN', config.ci.deployToken);
     await this.setRepoSecret(actor.username, name, 'INITPAD_REGISTRY_USER', config.registry.user);
     await this.setRepoSecret(
@@ -280,16 +287,18 @@ export class GiteaService {
     }).catch(() => undefined);
   }
 
-  // Stáhne poslední stav větve do lokální workspace složky (fetch + hard reset),
-  // aby platforma nasadila reálně pushnutý kód, ne původní scaffold.
+  // Pulls the latest branch state into the local workspace directory
+  // (fetch + hard reset), so the platform deploys the code that was actually
+  // pushed, not the original scaffold.
   async syncFromRemote(dir: string, branch = 'main'): Promise<void> {
     const git = (args: string[]) => exec('git', args, { cwd: dir });
     await git(['fetch', 'origin', branch]);
     await git(['reset', '--hard', `origin/${branch}`]);
   }
 
-  // Gitea generuje target_url s interním hostem (http://gitea:3000), který
-  // prohlížeč nezná. Přepíšeme origin na veřejnou adresu (INITPAD_GITEA_URL).
+  // Gitea generates target_url with its internal host (http://gitea:3000),
+  // which the browser cannot resolve. Rewrite the origin to the public
+  // address (INITPAD_GITEA_URL).
   private browserUrl(target?: string): string | null {
     if (!target) return null;
     const base = config.gitea.url?.replace(/\/$/, '');
@@ -302,7 +311,8 @@ export class GiteaService {
     }
   }
 
-  // Z vygenerované složky udělá lokální git repo s commitem autora (vlastníka).
+  // Turns the generated directory into a local git repository with an
+  // initial commit.
   async initLocal(dir: string, author?: { name: string; email: string }): Promise<void> {
     const name = author?.name || config.git.authorName;
     const email = author?.email || config.git.authorEmail;
@@ -316,7 +326,7 @@ export class GiteaService {
         'commit', '-m', 'init: scaffold from template',
       ]);
     } catch (e) {
-      this.logger.warn(`Lokální git init selhal: ${(e as Error).message}`);
+      this.logger.warn(`Local git init failed: ${(e as Error).message}`);
     }
   }
 
@@ -332,8 +342,9 @@ export class GiteaService {
     const sep = url.indexOf('://');
     const scheme = url.slice(0, sep + 3);
     const host = url.slice(sep + 3);
-    // Push pod admin credentials (admin má zápis do všech rep); vlastník repa je
-    // actor.username, autor commitu se nastavuje zvlášť v initLocal.
+    // Push with admin credentials (the admin has write access to all repos).
+    // The repository owner is actor.username; the commit author identity is
+    // set separately in initLocal.
     return `${scheme}${encodeURIComponent(user)}:${adminToken}@${host}/${actor.username}/${name}.git`;
   }
 }

@@ -2,8 +2,9 @@ import * as React from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Zjednodušené shadcn primitivum: stylovaný nativní <select> (bez Radixu).
-// Pro krátké seznamy (provider prostředí) bohatě stačí a je přístupný zdarma.
+// Simplified shadcn-style primitive: a styled native <select> (no Radix).
+// More than enough for short lists (environment providers) and accessible
+// out of the box.
 const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
   ({ className, children, ...props }, ref) => (
     <span className={cn('relative inline-flex', className)}>

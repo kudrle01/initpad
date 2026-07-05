@@ -1,9 +1,14 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 import { config } from '../config';
 
-// Šifrování citlivých hodnot (Gitea tokeny) v DB pomocí AES-256-GCM.
-// Formát: "enc:v1:<base64(iv|tag|ciphertext)>". Staré plaintext hodnoty
-// (bez prefixu) se vrací beze změny → zpětná kompatibilita bez migrace.
+/**
+ * Encryption of sensitive values stored in the database (Gitea tokens),
+ * using AES-256-GCM.
+ *
+ * Stored format: "enc:v1:<base64(iv | authTag | ciphertext)>". Legacy plaintext
+ * values (no prefix) are returned unchanged, which keeps old rows readable
+ * without a data migration.
+ */
 const PREFIX = 'enc:v1:';
 const key = scryptSync(config.security.encryptionKey, 'initpad-secret-salt', 32);
 
@@ -26,9 +31,10 @@ export function decryptSecret(stored: string): string {
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
   } catch {
-    // Šifrováno jiným klíčem (změnil se INITPAD_ENCRYPTION_KEY). Token je dnes
-    // jen fallback – git operace jedou přes admin token + Sudo, takže vracíme
-    // prázdno místo pádu.
+    // The value was encrypted with a different key (INITPAD_ENCRYPTION_KEY
+    // changed). The per-user token is only a fallback these days — Git
+    // operations run through the service account (admin token + Sudo) — so
+    // returning an empty string is safer than failing the whole request.
     return '';
   }
 }

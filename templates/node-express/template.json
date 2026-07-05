@@ -6,5 +6,6 @@
   "compatibleProviders": ["docker", "ssh"],
   "port": 8080,
   "healthPath": "/health",
+  "startCommand": "node src/index.js",
   "description": "Express REST API with Dockerfile and CI/CD pipeline. Prod: Docker / SSH-VPS."
 }

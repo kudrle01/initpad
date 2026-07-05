@@ -1,6 +1,6 @@
-# Simulované prostředí „firmy" na jednom stroji.
-# Stav: kostra (F2). platform-api/web jedou i bez compose přes `npm run dev`.
-# Služby gitea/postgres/fake-* se zapojují postupně (F2–F3).
+# Simulated "company" environment on a single machine.
+# platform-api/web run outside compose via `npm run dev`; the services below
+# provide Git hosting, CI, persistence and the simulated deployment targets.
 
 name: initpad
 
@@ -21,10 +21,10 @@ services:
     image: gitea/gitea:1.22
     environment:
       GITEA__server__ROOT_URL: http://localhost:3001/
-      # Zapne Gitea Actions (CI). Runner se registruje níže (profil "ci").
+      # Enables Gitea Actions (CI). The runner registers below (profile "ci").
       GITEA__actions__ENABLED: "true"
-      # SSO: přihlášení přes platformu (OIDC) se automaticky spáruje s existujícím
-      # účtem podle e-mailu; pro neznámé e-maily založí účet (username = claim).
+      # SSO: signing in through the platform (OIDC) auto-links to an existing
+      # account by e-mail; unknown e-mails get a new account (username = claim).
       GITEA__oauth2_client__ACCOUNT_LINKING: auto
       GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
       GITEA__oauth2_client__USERNAME: nickname
@@ -32,18 +32,19 @@ services:
       - "3001:3000"
     volumes:
       - gitea-data:/data
-    # Gitea (z kontejneru) volá API platformy na hostu přes host.docker.internal
-    # (SSO discovery/token/userinfo). Na Docker Desktop (Mac/Windows) je k dispozici
-    # nativně – NEPŘIDÁVAT extra_hosts host-gateway, to ho na Macu rozbije.
-    # (Na čistém Linuxu odkomentuj:)
+    # Gitea (inside its container) calls the platform API on the host via
+    # host.docker.internal (SSO discovery/token/userinfo). Docker Desktop
+    # (Mac/Windows) provides it natively — do NOT add the host-gateway
+    # extra_hosts entry there, it breaks the name on macOS.
+    # (On plain Linux, uncomment:)
     # extra_hosts:
     #   - "host.docker.internal:host-gateway"
     networks: [platform]
 
-  # Gitea Actions runner – spouští vygenerovaný .gitea/workflows/ci.yml na push.
-  # Profil "ci": startuje zvlášť po vygenerování registračního tokenu, viz README.
+  # Gitea Actions runner — executes the generated .gitea/workflows/ci.yml on push.
+  # Profile "ci": started separately after generating a registration token:
   #   1) docker compose up -d gitea postgres
-  #   2) infra/register-runner.sh            # vytiskne a uloží token do .env
+  #   2) infra/register-runner.sh            # prints the token
   #   3) docker compose --profile ci up -d act_runner
   act_runner:
     image: gitea/act_runner:0.2.11
@@ -53,32 +54,35 @@ services:
       GITEA_INSTANCE_URL: http://gitea:3000
       GITEA_RUNNER_REGISTRATION_TOKEN: ${INITPAD_RUNNER_TOKEN:-}
       GITEA_RUNNER_NAME: initpad-runner
-      # Labely se zapisují PŘI REGISTRACI a image je bere odsud (ne z config.yaml).
-      # Musí obsahovat "ubuntu-latest", protože workflow má runs-on: ubuntu-latest.
+      # Labels are written AT REGISTRATION TIME and the image reads them from
+      # here (not from config.yaml). Must include "ubuntu-latest" because the
+      # workflows use runs-on: ubuntu-latest.
       GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
       CONFIG_FILE: /config.yaml
     volumes:
       - ./act_runner/config.yaml:/config.yaml:ro
       - runner-data:/data
-      # Sdílený Docker daemon – aby krok "docker build" v CI reálně postavil image.
+      # Shared Docker daemon — so the CI "docker build" step really builds
+      # images on the host.
       - /var/run/docker.sock:/var/run/docker.sock
     networks: [platform]
     restart: unless-stopped
 
-  # --- simulované cíle nasazení (reálné protokoly proti stand-in kontejnerům) ---
+  # --- simulated deployment targets (real protocols against stand-in containers) ---
 
-  # SFTP cíl pro statické/PHP aplikace. Platforma sem přes SFTP nahraje release;
-  # obsah (symlink `current`) servíruje nginx níže. Volume sdílí s nginxem.
+  # SFTP target for static/PHP applications. The platform uploads releases
+  # here over SFTP; the content (per-project symlinks) is served by the nginx
+  # service below. The volume is shared with nginx.
   fake-sftp:
     image: atmoz/sftp
     command: deploy:deploy:::www
     ports:
-      - "2222:22" # SFTP dosažitelné z API na hostu (config.providers.sftp.port)
+      - "2222:22" # SFTP reachable from the API on the host (config.providers.sftp.port)
     volumes:
       - sftp-www:/home/deploy/www
     networks: [net-prod]
 
-  # Servíruje nahraný statický obsah (release přepnutý symlinkem `current`).
+  # Serves the uploaded static content (releases published via symlinks).
   static-web:
     image: nginx:alpine
     depends_on: [fake-sftp]
@@ -89,7 +93,7 @@ services:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     networks: [net-prod]
 
-  # SSH cíl pro runtime aplikace (Node). Vlastní image = openssh-server + Node.
+  # SSH target for runtime applications (Node). Custom image = openssh-server + Node.
   fake-vps:
     build: ./fake-vps
     environment:
@@ -100,10 +104,11 @@ services:
       PASSWORD_ACCESS: "true"
       SUDO_ACCESS: "false"
     ports:
-      - "2200:2222" # SSH dosažitelné z API na hostu (config.providers.ssh.port)
-      # App porty publikované 1:1 → funkční URL a health check z hostu
-      # (config.providers.ssh.appPortBase/appPortSlots).
-      - "8090-8099:8090-8099"
+      - "2200:2222" # SSH reachable from the API on the host (config.providers.ssh.port)
+      # App ports published 1:1 → working URLs and health checks from the
+      # host. Ports are allocated per environment from the database
+      # (config.providers.ssh.appPortBase/appPortSlots must match this range).
+      - "8090-8189:8090-8189"
     networks: [net-prod]
 
 volumes:

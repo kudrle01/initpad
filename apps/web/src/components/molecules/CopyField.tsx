@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 
-// Molekula: příkaz v mono fontu s tlačítkem na zkopírování.
+// Molecule: a monospaced command with a copy-to-clipboard button.
 export function CopyField({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   return (

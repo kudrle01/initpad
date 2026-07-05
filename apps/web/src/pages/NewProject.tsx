@@ -39,7 +39,7 @@ export default function NewProject() {
   useEffect(() => {
     api.listTemplates().then((t) => {
       setTemplates(t);
-      // „Use template" na stránce Templates předvybere šablonu přes ?template=id.
+      // "Use template" on the Templates page preselects a template via ?template=id.
       const wanted = params.get('template');
       const preselected = wanted && t.find((x) => x.id === wanted);
       if (preselected) setTemplateId(preselected.id);

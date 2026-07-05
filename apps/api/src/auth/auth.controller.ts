@@ -15,7 +15,7 @@ const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
-  // Řízená registrace – platforma založí Gitea účet a rovnou přihlásí.
+  // Managed registration — provisions the Gitea account and signs the user in.
   @Post('register')
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.register(dto);
@@ -23,7 +23,7 @@ export class AuthController {
     return user;
   }
 
-  // Přihlášení účtem platformy.
+  // Sign-in with a platform-native account.
   @Post('signin')
   async signin(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.login(dto);

@@ -6,53 +6,74 @@ export interface DeployInput {
   env: string;
   repoPath: string;
   port?: number;
-  // Cesta pro post-deploy health check (ověření, že nasazení v tomto
-  // prostředí reálně odpovídá). Default '/health'.
+  // Path used for the post-deploy health check (verifies the deployment
+  // actually responds in this environment). Defaults to '/health'.
   healthPath?: string;
-  // Odkaz na hotový image v registru (build once, deploy many). Když je zadán,
-  // provider ho stáhne a spustí.
+  // Reference to a pre-built image in the registry (build once, deploy many).
+  // When set, the provider pulls and runs it instead of building.
   imageRef?: string;
-  // Smí provider při nedostupném image spadnout na lokální build z repoPath?
-  // true jen pro bootstrap (první scaffold). U reálných deployů false → přísné
-  // build-once: chybí-li otestovaný image, deploy selže (nespustí se jiný bit).
+  // May the provider fall back to a local build from repoPath when the image
+  // is unavailable? True only for bootstrap (the initial scaffold). Real
+  // deployments keep this false → strict build-once: if the tested image is
+  // missing, the deployment fails rather than running a different artifact.
   allowBuildFallback?: boolean;
+  // Command that starts the app for source-based deployments (from the
+  // template manifest).
+  startCommand?: string;
+  // Subdirectory containing the artifact for static deployments (from the
+  // template manifest).
+  artifactDir?: string;
+  // Application port allocated by the platform for source-based deployments
+  // on a shared host (SSH). Allocated from the database, so it is unique
+  // across all environments.
+  appPort?: number;
 }
 
 export interface DeployResult {
   status: 'running' | 'failed';
   url: string;
-  // Lidsky čitelný důvod selhání (u status 'failed').
+  // Human-readable failure reason (present when status is 'failed').
   reason?: string;
 }
 
-// Co je potřeba ke zrušení nasazení (zastavení kontejneru / procesu).
+// Everything needed to tear a deployment down (stop the container/process).
 export interface TeardownInput {
   projectName: string;
   env: string;
 }
 
-// Spuštění dříve nasazeného prostředí (po Stop). Verze se nemění – jen se znovu
-// rozběhne to, co už bylo nasazené.
+// Restart of a previously deployed environment (after Stop). The version does
+// not change — the provider re-runs what was already deployed.
 export interface StartInput {
   projectName: string;
   env: string;
   port?: number;
   healthPath?: string;
+  // Version that was last deployed (SFTP re-links the release symlink to it).
+  version?: string;
+  // Command that starts the app for source-based deployments (SSH).
+  startCommand?: string;
+  // Application port allocated by the platform (see DeployInput.appPort).
+  appPort?: number;
 }
 
-// Zásuvný adaptér nasazení: platforma deleguje "kam a jak" na konkrétní
-// implementaci (Docker, SFTP, SSH). Nový cíl = nová implementace tohoto rozhraní.
+/**
+ * Pluggable deployment adapter. The platform delegates the "where and how"
+ * of a deployment to a concrete implementation (Docker, SFTP, SSH).
+ * Supporting a new target means implementing this interface.
+ */
 export interface DeploymentProvider {
   readonly kind: ProviderKind;
   deploy(input: DeployInput): Promise<DeployResult>;
-  // Zruší nasazení daného prostředí; volitelné (stuby zatím nic nedělají).
+  // Removes the deployment of the given environment; optional.
   teardown?(input: TeardownInput): Promise<void>;
-  // Vrátí posledních N řádků logu běžícího nasazení; volitelné.
+  // Returns the last ~N lines of the running deployment's log; optional.
   logs?(input: TeardownInput): Promise<string>;
-  // Smaže všechny lokální image daného repa (<registry>/<owner>/<name>:*).
+  // Removes all local images of the given repository (<registry>/<owner>/<name>:*).
   removeImages?(repo: string): Promise<void>;
-  // Pozastaví běžící prostředí (zastaví kontejner/proces), verze zůstává.
+  // Suspends a running environment (stops the container/process); the
+  // deployed version is kept.
   stop?(input: TeardownInput): Promise<void>;
-  // Znovu spustí dříve nasazené (pozastavené) prostředí ve stejné verzi.
+  // Re-starts a previously deployed (stopped) environment at the same version.
   start?(input: StartInput): Promise<DeployResult>;
 }

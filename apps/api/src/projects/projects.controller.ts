@@ -14,6 +14,9 @@ import { EnvName } from '../domain/types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
+// Every operation on a concrete project first verifies ownership
+// (assertOwner) — knowing a UUID must not grant access to someone else's
+// project.
 @Controller('projects')
 @UseGuards(JwtAuthGuard)
 export class ProjectsController {
@@ -25,12 +28,14 @@ export class ProjectsController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
+  async get(@Param('id') id: string, @CurrentUser() userId: string) {
+    await this.projects.assertOwner(id, userId);
     return this.projects.get(id);
   }
 
   @Get(':id/commits')
-  commits(@Param('id') id: string) {
+  async commits(@Param('id') id: string, @CurrentUser() userId: string) {
+    await this.projects.assertOwner(id, userId);
     return this.projects.getCommits(id);
   }
 
@@ -40,32 +45,62 @@ export class ProjectsController {
   }
 
   @Post(':id/promote/:env')
-  promote(@Param('id') id: string, @Param('env') env: EnvName) {
+  async promote(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertOwner(id, userId);
     return this.projects.promote(id, env);
   }
 
   @Post(':id/redeploy/:env')
-  redeploy(@Param('id') id: string, @Param('env') env: EnvName) {
+  async redeploy(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertOwner(id, userId);
     return this.projects.redeploy(id, env);
   }
 
   @Post(':id/stop/:env')
-  stopEnv(@Param('id') id: string, @Param('env') env: EnvName) {
+  async stopEnv(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertOwner(id, userId);
     return this.projects.stopEnv(id, env);
   }
 
   @Post(':id/start/:env')
-  startEnv(@Param('id') id: string, @Param('env') env: EnvName) {
+  async startEnv(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertOwner(id, userId);
     return this.projects.startEnv(id, env);
   }
 
   @Post(':id/teardown/:env')
-  removeEnv(@Param('id') id: string, @Param('env') env: EnvName) {
+  async removeEnv(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertOwner(id, userId);
     return this.projects.removeEnv(id, env);
   }
 
   @Get(':id/logs/:env')
-  async logs(@Param('id') id: string, @Param('env') env: EnvName) {
+  async logs(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertOwner(id, userId);
     return { logs: await this.projects.envLogs(id, env) };
   }
 

@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
-// Molekula: jednotný prázdný/placeholder stav (ikona, titulek, popis, akce).
+// Molecule: unified empty/placeholder state (icon, title, description, action).
 export function EmptyState({
   icon: I,
   title,

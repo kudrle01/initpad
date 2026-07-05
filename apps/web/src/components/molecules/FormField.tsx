@@ -2,7 +2,8 @@ import * as React from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-// Molekula: popisek + input + volitelná chyba. Skládá atomy (Label, Input).
+// Molecule: label + input + optional error message. Composes the Label and
+// Input atoms and wires them together via a derived id.
 interface FormFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
   error?: string | null;
