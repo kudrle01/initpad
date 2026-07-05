@@ -1,0 +1,207 @@
+# InitPad — full containerized stack (one-command install, see install.sh).
+#
+# Local install:   ./install.sh              → http://localhost:8080
+# Server install:  set INITPAD_DOMAIN + INITPAD_GIT_DOMAIN in .env, then
+#                  ./install.sh              → https://<domain> via Caddy
+#
+# The project name must stay "initpad": CI job containers attach to the
+# network "initpad_platform" (see infra/act_runner/config.yaml). Do not run
+# this stack and the infra/ development stack at the same time.
+
+name: initpad
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: initpad
+      POSTGRES_PASSWORD: ${INITPAD_DB_PASSWORD:-initpad}
+      POSTGRES_DB: initpad
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U initpad"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [platform]
+    restart: unless-stopped
+
+  gitea:
+    image: gitea/gitea:1.22
+    environment:
+      # INSTALL_LOCK skips the web install wizard — the instance is configured
+      # entirely from here and from install.sh (no manual clicking).
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__ROOT_URL: ${INITPAD_GITEA_PUBLIC_URL:-http://localhost:3001/}
+      GITEA__actions__ENABLED: "true"
+      # SSO: sign-in through the platform (OIDC) auto-links to an existing
+      # account by e-mail; unknown e-mails get a new account.
+      GITEA__oauth2_client__ACCOUNT_LINKING: auto
+      GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
+      GITEA__oauth2_client__USERNAME: nickname
+      GITEA__webhook__ALLOWED_HOST_LIST: "*"
+    ports:
+      # Must stay published on the host: the host Docker daemon pushes/pulls
+      # registry images through this port (build once, deploy many).
+      - "${INITPAD_GITEA_HTTP_PORT:-3001}:3000"
+    volumes:
+      - gitea-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [platform]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://initpad:${INITPAD_DB_PASSWORD:-initpad}@postgres:5432/initpad
+      # Browser-facing vs server-to-server addresses (split horizon).
+      INITPAD_GITEA_URL: ${INITPAD_GITEA_PUBLIC_URL:-http://localhost:3001}
+      INITPAD_GITEA_INTERNAL_URL: http://gitea:3000
+      INITPAD_GITEA_USER: ${INITPAD_BOT_USER:-initpad-bot}
+      INITPAD_GITEA_TOKEN: ${INITPAD_GITEA_TOKEN:-}
+      INITPAD_FRONTEND_URL: ${INITPAD_PUBLIC_URL:-http://localhost:8080}
+      INITPAD_JWT_SECRET: ${INITPAD_JWT_SECRET:?run install.sh to generate secrets}
+      INITPAD_ENCRYPTION_KEY: ${INITPAD_ENCRYPTION_KEY:?run install.sh to generate secrets}
+      INITPAD_CI_DEPLOY_TOKEN: ${INITPAD_CI_DEPLOY_TOKEN:?run install.sh to generate secrets}
+      # Addresses of deployed apps (browser) and health checks (from inside
+      # this container → host-published ports via host.docker.internal).
+      INITPAD_PUBLIC_HOST: ${INITPAD_PUBLIC_HOST:-localhost}
+      INITPAD_DEPLOY_HEALTH_HOST: host.docker.internal
+      # Registry as seen by the HOST Docker daemon (runner jobs push through
+      # the mounted socket; the API pulls through dockerode → same daemon).
+      INITPAD_REGISTRY_HOST: ${INITPAD_REGISTRY_HOST:-localhost:3001}
+      # CI job containers reach the API by its compose service name.
+      INITPAD_PLATFORM_INTERNAL_URL: http://api:3000
+      # Simulated deployment targets (service names inside the compose net).
+      INITPAD_SSH_HOST: fake-vps
+      INITPAD_SSH_PORT: "2222"
+      INITPAD_SFTP_HOST: fake-sftp
+      INITPAD_SFTP_PORT: "22"
+      INITPAD_SFTP_PUBLIC_URL: http://${INITPAD_PUBLIC_HOST:-localhost}:8085
+      INITPAD_SFTP_INTERNAL_URL: http://static-web
+      # SSO: Gitea (server) calls the API by service name; the browser goes
+      # through the web origin (nginx proxies /api → api:3000).
+      INITPAD_OIDC_ISSUER: http://api:3000/api
+      INITPAD_OIDC_PUBLIC_URL: ${INITPAD_PUBLIC_URL:-http://localhost:8080}/api
+      INITPAD_OIDC_CLIENT_SECRET: ${INITPAD_OIDC_CLIENT_SECRET:?run install.sh to generate secrets}
+      INITPAD_OIDC_KEY_FILE: /data/oidc-key.pem
+      INITPAD_TEMPLATES_DIR: /templates
+      INITPAD_WORKSPACE_DIR: /data/workspace
+    volumes:
+      # The API drives deployments through the host Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../templates:/templates:ro
+      - api-data:/data
+    extra_hosts:
+      # Works on Docker Desktop out of the box; this line makes it work on
+      # plain Linux too (health checks of host-published app ports).
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres: { condition: service_healthy }
+      gitea: { condition: service_healthy }
+    networks: [platform, net-prod]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "${INITPAD_WEB_PORT:-8080}:80"
+    depends_on: [api]
+    networks: [platform]
+    restart: unless-stopped
+
+  # Gitea Actions runner — registered automatically by install.sh.
+  act_runner:
+    image: gitea/act_runner:0.2.11
+    profiles: ["runner"]
+    environment:
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${INITPAD_RUNNER_TOKEN:-}
+      GITEA_RUNNER_NAME: initpad-runner
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
+      CONFIG_FILE: /config.yaml
+    volumes:
+      - ../infra/act_runner/config.yaml:/config.yaml:ro
+      - runner-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gitea: { condition: service_healthy }
+    networks: [platform]
+    restart: unless-stopped
+
+  # --- simulated deployment targets (real protocols, stand-in containers) ---
+
+  fake-sftp:
+    image: atmoz/sftp
+    command: deploy:${INITPAD_SFTP_PASSWORD:-deploy}:::www
+    volumes:
+      - sftp-www:/home/deploy/www
+    networks: [net-prod]
+    restart: unless-stopped
+
+  static-web:
+    image: nginx:alpine
+    depends_on: [fake-sftp]
+    ports:
+      - "8085:80"
+    volumes:
+      - sftp-www:/usr/share/nginx/html:ro
+      - ../infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [net-prod]
+    restart: unless-stopped
+
+  fake-vps:
+    build: ../infra/fake-vps
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      USER_NAME: deploy
+      USER_PASSWORD: ${INITPAD_SSH_PASSWORD:-deploy}
+      PASSWORD_ACCESS: "true"
+      SUDO_ACCESS: "false"
+    ports:
+      # App ports published 1:1 — must match INITPAD_SSH_APP_PORT_* config.
+      - "8090-8189:8090-8189"
+    networks: [net-prod]
+    restart: unless-stopped
+
+  # --- reverse proxy with automatic HTTPS (server installs only) -----------
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["server"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      INITPAD_DOMAIN: ${INITPAD_DOMAIN:-}
+      INITPAD_GIT_DOMAIN: ${INITPAD_GIT_DOMAIN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [web, gitea]
+    networks: [platform]
+    restart: unless-stopped
+
+volumes:
+  pgdata: {}
+  gitea-data: {}
+  runner-data: {}
+  sftp-www: {}
+  api-data: {}
+  caddy-data: {}
+
+networks:
+  platform: {}
+  net-dev: {}
+  net-test: {}
+  net-prod: {}

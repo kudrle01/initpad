@@ -1,0 +1,10 @@
+# Reverse proxy for server installs (profile "server"). Caddy obtains and
+# renews TLS certificates automatically for both domains.
+
+{$INITPAD_DOMAIN} {
+	reverse_proxy web:80
+}
+
+{$INITPAD_GIT_DOMAIN} {
+	reverse_proxy gitea:3000
+}

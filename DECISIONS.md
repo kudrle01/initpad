@@ -422,3 +422,29 @@ o zálohy se stará jen Gitea volume + Postgres.
 **Kompromisy.** Každý source-based deploy = jeden HTTP download archivu
 (na localhostu zanedbatelné). Při nedostupné Gitee source-based deploy
 selže s důvodem — což je korektní: bez zdroje pravdy se nemá co nasazovat.
+
+---
+
+## ADR-015 — Instalace jedním příkazem (plně kontejnerizovaný stack + bootstrap)
+
+**Kontext.** Platforma má být snadno nasaditelná kýmkoli — lokálně i na
+server pro výuku. Původní runbook měl šest ručních kroků (průvodce Gitey,
+tokeny, registrace runneru, OIDC source, migrace, dva `npm run dev`).
+
+**Rozhodnutí.** `deploy/` obsahuje produkční compose (api a web mají vlastní
+Dockerfile — uživatel nepotřebuje Node) a idempotentní `install.sh`:
+vygeneruje secrety, nastartuje jádro, přes Gitea CLI založí servisní účet,
+vydá admin token, zaregistruje OIDC SSO i CI runner, a spustí zbytek stacku.
+`INSTALL_LOCK=true` přeskočí webového průvodce Gitey. Server režim = tentýž
+compose + profil `server` (Caddy, automatické HTTPS pro dvě domény);
+rozdíl proti lokálu je jen v `.env`. Schéma DB se synchronizuje při startu
+API (`prisma db push` v entrypointu).
+
+**Proč.** „Instalace = jeden příkaz" je přesně vlastnost, kterou IDP hlásá
+pro projekty — platforma ji má splňovat sama (dogfooding). Bootstrap přes
+`compose exec` + Gitea CLI nevyžaduje žádné ruční klikání a je opakovatelný.
+
+**Kompromisy.** `install.sh` je bash (Windows → WSL/Git Bash). Dev stack
+(`infra/`, `npm run dev`) zůstává oddělený — sdílí jméno compose projektu,
+takže se nesmí běžet oba najednou. Registry porty zůstávají publikované na
+hostu (push/pull dělá hostitelský daemon).
