@@ -1,11 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   createHash,
+  createPrivateKey,
+  createPublicKey,
   createSign,
   generateKeyPairSync,
   randomBytes,
   type KeyObject,
 } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { dirname } from 'path';
 import { config } from '../config';
 
 interface AuthCode {
@@ -19,11 +23,14 @@ interface AuthCode {
 /**
  * The platform's OIDC provider: holds the signing key pair, issues
  * authorization codes and access tokens, and signs id_tokens (RS256).
- * State is kept in memory — acceptable for the prototype, but codes and
- * tokens do not survive a restart.
+ *
+ * The signing key is persisted to INITPAD_OIDC_KEY_FILE when configured, so
+ * SSO sessions survive API restarts. Codes and access tokens are in-memory
+ * (short-lived by design).
  */
 @Injectable()
 export class OidcService {
+  private readonly logger = new Logger('OidcService');
   private readonly privateKey: KeyObject;
   private readonly publicJwk: { kty: string; n: string; e: string };
   readonly kid: string;
@@ -32,14 +39,36 @@ export class OidcService {
   private readonly accessTokens = new Map<string, { userId: string; expiresAt: number }>();
 
   constructor() {
-    const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-    this.privateKey = privateKey;
-    this.publicJwk = publicKey.export({ format: 'jwk' }) as {
+    this.privateKey = this.loadOrCreateKey();
+    this.publicJwk = createPublicKey(this.privateKey).export({ format: 'jwk' }) as {
       kty: string;
       n: string;
       e: string;
     };
     this.kid = createHash('sha256').update(this.publicJwk.n).digest('base64url').slice(0, 16);
+  }
+
+  // Loads the RSA signing key from the configured file, generating (and
+  // persisting) one on first start. Without a configured file the key is
+  // in-memory only (dev mode; a restart invalidates issued id_tokens).
+  private loadOrCreateKey(): KeyObject {
+    const file = config.oidc.keyFile;
+    if (file && existsSync(file)) {
+      return createPrivateKey(readFileSync(file));
+    }
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    if (file) {
+      try {
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, privateKey.export({ type: 'pkcs8', format: 'pem' }), {
+          mode: 0o600,
+        });
+        this.logger.log(`OIDC signing key generated and stored at ${file}`);
+      } catch (e) {
+        this.logger.warn(`Could not persist OIDC key to ${file}: ${(e as Error).message}`);
+      }
+    }
+    return privateKey;
   }
 
   // --- discovery + JWKS ---

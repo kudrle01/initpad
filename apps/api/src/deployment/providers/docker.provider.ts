@@ -71,8 +71,10 @@ export class DockerProvider implements DeploymentProvider {
 
     // Post-deploy verification: the same artifact may come up in one
     // environment and fail in another (config, network, dependencies), so the
-    // health check runs HERE, against this concrete deployment.
-    const url = `http://localhost:${hostPort}`;
+    // health check runs HERE, against this concrete deployment. The user
+    // gets a URL on the public host; the health check may use a different
+    // host (deployHealthHost) when the API itself runs in a container.
+    const url = `http://${config.publicHost}:${hostPort}`;
     const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
     if (!healthy) {
       this.logger.warn(`${containerName} failed its health check`);
@@ -88,7 +90,7 @@ export class DockerProvider implements DeploymentProvider {
 
   // Polls the health endpoint until it returns 2xx or the deadline passes.
   private async waitHealthy(hostPort: string, path: string): Promise<boolean> {
-    const target = `http://localhost:${hostPort}${path.startsWith('/') ? '' : '/'}${path}`;
+    const target = `http://${config.deployHealthHost}:${hostPort}${path.startsWith('/') ? '' : '/'}${path}`;
     const attempts = 20; // ~10 s (20 × 500 ms)
     for (let i = 0; i < attempts; i++) {
       try {
@@ -153,7 +155,7 @@ export class DockerProvider implements DeploymentProvider {
     }
     const mapping = info.NetworkSettings.Ports?.[`${port}/tcp`];
     const hostPort = mapping && mapping[0] ? mapping[0].HostPort : String(port);
-    const url = `http://localhost:${hostPort}`;
+    const url = `http://${config.publicHost}:${hostPort}`;
     const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
     if (!healthy) {
       return { status: 'failed', url, reason: 'Health check did not pass after start.' };

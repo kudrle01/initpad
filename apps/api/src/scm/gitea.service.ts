@@ -40,13 +40,15 @@ export class GiteaService {
     dir: string,
     actor: GiteaActor,
   ): Promise<{ repoUrl: string }> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     if (!url || !adminToken) {
       throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
     await this.createRepo(name, actor);
     await this.pushScaffold(name, dir, actor);
-    const repoUrl = `${url}/${actor.username}/${name}`;
+    // The stored repo URL is browser-facing (users click it in the UI).
+    const repoUrl = `${config.gitea.url}/${actor.username}/${name}`;
     this.logger.log(`Repository created and pushed: ${repoUrl}`);
     return { repoUrl };
   }
@@ -58,7 +60,8 @@ export class GiteaService {
     email: string;
     password: string;
   }): Promise<{ id: number; login: string }> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     if (!url || !adminToken) {
       throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
@@ -85,7 +88,7 @@ export class GiteaService {
   // Creates the user's personal access token (Basic auth with their
   // password). The platform stores it and can act on the user's behalf.
   async createUserToken(username: string, password: string): Promise<string> {
-    const { url } = config.gitea;
+    const url = config.gitea.internalUrl;
     const basic = Buffer.from(`${username}:${password}`).toString('base64');
     const res = await fetch(`${url}/api/v1/users/${username}/tokens`, {
       method: 'POST',
@@ -117,7 +120,8 @@ export class GiteaService {
   // platform (SSO/OIDC), so the Gitea password is otherwise unused and
   // resetting it breaks nothing.
   async issueCloneToken(username: string): Promise<string> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     if (!url || !adminToken) {
       throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
@@ -147,7 +151,8 @@ export class GiteaService {
   // Deletes all versions of the project's container package (images in the
   // Gitea registry), so no orphaned artifacts remain after project removal.
   async deletePackages(owner: string, name: string): Promise<void> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     if (!url || !adminToken) return;
     const pkgName = name.toLowerCase();
     try {
@@ -171,7 +176,8 @@ export class GiteaService {
 
   // Deletes the repository in Gitea (best-effort; admin can access any repo).
   async deleteRepo(name: string, actor: GiteaActor): Promise<void> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     if (!url || !adminToken) return;
     await fetch(`${url}/api/v1/repos/${actor.username}/${name}`, {
       method: 'DELETE',
@@ -185,7 +191,8 @@ export class GiteaService {
     actor: GiteaActor,
     limit = 20,
   ): Promise<{ sha: string; message: string; author: string; date: string }[] | null> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     // Reads use the admin token — the admin sees all repositories, so the
     // state of the per-user token (e.g. overwritten by an OAuth login) does
     // not matter. The path is still namespaced by the repository owner.
@@ -226,7 +233,8 @@ export class GiteaService {
     sha: string,
     actor: GiteaActor,
   ): Promise<{ context: string; status: string; targetUrl: string | null }[] | null> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     const readToken = adminToken || actor.token;
     if (!url || !readToken) return null;
     try {
@@ -251,7 +259,8 @@ export class GiteaService {
   }
 
   private async createRepo(name: string, actor: GiteaActor): Promise<void> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     // The repository is created ON BEHALF of the user via the admin token +
     // Sudo header — the repo belongs to the user, without relying on their
     // (fragile) personal token.
@@ -276,8 +285,12 @@ export class GiteaService {
     }).catch(() => undefined);
 
     // Actions secrets: the deploy-webhook token + registry credentials
-    // (build once, deploy many — CI pushes the image, the platform pulls it).
+    // (build once, deploy many — CI pushes the image, the platform pulls it)
+    // + addresses of the registry and the platform as seen from CI jobs, so
+    // the generated workflow contains no hard-coded hosts.
     await this.setRepoSecret(actor.username, name, 'INITPAD_DEPLOY_TOKEN', config.ci.deployToken);
+    await this.setRepoSecret(actor.username, name, 'INITPAD_REGISTRY', config.registry.host);
+    await this.setRepoSecret(actor.username, name, 'INITPAD_PLATFORM_URL', config.ci.platformUrl);
     await this.setRepoSecret(actor.username, name, 'INITPAD_REGISTRY_USER', config.registry.user);
     await this.setRepoSecret(
       actor.username,
@@ -293,7 +306,8 @@ export class GiteaService {
     key: string,
     value: string,
   ): Promise<void> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     await fetch(`${url}/api/v1/repos/${owner}/${repo}/actions/secrets/${key}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
@@ -311,7 +325,8 @@ export class GiteaService {
     ref: string,
     actor: GiteaActor,
   ): Promise<RepoArchive | null> {
-    const { url, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
     const token = adminToken || actor.token;
     if (!url || !token || !ref) return null;
 
@@ -395,7 +410,8 @@ export class GiteaService {
   }
 
   private authedRemote(name: string, actor: GiteaActor): string {
-    const { url, user, adminToken } = config.gitea;
+    const url = config.gitea.internalUrl;
+    const { user, adminToken } = config.gitea;
     const sep = url.indexOf('://');
     const scheme = url.slice(0, sep + 3);
     const host = url.slice(sep + 3);

@@ -86,7 +86,7 @@ export class SftpProvider implements DeploymentProvider {
       await this.swapLink(sftp, slug, `${slug}-releases/${version}`);
 
       const url = this.publicUrl(slug);
-      const reachable = await this.waitReachable(url);
+      const reachable = await this.waitReachable(this.internalUrl(slug));
       if (!reachable) {
         this.logger.warn(`SFTP upload succeeded but ${url} is not responding (is nginx up?).`);
         return {
@@ -171,7 +171,7 @@ export class SftpProvider implements DeploymentProvider {
       }
       await this.swapLink(sftp, slug, `${slug}-releases/${version}`);
       const url = this.publicUrl(slug);
-      const reachable = await this.waitReachable(url);
+      const reachable = await this.waitReachable(this.internalUrl(slug));
       return reachable
         ? { status: 'running', url }
         : { status: 'failed', url, reason: `${url} is not serving — is nginx running?` };
@@ -193,8 +193,15 @@ export class SftpProvider implements DeploymentProvider {
     return this.sanitize(`${input.projectName}-${input.env}`).toLowerCase();
   }
 
+  // URL shown to the user (browser-facing).
   private publicUrl(slug: string): string {
     return `${this.cfg.publicUrl.replace(/\/+$/, '')}/${slug}/`;
+  }
+
+  // URL the API uses to verify the site is served (may differ from the
+  // public one when the API runs in a container).
+  private internalUrl(slug: string): string {
+    return `${this.cfg.internalUrl.replace(/\/+$/, '')}/${slug}/`;
   }
 
   private async waitReachable(url: string): Promise<boolean> {

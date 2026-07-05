@@ -44,7 +44,7 @@ export class SshProvider implements DeploymentProvider {
     const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
     const version = this.sanitize(input.version) || 'latest';
     const release = `${base}/releases/${version}`;
-    const url = `http://localhost:${appPort}`;
+    const url = `http://${config.publicHost}:${appPort}`;
 
     let conn: Client;
     try {
@@ -170,7 +170,7 @@ export class SshProvider implements DeploymentProvider {
   async start(input: StartInput): Promise<DeployResult> {
     const appPort = this.resolvePort(input);
     const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
-    const url = `http://localhost:${appPort}`;
+    const url = `http://${config.publicHost}:${appPort}`;
 
     let conn: Client;
     try {
@@ -244,7 +244,7 @@ export class SshProvider implements DeploymentProvider {
   }
 
   private async waitHealthy(port: number, path: string): Promise<boolean> {
-    const target = `http://localhost:${port}${path.startsWith('/') ? '' : '/'}${path}`;
+    const target = `http://${config.deployHealthHost}:${port}${path.startsWith('/') ? '' : '/'}${path}`;
     for (let i = 0; i < 30; i++) {
       try {
         const res = await fetch(target);

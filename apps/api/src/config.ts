@@ -1,12 +1,30 @@
 import { resolve } from 'path';
 
+// Host name the platform (and the apps it deploys) is reachable on from a
+// browser. 'localhost' for local installs; the server hostname/domain when
+// deployed. Deployed-app URLs are composed from it.
+const publicHost = process.env.INITPAD_PUBLIC_HOST || 'localhost';
+
+// Host the API itself uses to reach ports published on the Docker host
+// (deployed-app health checks). Differs from publicHost when the API runs in
+// a container: the compose setup sets it to 'host.docker.internal'.
+const deployHealthHost = process.env.INITPAD_DEPLOY_HEALTH_HOST || publicHost;
+
 export const config = {
+  publicHost,
+  deployHealthHost,
   templatesDir:
     process.env.INITPAD_TEMPLATES_DIR || resolve(process.cwd(), '../../templates'),
   workspaceDir:
     process.env.INITPAD_WORKSPACE_DIR || resolve(process.cwd(), '../../.workspace'),
   gitea: {
+    // Browser-facing URL (repository links shown to users, OAuth redirects).
     url: process.env.INITPAD_GITEA_URL || '',
+    // Server-to-server URL the API uses for Gitea REST calls and git pushes.
+    // Same as `url` in local development; the compose setup points it at the
+    // internal service name (http://gitea:3000).
+    internalUrl:
+      process.env.INITPAD_GITEA_INTERNAL_URL || process.env.INITPAD_GITEA_URL || '',
     user: process.env.INITPAD_GITEA_USER || '',
     token: process.env.INITPAD_GITEA_TOKEN || '',
     // Gitea admin token — the platform uses it to provision user accounts
@@ -37,6 +55,12 @@ export const config = {
   // platform webhook. The platform sets it as the repo's Actions secret.
   ci: {
     deployToken: process.env.INITPAD_CI_DEPLOY_TOKEN || 'ci-deploy-secret-change-me',
+    // Platform API base URL as reachable FROM CI job containers. Written to
+    // each repo as an Actions secret; the generated workflow posts the deploy
+    // webhook to it. host.docker.internal works for the npm-run-dev setup;
+    // the compose setup overrides it with the internal service name.
+    platformUrl:
+      process.env.INITPAD_PLATFORM_INTERNAL_URL || 'http://host.docker.internal:3000',
   },
   // Gitea container registry (OCI). The host must be reachable from the
   // host machine's Docker daemon (it performs both push and pull).
@@ -77,7 +101,13 @@ export const config = {
       // Subdirectory with the static build, when the template produces one (otherwise the whole repo).
       artifactSubdir: process.env.INITPAD_SFTP_ARTIFACT_DIR || '',
       // Public address where nginx serves the published releases.
-      publicUrl: process.env.INITPAD_SFTP_PUBLIC_URL || 'http://localhost:8085',
+      publicUrl: process.env.INITPAD_SFTP_PUBLIC_URL || `http://${publicHost}:8085`,
+      // Address the API uses to verify the site is being served (reachable
+      // from wherever the API runs; compose points it at http://static-web).
+      internalUrl:
+        process.env.INITPAD_SFTP_INTERNAL_URL ||
+        process.env.INITPAD_SFTP_PUBLIC_URL ||
+        `http://${deployHealthHost}:8085`,
     },
   },
   // The platform as an OIDC provider (SSO into Gitea); Gitea registers as a
@@ -89,6 +119,10 @@ export const config = {
     publicUrl: process.env.INITPAD_OIDC_PUBLIC_URL || 'http://localhost:3000/api',
     clientId: process.env.INITPAD_OIDC_CLIENT_ID || 'gitea',
     clientSecret: process.env.INITPAD_OIDC_CLIENT_SECRET || 'gitea-oidc-secret-change-me',
+    // Path to the RSA signing key (PEM). When set, the key is loaded from —
+    // or generated into — this file, so SSO sessions survive API restarts.
+    // When empty, an in-memory key is generated (dev mode).
+    keyFile: process.env.INITPAD_OIDC_KEY_FILE || '',
   },
 };
 

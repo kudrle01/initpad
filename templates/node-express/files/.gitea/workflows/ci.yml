@@ -33,14 +33,14 @@ jobs:
       - uses: actions/checkout@v4
       # Build once, deploy many: the image is built ONCE and pushed to the
       # Gitea registry tagged with the commit hash. The platform then only
-      # pulls and runs it (dev/test/prod = the same image). Registry =
-      # localhost:3001 (reachable from the host's Docker daemon); credentials
-      # come from the bot's Actions secrets.
+      # pulls and runs it (dev/test/prod = the same image). The registry host
+      # comes from an Actions secret set by the platform at repo creation, so
+      # the workflow contains no hard-coded addresses.
       - name: build & push image
         run: |
-          IMAGE=$(echo "localhost:3001/${{ github.repository }}:${{ github.sha }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE=$(echo "${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}" | tr '[:upper:]' '[:lower:]')
           echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \
-            docker login localhost:3001 -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin
+            docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
 
@@ -48,12 +48,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: docker
     steps:
-      # After a successful build, tell the platform to sync this commit and
-      # deploy dev. host.docker.internal = the platform API on the host;
-      # token = the Actions secret set by the platform at repo creation.
+      # After a successful build, tell the platform to deploy this commit to
+      # dev. The platform URL and the token come from Actions secrets set by
+      # the platform at repo creation.
       - name: notify platform
         run: |
-          curl -fsS -X POST http://host.docker.internal:3000/api/ci/deploy \
+          curl -fsS -X POST "${{ secrets.INITPAD_PLATFORM_URL }}/api/ci/deploy" \
             -H "Authorization: Bearer ${{ secrets.INITPAD_DEPLOY_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}'

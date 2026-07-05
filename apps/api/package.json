@@ -18,10 +18,11 @@
     "@nestjs/platform-express": "^10.4.0",
     "@prisma/client": "^5.19.0",
     "class-transformer": "^0.5.1",
-    "cookie-parser": "^1.4.6",
     "class-validator": "^0.14.1",
+    "cookie-parser": "^1.4.6",
     "dockerode": "^4.0.2",
     "handlebars": "^4.7.8",
+    "prisma": "^5.19.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "ssh2": "^1.15.0",
@@ -34,7 +35,6 @@
     "@types/node": "^22.5.0",
     "@types/ssh2": "^1.15.0",
     "@types/tar-fs": "^2.0.4",
-    "prisma": "^5.19.0",
     "typescript": "^5.5.4"
   }
 }

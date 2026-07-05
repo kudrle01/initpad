@@ -153,7 +153,7 @@ export class AuthService {
 
   private async exchangeCode(code: string): Promise<string> {
     const { clientId, clientSecret, callbackUrl } = config.auth;
-    const res = await fetch(`${config.gitea.url}/login/oauth/access_token`, {
+    const res = await fetch(`${config.gitea.internalUrl}/login/oauth/access_token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
@@ -171,7 +171,7 @@ export class AuthService {
   }
 
   private async fetchGiteaUser(token: string): Promise<GiteaUser> {
-    const res = await fetch(`${config.gitea.url}/api/v1/user`, {
+    const res = await fetch(`${config.gitea.internalUrl}/api/v1/user`, {
       headers: { Authorization: `token ${token}` },
     });
     if (!res.ok) throw new UnauthorizedException('Failed to load user from Gitea');
