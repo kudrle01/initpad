@@ -18,7 +18,6 @@ import {
   uploadTar,
   type ExecResult,
 } from './ssh-utils';
-import { exportVersion } from './source-export';
 
 // Fallback for templates that predate the startCommand manifest field.
 const DEFAULT_START = 'node src/index.js';
@@ -56,11 +55,6 @@ export class SshProvider implements DeploymentProvider {
       return { status: 'failed', url: '', reason };
     }
 
-    // Deploy exactly the version being promoted — not the working tree,
-    // which is synced to the latest main and may be newer.
-    const exported = await exportVersion(input.repoPath, input.version);
-    const sourceDir = exported?.dir ?? input.repoPath;
-
     try {
       // Without a Node runtime on the host there is nothing to run.
       const node = await sshExec(conn, `${this.PATH} command -v node`);
@@ -74,9 +68,11 @@ export class SshProvider implements DeploymentProvider {
 
       await this.execOrFail(conn, `mkdir -p ${release}`, 'prepare release dir');
 
-      // Upload the source as a tarball and extract it (node_modules/.git excluded).
+      // Upload the source as a tarball and extract it (node_modules/.git
+      // excluded). input.repoPath contains the exact version being deployed
+      // — the platform downloads it from Gitea before calling the provider.
       const sftp = await getSftp(conn);
-      await uploadTar(sftp, sourceDir, `${base}/app.tar`);
+      await uploadTar(sftp, input.repoPath, `${base}/app.tar`);
       await this.execOrFail(
         conn,
         `tar xf ${base}/app.tar -C ${release} && rm -f ${base}/app.tar`,
@@ -126,7 +122,6 @@ export class SshProvider implements DeploymentProvider {
     } catch (e) {
       return { status: 'failed', url: '', reason: (e as Error).message };
     } finally {
-      exported?.cleanup();
       sshEnd(conn);
     }
   }

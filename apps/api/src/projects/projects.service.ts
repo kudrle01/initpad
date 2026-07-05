@@ -22,7 +22,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
 import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
-import { GiteaService, GiteaActor } from '../scm/gitea.service';
+import { GiteaService, GiteaActor, RepoArchive } from '../scm/gitea.service';
+import { exportVersion } from '../deployment/providers/source-export';
 import { config } from '../config';
 import { decryptSecret } from '../common/secret';
 
@@ -108,6 +109,11 @@ export class ProjectsService {
       );
     }
 
+    // The scaffold has been pushed — Gitea is now the source of truth and the
+    // local working copy is no longer needed (deployments download the exact
+    // commit from Gitea). Keeping the platform stateless w.r.t. code.
+    rmSync(repoPath, { recursive: true, force: true });
+
     const created = await this.prisma.project.create({
       data: {
         name: dto.name,
@@ -176,12 +182,8 @@ export class ProjectsService {
       return;
     }
 
-    try {
-      await this.gitea.syncFromRemote(project.repoPath);
-    } catch (e) {
-      this.logger.error(`CI deploy: sync failed: ${(e as Error).message}`);
-    }
     // Version = the full commit hash (unambiguous, matches the CI image tag).
+    // No local sync needed — sources are fetched from Gitea on demand.
     const version = sha || '0.1.0';
     await this.prisma.project.update({
       where: { id: project.id },
@@ -505,30 +507,49 @@ export class ProjectsService {
     // from the database before handing the deployment to the provider.
     const appPort =
       env.provider === 'ssh' ? await this.allocateSshPort(projectId, envName) : undefined;
-    const result = await this.deployment.deploy(env.provider as ProviderKind, {
-      projectName: this.deploySlug(project.repoUrl, project.name),
-      version,
-      env: envName,
-      repoPath: project.repoPath,
-      port: template.port,
-      healthPath: template.healthPath ?? '/health',
-      startCommand: template.startCommand,
-      artifactDir: template.artifactDir,
-      appPort,
-      imageRef: useRegistry
-        ? this.imageRef(project.repoUrl, project.name, version)
-        : undefined,
-      allowBuildFallback: !useRegistry,
-    });
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId, name: envName } },
-      data: {
-        status: result.status,
+
+    // Source-based providers (and Docker's bootstrap build) need the source
+    // tree of the EXACT version. Gitea is the source of truth, so the tree is
+    // downloaded on demand into a temp directory; a local `git archive` from
+    // the (legacy) working copy is the fallback. The platform keeps no
+    // persistent checkouts.
+    const needsSource = env.provider !== 'docker' || !useRegistry;
+    let source: RepoArchive | null = null;
+    if (needsSource) {
+      const actor = await this.actorForProject(projectId);
+      source =
+        (await this.gitea.downloadArchive(project.name, version, actor)) ??
+        (await exportVersion(project.repoPath, version));
+    }
+
+    try {
+      const result = await this.deployment.deploy(env.provider as ProviderKind, {
+        projectName: this.deploySlug(project.repoUrl, project.name),
         version,
-        url: result.url,
-        statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
-      },
-    });
+        env: envName,
+        repoPath: source?.dir ?? project.repoPath,
+        port: template.port,
+        healthPath: template.healthPath ?? '/health',
+        startCommand: template.startCommand,
+        artifactDir: template.artifactDir,
+        appPort,
+        imageRef: useRegistry
+          ? this.imageRef(project.repoUrl, project.name, version)
+          : undefined,
+        allowBuildFallback: !useRegistry,
+      });
+      await this.prisma.environment.update({
+        where: { projectId_name: { projectId, name: envName } },
+        data: {
+          status: result.status,
+          version,
+          url: result.url,
+          statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
+        },
+      });
+    } finally {
+      source?.cleanup();
+    }
   }
 
   // dev/test run on Docker; prod is chosen by the template's artifact kind.

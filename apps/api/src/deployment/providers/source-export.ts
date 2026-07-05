@@ -14,16 +14,17 @@ export interface ExportedSource {
 }
 
 /**
- * Exports the EXACT commit (via `git archive`) into a temporary directory.
+ * Exports the EXACT commit (via `git archive`) from a local repository into
+ * a temporary directory.
  *
- * Source-based providers (SSH/SFTP) deploy from this export instead of the
- * working tree: the working tree is synced to the latest `main`, so it can be
- * newer than the version being promoted — deploying it would silently ship
- * different code than the user approved. This mirrors the "build once,
+ * The platform primarily downloads sources from Gitea (the source of truth,
+ * see GiteaService.downloadArchive); this local export is the fallback for
+ * legacy projects that still have a working copy on disk. Deploying an exact
+ * commit — never a possibly-newer working tree — mirrors the "build once,
  * deploy many" guarantee of the Docker/registry path at the source level.
  *
  * Returns null when the version is not a commit of the repository (e.g. the
- * bootstrap version) — the caller then falls back to the working tree.
+ * bootstrap version) or the repository does not exist locally.
  */
 export async function exportVersion(
   repoPath: string,

@@ -2,9 +2,23 @@ import { Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomBytes } from 'crypto';
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
+import { createGunzip } from 'zlib';
+import * as tar from 'tar-fs';
 import { config } from '../config';
 
 const exec = promisify(execFile);
+
+// A commit's source tree downloaded into a temporary directory. The caller
+// must invoke cleanup() once the contents are no longer needed.
+export interface RepoArchive {
+  dir: string;
+  cleanup: () => void;
+}
 
 // Identity used for repository operations (the project owner).
 export interface GiteaActor {
@@ -287,13 +301,56 @@ export class GiteaService {
     }).catch(() => undefined);
   }
 
-  // Pulls the latest branch state into the local workspace directory
-  // (fetch + hard reset), so the platform deploys the code that was actually
-  // pushed, not the original scaffold.
-  async syncFromRemote(dir: string, branch = 'main'): Promise<void> {
-    const git = (args: string[]) => exec('git', args, { cwd: dir });
-    await git(['fetch', 'origin', branch]);
-    await git(['reset', '--hard', `origin/${branch}`]);
+  // Downloads the source tree of an exact commit into a temporary directory.
+  // Gitea is the source of truth for code — deployments fetch from it on
+  // demand, so the platform keeps no persistent working copies (stateless
+  // with respect to repository content). Returns null on any failure; the
+  // caller decides on a fallback.
+  async downloadArchive(
+    name: string,
+    ref: string,
+    actor: GiteaActor,
+  ): Promise<RepoArchive | null> {
+    const { url, adminToken } = config.gitea;
+    const token = adminToken || actor.token;
+    if (!url || !token || !ref) return null;
+
+    let res: Response;
+    try {
+      res = await fetch(
+        `${url}/api/v1/repos/${actor.username}/${name}/archive/${encodeURIComponent(ref)}.tar.gz`,
+        { headers: { Authorization: `token ${token}` } },
+      );
+    } catch (e) {
+      this.logger.warn(`downloadArchive ${actor.username}/${name}@${ref}: ${(e as Error).message}`);
+      return null;
+    }
+    if (!res.ok || !res.body) {
+      this.logger.warn(`downloadArchive ${actor.username}/${name}@${ref} → HTTP ${res.status}`);
+      return null;
+    }
+
+    const base = mkdtempSync(join(tmpdir(), 'initpad-archive-'));
+    const cleanup = () => rmSync(base, { recursive: true, force: true });
+    try {
+      const extractDir = join(base, 'src');
+      await pipeline(
+        Readable.fromWeb(res.body as import('stream/web').ReadableStream),
+        createGunzip(),
+        tar.extract(extractDir),
+      );
+      // Gitea wraps the archive in a top-level "<repo>/" directory — unwrap it.
+      const entries = readdirSync(extractDir);
+      const dir =
+        entries.length === 1 && statSync(join(extractDir, entries[0])).isDirectory()
+          ? join(extractDir, entries[0])
+          : extractDir;
+      return { dir, cleanup };
+    } catch (e) {
+      cleanup();
+      this.logger.warn(`downloadArchive extract failed: ${(e as Error).message}`);
+      return null;
+    }
   }
 
   // Gitea generates target_url with its internal host (http://gitea:3000),

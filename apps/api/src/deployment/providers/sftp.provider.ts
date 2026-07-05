@@ -22,7 +22,6 @@ import {
   sshEnd,
   uploadDir,
 } from './ssh-utils';
-import { exportVersion } from './source-export';
 
 /**
  * Deploys a static / PHP application over SFTP — a real upload to the
@@ -51,15 +50,13 @@ export class SftpProvider implements DeploymentProvider {
     const releasesDir = `${this.cfg.remoteRoot}/${slug}-releases`;
     const release = `${releasesDir}/${version}`;
 
-    // Deploy exactly the version being promoted — not the working tree.
-    const exported = await exportVersion(input.repoPath, input.version);
-    const sourceRoot = exported?.dir ?? input.repoPath;
-    // Source: the template's artifact subdirectory, or the repository root.
+    // input.repoPath contains the exact version being deployed — the platform
+    // downloads it from Gitea before calling the provider. Source is the
+    // template's artifact subdirectory, or the repository root.
     const artifactDir = input.artifactDir ?? this.cfg.artifactSubdir;
-    const localDir = artifactDir ? join(sourceRoot, artifactDir) : sourceRoot;
+    const localDir = artifactDir ? join(input.repoPath, artifactDir) : input.repoPath;
 
     if (!existsSync(localDir)) {
-      exported?.cleanup();
       return {
         status: 'failed',
         url: '',
@@ -71,7 +68,6 @@ export class SftpProvider implements DeploymentProvider {
     try {
       conn = await sshConnect(this.cfg);
     } catch (e) {
-      exported?.cleanup();
       const reason = `Cannot reach SFTP host ${this.cfg.host}:${this.cfg.port} — is fake-sftp running? (${(e as Error).message})`;
       this.logger.warn(reason);
       return { status: 'failed', url: '', reason };
@@ -105,7 +101,6 @@ export class SftpProvider implements DeploymentProvider {
     } catch (e) {
       return { status: 'failed', url: '', reason: (e as Error).message };
     } finally {
-      exported?.cleanup();
       sshEnd(conn);
     }
   }
