@@ -90,6 +90,28 @@ export class ProjectsService {
     }
   }
 
+  // On-read reconciliation for a single project (detail view / refresh):
+  // when the repository was deleted directly in Gitea, clean the project up
+  // and surface 404 to the caller. Same fail-safe as the list variant —
+  // only an explicit 404 from Gitea counts.
+  async reconcileProject(id: string): Promise<void> {
+    const row = await this.prisma.project.findUnique({
+      where: { id },
+      include: { owner: true },
+    });
+    if (!row) return; // get() reports the 404
+    const actor = this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner });
+    if (await this.gitea.repoMissing(row.name, actor)) {
+      this.logger.log(
+        `Repository ${actor.username}/${row.name} no longer exists in Gitea — cleaning up`,
+      );
+      await this.removeByRepo(`${actor.username}/${row.name}`).catch((e) =>
+        this.logger.error(`Cleanup failed: ${(e as Error).message}`),
+      );
+      throw new NotFoundException(`Project '${id}' not found`);
+    }
+  }
+
   async get(id: string): Promise<Project> {
     const row = await this.prisma.project.findUnique({
       where: { id },

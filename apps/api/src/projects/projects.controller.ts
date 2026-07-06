@@ -30,6 +30,9 @@ export class ProjectsController {
   @Get(':id')
   async get(@Param('id') id: string, @CurrentUser() userId: string) {
     await this.projects.assertOwner(id, userId);
+    // Detail reads reconcile too — refreshing the detail of a project whose
+    // repository was deleted in Gitea cleans it up and returns 404.
+    await this.projects.reconcileProject(id);
     return this.projects.get(id);
   }
 

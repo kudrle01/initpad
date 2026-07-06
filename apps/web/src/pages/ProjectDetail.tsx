@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, GitBranch, MoreHorizontal, Trash2, ExternalLink } from 'lucide-react';
-import { api } from '@/api';
+import { ArrowLeft, GitBranch, Layers, MoreHorizontal, Trash2, ExternalLink } from 'lucide-react';
+import { api, ApiError } from '@/api';
 import { useToast } from '@/toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +11,8 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { CopyField } from '@/components/molecules/CopyField';
+import { EmptyState } from '@/components/molecules/EmptyState';
+import { PageHeader } from '@/components/molecules/PageHeader';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline';
 import { CommitList } from '@/components/organisms/CommitList';
@@ -70,6 +72,7 @@ export default function ProjectDetail() {
   const [commits, setCommits] = useState<Commit[]>([]);
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
@@ -123,7 +126,13 @@ export default function ProjectDetail() {
       setCommits(c);
       setOpenSha((cur) => cur ?? c[0]?.sha ?? null);
     } catch (e) {
-      setError((e as Error).message);
+      // 404 = the project is gone (deleted here, or its repository was
+      // removed in Gitea and reconciliation cleaned it up) → dedicated page.
+      if (e instanceof ApiError && e.status === 404) {
+        setNotFound(true);
+      } else {
+        setError((e as Error).message);
+      }
     } finally {
       setLoading(false);
     }
@@ -135,10 +144,10 @@ export default function ProjectDetail() {
   }, [load]);
 
   useEffect(() => {
-    if (!isLive(project, commits)) return;
+    if (notFound || !isLive(project, commits)) return;
     const t = setTimeout(load, 2500);
     return () => clearTimeout(t);
-  }, [project, commits, load]);
+  }, [project, commits, load, notFound]);
 
   useEffect(() => {
     if (!project) return;
@@ -210,6 +219,25 @@ export default function ProjectDetail() {
     }
   }
 
+  if (notFound) {
+    return (
+      <div>
+        <PageHeader title="Project not found" />
+        <EmptyState
+          icon={Layers}
+          title="This project doesn't exist anymore"
+          description="It was deleted — either here, or its repository was removed in Gitea and the platform cleaned it up."
+          action={
+            <Button asChild>
+              <Link to="/projects">
+                <ArrowLeft className="h-4 w-4" /> Back to projects
+              </Link>
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (loading && !project) return <Skeleton />;
   if (!project) return <div className="text-sm text-muted-foreground">Loading…</div>;

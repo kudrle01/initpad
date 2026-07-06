@@ -7,6 +7,17 @@ export interface EnvConfig {
 
 const BASE = '/api';
 
+// Error carrying the HTTP status, so callers can distinguish "gone" (404)
+// from other failures.
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -15,7 +26,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || `HTTP ${res.status}`);
+    throw new ApiError(body.message || `HTTP ${res.status}`, res.status);
   }
   // 204 / empty body (e.g. DELETE) — nothing to parse.
   const text = await res.text();
