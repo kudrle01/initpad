@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { rmSync } from 'fs';
 import { Prisma } from '@prisma/client';
@@ -37,8 +38,9 @@ type ProjectRow = Prisma.ProjectGetPayload<{ include: { environments: true } }>;
  * in PostgreSQL via Prisma.
  */
 @Injectable()
-export class ProjectsService {
+export class ProjectsService implements OnModuleInit {
   private readonly logger = new Logger('ProjectsService');
+  private reconciling = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -47,6 +49,39 @@ export class ProjectsService {
     private readonly deployment: DeploymentService,
     private readonly gitea: GiteaService,
   ) {}
+
+  // Reconciliation sweep: the guaranteed mechanism keeping the platform
+  // consistent with Gitea. Webhook deliveries are the fast path, but they
+  // can be missed (platform down, hook not firing on a given Gitea
+  // version) — the sweep catches everything eventually. Cheap at this
+  // scale: one HEAD-style request per project per minute.
+  onModuleInit(): void {
+    setTimeout(() => void this.reconcileWithScm(), 15_000);
+    setInterval(() => void this.reconcileWithScm(), 60_000);
+  }
+
+  async reconcileWithScm(): Promise<void> {
+    if (this.reconciling) return;
+    this.reconciling = true;
+    try {
+      const rows = await this.prisma.project.findMany({ include: { owner: true } });
+      for (const row of rows) {
+        const actor = this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner });
+        if (await this.gitea.repoMissing(row.name, actor)) {
+          this.logger.log(
+            `Reconciliation: repository ${actor.username}/${row.name} no longer exists in Gitea — cleaning up`,
+          );
+          await this.removeByRepo(`${actor.username}/${row.name}`).catch((e) =>
+            this.logger.error(`Reconciliation cleanup failed: ${(e as Error).message}`),
+          );
+        }
+      }
+    } catch (e) {
+      this.logger.warn(`Reconciliation sweep failed: ${(e as Error).message}`);
+    } finally {
+      this.reconciling = false;
+    }
+  }
 
   async list(ownerId: string): Promise<Project[]> {
     const rows = await this.prisma.project.findMany({

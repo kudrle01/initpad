@@ -494,8 +494,12 @@ uvolnění portů, smazání images a DB záznamu) — stejná cesta jako ručn�
 smazání, jen bez mazání již neexistujícího repa. Samoregistrace při startu
 pokrývá dev i kontejnerový režim bez kroku v instalátoru.
 
-**Kompromisy.** Když platforma neběží v okamžiku smazání, událost se ztratí
-(Gitea doručení opakuje jen krátce) — zbylý projekt pak selže při deployi
-se srozumitelnou chybou; plná rekonciliace (periodické porovnání DB vs.
-Gitea) je popsaná jako možné rozšíření. Přejmenování repa v Gitee zůstává
-nepodporované (rozbije uložené URL) — vědomé omezení.
+**Kompromisy → dodatek z ostrého testu.** Hook založený přes admin API se
+na Gitea 1.22 choval jako „default hook" (šablona pro nová repa) a události
+nedoručoval. Autoritativním mechanismem je proto **rekonciliační smyčka**:
+API každou minutu ověří existenci rep všech projektů (smazání = výhradně
+explicitní 404, výpadek sítě se smazáním nikdy nezamění) a chybějící
+projekty uklidí — čímž jsou pokryté i události zmeškané během výpadku
+platformy. Webhook zůstává jako okamžitá cesta, když ho daná verze Gitey
+doručí. Přejmenování repa v Gitee zůstává nepodporované (rozbije uložené
+URL) — vědomé omezení.

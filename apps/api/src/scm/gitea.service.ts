@@ -247,6 +247,23 @@ export class GiteaService implements OnModuleInit {
     }).catch(() => undefined);
   }
 
+  // True only when Gitea explicitly reports the repository as absent (404).
+  // Network failures, auth errors etc. return false — the caller must never
+  // treat an outage as a deletion.
+  async repoMissing(name: string, actor: GiteaActor): Promise<boolean> {
+    const url = config.gitea.internalUrl;
+    const token = config.gitea.adminToken || actor.token;
+    if (!url || !token) return false;
+    try {
+      const res = await fetch(`${url}/api/v1/repos/${actor.username}/${name}`, {
+        headers: { Authorization: `token ${token}` },
+      });
+      return res.status === 404;
+    } catch {
+      return false;
+    }
+  }
+
   // Returns commits of the owner's repository, or null when unavailable.
   async listCommits(
     name: string,
