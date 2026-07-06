@@ -2,6 +2,10 @@
 #   docker build -f apps/api/Dockerfile .
 # ---------------------------------------------------------------- build ----
 FROM node:22-alpine AS build
+# openssl: Prisma detects the SSL version at install time and downloads the
+# matching engine binaries — without it the detection silently falls back to
+# openssl 1.1 and the engines fail to load at runtime.
+RUN apk add --no-cache openssl
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
@@ -14,7 +18,8 @@ RUN npm run build --workspace @initpad/api
 FROM node:22-alpine
 # git: scaffold init/push at project creation (deployments themselves are
 # stateless and fetch archives from Gitea over HTTP).
-RUN apk add --no-cache git
+# openssl: required by the Prisma engines (see the build stage note).
+RUN apk add --no-cache git openssl
 WORKDIR /repo
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
