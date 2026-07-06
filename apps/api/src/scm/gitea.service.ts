@@ -49,14 +49,31 @@ export class GiteaService implements OnModuleInit {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     if (!url || !adminToken) return;
-    const hookUrl = `${config.ci.platformUrl}/api/scm/webhook`;
+    const basePath = `${config.ci.platformUrl}/api/scm/webhook`;
+    // The token travels in the hook URL: some Gitea versions silently ignore
+    // the authorization_header field, and the URL always gets through. The
+    // header is set as well (belt and braces).
+    const hookUrl = `${basePath}?token=${encodeURIComponent(config.ci.deployToken)}`;
     try {
       const listed = await fetch(`${url}/api/v1/admin/hooks?limit=50`, {
         headers: { Authorization: `token ${adminToken}` },
       });
       if (listed.ok) {
-        const hooks = (await listed.json()) as Array<{ config?: { url?: string } }>;
+        const hooks = (await listed.json()) as Array<{
+          id: number;
+          config?: { url?: string };
+        }>;
         if (hooks.some((h) => h.config?.url === hookUrl)) return;
+        // Replace stale registrations pointing at the webhook path (e.g. an
+        // older URL format without the token).
+        for (const h of hooks) {
+          if (h.config?.url?.startsWith(basePath)) {
+            await fetch(`${url}/api/v1/admin/hooks/${h.id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `token ${adminToken}` },
+            }).catch(() => undefined);
+          }
+        }
       }
       const created = await fetch(`${url}/api/v1/admin/hooks`, {
         method: 'POST',
@@ -70,7 +87,7 @@ export class GiteaService implements OnModuleInit {
         }),
       });
       if (created.ok) {
-        this.logger.log(`System webhook registered: ${hookUrl}`);
+        this.logger.log(`System webhook registered: ${basePath}`);
       } else {
         this.logger.warn(`System webhook registration failed (HTTP ${created.status})`);
       }

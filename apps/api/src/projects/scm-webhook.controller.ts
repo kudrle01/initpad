@@ -5,6 +5,7 @@ import {
   HttpCode,
   Logger,
   Post,
+  Query,
   UnauthorizedException,
 } from '@nestjs/common';
 import { config } from '../config';
@@ -33,12 +34,18 @@ export class ScmWebhookController {
   handle(
     @Headers('authorization') auth: string,
     @Headers('x-gitea-event') event: string,
+    @Query('token') queryToken: string,
     @Body() body: RepositoryEventDto,
   ) {
-    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
+    // The token may arrive as a Bearer header or in the URL — older Gitea
+    // versions silently ignore the authorization_header hook field, so the
+    // registration also embeds the token in the hook URL.
+    const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
+    const token = bearer || queryToken || '';
     if (!token || token !== config.ci.deployToken) {
       throw new UnauthorizedException('Invalid webhook token');
     }
+    this.logger.log(`SCM webhook received: ${event ?? '?'} / ${body.action ?? '-'}`);
     if (event === 'repository' && body.action === 'deleted' && body.repository?.full_name) {
       // Run in the background — webhook deliveries should return quickly.
       void this.projects.removeByRepo(body.repository.full_name).catch((e) =>
