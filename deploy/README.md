@@ -49,3 +49,16 @@ sync and container builds.
 - Do not run this stack and the `infra/` development stack simultaneously —
   they share the compose project name on purpose (CI job containers attach
   to the `initpad_platform` network).
+
+## Troubleshooting
+
+- **"database volume was initialized with a different password"** — you have
+  an older `pgdata` volume but a regenerated `.env`. Fresh start:
+  `docker compose down -v && rm .env && ./install.sh` (wipes all platform
+  data), or set `INITPAD_DB_PASSWORD` back to the original value.
+- **SSO registration fails with "no such host: api"** — the API container is
+  not running; re-run `./install.sh` (it registers SSO only after the API is
+  healthy).
+- **fake-sftp platform warning on Apple Silicon** — the image is amd64-only
+  and runs via emulation; the compose file declares `platform: linux/amd64`
+  to make this explicit.

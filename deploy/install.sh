@@ -6,6 +6,7 @@
 #    server install with automatic HTTPS)
 #
 # Idempotent: safe to re-run. Requires Docker with the compose plugin.
+# Fully fresh start: docker compose down -v && rm .env && ./install.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -38,23 +39,40 @@ set_env() {
   awk -v k="$1" -v v="$2" 'BEGIN{FS=OFS="="} $1==k {$0=k"="v; done=1} {print} END{if(!done) print k"="v}' .env > "$tmp"
   mv "$tmp" .env
 }
+wait_healthy() { # <service> [attempts]
+  local svc=$1 tries=${2:-60} cid state
+  for i in $(seq 1 "$tries"); do
+    cid=$($COMPOSE ps -q "$svc" 2>/dev/null || true)
+    state=$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo starting)
+    [ "$state" = healthy ] && return 0
+    sleep 2
+  done
+  fail "$svc did not become healthy — check: docker compose logs $svc"
+}
 
 BOT_USER=$(get_env INITPAD_BOT_USER); BOT_USER=${BOT_USER:-initpad-bot}
 BOT_PASSWORD=$(get_env INITPAD_BOT_PASSWORD)
 OIDC_SECRET=$(get_env INITPAD_OIDC_CLIENT_SECRET)
+DB_PASSWORD=$(get_env INITPAD_DB_PASSWORD)
 DOMAIN=$(get_env INITPAD_DOMAIN || true)
 
 # ---- 2. core services -------------------------------------------------------
 say "Starting core services (postgres, gitea, deployment targets)"
 $COMPOSE up -d postgres gitea fake-vps fake-sftp static-web
 
-say "Waiting for Gitea to become healthy"
-for i in $(seq 1 60); do
-  state=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q gitea)" 2>/dev/null || echo starting)
-  [ "$state" = healthy ] && break
-  sleep 2
-  [ "$i" = 60 ] && fail "Gitea did not become healthy — check: docker compose logs gitea"
-done
+say "Waiting for PostgreSQL"
+wait_healthy postgres 30
+# A pre-existing database volume keeps the password it was initialized with.
+# Verify our .env matches it, otherwise the API could not connect later.
+if ! $COMPOSE exec -T -e PGPASSWORD="$DB_PASSWORD" postgres \
+    psql -h 127.0.0.1 -U initpad -d initpad -c 'select 1' >/dev/null 2>&1; then
+  fail "The existing database volume was initialized with a different password
+  than INITPAD_DB_PASSWORD in .env. Either restore the original .env, or start
+  fresh:  docker compose down -v && rm .env && ./install.sh"
+fi
+
+say "Waiting for Gitea"
+wait_healthy gitea 60
 
 # The gitea CLI needs the config path and must run as the 'git' user.
 GITEA_CONF=$($COMPOSE exec -T gitea sh -c \
@@ -63,7 +81,7 @@ GITEA_CONF=$($COMPOSE exec -T gitea sh -c \
 GITEA_WORK=$(dirname "$(dirname "$GITEA_CONF")")
 gitea_cli() { $COMPOSE exec -T -u git gitea gitea --work-path "$GITEA_WORK" --config "$GITEA_CONF" "$@"; }
 
-# ---- 3. bootstrap: bot account, tokens, SSO, runner -------------------------
+# ---- 3. bootstrap: service account + tokens ---------------------------------
 if gitea_cli admin user list 2>/dev/null | awk '{print $2}' | grep -qx "$BOT_USER"; then
   say "Service account '$BOT_USER' already exists"
 else
@@ -84,15 +102,6 @@ else
   say "Admin access token already configured"
 fi
 
-if gitea_cli admin auth list 2>/dev/null | grep -q initpad-sso; then
-  say "SSO authentication source already registered"
-else
-  say "Registering the platform as Gitea's OIDC sign-in (SSO)"
-  gitea_cli admin auth add-oauth --name initpad-sso --provider openidConnect \
-    --key gitea --secret "$OIDC_SECRET" \
-    --auto-discover-url "http://api:3000/api/.well-known/openid-configuration" >/dev/null
-fi
-
 if [ -z "$(get_env INITPAD_RUNNER_TOKEN)" ]; then
   say "Generating CI runner registration token"
   out=$(gitea_cli actions generate-runner-token 2>&1)
@@ -103,16 +112,32 @@ else
   say "Runner token already configured"
 fi
 
-# ---- 4. platform + runner (+ optional HTTPS proxy) ---------------------------
+# ---- 4. platform ------------------------------------------------------------
 say "Building and starting the platform (api, web) — first build takes a few minutes"
 $COMPOSE up -d --build api web
+say "Waiting for the platform API"
+wait_healthy api 60
+
+# ---- 5. SSO — MUST run after the API is up: Gitea validates the discovery
+# URL immediately when the auth source is registered.
+if gitea_cli admin auth list 2>/dev/null | grep -q initpad-sso; then
+  say "SSO authentication source already registered"
+else
+  say "Registering the platform as Gitea's OIDC sign-in (SSO)"
+  gitea_cli admin auth add-oauth --name initpad-sso --provider openidConnect \
+    --key gitea --secret "$OIDC_SECRET" \
+    --auto-discover-url "http://api:3000/api/.well-known/openid-configuration" >/dev/null
+fi
+
+# ---- 6. runner (+ optional HTTPS proxy) --------------------------------------
+say "Starting the CI runner"
 $COMPOSE --profile runner up -d act_runner
 if [ -n "${DOMAIN:-}" ]; then
   say "Starting Caddy reverse proxy for https://$DOMAIN"
   $COMPOSE --profile server up -d caddy
 fi
 
-# ---- 5. summary --------------------------------------------------------------
+# ---- 7. summary ---------------------------------------------------------------
 PUBLIC_URL=$(get_env INITPAD_PUBLIC_URL); PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
 GITEA_URL=$(get_env INITPAD_GITEA_PUBLIC_URL); GITEA_URL=${GITEA_URL:-http://localhost:3001}
 cat <<MSG

@@ -103,6 +103,13 @@ services:
       # Works on Docker Desktop out of the box; this line makes it work on
       # plain Linux too (health checks of host-published app ports).
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      # busybox wget is available in node:alpine.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
     depends_on:
       postgres: { condition: service_healthy }
       gitea: { condition: service_healthy }
@@ -142,6 +149,9 @@ services:
 
   fake-sftp:
     image: atmoz/sftp
+    # The image ships amd64 only; declare it so arm64 hosts (Apple Silicon)
+    # run it via emulation without the platform-mismatch warning.
+    platform: linux/amd64
     command: deploy:${INITPAD_SFTP_PASSWORD:-deploy}:::www
     volumes:
       - sftp-www:/home/deploy/www
