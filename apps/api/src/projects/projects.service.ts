@@ -4,7 +4,6 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { rmSync } from 'fs';
 import { Prisma } from '@prisma/client';
@@ -38,9 +37,8 @@ type ProjectRow = Prisma.ProjectGetPayload<{ include: { environments: true } }>;
  * in PostgreSQL via Prisma.
  */
 @Injectable()
-export class ProjectsService implements OnModuleInit {
+export class ProjectsService {
   private readonly logger = new Logger('ProjectsService');
-  private reconciling = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -50,46 +48,46 @@ export class ProjectsService implements OnModuleInit {
     private readonly gitea: GiteaService,
   ) {}
 
-  // Reconciliation sweep: the guaranteed mechanism keeping the platform
-  // consistent with Gitea. Webhook deliveries are the fast path, but they
-  // can be missed (platform down, hook not firing on a given Gitea
-  // version) — the sweep catches everything eventually. Cheap at this
-  // scale: one HEAD-style request per project per minute.
-  onModuleInit(): void {
-    setTimeout(() => void this.reconcileWithScm(), 15_000);
-    setInterval(() => void this.reconcileWithScm(), 60_000);
-  }
-
-  async reconcileWithScm(): Promise<void> {
-    if (this.reconciling) return;
-    this.reconciling = true;
-    try {
-      const rows = await this.prisma.project.findMany({ include: { owner: true } });
-      for (const row of rows) {
-        const actor = this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner });
-        if (await this.gitea.repoMissing(row.name, actor)) {
-          this.logger.log(
-            `Reconciliation: repository ${actor.username}/${row.name} no longer exists in Gitea — cleaning up`,
-          );
-          await this.removeByRepo(`${actor.username}/${row.name}`).catch((e) =>
-            this.logger.error(`Reconciliation cleanup failed: ${(e as Error).message}`),
-          );
-        }
-      }
-    } catch (e) {
-      this.logger.warn(`Reconciliation sweep failed: ${(e as Error).message}`);
-    } finally {
-      this.reconciling = false;
-    }
-  }
-
   async list(ownerId: string): Promise<Project[]> {
+    // Reconcile on read: refreshing the project list is the moment the user
+    // expects reality — projects whose repositories were deleted directly in
+    // Gitea are cleaned up here (the webhook remains as an instant path when
+    // a Gitea version delivers it). No background timers needed.
+    await this.pruneMissingRepos(ownerId);
     const rows = await this.prisma.project.findMany({
       where: { ownerId },
       include: { environments: true },
       orderBy: { createdAt: 'desc' },
     });
     return rows.map((r) => this.toDomain(r));
+  }
+
+  // Drops the owner's projects whose repositories no longer exist in Gitea.
+  // A repository counts as gone ONLY on an explicit 404 (with a short request
+  // timeout) — an outage never deletes anything and never blocks the list
+  // for long. Checks run in parallel; cheap at per-user scale.
+  private async pruneMissingRepos(ownerId: string): Promise<void> {
+    try {
+      const rows = await this.prisma.project.findMany({
+        where: { ownerId },
+        include: { owner: true },
+      });
+      await Promise.all(
+        rows.map(async (row) => {
+          const actor = this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner });
+          if (await this.gitea.repoMissing(row.name, actor)) {
+            this.logger.log(
+              `Repository ${actor.username}/${row.name} no longer exists in Gitea — cleaning up`,
+            );
+            await this.removeByRepo(`${actor.username}/${row.name}`).catch((e) =>
+              this.logger.error(`Cleanup failed: ${(e as Error).message}`),
+            );
+          }
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`Repository reconciliation skipped: ${(e as Error).message}`);
+    }
   }
 
   async get(id: string): Promise<Project> {

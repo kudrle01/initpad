@@ -257,6 +257,7 @@ export class GiteaService implements OnModuleInit {
     try {
       const res = await fetch(`${url}/api/v1/repos/${actor.username}/${name}`, {
         headers: { Authorization: `token ${token}` },
+        signal: AbortSignal.timeout(2500),
       });
       return res.status === 404;
     } catch {

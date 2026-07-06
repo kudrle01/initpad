@@ -496,10 +496,11 @@ pokrývá dev i kontejnerový režim bez kroku v instalátoru.
 
 **Kompromisy → dodatek z ostrého testu.** Hook založený přes admin API se
 na Gitea 1.22 choval jako „default hook" (šablona pro nová repa) a události
-nedoručoval. Autoritativním mechanismem je proto **rekonciliační smyčka**:
-API každou minutu ověří existenci rep všech projektů (smazání = výhradně
-explicitní 404, výpadek sítě se smazáním nikdy nezamění) a chybějící
-projekty uklidí — čímž jsou pokryté i události zmeškané během výpadku
-platformy. Webhook zůstává jako okamžitá cesta, když ho daná verze Gitey
+nedoručoval. Autoritativním mechanismem je proto **rekonciliace při čtení**:
+načtení seznamu projektů ověří existenci rep (paralelně, s krátkým
+timeoutem; smazání = výhradně explicitní 404, výpadek sítě se smazáním
+nikdy nezamění) a chybějící projekty uklidí. Uživatelská očekávání zní
+„po refreshi vidím realitu" — periodický časovač na pozadí by byl
+zbytečná složitost navíc. Webhook zůstává jako okamžitá cesta, když ho daná verze Gitey
 doručí. Přejmenování repa v Gitee zůstává nepodporované (rozbije uložené
 URL) — vědomé omezení.
