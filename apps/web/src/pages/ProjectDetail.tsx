@@ -144,8 +144,11 @@ export default function ProjectDetail() {
   }, [load]);
 
   useEffect(() => {
-    if (notFound || !isLive(project, commits)) return;
-    const t = setTimeout(load, 2500);
+    if (notFound) return;
+    // Fast cadence while something is working; a slow heartbeat otherwise so
+    // out-of-band changes (repo deleted in Gitea, new commits) surface
+    // without a manual refresh. Server-side reconciliation runs on each read.
+    const t = setTimeout(load, isLive(project, commits) ? 2500 : 10_000);
     return () => clearTimeout(t);
   }, [project, commits, load, notFound]);
 
@@ -225,8 +228,8 @@ export default function ProjectDetail() {
         <PageHeader title="Project not found" />
         <EmptyState
           icon={Layers}
-          title="This project doesn't exist anymore"
-          description="It was deleted — either here, or its repository was removed in Gitea and the platform cleaned it up."
+          title="This project doesn't exist"
+          description="Check the address, or head back to your projects."
           action={
             <Button asChild>
               <Link to="/projects">
