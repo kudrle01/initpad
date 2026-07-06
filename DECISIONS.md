@@ -448,3 +448,23 @@ pro projekty — platforma ji má splňovat sama (dogfooding). Bootstrap přes
 (`infra/`, `npm run dev`) zůstává oddělený — sdílí jméno compose projektu,
 takže se nesmí běžet oba najednou. Registry porty zůstávají publikované na
 hostu (push/pull dělá hostitelský daemon).
+
+---
+
+## ADR-016 — Jediný směr identity: odstranění „Continue with Gitea"
+
+**Kontext.** Login platformy nabízel i přihlášení přes Gitea OAuth2 —
+pozůstatek z doby před ADR-005. Od zavedení SSO jde identita opačným směrem
+(platforma je OIDC provider, Gitea deleguje přihlášení na ni). Obě cesty
+najednou matou („kdo je zdroj pravdy?") a hrozí smyčka login ↔ login. Navíc
+instalátor OAuth aplikaci v Gitee nikdy nezakládal, takže tlačítko bylo
+v čerstvé instalaci nefunkční.
+
+**Rozhodnutí.** Legacy větev odstraněna celá: UI tlačítko, endpointy
+`/auth/login` + `/auth/callback`, OAuth-klient helpery v AuthService i
+`INITPAD_OAUTH_*` konfigurace. Identita má jediný zdroj: účet platformy
+(řízená registrace), Gitea se přihlašuje přes platformu (SSO).
+
+**Důsledky.** Uživatelé existující jen v Gitee se do platformy nepřihlásí —
+v modelu řízené registrace takoví legitimně nevznikají (výjimkou je servisní
+bot, který se do platformy hlásit nemá).

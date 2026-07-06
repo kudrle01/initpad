@@ -4,21 +4,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GiteaService } from '../scm/gitea.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { hashPassword, verifyPassword } from './password';
 import { encryptSecret } from '../common/secret';
-
-interface GiteaUser {
-  id: number;
-  login: string;
-  full_name?: string;
-  email?: string;
-  avatar_url?: string;
-}
 
 export interface SessionUser {
   id: string;
@@ -29,9 +20,10 @@ export interface SessionUser {
 }
 
 /**
- * Platform identity. Supports managed registration (the platform provisions
- * the Gitea account on the user's behalf) as well as sign-in via Gitea
- * OAuth2 (SSO).
+ * Platform identity — the single source of truth for user accounts.
+ * Managed registration provisions the Gitea account on the user's behalf;
+ * Gitea itself delegates sign-in back to the platform via OIDC (ADR-005),
+ * so there is no reverse "sign in with Gitea" path (ADR-016).
  */
 @Injectable()
 export class AuthService {
@@ -96,49 +88,6 @@ export class AuthService {
     };
   }
 
-  authorizeUrl(state: string): string {
-    const { clientId, callbackUrl } = config.auth;
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: callbackUrl,
-      response_type: 'code',
-      state,
-    });
-    return `${config.gitea.url}/login/oauth/authorize?${params}`;
-  }
-
-  /**
-   * OAuth callback: exchanges the code for a token, loads the Gitea profile,
-   * upserts the local user and returns a session JWT.
-   */
-  async handleCallback(code: string): Promise<string> {
-    const accessToken = await this.exchangeCode(code);
-    const profile = await this.fetchGiteaUser(accessToken);
-
-    const user = await this.prisma.user.upsert({
-      where: { giteaId: profile.id },
-      // Note: accessToken is intentionally NOT updated here. Git operations
-      // run through the service account (admin token + Sudo), so an OAuth
-      // login must not overwrite a stored personal access token.
-      update: {
-        username: profile.login,
-        name: profile.full_name || null,
-        email: profile.email || null,
-        avatarUrl: profile.avatar_url || null,
-      },
-      create: {
-        giteaId: profile.id,
-        username: profile.login,
-        name: profile.full_name || null,
-        email: profile.email || null,
-        avatarUrl: profile.avatar_url || null,
-        accessToken: encryptSecret(accessToken),
-      },
-    });
-
-    return this.jwt.sign({ sub: user.id });
-  }
-
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
@@ -149,32 +98,5 @@ export class AuthService {
       email: user.email,
       avatarUrl: user.avatarUrl,
     };
-  }
-
-  private async exchangeCode(code: string): Promise<string> {
-    const { clientId, clientSecret, callbackUrl } = config.auth;
-    const res = await fetch(`${config.gitea.internalUrl}/login/oauth/access_token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code,
-        grant_type: 'authorization_code',
-        redirect_uri: callbackUrl,
-      }),
-    });
-    if (!res.ok) throw new UnauthorizedException('OAuth code exchange failed');
-    const data = (await res.json()) as { access_token?: string };
-    if (!data.access_token) throw new UnauthorizedException('Missing access_token');
-    return data.access_token;
-  }
-
-  private async fetchGiteaUser(token: string): Promise<GiteaUser> {
-    const res = await fetch(`${config.gitea.internalUrl}/api/v1/user`, {
-      headers: { Authorization: `token ${token}` },
-    });
-    if (!res.ok) throw new UnauthorizedException('Failed to load user from Gitea');
-    return (await res.json()) as GiteaUser;
   }
 }

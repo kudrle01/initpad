@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { GitBranch } from 'lucide-react';
-import { api, loginUrl } from '@/api';
+import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +11,6 @@ type Mode = 'signin' | 'register';
 export default function Login() {
   const { user, loading, signIn } = useAuth();
   const [params] = useSearchParams();
-  const oauthError = params.get('error');
   const next = params.get('next');
 
   const [mode, setMode] = useState<Mode>('signin');
@@ -104,28 +102,13 @@ export default function Login() {
             required
           />
 
-          {(error || oauthError) && (
-            <p className="text-sm text-destructive">
-              {error ?? 'Sign-in failed, please try again.'}
-            </p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <Button type="submit" disabled={busy} className="mt-1 w-full">
             {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
           </Button>
         </form>
 
-        <div className="my-[18px] flex items-center gap-2.5 text-xs text-muted-foreground">
-          <span className="h-px flex-1 bg-border" />
-          <span>or</span>
-          <span className="h-px flex-1 bg-border" />
-        </div>
-
-        <Button asChild variant="secondary" className="w-full">
-          <a href={loginUrl}>
-            <GitBranch className="h-4 w-4" /> Continue with Gitea
-          </a>
-        </Button>
       </div>
     </div>
   );

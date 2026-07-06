@@ -37,10 +37,6 @@ export const config = {
     authorEmail: process.env.INITPAD_GIT_AUTHOR_EMAIL || 'bot@initpad.local',
   },
   auth: {
-    clientId: process.env.INITPAD_OAUTH_CLIENT_ID || '',
-    clientSecret: process.env.INITPAD_OAUTH_CLIENT_SECRET || '',
-    callbackUrl:
-      process.env.INITPAD_OAUTH_CALLBACK_URL || 'http://localhost:3000/api/auth/callback',
     frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
   },
@@ -125,6 +121,3 @@ export const config = {
     keyFile: process.env.INITPAD_OIDC_KEY_FILE || '',
   },
 };
-
-export const isAuthConfigured = (): boolean =>
-  Boolean(config.auth.clientId && config.auth.clientSecret && config.gitea.url);

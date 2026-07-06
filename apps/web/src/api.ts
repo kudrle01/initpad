@@ -61,5 +61,3 @@ export const api = {
   getGitAccess: () =>
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
 };
-
-export const loginUrl = `${BASE}/auth/login`;
