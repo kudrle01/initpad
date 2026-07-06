@@ -28,6 +28,8 @@ services:
       GITEA__oauth2_client__ACCOUNT_LINKING: auto
       GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
       GITEA__oauth2_client__USERNAME: nickname
+      # Allow webhook deliveries to the platform API (private/host addresses).
+      GITEA__webhook__ALLOWED_HOST_LIST: "*"
     ports:
       - "3001:3000"
     volumes:

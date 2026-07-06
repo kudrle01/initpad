@@ -380,7 +380,34 @@ export class ProjectsService {
     if (row.ownerId && row.ownerId !== ownerId) {
       throw new ForbiddenException('Not your project');
     }
+    await this.cleanupProject(row, { deleteRemoteRepo: true });
+  }
 
+  /**
+   * Reacts to a repository deleted directly in Gitea (system webhook):
+   * tears down all deployments of the matching project and removes its
+   * record, so no orphaned containers or rows remain. No-op when nothing
+   * matches — e.g. when the deletion originated from the platform itself.
+   */
+  async removeByRepo(fullName: string): Promise<void> {
+    const [owner, name] = fullName.split('/');
+    if (!owner || !name) return;
+    const user = await this.prisma.user.findFirst({ where: { username: owner } });
+    const row = await this.prisma.project.findFirst({
+      where: { name, ownerId: user?.id ?? undefined },
+      include: { environments: true, owner: true },
+    });
+    if (!row) return;
+    this.logger.log(`Repository ${fullName} was deleted in Gitea — cleaning up project ${row.id}`);
+    // The repository itself is already gone; clean up everything else.
+    await this.cleanupProject(row, { deleteRemoteRepo: false });
+  }
+
+  // Shared teardown used by user-initiated deletion and the SCM webhook.
+  private async cleanupProject(
+    row: Prisma.ProjectGetPayload<{ include: { environments: true; owner: true } }>,
+    opts: { deleteRemoteRepo: boolean },
+  ): Promise<void> {
     const slug = this.deploySlug(row.repoUrl, row.name);
     for (const env of row.environments) {
       await this.deployment.teardown(env.provider as ProviderKind, {
@@ -395,12 +422,14 @@ export class ProjectsService {
     // orphaned artifacts remain.
     const owner = this.ownerFromRepoUrl(row.repoUrl) ?? config.gitea.user;
     await this.gitea.deletePackages(owner, row.name);
-    await this.gitea.deleteRepo(
-      row.name,
-      this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
-    );
+    if (opts.deleteRemoteRepo) {
+      await this.gitea.deleteRepo(
+        row.name,
+        this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
+      );
+    }
     rmSync(row.repoPath, { recursive: true, force: true });
-    await this.prisma.project.delete({ where: { id } });
+    await this.prisma.project.delete({ where: { id: row.id } });
   }
 
   // Identity for repository operations: username = the ACTUAL repo owner

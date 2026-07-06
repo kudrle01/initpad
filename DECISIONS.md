@@ -475,3 +475,27 @@ v čerstvé instalaci nefunkční.
 **Důsledky.** Uživatelé existující jen v Gitee se do platformy nepřihlásí —
 v modelu řízené registrace takoví legitimně nevznikají (výjimkou je servisní
 bot, který se do platformy hlásit nemá).
+
+---
+
+## ADR-017 — Reflexe změn provedených přímo v Gitee (systémový webhook)
+
+**Kontext.** Uživatel vlastní své repo, takže ho může smazat i přímo v Gitee.
+Platforma o tom nevěděla — zůstal „zombie" projekt: záznam v DB, běžící
+kontejnery a obsazený port bez existujícího zdroje. Pushe problém nemají
+(CI → deploy webhook, commity se čtou z Gitey živě), smazání repa ano.
+
+**Rozhodnutí.** Gitea → platforma systémový webhook: API si ho při startu
+samo idempotentně registruje (`ensureSystemWebhook`, admin API
+`/admin/hooks`, události `repository`, autentizace sdíleným tokenem
+v Authorization hlavičce). Handler `POST /api/scm/webhook` na událost
+`repository/deleted` spustí úplný úklid projektu (teardown prostředí,
+uvolnění portů, smazání images a DB záznamu) — stejná cesta jako ruční
+smazání, jen bez mazání již neexistujícího repa. Samoregistrace při startu
+pokrývá dev i kontejnerový režim bez kroku v instalátoru.
+
+**Kompromisy.** Když platforma neběží v okamžiku smazání, událost se ztratí
+(Gitea doručení opakuje jen krátce) — zbylý projekt pak selže při deployi
+se srozumitelnou chybou; plná rekonciliace (periodické porovnání DB vs.
+Gitea) je popsaná jako možné rozšíření. Přejmenování repa v Gitee zůstává
+nepodporované (rozbije uložené URL) — vědomé omezení.

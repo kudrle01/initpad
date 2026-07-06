@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomBytes } from 'crypto';
@@ -32,8 +32,53 @@ export interface GiteaActor {
  * (managed registration) and reads commits / CI commit statuses.
  */
 @Injectable()
-export class GiteaService {
+export class GiteaService implements OnModuleInit {
   private readonly logger = new Logger('GiteaService');
+
+  // Registers the platform's system webhook in Gitea (idempotent, best
+  // effort). The hook notifies the platform about repository events, so
+  // changes made directly in Gitea — e.g. deleting a repository — are
+  // reflected back and no orphaned projects remain. Running this on startup
+  // covers both the npm-run-dev and the containerized setup without any
+  // installer step.
+  onModuleInit(): void {
+    void this.ensureSystemWebhook();
+  }
+
+  private async ensureSystemWebhook(): Promise<void> {
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
+    if (!url || !adminToken) return;
+    const hookUrl = `${config.ci.platformUrl}/api/scm/webhook`;
+    try {
+      const listed = await fetch(`${url}/api/v1/admin/hooks?limit=50`, {
+        headers: { Authorization: `token ${adminToken}` },
+      });
+      if (listed.ok) {
+        const hooks = (await listed.json()) as Array<{ config?: { url?: string } }>;
+        if (hooks.some((h) => h.config?.url === hookUrl)) return;
+      }
+      const created = await fetch(`${url}/api/v1/admin/hooks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
+        body: JSON.stringify({
+          type: 'gitea',
+          active: true,
+          events: ['repository'],
+          config: { url: hookUrl, content_type: 'json' },
+          authorization_header: `Bearer ${config.ci.deployToken}`,
+        }),
+      });
+      if (created.ok) {
+        this.logger.log(`System webhook registered: ${hookUrl}`);
+      } else {
+        this.logger.warn(`System webhook registration failed (HTTP ${created.status})`);
+      }
+    } catch (e) {
+      // Gitea may not be reachable yet — not fatal; the next start retries.
+      this.logger.warn(`System webhook registration skipped: ${(e as Error).message}`);
+    }
+  }
 
   async provision(
     name: string,
