@@ -261,18 +261,21 @@ export class GiteaService {
   private async createRepo(name: string, actor: GiteaActor): Promise<void> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
-    // The repository is created ON BEHALF of the user via the admin token +
-    // Sudo header — the repo belongs to the user, without relying on their
-    // (fragile) personal token.
-    const res = await fetch(`${url}/api/v1/user/repos`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `token ${adminToken}`,
-        Sudo: actor.username,
+    // The repository is created FOR the user via the admin endpoint: the user
+    // owns the repo, but the activity feed attributes the action to the
+    // service account — consistent with the scaffold push and honest about
+    // who actually performed it (automation, not the user).
+    const res = await fetch(
+      `${url}/api/v1/admin/users/${encodeURIComponent(actor.username)}/repos`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `token ${adminToken}`,
+        },
+        body: JSON.stringify({ name, private: true, auto_init: false, default_branch: 'main' }),
       },
-      body: JSON.stringify({ name, private: true, auto_init: false, default_branch: 'main' }),
-    });
+    );
     // 409 = repo already exists, continue with push
     if (!res.ok && res.status !== 409) {
       throw new Error(`repository creation failed (HTTP ${res.status})`);

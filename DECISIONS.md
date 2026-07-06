@@ -48,6 +48,13 @@ stejně má (zakládá jím účty).
 **Důsledky.** Per-user token je dnes vedlejší (viz ADR-006 o šifrování).
 Doporučeno: bota vydat na dedikovaný účet (`initpad-bot`), ne osobní admin.
 
+**Dodatek (audit trail).** Založení repa bylo později přepnuto ze
+`Sudo: <uživatel>` na admin endpoint `POST /admin/users/{user}/repos`:
+vlastníkem zůstává uživatel, ale aktivita v Gitee se připisuje botovi —
+konzistentně s pushem scaffoldu a poctivě vůči tomu, kdo akci skutečně
+provedl (automatizace, ne člověk). Sudo dávalo do feedu zavádějící
+„uživatel vytvořil repozitář" o akci, o které uživatel nevěděl.
+
 ---
 
 ## ADR-003 — Název projektu unikátní per uživatel
