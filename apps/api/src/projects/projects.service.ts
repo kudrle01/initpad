@@ -25,7 +25,8 @@ import { DeploymentService } from '../deployment/deployment.service';
 import { GiteaService, GiteaActor, RepoArchive } from '../scm/gitea.service';
 import { exportVersion } from '../deployment/providers/source-export';
 import { config } from '../config';
-import { decryptSecret } from '../common/secret';
+import { decryptSecret, encryptSecret } from '../common/secret';
+import type { ProviderConnection } from '../deployment/deployment-provider.interface';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -280,7 +281,35 @@ export class ProjectsService {
     return this.deployment.logs(env.provider as ProviderKind, {
       projectName: this.deploySlug(project.repoUrl, project.name),
       env: envName,
+      connection: this.targetConnection(env),
     });
+  }
+
+  // Builds the connection to a user-configured deployment target (prod: your
+  // own server). Returns undefined when no target is set → the platform's demo
+  // target is used. The secret (password / key) is decrypted here.
+  private targetConnection(env: {
+    targetKind?: string | null;
+    targetHost?: string | null;
+    targetPort?: number | null;
+    targetUsername?: string | null;
+    targetAuth?: string | null;
+    targetSecret?: string | null;
+    targetPath?: string | null;
+    targetPublicUrl?: string | null;
+  }): ProviderConnection | undefined {
+    if (!env.targetKind || !env.targetHost) return undefined;
+    const secret = env.targetSecret ? decryptSecret(env.targetSecret) : '';
+    const isKey = env.targetAuth === 'key';
+    return {
+      host: env.targetHost,
+      port: env.targetPort ?? 22,
+      username: env.targetUsername ?? '',
+      password: isKey ? undefined : secret,
+      privateKey: isKey ? secret : undefined,
+      remoteRoot: env.targetPath ?? '',
+      publicUrl: env.targetPublicUrl ?? '',
+    };
   }
 
   // Re-deploys the environment at its current version. A hash version comes
@@ -305,7 +334,11 @@ export class ProjectsService {
     if (env.status !== 'running') {
       throw new BadRequestException(`Environment '${envName}' is not running`);
     }
-    await this.deployment.stop(env.provider as ProviderKind, { projectName: slug, env: envName });
+    await this.deployment.stop(env.provider as ProviderKind, {
+      projectName: slug,
+      env: envName,
+      connection: this.targetConnection(env),
+    });
     await this.prisma.environment.update({
       where: { projectId_name: { projectId: id, name: envName } },
       data: { status: 'stopped', statusReason: null },
@@ -335,7 +368,11 @@ export class ProjectsService {
   // The repository and the project itself are untouched.
   async removeEnv(id: string, envName: EnvName): Promise<Project> {
     const { env, slug } = await this.envContext(id, envName);
-    await this.deployment.teardown(env.provider as ProviderKind, { projectName: slug, env: envName });
+    await this.deployment.teardown(env.provider as ProviderKind, {
+      projectName: slug,
+      env: envName,
+      connection: this.targetConnection(env),
+    });
     await this.prisma.environment.update({
       where: { projectId_name: { projectId: id, name: envName } },
       // Releasing allocatedPort returns the port to the pool.
@@ -357,6 +394,7 @@ export class ProjectsService {
         startCommand: template.startCommand,
         version: env.version ?? undefined,
         appPort,
+        connection: this.targetConnection(env),
       });
       await this.prisma.environment.update({
         where: { projectId_name: { projectId: id, name: envName } },
@@ -468,6 +506,7 @@ export class ProjectsService {
       await this.deployment.teardown(env.provider as ProviderKind, {
         projectName: slug,
         env: env.name,
+        connection: this.targetConnection(env),
       });
     }
     // Only after all containers are stopped, remove the locally pulled
@@ -616,7 +655,9 @@ export class ProjectsService {
         healthPath: template.healthPath ?? '/health',
         startCommand: template.startCommand,
         artifactDir: template.artifactDir,
+        buildCommand: template.buildCommand,
         appPort,
+        connection: this.targetConnection(env),
         imageRef: useRegistry
           ? this.imageRef(project.repoUrl, project.name, version)
           : undefined,
@@ -729,7 +770,73 @@ export class ProjectsService {
           version: e.version,
           url: e.url,
           statusReason: e.statusReason,
+          target: e.targetKind
+            ? {
+                kind: e.targetKind as ProviderKind,
+                host: e.targetHost,
+                port: e.targetPort,
+                username: e.targetUsername,
+                auth: e.targetAuth,
+                path: e.targetPath,
+                publicUrl: e.targetPublicUrl,
+              }
+            : null,
         })),
     };
+  }
+
+  // Configures a user deployment target on an environment (prod: your own
+  // server). The env deploys via the chosen provider (sftp/ssh) to this target;
+  // the secret (password / private key) is encrypted at rest.
+  async setTarget(
+    id: string,
+    envName: EnvName,
+    dto: {
+      kind: ProviderKind;
+      host: string;
+      port: number;
+      username: string;
+      auth: 'password' | 'key';
+      secret?: string;
+      path: string;
+      publicUrl: string;
+    },
+  ): Promise<Project> {
+    await this.prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId: id, name: envName } },
+    });
+    await this.prisma.environment.update({
+      where: { projectId_name: { projectId: id, name: envName } },
+      data: {
+        provider: dto.kind,
+        targetKind: dto.kind,
+        targetHost: dto.host,
+        targetPort: dto.port,
+        targetUsername: dto.username,
+        targetAuth: dto.auth,
+        ...(dto.secret ? { targetSecret: encryptSecret(dto.secret) } : {}),
+        targetPath: dto.path,
+        targetPublicUrl: dto.publicUrl,
+      },
+    });
+    return this.get(id);
+  }
+
+  // Removes the user target → the environment reverts to the platform's demo target.
+  async clearTarget(id: string, envName: EnvName): Promise<Project> {
+    await this.prisma.environment.update({
+      where: { projectId_name: { projectId: id, name: envName } },
+      data: {
+        targetKind: null,
+        targetHost: null,
+        targetPort: null,
+        targetUsername: null,
+        targetAuth: null,
+        targetSecret: null,
+        targetPath: null,
+        targetPublicUrl: null,
+      },
+    });
+    return this.get(id);
   }
 }

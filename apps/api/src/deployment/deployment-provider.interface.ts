@@ -1,6 +1,24 @@
 import { ProviderKind } from '../domain/types';
 
+// Connection to a user-provided deployment target (typically prod: your own
+// server, e.g. a school SFTP host or a VPS over SSH). When absent, the provider
+// uses the platform's built-in demo target (fake-vps / fake-sftp).
+export interface ProviderConnection {
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  privateKey?: string;
+  // Writable root on the remote (SFTP: web dir; SSH: deploy dir).
+  remoteRoot: string;
+  // Public URL where the deployed app/site is reachable (used for the health
+  // check and shown to the user). The user knows their own server's address.
+  publicUrl: string;
+}
+
 export interface DeployInput {
+  // User target for this deployment (prod); absent → platform demo target.
+  connection?: ProviderConnection;
   projectName: string;
   version: string;
   env: string;
@@ -23,6 +41,9 @@ export interface DeployInput {
   // Subdirectory containing the artifact for static deployments (from the
   // template manifest).
   artifactDir?: string;
+  // Command that builds the static artifact before upload (from the template
+  // manifest, e.g. 'npm install && npm run build').
+  buildCommand?: string;
   // Application port allocated by the platform for source-based deployments
   // on a shared host (SSH). Allocated from the database, so it is unique
   // across all environments.
@@ -40,6 +61,7 @@ export interface DeployResult {
 export interface TeardownInput {
   projectName: string;
   env: string;
+  connection?: ProviderConnection;
 }
 
 // Restart of a previously deployed environment (after Stop). The version does
@@ -55,6 +77,8 @@ export interface StartInput {
   startCommand?: string;
   // Application port allocated by the platform (see DeployInput.appPort).
   appPort?: number;
+  // User target for this environment (prod); absent → platform demo target.
+  connection?: ProviderConnection;
 }
 
 /**

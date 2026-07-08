@@ -18,6 +18,7 @@ import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline'
 import { CommitList } from '@/components/organisms/CommitList';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { EnvLogsDialog } from '@/components/organisms/EnvLogsDialog';
+import { TargetDialog, type TargetBody } from '@/components/organisms/TargetDialog';
 import { giteaLink } from '@/lib/utils';
 import type { Commit, EnvName, Project, TemplateManifest } from '@/types';
 
@@ -78,6 +79,7 @@ export default function ProjectDetail() {
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [logsEnv, setLogsEnv] = useState<EnvName | null>(null);
+  const [targetEnv, setTargetEnv] = useState<EnvName | null>(null);
   const [logsText, setLogsText] = useState('');
   const [logsLoading, setLogsLoading] = useState(false);
   const toast = useToast();
@@ -209,6 +211,34 @@ export default function ProjectDetail() {
   const removeEnvironment = (env: EnvName) =>
     envAction('remove', env, api.removeEnv, `Removed ${env} deployment`);
 
+  async function saveTarget(env: EnvName, body: TargetBody) {
+    if (!id) return;
+    setBusy(`target-${env}`);
+    try {
+      setProject(await api.setEnvTarget(id, env, body));
+      toast.success(`Saved ${env} target`);
+      setTargetEnv(null);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function clearTarget(env: EnvName) {
+    if (!id) return;
+    setBusy(`target-${env}`);
+    try {
+      setProject(await api.clearEnvTarget(id, env));
+      toast.success(`Removed ${env} target`);
+      setTargetEnv(null);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function doDelete() {
     if (!id || !project) return;
     setDeleting(true);
@@ -325,6 +355,7 @@ export default function ProjectDetail() {
           onStop={stopEnvironment}
           onStart={startEnvironment}
           onRemoveEnv={removeEnvironment}
+          onConfigureTarget={setTargetEnv}
           onOpenLogs={openLogs}
         />
       </Section>
@@ -354,6 +385,15 @@ export default function ProjectDetail() {
         logsLoading={logsLoading}
         onOpenChange={(o) => !o && setLogsEnv(null)}
         onRefresh={() => logsEnv && openLogs(logsEnv)}
+      />
+
+      <TargetDialog
+        env={targetEnv}
+        target={project.environments.find((x) => x.name === targetEnv)?.target ?? null}
+        busy={busy === `target-${targetEnv}`}
+        onOpenChange={(o) => !o && setTargetEnv(null)}
+        onSave={saveTarget}
+        onClear={clearTarget}
       />
     </div>
   );

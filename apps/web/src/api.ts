@@ -53,6 +53,26 @@ export const api = {
     http<Project>(`/projects/${id}/start/${env}`, { method: 'POST' }),
   removeEnv: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/teardown/${env}`, { method: 'POST' }),
+  setEnvTarget: (
+    id: string,
+    env: EnvName,
+    body: {
+      kind: 'sftp' | 'ssh';
+      host: string;
+      port: number;
+      username: string;
+      auth: 'password' | 'key';
+      secret?: string;
+      path: string;
+      publicUrl: string;
+    },
+  ) =>
+    http<Project>(`/projects/${id}/target/${env}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  clearEnvTarget: (id: string, env: EnvName) =>
+    http<Project>(`/projects/${id}/target/${env}`, { method: 'DELETE' }),
   getLogs: (id: string, env: EnvName) =>
     http<{ logs: string }>(`/projects/${id}/logs/${env}`),
   deleteProject: (id: string) =>

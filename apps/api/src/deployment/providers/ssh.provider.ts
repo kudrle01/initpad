@@ -6,6 +6,7 @@ import {
   DeployInput,
   DeployResult,
   DeploymentProvider,
+  ProviderConnection,
   StartInput,
   TeardownInput,
 } from '../deployment-provider.interface';
@@ -19,58 +20,94 @@ import {
   type ExecResult,
 } from './ssh-utils';
 
-// Fallback for templates that predate the startCommand manifest field.
 const DEFAULT_START = 'node src/index.js';
 
+// Effective connection for one call: the user's custom target (prod) or the
+// platform's demo VPS (fake-vps).
+interface EffConn {
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  privateKey?: string;
+  remoteRoot: string;
+  custom: boolean;
+  publicUrl?: string;
+}
+
 /**
- * Deploys a runtime (Node) application to a remote host over SSH — a real
- * protocol conversation with the fake-vps container (sshd + Node) that stands
- * in for a company VPS.
+ * Deploys a runtime (Node) application to a remote host over SSH.
+ *
+ * Two kinds of target:
+ *  - demo (no connection): the fake-vps container; the app port is allocated
+ *    from a pool and published 1:1 to the host for the health check;
+ *  - custom (input.connection): the user's own VPS; the app runs there and is
+ *    reached at the user-provided public URL (used for the health check).
  *
  * Flow: upload source (tar) → extract into releases/<version> → npm install →
- * switch the `current` symlink → (re)start the process → health check via the
- * published port.
+ * switch the `current` symlink → (re)start the process → health check.
  */
 @Injectable()
 export class SshProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'ssh';
   private readonly logger = new Logger('SshProvider');
   private readonly cfg = config.providers.ssh;
-  // node/npm may be missing from the non-interactive PATH — set it explicitly.
   private readonly PATH = 'PATH=/usr/local/bin:/usr/bin:/bin:$PATH';
 
+  private eff(input: { connection?: ProviderConnection }): EffConn {
+    if (input.connection) {
+      const c = input.connection;
+      return {
+        host: c.host,
+        port: c.port,
+        username: c.username,
+        password: c.password,
+        privateKey: c.privateKey,
+        remoteRoot: c.remoteRoot.replace(/\/+$/, ''),
+        custom: true,
+        publicUrl: c.publicUrl.replace(/\/+$/, ''),
+      };
+    }
+    return {
+      host: this.cfg.host,
+      port: this.cfg.port,
+      username: this.cfg.username,
+      password: this.cfg.password,
+      remoteRoot: this.cfg.remoteRoot,
+      custom: false,
+    };
+  }
+
   async deploy(input: DeployInput): Promise<DeployResult> {
-    const appPort = this.resolvePort(input);
-    const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
+    const cfg = this.eff(input);
+    const appPort = cfg.custom ? (input.port ?? 8080) : this.resolvePort(input);
+    const base = `${cfg.remoteRoot}/${input.projectName}-${input.env}`;
     const version = this.sanitize(input.version) || 'latest';
     const release = `${base}/releases/${version}`;
-    const url = `http://${config.publicHost}:${appPort}`;
+    const url = cfg.custom ? cfg.publicUrl! : `http://${config.publicHost}:${appPort}`;
+    const healthPath = input.healthPath ?? '/health';
 
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch (e) {
-      const reason = `Cannot reach SSH host ${this.cfg.host}:${this.cfg.port} — is fake-vps running? (${(e as Error).message})`;
+      const reason = `Cannot reach SSH host ${cfg.host}:${cfg.port} (${(e as Error).message})`;
       this.logger.warn(reason);
       return { status: 'failed', url: '', reason };
     }
 
     try {
-      // Without a Node runtime on the host there is nothing to run.
       const node = await sshExec(conn, `${this.PATH} command -v node`);
       if (node.code !== 0) {
         return {
           status: 'failed',
           url: '',
-          reason: 'No Node.js runtime on the SSH host (fake-vps image must ship node).',
+          reason: 'No Node.js runtime on the SSH host.',
         };
       }
 
       await this.execOrFail(conn, `mkdir -p ${release}`, 'prepare release dir');
 
-      // Upload the source as a tarball and extract it (node_modules/.git
-      // excluded). input.repoPath contains the exact version being deployed
-      // — the platform downloads it from Gitea before calling the provider.
       const sftp = await getSftp(conn);
       await uploadTar(sftp, input.repoPath, `${base}/app.tar`);
       await this.execOrFail(
@@ -78,25 +115,16 @@ export class SshProvider implements DeploymentProvider {
         `tar xf ${base}/app.tar -C ${release} && rm -f ${base}/app.tar`,
         'extract source',
       );
-
-      // Install dependencies (no lockfile in scaffolds → install, not ci).
       await this.execOrFail(
         conn,
         `cd ${release} && ${this.PATH} npm install --omit=dev --no-audit --no-fund`,
         'npm install',
       );
-
-      // Stop the previous instance (if any) and atomically switch the
-      // `current` symlink to the new release.
       await sshExec(
         conn,
         `[ -f ${base}/app.pid ] && kill "$(cat ${base}/app.pid)" 2>/dev/null; ln -sfn ${release} ${base}/current; true`,
       );
 
-      // Start on a fixed port (published 1:1 to the host). Subshell + nohup:
-      // the process survives the SSH channel closing, and the pidfile records
-      // the PID of the app process itself. The start command is a property of
-      // the template (manifest.startCommand), not of this provider.
       const startCmd = input.startCommand ?? DEFAULT_START;
       await this.execOrFail(
         conn,
@@ -104,15 +132,16 @@ export class SshProvider implements DeploymentProvider {
         'start app',
       );
 
-      const healthy = await this.waitHealthy(appPort, input.healthPath ?? '/health');
+      const healthy = cfg.custom
+        ? await this.waitHealthyUrl(`${url}${healthPath.startsWith('/') ? '' : '/'}${healthPath}`)
+        : await this.waitHealthy(appPort, healthPath);
       if (!healthy) {
         const log = await sshExec(conn, `tail -n 20 ${base}/app.log`).catch(() => null);
-        this.logger.warn(`${input.projectName} (${input.env}) SSH deploy unhealthy`);
         return {
           status: 'failed',
           url,
           reason:
-            `App did not pass health check at ${url}${input.healthPath ?? '/health'} within ~15s.` +
+            `App did not pass health check at ${url}${healthPath} within ~15s.` +
             (log?.stdout ? `\n--- last log ---\n${log.stdout.trim()}` : ''),
         };
       }
@@ -127,12 +156,13 @@ export class SshProvider implements DeploymentProvider {
   }
 
   async teardown(input: TeardownInput): Promise<void> {
-    const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
+    const cfg = this.eff(input);
+    const base = `${cfg.remoteRoot}/${input.projectName}-${input.env}`;
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch {
-      return; // Host unreachable — nothing to clean up.
+      return;
     }
     try {
       await sshExec(
@@ -145,12 +175,12 @@ export class SshProvider implements DeploymentProvider {
     }
   }
 
-  // Stops the running process; the release stays on disk so Start can resume it.
   async stop(input: TeardownInput): Promise<void> {
-    const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
+    const cfg = this.eff(input);
+    const base = `${cfg.remoteRoot}/${input.projectName}-${input.env}`;
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch {
       return;
     }
@@ -165,29 +195,24 @@ export class SshProvider implements DeploymentProvider {
     }
   }
 
-  // Re-starts the most recently deployed release (the `current` symlink) on
-  // the same port.
   async start(input: StartInput): Promise<DeployResult> {
-    const appPort = this.resolvePort(input);
-    const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
-    const url = `http://${config.publicHost}:${appPort}`;
+    const cfg = this.eff(input);
+    const appPort = cfg.custom ? (input.port ?? 8080) : this.resolvePort(input);
+    const base = `${cfg.remoteRoot}/${input.projectName}-${input.env}`;
+    const url = cfg.custom ? cfg.publicUrl! : `http://${config.publicHost}:${appPort}`;
+    const healthPath = input.healthPath ?? '/health';
 
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch (e) {
-      return {
-        status: 'failed',
-        url: '',
-        reason: `Cannot reach SSH host ${this.cfg.host}:${this.cfg.port} (${(e as Error).message})`,
-      };
+      return { status: 'failed', url: '', reason: `Cannot reach SSH host ${cfg.host}:${cfg.port} (${(e as Error).message})` };
     }
     try {
       const has = await sshExec(conn, `[ -d ${base}/current ] && echo ok`);
       if (!has.stdout.includes('ok')) {
         return { status: 'failed', url: '', reason: 'No release to start — use Redeploy first.' };
       }
-      // Defensively kill any leftover process, then start fresh.
       await sshExec(conn, `[ -f ${base}/app.pid ] && kill "$(cat ${base}/app.pid)" 2>/dev/null; true`);
       const startCmd = input.startCommand ?? DEFAULT_START;
       await this.execOrFail(
@@ -195,7 +220,9 @@ export class SshProvider implements DeploymentProvider {
         `cd ${base}/current && ( ${this.PATH} PORT=${appPort} nohup ${startCmd} > ${base}/app.log 2>&1 & echo $! > ${base}/app.pid )`,
         'start app',
       );
-      const healthy = await this.waitHealthy(appPort, input.healthPath ?? '/health');
+      const healthy = cfg.custom
+        ? await this.waitHealthyUrl(`${url}${healthPath.startsWith('/') ? '' : '/'}${healthPath}`)
+        : await this.waitHealthy(appPort, healthPath);
       if (!healthy) {
         return { status: 'failed', url, reason: `Health check at ${url} did not pass after start.` };
       }
@@ -209,10 +236,11 @@ export class SshProvider implements DeploymentProvider {
   }
 
   async logs(input: TeardownInput): Promise<string> {
-    const base = `${this.cfg.remoteRoot}/${input.projectName}-${input.env}`;
+    const cfg = this.eff(input);
+    const base = `${cfg.remoteRoot}/${input.projectName}-${input.env}`;
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch (e) {
       return `Logs unavailable: cannot reach SSH host (${(e as Error).message})`;
     }
@@ -224,16 +252,12 @@ export class SshProvider implements DeploymentProvider {
     }
   }
 
-  // The application port is allocated by the platform from the database
-  // (unique across all environments). The hash-slot fallback only covers
-  // callers that do not supply a port (e.g. provider used standalone).
   private resolvePort(input: { projectName: string; env: string; appPort?: number }): number {
     if (input.appPort) return input.appPort;
     const slot = portSlot(`${input.projectName}-${input.env}`, this.cfg.appPortSlots);
     return this.cfg.appPortBase + slot;
   }
 
-  // Runs a command and throws a labelled error when it exits non-zero.
   private async execOrFail(conn: Client, cmd: string, label: string): Promise<ExecResult> {
     const res = await sshExec(conn, cmd);
     if (res.code !== 0) {
@@ -243,21 +267,30 @@ export class SshProvider implements DeploymentProvider {
     return res;
   }
 
+  // Demo target: the app port is published 1:1 to the host, health-check localhost.
   private async waitHealthy(port: number, path: string): Promise<boolean> {
     const target = `http://${config.deployHealthHost}:${port}${path.startsWith('/') ? '' : '/'}${path}`;
+    return this.pollOk(target);
+  }
+
+  // Custom target: health-check the user-provided public URL.
+  private async waitHealthyUrl(url: string): Promise<boolean> {
+    return this.pollOk(url);
+  }
+
+  private async pollOk(target: string): Promise<boolean> {
     for (let i = 0; i < 30; i++) {
       try {
         const res = await fetch(target);
         if (res.ok) return true;
       } catch {
-        // App still starting — retry.
+        // still starting — retry
       }
       await new Promise((r) => setTimeout(r, 500));
     }
     return false;
   }
 
-  // Restrict to filesystem-safe characters for the release directory name.
   private sanitize(v: string): string {
     return v.replace(/[^a-zA-Z0-9._-]/g, '');
   }

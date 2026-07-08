@@ -52,6 +52,7 @@ interface Props {
   onStop: (env: EnvName) => void;
   onStart: (env: EnvName) => void;
   onRemoveEnv: (env: EnvName) => void;
+  onConfigureTarget: (env: EnvName) => void;
   onOpenLogs: (env: EnvName) => void;
 }
 
@@ -64,6 +65,7 @@ export function EnvironmentPipeline({
   onStop,
   onStart,
   onRemoveEnv,
+  onConfigureTarget,
   onOpenLogs,
 }: Props) {
   const byEnv = Object.fromEntries(project.environments.map((e) => [e.name, e])) as Record<
@@ -85,6 +87,9 @@ export function EnvironmentPipeline({
         // Stop/Start only makes sense for process targets (Docker/SSH), not static hosting (SFTP).
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
+        // A user deployment target (your own server) makes sense for the remote
+        // providers, and stays available once one is configured.
+        const canTarget = env.provider === 'ssh' || env.provider === 'sftp' || !!env.target;
 
         return (
           <Fragment key={env.name}>
@@ -104,7 +109,7 @@ export function EnvironmentPipeline({
                   ) : (
                     <StatusBadge status={env.status} />
                   )}
-                  {hasDeployment && (
+                  {(hasDeployment || canTarget) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -117,10 +122,13 @@ export function EnvironmentPipeline({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
-                          <RefreshCw className="h-4 w-4" /> Redeploy
-                        </DropdownMenuItem>
-                        {canStopStart &&
+                        {hasDeployment && (
+                          <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
+                            <RefreshCw className="h-4 w-4" /> Redeploy
+                          </DropdownMenuItem>
+                        )}
+                        {hasDeployment &&
+                          canStopStart &&
                           (env.status === 'stopped' ? (
                             <DropdownMenuItem onSelect={() => onStart(env.name)}>
                               <Play className="h-4 w-4" /> Start
@@ -133,10 +141,19 @@ export function EnvironmentPipeline({
                               <Square className="h-4 w-4" /> Stop
                             </DropdownMenuItem>
                           ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem destructive onSelect={() => onRemoveEnv(env.name)}>
-                          <Trash2 className="h-4 w-4" /> Remove deployment
-                        </DropdownMenuItem>
+                        {canTarget && (
+                          <DropdownMenuItem onSelect={() => onConfigureTarget(env.name)}>
+                            <Server className="h-4 w-4" /> {env.target ? 'Edit target' : 'Configure target'}
+                          </DropdownMenuItem>
+                        )}
+                        {hasDeployment && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem destructive onSelect={() => onRemoveEnv(env.name)}>
+                              <Trash2 className="h-4 w-4" /> Remove deployment
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
@@ -154,6 +171,15 @@ export function EnvironmentPipeline({
               <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                 <ProviderIcon className="h-3.5 w-3.5 shrink-0" /> {env.provider}
               </div>
+              {env.target?.host && (
+                <div
+                  className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"
+                  title={`Your server: ${env.target.host}`}
+                >
+                  <Server className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{env.target.host}</span>
+                </div>
+              )}
 
               <a
                 href={env.url ?? undefined}

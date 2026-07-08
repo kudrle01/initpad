@@ -22,6 +22,16 @@ export interface TemplateManifest {
   description: string;
 }
 
+export interface EnvTarget {
+  kind: ProviderKind;
+  host: string | null;
+  port: number | null;
+  username: string | null;
+  auth: string | null; // 'password' | 'key'
+  path: string | null;
+  publicUrl: string | null;
+}
+
 export interface Environment {
   name: EnvName;
   provider: ProviderKind;
@@ -29,6 +39,7 @@ export interface Environment {
   version: string | null;
   url: string | null;
   statusReason: string | null;
+  target: EnvTarget | null;
 }
 
 export interface Project {

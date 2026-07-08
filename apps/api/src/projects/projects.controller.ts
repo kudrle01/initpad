@@ -6,10 +6,12 @@ import {
   HttpCode,
   Param,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { SetTargetDto } from './dto/set-target.dto';
 import { EnvName } from '../domain/types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -95,6 +97,29 @@ export class ProjectsController {
   ) {
     await this.projects.assertOwner(id, userId);
     return this.projects.removeEnv(id, env);
+  }
+
+  // Configure the environment's deployment target (prod: your own server).
+  @Put(':id/target/:env')
+  async setTarget(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @Body() dto: SetTargetDto,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertOwner(id, userId);
+    return this.projects.setTarget(id, env, dto);
+  }
+
+  // Remove the user target → revert to the platform's demo target.
+  @Delete(':id/target/:env')
+  async clearTarget(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertOwner(id, userId);
+    return this.projects.clearTarget(id, env);
   }
 
   @Get(':id/logs/:env')

@@ -22,7 +22,21 @@ export interface TemplateManifest {
   // Subdirectory containing the build artifact for static deployments
   // (e.g. 'dist'). When omitted, the repository root is deployed.
   artifactDir?: string;
+  // Command that produces the static artifact before an SFTP upload
+  // (e.g. 'npm install && npm run build'). Runs in the deployed source.
+  buildCommand?: string;
   description: string;
+}
+
+// Summary of a user-configured deployment target (no secret) for the UI.
+export interface EnvTarget {
+  kind: ProviderKind;
+  host: string | null;
+  port: number | null;
+  username: string | null;
+  auth: string | null; // 'password' | 'key'
+  path: string | null;
+  publicUrl: string | null;
 }
 
 export interface Environment {
@@ -32,6 +46,8 @@ export interface Environment {
   version: string | null;
   url: string | null;
   statusReason: string | null;
+  // Present when this environment deploys to the user's own server (prod).
+  target: EnvTarget | null;
 }
 
 export interface Project {

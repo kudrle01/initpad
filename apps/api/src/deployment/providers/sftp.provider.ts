@@ -1,13 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Client, SFTPWrapper } from 'ssh2';
+import { exec } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { promisify } from 'util';
 import { ProviderKind } from '../../domain/types';
 import { config } from '../../config';
 import {
   DeployInput,
   DeployResult,
   DeploymentProvider,
+  ProviderConnection,
   StartInput,
   TeardownInput,
 } from '../deployment-provider.interface';
@@ -23,39 +26,82 @@ import {
   uploadDir,
 } from './ssh-utils';
 
+const execAsync = promisify(exec);
+
+// Effective connection for one call: the user's custom target (prod), or the
+// platform's built-in demo target (fake-sftp + nginx).
+interface EffCfg {
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  privateKey?: string;
+  remoteRoot: string;
+  publicUrl: string;
+  internalUrl: string;
+  artifactSubdir: string;
+}
+
 /**
- * Deploys a static / PHP application over SFTP — a real upload to the
- * fake-sftp container (atmoz/sftp: SFTP subsystem only, no shell). The
- * uploaded content is served by nginx.
+ * Deploys a static / PHP application over SFTP.
  *
- * The remote layout is namespaced per project+environment so deployments
- * never overwrite each other:
+ * Two kinds of target:
+ *  - demo (no connection): the fake-sftp container served by nginx;
+ *  - custom (input.connection): the user's own SFTP host (e.g. a school server
+ *    such as ESO that also runs PHP), configured via a form in the UI.
  *
- *   <root>/<slug>-releases/<version>/…   uploaded releases
- *   <root>/<slug>                        symlink → <slug>-releases/<version>
- *
- * The public URL is <publicUrl>/<slug>/. nginx serves the volume root, so
- * swapping the symlink atomically switches the published version — the
- * classic "releases + current" deployment pattern.
+ * Layout is namespaced per project+environment so deployments never overwrite
+ * each other: <root>/<slug>-releases/<version> plus a <root>/<slug> symlink to
+ * the current version (atomic release switch). The site is served at
+ * <publicUrl>/<slug>/.
  */
 @Injectable()
 export class SftpProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'sftp';
   private readonly logger = new Logger('SftpProvider');
-  private readonly cfg = config.providers.sftp;
+
+  private eff(input: { connection?: ProviderConnection }): EffCfg {
+    if (input.connection) {
+      const c = input.connection;
+      const base = c.publicUrl.replace(/\/+$/, '');
+      return {
+        host: c.host,
+        port: c.port,
+        username: c.username,
+        password: c.password,
+        privateKey: c.privateKey,
+        remoteRoot: c.remoteRoot.replace(/\/+$/, ''),
+        publicUrl: base,
+        internalUrl: base, // the user's server is reachable directly
+        artifactSubdir: '',
+      };
+    }
+    return { ...config.providers.sftp };
+  }
 
   async deploy(input: DeployInput): Promise<DeployResult> {
+    const cfg = this.eff(input);
     const slug = this.slug(input);
     const version = this.sanitize(input.version) || 'latest';
-    const releasesDir = `${this.cfg.remoteRoot}/${slug}-releases`;
-    const release = `${releasesDir}/${version}`;
+    const release = `${cfg.remoteRoot}/${slug}-releases/${version}`;
 
-    // input.repoPath contains the exact version being deployed — the platform
-    // downloads it from Gitea before calling the provider. Source is the
-    // template's artifact subdirectory, or the repository root.
-    const artifactDir = input.artifactDir ?? this.cfg.artifactSubdir;
+    // Build the static artifact if the template needs it (e.g. React → dist).
+    if (input.buildCommand) {
+      this.logger.log(`Building static artifact: ${input.buildCommand}`);
+      try {
+        await execAsync(input.buildCommand, {
+          cwd: input.repoPath,
+          timeout: 180_000,
+          maxBuffer: 16 * 1024 * 1024,
+        });
+      } catch (e) {
+        const detail = (e as Error).message.split('\n').slice(-4).join(' ').trim();
+        return { status: 'failed', url: '', reason: `Build failed: ${detail}` };
+      }
+    }
+
+    const artifactDir = input.artifactDir ?? cfg.artifactSubdir;
     const localDir = artifactDir ? join(input.repoPath, artifactDir) : input.repoPath;
-
     if (!existsSync(localDir)) {
       return {
         status: 'failed',
@@ -66,36 +112,28 @@ export class SftpProvider implements DeploymentProvider {
 
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch (e) {
-      const reason = `Cannot reach SFTP host ${this.cfg.host}:${this.cfg.port} — is fake-sftp running? (${(e as Error).message})`;
+      const reason = `Cannot reach SFTP host ${cfg.host}:${cfg.port} (${(e as Error).message})`;
       this.logger.warn(reason);
       return { status: 'failed', url: '', reason };
     }
 
     try {
       const sftp = await getSftp(conn);
-
-      // Upload the new release (node_modules/.git excluded).
       await mkdirp(sftp, release);
       await uploadDir(sftp, localDir, release);
+      await this.swapLink(sftp, cfg.remoteRoot, slug, `${slug}-releases/${version}`);
 
-      // Atomic switch: symlink <slug> → <slug>-releases/<version>. The target
-      // is relative so it also resolves inside the nginx volume mount. The old
-      // link is removed first (SFTP cannot atomically replace a symlink).
-      await this.swapLink(sftp, slug, `${slug}-releases/${version}`);
-
-      const url = this.publicUrl(slug);
-      const reachable = await this.waitReachable(this.internalUrl(slug));
+      const url = this.publicUrl(cfg, slug);
+      const reachable = await this.waitReachable(this.internalUrl(cfg, slug));
       if (!reachable) {
-        this.logger.warn(`SFTP upload succeeded but ${url} is not responding (is nginx up?).`);
         return {
           status: 'failed',
           url,
-          reason: `Files uploaded, but ${url} is not serving them — is the nginx service running?`,
+          reason: `Files uploaded, but ${url} is not serving them (is the web server up / the public URL correct?).`,
         };
       }
-
       this.logger.log(`Deployed over SFTP: ${input.projectName} (${input.env}) → ${url}`);
       return { status: 'running', url };
     } catch (e) {
@@ -106,18 +144,18 @@ export class SftpProvider implements DeploymentProvider {
   }
 
   async teardown(input: TeardownInput): Promise<void> {
+    const cfg = this.eff(input);
     const slug = this.slug(input);
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch {
       return;
     }
     try {
       const sftp = await getSftp(conn);
-      // Only this project's subtree — other deployments are untouched.
-      await sftpUnlink(sftp, `${this.cfg.remoteRoot}/${slug}`);
-      await sftpRmrf(sftp, `${this.cfg.remoteRoot}/${slug}-releases`);
+      await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}`);
+      await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}-releases`);
       this.logger.log(`Torn down SFTP deploy: ${input.projectName} (${input.env})`);
     } finally {
       sshEnd(conn);
@@ -125,23 +163,21 @@ export class SftpProvider implements DeploymentProvider {
   }
 
   async logs(): Promise<string> {
-    // Static hosting has no process to produce runtime logs (unlike Docker/SSH).
-    return 'Static hosting has no process logs. Files are served by nginx from the published release.';
+    return 'Static hosting has no process logs. Files are served by the web server from the published release.';
   }
 
-  // "Stop" for a static site = unlink the public symlink (the site stops being
-  // served; release files stay). "Start" re-links it to the deployed version.
   async stop(input: TeardownInput): Promise<void> {
+    const cfg = this.eff(input);
     const slug = this.slug(input);
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch {
       return;
     }
     try {
       const sftp = await getSftp(conn);
-      await sftpUnlink(sftp, `${this.cfg.remoteRoot}/${slug}`);
+      await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}`);
       this.logger.log(`SFTP site unpublished: ${slug}`);
     } finally {
       sshEnd(conn);
@@ -149,70 +185,66 @@ export class SftpProvider implements DeploymentProvider {
   }
 
   async start(input: StartInput): Promise<DeployResult> {
+    const cfg = this.eff(input);
     const slug = this.slug(input);
     let conn: Client;
     try {
-      conn = await sshConnect(this.cfg);
+      conn = await sshConnect(cfg);
     } catch (e) {
       return { status: 'failed', url: '', reason: `Cannot reach SFTP host (${(e as Error).message})` };
     }
     try {
       const sftp = await getSftp(conn);
-      // Prefer the version the platform recorded as deployed; fall back to the
-      // lexicographically last release (hashes → only a best-effort guess).
       let version = input.version ? this.sanitize(input.version) : '';
       if (!version) {
-        const entries = await sftpReaddir(sftp, `${this.cfg.remoteRoot}/${slug}-releases`);
+        const entries = await sftpReaddir(sftp, `${cfg.remoteRoot}/${slug}-releases`);
         const dirs = entries.filter((e) => e.isDir).map((e) => e.name).sort();
         version = dirs[dirs.length - 1] ?? '';
       }
       if (!version) {
         return { status: 'failed', url: '', reason: 'No release to start — use Redeploy first.' };
       }
-      await this.swapLink(sftp, slug, `${slug}-releases/${version}`);
-      const url = this.publicUrl(slug);
-      const reachable = await this.waitReachable(this.internalUrl(slug));
+      await this.swapLink(sftp, cfg.remoteRoot, slug, `${slug}-releases/${version}`);
+      const url = this.publicUrl(cfg, slug);
+      const reachable = await this.waitReachable(this.internalUrl(cfg, slug));
       return reachable
         ? { status: 'running', url }
-        : { status: 'failed', url, reason: `${url} is not serving — is nginx running?` };
+        : { status: 'failed', url, reason: `${url} is not serving.` };
     } finally {
       sshEnd(conn);
     }
   }
 
-  // Re-points the <root>/<name> symlink at a new target (relative to root).
-  private async swapLink(sftp: SFTPWrapper, name: string, target: string): Promise<void> {
-    const link = `${this.cfg.remoteRoot}/${name}`;
+  private async swapLink(
+    sftp: SFTPWrapper,
+    remoteRoot: string,
+    name: string,
+    target: string,
+  ): Promise<void> {
+    const link = `${remoteRoot}/${name}`;
     await sftpUnlink(sftp, link); // best-effort; the link may not exist yet
     await sftpSymlink(sftp, target, link);
   }
 
-  // Deployment key <owner>-<name>-<env> → separate sites even for the test
-  // and prod environments of the same project.
   private slug(input: { projectName: string; env: string }): string {
     return this.sanitize(`${input.projectName}-${input.env}`).toLowerCase();
   }
 
-  // URL shown to the user (browser-facing).
-  private publicUrl(slug: string): string {
-    return `${this.cfg.publicUrl.replace(/\/+$/, '')}/${slug}/`;
+  private publicUrl(cfg: EffCfg, slug: string): string {
+    return `${cfg.publicUrl.replace(/\/+$/, '')}/${slug}/`;
   }
 
-  // URL the API uses to verify the site is served (may differ from the
-  // public one when the API runs in a container).
-  private internalUrl(slug: string): string {
-    return `${this.cfg.internalUrl.replace(/\/+$/, '')}/${slug}/`;
+  private internalUrl(cfg: EffCfg, slug: string): string {
+    return `${cfg.internalUrl.replace(/\/+$/, '')}/${slug}/`;
   }
 
   private async waitReachable(url: string): Promise<boolean> {
     for (let i = 0; i < 10; i++) {
       try {
         const res = await fetch(url);
-        // Require actually served content (2xx), not just a running nginx —
-        // a 404 would mask a broken symlink or a wrong document root.
         if (res.ok) return true;
       } catch {
-        // nginx not up yet / unreachable — retry.
+        // not up yet — retry
       }
       await new Promise((r) => setTimeout(r, 500));
     }

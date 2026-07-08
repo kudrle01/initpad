@@ -58,5 +58,17 @@ model Environment {
   // (Postgres allows multiple NULLs in a unique column).
   allocatedPort Int? @unique
 
+  // User-provided deployment target (typically prod: your own server). When
+  // null, the platform's built-in demo target is used. The secret (password or
+  // private key) is encrypted at rest (AES-256-GCM, see common/secret.ts).
+  targetKind      String? // 'sftp' | 'ssh'
+  targetHost      String?
+  targetPort      Int?
+  targetUsername  String?
+  targetAuth      String? // 'password' | 'key'
+  targetSecret    String? // encrypted password or PEM private key
+  targetPath      String? // writable root on the remote
+  targetPublicUrl String?
+
   @@unique([projectId, name])
 }

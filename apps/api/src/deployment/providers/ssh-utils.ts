@@ -15,7 +15,9 @@ export interface SshTarget {
   host: string;
   port: number;
   username: string;
-  password: string;
+  password?: string;
+  // PEM private key (custom targets that authenticate by key instead of password).
+  privateKey?: string;
 }
 
 export interface ExecResult {
@@ -34,7 +36,7 @@ export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client
         host: t.host,
         port: t.port,
         username: t.username,
-        password: t.password,
+        ...(t.privateKey ? { privateKey: t.privateKey } : { password: t.password }),
         readyTimeout: timeoutMs,
       });
   });
