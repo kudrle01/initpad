@@ -1,0 +1,11 @@
+{
+  "id": "nestjs",
+  "name": "NestJS API",
+  "language": "TypeScript",
+  "artifact": "runtime",
+  "compatibleProviders": ["docker"],
+  "port": 8080,
+  "healthPath": "/health",
+  "startCommand": "node dist/main.js",
+  "description": "NestJS (TypeScript) REST API. Compiled to JS and run on Docker across dev/test/prod."
+}

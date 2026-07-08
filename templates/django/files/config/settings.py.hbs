@@ -1,0 +1,14 @@
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+SECRET_KEY = "dev-{{projectName}}-change-me"
+DEBUG = False
+ALLOWED_HOSTS = ["*"]
+
+INSTALLED_APPS = []
+MIDDLEWARE = []
+ROOT_URLCONF = "config.urls"
+TEMPLATES = []
+WSGI_APPLICATION = "config.wsgi.application"
+DATABASES = {}
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

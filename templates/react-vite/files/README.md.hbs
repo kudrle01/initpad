@@ -1,0 +1,10 @@
+# {{projectName}}
+
+React (Vite) single-page app scaffolded by InitPad.
+
+- `npm install` then `npm run dev` — local dev server
+- `npm run build` — static bundle into `dist/`
+
+Dev/test run on Docker (nginx serving the build); prod is published as static
+files over SFTP. `vite.config.js` uses `base: './'` so the app works under a
+subpath.

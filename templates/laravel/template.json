@@ -1,0 +1,10 @@
+{
+  "id": "laravel",
+  "name": "Laravel (PHP)",
+  "language": "PHP",
+  "artifact": "runtime",
+  "compatibleProviders": ["docker"],
+  "port": 8080,
+  "healthPath": "/",
+  "description": "Laravel (PHP) application scaffolded via Composer. Runs on Docker across dev/test/prod."
+}

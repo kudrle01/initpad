@@ -1,0 +1,10 @@
+{
+  "id": "nette",
+  "name": "Nette (PHP)",
+  "language": "PHP",
+  "artifact": "runtime",
+  "compatibleProviders": ["docker"],
+  "port": 8080,
+  "healthPath": "/",
+  "description": "Nette (PHP) web project scaffolded via Composer. Runs on Docker across dev/test/prod."
+}

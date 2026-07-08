@@ -1,0 +1,9 @@
+from django.http import JsonResponse
+
+
+def root(request):
+    return JsonResponse({"service": "{{projectName}}", "status": "ok"})
+
+
+def health(request):
+    return JsonResponse({"status": "ok"})

@@ -1,0 +1,10 @@
+{
+  "id": "flask",
+  "name": "Flask (Python)",
+  "language": "Python",
+  "artifact": "runtime",
+  "compatibleProviders": ["docker"],
+  "port": 8000,
+  "healthPath": "/health",
+  "description": "Flask (Python) web app served by gunicorn. Runs on Docker across dev/test/prod."
+}

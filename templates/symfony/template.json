@@ -1,0 +1,10 @@
+{
+  "id": "symfony",
+  "name": "Symfony (PHP)",
+  "language": "PHP",
+  "artifact": "runtime",
+  "compatibleProviders": ["docker"],
+  "port": 8080,
+  "healthPath": "/health",
+  "description": "Symfony (PHP) application scaffolded via Composer, with a minimal JSON controller. Runs on Docker."
+}

@@ -1,0 +1,10 @@
+{
+  "id": "nextjs",
+  "name": "Next.js",
+  "language": "JavaScript",
+  "artifact": "runtime",
+  "compatibleProviders": ["docker"],
+  "port": 8080,
+  "healthPath": "/health",
+  "description": "Next.js (React) app with server rendering. Runs on Docker across dev/test/prod."
+}

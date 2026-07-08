@@ -1,0 +1,10 @@
+{
+  "id": "django",
+  "name": "Django (Python)",
+  "language": "Python",
+  "artifact": "runtime",
+  "compatibleProviders": ["docker"],
+  "port": 8000,
+  "healthPath": "/health",
+  "description": "Django (Python) project served by gunicorn. Runs on Docker across dev/test/prod."
+}
