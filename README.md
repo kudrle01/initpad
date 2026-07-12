@@ -1,161 +1,108 @@
-# InitPad – interní platforma pro vývojáře (IDP)
+# InitPad — internal developer platform
 
-Funkční interní platforma pro vývojáře (diplomová práce). Vývojář klikne „nový
-projekt“, vybere šablonu a platforma připraví repo, kód, CI/CD a běžící aplikaci
-v promotion pipeline **dev → test → prod**, kde cíl nasazení řídí zvolený
-**target** (Docker / SFTP / SSH; Kubernetes jako doporučená produkční vrstva).
+InitPad je self-hosted vývojářská platforma pro výuku, malé týmy a organizace,
+které chtějí standardizovat založení projektu bez zavedení celého enterprise
+platform-engineering stacku. Z jednoho formuláře vytvoří privátní Git repozitář,
+zdrojový scaffold, reprodukovatelnou CI pipeline, OCI image a prostředí
+`dev → test → prod`.
 
-**Není to fake prototyp — mašinerie je reálná** (Gitea SCM + OCI registry +
-Actions CI, PostgreSQL, buildy a deploye image, OIDC SSO, šifrované secrety,
-Caddy s automatickým HTTPS). Jeden kód, dva režimy: **simulovaný** pro lokální
-ukázku (vestavěné demo cíle) a **reálný** pro produkci (skutečné servery /
-Kubernetes). Produkční architektura nasazování je v [`DECISIONS.md`](DECISIONS.md)
-(ADR-020).
+Nejde o náhradu Kubernetes ani o obecný cloud. Aktuální produkt je bezpečný
+single-node control plane a realistická simulace firemního delivery procesu.
+Pro větší produkční provoz se mají deployment providery přesunout na oddělené
+agenty nebo Kubernetes; viz [THREAT_MODEL.md](THREAT_MODEL.md).
 
-## Struktura (monorepo)
-```
-initpad/
-├── apps/
-│   ├── api/        backend (NestJS) – projekty, šablony, generátor, nasazení, SCM
-│   └── web/        frontend (React + Vite) – dashboard, formulář, detail
-├── templates/      katalog šablon (data-driven; node-express)
-├── infra/          docker-compose (simulované prostředí)
-└── package.json    npm workspaces
-```
+## Co funguje
 
-## Spuštění (vývoj)
-Potřeba Node 20+ a Docker (kvůli PostgreSQL). Ze složky `initpad/`:
+- platform-native účty, první účet při výchozí instalaci, HTTP-only session a
+  OIDC SSO z InitPadu do Gitey;
+- Gitea jako SCM, Actions a OCI registry, privátní repozitáře a tokeny oddělené
+  pro každý projekt;
+- izolovaný rootless CI daemon bez přístupu k Docker socketu hostitele;
+- skutečné testy, zamčené závislosti a Dockerfile v každém golden pathu;
+- build once, deploy many: hash commitu označuje image propagovaný do dev/test/prod;
+- Docker, SSH a SFTP targety, ověření spojení, healthchecky, logy, stop/start,
+  redeploy, teardown a ochrana proti souběžným deployům;
+- verzované Prisma migrace, readiness/liveness, resource limity, security
+  headers, backup skript a automatické HTTPS v server profilu.
+
+## Golden paths
+
+Node/JS: Express, NestJS, Next.js, React + Vite, Vue + Vite. Python: Django,
+FastAPI, Flask. PHP: jednoduché PHP, Laravel, Nette a Symfony. Laravel/Nette/
+Symfony obsahují zdrojový skeleton i `composer.lock`; framework se negeneruje
+až během release buildu.
+
+## Instalace jedním příkazem
+
+Požadavek: Docker s Compose pluginem.
+
 ```bash
-npm install                                          # workspaces + prisma generate
+cd deploy
+./install.sh
+```
 
-# 1) databáze (PostgreSQL v Dockeru)
-docker compose -f infra/docker-compose.yml up -d postgres
+Platforma běží na `http://localhost:8080`, Gitea na
+`http://gitea.localhost:3001`. Instalátor vygeneruje secrety, vytvoří servisní
+účet, aplikuje migrace, nastaví OIDC a zaregistruje runner. Je idempotentní;
+upgrade se provádí `git pull && ./install.sh`.
 
-# 2) konfigurace + migrace schématu
-cd apps/api && cp .env.example .env && npm run db:migrate && cd ../..
+Serverovou instalaci, DNS/TLS, zálohu a restore drill popisuje
+[deploy/README.md](deploy/README.md).
 
-# 3) backend (http://localhost:3000/api)
+## Lokální vývoj
+
+Požadavek: Node.js 20+ a Docker.
+
+```bash
+npm install
+docker compose -f infra/docker-compose.yml up -d postgres gitea
+cp apps/api/.env.example apps/api/.env
+npm run db:migrate --workspace @initpad/api
 npm run dev:api
-
-# 4) frontend (http://localhost:5173), v druhém terminálu
+# v druhém terminálu
 npm run dev:web
 ```
-Frontend proxuje `/api` na backend. Otevři `http://localhost:5173`.
-Projekty se ukládají do PostgreSQL, takže přežijí restart.
 
-## Gitea (volitelné)
-Bez konfigurace zůstává repo jen lokální složkou. Pro reálná Git repa:
-```bash
-docker compose -f infra/docker-compose.yml up -d gitea   # http://localhost:3001
-```
-V Gitea web UI založ uživatele a vytvoř access token (Settings → Applications).
-Pak v `apps/api/` zkopíruj `.env.example` na `.env` a vyplň
-`INITPAD_GITEA_URL/USER/TOKEN`. Po vytvoření projektu platforma založí repo a
-pushne do něj scaffold; odkaz se objeví v detailu projektu.
+Web je na `http://localhost:5173`, API na `http://localhost:3000/api`.
+Plný kontejnerový stack v `deploy/` a vývojový stack v `infra/` nespouštějte
+současně — sdílejí jméno Compose projektu.
 
-## CI/CD (Gitea Actions)
-Vygenerovaný `.gitea/workflows/ci.yml` (joby build → test → docker build →
-deploy) běží reálně na Gitea Actions runneru. Stav pipeline platforma čte
-z commit statusů Gitey a ukazuje ho v detailu projektu u každého commitu.
+## Architektura a tok změny
 
-Jednorázové zapnutí runneru (Gitea musí běžet a mít založený admin účet):
-```bash
-docker compose -f infra/docker-compose.yml up -d gitea postgres
-./infra/register-runner.sh         # vygeneruje registrační token + vypíše příkaz
-# spusť vypsaný příkaz, např.:
-INITPAD_RUNNER_TOKEN=<token> \
-  docker compose -f infra/docker-compose.yml --profile ci up -d act_runner
-```
-Runner si registraci uloží do volume `runner-data`, takže token je potřeba jen
-poprvé. Krok `docker build` v CI staví image přes hostitelský Docker daemon
-(socket je vmountovaný do runneru). Platforma u nově vytvořených repozitářů
-Actions zapíná automaticky (`has_actions`).
-
-**Pozn.:** Labely runneru (`ubuntu-latest`) se zapisují **při registraci** z env
-`GITEA_RUNNER_LABELS`. Když runner hlásí *„no matching online runner with label
-ubuntu-latest"*, je buď offline, nebo se zaregistroval se špatnými labely. Pak je
-nutná re-registrace (smaž `runner-data` volume a registruj znovu):
-```bash
-docker compose -f infra/docker-compose.yml --profile ci down
-docker volume rm initpad_runner-data
-./infra/register-runner.sh
-INITPAD_RUNNER_TOKEN=<token> \
-  docker compose -f infra/docker-compose.yml --profile ci up -d act_runner
-docker compose -f infra/docker-compose.yml --profile ci logs -f act_runner
-```
-Stav runneru ověříš v Gitea UI: Site Administration → Actions → Runners (musí být
-zelený a mít label `ubuntu-latest`).
-
-## Přihlášení (Gitea OAuth2 SSO)
-Aplikace vyžaduje přihlášení přes Gitea. V Gitea: Settings → Applications →
-**Create OAuth2 Application**, Redirect URI = `http://localhost:3000/api/auth/callback`.
-Vzniklé `Client ID` a `Client Secret` vyplň do `apps/api/.env`
-(`INITPAD_OAUTH_CLIENT_ID/SECRET`) spolu s náhodným `INITPAD_JWT_SECRET`.
-Po `npm run db:migrate` (vytvoří tabulku uživatelů) se na `:5173` zobrazí
-přihlašovací obrazovka; projekty patří přihlášenému uživateli.
-
-## SSO do Gitey (platforma jako OIDC provider)
-Aby přihlášený uživatel viděl svá (privátní) repa po prokliku, aniž by se zvlášť
-loginoval do Gitey, je platforma **OIDC provider** a Gitea její klient. Po
-nastavení stačí na Gitea login stránce kliknout „Sign in with InitPad" – protože
-už jsi přihlášený na platformě, je to jen automatický redirect.
-
-Backend vystavuje: `/.well-known/openid-configuration`, `/oauth/authorize`,
-`/oauth/token`, `/oauth/userinfo`, `/oauth/jwks` (vše pod `/api`). Hodnoty
-nastav v `apps/api/.env` (`INITPAD_OIDC_CLIENT_ID/SECRET/ISSUER`).
-
-V Gitee jako admin: **Site Administration → Authentication Sources → Add Source**:
-- Authentication Type: **OAuth2**
-- Authentication Name: `initpad` (callback bude `<gitea>/user/oauth2/initpad/callback`)
-- OAuth2 Provider: **OpenID Connect**
-- Client ID / Secret: stejné jako `INITPAD_OIDC_CLIENT_ID/SECRET`
-- Auto Discovery URL: `http://host.docker.internal:3000/api/.well-known/openid-configuration`
-  (Gitea běží v kontejneru – `localhost:3000` by ukázal na Giteu samotnou, proto
-  `host.docker.internal`. Browser-facing `authorize` zůstává na `localhost`,
-  to řeší `INITPAD_OIDC_PUBLIC_URL`.)
-
-Account linking **není v tom formuláři** – je to globální nastavení Gitey. Je
-zapnuté přes env v `infra/docker-compose.yml` (služba `gitea`):
-`GITEA__oauth2_client__ACCOUNT_LINKING=auto` (+ `ENABLE_AUTO_REGISTRATION=true`,
-`USERNAME=nickname`). Díky tomu se přihlášení přes platformu spáruje s existujícím
-účtem podle e-mailu (řízená registrace ho vytvořila se stejným e-mailem). Po
-úpravě env Giteu znovu nasaď: `docker compose -f infra/docker-compose.yml up -d gitea`.
-
-Pozn.: podpisový klíč (RS256) se generuje při startu API do paměti – po restartu
-se mění, což pro prototyp stačí (Gitea si JWKS načítá při každém loginu).
-
-## Co už funguje
-- **Přihlášení přes Gitea** (OAuth2 SSO), projekty patří uživateli (PostgreSQL)
-- katalog šablon z disku (`/api/templates`)
-- vytvoření projektu → generování ze šablony (Handlebars) do `.workspace/<projekt>`
-- **Gitea**: založení repa + push scaffoldu (s fallbackem na lokální složku)
-- **Docker**: reálný build image a běh kontejneru v dev (s fallbackem bez Dockeru)
-- **Gitea Actions CI**: workflow build → test → docker build na push reálně proběhne;
-  stav pipeline se zobrazuje u commitů v detailu projektu
-- **CI → deploy**: po úspěšném buildu CI zavolá webhook platformy (`/api/ci/deploy`),
-  ta stáhne commit a nasadí dev → uzavřený E2E: commit → build → běžící dev
-- **Build once, deploy many**: CI pushne image do Gitea registru (tag = commit),
-  platforma ho jen stáhne a spustí; promote do test/prod = ten samý image
-  (viz `DECISIONS.md`, ADR-008)
-- **Řízená registrace**: platforma zakládá Gitea účet + token (formulář na login)
-- **SSO**: platforma jako OIDC provider, Gitea se přihlašuje přes ni
-- prostředí dev/test/prod s providerem, auto-deploy do dev, promote dev → test → prod
-- dashboard, formulář, detail s promotion pipeline
-- **Reálné SSH/SFTP nasazení**: prod jede přes SSH na `fake-vps` (Node runtime,
-  release + symlink `current`, health check) nebo přes SFTP na `fake-sftp`
-  (statika, servíruje nginx) – tři heterogenní cíle (Docker/SSH/SFTP), viz
-  `DECISIONS.md`, ADR-009
-
-### Spuštění cílů nasazení (prod)
-```bash
-cd infra
-docker compose up -d --build fake-vps fake-sftp static-web
-# SSH cíl:  localhost:2200 (deploy/deploy), app porty 8090–8099
-# SFTP cíl: localhost:2222 (deploy/deploy), servíruje http://localhost:8085
+```text
+Developer → InitPad web/API → Gitea repository
+                              ↓ push
+                     isolated Actions runner
+                              ↓ test/build/push
+                         Gitea OCI registry
+                              ↓ signed per-repo callback
+                      deploy dev → test → prod
 ```
 
-## Zatím simulováno (další iterace)
-- statická šablona (React build) pro plné vyzkoušení SFTP cíle
+Zdroj pravdy pro kód je Gitea, pro metadata PostgreSQL a pro artefakty OCI
+registry. Asynchronní deployment má per-environment operation lock; po restartu
+se přerušená operace označí jako failed a nemůže přepsat novější stav.
 
-## Mapování na plán
-Viz `../PLAN.md` (fáze, providery, šablony, evaluace).
+## Ověření kvality
+
+```bash
+npm run build
+npm run test --workspace @initpad/api -- --runInBand
+npm audit --audit-level=low
+docker compose -f deploy/docker-compose.yml --profile runner config --quiet
+```
+
+Každý template se při změně má vyrenderovat se vzorovým názvem a spustit jeho
+lockfile install, test a build. PHP frameworky mají navíc `composer audit
+--locked` a Docker `test` stage.
+
+## Produktové zaměření
+
+Nejsilnější tržní pozice není „menší Backstage pro enterprise“, ale rychle
+nasaditelný self-hosted paved road pro školy, bootcampy, interní sandboxy a malé
+týmy: jednotný onboarding, auditovatelný promotion flow a možnost připojit
+vlastní VPS/SFTP bez znalosti CI syntaxe. Další nejhodnotnější investice jsou
+preview environments, týmové role/approvals, template versioning, observability
+a oddělený deployment agent.
+
+Návrhová rozhodnutí jsou v [DECISIONS.md](DECISIONS.md).

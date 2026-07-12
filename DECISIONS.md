@@ -99,8 +99,8 @@ deleguje na platformu. Odkazy do Gitey vedou přes `/user/login?redirect_to=…`
 klikem bez psaní hesla. Cross-origin cookie nejde „potichu" nastavit, proto OIDC.
 
 **Důsledky.** Split-horizon adresy: prohlížeč používá `localhost`, Gitea-server
-`host.docker.internal`. Podpisový klíč je in-memory (po restartu se mění — pro
-prototyp OK).
+`host.docker.internal`. V kontejnerové instalaci je podpisový klíč uložený v
+`api-data`, takže restart nerozbije SSO; in-memory klíč zůstává jen dev fallback.
 
 ---
 
@@ -180,8 +180,9 @@ v dalším prostředí. Žádný rebuild.
 
 ### Proč B (registr) a ne A (sdílený daemon)
 
-Na jednom stroji sdílí runner i platforma tentýž Docker daemon, takže by stačilo
-image jen otagovat a spustit bez registru (varianta A). Šli jsme ale do **B
+Na jednom stroji by technicky šlo sdílet Docker daemon. Runner je ale po
+bezpečnostním auditu úmyslně izolovaný ve vlastním rootless DinD, takže image
+musí předat přes registry stejně jako v distribuovaném provozu. Šli jsme do **B
 (registr)**, protože:
 
 - **Simuluje reálný svět správně.** V produkci runner a cílové servery běží na
@@ -194,7 +195,7 @@ image jen otagovat a spustit bez registru (varianta A). Šli jsme ale do **B
 - **Split-horizon adresy.** Tag v sobě nese hostname registru a ten musí sedět
   z místa, kde se pushuje, i odkud se pulluje. V našem setupu obojí dělá
   hostitelský Docker daemon, takže používáme adresu dosažitelnou z hostu
-  (`localhost:3001`). Registry na `localhost` bere Docker jako „insecure" (HTTP)
+  (`gitea.localhost:3001`, v CI mapovanou na izolovanou gateway). Lokální registry je HTTP
   automaticky, takže netřeba TLS.
 - **Přísné build-once (žádný tichý fallback u reálných deployů).** Když
   otestovaný image v registru chybí, **CI → deploy i promote úmyslně SELŽOU** –
@@ -445,7 +446,8 @@ vydá admin token, zaregistruje OIDC SSO i CI runner, a spustí zbytek stacku.
 `INSTALL_LOCK=true` přeskočí webového průvodce Gitey. Server režim = tentýž
 compose + profil `server` (Caddy, automatické HTTPS pro dvě domény);
 rozdíl proti lokálu je jen v `.env`. Schéma DB se synchronizuje při startu
-API (`prisma db push` v entrypointu).
+API (`prisma migrate deploy` v entrypointu). Upgrade staré instalace nejprve
+ověří její legacy schema a teprve potom bezpečně založí migrační historii.
 
 **Proč.** „Instalace = jeden příkaz" je přesně vlastnost, kterou IDP hlásá
 pro projekty — platforma ji má splňovat sama (dogfooding). Bootstrap přes
@@ -554,36 +556,33 @@ SFTP" má smysl výhradně na PHP-schopném uživatelském cíli.
 
 ---
 
-## ADR-019 — PHP frameworky přes SFTP: „build-and-extract"
+## ADR-019 — PHP frameworky přes SFTP: verzovaný zdroj + „build-and-extract"
 
-**Kontext.** Frameworkové šablony (Nette/Laravel/Symfony) se scaffoldují
-uvnitř Docker image (`composer create-project` při buildu), takže git repo
-neobsahuje spustitelnou aplikaci — jen Dockerfile. SFTP cesta ale nahrává
-zdroják z gitu, takže na reálný PHP hosting (školní ESO) by nahrála jen
-Dockerfile → 403. Přitom ručně se tam Nette běžně nahrává: lokálně
-`composer install` → `vendor/`, a přes SFTP celý hotový projekt s docrootem
-`www/`. Platforma to má zautomatizovat, ne znemožnit.
+**Kontext.** Frameworkové šablony (Nette/Laravel/Symfony) potřebují před během
+`composer install` a adresář `vendor/`. Samotný zdroj z gitu proto není hotový
+artefakt pro SFTP hosting. Starší varianta navíc spouštěla `composer
+create-project` až při Docker buildu, takže repo neobsahovalo skutečnou aplikaci
+a výsledek nebyl dobře auditovatelný ani reprodukovatelný.
 
-**Rozhodnutí.** Pro SFTP nasazení šablon s `buildArtifactPath` platforma
-místo git zdrojáku **sestaví Docker image** (CI ho už staví a pushuje) a
-**vytáhne z něj hotový strom** (`/app`, tj. app + `vendor/` + `www/`), který
-pak nahraje přes SFTP „real-host" režimem (bez symlinku, web-čitelná práva).
-Manifest doplněn o `buildArtifactPath` (co vytáhnout), `webRoot` (servírovaný
-docroot — `www` u Nette, `public` u Laravel/Symfony) a `writableDirs` (runtime
-adresáře, které se nastaví na 0777). Extrakci dělá `DockerProvider.extractArtifact`
-(vytvoří kontejner z image, `getArchive`, rozbalí), řídí `ProjectsService.deployEnv`.
+**Rozhodnutí.** Šablona verzovaně obsahuje minimální funkční aplikaci,
+`composer.json`, `composer.lock` a PHPUnit testy. CI nad ní sestaví jediný Docker
+image. Pro SFTP nasazení šablon s `buildArtifactPath` platforma z tohoto image
+**vytáhne hotový strom** (`/app`, tedy aplikaci včetně `vendor/`) a nahraje ho
+přes SFTP „real-host" režimem (bez symlinku, s web-čitelnými právy). Manifest
+deklaruje `buildArtifactPath`, `webRoot` (`www` u Nette, `public` u
+Laravel/Symfony) a `writableDirs`. Extrakci dělá
+`DockerProvider.extractArtifact`, tok řídí `ProjectsService.deployEnv`.
 
-**Důsledky.** Nette/Laravel/Symfony jsou znovu SFTP-nasaditelné na vlastní
-PHP hosting; aplikace běží na `<publicUrl>/<slug>/<webRoot>/`. Statické
-šablony (React/Vue) i nadále jedou přes build + upload dist/ bez extrakce.
+**Důsledky.** Repo je samo o sobě čitelné a testovatelné; build je díky lockfile
+reprodukovatelný. Nette/Laravel/Symfony jsou SFTP-nasaditelné na vlastní PHP
+hosting a běží na `<publicUrl>/<slug>/<webRoot>/`. Statické šablony (React/Vue)
+nadále jedou přes build + upload `dist/` bez extrakce.
 
-**Kompromisy / na co pozor.** URL končí na `/www/` (docroot na sdíleném
-hostingu bez kontroly nad docrootem). `vendor/` = tisíce souborů → upload
-po souborech přes SFTP je pomalý (minuty). Registry image musí existovat
-(CI ho musí stihnout postavit) před promote na prod. Laravel/Symfony navíc
-potřebují běhové prostředí (`.env`, `APP_KEY`) — mechanismus je připravený,
-ale plná funkčnost frameworku je na uživateli; Nette (bez konfigurace) je
-nejpřímější případ.
+**Kompromisy / na co pozor.** URL končí na `/www/` či `/public/`, protože na
+sdíleném hostingu obvykle nelze změnit docroot. `vendor/` znamená tisíce souborů,
+takže upload po souborech přes SFTP je pomalejší. Registry image musí existovat
+před promote na prod. Laravel potřebuje per-environment `APP_KEY`; produkční
+správa runtime konfigurace patří do budoucího secret-management rozšíření.
 
 ---
 
@@ -633,3 +632,153 @@ bod**, ne implementace — Docker/SSH/SFTP zůstávají funkční pro demo a leg
 
 **Důsledky.** Rámování se mění z „prototyp" na „funkční platforma se dvěma
 režimy": simulace pro ukázku, reálné cíle (až po Kubernetes) pro provoz.
+
+---
+
+## ADR-021 — CI běží v odděleném rootless Docker daemonu
+
+**Kontext.** Gitea Actions spouští kód vygenerovaných projektů. Připojení
+runneru na hostitelský `/var/run/docker.sock` by libovolnému CI jobu dalo
+prakticky root oprávnění nad celým strojem včetně databáze, Gitey a platformy.
+Read-only mount socketu tuto pravomoc neomezuje, protože Docker API samo umí
+vytvářet privilegované kontejnery a zapisovat na hostitele.
+
+**Možnosti.** (a) Sdílet host Docker socket. (b) Samostatný Docker-in-Docker
+daemon. (c) Externí ephemeral runner/BuildKit/Kubernetes.
+
+**Rozhodnutí.** Pro self-contained instalaci (b): `act_runner` mluví jen se
+samostatným `docker:*-dind-rootless` daemonem na izolované `ci-control` síti.
+Runner nemá host socket ani přístup do platformní datové sítě; CI kontejnery
+dostávají pouze explicitní host aliases pro Giteu, registry a deploy webhook.
+Image se mezi CI a platformou předává registry, ne sdíleným daemonem.
+
+**Proč.** Zachovává instalaci jedním příkazem a současně odděluje nedůvěryhodný
+projektový build od řídicí vrstvy platformy. Zároveň věrněji simuluje firmu,
+kde runner a deployment target neběží na stejném daemonu.
+
+**Kompromisy.** Vnější DinD služba stále potřebuje `privileged`; jde o menší,
+explicitní trust boundary, ne o absolutní sandbox. Pro nedůvěryhodný
+multi-tenant provoz je cílem (c): jednorázové runnery/BuildKit nebo Kubernetes
+s network policies, kvótami a omezenými service accounts.
+
+---
+
+## ADR-022 — Deployment je persistentní operace, ne fire-and-forget promise
+
+**Kontext.** Stav `Environment.status` popisuje výsledek, ale nestačí pro řízení
+probíhající práce. Dva souběžné promote/redeploy požadavky mohly závodit,
+po restartu API nebylo poznat, která operace zůstala nedokončená, a starší
+promise mohla přepsat stav novějšího deploye.
+
+**Rozhodnutí.** Každý deploy, promote, redeploy a teardown vytváří záznam
+`DeploymentOperation` s typem, fází, požadovanou verzí, výsledkem, chybou a
+časovými údaji. Databáze atomicky povolí nejvýše jednu aktivní operaci na
+prostředí. Provider před drahými kroky kontroluje požadavek na zrušení a zápis
+výsledku je podmíněný identitou operace, takže zastaralý worker nepřepíše novější
+stav. Při startu API se osiřelé operace označí jako přerušené a prostředí se
+vrátí do konzistentního stavu.
+
+**Proč.** Databáze se stává auditovatelným zdrojem pravdy o tom, co platforma
+dělá. Stejný model podporuje UI progress, Activity feed, bezpečné retry i budoucí
+přesun práce do fronty bez změny doménového API.
+
+**Kompromisy.** Samotná DB operace ještě není distribuovaná job queue. Pro HA
+více API instancí bude dalším krokem durable worker/queue s leases a heartbeatem;
+datový model je na to připravený.
+
+---
+
+## ADR-023 — Oddělená autentizace uživatele, CI projektu a SCM webhooku
+
+**Kontext.** Jeden globální CI token dával kompromitovanému repozitáři právo
+spouštět deploye jiných projektů. SCM webhook používal token v URL a veřejná
+registrace neměla jasný lifecycle ani ochranu proti brute force. Tyto toky mají
+jiné aktéry, oprávnění i možnosti rotace a nesmějí sdílet credential.
+
+**Rozhodnutí.** Každý projekt dostane kryptograficky náhodný `deployToken`, který
+je uložen jako Gitea Actions secret a autorizuje jen dané repo. Gitea systémový
+webhook používá oddělený secret a HMAC podpis nad přesným raw request body;
+porovnání tokenů i podpisů je constant-time. Uživatelský login má rate limit,
+silnější minimální heslo, bezpečnou session cookie a přesnou allow-list OIDC
+redirectů. Registrace má explicitní režimy `first-user`, `open`, `closed`;
+čerstvá instalace tedy dovolí bootstrap prvního správce, ale nemusí zůstat
+trvale otevřená. Samostatná registrace v Giteji je vypnutá.
+
+**Proč.** Princip least privilege a samostatná rotace: únik CI secretu jednoho
+projektu neotevře ostatní projekty ani SCM administraci. Identita zůstává v
+jednom směru podle ADR-001/005/016.
+
+**Důsledky.** Starý globální CI secret není autoritativní. V produkci se mají
+secrety přesunout z `.env`/DB do Vault/KMS a přidat administrační správu rolí;
+pro single-admin prototyp je současný model uzavřený a konzistentní.
+
+---
+
+## ADR-024 — Databázi mění pouze verzované migrace a upgrade selhává bezpečně
+
+**Kontext.** `prisma db push` synchronizuje aktuální model, ale nevytváří
+auditovatelnou historii a neumí bezpečně rozhodnout, jak převést starší data.
+Existující instalace InitPadu navíc vznikly právě přes `db push`, takže neměly
+záznamy v tabulce Prisma migrací.
+
+**Rozhodnutí.** Nové změny schématu jsou výhradně verzované Prisma migrace a
+start kontejneru používá `prisma migrate deploy`. Upgrade helper nejprve porovná
+legacy databázi s přesně známým výchozím schématem; pouze při shodě staré migrace
+bezpečně označí jako aplikované a následně spustí nové. Neznámá nebo částečně
+změněná databáze vede k zastavení s návodem, ne k destruktivnímu odhadu.
+
+**Provozní doplněk.** Záloha kombinuje logický PostgreSQL dump s read-only
+archivy stavových volumes a kontrolními součty. Záloha obsahuje credentials,
+proto musí být šifrovaná a pravidelně ověřená restore drillem.
+
+**Proč.** Deterministické upgrady, reprodukovatelnost do diplomové práce a
+možnost obnovy jsou důležitější než pohodlí automatického `db push`.
+
+---
+
+## ADR-025 — Golden-path šablona je verzovaný, testovaný a reprodukovatelný produkt
+
+**Kontext.** Šablona není jen ukázková složka; její chyby se násobí do každého
+nového projektu. Dynamické `create-project`, plovoucí závislosti, `npm install`
+bez lockfile a CI bez reálných testů vytvářely nereprodukovatelné projekty a
+falešný pocit kvality.
+
+**Rozhodnutí.** Každá podporovaná šablona obsahuje skutečný minimální zdroj,
+test, multi-stage Dockerfile s explicitním `test` targetem a CI pipeline, která
+test target opravdu sestaví. Node šablony používají commitnutý `package-lock`
+a `npm ci`; PHP šablony (Laravel, Nette, Symfony) `composer.lock` a PHPUnit;
+Python šablony HTTP testy. Runtime image běží bez roota, kde to framework dovolí.
+Externí CI action je připnutá na konkrétní commit SHA.
+
+**Proč.** „Golden path" musí být bezpečnější a spolehlivější než ručně založený
+projekt. Verze, testy a lockfiles umožňují dokázat, co přesně platforma
+vygenerovala a že to v okamžiku vydání fungovalo.
+
+**Kompromisy.** Katalog dvanácti šablon znamená průběžnou údržbu a pravidelné
+dependency refresh testy. Nová šablona se nepovažuje za podporovanou, dokud
+neprojde renderem, test buildem a dependency auditem.
+
+---
+
+## ADR-026 — Produktové vymezení: opinionated IDP pro malé týmy, výuku a on-prem
+
+**Kontext.** Obecný developer portal typu Backstage řeší široký katalog služeb,
+pluginy a dokumentaci. Pokus kopírovat celý tento ekosystém by diplomovou práci
+rozmělnil a nepřinesl důvod, proč zvolit InitPad.
+
+**Rozhodnutí.** InitPad se profiluje jako self-contained **golden path**, který
+nejen ukáže službu v katalogu, ale skutečně založí repo, dodá testovanou šablonu,
+spustí CI a nasadí tentýž artefakt přes dev → test → prod. Primární segment je
+výuka DevOps, školní laboratoře, malé vývojové týmy a organizace požadující
+jednoduchý on-prem demonstrátor. Enterprise vlastnosti (RBAC, Vault/KMS,
+observabilita, HA, policy engine, Kubernetes provider) se v UI nepředstírají;
+jsou explicitní roadmapa a hranice nasazení.
+
+**Proč.** Hloubka jednoho ověřitelného end-to-end toku je pro uživatele i
+obhajobu hodnotnější než široký, ale povrchní katalog integrací. Vymezení zároveň
+umožňuje měřit přínos: čas do prvního běžícího deploye, počet ručních kroků,
+úspěšnost golden path a srozumitelnost pro vývojáře bez DevOps zkušenosti.
+
+**Důsledky.** Backstage je referenční konkurent a možný budoucí integrační
+frontend, ne produkt, který má InitPad funkčně napodobit. Prioritu mají
+spolehlivost provisioningu, bezpečná izolace a měřitelná developer experience.
