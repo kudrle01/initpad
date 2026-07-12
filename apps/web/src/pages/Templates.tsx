@@ -11,9 +11,10 @@ import type { TemplateManifest } from '@/types';
 export default function Templates() {
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.listTemplates().then(setTemplates).catch((e) => setError(e.message));
+    api.listTemplates().then(setTemplates).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -32,7 +33,11 @@ export default function Templates() {
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {loading && <div className="grid grid-cols-1 gap-4 md:grid-cols-2" aria-label="Loading templates">
+        {[0, 1, 2, 3].map((item) => <div key={item} className="h-44 animate-pulse rounded-lg border border-border bg-card/60" />)}
+      </div>}
+
+      {!loading && <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {templates.map((t) => (
           <Card key={t.id} className="flex flex-col p-5">
             <div className="flex items-center gap-3">
@@ -64,7 +69,7 @@ export default function Templates() {
             </Link>
           </Card>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }

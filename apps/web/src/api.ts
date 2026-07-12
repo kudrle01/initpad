@@ -98,6 +98,7 @@ export const api = {
   deleteProject: (id: string) =>
     http<void>(`/projects/${id}`, { method: 'DELETE' }),
   me: () => http<User>('/auth/me'),
+  authConfig: () => http<{ registrationAvailable: boolean }>('/auth/config'),
   register: (username: string, email: string, password: string) =>
     http<User>('/auth/register', {
       method: 'POST',

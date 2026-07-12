@@ -109,7 +109,7 @@ export default function Environments() {
             {groups.map(({ project, envs }) => {
               const open = !collapsed.has(project.id);
               return (
-                <div key={project.id} className="overflow-hidden rounded-lg border border-border">
+                <div key={project.id} className="overflow-hidden rounded-lg border border-border bg-card">
                   <div className="flex items-center gap-2 bg-secondary/40 px-3 py-2.5">
                     <button
                       type="button"
@@ -146,7 +146,8 @@ export default function Environments() {
                   </div>
 
                   {open && (
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto" role="region" aria-label={`${project.name} environments`} tabIndex={0}>
+                    <table className="min-w-[680px] w-full text-sm">
                       <tbody>
                         {envs.map((env) => {
                           const Icon = KIND_ICON[env.provider] ?? Server;
@@ -194,6 +195,7 @@ export default function Environments() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </div>
               );

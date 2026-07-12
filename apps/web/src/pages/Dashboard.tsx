@@ -15,9 +15,10 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [templates, setTemplates] = useState<Record<string, TemplateManifest>>({});
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.listProjects().then(setProjects).catch((e) => setError(e.message));
+    api.listProjects().then(setProjects).catch((e) => setError(e.message)).finally(() => setLoading(false));
     api
       .listTemplates()
       .then((all) => setTemplates(Object.fromEntries(all.map((t) => [t.id, t]))))
@@ -28,6 +29,7 @@ export default function Dashboard() {
     (n, p) => n + p.environments.filter((e) => e.status === 'running').length,
     0,
   );
+  const environmentCount = projects.reduce((n, p) => n + p.environments.length, 0);
   const recent = projects.slice(0, RECENT_LIMIT);
 
   return (
@@ -47,9 +49,9 @@ export default function Dashboard() {
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
       <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Projects" value={projects.length} icon={Layers} />
-        <StatCard label="Running deploys" value={running} icon={Play} />
-        <StatCard label="Environments" value={3} icon={Server} />
+        <StatCard label="Projects" value={loading ? '—' : projects.length} icon={Layers} />
+        <StatCard label="Running deploys" value={loading ? '—' : running} icon={Play} />
+        <StatCard label="Environments" value={loading ? '—' : environmentCount} icon={Server} />
       </div>
 
       <div className="mb-3 flex items-baseline justify-between gap-4">
@@ -66,7 +68,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {projects.length === 0 ? (
+      {!loading && projects.length === 0 ? (
         <EmptyState
           icon={Layers}
           title="No projects yet"
@@ -79,7 +81,7 @@ export default function Dashboard() {
             </Button>
           }
         />
-      ) : (
+      ) : !loading ? (
         <div className="flex flex-col gap-2">
           {recent.map((p) => (
             <ProjectRow
@@ -89,7 +91,7 @@ export default function Dashboard() {
             />
           ))}
         </div>
-      )}
+      ) : <div className="h-28 animate-pulse rounded-lg border border-border bg-card/60" aria-label="Loading projects" />}
     </div>
   );
 }

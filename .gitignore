@@ -2,5 +2,9 @@ node_modules/
 dist/
 .workspace/
 *.log
+*.tsbuildinfo
+*.timestamp-*.mjs
 .DS_Store
 .env
+vendor/
+.phpunit.cache/
