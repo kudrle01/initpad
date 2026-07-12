@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { hashPassword, verifyPassword } from './password';
 import { encryptSecret } from '../common/secret';
+import { config } from '../config';
 
 export interface SessionUser {
   id: string;
@@ -27,44 +29,79 @@ export interface SessionUser {
  */
 @Injectable()
 export class AuthService {
+  private registrationLock: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly gitea: GiteaService,
   ) {}
 
+  async registrationAvailable(): Promise<boolean> {
+    if (config.auth.registrationMode === 'open') return true;
+    if (config.auth.registrationMode === 'closed') return false;
+    return (await this.prisma.user.count()) === 0;
+  }
+
   /** Managed registration: provisions a Gitea account + token, persists the user. */
   async register(dto: RegisterDto): Promise<{ token: string; user: SessionUser }> {
+    let release!: () => void;
+    const previous = this.registrationLock;
+    this.registrationLock = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await this.registerUnlocked(dto);
+    } finally {
+      release();
+    }
+  }
+
+  private async registerUnlocked(
+    dto: RegisterDto,
+  ): Promise<{ token: string; user: SessionUser }> {
+    if (!(await this.registrationAvailable())) {
+      throw new ForbiddenException('Account registration is closed. Ask the platform administrator for access.');
+    }
+    const email = dto.email.trim().toLowerCase();
     const existing = await this.prisma.user.findFirst({
-      where: { OR: [{ username: dto.username }, { email: dto.email }] },
+      where: { OR: [{ username: dto.username }, { email }] },
     });
     if (existing) {
       throw new BadRequestException('Username or e-mail is already taken');
     }
 
-    const giteaUser = await this.gitea.createUser({
-      username: dto.username,
-      email: dto.email,
-      password: dto.password,
-    });
-    const accessToken = await this.gitea.createUserToken(dto.username, dto.password);
-
-    const user = await this.prisma.user.create({
-      data: {
-        giteaId: giteaUser.id,
-        username: giteaUser.login,
-        email: dto.email,
-        passwordHash: hashPassword(dto.password),
-        accessToken: encryptSecret(accessToken),
-      },
-    });
-    return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };
+    let provisionedUsername: string | null = null;
+    try {
+      const giteaUser = await this.gitea.createUser({
+        username: dto.username,
+        email,
+        password: dto.password,
+      });
+      provisionedUsername = giteaUser.login;
+      const accessToken = await this.gitea.createUserToken(dto.username, dto.password);
+      const user = await this.prisma.user.create({
+        data: {
+          giteaId: giteaUser.id,
+          username: giteaUser.login,
+          email,
+          passwordHash: hashPassword(dto.password),
+          accessToken: encryptSecret(accessToken),
+        },
+      });
+      return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };
+    } catch (e) {
+      if (provisionedUsername) await this.gitea.deleteUser(provisionedUsername);
+      throw e;
+    }
   }
 
   /** Sign-in with a platform-native account (password verified locally). */
   async login(dto: LoginDto): Promise<{ token: string; user: SessionUser }> {
+    const identity = dto.username.trim();
     const user = await this.prisma.user.findFirst({
-      where: { OR: [{ username: dto.username }, { email: dto.username }] },
+      where: { OR: [{ username: identity }, { email: identity.toLowerCase() }] },
     });
     if (!user || !user.passwordHash || !verifyPassword(dto.password, user.passwordHash)) {
       throw new UnauthorizedException('Invalid username or password');

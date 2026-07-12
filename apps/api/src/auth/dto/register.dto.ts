@@ -1,4 +1,4 @@
-import { IsEmail, Matches, MinLength } from 'class-validator';
+import { IsEmail, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class RegisterDto {
   // Mirrors Gitea username rules: letters/digits/._-, must start alphanumeric.
@@ -10,6 +10,7 @@ export class RegisterDto {
   @IsEmail({}, { message: 'Valid e-mail required' })
   email!: string;
 
-  @MinLength(8, { message: 'Password must be at least 8 characters' })
+  @MinLength(12, { message: 'Password must be at least 12 characters' })
+  @MaxLength(128, { message: 'Password must be at most 128 characters' })
   password!: string;
 }

@@ -49,11 +49,7 @@ export class GiteaService implements OnModuleInit {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     if (!url || !adminToken) return;
-    const basePath = `${config.ci.platformUrl}/api/scm/webhook`;
-    // The token travels in the hook URL: some Gitea versions silently ignore
-    // the authorization_header field, and the URL always gets through. The
-    // header is set as well (belt and braces).
-    const hookUrl = `${basePath}?token=${encodeURIComponent(config.ci.deployToken)}`;
+    const hookUrl = `${config.scm.webhookUrl.replace(/\/$/, '')}/api/scm/webhook`;
     try {
       const listed = await fetch(`${url}/api/v1/admin/hooks?limit=50`, {
         headers: { Authorization: `token ${adminToken}` },
@@ -67,7 +63,7 @@ export class GiteaService implements OnModuleInit {
         // Replace stale registrations pointing at the webhook path (e.g. an
         // older URL format without the token).
         for (const h of hooks) {
-          if (h.config?.url?.startsWith(basePath)) {
+          if (h.config?.url?.startsWith(hookUrl)) {
             await fetch(`${url}/api/v1/admin/hooks/${h.id}`, {
               method: 'DELETE',
               headers: { Authorization: `token ${adminToken}` },
@@ -82,12 +78,16 @@ export class GiteaService implements OnModuleInit {
           type: 'gitea',
           active: true,
           events: ['repository'],
-          config: { url: hookUrl, content_type: 'json' },
-          authorization_header: `Bearer ${config.ci.deployToken}`,
+          config: {
+            url: hookUrl,
+            content_type: 'json',
+            secret: config.scm.webhookToken,
+          },
+          authorization_header: `Bearer ${config.scm.webhookToken}`,
         }),
       });
       if (created.ok) {
-        this.logger.log(`System webhook registered: ${basePath}`);
+        this.logger.log(`System webhook registered: ${hookUrl}`);
       } else {
         this.logger.warn(`System webhook registration failed (HTTP ${created.status})`);
       }
@@ -101,13 +101,14 @@ export class GiteaService implements OnModuleInit {
     name: string,
     dir: string,
     actor: GiteaActor,
+    ciDeployToken: string,
   ): Promise<{ repoUrl: string }> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     if (!url || !adminToken) {
       throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
-    await this.createRepo(name, actor);
+    await this.createRepo(name, actor, ciDeployToken);
     await this.pushScaffold(name, dir, actor);
     // The stored repo URL is browser-facing (users click it in the UI).
     const repoUrl = `${config.gitea.url}/${actor.username}/${name}`;
@@ -147,6 +148,16 @@ export class GiteaService implements OnModuleInit {
     return { id: data.id, login: data.login };
   }
 
+  async deleteUser(username: string): Promise<void> {
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
+    if (!url || !adminToken) return;
+    await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}?purge=true`, {
+      method: 'DELETE',
+      headers: { Authorization: `token ${adminToken}` },
+    }).catch(() => undefined);
+  }
+
   // Creates the user's personal access token (Basic auth with their
   // password). The platform stores it and can act on the user's behalf.
   async createUserToken(username: string, password: string): Promise<string> {
@@ -160,6 +171,8 @@ export class GiteaService implements OnModuleInit {
         scopes: [
           'write:repository',
           'read:repository',
+          'write:package',
+          'read:package',
           'write:user',
           'read:user',
           'write:organization',
@@ -338,7 +351,11 @@ export class GiteaService implements OnModuleInit {
     }
   }
 
-  private async createRepo(name: string, actor: GiteaActor): Promise<void> {
+  private async createRepo(
+    name: string,
+    actor: GiteaActor,
+    ciDeployToken: string,
+  ): Promise<void> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     // The repository is created FOR the user via the admin endpoint: the user
@@ -367,20 +384,24 @@ export class GiteaService implements OnModuleInit {
       body: JSON.stringify({ has_actions: true }),
     }).catch(() => undefined);
 
-    // Actions secrets: the deploy-webhook token + registry credentials
-    // (build once, deploy many — CI pushes the image, the platform pulls it)
-    // + addresses of the registry and the platform as seen from CI jobs, so
-    // the generated workflow contains no hard-coded hosts.
-    await this.setRepoSecret(actor.username, name, 'INITPAD_DEPLOY_TOKEN', config.ci.deployToken);
-    await this.setRepoSecret(actor.username, name, 'INITPAD_REGISTRY', config.registry.host);
-    await this.setRepoSecret(actor.username, name, 'INITPAD_PLATFORM_URL', config.ci.platformUrl);
-    await this.setRepoSecret(actor.username, name, 'INITPAD_REGISTRY_USER', config.registry.user);
-    await this.setRepoSecret(
-      actor.username,
-      name,
-      'INITPAD_REGISTRY_PASSWORD',
-      config.registry.password,
-    );
+    await this.configureRepoSecrets(actor.username, name, actor.token, ciDeployToken);
+  }
+
+  // Each repository receives its own deploy token and its owner's package
+  // credentials. The Gitea administrator token never enters an untrusted CI
+  // job. Existing projects are migrated through this same method on startup.
+  async configureRepoSecrets(
+    owner: string,
+    repo: string,
+    ownerToken: string,
+    ciDeployToken: string,
+  ): Promise<void> {
+    if (!ownerToken) throw new Error(`No repository/package token available for '${owner}'`);
+    await this.setRepoSecret(owner, repo, 'INITPAD_DEPLOY_TOKEN', ciDeployToken);
+    await this.setRepoSecret(owner, repo, 'INITPAD_REGISTRY', config.registry.host);
+    await this.setRepoSecret(owner, repo, 'INITPAD_PLATFORM_URL', config.ci.platformUrl);
+    await this.setRepoSecret(owner, repo, 'INITPAD_REGISTRY_USER', owner);
+    await this.setRepoSecret(owner, repo, 'INITPAD_REGISTRY_PASSWORD', ownerToken);
   }
 
   private async setRepoSecret(
@@ -391,11 +412,14 @@ export class GiteaService implements OnModuleInit {
   ): Promise<void> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
-    await fetch(`${url}/api/v1/repos/${owner}/${repo}/actions/secrets/${key}`, {
+    const res = await fetch(`${url}/api/v1/repos/${owner}/${repo}/actions/secrets/${key}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({ data: value }),
-    }).catch(() => undefined);
+    });
+    if (!res.ok) {
+      throw new Error(`Could not configure Actions secret '${key}' (HTTP ${res.status})`);
+    }
   }
 
   // Downloads the source tree of an exact commit into a temporary directory.

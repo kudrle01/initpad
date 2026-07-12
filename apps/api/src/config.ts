@@ -39,6 +39,13 @@ export const config = {
   auth: {
     frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
+    registrationMode:
+      process.env.INITPAD_REGISTRATION_MODE ||
+      (process.env.NODE_ENV === 'production' ? 'first-user' : 'open'),
+    secureCookie:
+      process.env.INITPAD_COOKIE_SECURE === 'true' ||
+      (process.env.INITPAD_COOKIE_SECURE !== 'false' &&
+        (process.env.INITPAD_FRONTEND_URL || '').startsWith('https://')),
   },
   // Key for encrypting sensitive DB values (tokens). Falls back to the JWT secret.
   security: {
@@ -50,22 +57,39 @@ export const config = {
   // CI → deploy: shared token the CI job uses to authenticate against the
   // platform webhook. The platform sets it as the repo's Actions secret.
   ci: {
-    deployToken: process.env.INITPAD_CI_DEPLOY_TOKEN || 'ci-deploy-secret-change-me',
     // Platform API base URL as reachable FROM CI job containers. Written to
     // each repo as an Actions secret; the generated workflow posts the deploy
     // webhook to it. host.docker.internal works for the npm-run-dev setup;
     // the compose setup overrides it with the internal service name.
     platformUrl:
-      process.env.INITPAD_PLATFORM_INTERNAL_URL || 'http://host.docker.internal:3000',
+      process.env.INITPAD_PLATFORM_INTERNAL_URL || 'http://platform.localhost:3000',
+  },
+  scm: {
+    webhookUrl:
+      process.env.INITPAD_SCM_WEBHOOK_URL ||
+      process.env.INITPAD_PLATFORM_INTERNAL_URL ||
+      'http://host.docker.internal:3000',
+    webhookToken:
+      process.env.INITPAD_SCM_WEBHOOK_TOKEN ||
+      process.env.INITPAD_CI_DEPLOY_TOKEN ||
+      'scm-webhook-secret-change-me',
   },
   // Gitea container registry (OCI). The host must be reachable from the
   // host machine's Docker daemon (it performs both push and pull).
   // Credentials = the service (bot) account.
   registry: {
-    host: process.env.INITPAD_REGISTRY_HOST || 'localhost:3001',
+    host: process.env.INITPAD_REGISTRY_HOST || 'gitea.localhost:3001',
     user: process.env.INITPAD_GITEA_USER || '',
     password:
       process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
+  },
+  deployment: {
+    // Development binds app ports to loopback. A server installation opts in
+    // to public binding explicitly (or can put an ingress in front instead).
+    bindAddress: process.env.INITPAD_DEPLOY_BIND_ADDRESS || '127.0.0.1',
+    memoryBytes: Number(process.env.INITPAD_DEPLOY_MEMORY_MB || 512) * 1024 * 1024,
+    nanoCpus: Number(process.env.INITPAD_DEPLOY_CPU || 1) * 1_000_000_000,
+    pidsLimit: Number(process.env.INITPAD_DEPLOY_PIDS_LIMIT || 256),
   },
   // Non-Docker deployment targets (simulated company infrastructure). Must
   // match infra/docker-compose.yml (published ports of fake-vps / fake-sftp
@@ -121,3 +145,38 @@ export const config = {
     keyFile: process.env.INITPAD_OIDC_KEY_FILE || '',
   },
 };
+
+export function validateConfig(): void {
+  const modes = ['open', 'first-user', 'closed'];
+  if (!modes.includes(config.auth.registrationMode)) {
+    throw new Error(
+      `INITPAD_REGISTRATION_MODE must be one of ${modes.join(', ')} (received '${config.auth.registrationMode}')`,
+    );
+  }
+  if (!['127.0.0.1', '0.0.0.0', '::1', '::'].includes(config.deployment.bindAddress)) {
+    throw new Error('INITPAD_DEPLOY_BIND_ADDRESS must be a local or wildcard IP address');
+  }
+  if (
+    !Number.isFinite(config.deployment.memoryBytes) ||
+    config.deployment.memoryBytes < 64 * 1024 * 1024 ||
+    !Number.isFinite(config.deployment.nanoCpus) ||
+    config.deployment.nanoCpus <= 0 ||
+    !Number.isInteger(config.deployment.pidsLimit) ||
+    config.deployment.pidsLimit < 32
+  ) {
+    throw new Error('Deployment resource limits are invalid');
+  }
+  if (process.env.NODE_ENV !== 'production') return;
+  const insecure: string[] = [];
+  if (config.auth.jwtSecret === 'dev-secret-zmen-me') insecure.push('INITPAD_JWT_SECRET');
+  if (config.security.encryptionKey === 'dev-secret-zmen-me') insecure.push('INITPAD_ENCRYPTION_KEY');
+  if (config.scm.webhookToken === 'scm-webhook-secret-change-me') {
+    insecure.push('INITPAD_SCM_WEBHOOK_TOKEN');
+  }
+  if (config.oidc.clientSecret === 'gitea-oidc-secret-change-me') {
+    insecure.push('INITPAD_OIDC_CLIENT_SECRET');
+  }
+  if (insecure.length) {
+    throw new Error(`Refusing production startup with insecure defaults: ${insecure.join(', ')}`);
+  }
+}

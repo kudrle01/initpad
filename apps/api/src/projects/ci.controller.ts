@@ -6,7 +6,6 @@ import {
   Post,
   UnauthorizedException,
 } from '@nestjs/common';
-import { config } from '../config';
 import { ProjectsService } from './projects.service';
 
 interface CiDeployDto {
@@ -16,7 +15,7 @@ interface CiDeployDto {
 }
 
 // Webhook called from CI (Gitea Actions) after a successful build.
-// Authenticated with a shared token (the repo's Actions secret), not a user
+// Authenticated with a repository-specific token, not a user
 // session.
 @Controller('ci')
 export class CiController {
@@ -26,12 +25,11 @@ export class CiController {
   @HttpCode(202)
   async deploy(@Headers('authorization') auth: string, @Body() body: CiDeployDto) {
     const token = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
-    if (!token || token !== config.ci.deployToken) {
-      throw new UnauthorizedException('Invalid CI token');
-    }
+    if (!token) throw new UnauthorizedException('Missing CI token');
     if (!body.repo) return { accepted: false };
-    // Do not block the CI job — the deployment runs in the background.
-    void this.projects.deployFromCi(body.repo, body.sha ?? '', body.ref ?? '');
+    // Authentication finishes before returning 202; the deployment itself is
+    // still scheduled in the background by ProjectsService.
+    await this.projects.deployFromCi(body.repo, body.sha ?? '', body.ref ?? '', token);
     return { accepted: true };
   }
 }

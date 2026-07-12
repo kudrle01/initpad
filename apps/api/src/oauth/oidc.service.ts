@@ -112,8 +112,19 @@ export class OidcService {
 
   // The redirect URI must point at Gitea (prevents open-redirector abuse).
   isAllowedRedirect(redirectUri: string): boolean {
-    const gitea = config.gitea.url?.replace(/\/$/, '');
-    return Boolean(gitea && redirectUri.startsWith(gitea));
+    if (!config.gitea.url || !redirectUri) return false;
+    try {
+      const expected = new URL(config.gitea.url);
+      const actual = new URL(redirectUri);
+      return (
+        actual.origin === expected.origin &&
+        /^\/user\/oauth2\/[A-Za-z0-9._-]+\/callback$/.test(actual.pathname) &&
+        !actual.username &&
+        !actual.password
+      );
+    } catch {
+      return false;
+    }
   }
 
   // --- authorization codes ---

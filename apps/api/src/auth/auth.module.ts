@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { ScmModule } from '../scm/scm.module';
+import { AuthRateLimitGuard } from './auth-rate-limit.guard';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { ScmModule } from '../scm/scm.module';
       signOptions: { expiresIn: '7d' },
     }),
   ],
-  providers: [AuthService, JwtAuthGuard],
+  providers: [AuthService, JwtAuthGuard, AuthRateLimitGuard],
   controllers: [AuthController],
   exports: [JwtAuthGuard, JwtModule],
 })

@@ -1,4 +1,12 @@
-import { IsArray, IsIn, IsOptional, IsString, Matches, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsIn,
+  IsOptional,
+  Matches,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { EnvName } from '../../domain/types';
 
@@ -10,7 +18,7 @@ class EnvironmentConfigDto {
   // environments fall back to a sensible default (dev/test: built-in Docker;
   // prod: the built-in target for the template's natural kind).
   @IsOptional()
-  @IsString()
+  @Matches(/^(?:builtin-(?:docker|ssh|sftp)|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)
   targetId?: string;
 }
 
@@ -20,11 +28,13 @@ export class CreateProjectDto {
   })
   name!: string;
 
-  @IsString()
+  @Matches(/^[a-z0-9-]{1,64}$/)
   templateId!: string;
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(3)
+  @ArrayUnique((environment: EnvironmentConfigDto) => environment.name)
   @ValidateNested({ each: true })
   @Type(() => EnvironmentConfigDto)
   environments?: EnvironmentConfigDto[];

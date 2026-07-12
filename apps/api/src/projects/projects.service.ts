@@ -1,9 +1,11 @@
 import {
   Injectable,
   Logger,
+  OnModuleInit,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -32,7 +34,8 @@ import { TargetsService, TargetRow, BUILTIN_DOCKER } from '../targets/targets.se
 import { GiteaService, GiteaActor, RepoArchive } from '../scm/gitea.service';
 import { exportVersion } from '../deployment/providers/source-export';
 import { config } from '../config';
-import { decryptSecret } from '../common/secret';
+import { decryptSecret, encryptSecret } from '../common/secret';
+import { generateToken, hashToken, tokenMatches } from '../common/token';
 import type { ProviderConnection } from '../deployment/deployment-provider.interface';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
@@ -47,7 +50,7 @@ type ProjectRow = Prisma.ProjectGetPayload<{
  * in PostgreSQL via Prisma.
  */
 @Injectable()
-export class ProjectsService {
+export class ProjectsService implements OnModuleInit {
   private readonly logger = new Logger('ProjectsService');
 
   constructor(
@@ -58,6 +61,153 @@ export class ProjectsService {
     private readonly targets: TargetsService,
     private readonly gitea: GiteaService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.migrateLegacyCiTokens();
+    await this.recoverInterruptedOperations();
+  }
+
+  private async recoverInterruptedOperations(): Promise<void> {
+    try {
+      const interrupted = await this.prisma.deploymentOperation.findMany({
+        where: { status: { in: ['running', 'cancelled'] }, finishedAt: null },
+        select: { id: true, status: true },
+      });
+      for (const operation of interrupted) {
+        const cancelled = operation.status === 'cancelled';
+        await this.prisma.$transaction([
+          this.prisma.deploymentOperation.update({
+            where: { id: operation.id },
+            data: {
+              status: cancelled ? 'cancelled' : 'failed',
+              message: cancelled ? 'Cancellation completed during API restart' : 'Interrupted by API restart',
+              finishedAt: new Date(),
+            },
+          }),
+          this.prisma.environment.updateMany({
+            where: { activeOperationId: operation.id },
+            data: {
+              activeOperationId: null,
+              status: cancelled ? 'empty' : 'failed',
+              statusReason: cancelled ? null : 'Deployment was interrupted by an API restart. Redeploy to retry.',
+              ...(cancelled ? { version: null, url: null, allocatedPort: null } : {}),
+            },
+          }),
+        ]);
+      }
+    } catch (e) {
+      this.logger.warn(`Deployment operation recovery skipped: ${(e as Error).message}`);
+    }
+  }
+
+  private async beginOperation(
+    projectId: string,
+    envName: EnvName,
+    kind: string,
+    version: string | null,
+  ): Promise<string> {
+    const env = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId, name: envName } },
+    });
+    if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
+    const operation = await this.prisma.deploymentOperation.create({
+      data: { environmentId: env.id, kind, status: 'running', version },
+    });
+    const claimed = await this.prisma.environment.updateMany({
+      where: { id: env.id, activeOperationId: null },
+      data: {
+        activeOperationId: operation.id,
+        status: 'deploying',
+        statusReason: kind === 'start' ? 'Starting environment' : 'Preparing deployment',
+      },
+    });
+    if (claimed.count === 1) return operation.id;
+    await this.prisma.deploymentOperation.update({
+      where: { id: operation.id },
+      data: { status: 'cancelled', message: 'Another operation is already active', finishedAt: new Date() },
+    });
+    throw new BadRequestException(`Environment '${envName}' already has an active operation`);
+  }
+
+  private async completeOperation(
+    operationId: string,
+    status: 'succeeded' | 'failed' | 'cancelled',
+    message?: string,
+  ): Promise<void> {
+    await this.prisma.deploymentOperation
+      .update({
+        where: { id: operationId },
+        data: { status, message, finishedAt: new Date() },
+      })
+      .catch(() => undefined);
+    await this.prisma.environment.updateMany({
+      where: { activeOperationId: operationId },
+      data: { activeOperationId: null },
+    });
+  }
+
+  private async operationCancelled(operationId: string): Promise<boolean> {
+    const op = await this.prisma.deploymentOperation.findUnique({
+      where: { id: operationId },
+      select: { status: true },
+    });
+    return !op || op.status === 'cancelled';
+  }
+
+  private async scheduleDeployment(
+    projectId: string,
+    envName: EnvName,
+    version: string,
+    useRegistry: boolean,
+    kind: string,
+  ): Promise<void> {
+    const operationId = await this.beginOperation(projectId, envName, kind, version);
+    void this.deployEnvInBackground(projectId, envName, version, useRegistry, operationId);
+  }
+
+  // Projects created before repository-specific CI credentials used a single
+  // platform-wide token. Rotate those repositories on startup. Each affected
+  // user receives one fresh package-capable PAT, then every project gets an
+  // independent deploy secret whose plaintext lives only in Gitea Actions.
+  private async migrateLegacyCiTokens(): Promise<void> {
+    try {
+      const legacy = await this.prisma.project.findMany({
+        where: { ciDeployTokenHash: null },
+        include: { owner: true },
+      });
+      const byOwner = new Map<string, typeof legacy>();
+      for (const project of legacy) {
+        if (!project.owner) continue;
+        const list = byOwner.get(project.owner.id) ?? [];
+        list.push(project);
+        byOwner.set(project.owner.id, list);
+      }
+      for (const projects of byOwner.values()) {
+        const owner = projects[0].owner!;
+        try {
+          const ownerToken = await this.gitea.issueCloneToken(owner.username);
+          await this.prisma.user.update({
+            where: { id: owner.id },
+            data: { accessToken: encryptSecret(ownerToken) },
+          });
+          for (const project of projects) {
+            const token = generateToken();
+            await this.gitea.configureRepoSecrets(owner.username, project.name, ownerToken, token);
+            await this.prisma.project.update({
+              where: { id: project.id },
+              data: { ciDeployTokenHash: hashToken(token) },
+            });
+          }
+        } catch (e) {
+          this.logger.error(`CI credential migration for ${owner.username} failed: ${(e as Error).message}`);
+        }
+      }
+    } catch (e) {
+      // During the first migration-aware startup the column may not exist yet.
+      // The container migration step runs before the API in normal deployments.
+      this.logger.warn(`CI credential migration skipped: ${(e as Error).message}`);
+    }
+  }
 
   async list(ownerId: string): Promise<Project[]> {
     // Reconcile on read: refreshing the project list is the moment the user
@@ -153,7 +303,18 @@ export class ProjectsService {
     }
     const template = this.templates.get(dto.templateId);
     const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
-    const actor: GiteaActor = { username: owner.username, token: owner.accessToken };
+    const actor: GiteaActor = {
+      username: owner.username,
+      token: decryptSecret(owner.accessToken),
+    };
+
+    // Resolve every target before creating external state. Invalid target
+    // configuration must not leave a repository behind in Gitea.
+    const targets = await this.targets.listEntities(ownerId);
+    const envTargets = ENV_ORDER.map((name) => {
+      const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
+      return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
+    });
 
     // The workspace directory is namespaced by owner (.workspace/<owner>/<name>)
     // so same-named projects of different users cannot collide.
@@ -167,8 +328,9 @@ export class ProjectsService {
     await this.gitea.initLocal(repoPath);
 
     let repo: { repoUrl: string };
+    const ciDeployToken = generateToken();
     try {
-      repo = await this.gitea.provision(dto.name, repoPath, actor);
+      repo = await this.gitea.provision(dto.name, repoPath, actor, ciDeployToken);
     } catch (e) {
       throw new BadRequestException(
         `Repository could not be created in Gitea: ${(e as Error).message}`,
@@ -180,35 +342,32 @@ export class ProjectsService {
     // commit from Gitea). Keeping the platform stateless w.r.t. code.
     rmSync(repoPath, { recursive: true, force: true });
 
-    // Bind each environment to a target: dev/test to the built-in infra, prod
-    // to the chosen (or default) target. Validates capability/compatibility.
-    const targets = await this.targets.listEntities(ownerId);
-    const envTargets = ENV_ORDER.map((name) => {
-      const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
-      return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
-    });
-
-    const created = await this.prisma.project.create({
-      data: {
-        name: dto.name,
-        templateId: template.id,
-        repoPath,
-        repoUrl: repo.repoUrl,
-        lastCommit: 'init: scaffold from template',
-        ownerId,
-        environments: {
-          create: envTargets.map(({ name, target }, order) => ({
-            name,
-            order,
-            provider: target.kind,
-            targetId: target.id,
-            // dev immediately shows "deploying" — the deployment completes
-            // in the background once CI builds the image.
-            status: name === 'dev' ? 'deploying' : 'empty',
-          })),
+    let created: { id: string };
+    try {
+      created = await this.prisma.project.create({
+        data: {
+          name: dto.name,
+          templateId: template.id,
+          repoPath,
+          repoUrl: repo.repoUrl,
+          lastCommit: 'init: scaffold from template',
+          ciDeployTokenHash: hashToken(ciDeployToken),
+          ownerId,
+          environments: {
+            create: envTargets.map(({ name, target }, order) => ({
+              name,
+              order,
+              provider: target.kind,
+              targetId: target.id,
+              status: name === 'dev' ? 'deploying' : 'empty',
+            })),
+          },
         },
-      },
-    });
+      });
+    } catch (e) {
+      await this.gitea.deleteRepo(dto.name, actor);
+      throw e;
+    }
 
     // No local bootstrap build: dev stays "deploying" until CI builds and
     // tests the real image (build once, deploy many). Pushing the scaffold
@@ -223,24 +382,27 @@ export class ProjectsService {
     envName: EnvName,
     version: string,
     useRegistry: boolean,
+    operationId: string,
   ): Promise<void> {
     try {
-      await this.deployEnv(projectId, envName, version, useRegistry);
+      const published = await this.deployEnv(projectId, envName, version, useRegistry, operationId);
+      if (published) await this.completeOperation(operationId, 'succeeded');
     } catch (e) {
       this.logger.error(`Deploy to ${envName} failed: ${(e as Error).message}`);
       await this.prisma.environment
-        .update({
-          where: { projectId_name: { projectId, name: envName } },
-          data: { status: 'failed', statusReason: (e as Error).message },
+        .updateMany({
+          where: { projectId, name: envName, activeOperationId: operationId },
+          data: { status: 'failed', statusReason: (e as Error).message, activeOperationId: null },
         })
         .catch(() => undefined);
+      await this.completeOperation(operationId, 'failed', (e as Error).message);
     }
   }
 
   // CI → deploy: after a successful CI build, sync the latest commit and
   // deploy it to dev. Closes the E2E loop: commit → CI build/test/docker →
   // a running dev environment with the real code.
-  async deployFromCi(repo: string, sha: string, ref: string): Promise<void> {
+  async deployFromCi(repo: string, sha: string, ref: string, token: string): Promise<void> {
     const [owner, name] = repo.split('/');
     if (!owner || !name) throw new BadRequestException('Invalid repo');
     // Deploy from the main branch only.
@@ -254,6 +416,12 @@ export class ProjectsService {
       this.logger.warn(`CI deploy: project '${repo}' not found`);
       return;
     }
+    if (!tokenMatches(token, project.ciDeployTokenHash)) {
+      throw new UnauthorizedException('Invalid CI token for this repository');
+    }
+    if (!/^[0-9a-f]{40}$/i.test(sha)) {
+      throw new BadRequestException('CI deploy requires a full 40-character commit SHA');
+    }
 
     // Version = the full commit hash (unambiguous, matches the CI image tag).
     // No local sync needed — sources are fetched from Gitea on demand.
@@ -265,7 +433,7 @@ export class ProjectsService {
     // Runs in the background — the CI webhook returns immediately, the deploy
     // (pull + run) finishes afterwards. useRegistry=true: run exactly the
     // image CI built and tested.
-    void this.deployEnvInBackground(project.id, 'dev', version, true);
+    await this.scheduleDeployment(project.id, 'dev', version, true, 'ci-deploy');
     this.logger.log(`CI deploy: ${repo} → dev (${version})`);
   }
 
@@ -286,11 +454,7 @@ export class ProjectsService {
     // real host can take minutes (uploading vendor/ file-by-file), which would
     // otherwise block the HTTP request past proxy timeouts (504). The env is
     // marked 'deploying' and the UI polls for the outcome.
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId: id, name: target } },
-      data: { status: 'deploying', statusReason: null },
-    });
-    void this.deployEnvInBackground(id, target, source.version, true);
+    await this.scheduleDeployment(id, target, source.version, true, 'promote');
     return this.get(id);
   }
 
@@ -327,7 +491,7 @@ export class ProjectsService {
       throw new BadRequestException(`Environment '${envName}' has nothing to redeploy`);
     }
     const useRegistry = /^[0-9a-f]{7,40}$/.test(env.version);
-    void this.deployEnvInBackground(id, envName, env.version, useRegistry);
+    await this.scheduleDeployment(id, envName, env.version, useRegistry, 'redeploy');
     return this.get(id);
   }
 
@@ -335,6 +499,9 @@ export class ProjectsService {
   // is kept so it remains visible what is deployed; Start resumes it.
   async stopEnv(id: string, envName: EnvName): Promise<Project> {
     const { env, slug } = await this.envContext(id, envName);
+    if (env.activeOperationId) {
+      throw new BadRequestException(`Environment '${envName}' has an active operation`);
+    }
     if (env.status !== 'running') {
       throw new BadRequestException(`Environment '${envName}' is not running`);
     }
@@ -359,11 +526,8 @@ export class ProjectsService {
     if (!env.version) {
       throw new BadRequestException(`Environment '${envName}' has nothing to start`);
     }
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId: id, name: envName } },
-      data: { status: 'deploying', statusReason: null },
-    });
-    void this.startEnvInBackground(id, envName);
+    const operationId = await this.beginOperation(id, envName, 'start', env.version);
+    void this.startEnvInBackground(id, envName, operationId);
     return this.get(id);
   }
 
@@ -372,14 +536,22 @@ export class ProjectsService {
   // The repository and the project itself are untouched.
   async removeEnv(id: string, envName: EnvName): Promise<Project> {
     const { env, slug } = await this.envContext(id, envName);
-    // Tear down in the background: SFTP teardown on a real host (removing
-    // vendor/ file-by-file) can take a while and would otherwise block the
-    // request past proxy timeouts. The environment is marked empty right away.
+    if (env.activeOperationId) {
+      await this.prisma.$transaction([
+        this.prisma.deploymentOperation.update({
+          where: { id: env.activeOperationId },
+          data: { status: 'cancelled', message: 'Cancellation requested by user' },
+        }),
+        this.prisma.environment.update({
+          where: { id: env.id },
+          data: { statusReason: 'Cancellation requested — cleaning up' },
+        }),
+      ]);
+      return this.get(id);
+    }
     const provider = env.provider as ProviderKind;
     const connection = this.targetConnection(env);
-    void this.deployment
-      .teardown(provider, { projectName: slug, env: envName, connection })
-      .catch((e) => this.logger.warn(`Teardown of ${envName} failed: ${(e as Error).message}`));
+    await this.deployment.teardown(provider, { projectName: slug, env: envName, connection });
     await this.prisma.environment.update({
       where: { projectId_name: { projectId: id, name: envName } },
       // Releasing allocatedPort returns the port to the pool.
@@ -388,7 +560,11 @@ export class ProjectsService {
     return this.get(id);
   }
 
-  private async startEnvInBackground(id: string, envName: EnvName): Promise<void> {
+  private async startEnvInBackground(
+    id: string,
+    envName: EnvName,
+    operationId: string,
+  ): Promise<void> {
     try {
       const { template, env, slug } = await this.envContext(id, envName);
       const appPort = this.isDemoSsh(env) ? await this.allocateSshPort(id, envName) : undefined;
@@ -402,21 +578,40 @@ export class ProjectsService {
         appPort,
         connection: this.targetConnection(env),
       });
-      await this.prisma.environment.update({
-        where: { projectId_name: { projectId: id, name: envName } },
+      if (await this.operationCancelled(operationId)) {
+        await this.deployment.teardown(env.provider as ProviderKind, {
+          projectName: slug,
+          env: envName,
+          connection: this.targetConnection(env),
+        });
+        await this.prisma.environment.updateMany({
+          where: { projectId: id, name: envName, activeOperationId: operationId },
+          data: { status: 'empty', version: null, url: null, statusReason: null, activeOperationId: null },
+        });
+        await this.completeOperation(operationId, 'cancelled', 'Cancelled by user');
+        return;
+      }
+      await this.prisma.environment.updateMany({
+        where: { projectId: id, name: envName, activeOperationId: operationId },
         data: {
           status: result.status,
           url: result.url,
           statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
         },
       });
+      await this.completeOperation(
+        operationId,
+        result.status === 'failed' ? 'failed' : 'succeeded',
+        result.reason,
+      );
     } catch (e) {
       await this.prisma.environment
-        .update({
-          where: { projectId_name: { projectId: id, name: envName } },
-          data: { status: 'failed', statusReason: (e as Error).message },
+        .updateMany({
+          where: { projectId: id, name: envName, activeOperationId: operationId },
+          data: { status: 'failed', statusReason: (e as Error).message, activeOperationId: null },
         })
         .catch(() => undefined);
+      await this.completeOperation(operationId, 'failed', (e as Error).message);
     }
   }
 
@@ -516,6 +711,10 @@ export class ProjectsService {
     }>,
     opts: { deleteRemoteRepo: boolean },
   ): Promise<void> {
+    await this.prisma.deploymentOperation.updateMany({
+      where: { environment: { projectId: row.id }, finishedAt: null },
+      data: { status: 'cancelled', message: 'Project deletion requested' },
+    });
     const slug = this.deploySlug(row.repoUrl, row.name);
     for (const env of row.environments) {
       await this.deployment.teardown(env.provider as ProviderKind, {
@@ -662,7 +861,8 @@ export class ProjectsService {
     envName: EnvName,
     version: string,
     useRegistry: boolean,
-  ) {
+    operationId: string,
+  ): Promise<boolean> {
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
     const template = this.templates.get(project.templateId);
     const env = await this.prisma.environment.findUniqueOrThrow({
@@ -670,8 +870,8 @@ export class ProjectsService {
       include: { target: true },
     });
 
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId, name: envName } },
+    await this.prisma.environment.updateMany({
+      where: { projectId, name: envName, activeOperationId: operationId },
       data: { status: 'deploying', statusReason: null },
     });
     // The built-in SSH VPS is shared — allocate a unique app port from the
@@ -682,10 +882,14 @@ export class ProjectsService {
     // persisted into statusReason so the UI can show it under the deploying env.
     // It is cleared (success) or replaced by the failure reason at the end.
     const setStage = (message: string) => {
-      void this.prisma.environment
-        .update({
-          where: { projectId_name: { projectId, name: envName } },
-          data: { statusReason: message },
+      void this.prisma.deploymentOperation
+        .findUnique({ where: { id: operationId }, select: { status: true } })
+        .then((op) => {
+          if (op?.status !== 'running') return;
+          return this.prisma.environment.updateMany({
+            where: { projectId, name: envName, activeOperationId: operationId },
+            data: { statusReason: message },
+          });
         })
         .catch(() => undefined);
     };
@@ -746,15 +950,39 @@ export class ProjectsService {
           : undefined,
         allowBuildFallback: !useRegistry,
       });
-      await this.prisma.environment.update({
-        where: { projectId_name: { projectId, name: envName } },
+      if (await this.operationCancelled(operationId)) {
+        await this.deployment.teardown(env.provider as ProviderKind, {
+          projectName: this.deploySlug(project.repoUrl, project.name),
+          env: envName,
+          connection: this.targetConnection(env),
+        });
+        await this.prisma.environment.updateMany({
+          where: { projectId, name: envName, activeOperationId: operationId },
+          data: {
+            status: 'empty',
+            version: null,
+            url: null,
+            statusReason: null,
+            allocatedPort: null,
+            activeOperationId: null,
+          },
+        });
+        await this.completeOperation(operationId, 'cancelled', 'Cancelled by user');
+        return false;
+      }
+      if (result.status === 'failed') {
+        throw new Error(result.reason || `Deployment to '${envName}' failed`);
+      }
+      const published = await this.prisma.environment.updateMany({
+        where: { projectId, name: envName, activeOperationId: operationId },
         data: {
           status: result.status,
           version,
           url: result.url,
-          statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
+          statusReason: null,
         },
       });
+      return published.count === 1;
     } finally {
       source?.cleanup();
       if (extractedDir) rmSync(extractedDir, { recursive: true, force: true });
@@ -931,6 +1159,11 @@ export class ProjectsService {
       include: { target: true },
     });
     if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
+    if (env.activeOperationId) {
+      throw new BadRequestException(
+        `Environment '${envName}' is busy. Cancel or wait for its current operation first.`,
+      );
+    }
 
     const entities = await this.targets.listEntities(project.ownerId ?? '');
     const target = entities.find((e) => e.id === targetId);
@@ -940,15 +1173,13 @@ export class ProjectsService {
     const movingAway = !!env.targetId && env.targetId !== target.id && env.status !== 'empty';
     if (movingAway) {
       const slug = this.deploySlug(project.repoUrl, project.name);
-      // Fire-and-forget: tearing down the old deployment (possibly a slow SFTP
-      // host) must not block re-pointing the environment.
-      void this.deployment
-        .teardown(env.provider as ProviderKind, {
-          projectName: slug,
-          env: envName,
-          connection: this.targetConnection(env),
-        })
-        .catch((e) => this.logger.warn(`Teardown of old target failed: ${(e as Error).message}`));
+      // Do not bind the new target until teardown succeeds; otherwise a failed
+      // cleanup would leave an unreachable orphan on the old infrastructure.
+      await this.deployment.teardown(env.provider as ProviderKind, {
+        projectName: slug,
+        env: envName,
+        connection: this.targetConnection(env),
+      });
     }
 
     await this.prisma.environment.update({

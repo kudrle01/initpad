@@ -5,6 +5,8 @@ import { JwtAuthGuard, TOKEN_COOKIE } from './jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { AuthRateLimitGuard } from './auth-rate-limit.guard';
+import { config } from '../config';
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
@@ -13,7 +15,13 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   // Managed registration — provisions the Gitea account and signs the user in.
+  @Get('config')
+  async authConfig() {
+    return { registrationAvailable: await this.auth.registrationAvailable() };
+  }
+
   @Post('register')
+  @UseGuards(AuthRateLimitGuard)
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.register(dto);
     this.setSession(res, token);
@@ -22,6 +30,7 @@ export class AuthController {
 
   // Sign-in with a platform-native account.
   @Post('signin')
+  @UseGuards(AuthRateLimitGuard)
   async signin(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.login(dto);
     this.setSession(res, token);
@@ -32,6 +41,8 @@ export class AuthController {
     res.cookie(TOKEN_COOKIE, token, {
       httpOnly: true,
       sameSite: 'lax',
+      secure: config.auth.secureCookie,
+      path: '/',
       maxAge: SESSION_MAX_AGE,
     });
   }
@@ -44,7 +55,12 @@ export class AuthController {
 
   @Post('logout')
   logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie(TOKEN_COOKIE);
+    res.clearCookie(TOKEN_COOKIE, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: config.auth.secureCookie,
+      path: '/',
+    });
     return { ok: true };
   }
 }

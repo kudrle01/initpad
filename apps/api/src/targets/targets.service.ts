@@ -170,6 +170,7 @@ export class TargetsService implements OnModuleInit {
   }
 
   async create(ownerId: string, dto: CreateTargetDto): Promise<Target> {
+    this.assertSafeEndpoint(dto.host, dto.publicUrl);
     if (await this.prisma.target.findFirst({ where: { ownerId, name: dto.name } })) {
       throw new BadRequestException(`You already have a target named '${dto.name}'`);
     }
@@ -194,7 +195,25 @@ export class TargetsService implements OnModuleInit {
 
   async update(id: string, ownerId: string, dto: UpdateTargetDto): Promise<Target> {
     const row = await this.getUserTarget(id, ownerId);
+    this.assertSafeEndpoint(dto.host ?? row.host ?? '', dto.publicUrl ?? row.publicUrl ?? '');
+    if (dto.name && dto.name !== row.name) {
+      const duplicate = await this.prisma.target.findFirst({
+        where: { ownerId, name: dto.name, id: { not: row.id } },
+      });
+      if (duplicate) throw new BadRequestException(`You already have a target named '${dto.name}'`);
+    }
     const kindChanged = dto.kind !== undefined && dto.kind !== row.kind;
+    const capabilitiesChanged =
+      dto.capabilities !== undefined &&
+      this.toCsv(dto.capabilities) !== this.toCsv(this.parseCaps(row.capabilities));
+    if (kindChanged || capabilitiesChanged) {
+      const inUse = await this.prisma.environment.count({ where: { targetId: row.id } });
+      if (inUse > 0) {
+        throw new BadRequestException(
+          'A target in use cannot change kind or runtime capabilities. Move its environments first.',
+        );
+      }
+    }
     // Any change to the connection invalidates the previous verification.
     const connectionChanged =
       kindChanged ||
@@ -203,7 +222,9 @@ export class TargetsService implements OnModuleInit {
       dto.username !== undefined ||
       dto.auth !== undefined ||
       dto.secret !== undefined ||
-      dto.remotePath !== undefined;
+      dto.remotePath !== undefined ||
+      dto.publicUrl !== undefined ||
+      capabilitiesChanged;
     const updated = (await this.prisma.target.update({
       where: { id: row.id },
       data: {
@@ -301,7 +322,41 @@ export class TargetsService implements OnModuleInit {
   }
 
   private toCsv(caps: string[]): string {
-    return caps.join(',');
+    return [...new Set(caps)].sort().join(',');
+  }
+
+  private assertSafeEndpoint(host: string, publicUrl: string): void {
+    const blocked = new Set([
+      'localhost',
+      '0.0.0.0',
+      '::',
+      '::1',
+      'api',
+      'postgres',
+      'gitea',
+      'host.docker.internal',
+      '169.254.169.254',
+      'metadata.google.internal',
+    ]);
+    const normalizedHost = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+    if (
+      !normalizedHost ||
+      blocked.has(normalizedHost) ||
+      normalizedHost.startsWith('127.') ||
+      normalizedHost.startsWith('169.254.') ||
+      /[\s/@]/.test(normalizedHost)
+    ) {
+      throw new BadRequestException('This target host is reserved or unsafe');
+    }
+    try {
+      const url = new URL(publicUrl);
+      const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+      if (!['http:', 'https:'].includes(url.protocol) || blocked.has(hostname)) {
+        throw new Error('unsafe');
+      }
+    } catch {
+      throw new BadRequestException('Public URL must be a safe HTTP(S) address');
+    }
   }
 
   private toSummary(row: TargetRow, inUse: boolean): Target {

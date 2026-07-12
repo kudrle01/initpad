@@ -5,9 +5,12 @@ import {
   HttpCode,
   Logger,
   Post,
-  Query,
+  RawBodyRequest,
+  Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../config';
 import { ProjectsService } from './projects.service';
 
@@ -33,16 +36,22 @@ export class ScmWebhookController {
   @HttpCode(202)
   handle(
     @Headers('authorization') auth: string,
+    @Headers('x-gitea-signature') signature: string,
     @Headers('x-gitea-event') event: string,
-    @Query('token') queryToken: string,
+    @Req() req: RawBodyRequest<Request>,
     @Body() body: RepositoryEventDto,
   ) {
-    // The token may arrive as a Bearer header or in the URL — older Gitea
-    // versions silently ignore the authorization_header hook field, so the
-    // registration also embeds the token in the hook URL.
+    // Gitea signs the exact request body with the configured webhook secret.
+    // Bearer auth remains as a compatibility path, but secrets never enter
+    // URLs where proxies and access logs would retain them.
     const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
-    const token = bearer || queryToken || '';
-    if (!token || token !== config.ci.deployToken) {
+    const raw = req.rawBody;
+    const expected = raw
+      ? createHmac('sha256', config.scm.webhookToken).update(raw).digest('hex')
+      : '';
+    const signatureValid = this.safeEqual(signature || '', expected);
+    const bearerValid = this.safeEqual(bearer, config.scm.webhookToken);
+    if (!signatureValid && !bearerValid) {
       throw new UnauthorizedException('Invalid webhook token');
     }
     this.logger.log(`SCM webhook received: ${event ?? '?'} / ${body.action ?? '-'}`);
@@ -53,5 +62,11 @@ export class ScmWebhookController {
       );
     }
     return { accepted: true };
+  }
+
+  private safeEqual(actual: string, expected: string): boolean {
+    const a = Buffer.from(actual);
+    const b = Buffer.from(expected);
+    return a.length > 0 && a.length === b.length && timingSafeEqual(a, b);
   }
 }

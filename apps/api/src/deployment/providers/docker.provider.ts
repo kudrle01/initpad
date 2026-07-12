@@ -336,12 +336,36 @@ export class DockerProvider implements DeploymentProvider {
     const container = await this.docker.createContainer({
       Image: image,
       name,
+      Labels: {
+        'com.initpad.managed': 'true',
+        'com.initpad.environment': network.replace(/^net-/, ''),
+      },
       ExposedPorts: { [portKey]: {} },
-      HostConfig: { PublishAllPorts: true, NetworkMode: network },
+      HostConfig: {
+        NetworkMode: network,
+        PortBindings: {
+          [portKey]: [{ HostIp: config.deployment.bindAddress, HostPort: '' }],
+        },
+        Memory: config.deployment.memoryBytes,
+        MemorySwap: config.deployment.memoryBytes,
+        NanoCpus: config.deployment.nanoCpus,
+        PidsLimit: config.deployment.pidsLimit,
+        CapDrop: ['ALL'],
+        CapAdd: port < 1024 ? ['CHOWN', 'SETGID', 'SETUID', 'NET_BIND_SERVICE'] : [],
+        SecurityOpt: ['no-new-privileges'],
+        Init: true,
+        RestartPolicy: { Name: 'unless-stopped' },
+        LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
+      },
     });
-    await container.start();
-    const info = await container.inspect();
-    const mapping = info.NetworkSettings.Ports?.[portKey];
-    return mapping && mapping[0] ? mapping[0].HostPort : String(port);
+    try {
+      await container.start();
+      const info = await container.inspect();
+      const mapping = info.NetworkSettings.Ports?.[portKey];
+      return mapping && mapping[0] ? mapping[0].HostPort : String(port);
+    } catch (error) {
+      await container.remove({ force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 }
