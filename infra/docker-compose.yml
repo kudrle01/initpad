@@ -20,7 +20,7 @@ services:
   gitea:
     image: gitea/gitea:1.22
     environment:
-      GITEA__server__ROOT_URL: http://localhost:3001/
+      GITEA__server__ROOT_URL: http://gitea.localhost:3001/
       # Enables Gitea Actions (CI). The runner registers below (profile "ci").
       GITEA__actions__ENABLED: "true"
       # SSO: signing in through the platform (OIDC) auto-links to an existing
@@ -28,8 +28,9 @@ services:
       GITEA__oauth2_client__ACCOUNT_LINKING: auto
       GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
       GITEA__oauth2_client__USERNAME: nickname
-      # Allow webhook deliveries to the platform API (private/host addresses).
-      GITEA__webhook__ALLOWED_HOST_LIST: "*"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      # Allow webhook deliveries only to the host-side development API.
+      GITEA__webhook__ALLOWED_HOST_LIST: "host.docker.internal"
     ports:
       - "3001:3000"
     volumes:
@@ -43,15 +44,37 @@ services:
     #   - "host.docker.internal:host-gateway"
     networks: [platform]
 
-  # Gitea Actions runner — executes the generated .gitea/workflows/ci.yml on push.
+  # Gitea Actions runner — executes workflows in a dedicated rootless Docker
+  # daemon. A compromised workflow cannot control the host Docker daemon.
   # Profile "ci": started separately after generating a registration token:
   #   1) docker compose up -d gitea postgres
   #   2) infra/register-runner.sh            # prints the token
   #   3) docker compose --profile ci up -d act_runner
+  runner-docker:
+    image: docker:27.5.1-dind-rootless
+    profiles: ["ci"]
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+      DOCKER_HOST: tcp://127.0.0.1:2375
+    command: ["--host=tcp://0.0.0.0:2375", "--tls=false"]
+    volumes:
+      - runner-docker-data:/home/rootless/.local/share/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+    networks: [ci-control]
+    restart: unless-stopped
+
   act_runner:
     image: gitea/act_runner:0.2.11
     profiles: ["ci"]
-    depends_on: [gitea]
+    depends_on:
+      gitea: { condition: service_started }
+      runner-docker: { condition: service_healthy }
     environment:
       GITEA_INSTANCE_URL: http://gitea:3000
       GITEA_RUNNER_REGISTRATION_TOKEN: ${INITPAD_RUNNER_TOKEN:-}
@@ -64,10 +87,7 @@ services:
     volumes:
       - ./act_runner/config.yaml:/config.yaml:ro
       - runner-data:/data
-      # Shared Docker daemon — so the CI "docker build" step really builds
-      # images on the host.
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks: [platform]
+    networks: [platform, ci-control]
     restart: unless-stopped
 
   # --- simulated deployment targets (real protocols against stand-in containers) ---
@@ -117,10 +137,16 @@ volumes:
   pgdata: {}
   gitea-data: {}
   runner-data: {}
+  runner-docker-data: {}
   sftp-www: {}
 
 networks:
   platform: {}
+  ci-control:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+          gateway: 172.31.250.1
   net-dev: {}
   net-test: {}
   net-prod: {}

@@ -13,6 +13,9 @@ cd "$(dirname "$0")"
 COMPOSE="docker compose"
 say()  { printf '\033[1;32m›\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+random_secret() {
+  openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
 
 command -v docker >/dev/null || fail "Docker is not installed (https://docs.docker.com/get-docker/)."
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
@@ -26,7 +29,7 @@ fi
 
 # Replace every __GENERATE__ placeholder with a random secret.
 while grep -q '__GENERATE__' .env; do
-  secret=$(openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  secret=$(random_secret)
   tmp=$(mktemp)
   awk -v s="$secret" '!done && /__GENERATE__/ { sub(/__GENERATE__/, s); done=1 } { print }' .env > "$tmp"
   mv "$tmp" .env
@@ -39,6 +42,29 @@ set_env() {
   awk -v k="$1" -v v="$2" 'BEGIN{FS=OFS="="} $1==k {$0=k"="v; done=1} {print} END{if(!done) print k"="v}' .env > "$tmp"
   mv "$tmp" .env
 }
+
+# Upgrade existing installations from the former global CI token. It is now
+# used only for the Gitea system webhook; repository CI credentials are
+# rotated independently by the API on startup.
+if [ -z "$(get_env INITPAD_SCM_WEBHOOK_TOKEN)" ]; then
+  legacy=$(get_env INITPAD_CI_DEPLOY_TOKEN)
+  if [ -n "$legacy" ]; then
+    set_env INITPAD_SCM_WEBHOOK_TOKEN "$legacy"
+  else
+    set_env INITPAD_SCM_WEBHOOK_TOKEN "$(random_secret)"
+  fi
+fi
+if [ -z "$(get_env INITPAD_REGISTRATION_MODE)" ]; then
+  set_env INITPAD_REGISTRATION_MODE first-user
+fi
+# Local upgrades use a dedicated .localhost hostname so browsers resolve it
+# to loopback while isolated CI jobs map the same name to their gateway.
+if [ "$(get_env INITPAD_GITEA_PUBLIC_URL)" = "http://localhost:3001" ]; then
+  set_env INITPAD_GITEA_PUBLIC_URL http://gitea.localhost:3001
+fi
+if [ "$(get_env INITPAD_REGISTRY_HOST)" = "localhost:3001" ]; then
+  set_env INITPAD_REGISTRY_HOST gitea.localhost:3001
+fi
 wait_healthy() { # <service> [attempts]
   local svc=$1 tries=${2:-60} cid state
   for i in $(seq 1 "$tries"); do
@@ -139,7 +165,7 @@ fi
 
 # ---- 7. summary ---------------------------------------------------------------
 PUBLIC_URL=$(get_env INITPAD_PUBLIC_URL); PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
-GITEA_URL=$(get_env INITPAD_GITEA_PUBLIC_URL); GITEA_URL=${GITEA_URL:-http://localhost:3001}
+GITEA_URL=$(get_env INITPAD_GITEA_PUBLIC_URL); GITEA_URL=${GITEA_URL:-http://gitea.localhost:3001}
 cat <<MSG
 
   ✔ InitPad is running.

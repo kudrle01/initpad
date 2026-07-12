@@ -11,13 +11,13 @@ git clone <this repo> && cd initpad/deploy
 ./install.sh
 ```
 
-Open http://localhost:8080, register an account and create a project.
+Open http://localhost:8080, create the initial account and then create a project.
 The script is idempotent — re-run it anytime; it only fixes what's missing.
 
 What it automates: secret generation, Gitea provisioning without the web
 wizard (service account + admin token via CLI), SSO registration (the
-platform is Gitea's OIDC sign-in), CI runner registration, database schema
-sync and container builds.
+platform is Gitea's OIDC sign-in), isolated CI runner registration, versioned
+database migrations and container builds.
 
 ## Server install
 
@@ -42,13 +42,19 @@ sync and container builds.
 
 ## Operations
 
-- **State** lives in two Docker volumes only: `initpad_pgdata` (database)
-  and `initpad_gitea-data` (repositories + registry). Back these up.
-- **Upgrade**: `git pull && docker compose up -d --build api web`.
+- **Backup**: run `./backup.sh /secure/path/initpad-backup`. It creates a
+  PostgreSQL dump, archives Gitea/registry, API keys/workspaces, published
+  static files, Caddy data and runner registration, and copies `.env`.
+  The backup contains credentials; encrypt it and keep an off-host copy.
+- **Restore drill**: on an empty installation, restore `.env`, start
+  PostgreSQL, import `postgres.dump` with `pg_restore`, unpack each archive
+  into its matching `initpad_*` volume, then run `./install.sh`. Always test
+  this on a disposable host before relying on a backup.
+- **Upgrade**: `git pull && ./install.sh`. The installer applies reviewed
+  Prisma migrations and reconciles the stack.
 - **Logs**: `docker compose logs -f api` (or any other service).
-- Do not run this stack and the `infra/` development stack simultaneously —
-  they share the compose project name on purpose (CI job containers attach
-  to the `initpad_platform` network).
+- Do not run this stack and the `infra/` development stack simultaneously;
+  they intentionally share the compose project name.
 
 ## Troubleshooting
 

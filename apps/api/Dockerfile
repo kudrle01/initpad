@@ -25,11 +25,13 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/api/prisma apps/api/prisma
+COPY apps/api/scripts apps/api/scripts
 RUN npm ci --omit=dev --workspace @initpad/api --include-workspace-root=false \
     && npm cache clean --force
 COPY --from=build /repo/apps/api/dist apps/api/dist
 WORKDIR /repo/apps/api
 EXPOSE 3000
-# `prisma db push` syncs the schema on startup (idempotent) — no manual
-# migration step during installation.
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/main.js"]
+# Apply versioned, reviewable migrations before accepting traffic. Unlike
+# `db push`, this preserves migration history and never guesses destructive
+# schema changes in production.
+CMD ["sh", "-c", "node scripts/migrate.js && node dist/main.js"]

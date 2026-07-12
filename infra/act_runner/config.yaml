@@ -1,8 +1,5 @@
-# Gitea Actions runner (act_runner) configuration.
-# The runner mounts the Docker socket into job containers BY ITSELF — do not
-# list it here, or docker reports "Duplicate mount point". Thanks to the
-# socket, the `docker build` step in the generated ci.yml builds images on
-# the host daemon.
+# Gitea Actions runner configuration. Jobs use a dedicated rootless DinD
+# daemon; the host Docker socket is deliberately never exposed to workflows.
 log:
   level: info
 
@@ -11,10 +8,17 @@ runner:
   # The catthehacker image ships the Docker CLI (needed for `docker build`).
   labels:
     - "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
+  capacity: 1
+  timeout: 30m
+  shutdown_timeout: 2m
 
 container:
-  # Attach job containers to the same network as Gitea so the internal
-  # hostname "gitea" resolves (checkout clones from http://gitea:3000).
-  # Network name = <compose project>_<network> = initpad_platform.
-  network: "initpad_platform"
+  network: "bridge"
   privileged: false
+  # *.localhost resolves to the physical loopback in a browser. Inside CI it
+  # is mapped to the dedicated outer gateway, while Docker commands talk only
+  # to the nested daemon through its bridge gateway.
+  options: "--add-host=gitea.localhost:172.31.250.1 --add-host=platform.localhost:172.31.250.1 --env=DOCKER_HOST=tcp://172.17.0.1:2375 --security-opt=no-new-privileges"
+  valid_volumes: []
+  docker_host: "tcp://runner-docker:2375"
+  force_pull: true
