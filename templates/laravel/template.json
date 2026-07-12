@@ -3,8 +3,18 @@
   "name": "Laravel (PHP)",
   "language": "PHP",
   "artifact": "runtime",
-  "compatibleProviders": ["docker"],
+  "runtime": "php",
+  "compatibleProviders": [
+    "docker",
+    "sftp"
+  ],
   "port": 8080,
   "healthPath": "/",
-  "description": "Laravel (PHP) application scaffolded via Composer. Runs on Docker across dev/test/prod."
+  "description": "Laravel (PHP) application scaffolded via Composer. Runs on Docker across dev/test/prod.",
+  "buildArtifactPath": "/app",
+  "webRoot": "public",
+  "writableDirs": [
+    "storage",
+    "bootstrap/cache"
+  ]
 }

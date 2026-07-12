@@ -3,8 +3,17 @@
   "name": "Symfony (PHP)",
   "language": "PHP",
   "artifact": "runtime",
-  "compatibleProviders": ["docker"],
+  "runtime": "php",
+  "compatibleProviders": [
+    "docker",
+    "sftp"
+  ],
   "port": 8080,
   "healthPath": "/health",
-  "description": "Symfony (PHP) application scaffolded via Composer, with a minimal JSON controller. Runs on Docker."
+  "description": "Symfony (PHP) application scaffolded via Composer, with a minimal JSON controller. Runs on Docker.",
+  "buildArtifactPath": "/app",
+  "webRoot": "public",
+  "writableDirs": [
+    "var"
+  ]
 }

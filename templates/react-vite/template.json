@@ -3,7 +3,11 @@
   "name": "React (Vite)",
   "language": "JavaScript",
   "artifact": "static",
-  "compatibleProviders": ["docker", "sftp"],
+  "runtime": "static",
+  "compatibleProviders": [
+    "docker",
+    "sftp"
+  ],
   "port": 80,
   "healthPath": "/health",
   "artifactDir": "dist",

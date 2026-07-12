@@ -3,7 +3,10 @@
   "name": "NestJS API",
   "language": "TypeScript",
   "artifact": "runtime",
-  "compatibleProviders": ["docker"],
+  "runtime": "node",
+  "compatibleProviders": [
+    "docker"
+  ],
   "port": 8080,
   "healthPath": "/health",
   "startCommand": "node dist/main.js",

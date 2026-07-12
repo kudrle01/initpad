@@ -1,7 +1,7 @@
 # Laravel is scaffolded at build time via Composer, then served by artisan.
 FROM php:8.3-cli
 ADD --chmod=0755 https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
-RUN install-php-extensions pdo_sqlite mbstring bcmath
+RUN install-php-extensions pdo_sqlite mbstring bcmath zip
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 RUN composer create-project laravel/laravel . --no-interaction --prefer-dist

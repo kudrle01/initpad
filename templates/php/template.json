@@ -3,7 +3,10 @@
   "name": "PHP (built-in server)",
   "language": "PHP",
   "artifact": "runtime",
-  "compatibleProviders": ["docker"],
+  "runtime": "php",
+  "compatibleProviders": [
+    "docker"
+  ],
   "port": 8080,
   "healthPath": "/health",
   "description": "PHP app served by the built-in web server with a small front controller. Runs on Docker across dev/test/prod."

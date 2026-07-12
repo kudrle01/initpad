@@ -3,7 +3,11 @@
   "name": "Node.js API (Express)",
   "language": "JavaScript",
   "artifact": "runtime",
-  "compatibleProviders": ["docker", "ssh"],
+  "runtime": "node",
+  "compatibleProviders": [
+    "docker",
+    "ssh"
+  ],
   "port": 8080,
   "healthPath": "/health",
   "startCommand": "node src/index.js",

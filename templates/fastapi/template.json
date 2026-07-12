@@ -3,7 +3,10 @@
   "name": "FastAPI (Python)",
   "language": "Python",
   "artifact": "runtime",
-  "compatibleProviders": ["docker"],
+  "runtime": "python",
+  "compatibleProviders": [
+    "docker"
+  ],
   "port": 8000,
   "healthPath": "/health",
   "description": "FastAPI (Python) REST API served by uvicorn. Runs on Docker across dev/test/prod."

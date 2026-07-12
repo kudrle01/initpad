@@ -3,8 +3,18 @@
   "name": "Nette (PHP)",
   "language": "PHP",
   "artifact": "runtime",
-  "compatibleProviders": ["docker"],
+  "runtime": "php",
+  "compatibleProviders": [
+    "docker",
+    "sftp"
+  ],
   "port": 8080,
   "healthPath": "/",
-  "description": "Nette (PHP) web project scaffolded via Composer. Runs on Docker across dev/test/prod."
+  "description": "Nette (PHP) web project scaffolded via Composer. Runs on Docker across dev/test/prod.",
+  "buildArtifactPath": "/app",
+  "webRoot": "www",
+  "writableDirs": [
+    "temp",
+    "log"
+  ]
 }
