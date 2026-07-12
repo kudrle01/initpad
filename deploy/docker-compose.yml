@@ -80,10 +80,16 @@ services:
       # CI job containers reach the API by its compose service name.
       INITPAD_PLATFORM_INTERNAL_URL: http://api:3000
       # Simulated deployment targets (service names inside the compose net).
+      # The credentials MUST match how fake-vps/fake-sftp were created below,
+      # otherwise the API authenticates with the wrong password.
       INITPAD_SSH_HOST: fake-vps
       INITPAD_SSH_PORT: "2222"
+      INITPAD_SSH_USER: deploy
+      INITPAD_SSH_PASSWORD: ${INITPAD_SSH_PASSWORD:-deploy}
       INITPAD_SFTP_HOST: fake-sftp
       INITPAD_SFTP_PORT: "22"
+      INITPAD_SFTP_USER: deploy
+      INITPAD_SFTP_PASSWORD: ${INITPAD_SFTP_PASSWORD:-deploy}
       INITPAD_SFTP_PUBLIC_URL: http://${INITPAD_PUBLIC_HOST:-localhost}:8085
       INITPAD_SFTP_INTERNAL_URL: http://static-web
       # SSO: Gitea (server) calls the API by service name; the browser goes
