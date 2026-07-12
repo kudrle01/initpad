@@ -10,6 +10,7 @@ import { tmpdir } from 'os';
 import { join, basename } from 'path';
 import { Prisma } from '@prisma/client';
 import {
+  ActivityEvent,
   Commit,
   DeployStatus,
   EnvName,
@@ -21,6 +22,7 @@ import {
   TargetScope,
   TemplateManifest,
 } from '../domain/types';
+import { targetCanRun, templateRuntime } from '../domain/capability';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
@@ -620,6 +622,38 @@ export class ProjectsService {
     ];
   }
 
+  // Cross-project activity feed: the recent commits of every owned project with
+  // their CI/deploy pipeline state, merged newest-first. A failing project
+  // (e.g. its Gitea repo is unreachable) is skipped, not fatal.
+  async activity(ownerId: string): Promise<ActivityEvent[]> {
+    const rows = await this.prisma.project.findMany({
+      where: { ownerId },
+      select: { id: true, name: true },
+    });
+    const perProject = await Promise.all(
+      rows.map(async (p): Promise<ActivityEvent[]> => {
+        try {
+          const commits = await this.getCommits(p.id);
+          return commits.slice(0, 5).map((c) => ({
+            projectId: p.id,
+            projectName: p.name,
+            sha: c.sha,
+            message: c.message,
+            author: c.author,
+            date: c.date,
+            pipeline: c.pipeline,
+          }));
+        } catch {
+          return [];
+        }
+      }),
+    );
+    return perProject
+      .flat()
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+      .slice(0, 50);
+  }
+
   // useRegistry=true → deploy the TESTED image from the registry (build
   // once); if it is missing, the deployment fails. useRegistry=false →
   // bootstrap build from the repository.
@@ -727,35 +761,28 @@ export class ProjectsService {
     }
   }
 
-  // The runtime a template needs (matched against a target's capabilities).
-  private templateRuntime(template: TemplateManifest): RuntimeKind {
-    return template.runtime ?? (template.artifact === 'static' ? 'static' : 'node');
-  }
-
   // The "natural" prod target kind for a template. php/python have no built-in
   // ssh/sftp host that runs them, so they default to Docker (the user can
   // switch prod to their own PHP/SSH server afterwards).
   private defaultKind(template: TemplateManifest): ProviderKind {
-    const rt = this.templateRuntime(template);
+    const rt = templateRuntime(template);
     if (rt === 'static') return 'sftp';
     if (rt === 'node') return 'ssh';
     return 'docker';
   }
 
-  // A target is usable for a template when the template accepts its kind and
-  // the target can run the template's runtime (e.g. our static SFTP host can't
-  // run PHP, but a real PHP-capable SFTP host can).
-  private assertUsable(target: TargetRow, template: TemplateManifest, runtime: RuntimeKind): void {
+  // Validates that a target can host a template (kind accepted + runtime
+  // supported), raising a specific error otherwise. The predicate itself lives
+  // in domain/capability (pure, unit-tested).
+  private assertUsable(target: TargetRow, template: TemplateManifest): void {
+    const capabilities = this.targets.parseCaps(target.capabilities);
+    if (targetCanRun(template, { kind: target.kind as ProviderKind, capabilities })) return;
     if (!template.compatibleProviders.includes(target.kind as ProviderKind)) {
-      throw new BadRequestException(
-        `Template '${template.id}' cannot deploy over ${target.kind}.`,
-      );
+      throw new BadRequestException(`Template '${template.id}' cannot deploy over ${target.kind}.`);
     }
-    if (!this.targets.parseCaps(target.capabilities).includes(runtime)) {
-      throw new BadRequestException(
-        `Target '${target.name}' cannot run ${runtime} apps (its capabilities: ${target.capabilities}).`,
-      );
-    }
+    throw new BadRequestException(
+      `Target '${target.name}' cannot run ${templateRuntime(template)} apps (its capabilities: ${target.capabilities}).`,
+    );
   }
 
   // Resolves the target for an environment at creation time: an explicit choice
@@ -767,11 +794,11 @@ export class ProjectsService {
     targetId: string | undefined,
     entities: TargetRow[],
   ): TargetRow {
-    const runtime = this.templateRuntime(template);
+    const runtime = templateRuntime(template);
     if (targetId) {
       const t = entities.find((e) => e.id === targetId);
       if (!t) throw new NotFoundException(`Target '${targetId}' not found`);
-      this.assertUsable(t, template, runtime);
+      this.assertUsable(t, template);
       return t;
     }
     if (name === 'prod') {
@@ -908,7 +935,7 @@ export class ProjectsService {
     const entities = await this.targets.listEntities(project.ownerId ?? '');
     const target = entities.find((e) => e.id === targetId);
     if (!target) throw new NotFoundException(`Target '${targetId}' not found`);
-    this.assertUsable(target, template, this.templateRuntime(template));
+    this.assertUsable(target, template);
 
     const movingAway = !!env.targetId && env.targetId !== target.id && env.status !== 'empty';
     if (movingAway) {

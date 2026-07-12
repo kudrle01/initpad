@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { ProjectsController } from './projects.controller';
+import { ActivityController } from './activity.controller';
 import { CiController } from './ci.controller';
 import { ScmWebhookController } from './scm-webhook.controller';
 import { TemplatesModule } from '../templates/templates.module';
@@ -13,6 +14,6 @@ import { AuthModule } from '../auth/auth.module';
 @Module({
   imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, ScmModule, AuthModule],
   providers: [ProjectsService],
-  controllers: [ProjectsController, CiController, ScmWebhookController],
+  controllers: [ProjectsController, ActivityController, CiController, ScmWebhookController],
 })
 export class ProjectsModule {}

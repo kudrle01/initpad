@@ -6,6 +6,7 @@ import type {
   User,
   Target,
   RuntimeKind,
+  ActivityEvent,
 } from '@/types';
 
 export interface EnvConfig {
@@ -61,6 +62,7 @@ export const api = {
   getProject: (id: string) => http<Project>(`/projects/${id}`),
   getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
+  getActivity: () => http<ActivityEvent[]>('/activity'),
   createProject: (name: string, templateId: string, environments: EnvConfig[]) =>
     http<Project>('/projects', {
       method: 'POST',

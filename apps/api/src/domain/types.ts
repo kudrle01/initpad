@@ -120,3 +120,14 @@ export interface Commit {
   date: string;
   pipeline: PipelineStage[];
 }
+
+// A cross-project activity entry: a commit and its CI/deploy pipeline state.
+export interface ActivityEvent {
+  projectId: string;
+  projectName: string;
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  pipeline: PipelineStage[];
+}

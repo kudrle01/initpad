@@ -88,3 +88,13 @@ export interface Commit {
   date: string;
   pipeline: PipelineStage[];
 }
+
+export interface ActivityEvent {
+  projectId: string;
+  projectName: string;
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  pipeline: PipelineStage[];
+}
