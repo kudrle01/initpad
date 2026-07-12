@@ -584,3 +584,52 @@ po souborech přes SFTP je pomalý (minuty). Registry image musí existovat
 potřebují běhové prostředí (`.env`, `APP_KEY`) — mechanismus je připravený,
 ale plná funkčnost frameworku je na uživateli; Nette (bez konfigurace) je
 nejpřímější případ.
+
+---
+
+## ADR-020 — Produkční nasazení: vrstvy cílů a Kubernetes jako doporučená produkce
+
+**Kontext.** Platforma není „fake" prototyp — nasazovací mašinerie je reálná
+(Gitea SCM + OCI registry + Actions CI, PostgreSQL, buildy/deploye image, OIDC
+SSO, šifrované secrety, Caddy HTTPS). Potřebujeme rozhodnout, **jak platformu
+provozovat reálně** (firma/škola) a **kam nasazovat projekty v produkci**, aniž
+bychom ztratili jednoduchou lokální ukázku.
+
+**Rozhodnutí — jeden kód, dva režimy přes „everything is a target" (ADR-018).**
+
+Vrstvy nasazovacích cílů (target kinds):
+- **Lokální demo (simulace):** vestavěné cíle — Docker + `fake-vps` (SSH) +
+  `fake-sftp`/nginx v izolované síti. Self-contained, bez cloudu; slouží k ukázce.
+- **Malé / legacy reálné:** Docker na hostiteli, SSH VPS, nebo SFTP shared
+  hosting (např. školní ESO). Už implementováno a funkční.
+- **Produkce (doporučeno): Kubernetes.** Build once (CI → image v registry),
+  pak deploy image do K8s: **namespace na prostředí** (dev/test/prod, případně
+  cluster na prostředí), objekty **Deployment + Service + Ingress** (URL typu
+  `projekt-env.apps.org.tld`), tajemství jako **K8s Secrets**, rollout/rollback
+  a škálování zdarma, reálná izolace. Stejný tok pro dev/test/prod, liší se jen
+  namespace/cluster.
+
+Hosting **samotné platformy:** `deploy/` compose stack (Caddy s automatickým
+HTTPS, Gitea, PostgreSQL, CI runner) na jedné VM je legitimní reálné nasazení
+pro kurz/malou firmu; ve větším měřítku běží platforma na tomtéž Kubernetes.
+
+**Zařazení do kódu.** Kubernetes je **další `kubernetes` target kind** za
+stávajícím rozhraním `DeploymentProvider` (`deploy` / `teardown` / `logs` /
+`verify`) — implementace mluví s K8s API (client-go/kubernetes-client) místo
+s Docker démonem či SSH. Model targetů (ADR-018) tím zůstává beze změny; jde o
+čistě doplněný provider. V tomto kroku je Kubernetes **navržený rozšiřitelný
+bod**, ne implementace — Docker/SSH/SFTP zůstávají funkční pro demo a legacy.
+
+**Kompromisy / hardening pro tvrdý multi-tenant prod (patří do Diskuze).**
+- API dnes staví/pouští kontejnery přes **host Docker socket** (root-equiv).
+  Pro důvěryhodného admina OK; zpevněný prod by build **izoloval** (rootless
+  BuildKit nebo build výhradně v CI) a deploy směřoval **do K8s**, ne na lokální
+  démon.
+- Klíč na šifrování secretů z env → v produkci ideálně **KMS/Vault**.
+- Platforma je dnes single-instance (api/web) — pro velký provoz **HA/škálování**
+  (a runnery jako pool).
+- Auth: platforma je vlastní OIDC provider; ve firmě lze **federovat na firemní
+  IdP** (OIDC/SAML).
+
+**Důsledky.** Rámování se mění z „prototyp" na „funkční platforma se dvěma
+režimy": simulace pro ukázku, reálné cíle (až po Kubernetes) pro provoz.

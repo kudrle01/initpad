@@ -1,9 +1,16 @@
-# InitPad – prototyp IDP
+# InitPad – interní platforma pro vývojáře (IDP)
 
-Interní platforma pro vývojáře (diplomová práce). Vývojář klikne „nový projekt“,
-vybere šablonu a platforma připraví repo, kód, CI/CD a běžící aplikaci v
-promotion pipeline **dev → test → prod**, kde cíl nasazení řídí zvolený
-**provider** (Docker / SFTP / SSH).
+Funkční interní platforma pro vývojáře (diplomová práce). Vývojář klikne „nový
+projekt“, vybere šablonu a platforma připraví repo, kód, CI/CD a běžící aplikaci
+v promotion pipeline **dev → test → prod**, kde cíl nasazení řídí zvolený
+**target** (Docker / SFTP / SSH; Kubernetes jako doporučená produkční vrstva).
+
+**Není to fake prototyp — mašinerie je reálná** (Gitea SCM + OCI registry +
+Actions CI, PostgreSQL, buildy a deploye image, OIDC SSO, šifrované secrety,
+Caddy s automatickým HTTPS). Jeden kód, dva režimy: **simulovaný** pro lokální
+ukázku (vestavěné demo cíle) a **reálný** pro produkci (skutečné servery /
+Kubernetes). Produkční architektura nasazování je v [`DECISIONS.md`](DECISIONS.md)
+(ADR-020).
 
 ## Struktura (monorepo)
 ```
