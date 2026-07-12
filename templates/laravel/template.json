@@ -1,20 +1,14 @@
 {
   "id": "laravel",
-  "name": "Laravel (PHP)",
+  "name": "Laravel",
   "language": "PHP",
   "artifact": "runtime",
   "runtime": "php",
-  "compatibleProviders": [
-    "docker",
-    "sftp"
-  ],
+  "compatibleProviders": ["docker", "sftp"],
   "port": 8080,
-  "healthPath": "/",
-  "description": "Laravel (PHP) application scaffolded via Composer. Runs on Docker across dev/test/prod.",
+  "healthPath": "/up",
+  "description": "Laravel application with committed source, locked Composer dependencies and an HTTP test suite.",
   "buildArtifactPath": "/app",
   "webRoot": "public",
-  "writableDirs": [
-    "storage",
-    "bootstrap/cache"
-  ]
+  "writableDirs": ["storage", "bootstrap/cache"]
 }

@@ -1,10 +1,21 @@
-# Nette web-project is scaffolded at build time via Composer.
-FROM php:8.3-cli
-ADD --chmod=0755 https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
-RUN install-php-extensions intl tokenizer zip
+FROM php:8.3-cli-alpine AS base
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
-RUN composer create-project nette/web-project . --no-interaction --prefer-dist \
- && chmod -R 777 temp log
+
+FROM base AS test
+COPY composer.json composer.lock ./
+RUN composer install --no-interaction --prefer-dist --no-progress
+COPY . .
+RUN vendor/bin/phpunit
+
+FROM base AS production-deps
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
+
+FROM base AS runtime
+COPY . .
+COPY --from=production-deps /app/vendor ./vendor
+RUN mkdir -p temp log && chown -R www-data:www-data /app
+USER www-data
 EXPOSE 8080
 CMD ["php", "-S", "0.0.0.0:8080", "-t", "www", "www/index.php"]

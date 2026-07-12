@@ -13,16 +13,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: node --version && npm --version
-      - run: npm install
+      - run: npm ci
 
   test:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
-      - run: npm install
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: npm ci
       - run: npm test
 
   docker:
@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       # Build once, deploy many: the image is built ONCE and pushed to the
       # Gitea registry tagged with the commit hash. The platform then only
       # pulls and runs it (dev/test/prod = the same image). The registry host

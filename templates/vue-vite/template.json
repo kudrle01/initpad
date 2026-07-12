@@ -11,6 +11,6 @@
   "port": 80,
   "healthPath": "/health",
   "artifactDir": "dist",
-  "buildCommand": "npm install && npm run build",
+  "buildCommand": "npm ci && npm run build",
   "description": "Vue single-page app built with Vite. Dev/test on Docker (nginx), prod on static hosting via SFTP."
 }

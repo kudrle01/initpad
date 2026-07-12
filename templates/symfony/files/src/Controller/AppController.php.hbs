@@ -1,0 +1,21 @@
+<?php
+
+namespace App\Controller;
+
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\Routing\Attribute\Route;
+
+final class AppController
+{
+    #[Route('/', methods: ['GET'])]
+    public function index(): JsonResponse
+    {
+        return new JsonResponse(['service' => '{{projectName}}', 'status' => 'ok']);
+    }
+
+    #[Route('/health', methods: ['GET'])]
+    public function health(): JsonResponse
+    {
+        return new JsonResponse(['status' => 'ok']);
+    }
+}

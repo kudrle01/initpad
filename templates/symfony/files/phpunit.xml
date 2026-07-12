@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php" colors="true" cacheDirectory=".phpunit.cache">
+  <testsuites><testsuite name="Application"><directory>tests</directory></testsuite></testsuites>
+  <php><env name="APP_ENV" value="test"/><env name="APP_DEBUG" value="0"/><env name="APP_SECRET" value="test-secret"/><env name="KERNEL_CLASS" value="App\Kernel"/></php>
+</phpunit>

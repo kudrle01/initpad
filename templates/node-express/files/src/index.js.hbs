@@ -1,27 +1,36 @@
 const express = require('express');
 
-const app = express();
 const port = process.env.PORT || 8080;
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    console.log(
-      `${new Date().toISOString()} ${req.method} ${req.url} ${res.statusCode} ${Date.now() - start}ms`,
-    );
+function createApp() {
+  const app = express();
+
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      console.log(
+        `${new Date().toISOString()} ${req.method} ${req.url} ${res.statusCode} ${Date.now() - start}ms`,
+      );
+    });
+    next();
   });
-  next();
-});
 
-app.get('/', (req, res) => {
-  res.json({ service: '{{projectName}}', status: 'ok' });
-});
+  app.get('/', (req, res) => {
+    res.json({ service: '{{projectName}}', status: 'ok' });
+  });
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
+  app.get('/health', (req, res) => {
+    res.json({ status: 'ok' });
+  });
 
-app.listen(port, () => {
-  console.log(`[{{projectName}}] started on port ${port} (node ${process.version})`);
-  console.log(`[{{projectName}}] routes: GET /  ·  GET /health`);
-});
+  return app;
+}
+
+if (require.main === module) {
+  createApp().listen(port, () => {
+    console.log(`[{{projectName}}] started on port ${port} (node ${process.version})`);
+    console.log(`[{{projectName}}] routes: GET /  ·  GET /health`);
+  });
+}
+
+module.exports = { createApp };

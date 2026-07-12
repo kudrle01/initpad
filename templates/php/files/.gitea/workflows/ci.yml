@@ -1,29 +1,28 @@
 name: ci
 on: [push]
 
-# build/test run language tooling via `docker run` on the default runner (which
-# has Docker), so actions/checkout still runs on the Node-based runner image.
+# Build and test use Docker targets so CI and the release use the same PHP.
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: php lint
-        run: docker run --rm -v "$PWD:/app" -w /app php:8.3-cli-alpine php -l router.php
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: build runtime image
+        run: docker build --target runtime -t initpad-check .
 
   test:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
-      - run: echo "no tests"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: docker build --target test -t initpad-test .
 
   docker:
     name: docker build
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: build & push image
         run: |
           IMAGE=$(echo "${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}" | tr '[:upper:]' '[:lower:]')

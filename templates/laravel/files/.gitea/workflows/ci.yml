@@ -1,28 +1,26 @@
 name: ci
 on: [push]
 
-# The framework is scaffolded during the Docker build (composer create-project),
-# so build/test are light; the docker job is the real build.
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: echo "scaffolded during docker build"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: docker build --target runtime -t initpad-check .
 
   test:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
-      - run: echo "no tests"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: docker build --target test -t initpad-test .
 
   docker:
     name: docker build
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: build & push image
         run: |
           IMAGE=$(echo "${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}" | tr '[:upper:]' '[:lower:]')

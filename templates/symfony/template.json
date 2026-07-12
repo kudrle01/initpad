@@ -1,19 +1,14 @@
 {
   "id": "symfony",
-  "name": "Symfony (PHP)",
+  "name": "Symfony",
   "language": "PHP",
   "artifact": "runtime",
   "runtime": "php",
-  "compatibleProviders": [
-    "docker",
-    "sftp"
-  ],
+  "compatibleProviders": ["docker", "sftp"],
   "port": 8080,
   "healthPath": "/health",
-  "description": "Symfony (PHP) application scaffolded via Composer, with a minimal JSON controller. Runs on Docker.",
+  "description": "Symfony application with committed source, locked Composer dependencies and an HTTP test suite.",
   "buildArtifactPath": "/app",
   "webRoot": "public",
-  "writableDirs": [
-    "var"
-  ]
+  "writableDirs": ["var"]
 }

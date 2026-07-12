@@ -1,0 +1,18 @@
+<?php
+
+namespace App\Presenters;
+
+use Nette\Application\UI\Presenter;
+
+final class HomePresenter extends Presenter
+{
+    public function actionDefault(): void
+    {
+        $this->sendJson(['service' => '{{projectName}}', 'status' => 'ok']);
+    }
+
+    public function actionHealth(): void
+    {
+        $this->sendJson(['status' => 'ok']);
+    }
+}

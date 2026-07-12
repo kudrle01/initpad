@@ -1,20 +1,14 @@
 {
   "id": "nette",
-  "name": "Nette (PHP)",
+  "name": "Nette",
   "language": "PHP",
   "artifact": "runtime",
   "runtime": "php",
-  "compatibleProviders": [
-    "docker",
-    "sftp"
-  ],
+  "compatibleProviders": ["docker", "sftp"],
   "port": 8080,
-  "healthPath": "/",
-  "description": "Nette (PHP) web project scaffolded via Composer. Runs on Docker across dev/test/prod.",
+  "healthPath": "/health",
+  "description": "Nette application with committed source, locked Composer dependencies and a router test.",
   "buildArtifactPath": "/app",
   "webRoot": "www",
-  "writableDirs": [
-    "temp",
-    "log"
-  ]
+  "writableDirs": ["temp", "log"]
 }
