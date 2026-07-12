@@ -782,3 +782,60 @@ umožňuje měřit přínos: čas do prvního běžícího deploye, počet ručn
 **Důsledky.** Backstage je referenční konkurent a možný budoucí integrační
 frontend, ne produkt, který má InitPad funkčně napodobit. Prioritu mají
 spolehlivost provisioningu, bezpečná izolace a měřitelná developer experience.
+
+---
+
+## ADR-027 — Veřejný control plane, školní target pool a infrastruktura uživatele
+
+**Kontext.** Self-contained instalace dobře demonstruje celý DevOps tok, ale
+každý tým by musel provozovat vlastní kopii InitPadu. Pro reálné použití ve
+škole chceme jednu veřejně dostupnou platformu, do které se přihlásí studenti,
+zatímco aplikace a jejich data zůstávají na infrastruktuře školy nebo uživatele.
+Současně nechceme vyžadovat, aby si každý student kupoval vlastní VPS.
+
+**Možnosti.** (a) Jedna kompletní instalace InitPadu na tým. (b) Veřejný control
+plane, který se na všechny servery připojuje přímo přes SSH. (c) Veřejný control
+plane + kombinace školních target pools, přímého SFTP pro ESO a odchozích agentů
+pro Docker/VM cíle.
+
+**Rozhodnutí.** (c), přičemž self-contained režim zůstává podporovaný jako demo,
+offline laboratoř a referenční implementace. Veřejný control plane spravuje
+identity, workspaces, předměty, projekty, CI metadata, schválení a deployment
+operace. Samotné workloady neběží v control plane:
+
+- škola registruje fyzické servery a publikuje je jako omezený **target pool**;
+- učitel přidělí týmu logické target allocations pro dev/test/prod;
+- ESO je přímý SFTP/PHP target, protože je veřejně dosažitelný a neumožňuje
+  instalaci agenta;
+- Docker server, VM nebo počítač za NATem používá **InitPad Agent**, který
+  navazuje pouze odchozí HTTPS/WSS spojení a přebírá podepsané deployment jobs;
+- běžný veřejný uživatel může místo školního poolu připojit vlastní server.
+
+Fyzický target a přidělení prostředí jsou různé pojmy. Jeden ESO server může
+hostovat test i prod, ale každé přidělení má vlastní `remotePath`, `publicUrl`,
+kvótu a oprávnění. Stejně tak jeden školní Docker host obslouží více týmů,
+aniž by studenti získali credentials k hostiteli.
+
+**Tok ve škole.** Učitel založí předmět a target pool → studenti vstoupí přes
+pozvánku/kód → vytvoří tým → založí projekt ze šablony nebo importují repo → CI
+postaví a otestuje artefakt → dev se nasadí automaticky na školní Docker pool →
+tentýž artefakt jde po promotion do testu a po schválení učitelem do produkce na
+ESO či jiný přidělený cíl.
+
+**Kompatibilita.** ESO není univerzální runtime. SFTP/PHP target přijímá PHP a
+statické artefakty; Node/Python/server-side Next.js vyžadují Docker, SSH VM nebo
+budoucí Kubernetes target. Schopnosti se ověřují přes existující target
+capabilities, nikoli názvem prostředí.
+
+**Bezpečnostní důsledky.** Veřejný režim je multi-tenant a nesmí zdědit trust
+assumptions single-node profilu. Před jeho vystavením jsou povinné workspaces a
+RBAC, tenant-scoped dotazy, invitation/e-mail onboarding, audit log, kvóty,
+ochrana proti zneužití, externalizované secrety a odstranění host Docker socketu
+z control plane. Agent dostává pouze krátkodobé job credentials a omezení svého
+target allocation; nemá globální přístup k ostatním týmům.
+
+**Rozsah diplomky.** Implementační MVP zahrnuje jeden veřejný control plane,
+workspaces/role, školní předmět a tým, import existujícího Gitea repozitáře,
+target pool, jednoho Docker agenta a ověřený dev → test → prod scénář s ESO.
+Billing, plná HA, Kubernetes, marketplace, mobilní agent, globální build cloud a
+enterprise federation zůstávají návrhem po obhajobě.
