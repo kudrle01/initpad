@@ -504,3 +504,83 @@ nikdy nezamění) a chybějící projekty uklidí. Uživatelská očekávání z
 zbytečná složitost navíc. Webhook zůstává jako okamžitá cesta, když ho daná verze Gitey
 doručí. Přejmenování repa v Gitee zůstává nepodporované (rozbije uložené
 URL) — vědomé omezení.
+
+---
+
+## ADR-018 — „Všechno je target": cíle nasazení jako první-třídní zdroj
+
+**Kontext.** „Kam se nasazuje" žilo ve dvou oddělených mechanismech: `provider`
+u prostředí (docker/ssh/sftp, implicitně mířil na vestavěnou simulovanou
+infrastrukturu přes `config.ts`) a osm inline sloupců `target*` na Environment
+(údaje vlastního serveru zadané ve formuláři). Dvě cesty pro tutéž věc se
+špatně udržují a nešlo v nich čistě vyjádřit, že **schopnost hostit PHP je
+vlastnost cíle, ne šablony**: náš vestavěný SFTP je statický nginx (PHP
+nespustí), zatímco reálný školní SFTP host (ESO) PHP běžně spouští.
+
+**Co je „target" (pro úplný začátek).** Jedno místo, kam lze nasadit: má druh
+(docker/ssh/sftp), adresu + přihlášení a **schopnosti** (co umí spustit —
+podmnožina `static,node,php,python`). Prostředí (dev/test/prod) se na jeden
+target odkazuje.
+
+**Rozhodnutí.** Zavést první-třídní model **Target**. Cíle jsou dvojího původu:
+- **builtin** — vestavěná simulovaná infrastruktura (Docker, SSH VPS, SFTP host),
+  seedovaná při startu z `config.ts` (idempotentní upsert se stabilními id).
+  Nasazují se dál přes původní „demo" cestu providerů (`connection = undefined`),
+  takže jejich chování je beze změny.
+- **user** — servery, které si uživatel zaregistruje (host/port/přihlášení,
+  tajemství šifrované AES-256-GCM) a ověří tlačítkem **Test connection**
+  (`provider.verify()` → uloží `verifiedAt`).
+
+Environment odkazuje na Target (`targetId`); `provider` zůstává jako
+denormalizovaná kopie `target.kind` (kvůli mnoha čtecím cestám). **dev/test** se
+váží na vestavěný Docker, **prod** na vybraný cíl a **jde ho změnit i po
+nasazení** — staré nasazení se nejdřív teardownuje (jinak by osiřelo na starém
+cíli). Výběr cíle je hlídán: `template.compatibleProviders` (přípustné druhy)
+∩ `template.runtime ∈ target.capabilities` (cíl to umí spustit). Tím se PHP+SFTP
+vyřeší samo: vestavěný statický SFTP je z nabídky vyloučen (neumí PHP),
+uživatelův PHP-schopný SFTP zahrnut.
+
+**Důsledky pro kód.** Nový `TargetsModule` (`/targets` CRUD + `POST
+/targets/:id/verify`), `DeploymentProvider.verify()` u všech tří providerů,
+migrace `20260710120000_targets` (tabulka `Target`, `Environment.targetId`,
+zrušení inline `target*` sloupců), routy **Infrastructure** (správa a ověřování
+cílů) a **Environments** (přehled napříč projekty). Zakládání projektu i změna
+cíle běží přes `resolveEnvTarget` / `bindTarget` v `ProjectsService`.
+
+**Kompromisy.** Inline prod-cíle z předchozí verze (ADR mimo) při migraci
+zanikají — je nutná jejich re-registrace jako Target (v prototypu, který se
+běžně resetuje, přijatelné). Vestavěný SFTP zůstává jen statický; „PHP přes
+SFTP" má smysl výhradně na PHP-schopném uživatelském cíli.
+
+---
+
+## ADR-019 — PHP frameworky přes SFTP: „build-and-extract"
+
+**Kontext.** Frameworkové šablony (Nette/Laravel/Symfony) se scaffoldují
+uvnitř Docker image (`composer create-project` při buildu), takže git repo
+neobsahuje spustitelnou aplikaci — jen Dockerfile. SFTP cesta ale nahrává
+zdroják z gitu, takže na reálný PHP hosting (školní ESO) by nahrála jen
+Dockerfile → 403. Přitom ručně se tam Nette běžně nahrává: lokálně
+`composer install` → `vendor/`, a přes SFTP celý hotový projekt s docrootem
+`www/`. Platforma to má zautomatizovat, ne znemožnit.
+
+**Rozhodnutí.** Pro SFTP nasazení šablon s `buildArtifactPath` platforma
+místo git zdrojáku **sestaví Docker image** (CI ho už staví a pushuje) a
+**vytáhne z něj hotový strom** (`/app`, tj. app + `vendor/` + `www/`), který
+pak nahraje přes SFTP „real-host" režimem (bez symlinku, web-čitelná práva).
+Manifest doplněn o `buildArtifactPath` (co vytáhnout), `webRoot` (servírovaný
+docroot — `www` u Nette, `public` u Laravel/Symfony) a `writableDirs` (runtime
+adresáře, které se nastaví na 0777). Extrakci dělá `DockerProvider.extractArtifact`
+(vytvoří kontejner z image, `getArchive`, rozbalí), řídí `ProjectsService.deployEnv`.
+
+**Důsledky.** Nette/Laravel/Symfony jsou znovu SFTP-nasaditelné na vlastní
+PHP hosting; aplikace běží na `<publicUrl>/<slug>/<webRoot>/`. Statické
+šablony (React/Vue) i nadále jedou přes build + upload dist/ bez extrakce.
+
+**Kompromisy / na co pozor.** URL končí na `/www/` (docroot na sdíleném
+hostingu bez kontroly nad docrootem). `vendor/` = tisíce souborů → upload
+po souborech přes SFTP je pomalý (minuty). Registry image musí existovat
+(CI ho musí stihnout postavit) před promote na prod. Laravel/Symfony navíc
+potřebují běhové prostředí (`.env`, `APP_KEY`) — mechanismus je připravený,
+ale plná funkčnost frameworku je na uživateli; Nette (bez konfigurace) je
+nejpřímější případ.
