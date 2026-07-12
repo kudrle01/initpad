@@ -18,9 +18,9 @@ import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline'
 import { CommitList } from '@/components/organisms/CommitList';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { EnvLogsDialog } from '@/components/organisms/EnvLogsDialog';
-import { TargetDialog, type TargetBody } from '@/components/organisms/TargetDialog';
+import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
 import { giteaLink } from '@/lib/utils';
-import type { Commit, EnvName, Project, TemplateManifest } from '@/types';
+import type { Commit, EnvName, Project, Target, TemplateManifest } from '@/types';
 
 // After creation the project finishes in the background (dev: deploying →
 // running) and CI runs asynchronously — while anything is "working", the
@@ -80,6 +80,7 @@ export default function ProjectDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [logsEnv, setLogsEnv] = useState<EnvName | null>(null);
   const [targetEnv, setTargetEnv] = useState<EnvName | null>(null);
+  const [targets, setTargets] = useState<Target[]>([]);
   const [logsText, setLogsText] = useState('');
   const [logsLoading, setLogsLoading] = useState(false);
   const toast = useToast();
@@ -162,12 +163,16 @@ export default function ProjectDetail() {
       .catch(() => {});
   }, [project]);
 
+  useEffect(() => {
+    api.listTargets().then(setTargets).catch(() => {});
+  }, []);
+
   async function promote(target: EnvName) {
     if (!id) return;
     setBusy(target);
     try {
       setProject(await api.promote(id, target));
-      toast.success(`Promoted to ${target}`);
+      toast.success(`Deploying to ${target}…`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -211,26 +216,12 @@ export default function ProjectDetail() {
   const removeEnvironment = (env: EnvName) =>
     envAction('remove', env, api.removeEnv, `Removed ${env} deployment`);
 
-  async function saveTarget(env: EnvName, body: TargetBody) {
+  async function bindTarget(env: EnvName, targetId: string) {
     if (!id) return;
     setBusy(`target-${env}`);
     try {
-      setProject(await api.setEnvTarget(id, env, body));
-      toast.success(`Saved ${env} target`);
-      setTargetEnv(null);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function clearTarget(env: EnvName) {
-    if (!id) return;
-    setBusy(`target-${env}`);
-    try {
-      setProject(await api.clearEnvTarget(id, env));
-      toast.success(`Removed ${env} target`);
+      setProject(await api.bindEnvTarget(id, env, targetId));
+      toast.success(`Updated ${env} target`);
       setTargetEnv(null);
     } catch (e) {
       toast.error((e as Error).message);
@@ -281,6 +272,10 @@ export default function ProjectDetail() {
     ? project.environments.find((x) => x.name === logsEnv)?.status
     : undefined;
   const commitsBySha = Object.fromEntries(commits.map((c) => [c.sha, c] as const));
+  // Latest CI run link (build/deploy pipeline) for the runner-logs shortcut.
+  const runnerUrl =
+    commits[0]?.pipeline.find((s) => s.url)?.url ??
+    (project.repoUrl ? `${giteaLink(project.repoUrl)}/actions` : null);
 
   return (
     <div>
@@ -383,17 +378,19 @@ export default function ProjectDetail() {
         status={logsStatus}
         logsText={logsText}
         logsLoading={logsLoading}
+        runnerUrl={runnerUrl}
         onOpenChange={(o) => !o && setLogsEnv(null)}
         onRefresh={() => logsEnv && openLogs(logsEnv)}
       />
 
-      <TargetDialog
+      <TargetPickerDialog
         env={targetEnv}
-        target={project.environments.find((x) => x.name === targetEnv)?.target ?? null}
+        current={project.environments.find((x) => x.name === targetEnv)?.target ?? null}
+        template={template}
+        targets={targets}
         busy={busy === `target-${targetEnv}`}
         onOpenChange={(o) => !o && setTargetEnv(null)}
-        onSave={saveTarget}
-        onClear={clearTarget}
+        onPick={bindTarget}
       />
     </div>
   );

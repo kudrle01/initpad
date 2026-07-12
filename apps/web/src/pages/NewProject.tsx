@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, Rocket, ArrowRight } from 'lucide-react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { Check, Rocket, ArrowRight, Container } from 'lucide-react';
 import { api, type EnvConfig } from '@/api';
 import { useToast } from '@/toast';
 import { Button } from '@/components/ui/button';
@@ -11,14 +11,19 @@ import { FormField } from '@/components/molecules/FormField';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { Spinner } from '@/components/atoms/Spinner';
 import { cn } from '@/lib/utils';
-import type { EnvName, ProviderKind, TemplateManifest } from '@/types';
+import type { RuntimeKind, Target, TemplateManifest } from '@/types';
 
-const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
+function runtimeOf(t: TemplateManifest): RuntimeKind {
+  return t.runtime ?? (t.artifact === 'static' ? 'static' : 'node');
+}
 
-function defaultProvider(env: EnvName, template: TemplateManifest): ProviderKind {
-  const wanted: ProviderKind =
-    env === 'prod' ? (template.artifact === 'static' ? 'sftp' : 'ssh') : 'docker';
-  return template.compatibleProviders.includes(wanted) ? wanted : template.compatibleProviders[0];
+// A target is usable for a template when the template accepts its kind and the
+// target can run the template's runtime.
+function usable(target: Target, template: TemplateManifest): boolean {
+  return (
+    template.compatibleProviders.includes(target.kind) &&
+    target.capabilities.includes(runtimeOf(template))
+  );
 }
 
 export default function NewProject() {
@@ -26,9 +31,10 @@ export default function NewProject() {
   const toast = useToast();
   const [params] = useSearchParams();
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
+  const [targets, setTargets] = useState<Target[]>([]);
   const [name, setName] = useState('my-project');
   const [templateId, setTemplateId] = useState<string>('');
-  const [envs, setEnvs] = useState<EnvConfig[]>([]);
+  const [prodTargetId, setProdTargetId] = useState<string>('');
   const [busy, setBusy] = useState(false);
 
   const template = useMemo(
@@ -36,9 +42,20 @@ export default function NewProject() {
     [templates, templateId],
   );
 
+  const prodOptions = useMemo(
+    () => (template ? targets.filter((t) => usable(t, template)) : []),
+    [targets, template],
+  );
+
+  const dockerTarget = useMemo(
+    () => targets.find((t) => t.scope === 'builtin' && t.kind === 'docker') ?? null,
+    [targets],
+  );
+
   useEffect(() => {
-    api.listTemplates().then((t) => {
+    Promise.all([api.listTemplates(), api.listTargets()]).then(([t, tg]) => {
       setTemplates(t);
+      setTargets(tg);
       // "Use template" on the Templates page preselects a template via ?template=id.
       const wanted = params.get('template');
       const preselected = wanted && t.find((x) => x.id === wanted);
@@ -48,19 +65,31 @@ export default function NewProject() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Default prod to the template's natural target (static→SFTP, node→SSH,
+  // otherwise Docker); the user can change it here or later.
   useEffect(() => {
     if (!template) return;
-    setEnvs(ENV_ORDER.map((envName) => ({ name: envName, provider: defaultProvider(envName, template) })));
-  }, [template]);
-
-  function setProvider(envName: EnvName, provider: ProviderKind) {
-    setEnvs((cur) => cur.map((e) => (e.name === envName ? { ...e, provider } : e)));
-  }
+    const rt = runtimeOf(template);
+    const kind = rt === 'static' ? 'sftp' : rt === 'node' ? 'ssh' : 'docker';
+    const opts = targets.filter((t) => usable(t, template));
+    const natural =
+      opts.find((t) => t.scope === 'builtin' && t.kind === kind) ??
+      opts.find((t) => t.scope === 'builtin' && t.kind === 'docker') ??
+      opts[0];
+    setProdTargetId(natural?.id ?? '');
+  }, [template, targets]);
 
   async function submit() {
     setBusy(true);
     try {
-      const project = await api.createProject(name, templateId, envs);
+      // dev/test use the built-in infra by default (server-side); prod uses the
+      // chosen target.
+      const environments: EnvConfig[] = [
+        { name: 'dev' },
+        { name: 'test' },
+        { name: 'prod', targetId: prodTargetId || undefined },
+      ];
+      const project = await api.createProject(name, templateId, environments);
       toast.success('Project created');
       navigate(`/projects/${project.id}`);
     } catch (e) {
@@ -121,30 +150,45 @@ export default function NewProject() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label>Environments</Label>
+          <Label>Environments &amp; targets</Label>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            {envs.map((e, i) => (
-              <div key={e.name} className="flex items-center gap-2">
-                <span className="w-12 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {e.name}
+            {(['dev', 'test'] as const).map((envName) => (
+              <div key={envName} className="flex items-center gap-2">
+                <span className="w-10 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {envName}
                 </span>
-                <Select
-                  value={e.provider}
-                  aria-label={`Provider for ${e.name}`}
-                  onChange={(ev) => setProvider(e.name, ev.target.value as ProviderKind)}
-                >
-                  {template?.compatibleProviders.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </Select>
-                {i < envs.length - 1 && (
-                  <ArrowRight className="hidden h-4 w-4 text-muted-foreground sm:block" />
-                )}
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/40 px-3 py-1.5 text-sm text-muted-foreground">
+                  <Container className="h-3.5 w-3.5" /> {dockerTarget?.name ?? 'Built-in Docker'}
+                </span>
+                <ArrowRight className="hidden h-4 w-4 text-muted-foreground sm:block" />
               </div>
             ))}
+            <div className="flex items-center gap-2">
+              <span className="w-10 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                prod
+              </span>
+              <Select
+                value={prodTargetId}
+                aria-label="Production target"
+                onChange={(ev) => setProdTargetId(ev.target.value)}
+              >
+                {prodOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                    {t.scope === 'user' ? ' (yours)' : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            dev &amp; test run on the built-in infrastructure. Choose where prod deploys — or
+            register your own server in{' '}
+            <Link to="/infrastructure" className="text-primary hover:underline">
+              Infrastructure
+            </Link>
+            .
+          </p>
         </div>
 
         <div className="flex items-start gap-2.5 rounded-lg border border-border bg-secondary/40 p-4 text-sm text-muted-foreground">

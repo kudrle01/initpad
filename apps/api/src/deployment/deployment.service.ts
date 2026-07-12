@@ -4,8 +4,10 @@ import {
   DeployInput,
   DeployResult,
   DeploymentProvider,
+  ProviderConnection,
   StartInput,
   TeardownInput,
+  VerifyResult,
 } from './deployment-provider.interface';
 import { DockerProvider } from './providers/docker.provider';
 import { SftpProvider } from './providers/sftp.provider';
@@ -61,10 +63,30 @@ export class DeploymentService {
     return (await this.registry.get(provider)?.logs?.(input)) ?? '';
   }
 
+  // Tests a target's reachability/credentials without deploying. `connection`
+  // is absent for built-in targets (checked against the local/simulated infra).
+  async verify(provider: ProviderKind, connection?: ProviderConnection): Promise<VerifyResult> {
+    const impl = this.registry.get(provider);
+    if (!impl?.verify) {
+      throw new BadRequestException(`Provider '${provider}' does not support connection tests`);
+    }
+    return impl.verify(connection);
+  }
+
   // Removes local images of the repository (across providers that support it).
   async removeImages(repo: string): Promise<void> {
     for (const impl of this.registry.values()) {
       await impl.removeImages?.(repo);
     }
+  }
+
+  // Extracts a directory from a built image into a local dir (Docker only) —
+  // used to produce an SFTP-uploadable artifact from a Docker-built app.
+  async extractArtifact(imageRef: string, srcPath: string, destDir: string): Promise<void> {
+    const impl = this.registry.get('docker');
+    if (!impl?.extractArtifact) {
+      throw new BadRequestException('Artifact extraction requires the Docker provider');
+    }
+    await impl.extractArtifact(imageRef, srcPath, destDir);
   }
 }

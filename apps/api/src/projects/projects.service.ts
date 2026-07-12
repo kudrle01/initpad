@@ -5,7 +5,9 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { rmSync } from 'fs';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, basename } from 'path';
 import { Prisma } from '@prisma/client';
 import {
   Commit,
@@ -14,7 +16,9 @@ import {
   PipelineStage,
   Project,
   ProviderKind,
+  RuntimeKind,
   StageStatus,
+  TargetScope,
   TemplateManifest,
 } from '../domain/types';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -22,15 +26,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
 import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
+import { TargetsService, TargetRow, BUILTIN_DOCKER } from '../targets/targets.service';
 import { GiteaService, GiteaActor, RepoArchive } from '../scm/gitea.service';
 import { exportVersion } from '../deployment/providers/source-export';
 import { config } from '../config';
-import { decryptSecret, encryptSecret } from '../common/secret';
+import { decryptSecret } from '../common/secret';
 import type { ProviderConnection } from '../deployment/deployment-provider.interface';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
-type ProjectRow = Prisma.ProjectGetPayload<{ include: { environments: true } }>;
+type ProjectRow = Prisma.ProjectGetPayload<{
+  include: { environments: { include: { target: true } } };
+}>;
 
 /**
  * The platform's core orchestrator: template scaffolding, repository
@@ -46,6 +53,7 @@ export class ProjectsService {
     private readonly templates: TemplatesService,
     private readonly generator: GeneratorService,
     private readonly deployment: DeploymentService,
+    private readonly targets: TargetsService,
     private readonly gitea: GiteaService,
   ) {}
 
@@ -57,7 +65,7 @@ export class ProjectsService {
     await this.pruneMissingRepos(ownerId);
     const rows = await this.prisma.project.findMany({
       where: { ownerId },
-      include: { environments: true },
+      include: { environments: { include: { target: true } } },
       orderBy: { createdAt: 'desc' },
     });
     return rows.map((r) => this.toDomain(r));
@@ -116,7 +124,7 @@ export class ProjectsService {
   async get(id: string): Promise<Project> {
     const row = await this.prisma.project.findUnique({
       where: { id },
-      include: { environments: true },
+      include: { environments: { include: { target: true } } },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
     return this.toDomain(row);
@@ -170,6 +178,14 @@ export class ProjectsService {
     // commit from Gitea). Keeping the platform stateless w.r.t. code.
     rmSync(repoPath, { recursive: true, force: true });
 
+    // Bind each environment to a target: dev/test to the built-in infra, prod
+    // to the chosen (or default) target. Validates capability/compatibility.
+    const targets = await this.targets.listEntities(ownerId);
+    const envTargets = ENV_ORDER.map((name) => {
+      const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
+      return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
+    });
+
     const created = await this.prisma.project.create({
       data: {
         name: dto.name,
@@ -179,12 +195,11 @@ export class ProjectsService {
         lastCommit: 'init: scaffold from template',
         ownerId,
         environments: {
-          create: ENV_ORDER.map((name, order) => ({
+          create: envTargets.map(({ name, target }, order) => ({
             name,
             order,
-            provider:
-              dto.environments?.find((e) => e.name === name)?.provider ??
-              this.defaultProvider(name, template),
+            provider: target.kind,
+            targetId: target.id,
             // dev immediately shows "deploying" — the deployment completes
             // in the background once CI builds the image.
             status: name === 'dev' ? 'deploying' : 'empty',
@@ -265,9 +280,15 @@ export class ProjectsService {
       );
     }
     // Promote = run THE SAME registry image in the target environment (build
-    // once, deploy many). If the version is missing from the registry (e.g.
-    // bootstrap without CI), the deployment fails rather than rebuilding.
-    await this.deployEnv(id, target, source.version, true);
+    // once, deploy many). Runs in the BACKGROUND: an SFTP build-extract to a
+    // real host can take minutes (uploading vendor/ file-by-file), which would
+    // otherwise block the HTTP request past proxy timeouts (504). The env is
+    // marked 'deploying' and the UI polls for the outcome.
+    await this.prisma.environment.update({
+      where: { projectId_name: { projectId: id, name: target } },
+      data: { status: 'deploying', statusReason: null },
+    });
+    void this.deployEnvInBackground(id, target, source.version, true);
     return this.get(id);
   }
 
@@ -276,6 +297,7 @@ export class ProjectsService {
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
+      include: { target: true },
     });
     if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
     return this.deployment.logs(env.provider as ProviderKind, {
@@ -285,31 +307,11 @@ export class ProjectsService {
     });
   }
 
-  // Builds the connection to a user-configured deployment target (prod: your
-  // own server). Returns undefined when no target is set → the platform's demo
-  // target is used. The secret (password / key) is decrypted here.
-  private targetConnection(env: {
-    targetKind?: string | null;
-    targetHost?: string | null;
-    targetPort?: number | null;
-    targetUsername?: string | null;
-    targetAuth?: string | null;
-    targetSecret?: string | null;
-    targetPath?: string | null;
-    targetPublicUrl?: string | null;
-  }): ProviderConnection | undefined {
-    if (!env.targetKind || !env.targetHost) return undefined;
-    const secret = env.targetSecret ? decryptSecret(env.targetSecret) : '';
-    const isKey = env.targetAuth === 'key';
-    return {
-      host: env.targetHost,
-      port: env.targetPort ?? 22,
-      username: env.targetUsername ?? '',
-      password: isKey ? undefined : secret,
-      privateKey: isKey ? secret : undefined,
-      remoteRoot: env.targetPath ?? '',
-      publicUrl: env.targetPublicUrl ?? '',
-    };
+  // Live connection for an environment's target. Built-in targets return
+  // undefined → the provider uses the config demo path (behaviour unchanged);
+  // user targets return their decrypted connection.
+  private targetConnection(env: { target?: TargetRow | null }): ProviderConnection | undefined {
+    return env.target ? this.targets.connectionForTarget(env.target) : undefined;
   }
 
   // Re-deploys the environment at its current version. A hash version comes
@@ -368,11 +370,14 @@ export class ProjectsService {
   // The repository and the project itself are untouched.
   async removeEnv(id: string, envName: EnvName): Promise<Project> {
     const { env, slug } = await this.envContext(id, envName);
-    await this.deployment.teardown(env.provider as ProviderKind, {
-      projectName: slug,
-      env: envName,
-      connection: this.targetConnection(env),
-    });
+    // Tear down in the background: SFTP teardown on a real host (removing
+    // vendor/ file-by-file) can take a while and would otherwise block the
+    // request past proxy timeouts. The environment is marked empty right away.
+    const provider = env.provider as ProviderKind;
+    const connection = this.targetConnection(env);
+    void this.deployment
+      .teardown(provider, { projectName: slug, env: envName, connection })
+      .catch((e) => this.logger.warn(`Teardown of ${envName} failed: ${(e as Error).message}`));
     await this.prisma.environment.update({
       where: { projectId_name: { projectId: id, name: envName } },
       // Releasing allocatedPort returns the port to the pool.
@@ -384,8 +389,7 @@ export class ProjectsService {
   private async startEnvInBackground(id: string, envName: EnvName): Promise<void> {
     try {
       const { template, env, slug } = await this.envContext(id, envName);
-      const appPort =
-        env.provider === 'ssh' ? await this.allocateSshPort(id, envName) : undefined;
+      const appPort = this.isDemoSsh(env) ? await this.allocateSshPort(id, envName) : undefined;
       const result = await this.deployment.start(env.provider as ProviderKind, {
         projectName: slug,
         env: envName,
@@ -456,9 +460,16 @@ export class ProjectsService {
     const template = this.templates.get(project.templateId);
     const env = await this.prisma.environment.findUniqueOrThrow({
       where: { projectId_name: { projectId: id, name: envName } },
+      include: { target: true },
     });
     const slug = this.deploySlug(project.repoUrl, project.name);
     return { project, template, env, slug };
+  }
+
+  // The shared SSH port pool is only for the built-in demo VPS; a user's own
+  // SSH server runs the app on the template port directly (no pool).
+  private isDemoSsh(env: { provider: string; target?: TargetRow | null }): boolean {
+    return env.provider === 'ssh' && env.target?.scope !== 'user';
   }
 
   // Deletes the project: tears down all environment deployments, removes the
@@ -467,7 +478,7 @@ export class ProjectsService {
   async remove(id: string, ownerId: string): Promise<void> {
     const row = await this.prisma.project.findUnique({
       where: { id },
-      include: { environments: true, owner: true },
+      include: { environments: { include: { target: true } }, owner: true },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
     if (row.ownerId && row.ownerId !== ownerId) {
@@ -488,7 +499,7 @@ export class ProjectsService {
     const user = await this.prisma.user.findFirst({ where: { username: owner } });
     const row = await this.prisma.project.findFirst({
       where: { name, ownerId: user?.id ?? undefined },
-      include: { environments: true, owner: true },
+      include: { environments: { include: { target: true } }, owner: true },
     });
     if (!row) return;
     this.logger.log(`Repository ${fullName} was deleted in Gitea — cleaning up project ${row.id}`);
@@ -498,7 +509,9 @@ export class ProjectsService {
 
   // Shared teardown used by user-initiated deletion and the SCM webhook.
   private async cleanupProject(
-    row: Prisma.ProjectGetPayload<{ include: { environments: true; owner: true } }>,
+    row: Prisma.ProjectGetPayload<{
+      include: { environments: { include: { target: true } }; owner: true };
+    }>,
     opts: { deleteRemoteRepo: boolean },
   ): Promise<void> {
     const slug = this.deploySlug(row.repoUrl, row.name);
@@ -620,29 +633,62 @@ export class ProjectsService {
     const template = this.templates.get(project.templateId);
     const env = await this.prisma.environment.findUniqueOrThrow({
       where: { projectId_name: { projectId, name: envName } },
+      include: { target: true },
     });
 
     await this.prisma.environment.update({
       where: { projectId_name: { projectId, name: envName } },
       data: { status: 'deploying', statusReason: null },
     });
-    // SSH targets share one host — the platform allocates a unique app port
-    // from the database before handing the deployment to the provider.
-    const appPort =
-      env.provider === 'ssh' ? await this.allocateSshPort(projectId, envName) : undefined;
+    // The built-in SSH VPS is shared — allocate a unique app port from the
+    // database. A user's own SSH server uses the template port directly.
+    const appPort = this.isDemoSsh(env) ? await this.allocateSshPort(projectId, envName) : undefined;
+
+    // Live progress: providers report steps via onProgress; the latest is
+    // persisted into statusReason so the UI can show it under the deploying env.
+    // It is cleared (success) or replaced by the failure reason at the end.
+    const setStage = (message: string) => {
+      void this.prisma.environment
+        .update({
+          where: { projectId_name: { projectId, name: envName } },
+          data: { statusReason: message },
+        })
+        .catch(() => undefined);
+    };
+
+    // SFTP deploy of a template whose app is built inside the Docker image
+    // (PHP frameworks scaffolded via Composer): the git repo has no runnable
+    // app, so build the image (CI already did) and extract the built tree, then
+    // upload THAT. Otherwise upload git source (SSH / bootstrap) as before.
+    const useBuildExtract = env.provider === 'sftp' && !!template.buildArtifactPath;
 
     // Source-based providers (and Docker's bootstrap build) need the source
     // tree of the EXACT version. Gitea is the source of truth, so the tree is
     // downloaded on demand into a temp directory; a local `git archive` from
     // the (legacy) working copy is the fallback. The platform keeps no
     // persistent checkouts.
-    const needsSource = env.provider !== 'docker' || !useRegistry;
+    const needsSource = !useBuildExtract && (env.provider !== 'docker' || !useRegistry);
     let source: RepoArchive | null = null;
-    if (needsSource) {
+    let extractedDir: string | null = null;
+    let deployRepoPath = project.repoPath;
+    let deployArtifactDir = template.artifactDir;
+    let deployBuildCommand = template.buildCommand;
+
+    if (useBuildExtract) {
+      setStage('Building & extracting artifact');
+      const imageRef = this.imageRef(project.repoUrl, project.name, version);
+      extractedDir = mkdtempSync(join(tmpdir(), 'initpad-artifact-'));
+      await this.deployment.extractArtifact(imageRef, template.buildArtifactPath!, extractedDir);
+      // getArchive packs the directory itself, so its tree is under the basename.
+      deployRepoPath = join(extractedDir, basename(template.buildArtifactPath!));
+      deployArtifactDir = undefined; // upload the whole extracted tree
+      deployBuildCommand = undefined; // already built inside the image
+    } else if (needsSource) {
       const actor = await this.actorForProject(projectId);
       source =
         (await this.gitea.downloadArchive(project.name, version, actor)) ??
         (await exportVersion(project.repoPath, version));
+      deployRepoPath = source?.dir ?? project.repoPath;
     }
 
     try {
@@ -650,13 +696,16 @@ export class ProjectsService {
         projectName: this.deploySlug(project.repoUrl, project.name),
         version,
         env: envName,
-        repoPath: source?.dir ?? project.repoPath,
+        repoPath: deployRepoPath,
         port: template.port,
         healthPath: template.healthPath ?? '/health',
         startCommand: template.startCommand,
-        artifactDir: template.artifactDir,
-        buildCommand: template.buildCommand,
+        artifactDir: deployArtifactDir,
+        buildCommand: deployBuildCommand,
+        webRoot: template.webRoot,
+        writableDirs: template.writableDirs,
         appPort,
+        onProgress: setStage,
         connection: this.targetConnection(env),
         imageRef: useRegistry
           ? this.imageRef(project.repoUrl, project.name, version)
@@ -674,15 +723,74 @@ export class ProjectsService {
       });
     } finally {
       source?.cleanup();
+      if (extractedDir) rmSync(extractedDir, { recursive: true, force: true });
     }
   }
 
-  // dev/test run on Docker; prod is chosen by the template's artifact kind.
-  private defaultProvider(name: EnvName, template: TemplateManifest): ProviderKind {
-    if (name === 'prod') {
-      return template.artifact === 'static' ? 'sftp' : 'ssh';
-    }
+  // The runtime a template needs (matched against a target's capabilities).
+  private templateRuntime(template: TemplateManifest): RuntimeKind {
+    return template.runtime ?? (template.artifact === 'static' ? 'static' : 'node');
+  }
+
+  // The "natural" prod target kind for a template. php/python have no built-in
+  // ssh/sftp host that runs them, so they default to Docker (the user can
+  // switch prod to their own PHP/SSH server afterwards).
+  private defaultKind(template: TemplateManifest): ProviderKind {
+    const rt = this.templateRuntime(template);
+    if (rt === 'static') return 'sftp';
+    if (rt === 'node') return 'ssh';
     return 'docker';
+  }
+
+  // A target is usable for a template when the template accepts its kind and
+  // the target can run the template's runtime (e.g. our static SFTP host can't
+  // run PHP, but a real PHP-capable SFTP host can).
+  private assertUsable(target: TargetRow, template: TemplateManifest, runtime: RuntimeKind): void {
+    if (!template.compatibleProviders.includes(target.kind as ProviderKind)) {
+      throw new BadRequestException(
+        `Template '${template.id}' cannot deploy over ${target.kind}.`,
+      );
+    }
+    if (!this.targets.parseCaps(target.capabilities).includes(runtime)) {
+      throw new BadRequestException(
+        `Target '${target.name}' cannot run ${runtime} apps (its capabilities: ${target.capabilities}).`,
+      );
+    }
+  }
+
+  // Resolves the target for an environment at creation time: an explicit choice
+  // (validated), or a sensible default (dev/test → built-in Docker; prod → the
+  // built-in target for the template's natural kind, else Docker).
+  private resolveEnvTarget(
+    name: EnvName,
+    template: TemplateManifest,
+    targetId: string | undefined,
+    entities: TargetRow[],
+  ): TargetRow {
+    const runtime = this.templateRuntime(template);
+    if (targetId) {
+      const t = entities.find((e) => e.id === targetId);
+      if (!t) throw new NotFoundException(`Target '${targetId}' not found`);
+      this.assertUsable(t, template, runtime);
+      return t;
+    }
+    if (name === 'prod') {
+      const kind = this.defaultKind(template);
+      const natural = entities.find(
+        (e) =>
+          e.scope === 'builtin' &&
+          e.kind === kind &&
+          this.targets.parseCaps(e.capabilities).includes(runtime),
+      );
+      if (natural) return natural;
+    }
+    const docker = entities.find((e) => e.id === BUILTIN_DOCKER);
+    if (!docker) {
+      throw new BadRequestException(
+        'Built-in Docker target is missing — the platform has not seeded its infrastructure yet.',
+      );
+    }
+    return docker;
   }
 
   // CI stages derived from the artifact kind. The state is assembled from
@@ -770,71 +878,60 @@ export class ProjectsService {
           version: e.version,
           url: e.url,
           statusReason: e.statusReason,
-          target: e.targetKind
+          target: e.target
             ? {
-                kind: e.targetKind as ProviderKind,
-                host: e.targetHost,
-                port: e.targetPort,
-                username: e.targetUsername,
-                auth: e.targetAuth,
-                path: e.targetPath,
-                publicUrl: e.targetPublicUrl,
+                id: e.target.id,
+                name: e.target.name,
+                kind: e.target.kind as ProviderKind,
+                scope: e.target.scope as TargetScope,
+                host: e.target.host,
               }
             : null,
         })),
     };
   }
 
-  // Configures a user deployment target on an environment (prod: your own
-  // server). The env deploys via the chosen provider (sftp/ssh) to this target;
-  // the secret (password / private key) is encrypted at rest.
-  async setTarget(
-    id: string,
-    envName: EnvName,
-    dto: {
-      kind: ProviderKind;
-      host: string;
-      port: number;
-      username: string;
-      auth: 'password' | 'key';
-      secret?: string;
-      path: string;
-      publicUrl: string;
-    },
-  ): Promise<Project> {
-    await this.prisma.environment.findUniqueOrThrow({
+  // Points an environment at a (different) target — the core of a configurable
+  // prod. Validates capability/compatibility. When the environment already has
+  // a live deployment on another target, that deployment is torn down first so
+  // it is not left orphaned on the old target; the environment then becomes
+  // empty and can be (re)deployed to the new target.
+  async bindTarget(id: string, envName: EnvName, targetId: string): Promise<Project> {
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const template = this.templates.get(project.templateId);
+    const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
+      include: { target: true },
     });
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId: id, name: envName } },
-      data: {
-        provider: dto.kind,
-        targetKind: dto.kind,
-        targetHost: dto.host,
-        targetPort: dto.port,
-        targetUsername: dto.username,
-        targetAuth: dto.auth,
-        ...(dto.secret ? { targetSecret: encryptSecret(dto.secret) } : {}),
-        targetPath: dto.path,
-        targetPublicUrl: dto.publicUrl,
-      },
-    });
-    return this.get(id);
-  }
+    if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
 
-  // Removes the user target → the environment reverts to the platform's demo target.
-  async clearTarget(id: string, envName: EnvName): Promise<Project> {
+    const entities = await this.targets.listEntities(project.ownerId ?? '');
+    const target = entities.find((e) => e.id === targetId);
+    if (!target) throw new NotFoundException(`Target '${targetId}' not found`);
+    this.assertUsable(target, template, this.templateRuntime(template));
+
+    const movingAway = !!env.targetId && env.targetId !== target.id && env.status !== 'empty';
+    if (movingAway) {
+      const slug = this.deploySlug(project.repoUrl, project.name);
+      // Fire-and-forget: tearing down the old deployment (possibly a slow SFTP
+      // host) must not block re-pointing the environment.
+      void this.deployment
+        .teardown(env.provider as ProviderKind, {
+          projectName: slug,
+          env: envName,
+          connection: this.targetConnection(env),
+        })
+        .catch((e) => this.logger.warn(`Teardown of old target failed: ${(e as Error).message}`));
+    }
+
     await this.prisma.environment.update({
       where: { projectId_name: { projectId: id, name: envName } },
       data: {
-        targetKind: null,
-        targetHost: null,
-        targetPort: null,
-        targetUsername: null,
-        targetAuth: null,
-        targetSecret: null,
-        targetPath: null,
-        targetPublicUrl: null,
+        targetId: target.id,
+        provider: target.kind,
+        ...(movingAway
+          ? { status: 'empty', version: null, url: null, statusReason: null, allocatedPort: null }
+          : {}),
       },
     });
     return this.get(id);

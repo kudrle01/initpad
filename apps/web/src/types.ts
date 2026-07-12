@@ -7,6 +7,8 @@ export interface User {
 }
 
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';
+export type RuntimeKind = 'static' | 'node' | 'php' | 'python';
+export type TargetScope = 'builtin' | 'user';
 export type EnvName = 'dev' | 'test' | 'prod';
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
 
@@ -15,6 +17,8 @@ export interface TemplateManifest {
   name: string;
   language: string;
   artifact: 'static' | 'runtime';
+  // Runtime the app needs — matched against a target's capabilities.
+  runtime?: RuntimeKind;
   compatibleProviders: ProviderKind[];
   // Template properties for source-based deployments (informational in the UI).
   startCommand?: string;
@@ -22,14 +26,30 @@ export interface TemplateManifest {
   description: string;
 }
 
-export interface EnvTarget {
+// A deployment target: the built-in simulated infra or a user's own server.
+export interface Target {
+  id: string;
+  name: string;
   kind: ProviderKind;
+  scope: TargetScope;
+  capabilities: RuntimeKind[];
   host: string | null;
   port: number | null;
   username: string | null;
   auth: string | null; // 'password' | 'key'
-  path: string | null;
+  remotePath: string | null;
   publicUrl: string | null;
+  verifiedAt: string | null;
+  inUse?: boolean;
+}
+
+// Compact reference to the target an environment is bound to.
+export interface EnvTarget {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  scope: TargetScope;
+  host: string | null;
 }
 
 export interface Environment {

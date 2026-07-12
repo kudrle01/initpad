@@ -99,7 +99,8 @@ export class ProjectsController {
     return this.projects.removeEnv(id, env);
   }
 
-  // Configure the environment's deployment target (prod: your own server).
+  // Point the environment at a target (built-in infra or the user's own
+  // server). Used to configure or change where an environment deploys.
   @Put(':id/target/:env')
   async setTarget(
     @Param('id') id: string,
@@ -108,18 +109,7 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertOwner(id, userId);
-    return this.projects.setTarget(id, env, dto);
-  }
-
-  // Remove the user target → revert to the platform's demo target.
-  @Delete(':id/target/:env')
-  async clearTarget(
-    @Param('id') id: string,
-    @Param('env') env: EnvName,
-    @CurrentUser() userId: string,
-  ) {
-    await this.projects.assertOwner(id, userId);
-    return this.projects.clearTarget(id, env);
+    return this.projects.bindTarget(id, env, dto.targetId);
   }
 
   @Get(':id/logs/:env')

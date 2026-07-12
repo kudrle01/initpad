@@ -1,13 +1,17 @@
 import { IsArray, IsIn, IsOptional, IsString, Matches, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { EnvName, ProviderKind } from '../../domain/types';
+import { EnvName } from '../../domain/types';
 
 class EnvironmentConfigDto {
   @IsIn(['dev', 'test', 'prod'])
   name!: EnvName;
 
-  @IsIn(['docker', 'sftp', 'ssh'])
-  provider!: ProviderKind;
+  // The target this environment should deploy to. Optional — omitted
+  // environments fall back to a sensible default (dev/test: built-in Docker;
+  // prod: the built-in target for the template's natural kind).
+  @IsOptional()
+  @IsString()
+  targetId?: string;
 }
 
 export class CreateProjectDto {

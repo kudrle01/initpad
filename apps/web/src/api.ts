@@ -1,8 +1,31 @@
-import type { Project, TemplateManifest, EnvName, Commit, User, ProviderKind } from '@/types';
+import type {
+  Project,
+  TemplateManifest,
+  EnvName,
+  Commit,
+  User,
+  Target,
+  RuntimeKind,
+} from '@/types';
 
 export interface EnvConfig {
   name: EnvName;
-  provider: ProviderKind;
+  // Target to deploy this environment to; omitted → server-side default.
+  targetId?: string;
+}
+
+// Body for registering / editing a user deployment target.
+export interface TargetInput {
+  name: string;
+  kind: 'ssh' | 'sftp';
+  capabilities: RuntimeKind[];
+  host: string;
+  port: number;
+  username: string;
+  auth: 'password' | 'key';
+  secret?: string;
+  remotePath: string;
+  publicUrl: string;
 }
 
 const BASE = '/api';
@@ -53,26 +76,21 @@ export const api = {
     http<Project>(`/projects/${id}/start/${env}`, { method: 'POST' }),
   removeEnv: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/teardown/${env}`, { method: 'POST' }),
-  setEnvTarget: (
-    id: string,
-    env: EnvName,
-    body: {
-      kind: 'sftp' | 'ssh';
-      host: string;
-      port: number;
-      username: string;
-      auth: 'password' | 'key';
-      secret?: string;
-      path: string;
-      publicUrl: string;
-    },
-  ) =>
+  // Point an environment at a target (built-in infra or the user's server).
+  bindEnvTarget: (id: string, env: EnvName, targetId: string) =>
     http<Project>(`/projects/${id}/target/${env}`, {
       method: 'PUT',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ targetId }),
     }),
-  clearEnvTarget: (id: string, env: EnvName) =>
-    http<Project>(`/projects/${id}/target/${env}`, { method: 'DELETE' }),
+  // Deployment targets (built-in infra + the user's own servers).
+  listTargets: () => http<Target[]>('/targets'),
+  createTarget: (body: TargetInput) =>
+    http<Target>('/targets', { method: 'POST', body: JSON.stringify(body) }),
+  updateTarget: (id: string, body: Partial<TargetInput>) =>
+    http<Target>(`/targets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteTarget: (id: string) => http<void>(`/targets/${id}`, { method: 'DELETE' }),
+  verifyTarget: (id: string) =>
+    http<{ ok: boolean; message: string }>(`/targets/${id}/verify`, { method: 'POST' }),
   getLogs: (id: string, env: EnvName) =>
     http<{ logs: string }>(`/projects/${id}/logs/${env}`),
   deleteProject: (id: string) =>

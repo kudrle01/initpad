@@ -44,10 +44,20 @@ export interface DeployInput {
   // Command that builds the static artifact before upload (from the template
   // manifest, e.g. 'npm install && npm run build').
   buildCommand?: string;
+  // Public docroot subfolder (SFTP): the app is served at
+  // <publicUrl>/<slug>/<webRoot>/ (e.g. 'www' for Nette).
+  webRoot?: string;
+  // Directories made world-writable (0777) after an SFTP upload (framework
+  // runtime dirs, e.g. Nette 'temp'/'log').
+  writableDirs?: string[];
   // Application port allocated by the platform for source-based deployments
   // on a shared host (SSH). Allocated from the database, so it is unique
   // across all environments.
   appPort?: number;
+  // Optional progress reporter — the provider calls it with a short
+  // human-readable stage/step (e.g. 'Uploading 340/1200 files') so the platform
+  // can surface live deploy progress in the UI.
+  onProgress?: (message: string) => void;
 }
 
 export interface DeployResult {
@@ -55,6 +65,13 @@ export interface DeployResult {
   url: string;
   // Human-readable failure reason (present when status is 'failed').
   reason?: string;
+}
+
+// Result of a target connection test ("Test connection" in the UI).
+export interface VerifyResult {
+  ok: boolean;
+  // Human-readable outcome (what succeeded, or why it failed).
+  message: string;
 }
 
 // Everything needed to tear a deployment down (stop the container/process).
@@ -89,6 +106,13 @@ export interface StartInput {
 export interface DeploymentProvider {
   readonly kind: ProviderKind;
   deploy(input: DeployInput): Promise<DeployResult>;
+  // Tests reachability/credentials of a target without deploying anything.
+  // `connection` is absent for built-in targets (verified against local infra).
+  verify?(connection?: ProviderConnection): Promise<VerifyResult>;
+  // Extracts a directory from a built image into a local dir — turns a
+  // Docker-built app (e.g. a Composer-scaffolded PHP framework) into an
+  // SFTP-uploadable artifact. Docker only.
+  extractArtifact?(imageRef: string, srcPath: string, destDir: string): Promise<void>;
   // Removes the deployment of the given environment; optional.
   teardown?(input: TeardownInput): Promise<void>;
   // Returns the last ~N lines of the running deployment's log; optional.

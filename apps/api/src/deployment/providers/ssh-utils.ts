@@ -94,6 +94,7 @@ export async function uploadDir(
   localDir: string,
   remoteDir: string,
   ignore: string[] = ['node_modules', '.git'],
+  onFile?: () => void,
 ): Promise<void> {
   await mkdirp(sftp, remoteDir);
   for (const entry of readdirSync(localDir)) {
@@ -101,9 +102,10 @@ export async function uploadDir(
     const localPath = join(localDir, entry);
     const remotePath = `${remoteDir}/${entry}`;
     if (statSync(localPath).isDirectory()) {
-      await uploadDir(sftp, localPath, remotePath, ignore);
+      await uploadDir(sftp, localPath, remotePath, ignore, onFile);
     } else {
       await fastPut(sftp, localPath, remotePath);
+      onFile?.();
     }
   }
 }
@@ -189,6 +191,28 @@ export async function sftpRmrf(sftp: SFTPWrapper, path: string): Promise<void> {
     else await sftpUnlink(sftp, child);
   }
   await sftpRmdir(sftp, path);
+}
+
+// Best-effort chmod over SFTP (setstat). Errors are swallowed — some servers
+// disallow it, and it must never fail the deployment.
+export function sftpSetMode(sftp: SFTPWrapper, path: string, mode: number): Promise<void> {
+  return new Promise((resolve) => sftp.setstat(path, { mode }, () => resolve()));
+}
+
+// Recursively makes an uploaded tree web-readable (dirs 0755, files 0644) so a
+// web server running as a different user (real shared hosting) can serve it.
+export async function sftpChmodTree(
+  sftp: SFTPWrapper,
+  path: string,
+  fileMode = 0o644,
+  dirMode = 0o755,
+): Promise<void> {
+  await sftpSetMode(sftp, path, dirMode);
+  for (const e of await sftpReaddir(sftp, path)) {
+    const child = `${path}/${e.name}`;
+    if (e.isDir) await sftpChmodTree(sftp, child, fileMode, dirMode);
+    else await sftpSetMode(sftp, child, fileMode);
+  }
 }
 
 export function sshEnd(conn: Client): void {

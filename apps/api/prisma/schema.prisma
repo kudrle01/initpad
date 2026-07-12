@@ -22,6 +22,46 @@ model User {
   passwordHash String?
   createdAt    DateTime  @default(now())
   projects     Project[]
+  targets      Target[]
+}
+
+// A first-class deployment target: a place an environment can deploy to.
+// "Everything is a target" — the built-in simulated infrastructure (Docker,
+// the SSH VPS, the SFTP static host) is seeded as `builtin` targets, and users
+// register their own servers (e.g. a school SFTP host, a VPS) as `user`
+// targets. An Environment references one Target.
+//
+// Built-in targets carry only display metadata; their live connection details
+// come from config (single source of truth for the simulated infra), so the
+// deploy path for them is unchanged. User targets carry an encrypted secret
+// (password / PEM key) and are used to build the real connection.
+model Target {
+  id           String        @id @default(uuid())
+  name         String
+  kind         String        // 'docker' | 'ssh' | 'sftp'
+  scope        String        // 'builtin' | 'user'
+  // What runtimes this target can execute (comma-separated): a subset of
+  // 'static','node','php','python'. An environment can bind to a target only
+  // when its template's runtime is in this set (e.g. our static nginx host
+  // cannot run PHP, but a real PHP-capable SFTP host can).
+  capabilities String
+  host         String?
+  port         Int?
+  username     String?
+  auth         String?       // 'password' | 'key'
+  secret       String?       // encrypted password or PEM private key (user targets)
+  remotePath   String?       // writable root on the remote
+  publicUrl    String?       // public address the deployed app/site is reachable at
+  // Last successful connection test; null = never verified.
+  verifiedAt   DateTime?
+  // Owner of a user target; null for built-in (shared) targets.
+  owner        User?         @relation(fields: [ownerId], references: [id])
+  ownerId      String?
+  createdAt    DateTime      @default(now())
+  environments Environment[]
+
+  // A user cannot have two targets with the same name.
+  @@unique([ownerId, name])
 }
 
 model Project {
@@ -58,17 +98,12 @@ model Environment {
   // (Postgres allows multiple NULLs in a unique column).
   allocatedPort Int? @unique
 
-  // User-provided deployment target (typically prod: your own server). When
-  // null, the platform's built-in demo target is used. The secret (password or
-  // private key) is encrypted at rest (AES-256-GCM, see common/secret.ts).
-  targetKind      String? // 'sftp' | 'ssh'
-  targetHost      String?
-  targetPort      Int?
-  targetUsername  String?
-  targetAuth      String? // 'password' | 'key'
-  targetSecret    String? // encrypted password or PEM private key
-  targetPath      String? // writable root on the remote
-  targetPublicUrl String?
+  // The deployment target this environment runs on. dev/test point at a
+  // built-in target (the simulated infra); prod points at a built-in or a
+  // user-registered target. `provider` mirrors target.kind (denormalised for
+  // the many read paths that switch on the provider kind).
+  target   Target? @relation(fields: [targetId], references: [id])
+  targetId String?
 
   @@unique([projectId, name])
 }

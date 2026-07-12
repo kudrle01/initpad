@@ -9,6 +9,7 @@ import {
   ProviderConnection,
   StartInput,
   TeardownInput,
+  VerifyResult,
 } from '../deployment-provider.interface';
 import {
   getSftp,
@@ -76,6 +77,39 @@ export class SshProvider implements DeploymentProvider {
       remoteRoot: this.cfg.remoteRoot,
       custom: false,
     };
+  }
+
+  // Test connection: connect, confirm the deploy root is writable, and report
+  // which runtimes the host offers (helps the user set target capabilities).
+  async verify(connection?: ProviderConnection): Promise<VerifyResult> {
+    const cfg = this.eff({ connection });
+    let conn: Client;
+    try {
+      conn = await sshConnect(cfg);
+    } catch (e) {
+      return { ok: false, message: `Cannot connect to ${cfg.host}:${cfg.port} — ${(e as Error).message}` };
+    }
+    try {
+      const mk = await sshExec(conn, `${this.PATH} mkdir -p ${cfg.remoteRoot} && echo ok`);
+      if (!mk.stdout.includes('ok')) {
+        return {
+          ok: false,
+          message: `Connected, but ${cfg.remoteRoot} is not writable: ${(mk.stderr || '').trim() || 'permission denied'}`,
+        };
+      }
+      const probe = await sshExec(
+        conn,
+        `${this.PATH} for r in node php python3; do command -v $r >/dev/null 2>&1 && echo $r; done`,
+      );
+      const found = probe.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+      const runtimes = found.length ? found.join(', ') : 'none detected';
+      return {
+        ok: true,
+        message: `Connected to ${cfg.host}. Deploy dir ${cfg.remoteRoot} is writable. Runtimes: ${runtimes}.`,
+      };
+    } finally {
+      sshEnd(conn);
+    }
   }
 
   async deploy(input: DeployInput): Promise<DeployResult> {

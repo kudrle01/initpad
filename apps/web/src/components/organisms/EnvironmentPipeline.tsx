@@ -81,15 +81,23 @@ export function EnvironmentPipeline({
         const synced =
           !!target && !!env.version && target.status === 'running' && target.version === env.version;
         const canPromote = busy === null && env.status === 'running' && !synced;
-        const deploying = busy === next;
+        const deploying = busy === next || target?.status === 'deploying';
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
         const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
+        // While deploying, statusReason carries the live step (e.g.
+        // 'Uploading 340/1200 files'); derive a % for the bar when it has a ratio.
+        const ratio =
+          env.status === 'deploying' && env.statusReason
+            ? env.statusReason.match(/(\d+)\s*\/\s*(\d+)/)
+            : null;
+        const pct = ratio
+          ? Math.min(100, Math.round((Number(ratio[1]) / Math.max(1, Number(ratio[2]))) * 100))
+          : null;
         // Stop/Start only makes sense for process targets (Docker/SSH), not static hosting (SFTP).
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
-        // A user deployment target (your own server) makes sense for the remote
-        // providers, and stays available once one is configured.
-        const canTarget = env.provider === 'ssh' || env.provider === 'sftp' || !!env.target;
+        // Any environment can be pointed at a different target.
+        const canTarget = true;
 
         return (
           <Fragment key={env.name}>
@@ -143,14 +151,15 @@ export function EnvironmentPipeline({
                           ))}
                         {canTarget && (
                           <DropdownMenuItem onSelect={() => onConfigureTarget(env.name)}>
-                            <Server className="h-4 w-4" /> {env.target ? 'Edit target' : 'Configure target'}
+                            <Server className="h-4 w-4" /> Change target
                           </DropdownMenuItem>
                         )}
-                        {hasDeployment && (
+                        {(hasDeployment || env.status === 'deploying') && (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem destructive onSelect={() => onRemoveEnv(env.name)}>
-                              <Trash2 className="h-4 w-4" /> Remove deployment
+                              <Trash2 className="h-4 w-4" />{' '}
+                              {env.status === 'deploying' ? 'Cancel deploy' : 'Remove deployment'}
                             </DropdownMenuItem>
                           </>
                         )}
@@ -168,18 +177,18 @@ export function EnvironmentPipeline({
                   {deployedCommit.message}
                 </div>
               )}
-              <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                <ProviderIcon className="h-3.5 w-3.5 shrink-0" /> {env.provider}
+              <div
+                className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"
+                title={env.target?.host ?? env.provider}
+              >
+                <ProviderIcon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{env.target?.name ?? env.provider}</span>
+                {env.target?.scope === 'user' && (
+                  <span className="shrink-0 rounded-full bg-secondary px-1.5 text-[10px] font-medium uppercase tracking-wide">
+                    yours
+                  </span>
+                )}
               </div>
-              {env.target?.host && (
-                <div
-                  className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"
-                  title={`Your server: ${env.target.host}`}
-                >
-                  <Server className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{env.target.host}</span>
-                </div>
-              )}
 
               <a
                 href={env.url ?? undefined}
@@ -193,6 +202,27 @@ export function EnvironmentPipeline({
                 <ExternalLink className="h-3 w-3 shrink-0" />
                 <span className="truncate">{env.url?.replace(/^https?:\/\//, '') ?? '—'}</span>
               </a>
+
+              {env.status === 'deploying' && (
+                <div className="mt-2">
+                  <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Spinner className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {env.statusReason ?? 'Deploying…'}
+                      {pct !== null ? ` · ${pct}%` : ''}
+                    </span>
+                  </div>
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className={cn(
+                        'h-full rounded-full bg-warning transition-all duration-500',
+                        pct === null && 'w-1/3 animate-pulse',
+                      )}
+                      style={pct !== null ? { width: `${pct}%` } : undefined}
+                    />
+                  </div>
+                </div>
+              )}
 
               {env.status === 'failed' && env.statusReason && (
                 <button

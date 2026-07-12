@@ -9,6 +9,7 @@ import {
   DeploymentProvider,
   StartInput,
   TeardownInput,
+  VerifyResult,
 } from '../deployment-provider.interface';
 
 /**
@@ -21,6 +22,13 @@ export class DockerProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'docker';
   private readonly logger = new Logger('DockerProvider');
   private readonly docker = new Docker();
+
+  // Test connection: the "connection" for Docker is the local daemon.
+  async verify(): Promise<VerifyResult> {
+    return (await this.isAvailable())
+      ? { ok: true, message: 'Docker daemon reachable — containers can be built and run.' }
+      : { ok: false, message: 'Docker daemon is not available — start Docker and try again.' };
+  }
 
   async deploy(input: DeployInput): Promise<DeployResult> {
     const port = input.port ?? 8080;
@@ -44,6 +52,7 @@ export class DockerProvider implements DeploymentProvider {
     // pull and run exactly that image (no rebuild).
     let image: string;
     if (input.imageRef) {
+      input.onProgress?.('Pulling image');
       if (await this.tryPull(input.imageRef)) {
         image = input.imageRef;
         this.logger.log(`Using registry image: ${image}`);
@@ -67,6 +76,7 @@ export class DockerProvider implements DeploymentProvider {
       await this.buildImage(input.repoPath, image);
     }
     await this.removeContainer(containerName);
+    input.onProgress?.('Starting container');
     const hostPort = await this.runContainer(image, containerName, network, port);
 
     // Post-deploy verification: the same artifact may come up in one
@@ -219,6 +229,42 @@ export class DockerProvider implements DeploymentProvider {
       if (targets.length) this.logger.log(`Removed ${targets.length} image(s) (${repo})`);
     } catch (e) {
       this.logger.warn(`removeImages ${repo} failed: ${(e as Error).message}`);
+    }
+  }
+
+  // Extracts a directory from a built image into a local dir. Used to turn a
+  // Docker-built app (e.g. a Composer-scaffolded PHP framework) into a tree the
+  // SFTP provider can upload. Creates (does not start) a container from the
+  // image, copies the path out as a tar and unpacks it into destDir.
+  async extractArtifact(imageRef: string, srcPath: string, destDir: string): Promise<void> {
+    if (!(await this.isAvailable())) {
+      throw new Error('Docker daemon is not available — cannot build the SFTP artifact.');
+    }
+    if (!(await this.imageExists(imageRef)) && !(await this.tryPull(imageRef))) {
+      throw new Error(`Image ${imageRef} was not found in the registry — has CI built it yet?`);
+    }
+    const container = await this.docker.createContainer({ Image: imageRef, Cmd: ['true'] });
+    try {
+      const stream = (await container.getArchive({ path: srcPath })) as unknown as NodeJS.ReadableStream;
+      await new Promise<void>((resolve, reject) => {
+        const extract = tar.extract(destDir);
+        extract.on('finish', () => resolve());
+        extract.on('error', reject);
+        stream.on('error', reject);
+        stream.pipe(extract);
+      });
+      this.logger.log(`Extracted ${srcPath} from ${imageRef}`);
+    } finally {
+      await container.remove({ force: true }).catch(() => undefined);
+    }
+  }
+
+  private async imageExists(ref: string): Promise<boolean> {
+    try {
+      await this.docker.getImage(ref).inspect();
+      return true;
+    } catch {
+      return false;
     }
   }
 

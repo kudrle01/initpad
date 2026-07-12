@@ -1,0 +1,13 @@
+import { Module } from '@nestjs/common';
+import { TargetsService } from './targets.service';
+import { TargetsController } from './targets.controller';
+import { DeploymentModule } from '../deployment/deployment.module';
+import { AuthModule } from '../auth/auth.module';
+
+@Module({
+  imports: [DeploymentModule, AuthModule],
+  providers: [TargetsService],
+  controllers: [TargetsController],
+  exports: [TargetsService],
+})
+export class TargetsModule {}
