@@ -23,6 +23,30 @@ model User {
   createdAt    DateTime  @default(now())
   projects     Project[]
   targets      Target[]
+  memberships WorkspaceMember[]
+}
+
+model Workspace {
+  id        String            @id @default(uuid())
+  slug      String            @unique
+  name      String
+  type      String            // personal | team | school
+  createdAt DateTime          @default(now())
+  members   WorkspaceMember[]
+  projects  Project[]
+  targets   Target[]
+}
+
+model WorkspaceMember {
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  role        String    // owner | admin | maintainer | member | viewer
+  createdAt   DateTime  @default(now())
+
+  @@id([workspaceId, userId])
+  @@index([userId])
 }
 
 // A first-class deployment target: a place an environment can deploy to.
@@ -57,6 +81,10 @@ model Target {
   // Owner of a user target; null for built-in (shared) targets.
   owner        User?         @relation(fields: [ownerId], references: [id])
   ownerId      String?
+  // Null only for built-in shared targets. User targets belong to a workspace;
+  // ownerId remains the credential/SCM identity during the tenancy migration.
+  workspace    Workspace?    @relation(fields: [workspaceId], references: [id])
+  workspaceId  String?
   createdAt    DateTime      @default(now())
   environments Environment[]
 
@@ -77,10 +105,13 @@ model Project {
   createdAt    DateTime      @default(now())
   owner        User?         @relation(fields: [ownerId], references: [id])
   ownerId      String?
+  // Authorization and visibility are workspace-scoped. ownerId remains the
+  // repository/SCM identity so existing repo URLs and image names do not move.
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id])
+  workspaceId  String
   environments Environment[]
 
-  // The name is unique per account — two users may own same-named projects.
-  @@unique([ownerId, name])
+  @@unique([workspaceId, name])
 }
 
 model Environment {

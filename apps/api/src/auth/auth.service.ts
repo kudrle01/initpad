@@ -88,6 +88,18 @@ export class AuthService {
           email,
           passwordHash: hashPassword(dto.password),
           accessToken: encryptSecret(accessToken),
+          memberships: {
+            create: {
+              role: 'owner',
+              workspace: {
+                create: {
+                  slug: giteaUser.login.toLowerCase(),
+                  name: `${giteaUser.login}'s workspace`,
+                  type: 'personal',
+                },
+              },
+            },
+          },
         },
       });
       return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };

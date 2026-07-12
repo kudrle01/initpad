@@ -303,6 +303,13 @@ export class ProjectsService implements OnModuleInit {
     }
     const template = this.templates.get(dto.templateId);
     const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
+    // Until the workspace selector reaches the API, preserve existing behavior
+    // by creating in the user's personal workspace. The next tenancy slice
+    // replaces this lookup with the explicitly selected authorized workspace.
+    const membership = await this.prisma.workspaceMember.findFirstOrThrow({
+      where: { userId: ownerId, workspace: { type: 'personal' } },
+      select: { workspaceId: true },
+    });
     const actor: GiteaActor = {
       username: owner.username,
       token: decryptSecret(owner.accessToken),
@@ -353,6 +360,7 @@ export class ProjectsService implements OnModuleInit {
           lastCommit: 'init: scaffold from template',
           ciDeployTokenHash: hashToken(ciDeployToken),
           ownerId,
+          workspaceId: membership.workspaceId,
           environments: {
             create: envTargets.map(({ name, target }, order) => ({
               name,
