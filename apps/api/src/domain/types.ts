@@ -35,17 +35,14 @@ export interface TemplateManifest {
   // Subdirectory containing the build artifact for static deployments
   // (e.g. 'dist'). When omitted, the repository root is deployed.
   artifactDir?: string;
-  // Command that produces the static artifact before an SFTP upload
-  // (e.g. 'npm install && npm run build'). Runs in the deployed source.
-  buildCommand?: string;
-  // For SFTP deploys of templates whose app is built inside the Docker image
-  // (PHP frameworks scaffolded via Composer): the path in the image whose
-  // built contents are extracted and uploaded (e.g. '/app'). When set and the
-  // target is SFTP, the platform builds the image, extracts this path and
-  // uploads it, instead of uploading git source.
+  // For SFTP deploys, the path in the CI-tested image whose contents are
+  // extracted and uploaded (e.g. '/app' for PHP or nginx's document root for
+  // a static app). This enforces build-once/deploy-many and prevents project
+  // build scripts from running inside the control-plane API container.
   buildArtifactPath?: string;
-  // Public docroot subfolder served over SFTP (e.g. 'www' for Nette, 'public'
-  // for Laravel/Symfony). The app is served at <publicUrl>/<slug>/<webRoot>/.
+  // Public docroot inside the image (e.g. 'www' for Nette, 'public' for
+  // Laravel/Symfony). SFTP flattens its contents to <publicUrl>/<slug>/ and
+  // keeps the rest of the app in an HTTP-denied private directory.
   webRoot?: string;
   // Directories the web server must be able to write after an SFTP upload
   // (framework runtime dirs, e.g. Nette 'temp'/'log'); made world-writable.

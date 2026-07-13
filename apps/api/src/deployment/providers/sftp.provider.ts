@@ -1,9 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Client, SFTPWrapper } from 'ssh2';
-import { exec } from 'child_process';
-import { existsSync, readdirSync, statSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { promisify } from 'util';
 import { ProviderKind } from '../../domain/types';
 import { config } from '../../config';
 import {
@@ -31,8 +29,7 @@ import {
   uploadDir,
   uploadTar,
 } from './ssh-utils';
-
-const execAsync = promisify(exec);
+import { PRIVATE_HTACCESS, PRIVATE_PROBE } from './sftp-layout';
 
 // Effective connection for one call: the user's custom target (prod), or the
 // platform's built-in demo target (fake-sftp + nginx).
@@ -117,21 +114,6 @@ export class SftpProvider implements DeploymentProvider {
     const version = this.sanitize(input.version) || 'latest';
     const release = `${cfg.remoteRoot}/${slug}-releases/${version}`;
 
-    // Build the static artifact if the template needs it (e.g. React → dist).
-    if (input.buildCommand) {
-      this.logger.log(`Building static artifact: ${input.buildCommand}`);
-      try {
-        await execAsync(input.buildCommand, {
-          cwd: input.repoPath,
-          timeout: 180_000,
-          maxBuffer: 16 * 1024 * 1024,
-        });
-      } catch (e) {
-        const detail = (e as Error).message.split('\n').slice(-4).join(' ').trim();
-        return { status: 'failed', url: '', reason: `Build failed: ${detail}` };
-      }
-    }
-
     const artifactDir = input.artifactDir ?? cfg.artifactSubdir;
     const localDir = artifactDir ? join(input.repoPath, artifactDir) : input.repoPath;
     if (!existsSync(localDir)) {
@@ -163,14 +145,49 @@ export class SftpProvider implements DeploymentProvider {
       }
 
       input.onProgress?.('Verifying deployment');
-      const url = this.publicUrl(cfg, slug, input.webRoot);
-      const reachable = await this.waitReachable(this.internalUrl(cfg, slug, input.webRoot));
+      const url = this.publicUrl(cfg, slug, input.webRoot, input.protectedWebLayout);
+      const internalUrl = this.internalUrl(
+        cfg,
+        slug,
+        input.webRoot,
+        input.protectedWebLayout,
+      );
+      const reachable = await this.waitReachable(internalUrl);
       if (!reachable) {
         return {
           status: 'failed',
           url,
           reason: `Files uploaded, but ${url} is not serving them (is the web server up / the public URL correct?).`,
         };
+      }
+      if (input.protectedWebLayout) {
+        const base = cfg.internalUrl.replace(/\/+$/, '');
+        const checks = [
+          `${internalUrl.replace(/\/+$/, '')}/.initpad-app/${PRIVATE_PROBE}`,
+          `${internalUrl.replace(/\/+$/, '')}/.initpad-app/composer.json`,
+          ...(input.writableDirs?.length
+            ? [`${base}/.initpad-data/${slug}/.initpad-probe`]
+            : []),
+        ];
+        const protectedResults = await Promise.all(
+          checks.map((privateUrl) => this.privateFilesProtected(privateUrl)),
+        );
+        if (protectedResults.some((protectedFile) => !protectedFile)) {
+          if (cfg.custom) {
+            await this.removeCustom(conn, sftp, cfg, slug);
+          } else {
+            await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}`);
+            await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}-releases`);
+          }
+          return {
+            status: 'failed',
+            url: '',
+            reason:
+              'Deployment was rolled back because the server exposed private application files. Enable Apache .htaccess/AllowOverride for this target.',
+          };
+        }
+        await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}/.initpad-app/${PRIVATE_PROBE}`);
+        await sftpUnlink(sftp, `${cfg.remoteRoot}/.initpad-data/${slug}/.initpad-probe`);
       }
       this.logger.log(`Deployed over SFTP: ${input.projectName} (${input.env}) → ${url}`);
       return { status: 'running', url };
@@ -193,22 +210,7 @@ export class SftpProvider implements DeploymentProvider {
     try {
       const sftp = await getSftp(conn);
       if (cfg.custom) {
-        // Real host: the served folder is a real directory (no releases/symlink).
-        if (await this.execWorks(conn)) {
-          const paths = [
-            `${cfg.remoteRoot}/${slug}`,
-            `${cfg.remoteRoot}/${slug}__deploying`,
-            `${cfg.remoteRoot}/${slug}.deploy.tar`,
-          ];
-          const removed = await sshExec(conn, `rm -rf -- ${paths.map(shellQuote).join(' ')}`);
-          if (removed.code !== 0) {
-            throw new Error(
-              `Remote teardown failed: ${(removed.stderr || removed.stdout).trim().slice(-300)}`,
-            );
-          }
-        } else {
-          await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}`);
-        }
+        await this.removeCustom(conn, sftp, cfg, slug);
       } else {
         await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}`);
         await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}-releases`);
@@ -287,19 +289,40 @@ export class SftpProvider implements DeploymentProvider {
     return this.sanitize(`${input.projectName}-${input.env}`).toLowerCase();
   }
 
-  // Served path: <slug>/ or, for frameworks with a public docroot subfolder,
-  // <slug>/<webRoot>/ (e.g. Nette's www/).
-  private servedSuffix(slug: string, webRoot?: string): string {
-    const wr = webRoot ? `${webRoot.replace(/^\/+|\/+$/g, '')}/` : '';
+  // Protected shared-hosting layouts flatten www/public into <slug>/; legacy
+  // layouts retain the explicit webRoot suffix.
+  private servedSuffix(slug: string, webRoot?: string, protectedWebLayout = false): string {
+    const wr = webRoot && !protectedWebLayout ? `${webRoot.replace(/^\/+|\/+$/g, '')}/` : '';
     return `${slug}/${wr}`;
   }
 
-  private publicUrl(cfg: EffCfg, slug: string, webRoot?: string): string {
-    return `${cfg.publicUrl.replace(/\/+$/, '')}/${this.servedSuffix(slug, webRoot)}`;
+  private publicUrl(
+    cfg: EffCfg,
+    slug: string,
+    webRoot?: string,
+    protectedWebLayout = false,
+  ): string {
+    return `${cfg.publicUrl.replace(/\/+$/, '')}/${this.servedSuffix(slug, webRoot, protectedWebLayout)}`;
   }
 
-  private internalUrl(cfg: EffCfg, slug: string, webRoot?: string): string {
-    return `${cfg.internalUrl.replace(/\/+$/, '')}/${this.servedSuffix(slug, webRoot)}`;
+  private internalUrl(
+    cfg: EffCfg,
+    slug: string,
+    webRoot?: string,
+    protectedWebLayout = false,
+  ): string {
+    return `${cfg.internalUrl.replace(/\/+$/, '')}/${this.servedSuffix(slug, webRoot, protectedWebLayout)}`;
+  }
+
+  private async privateFilesProtected(url: string): Promise<boolean> {
+    try {
+      const response = await fetch(url, { redirect: 'manual' });
+      return !response.ok;
+    } catch {
+      // The public app was reachable immediately before this check, so a
+      // network failure here means protection could not be proven.
+      return false;
+    }
   }
 
   private async waitReachable(url: string): Promise<boolean> {
@@ -361,20 +384,41 @@ export class SftpProvider implements DeploymentProvider {
         // A default ACL makes the SFTP/deploy identity retain access to those
         // descendants, preventing undeletable releases. Hosts without POSIX
         // ACL support keep the compatibility chmod fallback above.
-        const acl = await sshExec(
-          conn,
-          `if command -v setfacl >/dev/null 2>&1; then find ${path} -type d -exec setfacl -m "u:$(id -u):rwx,d:u:$(id -u):rwx" {} +; fi`,
-        );
-        if (acl.code !== 0) {
-          this.logger.warn(`Could not set persistent deploy ACL on ${staging}/${d}`);
+        if (!input.protectedWebLayout) {
+          const acl = await sshExec(
+            conn,
+            `if command -v setfacl >/dev/null 2>&1; then find ${path} -type d -exec setfacl -m "u:$(id -u):rwx,d:u:$(id -u):rwx" {} +; fi`,
+          );
+          if (acl.code !== 0) {
+            this.logger.warn(`Could not set persistent deploy ACL on ${staging}/${d}`);
+          }
         }
       }
+      if (input.protectedWebLayout && writable.length) {
+        await this.attachStableWritableDirs(conn, cfg, slug, staging, writable);
+      }
       input.onProgress?.('Publishing');
-      const swap = await sshExec(conn, `rm -rf -- ${qDest} && mv -- ${qStaging} ${qDest}`);
+      const quarantineRoot = `${cfg.remoteRoot}/.initpad-quarantine`;
+      const quarantine = `${quarantineRoot}/${slug}-${Date.now().toString(36)}`;
+      const swap = await sshExec(
+        conn,
+        `if rm -rf -- ${qDest}; then :; else mkdir -p -- ${shellQuote(quarantineRoot)} && chmod 0700 ${shellQuote(quarantineRoot)} && mv -- ${qDest} ${shellQuote(quarantine)} && echo INITPAD_QUARANTINED; fi && mv -- ${qStaging} ${qDest}`,
+      );
       if (swap.code !== 0) {
         throw new Error(`Remote publish failed: ${(swap.stderr || swap.stdout).trim().slice(-300)}`);
       }
+      if (swap.stdout.includes('INITPAD_QUARANTINED')) {
+        this.logger.warn(
+          `Legacy runtime-owned release moved to protected quarantine: ${quarantine}. Ask the target administrator to remove it.`,
+        );
+      }
       return;
+    }
+
+    if (input.protectedWebLayout && writable.length) {
+      throw new Error(
+        'This PHP deployment requires SSH shell access on the SFTP target so InitPad can isolate persistent runtime data safely.',
+      );
     }
 
     // SFTP-only host (no shell): upload file-by-file. Slower, but works.
@@ -394,6 +438,79 @@ export class SftpProvider implements DeploymentProvider {
     }
     await sftpRmrf(sftp, dest);
     await sftpRename(sftp, staging, dest);
+  }
+
+  private async removeCustom(
+    conn: Client,
+    sftp: SFTPWrapper,
+    cfg: EffCfg,
+    slug: string,
+  ): Promise<void> {
+    // Real host: the served folder is a real directory (no releases/symlink).
+    if (!(await this.execWorks(conn))) {
+      await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}`);
+      return;
+    }
+    const paths = [
+      `${cfg.remoteRoot}/${slug}`,
+      `${cfg.remoteRoot}/${slug}__deploying`,
+      `${cfg.remoteRoot}/${slug}.deploy.tar`,
+      `${cfg.remoteRoot}/.initpad-data/${slug}`,
+    ];
+    const removed = await sshExec(conn, `rm -rf -- ${paths.map(shellQuote).join(' ')}`);
+    if (removed.code !== 0) {
+      throw new Error(
+        `Remote teardown failed: ${(removed.stderr || removed.stdout).trim().slice(-300)}`,
+      );
+    }
+  }
+
+  private async attachStableWritableDirs(
+    conn: Client,
+    cfg: EffCfg,
+    slug: string,
+    staging: string,
+    writable: string[],
+  ): Promise<void> {
+    const dataRoot = `${cfg.remoteRoot}/.initpad-data`;
+    const projectData = `${dataRoot}/${slug}`;
+    const probe = `${projectData}/.initpad-probe`;
+    const prepared = await sshExec(
+      conn,
+      `mkdir -p -- ${shellQuote(projectData)} && chmod 0711 ${shellQuote(dataRoot)} ${shellQuote(projectData)} && printf %s ${shellQuote(PRIVATE_HTACCESS)} > ${shellQuote(`${dataRoot}/.htaccess`)} && printf %s initpad > ${shellQuote(probe)}`,
+    );
+    if (prepared.code !== 0) {
+      throw new Error(
+        `Could not prepare protected runtime storage: ${(prepared.stderr || prepared.stdout).trim().slice(-300)}`,
+      );
+    }
+    for (const directory of writable) {
+      if (
+        !/^[A-Za-z0-9._/-]+$/.test(directory) ||
+        directory.split('/').some((part) => part === '..')
+      ) {
+        throw new Error(`Invalid writable directory '${directory}'`);
+      }
+      const logical = directory.replace(/^\.initpad-app\//, '');
+      const stable = `${projectData}/${logical}`;
+      const staged = `${staging}/${directory}`;
+      const linked = await sshExec(
+        conn,
+        `mkdir -p -- ${shellQuote(stable)} && (chmod -R 0777 ${shellQuote(stable)} 2>/dev/null || true) && rm -rf -- ${shellQuote(staged)} && ln -s -- ${shellQuote(stable)} ${shellQuote(staged)}`,
+      );
+      if (linked.code !== 0) {
+        throw new Error(
+          `Could not attach runtime storage '${logical}': ${(linked.stderr || linked.stdout).trim().slice(-300)}`,
+        );
+      }
+      const acl = await sshExec(
+        conn,
+        `if command -v setfacl >/dev/null 2>&1; then find ${shellQuote(stable)} -type d -exec setfacl -m "u:$(id -u):rwx,d:u:$(id -u):rwx" {} +; fi`,
+      );
+      if (acl.code !== 0) {
+        this.logger.warn(`Could not set persistent deploy ACL on ${stable}`);
+      }
+    }
   }
 
   // Whether the connection allows running shell commands (chrooted SFTP-only

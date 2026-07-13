@@ -37,6 +37,7 @@ import { decryptSecret, encryptSecret } from '../common/secret';
 import { generateToken, hashToken, tokenMatches } from '../common/token';
 import type { ProviderConnection } from '../deployment/deployment-provider.interface';
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
+import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -1108,10 +1109,10 @@ export class ProjectsService implements OnModuleInit {
         .catch(() => undefined);
     };
 
-    // SFTP deploy of a template whose app is built inside the Docker image
-    // (PHP frameworks scaffolded via Composer): the git repo has no runnable
-    // app, so build the image (CI already did) and extract the built tree, then
-    // upload THAT. Otherwise upload git source (SSH / bootstrap) as before.
+    // SFTP deploy of a template with a packaged artifact: extract the exact
+    // CI-tested tree from its registry image and upload that. This applies to
+    // Composer PHP apps and static nginx bundles alike; project build commands
+    // never run inside the control plane.
     const useBuildExtract = env.provider === 'sftp' && !!template.buildArtifactPath;
 
     // Source-based providers (and Docker's bootstrap build) need the source
@@ -1124,17 +1125,28 @@ export class ProjectsService implements OnModuleInit {
     let extractedDir: string | null = null;
     let deployRepoPath = project.repoPath;
     let deployArtifactDir = template.artifactDir;
-    let deployBuildCommand = template.buildCommand;
+    let deployWritableDirs = template.writableDirs;
+    let protectedWebLayout = false;
 
     if (useBuildExtract) {
-      setStage('Building & extracting artifact');
+      setStage('Fetching & extracting tested artifact');
       const imageRef = this.imageRef(project.repoUrl, project.name, version);
       extractedDir = mkdtempSync(join(tmpdir(), 'initpad-artifact-'));
       await this.deployment.extractArtifact(imageRef, template.buildArtifactPath!, extractedDir);
       // getArchive packs the directory itself, so its tree is under the basename.
       deployRepoPath = join(extractedDir, basename(template.buildArtifactPath!));
       deployArtifactDir = undefined; // upload the whole extracted tree
-      deployBuildCommand = undefined; // already built inside the image
+      if (template.webRoot) {
+        deployRepoPath = prepareProtectedWebLayout(
+          deployRepoPath,
+          extractedDir,
+          template.webRoot,
+        );
+        deployWritableDirs = (template.writableDirs ?? []).map(
+          (directory) => `${PRIVATE_APP_DIR}/${directory.replace(/^\/+|\/+$/g, '')}`,
+        );
+        protectedWebLayout = true;
+      }
     } else if (needsSource) {
       const actor = await this.actorForProject(projectId);
       source =
@@ -1153,9 +1165,9 @@ export class ProjectsService implements OnModuleInit {
         healthPath: template.healthPath ?? '/health',
         startCommand: template.startCommand,
         artifactDir: deployArtifactDir,
-        buildCommand: deployBuildCommand,
         webRoot: template.webRoot,
-        writableDirs: template.writableDirs,
+        protectedWebLayout,
+        writableDirs: deployWritableDirs,
         appPort,
         onProgress: setStage,
         connection: this.targetConnection(env),

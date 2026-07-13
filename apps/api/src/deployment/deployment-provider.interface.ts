@@ -41,12 +41,13 @@ export interface DeployInput {
   // Subdirectory containing the artifact for static deployments (from the
   // template manifest).
   artifactDir?: string;
-  // Command that builds the static artifact before upload (from the template
-  // manifest, e.g. 'npm install && npm run build').
-  buildCommand?: string;
-  // Public docroot subfolder (SFTP): the app is served at
-  // <publicUrl>/<slug>/<webRoot>/ (e.g. 'www' for Nette).
+  // Public docroot within an application artifact (e.g. 'www' for Nette).
+  // Protected layouts publish its contents directly at <publicUrl>/<slug>/.
   webRoot?: string;
+  // The SFTP artifact was rearranged into a protected shared-hosting layout:
+  // its webRoot is published at <slug>/ and the full app is HTTP-denied under
+  // .initpad-app. The provider verifies that protection after upload.
+  protectedWebLayout?: boolean;
   // Directories prepared for the remote web runtime after an SFTP upload
   // (framework runtime dirs, e.g. Nette 'temp'/'log').
   writableDirs?: string[];
@@ -109,9 +110,8 @@ export interface DeploymentProvider {
   // Tests reachability/credentials of a target without deploying anything.
   // `connection` is absent for built-in targets (verified against local infra).
   verify?(connection?: ProviderConnection): Promise<VerifyResult>;
-  // Extracts a directory from a built image into a local dir — turns a
-  // Docker-built app (e.g. a Composer-scaffolded PHP framework) into an
-  // SFTP-uploadable artifact. Docker only.
+  // Extracts a directory from a CI-tested image into a local dir, producing an
+  // SFTP-uploadable artifact without executing project code in the API.
   extractArtifact?(imageRef: string, srcPath: string, destDir: string): Promise<void>;
   // Removes the deployment of the given environment; optional.
   teardown?(input: TeardownInput): Promise<void>;
