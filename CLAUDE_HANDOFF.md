@@ -14,18 +14,20 @@ a zachovej existující uživatelská data.
 
 ## Nejbližší milník — identity a workspace onboarding
 
-1. Zaveď edition-aware registration policy: `open`, `invite-only`,
-   `admin-provisioned`; zachovej bezpečný first-user bootstrap administrátora.
-2. Implementuj platform-admin API a UI pro seznam, vytvoření, deaktivaci a
-   reset uživatelů self-hosted instance. Vytvoření vrátí náhodné dočasné heslo
-   pouze jednou, uloží jen hash a serverově vynutí změnu hesla před ostatními
-   operacemi. Provisioning/rollback musí zůstat konzistentní s Giteou.
-3. Implementuj skutečné workspace invitations pro existující i nový e-mail:
+Kroky 1–4 jsou hotové (ADR-040). Zbývá krok 5 — GitHub adapter.
+
+1. [hotovo] Edition-aware registration policy: `open`, `invite-only`,
+   `admin-provisioned`; bezpečný first-user bootstrap administrátora zachován.
+2. [hotovo] Platform-admin API a UI pro seznam, vytvoření, deaktivaci a reset
+   uživatelů self-hosted instance. Vytvoření vrátí náhodné dočasné heslo pouze
+   jednou, uloží jen hash a serverově vynutí změnu hesla před ostatními operacemi.
+   Provisioning/rollback zůstává konzistentní s Giteou.
+3. [hotovo] Skutečné workspace invitations pro existující i nový e-mail:
    hashovaný jednorázový token, expirace, role, revoke, accept a audit. Bez SMTP
-   lze odkaz zobrazit ownerovi jednou; po přijetí synchronizuj Gitea collaboratora.
-4. Doplň ověření e-mailu, bezpečný reset hesla a rate limiting. Tokeny nikdy
-   neukládej plaintext a po resetu zneplatni staré sessions.
-5. Poté vytvoř `ScmProvider` a odděl stávající Gitea adapter od GitHub SaaS
+   se odkaz zobrazí ownerovi jednou; po přijetí se synchronizuje Gitea collaborator.
+4. [hotovo] Ověření e-mailu, bezpečný reset hesla a rate limiting. Tokeny se
+   nikdy neukládají v plaintextu a reset zneplatní staré sessions.
+5. [další krok] Vytvoř `ScmProvider` a odděl stávající Gitea adapter od GitHub SaaS
    adapteru. GitHub identitu ukládej podle immutable provider user ID; repo access
    řeš krátkodobými installation tokeny a minimálními permissions.
 

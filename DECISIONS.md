@@ -1192,3 +1192,70 @@ je podmínkou až pro create/import GitHub repozitáře.
 Správa uživatelů, pozvánky, ověření e-mailu a GitHub adapter jsou samostatné
 navazující podkroky; do jejich dokončení se `closed`/`first-user` hodí jen pro
 bootstrap a normální registrace je v lokálním vývojovém profilu výchozí.
+Konkrétní implementace identity onboardingu je v ADR-040; GitHub adapter zůstává
+posledním navazujícím krokem.
+
+---
+
+## ADR-040 — Identity a workspace onboarding: registrační politika, správa účtů, pozvánky a obnova hesla
+
+**Kontext.** ADR-039 zavedl jediný organizační model (workspaces) a vědomě odložil
+správu uživatelů, pozvánky, ověření e-mailu a bezpečný reset hesla jako navazující
+podkroky. Veřejný multi-tenant control plane (ADR-027) je ale nesmí postrádat:
+self-hosted správce potřebuje řídit, kdo si smí založit účet, provisionovat a
+deaktivovat účty, a uživatelé potřebují bezpečné pozvánky i obnovu přístupu bez
+sdílení hesel v plaintextu.
+
+**Rozhodnutí.**
+
+1. **Edition-aware registrační politika.** `INITPAD_REGISTRATION_MODE` má tři
+   kanonické hodnoty: `open` (běžná registrace), `invite-only` (jen držitel platné
+   workspace pozvánky) a `admin-provisioned` (účty zakládá pouze správce instance).
+   Bez ohledu na politiku smí úplně první účet bootstrapnout administrátora
+   instance, takže čistá instalace se nikdy nezamkne. Legacy `first-user`/`closed`
+   fungují dál jako aliasy `admin-provisioned`. `INITPAD_EDITION`
+   (`self-hosted`|`saas`) odděluje edici; SaaS registrace přes GitHub přijde s
+   adapterem (ADR-030).
+
+2. **Životní cyklus účtu a stavové session.** `User` má `active`,
+   `mustChangePassword`, `tokenVersion` a `emailVerifiedAt`. Session JWT nese
+   generaci (`ver`); guard při každém požadavku načte účet, odmítne deaktivovaný a
+   session se starou generací (chybějící `ver` = generace 0, aby deploy nikoho
+   neodhlásil). Vynucená změna hesla blokuje všechny endpointy kromě explicitně
+   povolených (`me`, `change-password`). Změna i reset hesla a deaktivace posouvají
+   generaci, čímž zneplatní existující session.
+
+3. **Platform-admin správa uživatelů.** Chráněná rolí administrátora instance:
+   seznam, vytvoření, deaktivace/reaktivace a reset. Vytvoření i reset vrátí náhodné
+   dočasné heslo pouze jednou; ukládá se jen jeho scrypt hash a účet musí heslo
+   změnit před jakoukoli další operací. Provisioning sdílí cestu s registrací a při
+   chybě rolluje Gitea účet zpět; deaktivace nejdřív zakáže Gitea účet (konzistence
+   se SCM) a poté zneplatní session. Poslední aktivní administrátor a sebe-deaktivace
+   jsou chráněny.
+
+4. **Reálné workspace pozvánky.** `WorkspaceInvitation` nese hashovaný jednorázový
+   token, expiraci, roli a auditní stopu (kdo pozval, kdo přijal, stav). Owner/admin
+   pozve existující i dosud neregistrovaný e-mail; bez SMTP se odkaz zobrazí ownerovi
+   jednou. Přijetí je vázané na e-mail: přihlášený uživatel přijme jen shodou e-mailu,
+   nový uživatel se zaregistruje účtem svázaným s pozvaným e-mailem a je přijat v
+   jednom kroku (to je cesta registrace pro `invite-only`). Přijetí přidá člena a
+   synchronizuje Gitea collaboratora se stejným rollbackem jako přímé přidání.
+
+5. **Ověření e-mailu, reset hesla, rate limiting.** `AuthToken` (kind
+   `email_verify`/`password_reset`) je jednorázový, hashovaný a expirující; ukládá se
+   jen SHA-256 hash a nový token zneplatní starší nepoužité téhož druhu. Reset
+   neenumeruje účty (vždy vrací ok; odkaz se bez SMTP loguje) a posune generaci
+   session. Ověření e-mailu vydá odkaz pro vlastní adresu přihlášeného uživatele.
+   Všechny veřejné auth endpointy jdou přes existující rate limiter.
+
+**Důsledky.** Self-hosted edice má úplný identity onboarding bez druhé autorizační
+domény. Všechny tokeny (session, pozvánky, verifikace, reset) jsou konzistentně
+jednorázové nebo řízené generací a nikdy nejsou v DB v plaintextu. Migrace jsou
+aditivní (nové sloupce s defaulty, nové tabulky `WorkspaceInvitation` a `AuthToken`),
+takže běží na existující DB bez ztráty dat. GitHub adapter (ADR-030/039) zůstává
+samostatným navazujícím krokem a tuto vrstvu nemění.
+
+**Uživatelské testování.** Viz PRODUCT_ROADMAP milník 4. Scénáře: normální
+registrace; admin-provisioned účet s vynucenou změnou dočasného hesla; pozvání dvou
+účtů (existující i nový e-mail) do týmu a ověření role v privátním SCM; reset hesla
+zneplatní staré session; deaktivace odepře přihlášení i použití session.

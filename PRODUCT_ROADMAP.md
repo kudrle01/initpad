@@ -96,7 +96,7 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 - Správa členů a rolí.
 - Viditelné označení osobního a týmového projektu.
 
-### Fáze 2 — identity a workspace onboarding
+### Fáze 2 — identity a workspace onboarding — dokončeno (mimo GitHub login/link)
 
 - Jediný organizační model tvoří workspaces a role; žádný zvláštní `Course` login.
 - Public SaaS má normální registraci a později GitHub login/link.
@@ -104,6 +104,14 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 - Self-hosted správce volí `open`, `invite-only` nebo `admin-provisioned`, spravuje
   uživatele a vydává jednorázové dočasné přihlašovací údaje s vynucenou změnou hesla.
 - Ochrana proti automatizovanému zneužití, ověření e-mailu a bezpečný reset hesla.
+
+Implementováno (ADR-040): edition-aware registrační politika s bezpečným
+first-user bootstrapem; stavové session s generací tokenu (deaktivace i reset
+zneplatní staré session); platform-admin API a UI pro seznam/vytvoření/
+deaktivaci/reset uživatelů s jednorázovým dočasným heslem a vynucenou změnou;
+reálné workspace pozvánky s hashovaným jednorázovým tokenem, expirací a auditem;
+ověření e-mailu a neenumerující reset hesla. GitHub login/link a `ScmProvider`
+adapter zůstávají samostatným navazujícím krokem (Fáze 3).
 
 ### Fáze 3 — existující repozitáře
 
@@ -245,6 +253,27 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 - Reálná Gitea integrace: viewer měl `pull=true, push=false`, po změně na member
   `pull=true, push=true` a po odebrání už privátní repo vracelo 404.
 - Auditní projekt, Gitea repo, účty a workspaces byly po testu odstraněny.
+
+### Aktuální výsledek milníku 4 (identity/onboarding)
+
+Implementováno podle ADR-040 a ověřeno API unit testy (registrační politika,
+stavový guard, platform-admin, pozvánky, reset/verifikace) i typecheckem obou
+aplikací a produkčním emitem API. Migrace jsou aditivní a ověřené `prisma
+migrate diff` proti předchozímu schématu. Browser acceptance test se spouští
+proti běžící instalaci; testovatelné scénáře:
+
+- Normální registrace v `open`; v `admin-provisioned` je self-service zavřená
+  (kromě prvního bootstrap účtu) a login screen to vysvětlí.
+- Správce vytvoří účet → jednorázové dočasné heslo se zobrazí jednou → uživatel
+  je při přihlášení nucen ho změnit, než smí cokoli dalšího.
+- Owner pozve dva e-maily (jeden existující účet, jeden nový) → nový se
+  zaregistruje vázaně na pozvaný e-mail → oba jsou členy a role platí i v
+  privátním Gitea repu.
+- Reset hesla přes `/forgot-password` → odkaz (log/e-mail) → nastavení nového
+  hesla zneplatní původní session.
+- Deaktivace účtu odepře přihlášení i běžící session; poslední aktivní
+  administrátor a sebe-deaktivace jsou chráněny.
+- Po testu se smažou všechny dočasné účty, workspaces, pozvánky a repozitáře.
 
 ### Průběžné ověření delivery části milníku 8
 
