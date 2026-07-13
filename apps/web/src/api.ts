@@ -32,6 +32,11 @@ export interface TargetInput {
   publicUrl: string;
 }
 
+export interface DeleteProjectOptions {
+  deleteRepository: boolean;
+  confirmProduction: boolean;
+}
+
 const BASE = '/api';
 
 // Error carrying the HTTP status, so callers can distinguish "gone" (404)
@@ -126,8 +131,11 @@ export const api = {
     http<{ ok: boolean; message: string }>(`/targets/${id}/verify`, { method: 'POST' }),
   getLogs: (id: string, env: EnvName) =>
     http<{ logs: string }>(`/projects/${id}/logs/${env}`),
-  deleteProject: (id: string) =>
-    http<void>(`/projects/${id}`, { method: 'DELETE' }),
+  deleteProject: (id: string, options: DeleteProjectOptions) =>
+    http<void>(`/projects/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify(options),
+    }),
   me: () => http<User>('/auth/me'),
   authConfig: () => http<{ registrationAvailable: boolean }>('/auth/config'),
   register: (username: string, email: string, password: string) =>

@@ -13,6 +13,7 @@ import {
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { SetTargetDto } from './dto/set-target.dto';
+import { DeleteProjectDto } from './dto/delete-project.dto';
 import { EnvName } from '../domain/types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -134,8 +135,15 @@ export class ProjectsController {
 
   @Delete(':id')
   @HttpCode(204)
-  async remove(@Param('id') id: string, @CurrentUser() userId: string) {
+  async remove(
+    @Param('id') id: string,
+    @Body() dto: DeleteProjectDto,
+    @CurrentUser() userId: string,
+  ) {
     await this.projects.assertAccess(id, userId, 'maintain');
-    return this.projects.remove(id);
+    return this.projects.remove(id, {
+      deleteRemoteRepo: dto?.deleteRepository === true,
+      confirmProduction: dto?.confirmProduction === true,
+    });
   }
 }

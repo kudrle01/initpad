@@ -57,3 +57,41 @@ describe('GiteaService CI retry tags', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('GiteaService repository detach', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('removes platform secrets and disables Actions while preserving the repository', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch');
+    for (let i = 0; i < 5; i++) fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+
+    await new GiteaService().detachRepo('nette', {
+      username: 'kudrla',
+      token: 'owner-token',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://gitea:3000/api/v1/repos/kudrla/nette/actions/secrets/INITPAD_REGISTRY_PASSWORD',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      'http://gitea:3000/api/v1/repos/kudrla/nette',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ has_actions: false }),
+      }),
+    );
+  });
+
+  it('does not detach partially when Gitea refuses secret removal', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('forbidden', { status: 403 }));
+
+    await expect(
+      new GiteaService().detachRepo('nette', { username: 'kudrla', token: 'owner-token' }),
+    ).rejects.toThrow("Could not remove Actions secret 'INITPAD_DEPLOY_TOKEN'");
+  });
+});

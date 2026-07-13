@@ -363,7 +363,9 @@ export class ProjectsService implements OnModuleInit {
         );
       }
     } catch (e) {
-      await this.gitea.deleteRepo(dto.name, actor);
+      await this.gitea.deleteRepo(dto.name, actor).catch((cleanupError) =>
+        this.logger.warn(`Repository rollback failed: ${(cleanupError as Error).message}`),
+      );
       throw new BadRequestException(
         `Repository collaborators could not be configured: ${(e as Error).message}`,
       );
@@ -398,7 +400,9 @@ export class ProjectsService implements OnModuleInit {
         },
       });
     } catch (e) {
-      await this.gitea.deleteRepo(dto.name, actor);
+      await this.gitea.deleteRepo(dto.name, actor).catch((cleanupError) =>
+        this.logger.warn(`Repository rollback failed: ${(cleanupError as Error).message}`),
+      );
       throw e;
     }
 
@@ -835,16 +839,29 @@ export class ProjectsService implements OnModuleInit {
     return env.provider === 'ssh' && env.target?.scope !== 'user';
   }
 
-  // Deletes the project: tears down all environment deployments, removes the
-  // Gitea repository, the workspace directory and the DB row (environments
-  // are removed by cascade).
-  async remove(id: string): Promise<void> {
+  // Deletes the project only after every managed environment has been torn
+  // down. Source deletion is an explicit opt-in; a production deployment also
+  // requires a separate acknowledgement enforced by the API.
+  async remove(
+    id: string,
+    opts: { deleteRemoteRepo: boolean; confirmProduction: boolean },
+  ): Promise<void> {
     const row = await this.prisma.project.findUnique({
       where: { id },
       include: { environments: { include: { target: true } }, owner: true },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
-    await this.cleanupProject(row, { deleteRemoteRepo: true });
+    const production = row.environments.find(
+      (env) =>
+        env.name === 'prod' &&
+        (env.status !== 'empty' || env.version !== null || env.url !== null),
+    );
+    if (production && !opts.confirmProduction) {
+      throw new BadRequestException(
+        'Production still has deployment state. Confirm production removal explicitly.',
+      );
+    }
+    await this.cleanupProject(row, { repoAction: opts.deleteRemoteRepo ? 'delete' : 'detach' });
   }
 
   /**
@@ -864,7 +881,7 @@ export class ProjectsService implements OnModuleInit {
     if (!row) return;
     this.logger.log(`Repository ${fullName} was deleted in Gitea — cleaning up project ${row.id}`);
     // The repository itself is already gone; clean up everything else.
-    await this.cleanupProject(row, { deleteRemoteRepo: false });
+    await this.cleanupProject(row, { repoAction: 'gone' });
   }
 
   // Shared teardown used by user-initiated deletion and the SCM webhook.
@@ -872,19 +889,47 @@ export class ProjectsService implements OnModuleInit {
     row: Prisma.ProjectGetPayload<{
       include: { environments: { include: { target: true } }; owner: true };
     }>,
-    opts: { deleteRemoteRepo: boolean },
+    opts: { repoAction: 'delete' | 'detach' | 'gone' },
   ): Promise<void> {
     await this.prisma.deploymentOperation.updateMany({
       where: { environment: { projectId: row.id }, finishedAt: null },
-      data: { status: 'cancelled', message: 'Project deletion requested' },
+      data: { status: 'cancelled', message: 'Project deletion requested', finishedAt: new Date() },
     });
     const slug = this.deploySlug(row.repoUrl, row.name);
     for (const env of row.environments) {
-      await this.deployment.teardown(env.provider as ProviderKind, {
-        projectName: slug,
-        env: env.name,
-        connection: this.targetConnection(env),
-      });
+      try {
+        await this.deployment.teardown(env.provider as ProviderKind, {
+          projectName: slug,
+          env: env.name,
+          connection: this.targetConnection(env),
+        });
+        // If a later target fails, keep an accurate, retryable project record
+        // instead of claiming that resources already removed still run.
+        await this.prisma.environment.update({
+          where: { id: env.id },
+          data: {
+            status: 'empty',
+            version: null,
+            url: null,
+            statusReason: null,
+            allocatedPort: null,
+            activeOperationId: null,
+          },
+        });
+      } catch (error) {
+        const reason = (error as Error).message || 'Unknown teardown error';
+        await this.prisma.environment.update({
+          where: { id: env.id },
+          data: {
+            status: 'failed',
+            statusReason: `Cleanup failed: ${reason}`,
+            activeOperationId: null,
+          },
+        });
+        throw new BadRequestException(
+          `Could not remove ${env.name} deployment from ${env.target?.name ?? env.provider}: ${reason}`,
+        );
+      }
     }
     // Only after all containers are stopped, remove the locally pulled
     // registry images of the project.
@@ -893,8 +938,13 @@ export class ProjectsService implements OnModuleInit {
     // orphaned artifacts remain.
     const owner = this.ownerFromRepoUrl(row.repoUrl) ?? config.gitea.user;
     await this.gitea.deletePackages(owner, row.name);
-    if (opts.deleteRemoteRepo) {
+    if (opts.repoAction === 'delete') {
       await this.gitea.deleteRepo(
+        row.name,
+        this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
+      );
+    } else if (opts.repoAction === 'detach') {
+      await this.gitea.detachRepo(
         row.name,
         this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
       );

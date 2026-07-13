@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, GitBranch, Layers, MoreHorizontal, Trash2, ExternalLink } from 'lucide-react';
-import { api, ApiError } from '@/api';
+import { api, ApiError, type DeleteProjectOptions } from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
@@ -248,11 +248,11 @@ export default function ProjectDetail() {
     }
   }
 
-  async function doDelete() {
+  async function doDelete(options: DeleteProjectOptions) {
     if (!id || !project) return;
     setDeleting(true);
     try {
-      await api.deleteProject(id);
+      await api.deleteProject(id, options);
       toast.success(`Deleted ${project.name}`);
       navigate('/');
     } catch (e) {
@@ -388,6 +388,8 @@ export default function ProjectDetail() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         projectName={project.name}
+        environments={project.environments}
+        hasRepository={!!project.repoUrl}
         deleting={deleting}
         onConfirm={doDelete}
       />

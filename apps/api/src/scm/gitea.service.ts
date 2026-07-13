@@ -249,15 +249,60 @@ export class GiteaService implements OnModuleInit {
     }
   }
 
-  // Deletes the repository in Gitea (best-effort; admin can access any repo).
+  // Deletes the repository in Gitea. A project deletion must not be reported
+  // as complete while its source repository still exists.
   async deleteRepo(name: string, actor: GiteaActor): Promise<void> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
-    if (!url || !adminToken) return;
-    await fetch(`${url}/api/v1/repos/${actor.username}/${name}`, {
-      method: 'DELETE',
-      headers: { Authorization: `token ${adminToken}` },
-    }).catch(() => undefined);
+    if (!url || !adminToken) throw new Error('Gitea is not configured');
+    const response = await fetch(
+      `${url}/api/v1/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `token ${adminToken}` },
+      },
+    );
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Could not delete the Gitea repository (HTTP ${response.status})`);
+    }
+  }
+
+  // Preserves source code while severing the repository's trust relationship
+  // with a deleted InitPad project. In particular, the owner package token
+  // must not remain available to future Actions runs after the project-scoped
+  // deploy-token hash and authorization record are gone.
+  async detachRepo(name: string, actor: GiteaActor): Promise<void> {
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
+    if (!url || !adminToken) throw new Error('Gitea is not configured');
+    const repo = `${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`;
+    const headers = { Authorization: `token ${adminToken}` };
+    const secrets = [
+      'INITPAD_DEPLOY_TOKEN',
+      'INITPAD_REGISTRY',
+      'INITPAD_PLATFORM_URL',
+      'INITPAD_REGISTRY_USER',
+      'INITPAD_REGISTRY_PASSWORD',
+    ];
+    for (const secret of secrets) {
+      const removed = await fetch(
+        `${url}/api/v1/repos/${repo}/actions/secrets/${encodeURIComponent(secret)}`,
+        { method: 'DELETE', headers },
+      );
+      if (!removed.ok && removed.status !== 404) {
+        throw new Error(`Could not remove Actions secret '${secret}' (HTTP ${removed.status})`);
+      }
+    }
+    const disabled = await fetch(`${url}/api/v1/repos/${repo}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ has_actions: false }),
+    });
+    if (!disabled.ok) {
+      throw new Error(
+        `Could not disable Actions on the detached repository (HTTP ${disabled.status})`,
+      );
+    }
   }
 
   async setCollaborator(
