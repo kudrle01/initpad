@@ -930,3 +930,77 @@ a `Install/Configure GitHub App`; UI je nesmí vydávat za jediný souhlas. Stav
 součástí preflightu. GitHub výpadek nesmí zablokovat přihlášení jiným providerem
 ani již běžící workloady. Gitea E2E zůstává povinný pro obhajobu; GitHub E2E je
 samostatný cloudový acceptance test.
+
+---
+
+## ADR-031 — CI runner registrujeme adresou dosažitelnou i z izolovaných jobů
+
+**Kontext.** `act_runner` ukládá adresu Gitey při registraci a checkout action
+ji později použije uvnitř kontejneru jobu. Interní Compose jméno `gitea:3000`
+je dostupné control-plane kontejnerům, ale z bezpečnostně odděleného rootless
+DinD jobu se nepřekládá.
+
+**Rozhodnutí.** Runner má explicitní `INITPAD_GITEA_RUNNER_URL`. Lokálně je
+to `host.docker.internal`, mapované v runneru, jobu i nested daemonu na host
+gateway; serverová instalace použije veřejné DNS/TLS. Browser-facing
+`gitea.localhost` se do CI nepřenáší, protože glibc v Ubuntu runner image
+rezervované `*.localhost` překládá na IPv6 `::1` i přes Docker IPv4 mapping.
+Ze stejného důvodu mají CI registry a callback samostatnou gateway adresu;
+Gitea secrets existujících repozitářů API při startu reconciliuje. Installer
+při změně uložené adresy
+jednorázově odstraní původní záznam se zastavenou Giteou, smaže lokální
+stav a runner zaregistruje znovu.
+
+**Důsledky.** Checkout i registry používají jeden hostname dosažitelný ve
+všech síťových kontextech. Rotace zároveň zneplatní starý dlouhodobý runner
+token; pouhé přepsání `/data/.runner` je zakázané, protože by staré
+credentials zůstaly platné.
+
+Lokální Gitea registry na host gateway používá HTTP. Nested daemon proto
+označuje jako insecure **jen** přesný interní alias
+`host.docker.internal:<gitea-port>`; veřejná registry doména na serveru na
+allow-listu není a nadále vyžaduje ověřené TLS.
+Gitea registry vrací token realm ze svého kanonického `ROOT_URL`, proto má
+daemon host-gateway mapování i pro lokální `gitea.localhost`; job samotný ho
+pro checkout ani callback nepoužívá.
+
+---
+
+## ADR-032 — „Run again“ bez prázdných commitů přes dočasný CI tag
+
+**Kontext.** Po zrušení prvního dev nasazení zůstalo prostředí prázdné a
+UI nemělo cestu zpět. Gitea 1.22 současně nemá REST API pro rerun workflow;
+webový endpoint vyžaduje uživatelskou session a CSRF token. Vytvořit prázdný
+commit by sice vyvolalo `push`, ale znečišťovalo by historii projektu.
+
+**Rozhodnutí.** Když už existuje otestovaný image z neúspěšného/zrušeného
+deploye, InitPad opakuje jen deployment. Jinak vytvoří dočasný tag
+`initpad-retry-*` na posledním SHA, čímž spustí stejné CI bez změny commit
+historie. Retry je v DB vedené jako aktivní `ci-retry` operace; callback smí
+nasadit jen tehdy, když tato operace stále běží. Cancel ji ukončí, takže
+pozdní callback nic nenasadí. Tag se po callbacku odstraní a staré retry tagy
+se uklízejí před dalším pokusem.
+
+**Důsledky.** Uživatel dostane `Run again` přímo v menu prázdného/selhaného
+dev prostředí. Zdrojový strom i SHA zůstávají stejné, audit operace je v
+platformě a opakování respektuje `build once, deploy many`, pokud image už
+existuje.
+
+---
+
+## ADR-033 — Runtime image musí ověřit bootstrap, ne jen Composer závislosti
+
+**Kontext.** Nette production stage generoval authoritative Composer classmap
+dříve, než do image zkopíroval `app/`. CI test stage používal běžné PSR-4 a
+prošel, zatímco runtime nenašel `App\Bootstrap`. PHP built-in server navíc u
+nezachycené chyby vrátil tělo Fatal error s HTTP 200, takže prostý status health
+check dal falešně zelený výsledek.
+
+**Rozhodnutí.** Production dependencies dostanou `app/` před authoritative
+`composer dump-autoload` a runtime build explicitně ověří
+`class_exists(App\Bootstrap)`. Front controller zachytí `Throwable`, zaloguje
+detail pouze server-side a klientovi vrátí HTTP 500 s obecným JSON.
+
+**Důsledky.** Chybný runtime autoload zastaví už CI build. Pokud selže pozdější
+bootstrap/configurace, deployment health check uvidí 500 a prostředí se
+neoznačí za zdravé.
