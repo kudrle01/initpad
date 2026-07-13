@@ -12,7 +12,9 @@ InitPad bude mít jeden kód a dva podporované provozní režimy:
 Veřejný režim není hosting aplikací. InitPad hostuje řízení, identity, metadata a
 deployment workflow; aplikace běží na targetech školy nebo uživatele. Studenti
 nemusejí kupovat VPS — učitel jim může přidělit kapacitu ze školního target
-poolu. Detailní rozhodnutí je v ADR-027.
+poolu. Self-contained profil používá vestavěnou Giteu; hosted profil bude mít
+GitHub jako výchozí SCM/CI, aniž by odstranil reprodukovatelnou Gitea variantu.
+Detailní rozhodnutí jsou v ADR-027 a ADR-030.
 
 ## Hlavní hodnota
 
@@ -72,7 +74,7 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 - Produkční build, API testy, dependency audit a browser E2E.
 - Výchozí stav uložen v tematických commitech před změnou tenancy modelu.
 
-### Fáze 1 — tenancy: workspaces a role
+### Fáze 1 — tenancy: workspaces a role — dokončeno
 
 **Datový model**
 
@@ -110,7 +112,26 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
   a uvidí preflight kontrolu Dockerfile, workflow, health endpointu a branch.
 - Platforma vytvoří pouze svůj projektový záznam, environmenty, per-repo CI
   secret a volitelný onboarding pull request/workflow po explicitním potvrzení.
-- GitHub App a GitLab provider následují za diplomkovým Gitea E2E.
+- Založení i import dostanou persistentní `ProvisioningOperation` s kroky
+  validate → repository → render/preflight → CI configuration → first deploy;
+  externí stav se nevytváří, dokud neprojde celý preflight.
+- Template manifest se povýší na verzovaný blueprint contract. Projekt vždy
+  odkazuje na konkrétní verzi; vlastní firemní blueprint repozitáře jsou až
+  následné rozšíření.
+- `ScmProvider` oddělí Giteu a GitHub od projektové domény. Self-contained profil
+  dál používá Gitea Actions/registry; hosted profil zvolí GitHub App, GitHub
+  Actions a GHCR jako výchozí cloudovou cestu.
+- Jedna GitHub App zajistí dvě oddělené vazby: OAuth user authorization pro
+  přihlášení/propojení identity a instalaci aplikace pro přístup k vybraným
+  repozitářům, webhookům a krátkodobým installation tokenům.
+- Přihlášení přes GitHub samo o sobě neuděluje přístup ke kódu. GitHub projekt
+  lze vytvořit/importovat až po propojení účtu a nalezení odpovídající instalace;
+  Gitea projekt ani prohlížení platformy se kvůli chybějícímu GitHubu neblokuje.
+- Externí účet se váže přes neměnné GitHub user ID, nikdy automaticky jen shodou
+  e-mailu. Propojení z existujícího účtu vyžaduje jeho aktivní session.
+- GitHub App je další adapter po funkčním Gitea školním E2E. Návrh a permission
+  model patří do diplomky, ale plná implementace nesmí blokovat ověření hlavního
+  scénáře; GitLab následuje později.
 
 ### Fáze 4 — target pool a allocations
 
@@ -122,13 +143,23 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 
 ### Fáze 5 — InitPad Agent
 
-- Jednorázový enrollment token sváže agenta s fyzickým targetem.
-- Agent navazuje pouze odchozí HTTPS/WSS spojení, posílá heartbeat a capabilities.
-- Control plane ukládá durable job; agent si jej pronajme, průběžně obnovuje lease,
-  streamuje logy a publikuje výsledek.
+- Pro MVP platí jeden target = jeden agent = jeden Linux Docker server.
+- Jednorázový enrollment token sváže agenta s fyzickým targetem a vymění se za
+  rotovatelnou identitu; agent jde zablokovat a eviduje verzi i poslední kontakt.
+- Agent navazuje pouze odchozí HTTPS spojení. První verze používá polling/long
+  polling; WebSocket je optimalizace, ne podmínka správnosti.
+- Control plane ukládá durable job; agent si jej pronajme, průběžně obnovuje
+  lease, posílá heartbeat/capabilities a publikuje strukturovaný progress.
+- Agent nepřijímá libovolný shell. Protokol povoluje pouze verzované operace
+  `DEPLOY_SERVICE`, `STOP_SERVICE`, `START_SERVICE`, `REMOVE_SERVICE`,
+  `GET_SERVICE_STATUS`, `FETCH_LOGS`, `RUN_HEALTH_CHECK` a `ROLLBACK_SERVICE`.
 - Agent stahuje image podle neměnného digestu, vynucuje allocation, resource limity,
   síť a naming; control plane už nepotřebuje host Docker socket.
-- Odpojení agenta operaci neztratí: lease vyprší a job lze bezpečně zopakovat.
+- Každý job má tenant/target scope, correlation ID a idempotency key. Odpojení
+  agenta operaci neztratí: lease vyprší a job lze bezpečně zopakovat bez druhého
+  kontejneru nebo sítě.
+- Secret hodnoty mohou zůstat pouze na targetu; cloud ukládá jejich názvy a stav
+  `configured/missing`, agent je lokálně mapuje do deploymentu.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -138,6 +169,11 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
   statický artefakt do přidělené cesty.
 - Destruktivní akce a prod promotion ukazují target, verzi a dopad.
 - Rollback vybírá předchozí úspěšný artefakt, nic znovu nestaví.
+- Deployment stavový automat je explicitní: queued → assigned → running →
+  verifying → succeeded; chybové větve failed/unhealthy mohou přejít do ručně
+  vyžádaného rollbacku.
+- Agent vrací omezený tail aplikačních logů, exit code a výsledek health checku;
+  platformní timeline zůstává oddělená od aplikačních logů.
 
 ### Fáze 7 — učitelský provoz
 
@@ -151,6 +187,9 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 - Threat-model review pro každou tenant boundary a agent protocol.
 - E2E test nejméně se dvěma workspaces, aby se ověřila izolace.
 - Restore drill, výpadek agenta během deploye a retry bez dvojitého spuštění.
+- Failure injection: agent offline, registry nedostupná, disk plný, okamžitý
+  exit kontejneru, health timeout, duplicitní doručení a ztracená odpověď po
+  úspěšném deploymentu.
 - Usability test se studenty a učitelem.
 - Aktualizace architektury, diagramů, ADR a implementační kapitoly diplomky.
 
@@ -164,6 +203,34 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 - Promotion používá stejný digest/SHA jako předchozí prostředí.
 - Odpojený nebo kompromitovaný agent nemůže převzít job jiného targetu/workspace.
 - Každá změna produkce má dohledatelného aktéra, artefakt a target allocation.
+
+## Uživatelské ověření po každém milníku
+
+U každého milníku se před přechodem dál provede tento acceptance test a uloží
+se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
+
+| Milník | Uživatelsky testovatelný | Scénář a očekávaný výsledek |
+|---|---|---|
+| 1 — bezpečný baseline | ano | Přihlášení, vytvoření projektu, viditelné CI a responzivní UI; build/test/health jsou zelené. |
+| 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
+| 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 403. |
+| 4 — předměty/onboarding | ano | Učitel vytvoří předmět a kód, dva studenti se zapíší, vytvoří tým a nepovolaný účet se nepřipojí. |
+| 5 — import repa/SCM | ano | Gitea: výběr repa a preflight bez změny kódu. Cloud: GitHub login/link, instalace App pro vybrané repo, create/import; odvolání instalace zablokuje další SCM operace, ne účet. |
+| 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
+| 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
+| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. |
+| 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
+
+### Aktuální výsledek milníku 3
+
+- Migrace reálné databáze: úspěšná, žádný projekt bez workspace.
+- Osobní workspace a týmový workspace: přepínání ověřeno v browseru.
+- Viewer viděl týmový projekt, ale create/deploy/delete UI bylo read-only.
+- API: osobní seznam 0 projektů, týmový seznam 1; viewer write 403, cizí
+  workspace ID 403.
+- Reálná Gitea integrace: viewer měl `pull=true, push=false`, po změně na member
+  `pull=true, push=true` a po odebrání už privátní repo vracelo 404.
+- Auditní projekt, Gitea repo, účty a workspaces byly po testu odstraněny.
 
 ## Vyhodnocení pro diplomovou práci
 

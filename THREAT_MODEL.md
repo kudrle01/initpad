@@ -2,8 +2,10 @@
 
 ## Scope and trust assumptions
 
-InitPad is a self-hosted single-tenant control plane. Authenticated platform
-users are trusted to create application code and register deployment targets;
+The implemented profile is a self-hosted control plane with multiple
+workspace-scoped users. Workspace members are not trusted to access another
+workspace's metadata, repositories or targets. Members with the appropriate
+role are trusted to create application code and register deployment targets;
 generated CI code is treated as untrusted. The public internet, repository
 content, webhook requests and target endpoints are untrusted.
 
@@ -11,8 +13,10 @@ The API intentionally controls the local Docker daemon to create application
 containers. Docker daemon access is host-root-equivalent, so the API container
 and its dependencies are part of the trusted computing base. This is acceptable
 for the thesis/single-node profile, but not a hard multi-tenant boundary. A
-production multi-tenant edition must use a remote deployment agent or
-Kubernetes API with a restricted service account instead of the host socket.
+hosted multi-tenant edition must use a remote deployment agent or Kubernetes
+API with a restricted service account instead of the host socket. Workspace
+RBAC is an application authorization boundary, not a hostile-workload compute
+boundary.
 
 ## Assets
 
@@ -25,6 +29,13 @@ Kubernetes API with a restricted service account instead of the host socket.
 
 - Gitea self-registration is disabled; InitPad defaults to first-user
   registration and rate-limits authentication endpoints.
+- Projects and user targets belong to a workspace. Every request resolves an
+  authenticated membership server-side; `X-Workspace-Id` is only a selector,
+  never proof of access. Viewer/member/maintainer/admin/owner roles separate
+  reading, delivery, destructive maintenance and membership administration.
+- Personal workspaces cannot accept additional members. Team membership and
+  role changes are synchronized to private Gitea repository collaborator
+  permissions, with compensating rollback when either side fails.
 - Sessions are HTTP-only, SameSite and Secure under HTTPS. OIDC redirects use
   exact origin/path validation and authorization codes are one-time/expiring.
 - Sensitive database values use AES-256-GCM. CI callback tokens are random per
@@ -35,7 +46,7 @@ Kubernetes API with a restricted service account instead of the host socket.
   socket or host workspace, allows no workflow-defined volumes and runs one job
   at a time. Its control network is separate from PostgreSQL and deployment
   networks.
-- DTO allow-list validation, bounded lengths, ownership checks and target
+- DTO allow-list validation, bounded lengths, workspace policy checks and target
   endpoint/path validation reduce injection, IDOR and resource-exhaustion risk.
 - Deployment operations atomically lock one environment. Cancellation is a
   persisted request; stale background work cannot publish over a newer state.
@@ -56,12 +67,20 @@ Kubernetes API with a restricted service account instead of the host socket.
 - Rootless DinD still requires a privileged outer container. It protects the
   host from ordinary workflow Docker control but is not equivalent to a
   dedicated runner VM.
+- Workspace RBAC isolates application data but all deployments still share the
+  self-hosted control plane's provider credentials and Docker trust boundary.
+  Do not expose this profile as a hostile public SaaS.
+- Gitea collaborator synchronization spans two systems and therefore uses
+  compensation rather than a distributed transaction. Reconciliation and an
+  audit log are required before hosted production use.
 - Backups contain credentials. They must be encrypted, stored off-host and
   tested with periodic restore drills.
 
 ## Production gates
 
-Before calling InitPad multi-tenant or enterprise-ready: remove the host Docker
-socket, add RBAC/teams and approvals, use an external secret manager, persist
-OIDC grants, add centralized audit logs/metrics/traces, scan images/SBOMs, sign
-artifacts, enforce network egress and test disaster recovery.
+Before calling InitPad hosted multi-tenant or enterprise-ready: remove the host
+Docker socket from the control plane, add invitation/e-mail onboarding,
+allocations, approvals and quotas, reconcile SCM permissions, use an external
+secret manager, persist OIDC grants, add centralized audit logs/metrics/traces,
+scan images/SBOMs, sign artifacts, enforce network egress and test disaster
+recovery.

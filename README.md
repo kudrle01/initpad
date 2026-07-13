@@ -17,6 +17,8 @@ agenty nebo Kubernetes; viz [THREAT_MODEL.md](THREAT_MODEL.md).
   OIDC SSO z InitPadu do Gitey;
 - Gitea jako SCM, Actions a OCI registry, privátní repozitáře a tokeny oddělené
   pro každý projekt;
+- osobní a týmové workspaces, přepínání tenantů, role owner/admin/maintainer/
+  member/viewer a synchronizace přístupu do privátních repozitářů;
 - izolovaný rootless CI daemon bez přístupu k Docker socketu hostitele;
 - skutečné testy, zamčené závislosti a Dockerfile v každém golden pathu;
 - build once, deploy many: hash commitu označuje image propagovaný do dev/test/prod;
@@ -99,10 +101,10 @@ lockfile install, test a build. PHP frameworky mají navíc `composer audit
 ## Produktové zaměření
 
 Nejsilnější tržní pozice není „menší Backstage pro enterprise“, ale rychle
-nasaditelný self-hosted paved road pro školy, bootcampy, interní sandboxy a malé
-týmy: jednotný onboarding, auditovatelný promotion flow a možnost připojit
-vlastní VPS/SFTP bez znalosti CI syntaxe. Další nejhodnotnější investice jsou
-preview environments, týmové role/approvals, template versioning, observability
-a oddělený deployment agent.
+nasaditelný paved road pro školy, bootcampy, interní sandboxy a malé týmy:
+jednotný onboarding, auditovatelný promotion flow a možnost připojit vlastní
+VPS/SFTP bez znalosti CI syntaxe. Další nejhodnotnější investice jsou školní
+předměty a pozvánky, import existujících repozitářů, target allocations,
+approval flow, template versioning, observability a oddělený deployment agent.
 
 Návrhová rozhodnutí jsou v [DECISIONS.md](DECISIONS.md).

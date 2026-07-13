@@ -839,3 +839,94 @@ workspaces/role, školní předmět a tým, import existujícího Gitea repozit�
 target pool, jednoho Docker agenta a ověřený dev → test → prod scénář s ESO.
 Billing, plná HA, Kubernetes, marketplace, mobilní agent, globální build cloud a
 enterprise federation zůstávají návrhem po obhajobě.
+
+---
+
+## ADR-028 — Workspace je tenant a jediná autorizační hranice
+
+**Kontext.** `Project.ownerId` a `Target.ownerId` původně znamenaly zároveň SCM
+identitu i oprávnění. To znemožňovalo týmové projekty: spolupracovník mohl být
+vidět v UI, ale nebyl vlastníkem řádku ani privátního repozitáře.
+
+**Rozhodnutí.** Viditelnost a oprávnění se odvozují výhradně z `Workspace` a
+`WorkspaceMember`. Aktivní workspace posílá klient v `X-Workspace-Id`; backend
+hlavičce nevěří a pokaždé ověří membership. Role jsou owner/admin/maintainer/
+member/viewer; viewer pouze čte, ostatní mohou pracovat s projekty, owner/admin
+spravují členství. `ownerId` zatím zůstává jako SCM/credential identita, takže
+migrace nepřejmenovává repozitáře, registry images ani deployment slugy.
+
+Každý existující uživatel dostane deterministický osobní workspace a jeho data
+se backfillují. Osiřelý projekt migraci zastaví místo náhodného přiřazení.
+Přidání/změna/odebrání člena současně synchronizuje oprávnění collaboratorů do
+privátních Gitea repozitářů (viewer=read, member/maintainer=write, admin=admin).
+
+**Důsledky.** API používá centrální workspace policy místo rozptýleného
+`assertOwner`. Aktivní workspace je UX filtr, zatímco přímý projektový odkaz je
+povolen každému skutečnému členovi jeho workspace. Osobní workspaces nelze
+smazat; týmový lze odstranit jen prázdný a pouze ownerem.
+
+---
+
+## ADR-029 — Agent MVP používá HTTPS polling a omezený job protokol
+
+**Kontext.** Veřejný control plane se nesmí připojovat inbound SSH na školní či
+zákaznické Docker servery ani posílat obecné shell příkazy. Potřebujeme přitom
+odolné doručování práce přes NAT a srozumitelný rozsah diplomky.
+
+**Rozhodnutí.** První agent používá odchozí HTTPS polling/long polling. Jeden
+agent reprezentuje jeden Linux Docker target. Jednorázový enrollment token se
+vymění za rotovatelnou identitu svázanou s tenantem a targetem. Agent přijímá
+jen verzované strukturované operace pro lifecycle služby, logy, health check a
+rollback; obecný shell není součástí protokolu.
+
+Job má lease, heartbeat, correlation ID a idempotency key. Opakované doručení
+stejného deploymentu nesmí vytvořit další síť či kontejner. Agent reportuje
+verzi, capabilities, poslední kontakt a omezené resource telemetry. Secret
+hodnoty mohou zůstat pouze lokálně; control plane zná jen reference a stav.
+
+**Kompromisy.** Polling má vyšší latenci a počet HTTP požadavků než WebSocket,
+ale jednodušší reconnect, proxy a testování. WebSocket/message broker je pozdější
+optimalizace. Agent s Docker socketem je root-equivalent na svém cílovém serveru,
+proto musí vynucovat target allocation a nikdy nesmí přijímat cizí job.
+
+---
+
+## ADR-030 — GitHub je výchozí cloudový SCM, Gitea zůstává self-contained cestou
+
+**Kontext.** Veřejný InitPad nemá důvod provozovat vlastní Git server pro každého
+uživatele, pokud většina cílových týmů už pracuje na GitHubu. Úplné odstranění
+Gitey by ale zrušilo offline/reprodukovatelný profil diplomky, školní laboratoř
+bez externího účtu a možnost organizace držet kód on-premise. Přihlášení uživatele
+a oprávnění automatizace k repozitářům jsou navíc dvě různé bezpečnostní vazby.
+
+**Rozhodnutí.** Hosted profil nabídne GitHub jako výchozí SCM, CI a registry
+provider; self-contained profil si ponechá Giteu. Projektová doména nebude znát
+konkrétní API, ale rozhraní `ScmProvider`. GitHub integraci zajistí jedna GitHub
+App, nikoli široce oprávněný klasický OAuth App:
+
+- OAuth user authorization GitHub App slouží pro `Sign in with GitHub` a
+  explicitní propojení existujícího InitPad účtu;
+- instalace GitHub App do osobního účtu/organizace určuje konkrétní repozitáře,
+  webhooky a oprávnění automatizace;
+- automatizace používá krátkodobé installation tokeny a neukládá je trvale;
+- externí identita se ukládá jako provider + neměnné GitHub user ID. Shodný
+  e-mail sám nikdy nesmí účty sloučit;
+- vytvoření/import GitHub projektu vyžaduje propojenou identitu a platnou
+  instalaci pro zvoleného ownera/repo. Uživatel se ale může přihlásit, přijmout
+  pozvánku nebo pracovat s Gitea projektem i bez instalace GitHub App;
+- workspace RBAC zůstává autorizačním zdrojem InitPadu. GitHub collaborator/team
+  přístupy se synchronizují jako externí efekt a musí mít reconciliation/audit.
+
+Minimální oprávnění se volí podle funkce: metadata read, contents read/write,
+checks/statuses a Actions/workflows jen pokud je InitPad spravuje. Administration
+write se žádá pouze pro explicitní vytvoření repozitáře a musí být uživateli
+vysvětleno. Oficiální dokumentace doporučuje GitHub Apps kvůli jemnějším
+oprávněním, výběru repozitářů, krátkodobým tokenům a vestavěným webhookům:
+https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/differences-between-github-apps-and-oauth-apps
+
+**Důsledky.** Cloudový onboarding má dvě viditelné fáze `Continue with GitHub`
+a `Install/Configure GitHub App`; UI je nesmí vydávat za jediný souhlas. Stav
+`connected`, `installation missing`, `repository not granted` a `revoked` je
+součástí preflightu. GitHub výpadek nesmí zablokovat přihlášení jiným providerem
+ani již běžící workloady. Gitea E2E zůstává povinný pro obhajobu; GitHub E2E je
+samostatný cloudový acceptance test.
