@@ -193,6 +193,20 @@ export class AuthService {
     return { token: this.signToken(updated), user: this.toSession(updated) };
   }
 
+  /** Issues a signed session for an already-provisioned user (e.g. invite sign-up). */
+  createSession(user: {
+    id: string;
+    username: string;
+    name: string | null;
+    email: string | null;
+    avatarUrl: string | null;
+    platformRole: string;
+    tokenVersion?: number;
+    mustChangePassword?: boolean;
+  }): { token: string; user: SessionUser } {
+    return { token: this.signToken(user), user: this.toSession(user) };
+  }
+
   private signToken(user: { id: string; tokenVersion?: number }): string {
     return this.jwt.sign({ sub: user.id, ver: user.tokenVersion ?? 0 });
   }

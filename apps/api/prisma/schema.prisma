@@ -36,17 +36,45 @@ model User {
   projects          Project[]
   targets           Target[]
   memberships       WorkspaceMember[]
+  sentInvitations     WorkspaceInvitation[] @relation("InvitedBy")
+  acceptedInvitations WorkspaceInvitation[] @relation("AcceptedBy")
 }
 
 model Workspace {
-  id         String            @id @default(uuid())
-  slug       String            @unique
-  name       String
-  type       String // personal | team
-  createdAt  DateTime          @default(now())
-  members    WorkspaceMember[]
-  projects   Project[]
-  targets    Target[]
+  id          String                @id @default(uuid())
+  slug        String                @unique
+  name        String
+  type        String // personal | team
+  createdAt   DateTime              @default(now())
+  members     WorkspaceMember[]
+  projects    Project[]
+  targets     Target[]
+  invitations WorkspaceInvitation[]
+}
+
+// A pending invitation to join a team workspace with a specific role. The
+// one-time acceptance token is never stored in plaintext — only its SHA-256
+// hash — and it expires. The record doubles as the audit trail: who invited
+// whom, to which role, and when it was accepted or revoked (ADR-040).
+model WorkspaceInvitation {
+  id           String    @id @default(uuid())
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId  String
+  // Normalised (lower-case) target e-mail. Acceptance binds to this address.
+  email        String
+  role         String // admin | maintainer | member | viewer
+  tokenHash    String    @unique
+  status       String    @default("pending") // pending | accepted | revoked
+  invitedBy    User      @relation("InvitedBy", fields: [invitedById], references: [id])
+  invitedById  String
+  acceptedBy   User?     @relation("AcceptedBy", fields: [acceptedById], references: [id])
+  acceptedById String?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  respondedAt  DateTime?
+
+  @@index([workspaceId])
+  @@index([email])
 }
 
 model WorkspaceMember {

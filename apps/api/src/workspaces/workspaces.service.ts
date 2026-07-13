@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.dto';
-import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto } from './dto/member.dto';
+import { AddWorkspaceMemberDto, AssignableRole, UpdateWorkspaceMemberDto } from './dto/member.dto';
 import { GiteaService } from '../scm/gitea.service';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
@@ -165,19 +165,33 @@ export class WorkspacesService {
       where: { workspaceId_userId: { workspaceId, userId: member.id } },
     });
     if (existing) throw new ConflictException('User is already a workspace member');
+    await this.attachMember(workspaceId, member.id, member.username, dto.role);
+    return this.members(userId, workspaceId);
+  }
+
+  /**
+   * Creates a workspace membership and mirrors the role into the private Gitea
+   * repositories, rolling the membership back if the SCM sync fails so the two
+   * never diverge. Shared by direct add-member and invitation acceptance.
+   */
+  async attachMember(
+    workspaceId: string,
+    memberUserId: string,
+    username: string,
+    role: AssignableRole,
+  ): Promise<void> {
     await this.prisma.workspaceMember.create({
-      data: { workspaceId, userId: member.id, role: dto.role },
+      data: { workspaceId, userId: memberUserId, role },
     });
     try {
-      await this.syncRepositoryAccess(workspaceId, member.username, dto.role);
+      await this.syncRepositoryAccess(workspaceId, username, role);
     } catch (error) {
-      await this.revokeRepositoryAccess(workspaceId, member.username).catch(() => undefined);
+      await this.revokeRepositoryAccess(workspaceId, username).catch(() => undefined);
       await this.prisma.workspaceMember.delete({
-        where: { workspaceId_userId: { workspaceId, userId: member.id } },
+        where: { workspaceId_userId: { workspaceId, userId: memberUserId } },
       });
       throw error;
     }
-    return this.members(userId, workspaceId);
   }
 
   async updateMember(
