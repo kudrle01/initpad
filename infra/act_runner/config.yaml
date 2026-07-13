@@ -15,10 +15,10 @@ runner:
 container:
   network: "bridge"
   privileged: false
-  # *.localhost resolves to the physical loopback in a browser. Inside CI it
-  # is mapped to the dedicated outer gateway, while Docker commands talk only
-  # to the nested daemon through its bridge gateway.
-  options: "--add-host=gitea.localhost:172.31.250.1 --add-host=platform.localhost:172.31.250.1 --env=DOCKER_HOST=tcp://172.17.0.1:2375 --security-opt=no-new-privileges"
+  # The runner's stored Gitea URL, registry and platform callback all use
+  # host.docker.internal locally. Map it to the dedicated outer gateway;
+  # Docker commands still talk only to the nested daemon via its bridge.
+  options: "--add-host=host.docker.internal:172.31.250.1 --env=DOCKER_HOST=tcp://172.17.0.1:2375 --security-opt=no-new-privileges"
   valid_volumes: []
   docker_host: "tcp://runner-docker:2375"
   force_pull: true

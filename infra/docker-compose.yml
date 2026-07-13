@@ -57,7 +57,10 @@ services:
     environment:
       DOCKER_TLS_CERTDIR: ""
       DOCKER_HOST: tcp://127.0.0.1:2375
-    command: ["--host=tcp://0.0.0.0:2375", "--tls=false"]
+    command:
+      - "--host=tcp://0.0.0.0:2375"
+      - "--tls=false"
+      - "--insecure-registry=host.docker.internal:3001"
     volumes:
       - runner-docker-data:/home/rootless/.local/share/docker
     healthcheck:
@@ -66,6 +69,9 @@ services:
       timeout: 3s
       retries: 40
       start_period: 10s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "gitea.localhost:host-gateway"
     networks: [ci-control]
     restart: unless-stopped
 
@@ -76,7 +82,7 @@ services:
       gitea: { condition: service_started }
       runner-docker: { condition: service_healthy }
     environment:
-      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_INSTANCE_URL: ${INITPAD_GITEA_RUNNER_URL:-http://host.docker.internal:3001}
       GITEA_RUNNER_REGISTRATION_TOKEN: ${INITPAD_RUNNER_TOKEN:-}
       GITEA_RUNNER_NAME: initpad-runner
       # Labels are written AT REGISTRATION TIME and the image reads them from
@@ -87,6 +93,8 @@ services:
     volumes:
       - ./act_runner/config.yaml:/config.yaml:ro
       - runner-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks: [platform, ci-control]
     restart: unless-stopped
 

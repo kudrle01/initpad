@@ -65,7 +65,25 @@ export class ProjectsService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.migrateLegacyCiTokens();
+    await this.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedOperations();
+  }
+
+  private async reconcileCiRuntimeSecrets(): Promise<void> {
+    try {
+      const projects = await this.prisma.project.findMany({
+        select: { name: true, repoUrl: true, owner: { select: { username: true } } },
+      });
+      await Promise.all(
+        projects.map((project) => {
+          const owner =
+            this.ownerFromRepoUrl(project.repoUrl) ?? project.owner?.username ?? config.gitea.user;
+          return this.gitea.configureRepoRuntimeSecrets(owner, project.name);
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`CI runtime-secret reconciliation skipped: ${(e as Error).message}`);
+    }
   }
 
   private async recoverInterruptedOperations(): Promise<void> {

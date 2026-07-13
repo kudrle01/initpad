@@ -62,7 +62,7 @@ export const config = {
     // webhook to it. host.docker.internal works for the npm-run-dev setup;
     // the compose setup overrides it with the internal service name.
     platformUrl:
-      process.env.INITPAD_PLATFORM_INTERNAL_URL || 'http://platform.localhost:3000',
+      process.env.INITPAD_PLATFORM_INTERNAL_URL || 'http://host.docker.internal:3000',
   },
   scm: {
     webhookUrl:
@@ -79,6 +79,9 @@ export const config = {
   // Credentials = the service (bot) account.
   registry: {
     host: process.env.INITPAD_REGISTRY_HOST || 'gitea.localhost:3001',
+    // Same registry, but addressed from glibc-based CI job containers and
+    // their nested daemon (where *.localhost resolves to loopback).
+    ciHost: process.env.INITPAD_CI_REGISTRY_HOST || 'host.docker.internal:3001',
     user: process.env.INITPAD_GITEA_USER || '',
     password:
       process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',

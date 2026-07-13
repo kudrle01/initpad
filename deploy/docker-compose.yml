@@ -88,7 +88,8 @@ services:
       # Registry as seen by the host deployment daemon. CI builds inside an
       # isolated daemon and pushes the resulting image to this registry.
       INITPAD_REGISTRY_HOST: ${INITPAD_REGISTRY_HOST:-gitea.localhost:3001}
-      INITPAD_PLATFORM_INTERNAL_URL: http://platform.localhost:${INITPAD_WEB_PORT:-8080}
+      INITPAD_CI_REGISTRY_HOST: ${INITPAD_CI_REGISTRY_HOST:-host.docker.internal:3001}
+      INITPAD_PLATFORM_INTERNAL_URL: http://host.docker.internal:${INITPAD_WEB_PORT:-8080}
       # Simulated deployment targets (service names inside the compose net).
       # The credentials MUST match how fake-vps/fake-sftp were created below,
       # otherwise the API authenticates with the wrong password.
@@ -166,7 +167,12 @@ services:
     environment:
       DOCKER_TLS_CERTDIR: ""
       DOCKER_HOST: tcp://127.0.0.1:2375
-    command: ["--host=tcp://0.0.0.0:2375", "--tls=false"]
+    command:
+      - "--host=tcp://0.0.0.0:2375"
+      - "--tls=false"
+      # Only the same-host, non-public alias is HTTP. A configured public CI
+      # registry still uses verified TLS and is not placed on this allow-list.
+      - "--insecure-registry=host.docker.internal:${INITPAD_GITEA_HTTP_PORT:-3001}"
     volumes:
       - runner-docker-data:/home/rootless/.local/share/docker
     healthcheck:
@@ -175,6 +181,11 @@ services:
       timeout: 3s
       retries: 40
       start_period: 10s
+    extra_hosts:
+      # Registry access is performed by the nested daemon itself. Gitea's
+      # auth challenge uses its canonical ROOT_URL as the token realm.
+      - "host.docker.internal:host-gateway"
+      - "gitea.localhost:host-gateway"
     networks: [ci-control]
     restart: unless-stopped
 
@@ -183,7 +194,9 @@ services:
     image: gitea/act_runner:0.2.11
     profiles: ["runner"]
     environment:
-      GITEA_INSTANCE_URL: http://gitea:3000
+      # Persisted by act_runner and passed to checkout jobs. Keep it separate
+      # from the browser URL: glibc treats *.localhost as IPv6 loopback.
+      GITEA_INSTANCE_URL: ${INITPAD_GITEA_RUNNER_URL:-http://host.docker.internal:3001}
       GITEA_RUNNER_REGISTRATION_TOKEN: ${INITPAD_RUNNER_TOKEN:-}
       GITEA_RUNNER_NAME: initpad-runner
       GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
@@ -191,6 +204,8 @@ services:
     volumes:
       - ../infra/act_runner/config.yaml:/config.yaml:ro
       - runner-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       gitea: { condition: service_healthy }
       api: { condition: service_healthy }

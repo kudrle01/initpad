@@ -441,10 +441,17 @@ export class GiteaService implements OnModuleInit {
   ): Promise<void> {
     if (!ownerToken) throw new Error(`No repository/package token available for '${owner}'`);
     await this.setRepoSecret(owner, repo, 'INITPAD_DEPLOY_TOKEN', ciDeployToken);
-    await this.setRepoSecret(owner, repo, 'INITPAD_REGISTRY', config.registry.host);
-    await this.setRepoSecret(owner, repo, 'INITPAD_PLATFORM_URL', config.ci.platformUrl);
+    await this.configureRepoRuntimeSecrets(owner, repo);
     await this.setRepoSecret(owner, repo, 'INITPAD_REGISTRY_USER', owner);
     await this.setRepoSecret(owner, repo, 'INITPAD_REGISTRY_PASSWORD', ownerToken);
+  }
+
+  // Reconciled on every API start because these addresses are configuration,
+  // not long-lived credentials. This also upgrades already-created repos when
+  // the CI network address changes.
+  async configureRepoRuntimeSecrets(owner: string, repo: string): Promise<void> {
+    await this.setRepoSecret(owner, repo, 'INITPAD_REGISTRY', config.registry.ciHost);
+    await this.setRepoSecret(owner, repo, 'INITPAD_PLATFORM_URL', config.ci.platformUrl);
   }
 
   private async setRepoSecret(

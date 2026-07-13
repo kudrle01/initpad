@@ -65,6 +65,29 @@ fi
 if [ "$(get_env INITPAD_REGISTRY_HOST)" = "localhost:3001" ]; then
   set_env INITPAD_REGISTRY_HOST gitea.localhost:3001
 fi
+# CI jobs cannot use *.localhost: glibc gives the reserved suffix an IPv6
+# loopback result before Docker's host mapping. Local jobs use the explicit
+# host gateway; a server install uses its real public Git hostname.
+if [ -z "$(get_env INITPAD_GITEA_RUNNER_URL)" ]; then
+  public_gitea=$(get_env INITPAD_GITEA_PUBLIC_URL)
+  gitea_port=$(get_env INITPAD_GITEA_HTTP_PORT); gitea_port=${gitea_port:-3001}
+  case "$public_gitea" in
+    http://gitea.localhost:*|http://localhost:*)
+      set_env INITPAD_GITEA_RUNNER_URL "http://host.docker.internal:$gitea_port"
+      ;;
+    *) set_env INITPAD_GITEA_RUNNER_URL "$public_gitea" ;;
+  esac
+fi
+if [ -z "$(get_env INITPAD_CI_REGISTRY_HOST)" ]; then
+  registry_host=$(get_env INITPAD_REGISTRY_HOST)
+  gitea_port=$(get_env INITPAD_GITEA_HTTP_PORT); gitea_port=${gitea_port:-3001}
+  case "$registry_host" in
+    gitea.localhost:*|localhost:*)
+      set_env INITPAD_CI_REGISTRY_HOST "host.docker.internal:$gitea_port"
+      ;;
+    *) set_env INITPAD_CI_REGISTRY_HOST "$registry_host" ;;
+  esac
+fi
 wait_healthy() { # <service> [attempts]
   local svc=$1 tries=${2:-60} cid state
   for i in $(seq 1 "$tries"); do
@@ -74,6 +97,53 @@ wait_healthy() { # <service> [attempts]
     sleep 2
   done
   fail "$svc did not become healthy — check: docker compose logs $svc"
+}
+
+# act_runner persists the instance URL in /data/.runner. Changing the Compose
+# environment alone therefore does not repair existing installations: checkout
+# jobs would keep receiving the old internal-only `http://gitea:3000` address.
+# Rotate the runner identity when its stored address differs. The exact old DB
+# row is removed while Gitea is stopped, which also invalidates the old runner
+# authentication token; no credential is ever printed by this migration.
+rotate_runner_if_address_changed() {
+  local desired state stored runner_id runner_name deleted
+  desired=$(get_env INITPAD_GITEA_RUNNER_URL)
+  desired=${desired:-http://host.docker.internal:3001}
+  desired=${desired%/}
+
+  state=$($COMPOSE --profile runner run --rm --no-deps --entrypoint sh act_runner -c \
+    "test ! -f /data/.runner || sed -n \
+      's/.*\"id\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/id=\1/p;
+       s/.*\"name\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/name=\1/p;
+       s/.*\"address\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/address=\1/p' \
+      /data/.runner" 2>/dev/null || true)
+  stored=$(printf '%s\n' "$state" | awk -F= '$1=="address" {sub(/^address=/, ""); print; exit}')
+  stored=${stored%/}
+  [ -z "$stored" ] && return 0
+  [ "$stored" = "$desired" ] && return 0
+
+  runner_id=$(printf '%s\n' "$state" | awk -F= '$1=="id" {print $2; exit}')
+  runner_name=$(printf '%s\n' "$state" | awk -F= '$1=="name" {sub(/^name=/, ""); print; exit}')
+  case "$runner_id" in ''|*[!0-9]*) fail "Stored CI runner id is invalid; refusing an unsafe rotation.";; esac
+  [ "$runner_name" = initpad-runner ] || \
+    fail "Stored CI runner name is unexpected; remove it manually before continuing."
+
+  say "Rotating CI runner registration for reachable checkout URL"
+  $COMPOSE stop act_runner api gitea >/dev/null
+  deleted=$($COMPOSE run --rm --no-deps -T -u git --entrypoint sqlite3 gitea \
+    /data/gitea/gitea.db \
+    "BEGIN IMMEDIATE; DELETE FROM action_runner WHERE id=$runner_id AND name='initpad-runner'; SELECT changes(); COMMIT;" \
+    | tr -d '\r' | tail -1)
+  case "$deleted" in 0|1) ;; *)
+    $COMPOSE up -d gitea api >/dev/null 2>&1 || true
+    fail "Could not invalidate the previous CI runner registration."
+  esac
+  $COMPOSE --profile runner run --rm --no-deps --entrypoint sh act_runner \
+    -c 'rm -f /data/.runner'
+  $COMPOSE up -d gitea
+  wait_healthy gitea 60
+  $COMPOSE up -d api
+  wait_healthy api 60
 }
 
 BOT_USER=$(get_env INITPAD_BOT_USER); BOT_USER=${BOT_USER:-initpad-bot}
@@ -156,6 +226,7 @@ else
 fi
 
 # ---- 6. runner (+ optional HTTPS proxy) --------------------------------------
+rotate_runner_if_address_changed
 say "Starting the CI runner"
 $COMPOSE --profile runner up -d act_runner
 if [ -n "${DOMAIN:-}" ]; then
