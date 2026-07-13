@@ -20,29 +20,24 @@ model User {
   accessToken       String
   // Password hash (scrypt) for managed registration; null = OAuth-only (SSO) account.
   passwordHash      String?
-  // Platform-wide authority is deliberately small. Course-level authority is
-  // represented by CourseMember.role and does not make a teacher a global admin.
+  // Platform-wide authority is deliberately small. Workspace roles carry
+  // project and team permissions; this role is for instance administration.
   platformRole      String            @default("user") // admin | user
   createdAt         DateTime          @default(now())
   projects          Project[]
   targets           Target[]
   memberships       WorkspaceMember[]
-  courseMemberships CourseMember[]
 }
 
 model Workspace {
   id         String            @id @default(uuid())
   slug       String            @unique
   name       String
-  type       String // personal | team | school
+  type       String // personal | team
   createdAt  DateTime          @default(now())
   members    WorkspaceMember[]
   projects   Project[]
   targets    Target[]
-  // A school workspace holds course-owned infrastructure and instructors.
-  course     Course?           @relation("CourseWorkspace")
-  // A team workspace remains the sole authorization boundary for its projects.
-  courseTeam CourseTeam?       @relation("CourseTeamWorkspace")
 }
 
 model WorkspaceMember {
@@ -55,52 +50,6 @@ model WorkspaceMember {
 
   @@id([workspaceId, userId])
   @@index([userId])
-}
-
-// A teaching/onboarding boundary. Course membership organizes people; it does
-// not authorize project access. Student projects live in linked team workspaces
-// and continue to use WorkspaceMember as their only authorization boundary.
-model Course {
-  id                 String         @id @default(uuid())
-  slug               String         @unique
-  name               String
-  description        String?
-  workspace          Workspace      @relation("CourseWorkspace", fields: [workspaceId], references: [id], onDelete: Restrict)
-  workspaceId        String         @unique
-  enrollmentCodeHash String?        @unique
-  enrollmentOpen     Boolean        @default(true)
-  membershipLocked   Boolean        @default(false)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  members            CourseMember[]
-  teams              CourseTeam[]
-}
-
-model CourseMember {
-  course    Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  courseId  String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  role      String // instructor | student
-  team      CourseTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  teamId    String?
-  createdAt DateTime    @default(now())
-
-  @@id([courseId, userId])
-  @@index([userId])
-  @@index([teamId])
-}
-
-model CourseTeam {
-  id          String         @id @default(uuid())
-  course      Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  courseId    String
-  workspace   Workspace      @relation("CourseTeamWorkspace", fields: [workspaceId], references: [id], onDelete: Cascade)
-  workspaceId String         @unique
-  createdAt   DateTime       @default(now())
-  members     CourseMember[]
-
-  @@index([courseId])
 }
 
 // A first-class deployment target: a place an environment can deploy to.

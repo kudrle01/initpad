@@ -55,41 +55,4 @@ describe('AuthService', () => {
       where: { OR: [{ username: 'ALICE@EXAMPLE.TEST' }, { email: 'alice@example.test' }] },
     });
   });
-
-  it('allows closed registration only with a valid open course code', async () => {
-    config.auth.registrationMode = 'closed';
-    const prisma = {
-      user: {
-        count: jest.fn(async () => 3),
-        findFirst: jest.fn(async () => null),
-        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
-          id: 'student', username: 'student', email: 'student@example.test', name: null,
-          avatarUrl: null, platformRole: 'user', ...data,
-        })),
-      },
-      course: {
-        findUnique: jest.fn(async () => ({
-          id: 'course-1', enrollmentOpen: true, membershipLocked: false,
-        })),
-      },
-    };
-    const gitea = {
-      createUser: jest.fn(async () => ({ id: 10, login: 'student' })),
-      createUserToken: jest.fn(async () => 'a'.repeat(40)),
-      deleteUser: jest.fn(),
-    };
-    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, gitea as never);
-
-    await service.register({
-      username: 'student', email: 'student@example.test', password: 'long-password',
-      enrollmentCode: 'INIT-0000-0000-0000-0000',
-    });
-
-    expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        platformRole: 'user',
-        courseMemberships: { create: { courseId: 'course-1', role: 'student' } },
-      }),
-    }));
-  });
 });

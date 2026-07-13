@@ -12,7 +12,6 @@ import { LoginDto } from './dto/login.dto';
 import { hashPassword, verifyPassword } from './password';
 import { encryptSecret } from '../common/secret';
 import { config } from '../config';
-import { hashEnrollmentCode } from '../courses/enrollment-code';
 
 export interface SessionUser {
   id: string;
@@ -63,28 +62,10 @@ export class AuthService {
   private async registerUnlocked(
     dto: RegisterDto,
   ): Promise<{ token: string; user: SessionUser }> {
-    const userCount = await this.prisma.user.count();
-    const publicRegistrationAvailable =
-      config.auth.registrationMode === 'open' ||
-      (config.auth.registrationMode === 'first-user' && userCount === 0);
-    const enrollmentCode = dto.enrollmentCode?.trim();
-    const course = enrollmentCode
-      ? await this.prisma.course.findUnique({
-          where: { enrollmentCodeHash: hashEnrollmentCode(enrollmentCode) },
-          select: { id: true, enrollmentOpen: true, membershipLocked: true },
-        })
-      : null;
-    if (enrollmentCode && !course) {
-      throw new BadRequestException('Enrollment code is invalid');
-    }
-    if (course && (!course.enrollmentOpen || course.membershipLocked)) {
-      throw new ForbiddenException(
-        course.membershipLocked ? 'Course membership is locked' : 'Course enrollment is closed',
-      );
-    }
-    if (!publicRegistrationAvailable && !course) {
+    if (!(await this.registrationAvailable())) {
       throw new ForbiddenException('Account registration is closed. Ask the platform administrator for access.');
     }
+    const userCount = await this.prisma.user.count();
     const email = dto.email.trim().toLowerCase();
     const existing = await this.prisma.user.findFirst({
       where: { OR: [{ username: dto.username }, { email }] },
@@ -122,9 +103,6 @@ export class AuthService {
               },
             },
           },
-          ...(course
-            ? { courseMemberships: { create: { courseId: course.id, role: 'student' } } }
-            : {}),
         },
       });
       return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };

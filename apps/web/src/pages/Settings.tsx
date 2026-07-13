@@ -36,7 +36,7 @@ export default function Settings() {
   const { activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
-  const canManageMembers = canAdmin && activeWorkspace?.type !== 'personal' && !activeWorkspace?.managedBy;
+  const canManageMembers = canAdmin && activeWorkspace?.type !== 'personal';
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -243,13 +243,6 @@ export default function Settings() {
           </p>
         )}
 
-        {activeWorkspace?.managedBy && (
-          <p className="mt-4 rounded-md bg-secondary p-3 text-sm text-muted-foreground">
-            This workspace is managed by a course. Change instructors and student team membership
-            from the Courses page so course locking and repository access stay consistent.
-          </p>
-        )}
-
         <div className="mt-4 divide-y divide-border rounded-md border border-border">
           {membersLoading && <p className="p-3 text-sm text-muted-foreground">Loading members…</p>}
           {!membersLoading && members.map((member) => (
@@ -281,7 +274,7 @@ export default function Settings() {
         </div>
       </div>
 
-      {activeWorkspace?.type !== 'personal' && !activeWorkspace?.managedBy && canAdmin && (
+      {activeWorkspace?.type !== 'personal' && canAdmin && (
         <div className="rounded-lg border border-border bg-card p-6">
           <h2 className="text-[15px] font-semibold">Current team workspace</h2>
           <p className="mt-1 text-sm text-muted-foreground">

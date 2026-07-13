@@ -41,7 +41,7 @@ export const config = {
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
     registrationMode:
       process.env.INITPAD_REGISTRATION_MODE ||
-      (process.env.NODE_ENV === 'production' ? 'first-user' : 'open'),
+      'open',
     secureCookie:
       process.env.INITPAD_COOKIE_SECURE === 'true' ||
       (process.env.INITPAD_COOKIE_SECURE !== 'false' &&

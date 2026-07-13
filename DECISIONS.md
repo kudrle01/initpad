@@ -800,7 +800,7 @@ pro Docker/VM cíle.
 
 **Rozhodnutí.** (c), přičemž self-contained režim zůstává podporovaný jako demo,
 offline laboratoř a referenční implementace. Veřejný control plane spravuje
-identity, workspaces, předměty, projekty, CI metadata, schválení a deployment
+identity, workspaces, projekty, CI metadata, schválení a deployment
 operace. Samotné workloady neběží v control plane:
 
 - škola registruje fyzické servery a publikuje je jako omezený **target pool**;
@@ -816,8 +816,9 @@ hostovat test i prod, ale každé přidělení má vlastní `remotePath`, `publi
 kvótu a oprávnění. Stejně tak jeden školní Docker host obslouží více týmů,
 aniž by studenti získali credentials k hostiteli.
 
-**Tok ve škole.** Učitel založí předmět a target pool → studenti vstoupí přes
-pozvánku/kód → vytvoří tým → založí projekt ze šablony nebo importují repo → CI
+**Tok ve škole.** Správce založí týmový workspace a target pool → studenti
+se zaregistrují jako běžní uživatelé a přijmou workspace pozvánku → založí
+projekt ze šablony nebo importují repo → CI
 postaví a otestuje artefakt → dev se nasadí automaticky na školní Docker pool →
 tentýž artefakt jde po promotion do testu a po schválení učitelem do produkce na
 ESO či jiný přidělený cíl.
@@ -835,7 +836,7 @@ z control plane. Agent dostává pouze krátkodobé job credentials a omezení s
 target allocation; nemá globální přístup k ostatním týmům.
 
 **Rozsah diplomky.** Implementační MVP zahrnuje jeden veřejný control plane,
-workspaces/role, školní předmět a tým, import existujícího Gitea repozitáře,
+workspaces/role a pozvánky, import existujícího repozitáře,
 target pool, jednoho Docker agenta a ověřený dev → test → prod scénář s ESO.
 Billing, plná HA, Kubernetes, marketplace, mobilní agent, globální build cloud a
 enterprise federation zůstávají návrhem po obhajobě.
@@ -1164,3 +1165,30 @@ nebo čitelnost cesty se za důkaz zápisu nepovažuje.
 nasadit React/Vue release. Chybná práva u vlastního SFTP targetu se odhalí už
 při `Verify`, nikoli až po CI a pokusu o produkční deploy. Inicializace se týká
 jen simulačního volume InitPadu; na uživatelském serveru vlastnictví neměníme.
+
+---
+
+## ADR-039 — Obecné workspaces nahrazují Course doménu; SCM se liší podle edice
+
+**Kontext.** První návrh onboardingu zavedl `Course`, `Join course`, instruktory a
+studentské týmy přímo do identity modelu. InitPad ale není pouze školní systém:
+stejný produkt musí fungovat pro jednotlivce, malé firmy i self-hosted instalace.
+Speciální kurzová registrace duplikovala členství a tlačila jeden use case do
+globální navigace.
+
+**Rozhodnutí.** Jedinou organizační a autorizační hranicí zůstává `Workspace`
+a `WorkspaceMember`. Uživatel se registruje normálně a do týmu vstupuje přes
+workspace pozvánku; škola je jen způsob použití téhož modelu. `Course` tabulky,
+API, navigace a enrollment kód se odstraňují reverzní migrací.
+
+Public SaaS používá GitHub pro identitu/propojení a GitHub App pro SCM, Actions
+a GHCR. Self-hosted edice používá vestavěnou Giteu a její správce volí onboarding
+policy: otevřená registrace, pouze pozvánky, nebo administrátorem provisionované
+účty. Dočasné přihlašovací údaje se zobrazí pouze jednou a musí vynutit
+změnu hesla. GitHub instalace nikdy není podmínkou samotného vytvoření účtu;
+je podmínkou až pro create/import GitHub repozitáře.
+
+**Důsledky.** Produktový model je použitelný beze změny pro firmu i školu.
+Správa uživatelů, pozvánky, ověření e-mailu a GitHub adapter jsou samostatné
+navazující podkroky; do jejich dokončení se `closed`/`first-user` hodí jen pro
+bootstrap a normální registrace je v lokálním vývojovém profilu výchozí.

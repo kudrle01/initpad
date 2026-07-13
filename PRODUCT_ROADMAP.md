@@ -7,13 +7,13 @@ InitPad bude mít jeden kód a dva podporované provozní režimy:
 | Režim | Control plane | Workloady | Použití |
 |---|---|---|---|
 | Self-contained | u uživatele, včetně Gitey a CI | lokální simulovaná infrastruktura | diplomkové demo, offline laboratoř, malý tým |
-| Hosted / school | veřejný InitPad | školní nebo uživatelské servery | předměty, studentské týmy, BYOS malé firmy |
+| Public SaaS | veřejný InitPad + GitHub | školní nebo uživatelské servery | školy, týmy a BYOS malé firmy |
 
 Veřejný režim není hosting aplikací. InitPad hostuje řízení, identity, metadata a
 deployment workflow; aplikace běží na targetech školy nebo uživatele. Studenti
 nemusejí kupovat VPS — učitel jim může přidělit kapacitu ze školního target
-poolu. Self-contained profil používá vestavěnou Giteu; hosted profil bude mít
-GitHub jako výchozí SCM/CI, aniž by odstranil reprodukovatelnou Gitea variantu.
+poolu. Self-contained profil používá vestavěnou Giteu; veřejný SaaS používá
+GitHub jako SCM/CI. Veřejná Gitea není podporovaná SaaS varianta.
 Detailní rozhodnutí jsou v ADR-027 a ADR-030.
 
 ## Hlavní hodnota
@@ -21,7 +21,7 @@ Detailní rozhodnutí jsou v ADR-027 a ADR-030.
 InitPad není obecný serverový panel. Je to opinionated developer platform:
 
 - nový projekt ze zkontrolované golden-path šablony nebo import existujícího repa;
-- týmové vlastnictví, role a školní předměty;
+- týmové vlastnictví, workspaces, pozvánky a role;
 - automatický build/test a dohledatelný artefakt;
 - řízený tok dev → test → prod nad heterogenní infrastrukturou;
 - přidělení prostředí bez předání serverových credentials studentům;
@@ -31,13 +31,13 @@ InitPad není obecný serverový panel. Je to opinionated developer platform:
 
 MVP je hotové, když lze na jedné veřejně dostupné instalaci prokázat tento tok:
 
-1. učitel založí předmět a publikuje školní target pool;
-2. studenti se přes pozvánku zaregistrují a vytvoří tým;
+1. správce nebo owner založí týmový workspace a publikuje target pool;
+2. uživatelé se normálně zaregistrují nebo dostanou self-hosted účet a přijmou pozvánku;
 3. tým vytvoří projekt ze šablony nebo importuje existující Gitea repo;
 4. CI postaví a otestuje jediný verzovaný artefakt;
 5. dev se automaticky nasadí na školní Docker target přes agenta;
 6. stejný artefakt se povýší do testu;
-7. prod vyžádá schválení učitele/maintainera a nasadí se na oddělenou ESO cestu;
+7. prod vyžádá schválení maintainera a nasadí se na oddělenou ESO cestu;
 8. platforma zobrazí stav, log, vlastníka, audit událostí a identitu artefaktu.
 
 ### Vědomě mimo MVP
@@ -78,7 +78,7 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 
 **Datový model**
 
-- `Workspace` typu personal/team/school.
+- `Workspace` typu personal/team.
 - `WorkspaceMember` s rolemi owner/admin/maintainer/member/viewer.
 - Projekt a uživatelský target vlastní workspace, ne přímo uživatel.
 - Bezpečná migrace: každý současný uživatel dostane osobní workspace a jeho
@@ -94,15 +94,16 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 
 - Přepínač aktivního workspace.
 - Správa členů a rolí.
-- Viditelné označení osobního, týmového a školního projektu.
+- Viditelné označení osobního a týmového projektu.
 
-### Fáze 2 — školní model a onboarding
+### Fáze 2 — identity a workspace onboarding
 
-- `Course`, instruktoři, enrollment kód/pozvánka a studentské týmy.
-- Veřejná registrace s ověřením e-mailu; školní členství jen přes pozvánku/kód.
-- Učitel může tým vytvořit, uzamknout členství a odebrat přístup.
-- Serverový režim dostane bezpečný reset hesla a ochranu proti automatizovanému
-  zneužití; self-contained režim může zůstat jednodušší.
+- Jediný organizační model tvoří workspaces a role; žádný zvláštní `Course` login.
+- Public SaaS má normální registraci a později GitHub login/link.
+- Workspace owner/admin zve existující i dosud neregistrované uživatele a přidělí roli.
+- Self-hosted správce volí `open`, `invite-only` nebo `admin-provisioned`, spravuje
+  uživatele a vydává jednorázové dočasné přihlašovací údaje s vynucenou změnou hesla.
+- Ochrana proti automatizovanému zneužití, ověření e-mailu a bezpečný reset hesla.
 
 ### Fáze 3 — existující repozitáře
 
@@ -187,12 +188,13 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 - Agent vrací omezený tail aplikačních logů, exit code a výsledek health checku;
   platformní timeline zůstává oddělená od aplikačních logů.
 
-### Fáze 7 — učitelský provoz
+### Fáze 7 — organizační provoz a školní vyhodnocení
 
-- Dashboard předmětu: týmy, projekty, CI, aktivní allocations a poslední deploy.
-- Approval pravidla, termíny, kvóty CPU/RAM/disk a automatický teardown po kurzu.
+- Portfolio workspaceů: týmy, projekty, CI, aktivní allocations a poslední deploy.
+- Approval pravidla, termíny, kvóty CPU/RAM/disk a automatický teardown.
 - Audit log registrace, změn členství, target assignmentů, promotion a mazání.
-- Export výsledků pro vyhodnocení předmětu bez přístupu ke zdrojovému kódu navíc.
+- Volitelný export workspace metrik pro firmu nebo vyhodnocení výuky bez
+  zavedení druhé autorizační domény.
 
 ### Fáze 8 — hardening a vyhodnocení
 
@@ -226,7 +228,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 1 — bezpečný baseline | ano | Přihlášení, vytvoření projektu, viditelné CI a responzivní UI; build/test/health jsou zelené. |
 | 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
 | 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 403. |
-| 4 — předměty/onboarding | ano | Učitel vytvoří předmět a kód, dva studenti se zapíší, vytvoří tým a nepovolaný účet se nepřipojí. |
+| 4 — identity/onboarding | ano | Normální registrace; owner pozve dva uživatele do workspace a role platí i v SCM. V `admin-provisioned` režimu správce vytvoří účet, dočasné heslo je zobrazeno jednou a uživatel je musí změnit. |
 | 5 — import repa/SCM | ano | Gitea: výběr repa a preflight bez změny kódu. Cloud: GitHub login/link, instalace App pro vybrané repo, create/import; odvolání instalace zablokuje další SCM operace, ne účet. |
 | 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |

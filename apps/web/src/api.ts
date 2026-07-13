@@ -10,9 +10,6 @@ import type {
   Workspace,
   WorkspaceMember,
   WorkspaceRole,
-  CourseSummary,
-  CourseDetail,
-  CreatedCourse,
 } from '@/types';
 
 export interface EnvConfig {
@@ -39,13 +36,6 @@ export interface DeleteProjectOptions {
   deleteRepository: boolean;
   confirmProduction: boolean;
   confirmCleanupDebt: boolean;
-}
-
-export interface CourseUpdateInput {
-  name?: string;
-  description?: string;
-  enrollmentOpen?: boolean;
-  membershipLocked?: boolean;
 }
 
 const BASE = '/api';
@@ -103,36 +93,6 @@ export const api = {
   }),
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
-  listCourses: () => http<CourseSummary[]>('/courses'),
-  createCourse: (name: string, slug: string, description?: string) =>
-    http<CreatedCourse>('/courses', {
-      method: 'POST', body: JSON.stringify({ name, slug, description }),
-    }),
-  getCourse: (courseId: string) => http<CourseDetail>(`/courses/${courseId}`),
-  updateCourse: (courseId: string, body: CourseUpdateInput) =>
-    http<CourseDetail>(`/courses/${courseId}`, { method: 'PUT', body: JSON.stringify(body) }),
-  joinCourse: (enrollmentCode: string) =>
-    http<CourseDetail>('/courses/join', {
-      method: 'POST', body: JSON.stringify({ enrollmentCode }),
-    }),
-  rotateCourseEnrollmentCode: (courseId: string) =>
-    http<{ enrollmentCode: string }>(`/courses/${courseId}/enrollment-code`, { method: 'POST' }),
-  addCourseMember: (courseId: string, identity: string, role: 'instructor' | 'student') =>
-    http<CourseDetail>(`/courses/${courseId}/members`, {
-      method: 'POST', body: JSON.stringify({ identity, role }),
-    }),
-  removeCourseMember: (courseId: string, userId: string) =>
-    http<CourseDetail>(`/courses/${courseId}/members/${userId}`, { method: 'DELETE' }),
-  createCourseTeam: (courseId: string, name: string, slug: string) =>
-    http<{ id: string; workspaceId: string; name: string }>(`/courses/${courseId}/teams`, {
-      method: 'POST', body: JSON.stringify({ name, slug }),
-    }),
-  joinCourseTeam: (courseId: string, teamId: string) =>
-    http<CourseDetail>(`/courses/${courseId}/teams/${teamId}/join`, { method: 'POST' }),
-  removeCourseTeamMember: (courseId: string, teamId: string, userId: string) =>
-    http<CourseDetail>(`/courses/${courseId}/teams/${teamId}/members/${userId}`, {
-      method: 'DELETE',
-    }),
   listProjects: () => http<Project[]>('/projects'),
   getProject: (id: string) => http<Project>(`/projects/${id}`),
   getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),
@@ -178,14 +138,11 @@ export const api = {
       body: JSON.stringify(options),
     }),
   me: () => http<User>('/auth/me'),
-  authConfig: () => http<{
-    registrationAvailable: boolean;
-    enrollmentRegistrationAvailable: boolean;
-  }>('/auth/config'),
-  register: (username: string, email: string, password: string, enrollmentCode?: string) =>
+  authConfig: () => http<{ registrationAvailable: boolean }>('/auth/config'),
+  register: (username: string, email: string, password: string) =>
     http<User>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, email, password, enrollmentCode }),
+      body: JSON.stringify({ username, email, password }),
     }),
   signin: (username: string, password: string) =>
     http<User>('/auth/signin', {

@@ -10,7 +10,6 @@ import { TargetsModule } from './targets/targets.module';
 import { OidcModule } from './oauth/oidc.module';
 import { MeModule } from './me/me.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
-import { CoursesModule } from './courses/courses.module';
 
 @Module({
   imports: [
@@ -24,7 +23,6 @@ import { CoursesModule } from './courses/courses.module';
     ProjectsModule,
     MeModule,
     WorkspacesModule,
-    CoursesModule,
   ],
   controllers: [HealthController],
 })

@@ -30,7 +30,7 @@ export class WorkspacesService {
   async list(userId: string) {
     const memberships = await this.prisma.workspaceMember.findMany({
       where: { userId },
-      include: { workspace: { include: { course: true, courseTeam: true } } },
+      include: { workspace: true },
       orderBy: { createdAt: 'asc' },
     });
     return memberships.map((m) => ({
@@ -38,7 +38,6 @@ export class WorkspacesService {
       slug: m.workspace.slug,
       name: m.workspace.name,
       type: m.workspace.type,
-      managedBy: m.workspace.course ? 'course' : m.workspace.courseTeam ? 'course-team' : null,
       role: m.role as WorkspaceRole,
       createdAt: m.workspace.createdAt.toISOString(),
     }));
@@ -100,17 +99,11 @@ export class WorkspacesService {
         members: { create: { userId, role: 'owner' } },
       },
     });
-    return {
-      ...workspace,
-      role: 'owner' as const,
-      managedBy: null,
-      createdAt: workspace.createdAt.toISOString(),
-    };
+    return { ...workspace, role: 'owner' as const, createdAt: workspace.createdAt.toISOString() };
   }
 
   async update(userId: string, workspaceId: string, dto: UpdateWorkspaceDto) {
     await this.require(userId, workspaceId, 'admin');
-    await this.assertDirectMembershipEditable(workspaceId);
     const workspace = await this.prisma.workspace.update({
       where: { id: workspaceId },
       data: { name: dto.name.trim() },
@@ -118,12 +111,7 @@ export class WorkspacesService {
     const membership = await this.prisma.workspaceMember.findUniqueOrThrow({
       where: { workspaceId_userId: { workspaceId, userId } },
     });
-    return {
-      ...workspace,
-      role: membership.role as WorkspaceRole,
-      managedBy: null,
-      createdAt: workspace.createdAt.toISOString(),
-    };
+    return { ...workspace, role: membership.role as WorkspaceRole, createdAt: workspace.createdAt.toISOString() };
   }
 
   async remove(userId: string, workspaceId: string): Promise<void> {
@@ -131,17 +119,10 @@ export class WorkspacesService {
     if (role !== 'owner') throw new ForbiddenException('Only the workspace owner can delete it');
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
-      include: {
-        course: true,
-        courseTeam: true,
-        _count: { select: { projects: true, targets: true } },
-      },
+      include: { _count: { select: { projects: true, targets: true } } },
     });
     if (!workspace) throw new NotFoundException('Workspace not found');
     if (workspace.type === 'personal') throw new BadRequestException('Personal workspaces cannot be deleted');
-    if (workspace.course || workspace.courseTeam) {
-      throw new BadRequestException('Course-managed workspaces must be managed from the course');
-    }
     if (workspace._count.projects || workspace._count.targets) {
       throw new BadRequestException('Delete or move all projects and targets before deleting this workspace');
     }
@@ -169,14 +150,11 @@ export class WorkspacesService {
     await this.require(userId, workspaceId, 'admin');
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { type: true, course: { select: { id: true } }, courseTeam: { select: { id: true } } },
+      select: { type: true },
     });
     if (!workspace) throw new NotFoundException('Workspace not found');
     if (workspace.type === 'personal') {
       throw new BadRequestException('Create a team workspace before adding other members');
-    }
-    if (workspace.course || workspace.courseTeam) {
-      throw new BadRequestException('Course-managed membership must be changed from the course');
     }
     const identity = dto.identity.trim();
     const member = await this.prisma.user.findFirst({
@@ -209,7 +187,6 @@ export class WorkspacesService {
     dto: UpdateWorkspaceMemberDto,
   ) {
     await this.require(userId, workspaceId, 'admin');
-    await this.assertDirectMembershipEditable(workspaceId);
     const member = await this.memberOrThrow(workspaceId, memberId);
     if (member.role === 'owner') throw new BadRequestException('Workspace owner role cannot be changed');
     const username = (await this.prisma.user.findUniqueOrThrow({ where: { id: memberId } })).username;
@@ -233,59 +210,6 @@ export class WorkspacesService {
 
   async removeMember(userId: string, workspaceId: string, memberId: string): Promise<void> {
     await this.require(userId, workspaceId, 'admin');
-    await this.assertDirectMembershipEditable(workspaceId);
-    await this.revokeManagedMember(workspaceId, memberId);
-  }
-
-  /**
-   * Internal membership reconciliation for a trusted domain service (courses).
-   * The caller must authorize the domain action first. Keeping repository sync
-   * here prevents course membership from becoming a second, drifting ACL.
-   */
-  async grantManagedMember(
-    workspaceId: string,
-    memberId: string,
-    role: Exclude<WorkspaceRole, 'owner'>,
-  ): Promise<void> {
-    const workspace = await this.prisma.workspace.findUnique({
-      where: { id: workspaceId },
-      select: { type: true },
-    });
-    if (!workspace) throw new NotFoundException('Workspace not found');
-    if (workspace.type === 'personal') {
-      throw new BadRequestException('Managed members cannot be added to a personal workspace');
-    }
-    const user = await this.prisma.user.findUnique({ where: { id: memberId } });
-    if (!user) throw new NotFoundException('User not found');
-    const existing = await this.prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId, userId: memberId } },
-    });
-    if (existing?.role === 'owner' || existing?.role === role) return;
-
-    try {
-      await this.syncRepositoryAccess(workspaceId, user.username, role);
-      if (existing) {
-        await this.prisma.workspaceMember.update({
-          where: { workspaceId_userId: { workspaceId, userId: memberId } },
-          data: { role },
-        });
-      } else {
-        await this.prisma.workspaceMember.create({
-          data: { workspaceId, userId: memberId, role },
-        });
-      }
-    } catch (error) {
-      if (existing) {
-        await this.syncRepositoryAccess(workspaceId, user.username, existing.role).catch(() => undefined);
-      } else {
-        await this.revokeRepositoryAccess(workspaceId, user.username).catch(() => undefined);
-      }
-      throw error;
-    }
-  }
-
-  /** See grantManagedMember. Workspace owners are intentionally immutable. */
-  async revokeManagedMember(workspaceId: string, memberId: string): Promise<void> {
     const member = await this.memberOrThrow(workspaceId, memberId);
     if (member.role === 'owner') throw new BadRequestException('Workspace owner cannot be removed');
     const username = (await this.prisma.user.findUniqueOrThrow({ where: { id: memberId } })).username;
@@ -306,17 +230,6 @@ export class WorkspacesService {
     });
     if (!member) throw new NotFoundException('Workspace member not found');
     return member;
-  }
-
-  private async assertDirectMembershipEditable(workspaceId: string): Promise<void> {
-    const workspace = await this.prisma.workspace.findUnique({
-      where: { id: workspaceId },
-      select: { course: { select: { id: true } }, courseTeam: { select: { id: true } } },
-    });
-    if (!workspace) throw new NotFoundException('Workspace not found');
-    if (workspace.course || workspace.courseTeam) {
-      throw new BadRequestException('Course-managed membership must be changed from the course');
-    }
   }
 
   private async syncRepositoryAccess(workspaceId: string, username: string, role: string): Promise<void> {
