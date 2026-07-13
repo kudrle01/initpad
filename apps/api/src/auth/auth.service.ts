@@ -38,10 +38,19 @@ export class AuthService {
     private readonly gitea: GiteaService,
   ) {}
 
+  /**
+   * Whether the public self-service registration form is available. `open`
+   * allows it unconditionally; every other policy only lets the very first
+   * account bootstrap the instance administrator. Invited users register
+   * through a separate token-carrying path, not this public gate.
+   */
   async registrationAvailable(): Promise<boolean> {
     if (config.auth.registrationMode === 'open') return true;
-    if (config.auth.registrationMode === 'closed') return false;
     return (await this.prisma.user.count()) === 0;
+  }
+
+  registrationMode(): string {
+    return config.auth.registrationMode;
   }
 
   /** Managed registration: provisions a Gitea account + token, persists the user. */

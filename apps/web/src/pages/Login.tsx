@@ -20,11 +20,15 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
+  const [registrationMode, setRegistrationMode] = useState<string>('open');
   const [configError, setConfigError] = useState(false);
 
   useEffect(() => {
     api.authConfig()
-      .then((x) => setRegistrationAvailable(x.registrationAvailable))
+      .then((x) => {
+        setRegistrationAvailable(x.registrationAvailable);
+        setRegistrationMode(x.registrationMode);
+      })
       .catch(() => setConfigError(true));
   }, []);
 
@@ -137,6 +141,16 @@ export default function Login() {
             {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
           </Button>
         </form>
+
+        {!registrationAvailable && !configError && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            {registrationMode === 'invite-only'
+              ? 'Registration is by invitation. Open the invite link a workspace owner sent you, or ask them for one.'
+              : registrationMode === 'admin-provisioned'
+                ? 'Accounts are created by the instance administrator. Ask your InitPad admin for sign-in details.'
+                : 'Self-service registration is currently closed.'}
+          </p>
+        )}
 
       </div>
     </div>

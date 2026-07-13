@@ -10,8 +10,8 @@ describe('AuthService', () => {
     config.auth.registrationMode = originalMode;
   });
 
-  it('serializes first-user registration so only one account is created', async () => {
-    config.auth.registrationMode = 'first-user';
+  it('serializes bootstrap registration so only one account is created', async () => {
+    config.auth.registrationMode = 'admin-provisioned';
     const users: Array<Record<string, unknown>> = [];
     const prisma = {
       user: {
@@ -41,6 +41,24 @@ describe('AuthService', () => {
     const rejected = result.find((entry) => entry.status === 'rejected') as PromiseRejectedResult;
     expect(rejected.reason).toBeInstanceOf(ForbiddenException);
     expect(gitea.createUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps self-service registration open in the open policy', async () => {
+    config.auth.registrationMode = 'open';
+    const prisma = { user: { count: jest.fn(async () => 5) } };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    expect(await service.registrationAvailable()).toBe(true);
+    expect(prisma.user.count).not.toHaveBeenCalled();
+  });
+
+  it('only allows the bootstrap admin under a non-open policy', async () => {
+    config.auth.registrationMode = 'admin-provisioned';
+    let count = 0;
+    const prisma = { user: { count: jest.fn(async () => count) } };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    expect(await service.registrationAvailable()).toBe(true); // empty instance bootstraps
+    count = 1;
+    expect(await service.registrationAvailable()).toBe(false); // then closed to self-service
   });
 
   it('normalizes an e-mail address during sign-in', async () => {

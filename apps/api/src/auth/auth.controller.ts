@@ -17,7 +17,10 @@ export class AuthController {
   // Managed registration — provisions the Gitea account and signs the user in.
   @Get('config')
   async authConfig() {
-    return { registrationAvailable: await this.auth.registrationAvailable() };
+    return {
+      registrationAvailable: await this.auth.registrationAvailable(),
+      registrationMode: this.auth.registrationMode(),
+    };
   }
 
   @Post('register')

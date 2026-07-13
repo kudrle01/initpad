@@ -5,12 +5,39 @@ import { resolve } from 'path';
 // deployed. Deployed-app URLs are composed from it.
 const publicHost = process.env.INITPAD_PUBLIC_HOST || 'localhost';
 
+// Product edition (ADR-039). The self-hosted edition ships the embedded Gitea
+// and the instance administrator chooses the registration policy below. The
+// SaaS edition uses GitHub for identity and SCM (that adapter lands later); its
+// managed password registration stays disabled until then.
+export type Edition = 'self-hosted' | 'saas';
+const EDITIONS: readonly Edition[] = ['self-hosted', 'saas'];
+const edition = (process.env.INITPAD_EDITION || 'self-hosted') as Edition;
+
+// Registration policy for the self-hosted edition (ADR-040). `open` is normal
+// self-service registration; `invite-only` accepts only users holding a valid
+// workspace invitation; `admin-provisioned` means only the instance admin
+// creates accounts. A brand-new instance always allows the very first account
+// to bootstrap its administrator, regardless of the policy. The historical
+// `first-user`/`closed` values keep working as bootstrap-only aliases.
+export const REGISTRATION_MODES = ['open', 'invite-only', 'admin-provisioned'] as const;
+export type RegistrationMode = (typeof REGISTRATION_MODES)[number];
+const LEGACY_REGISTRATION_ALIASES: Record<string, RegistrationMode> = {
+  'first-user': 'admin-provisioned',
+  closed: 'admin-provisioned',
+};
+const rawRegistrationMode = process.env.INITPAD_REGISTRATION_MODE || 'open';
+function normalizeRegistrationMode(raw: string): RegistrationMode {
+  if ((REGISTRATION_MODES as readonly string[]).includes(raw)) return raw as RegistrationMode;
+  return LEGACY_REGISTRATION_ALIASES[raw] ?? 'open';
+}
+
 // Host the API itself uses to reach ports published on the Docker host
 // (deployed-app health checks). Differs from publicHost when the API runs in
 // a container: the compose setup sets it to 'host.docker.internal'.
 const deployHealthHost = process.env.INITPAD_DEPLOY_HEALTH_HOST || publicHost;
 
 export const config = {
+  edition,
   publicHost,
   deployHealthHost,
   templatesDir:
@@ -39,9 +66,7 @@ export const config = {
   auth: {
     frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
-    registrationMode:
-      process.env.INITPAD_REGISTRATION_MODE ||
-      'open',
+    registrationMode: normalizeRegistrationMode(rawRegistrationMode),
     secureCookie:
       process.env.INITPAD_COOKIE_SECURE === 'true' ||
       (process.env.INITPAD_COOKIE_SECURE !== 'false' &&
@@ -150,10 +175,15 @@ export const config = {
 };
 
 export function validateConfig(): void {
-  const modes = ['open', 'first-user', 'closed'];
-  if (!modes.includes(config.auth.registrationMode)) {
+  if (!EDITIONS.includes(config.edition)) {
     throw new Error(
-      `INITPAD_REGISTRATION_MODE must be one of ${modes.join(', ')} (received '${config.auth.registrationMode}')`,
+      `INITPAD_EDITION must be one of ${EDITIONS.join(', ')} (received '${config.edition}')`,
+    );
+  }
+  const acceptedModes = [...REGISTRATION_MODES, ...Object.keys(LEGACY_REGISTRATION_ALIASES)];
+  if (!acceptedModes.includes(rawRegistrationMode)) {
+    throw new Error(
+      `INITPAD_REGISTRATION_MODE must be one of ${acceptedModes.join(', ')} (received '${rawRegistrationMode}')`,
     );
   }
   if (!['127.0.0.1', '0.0.0.0', '::1', '::'].includes(config.deployment.bindAddress)) {

@@ -138,7 +138,8 @@ export const api = {
       body: JSON.stringify(options),
     }),
   me: () => http<User>('/auth/me'),
-  authConfig: () => http<{ registrationAvailable: boolean }>('/auth/config'),
+  authConfig: () =>
+    http<{ registrationAvailable: boolean; registrationMode: string }>('/auth/config'),
   register: (username: string, email: string, password: string) =>
     http<User>('/auth/register', {
       method: 'POST',

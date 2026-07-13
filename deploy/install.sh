@@ -55,7 +55,7 @@ if [ -z "$(get_env INITPAD_SCM_WEBHOOK_TOKEN)" ]; then
   fi
 fi
 if [ -z "$(get_env INITPAD_REGISTRATION_MODE)" ]; then
-  set_env INITPAD_REGISTRATION_MODE first-user
+  set_env INITPAD_REGISTRATION_MODE admin-provisioned
 fi
 # Local upgrades use a dedicated .localhost hostname so browsers resolve it
 # to loopback while isolated CI jobs map the same name to their gateway.
