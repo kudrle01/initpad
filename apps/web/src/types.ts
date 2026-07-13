@@ -44,6 +44,28 @@ export interface WorkspaceMember {
   createdAt: string;
 }
 
+export type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
+
+export interface WorkspaceInvitation {
+  id: string;
+  email: string;
+  role: WorkspaceRole;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  invitedBy: string;
+  acceptedBy: string | null;
+  expiresAt: string;
+  createdAt: string;
+}
+
+// Public view of an invitation shown on the acceptance page.
+export interface InvitationPreview {
+  workspaceName: string;
+  email: string;
+  role: WorkspaceRole;
+  invitedBy: string;
+  expiresAt: string;
+}
+
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';
 export type RuntimeKind = 'static' | 'node' | 'php' | 'python';
 export type TargetScope = 'builtin' | 'user';

@@ -5,6 +5,7 @@ import { AuthProvider } from '@/auth';
 import { ToastProvider } from '@/toast';
 import App from '@/App';
 import Login from '@/pages/Login';
+import AcceptInvite from '@/pages/AcceptInvite';
 import Dashboard from '@/pages/Dashboard';
 import Projects from '@/pages/Projects';
 import Templates from '@/pages/Templates';
@@ -21,6 +22,7 @@ import '@/index.css';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/invite/:token', element: <AcceptInvite /> },
   {
     path: '/',
     element: <App />,
