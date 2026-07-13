@@ -210,6 +210,58 @@ export class WorkspacesService {
 
   async removeMember(userId: string, workspaceId: string, memberId: string): Promise<void> {
     await this.require(userId, workspaceId, 'admin');
+    await this.revokeManagedMember(workspaceId, memberId);
+  }
+
+  /**
+   * Internal membership reconciliation for a trusted domain service (courses).
+   * The caller must authorize the domain action first. Keeping repository sync
+   * here prevents course membership from becoming a second, drifting ACL.
+   */
+  async grantManagedMember(
+    workspaceId: string,
+    memberId: string,
+    role: Exclude<WorkspaceRole, 'owner'>,
+  ): Promise<void> {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { type: true },
+    });
+    if (!workspace) throw new NotFoundException('Workspace not found');
+    if (workspace.type === 'personal') {
+      throw new BadRequestException('Managed members cannot be added to a personal workspace');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: memberId } });
+    if (!user) throw new NotFoundException('User not found');
+    const existing = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: memberId } },
+    });
+    if (existing?.role === 'owner' || existing?.role === role) return;
+
+    try {
+      await this.syncRepositoryAccess(workspaceId, user.username, role);
+      if (existing) {
+        await this.prisma.workspaceMember.update({
+          where: { workspaceId_userId: { workspaceId, userId: memberId } },
+          data: { role },
+        });
+      } else {
+        await this.prisma.workspaceMember.create({
+          data: { workspaceId, userId: memberId, role },
+        });
+      }
+    } catch (error) {
+      if (existing) {
+        await this.syncRepositoryAccess(workspaceId, user.username, existing.role).catch(() => undefined);
+      } else {
+        await this.revokeRepositoryAccess(workspaceId, user.username).catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  /** See grantManagedMember. Workspace owners are intentionally immutable. */
+  async revokeManagedMember(workspaceId: string, memberId: string): Promise<void> {
     const member = await this.memberOrThrow(workspaceId, memberId);
     if (member.role === 'owner') throw new BadRequestException('Workspace owner cannot be removed');
     const username = (await this.prisma.user.findUniqueOrThrow({ where: { id: memberId } })).username;
