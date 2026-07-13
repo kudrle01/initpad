@@ -6,6 +6,27 @@ export interface User {
   avatarUrl: string | null;
 }
 
+export type WorkspaceRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
+export type WorkspaceType = 'personal' | 'team' | 'school';
+
+export interface Workspace {
+  id: string;
+  slug: string;
+  name: string;
+  type: WorkspaceType;
+  role: WorkspaceRole;
+  createdAt: string;
+}
+
+export interface WorkspaceMember {
+  userId: string;
+  username: string;
+  name: string | null;
+  avatarUrl: string | null;
+  role: WorkspaceRole;
+  createdAt: string;
+}
+
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';
 export type RuntimeKind = 'static' | 'node' | 'php' | 'python';
 export type TargetScope = 'builtin' | 'user';
@@ -64,6 +85,7 @@ export interface Environment {
 
 export interface Project {
   id: string;
+  workspaceId: string;
   name: string;
   templateId: string;
   repoPath: string;

@@ -54,6 +54,7 @@ interface Props {
   onRemoveEnv: (env: EnvName) => void;
   onConfigureTarget: (env: EnvName) => void;
   onOpenLogs: (env: EnvName) => void;
+  readOnly?: boolean;
 }
 
 export function EnvironmentPipeline({
@@ -67,6 +68,7 @@ export function EnvironmentPipeline({
   onRemoveEnv,
   onConfigureTarget,
   onOpenLogs,
+  readOnly = false,
 }: Props) {
   const byEnv = Object.fromEntries(project.environments.map((e) => [e.name, e])) as Record<
     EnvName,
@@ -80,7 +82,7 @@ export function EnvironmentPipeline({
         const target = next ? byEnv[next] : undefined;
         const synced =
           !!target && !!env.version && target.status === 'running' && target.version === env.version;
-        const canPromote = busy === null && env.status === 'running' && !synced;
+        const canPromote = !readOnly && busy === null && env.status === 'running' && !synced;
         const deploying = busy === next || target?.status === 'deploying';
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
         const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
@@ -117,7 +119,7 @@ export function EnvironmentPipeline({
                   ) : (
                     <StatusBadge status={env.status} />
                   )}
-                  {(hasDeployment || canTarget) && (
+                  {!readOnly && (hasDeployment || canTarget) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button

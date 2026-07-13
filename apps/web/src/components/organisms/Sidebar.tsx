@@ -10,6 +10,8 @@ import {
   Server,
   Network,
   Settings,
+  Building2,
+  Check,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -22,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
+import { useAuth } from '@/auth';
 
 function initials(name: string) {
   return name
@@ -73,6 +76,7 @@ function Item({ to, label, icon: I, end }: { to: string; label: string; icon: Lu
 // viewports; full width with labels from the lg breakpoint up.
 export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }) {
   const display = user.name || user.username;
+  const { workspaces, activeWorkspace, switchWorkspace } = useAuth();
   return (
     <aside className="fixed inset-y-0 left-0 z-40 flex w-16 flex-col border-r border-border bg-card lg:w-60">
       <div className="flex items-center justify-center gap-2 px-3 py-5 lg:justify-start lg:px-5">
@@ -83,6 +87,40 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
         <span className="hidden rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:inline">
           beta
         </span>
+      </div>
+
+      <div className="px-2.5 pb-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background p-2 text-left hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 lg:justify-start"
+              title={activeWorkspace?.name ?? 'Workspace'}
+              aria-label={`Workspace: ${activeWorkspace?.name ?? 'none'}`}
+            >
+              <Building2 className="h-4 w-4 shrink-0 text-primary" />
+              <span className="hidden min-w-0 flex-1 lg:block">
+                <span className="block truncate text-xs font-medium">{activeWorkspace?.name ?? 'Workspace'}</span>
+                <span className="block truncate text-[10px] text-muted-foreground">{activeWorkspace?.role ?? 'loading'}</span>
+              </span>
+              <ChevronsUpDown className="hidden h-3.5 w-3.5 text-muted-foreground lg:block" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>Switch workspace</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {workspaces.map((workspace) => (
+              <DropdownMenuItem key={workspace.id} onSelect={() => switchWorkspace(workspace.id)}>
+                <Building2 className="h-4 w-4" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{workspace.name}</span>
+                  <span className="block text-xs text-muted-foreground">{workspace.type} · {workspace.role}</span>
+                </span>
+                {workspace.id === activeWorkspace?.id && <Check className="h-4 w-4" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3">

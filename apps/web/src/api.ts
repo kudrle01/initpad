@@ -7,6 +7,9 @@ import type {
   Target,
   RuntimeKind,
   ActivityEvent,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceRole,
 } from '@/types';
 
 export interface EnvConfig {
@@ -43,10 +46,14 @@ export class ApiError extends Error {
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set('Content-Type', 'application/json');
+  const workspaceId = localStorage.getItem('initpad.workspace');
+  if (workspaceId) headers.set('X-Workspace-Id', workspaceId);
   const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     ...init,
+    headers,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -58,6 +65,28 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  listWorkspaces: () => http<Workspace[]>('/workspaces'),
+  createWorkspace: (name: string, slug: string) =>
+    http<Workspace>('/workspaces', { method: 'POST', body: JSON.stringify({ name, slug }) }),
+  updateWorkspace: (workspaceId: string, name: string) =>
+    http<Workspace>(`/workspaces/${workspaceId}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  deleteWorkspace: (workspaceId: string) =>
+    http<void>(`/workspaces/${workspaceId}`, { method: 'DELETE' }),
+  listWorkspaceMembers: (workspaceId: string) =>
+    http<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
+  addWorkspaceMember: (workspaceId: string, identity: string, role: Exclude<WorkspaceRole, 'owner'>) =>
+    http<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`, {
+      method: 'POST', body: JSON.stringify({ identity, role }),
+    }),
+  updateWorkspaceMember: (
+    workspaceId: string,
+    userId: string,
+    role: Exclude<WorkspaceRole, 'owner'>,
+  ) => http<WorkspaceMember[]>(`/workspaces/${workspaceId}/members/${userId}`, {
+    method: 'PUT', body: JSON.stringify({ role }),
+  }),
+  removeWorkspaceMember: (workspaceId: string, userId: string) =>
+    http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
   listProjects: () => http<Project[]>('/projects'),
   getProject: (id: string) => http<Project>(`/projects/${id}`),
   getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),

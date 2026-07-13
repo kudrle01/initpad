@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, GitBranch, Layers, MoreHorizontal, Trash2, ExternalLink } from 'lucide-react';
 import { api, ApiError } from '@/api';
 import { useToast } from '@/toast';
+import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -84,6 +85,10 @@ export default function ProjectDetail() {
   const [logsText, setLogsText] = useState('');
   const [logsLoading, setLogsLoading] = useState(false);
   const toast = useToast();
+  const { workspaces } = useAuth();
+  const projectRole = workspaces.find((workspace) => workspace.id === project?.workspaceId)?.role;
+  const readOnly = projectRole === 'viewer';
+  const canMaintain = projectRole === 'owner' || projectRole === 'admin' || projectRole === 'maintainer';
   const navigate = useNavigate();
 
   const fetchLogs = useCallback(
@@ -299,7 +304,7 @@ export default function ProjectDetail() {
               </a>
             </Button>
           )}
-          <DropdownMenu>
+          {canMaintain && <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="secondary" size="icon" aria-label="More actions">
                 <MoreHorizontal className="h-4 w-4" />
@@ -310,7 +315,7 @@ export default function ProjectDetail() {
                 <Trash2 className="h-4 w-4" /> Delete project
               </DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
         </div>
       </div>
 
@@ -352,6 +357,7 @@ export default function ProjectDetail() {
           onRemoveEnv={removeEnvironment}
           onConfigureTarget={setTargetEnv}
           onOpenLogs={openLogs}
+          readOnly={readOnly}
         />
       </Section>
 

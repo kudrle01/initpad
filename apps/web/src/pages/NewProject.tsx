@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Check, Rocket, ArrowRight, Container } from 'lucide-react';
 import { api, type EnvConfig } from '@/api';
 import { useToast } from '@/toast';
+import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
@@ -29,6 +30,8 @@ function usable(target: Target, template: TemplateManifest): boolean {
 export default function NewProject() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { activeWorkspace } = useAuth();
+  const readOnly = activeWorkspace?.role === 'viewer';
   const [params] = useSearchParams();
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
@@ -82,7 +85,7 @@ export default function NewProject() {
   }, [template, targets]);
 
   async function submit() {
-    if (!validName || !templateId) return;
+    if (readOnly || !validName || !templateId) return;
     setBusy(true);
     try {
       // dev/test use the built-in infra by default (server-side); prod uses the
@@ -109,6 +112,7 @@ export default function NewProject() {
       />
 
       {loadError && <p role="alert" className="mb-4 text-sm text-destructive">{loadError}</p>}
+      {readOnly && <p role="alert" className="mb-4 rounded-md border border-border bg-secondary p-3 text-sm text-muted-foreground">Viewer access is read-only. Ask a workspace admin for a member or maintainer role to create projects.</p>}
 
       <div className="flex flex-col gap-6">
         <FormField
@@ -211,7 +215,7 @@ export default function NewProject() {
         </div>
 
         <div>
-          <Button disabled={busy || !templateId || !validName || !!loadError} onClick={submit}>
+          <Button disabled={readOnly || busy || !templateId || !validName || !!loadError} onClick={submit}>
             {busy ? <Spinner className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}
             {busy ? 'Creating…' : 'Create project'}
           </Button>

@@ -13,6 +13,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { api, type TargetInput } from '@/api';
 import { useToast } from '@/toast';
+import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/molecules/PageHeader';
@@ -33,12 +34,14 @@ function TargetCard({
   onVerify,
   onEdit,
   onDelete,
+  readOnly,
 }: {
   target: Target;
   busy: boolean;
   onVerify: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  readOnly: boolean;
 }) {
   const Icon = KIND_ICON[target.kind] ?? Server;
   const isUser = target.scope === 'user';
@@ -82,7 +85,7 @@ function TargetCard({
         </div>
       )}
 
-      <div className="mt-auto flex items-center gap-2 pt-1">
+      {!readOnly && <div className="mt-auto flex items-center gap-2 pt-1">
         <Button variant="secondary" size="sm" disabled={busy} onClick={onVerify}>
           {busy ? <Spinner className="h-4 w-4" /> : <Wifi className="h-4 w-4" />} Test connection
         </Button>
@@ -103,7 +106,7 @@ function TargetCard({
             </Button>
           </>
         )}
-      </div>
+      </div>}
     </Card>
   );
 }
@@ -117,6 +120,8 @@ export default function Infrastructure() {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const toast = useToast();
+  const { activeWorkspace } = useAuth();
+  const readOnly = !activeWorkspace || !['owner', 'admin', 'maintainer'].includes(activeWorkspace.role);
 
   const load = useCallback(() => {
     api
@@ -178,7 +183,7 @@ export default function Infrastructure() {
       <PageHeader
         title="Infrastructure"
         subtitle="Where projects deploy. Built-in targets are the simulated company infra; add your own servers for production."
-        actions={
+        actions={!readOnly ? (
           <Button
             onClick={() => {
               setEditing(null);
@@ -187,7 +192,7 @@ export default function Infrastructure() {
           >
             <Plus className="h-4 w-4" /> Add target
           </Button>
-        }
+        ) : undefined}
       />
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
@@ -201,7 +206,7 @@ export default function Infrastructure() {
             </p>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {builtins.map((t) => (
-                <TargetCard key={t.id} target={t} busy={busyId === t.id} onVerify={() => verify(t)} onEdit={() => {}} onDelete={() => {}} />
+                <TargetCard key={t.id} target={t} busy={busyId === t.id} readOnly={readOnly} onVerify={() => verify(t)} onEdit={() => {}} onDelete={() => {}} />
               ))}
             </div>
           </section>
@@ -215,7 +220,7 @@ export default function Infrastructure() {
                 icon={Server}
                 title="No targets yet"
                 description="Register a server (e.g. your school SFTP host or a VPS) to deploy production there."
-                action={
+                action={!readOnly ? (
                   <Button
                     onClick={() => {
                       setEditing(null);
@@ -224,7 +229,7 @@ export default function Infrastructure() {
                   >
                     <Plus className="h-4 w-4" /> Add target
                   </Button>
-                }
+                ) : undefined}
               />
             ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -233,6 +238,7 @@ export default function Infrastructure() {
                     key={t.id}
                     target={t}
                     busy={busyId === t.id}
+                    readOnly={readOnly}
                     onVerify={() => verify(t)}
                     onEdit={() => {
                       setEditing(t);

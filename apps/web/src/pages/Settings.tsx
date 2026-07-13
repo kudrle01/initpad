@@ -1,10 +1,13 @@
-import { useState } from 'react';
-import { GitBranch, KeyRound, ExternalLink, ShieldAlert } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { GitBranch, KeyRound, ExternalLink, ShieldAlert, Users, Plus, Trash2 } from 'lucide-react';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { CopyField } from '@/components/molecules/CopyField';
 import { Spinner } from '@/components/atoms/Spinner';
+import { useAuth } from '@/auth';
+import { useToast } from '@/toast';
+import type { WorkspaceMember, WorkspaceRole } from '@/types';
 
 interface GitAccess {
   username: string;
@@ -25,6 +28,94 @@ export default function Settings() {
   const [access, setAccess] = useState<GitAccess | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [identity, setIdentity] = useState('');
+  const [memberRole, setMemberRole] = useState<Exclude<WorkspaceRole, 'owner'>>('member');
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceSlug, setWorkspaceSlug] = useState('');
+  const [renameWorkspace, setRenameWorkspace] = useState('');
+  const { activeWorkspace, refreshWorkspaces, switchWorkspace } = useAuth();
+  const toast = useToast();
+  const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
+  const canManageMembers = canAdmin && activeWorkspace?.type !== 'personal';
+
+  useEffect(() => {
+    if (!activeWorkspace) return;
+    setRenameWorkspace(activeWorkspace.name);
+    setMembersLoading(true);
+    api.listWorkspaceMembers(activeWorkspace.id)
+      .then(setMembers)
+      .catch((e) => toast.error((e as Error).message))
+      .finally(() => setMembersLoading(false));
+  }, [activeWorkspace?.id]);
+
+  async function createWorkspace() {
+    try {
+      const created = await api.createWorkspace(workspaceName.trim(), workspaceSlug.trim());
+      await refreshWorkspaces();
+      toast.success(`Created ${created.name}`);
+      switchWorkspace(created.id);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  async function addMember() {
+    if (!activeWorkspace) return;
+    try {
+      setMembers(await api.addWorkspaceMember(activeWorkspace.id, identity.trim(), memberRole));
+      setIdentity('');
+      toast.success('Workspace member added');
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  async function changeRole(member: WorkspaceMember, role: Exclude<WorkspaceRole, 'owner'>) {
+    if (!activeWorkspace) return;
+    try {
+      setMembers(await api.updateWorkspaceMember(activeWorkspace.id, member.userId, role));
+      toast.success(`Updated @${member.username}`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  async function removeMember(member: WorkspaceMember) {
+    if (!activeWorkspace || !window.confirm(`Remove @${member.username} from ${activeWorkspace.name}?`)) return;
+    try {
+      await api.removeWorkspaceMember(activeWorkspace.id, member.userId);
+      setMembers((rows) => rows.filter((row) => row.userId !== member.userId));
+      toast.success(`Removed @${member.username}`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  async function saveWorkspaceName() {
+    if (!activeWorkspace) return;
+    try {
+      await api.updateWorkspace(activeWorkspace.id, renameWorkspace.trim());
+      await refreshWorkspaces();
+      toast.success('Workspace renamed');
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  async function deleteWorkspace() {
+    if (!activeWorkspace || !window.confirm(`Delete empty workspace ${activeWorkspace.name}?`)) return;
+    try {
+      await api.deleteWorkspace(activeWorkspace.id);
+      localStorage.removeItem('initpad.workspace');
+      await refreshWorkspaces();
+      toast.success('Workspace deleted');
+      window.location.assign('/');
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
 
   async function reveal() {
     setLoading(true);
@@ -42,7 +133,8 @@ export default function Settings() {
     <div>
       <PageHeader title="Settings" />
 
-      <div className="max-w-2xl rounded-lg border border-border bg-card p-6">
+      <div className="flex max-w-2xl flex-col gap-6">
+      <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
             <GitBranch className="h-5 w-5" />
@@ -118,6 +210,108 @@ export default function Settings() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-6">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+            <Users className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="text-[15px] font-semibold">Workspace members</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {activeWorkspace?.name ?? 'Current workspace'} · your role: {activeWorkspace?.role ?? '—'}
+            </p>
+          </div>
+        </div>
+
+        {canManageMembers && (
+          <div className="mt-5 grid gap-2 sm:grid-cols-[1fr_140px_auto]">
+            <input
+              className="h-9 rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              placeholder="Username or e-mail"
+              aria-label="New member username or e-mail"
+              value={identity}
+              onChange={(e) => setIdentity(e.target.value)}
+            />
+            <select
+              className="h-9 rounded-md border border-input bg-card px-2 text-sm"
+              aria-label="New member role"
+              value={memberRole}
+              onChange={(e) => setMemberRole(e.target.value as Exclude<WorkspaceRole, 'owner'>)}
+            >
+              <option value="member">Member</option>
+              <option value="maintainer">Maintainer</option>
+              <option value="viewer">Viewer</option>
+              <option value="admin">Admin</option>
+            </select>
+            <Button onClick={addMember} disabled={!identity.trim()}><Plus className="h-4 w-4" /> Add</Button>
+          </div>
+        )}
+
+        {activeWorkspace?.type === 'personal' && (
+          <p className="mt-4 rounded-md bg-secondary p-3 text-sm text-muted-foreground">
+            Personal workspaces stay private. Create a team workspace to collaborate.
+          </p>
+        )}
+
+        <div className="mt-4 divide-y divide-border rounded-md border border-border">
+          {membersLoading && <p className="p-3 text-sm text-muted-foreground">Loading members…</p>}
+          {!membersLoading && members.map((member) => (
+            <div key={member.userId} className="flex flex-wrap items-center gap-3 p-3">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{member.name || `@${member.username}`}</span>
+                <span className="block truncate text-xs text-muted-foreground">@{member.username}</span>
+              </span>
+              {canManageMembers && member.role !== 'owner' ? (
+                <>
+                  <select
+                    className="h-8 rounded-md border border-input bg-card px-2 text-xs"
+                    aria-label={`Role for ${member.username}`}
+                    value={member.role}
+                    onChange={(e) => changeRole(member, e.target.value as Exclude<WorkspaceRole, 'owner'>)}
+                  >
+                    <option value="member">Member</option>
+                    <option value="maintainer">Maintainer</option>
+                    <option value="viewer">Viewer</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <Button variant="ghost" size="icon" aria-label={`Remove ${member.username}`} onClick={() => removeMember(member)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : <span className="rounded-full bg-secondary px-2 py-1 text-xs text-muted-foreground">{member.role}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-6">
+        <h2 className="text-[15px] font-semibold">Create team workspace</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Projects and targets in a team workspace are shared according to member roles.</p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <input className="h-9 rounded-md border border-input bg-card px-3 text-sm" placeholder="Team name" aria-label="Team workspace name" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} />
+          <input className="h-9 rounded-md border border-input bg-card px-3 text-sm" placeholder="team-slug" aria-label="Team workspace slug" value={workspaceSlug} onChange={(e) => setWorkspaceSlug(e.target.value.toLowerCase())} />
+        </div>
+        <Button className="mt-3" onClick={createWorkspace} disabled={workspaceName.trim().length < 2 || !/^(?!personal-)[a-z][a-z0-9-]{1,39}$/.test(workspaceSlug)}>
+          <Plus className="h-4 w-4" /> Create workspace
+        </Button>
+        {activeWorkspace?.type !== 'personal' && canAdmin && (
+          <div className="mt-6 border-t border-border pt-5">
+            <h3 className="text-sm font-semibold">Current team workspace</h3>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                className="h-9 flex-1 rounded-md border border-input bg-card px-3 text-sm"
+                aria-label="Current workspace name"
+                value={renameWorkspace}
+                onChange={(e) => setRenameWorkspace(e.target.value)}
+              />
+              <Button variant="secondary" onClick={saveWorkspaceName} disabled={renameWorkspace.trim().length < 2 || renameWorkspace.trim() === activeWorkspace.name}>Rename</Button>
+              {activeWorkspace.role === 'owner' && <Button variant="destructive" onClick={deleteWorkspace}>Delete empty workspace</Button>}
+            </div>
+          </div>
+        )}
+      </div>
       </div>
     </div>
   );
