@@ -102,4 +102,18 @@ describe('WorkspacesService tenant isolation', () => {
       service.addMember('owner', 'personal', { identity: 'bob', role: 'member' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('does not let generic workspace settings bypass course membership policy', async () => {
+    const prisma = {
+      workspace: {
+        findUnique: jest.fn(async () => ({ type: 'team', course: null, courseTeam: { id: 'team-1' } })),
+      },
+    };
+    const service = new WorkspacesService(prisma as never, {} as never);
+    jest.spyOn(service, 'require').mockResolvedValue('owner');
+
+    await expect(service.addMember('instructor', 'managed-team', {
+      identity: 'student', role: 'member',
+    })).rejects.toBeInstanceOf(BadRequestException);
+  });
 });
