@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -11,7 +12,11 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { hashPassword, verifyPassword } from './password';
 import { encryptSecret } from '../common/secret';
+import { generateToken, hashToken } from '../common/token';
 import { config } from '../config';
+
+const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 export interface SessionUser {
   id: string;
@@ -34,6 +39,7 @@ export interface SessionUser {
  */
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger('AuthService');
   private registrationLock: Promise<void> = Promise.resolve();
 
   constructor(
@@ -191,6 +197,89 @@ export class AuthService {
       },
     });
     return { token: this.signToken(updated), user: this.toSession(updated) };
+  }
+
+  /**
+   * Issues an e-mail verification link for the signed-in user's own address.
+   * Without SMTP the link is returned to the caller (their own account) and
+   * logged; a production build wires this to actual delivery.
+   */
+  async requestEmailVerification(userId: string): Promise<{ verifyUrl: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    if (!user.email) throw new BadRequestException('No e-mail address on file');
+    if (user.emailVerifiedAt) throw new BadRequestException('E-mail is already verified');
+    const token = await this.issueAuthToken(userId, 'email_verify', EMAIL_VERIFY_TTL_MS);
+    const verifyUrl = `${this.frontendBase()}/verify-email/${token}`;
+    this.logger.log(`E-mail verification link issued for ${user.username}`);
+    return { verifyUrl };
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const record = await this.consumeAuthToken(token, 'email_verify');
+    await this.prisma.user.update({
+      where: { id: record.userId },
+      data: { emailVerifiedAt: new Date() },
+    });
+  }
+
+  /**
+   * Starts a password reset. Always resolves the same way regardless of whether
+   * the account exists, so the endpoint cannot be used to enumerate users. When
+   * a matching local account is found the reset link is logged (stands in for
+   * SMTP delivery); it is never returned in the API response.
+   */
+  async requestPasswordReset(identity: string): Promise<void> {
+    const id = identity.trim();
+    if (!id) return;
+    const user = await this.prisma.user.findFirst({
+      where: { OR: [{ username: id }, { email: id.toLowerCase() }] },
+    });
+    if (!user || !user.passwordHash) return;
+    const token = await this.issueAuthToken(user.id, 'password_reset', PASSWORD_RESET_TTL_MS);
+    this.logger.warn(
+      `Password reset link for ${user.username}: ${this.frontendBase()}/reset-password/${token}`,
+    );
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const record = await this.consumeAuthToken(token, 'password_reset');
+    await this.prisma.user.update({
+      where: { id: record.userId },
+      data: {
+        passwordHash: hashPassword(newPassword),
+        mustChangePassword: false,
+        // A reset invalidates every existing session.
+        tokenVersion: { increment: 1 },
+      },
+    });
+  }
+
+  private frontendBase(): string {
+    return config.auth.frontendUrl.replace(/\/+$/, '');
+  }
+
+  private async issueAuthToken(userId: string, kind: string, ttlMs: number): Promise<string> {
+    // Supersede any earlier unused token of the same kind for this user.
+    await this.prisma.authToken.updateMany({
+      where: { userId, kind, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    const token = generateToken();
+    await this.prisma.authToken.create({
+      data: { userId, kind, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + ttlMs) },
+    });
+    return token;
+  }
+
+  private async consumeAuthToken(token: string, kind: string): Promise<{ userId: string }> {
+    if (!token) throw new BadRequestException('This link is invalid or has expired');
+    const record = await this.prisma.authToken.findUnique({ where: { tokenHash: hashToken(token) } });
+    if (!record || record.kind !== kind || record.usedAt || record.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('This link is invalid or has expired');
+    }
+    await this.prisma.authToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+    return { userId: record.userId };
   }
 
   /** Issues a signed session for an already-provisioned user (e.g. invite sign-up). */

@@ -121,4 +121,80 @@ describe('AuthService', () => {
       .rejects.toThrow('incorrect');
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
+
+  it('does not reveal whether an account exists on reset request', async () => {
+    const prisma = {
+      user: { findFirst: jest.fn(async () => null) },
+      authToken: { updateMany: jest.fn(), create: jest.fn() },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await expect(service.requestPasswordReset('ghost@example.test')).resolves.toBeUndefined();
+    expect(prisma.authToken.create).not.toHaveBeenCalled();
+  });
+
+  it('issues a single-use reset token superseding earlier ones', async () => {
+    let created: Record<string, unknown> | undefined;
+    const prisma = {
+      user: { findFirst: jest.fn(async () => ({ id: 'u1', username: 'dave', passwordHash: 'x' })) },
+      authToken: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { created = data; return {}; }),
+      },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await service.requestPasswordReset('dave');
+    expect(prisma.authToken.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'u1', kind: 'password_reset', usedAt: null } }),
+    );
+    expect(created?.kind).toBe('password_reset');
+    expect(typeof created?.tokenHash).toBe('string');
+    expect(created?.tokenHash).toHaveLength(64); // sha-256 hex, never the plaintext
+  });
+
+  it('resets the password, forces re-login and consumes the token', async () => {
+    const record = { id: 't1', userId: 'u1', kind: 'password_reset', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
+    let usedUpdate: unknown;
+    let userUpdate: Record<string, unknown> | undefined;
+    const prisma = {
+      authToken: {
+        findUnique: jest.fn(async () => record),
+        update: jest.fn(async (args: unknown) => { usedUpdate = args; return {}; }),
+      },
+      user: { update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { userUpdate = data; return {}; }) },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await service.resetPassword('plaintext-token', 'a-brand-new-password');
+    expect(usedUpdate).toMatchObject({ where: { id: 't1' }, data: { usedAt: expect.any(Date) } });
+    expect(userUpdate?.mustChangePassword).toBe(false);
+    expect(userUpdate?.tokenVersion).toEqual({ increment: 1 });
+  });
+
+  it('rejects an expired or unknown reset token', async () => {
+    const prisma = {
+      authToken: { findUnique: jest.fn(async () => null), update: jest.fn() },
+      user: { update: jest.fn() },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await expect(service.resetPassword('nope', 'a-brand-new-password')).rejects.toThrow('invalid or has expired');
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('marks the e-mail verified when the token is valid', async () => {
+    const record = { id: 't2', userId: 'u1', kind: 'email_verify', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
+    let userUpdate: Record<string, unknown> | undefined;
+    const prisma = {
+      authToken: { findUnique: jest.fn(async () => record), update: jest.fn(async () => ({})) },
+      user: { update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { userUpdate = data; return {}; }) },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await service.verifyEmail('tok');
+    expect(userUpdate?.emailVerifiedAt).toBeInstanceOf(Date);
+  });
+
+  it('does not accept a reset token for e-mail verification', async () => {
+    const record = { id: 't3', userId: 'u1', kind: 'password_reset', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
+    const prisma = { authToken: { findUnique: jest.fn(async () => record), update: jest.fn() }, user: { update: jest.fn() } };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await expect(service.verifyEmail('tok')).rejects.toThrow('invalid or has expired');
+  });
 });

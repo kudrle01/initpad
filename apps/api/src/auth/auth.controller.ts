@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard, TOKEN_COOKIE } from './jwt-auth.guard';
@@ -6,6 +6,8 @@ import { CurrentUser } from './current-user.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AllowDuringPasswordChange } from './allow-password-change.decorator';
 import { AuthRateLimitGuard } from './auth-rate-limit.guard';
 import { config } from '../config';
@@ -77,6 +79,42 @@ export class AuthController {
     );
     this.setSession(res, token);
     return user;
+  }
+
+  // Issues an e-mail verification link for the signed-in user's own address.
+  @Post('email/request-verification')
+  @UseGuards(JwtAuthGuard)
+  requestEmailVerification(@CurrentUser() userId: string) {
+    return this.auth.requestEmailVerification(userId);
+  }
+
+  @Post('email/verify')
+  @HttpCode(204)
+  @UseGuards(AuthRateLimitGuard)
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    await this.auth.verifyEmail(dto.token);
+  }
+
+  // Starts a password reset. Always returns ok so accounts cannot be enumerated.
+  @Post('password/request-reset')
+  @UseGuards(AuthRateLimitGuard)
+  async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+    await this.auth.requestPasswordReset(dto.identity);
+    return { ok: true };
+  }
+
+  @Post('password/reset')
+  @HttpCode(204)
+  @UseGuards(AuthRateLimitGuard)
+  async resetPassword(@Body() dto: ResetPasswordDto, @Res({ passthrough: true }) res: Response) {
+    await this.auth.resetPassword(dto.token, dto.newPassword);
+    // The reset revokes existing sessions; clear any cookie on this device too.
+    res.clearCookie(TOKEN_COOKIE, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: config.auth.secureCookie,
+      path: '/',
+    });
   }
 
   @Post('logout')

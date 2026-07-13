@@ -38,6 +38,23 @@ model User {
   memberships       WorkspaceMember[]
   sentInvitations     WorkspaceInvitation[] @relation("InvitedBy")
   acceptedInvitations WorkspaceInvitation[] @relation("AcceptedBy")
+  authTokens        AuthToken[]
+}
+
+// Single-use, hashed, expiring tokens for e-mail verification and password
+// reset (ADR-040). Only the SHA-256 hash is stored; the plaintext lives solely
+// in the link sent to the user. `usedAt` makes each token strictly one-shot.
+model AuthToken {
+  id        String    @id @default(uuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  kind      String // email_verify | password_reset
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, kind])
 }
 
 model Workspace {
