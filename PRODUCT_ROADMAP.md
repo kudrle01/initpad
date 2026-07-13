@@ -177,6 +177,9 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
   aktivní prod vyžaduje samostatné potvrzení a zdrojový repozitář je opt-in.
   Při chybě targetu zůstane projekt evidovaný a akci lze bezpečně zopakovat;
   fyzický target se s projektem nikdy nemaže.
+- Částečný externí teardown rozliší odstraněný veřejný workload od
+  chráněného cleanup dluhu. UI ukáže přesné cesty, dovolí retry a projektový
+  záznam lze s dluhy zapomenout jen po samostatném explicitním potvrzení.
 - Rollback vybírá předchozí úspěšný artefakt, nic znovu nestaví.
 - Deployment stavový automat je explicitní: queued → assigned → running →
   verifying → succeeded; chybové větve failed/unhealthy mohou přejít do ručně
@@ -227,7 +230,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 5 — import repa/SCM | ano | Gitea: výběr repa a preflight bez změny kódu. Cloud: GitHub login/link, instalace App pro vybrané repo, create/import; odvolání instalace zablokuje další SCM operace, ne účet. |
 | 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
-| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety, bez potvrzení produ odmítne pokračovat a simulované selhání teardownu ponechá projekt pro retry. |
+| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a nabídne retry; projekt lze s tímto dluhem zapomenout jen po dalším explicitním potvrzení. |
 | 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
 
 ### Aktuální výsledek milníku 3
@@ -251,6 +254,10 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
   skončil `running` bez permission chyby.
 - Jeden legacy release s již cizím vlastnictvím byl přesunut do chráněné
   karantény; jeho fyzické odstranění zůstává jednorázovým úkolem správce ESO.
+- Reálný částečný teardown odstranil veřejnou Nette aplikaci, přesunul
+  cizí runtime cache do chráněné karantény a v UI správně zobrazil `empty`,
+  konkrétní cleanup cesty, `Retry cleanup` a explicitní volbu pro odstranění
+  project record se zachováním administrátorského dluhu.
 
 ## Vyhodnocení pro diplomovou práci
 

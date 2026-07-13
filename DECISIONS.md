@@ -1094,3 +1094,32 @@ a správce hostingu ji musí jednorázově smazat. Nové deploye jsou build-once
 deploy-many, mají čistou URL a opakovaný deploy nemaže PHP runtime data. Target
 musí podporovat Apache `.htaccess`, symlinky a shell operace; pozdější target
 preflight má tyto schopnosti zobrazit ještě před prvním deploymentem.
+
+---
+
+## ADR-037 — Částečný teardown rozlišuje veřejný workload a cleanup dluh
+
+**Kontext.** Mazání na externím serveru není databázová transakce. Na ESO se
+veřejný adresář projektu odstranil, ale následující `rm -rf` skončil chybou na
+skryté Nette cache vlastněné PHP runnerem. Jeden nenulový exit code způsobil, že
+InitPad označil celý teardown za neúspěšný, ponechal starou URL/verzi a blokoval
+smazání projektu, přestože aplikace už nebyla veřejná.
+
+**Rozhodnutí.** SFTP teardown maže veřejný deployment a runtime data odděleně.
+Pokud cizí vlastnictví zabrání odstranění runtime stromu, celý jeho kořen se
+přesune do HTTP-nepřístupné `.initpad-quarantine`. Provider vrátí strukturované
+varování místo obecné chyby. Prostředí přejde na `empty`, ztratí URL a verzi,
+ale uchová `Cleanup pending` s přesnými cestami. Menu nabídne `Retry cleanup`,
+které po zásahu správce ověří, že dluh zmizel.
+
+Smazání projektu cleanup dluh ve výchozím stavu blokuje. Uživatel má
+samostatný serverem vynucený opt-in, který dovolí odstranit záznam InitPadu i
+s chráněnými zbytky. Dialog vypíše jejich cesty a vysvětlí, že po odstranění
+project record už InitPad retry neprovede. Tato volba je transparentní
+`forget/detach`, nikoli tvrzení, že server byl kompletně vyčištěn.
+
+**Důsledky.** UI a ESO ukazují stejnou realitu: odstraněná aplikace není
+`failed` ani `running`. Skrytá data nikdy neblokují odstranění veřejného
+workloadu, ale nejsou potichu zapomenuta. Plně automatický cleanup bez
+karantény vyžaduje, aby hosting poskytl společnou Unix identitu, POSIX ACL nebo
+InitPad Agenta s oprávněním spravovat runtime soubory.
