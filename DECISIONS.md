@@ -1043,6 +1043,11 @@ stav, nikoli varianta neúplného delete.
 Laravel nebo Symfony může za běhu vytvářet cache a logy pod jinou identitou
 PHP-FPM/Apache. Samotné `chmod 0777` kořenového `temp` nestačí: nový podadresář
 se řídí umask web procesu a deploy uživatel pak nemusí umět release odstranit.
+Jde o riziko různých konfigurací hostingu, nikoli o tvrzení, že dřívější
+ruční ESO workflow selhával. Doložený workflow používal pro SFTP i SSH stejný
+`${ESO_USERNAME}` a v praxi šel opakovaně nasadit i smazat; ESO tedy nejspíše
+spouštělo PHP pod kompatibilní identitou nebo právy. Jeho plošné `chmod 0777`
+bylo funkční, ale zbytečně široké bezpečnostní oprávnění.
 
 **Rozhodnutí.** SFTP provider na targetu se shell přístupem vedle kompatibilních
 práv nastaví na runtime adresáře defaultní POSIX ACL pro aktuální deploy UID.
@@ -1117,6 +1122,20 @@ samostatný serverem vynucený opt-in, který dovolí odstranit záznam InitPadu
 s chráněnými zbytky. Dialog vypíše jejich cesty a vysvětlí, že po odstranění
 project record už InitPad retry neprovede. Tato volba je transparentní
 `forget/detach`, nikoli tvrzení, že server byl kompletně vyčištěn.
+
+Stejné pravidlo platí pro starý layout, který měl runtime cache přímo uvnitř
+veřejného adresáře. Pokud rekurzivní odstranění skončí na cizím vlastnictví,
+zbytek celého legacy stromu se přesune pod unikátní jméno v karanténě.
+Smazání project record je dovoleno pouze po úspěšném odstranění nebo přesunu
+kanonické cesty `<slug>` i pomocných staging/archive cest. Selhání přesunu
+zůstává tvrdou chybou, protože v takovém případě nelze bezpečně slíbit, že
+nový projekt smí stejné jméno použít.
+
+Po prvním pokusu o smazání UI znovu načte projekt a bez ručního refresh zobrazí
+nově vzniklý cleanup dluh a druhé potvrzení. Smazání InitPad záznamu uvolní
+jméno pouze ve workspace; pro založení zcela nového projektu se stejným jménem
+musí uživatel zároveň smazat zdrojový repozitář. Zachovaný repozitář jeho
+jméno v SCM záměrně dál rezervuje pro budoucí „Add existing project“.
 
 **Důsledky.** UI a ESO ukazují stejnou realitu: odstraněná aplikace není
 `failed` ani `running`. Skrytá data nikdy neblokují odstranění veřejného

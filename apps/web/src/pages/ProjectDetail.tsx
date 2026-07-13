@@ -269,6 +269,17 @@ export default function ProjectDetail() {
       toast.success(`Deleted ${project.name}`);
       navigate('/');
     } catch (e) {
+      // Teardown may have removed the public workload and converted a
+      // foreign-owned remainder into explicit cleanup debt. Refresh while the
+      // dialog stays open so the user immediately sees the quarantined paths
+      // and can make the separate, informed detach decision without a manual
+      // page reload.
+      try {
+        setProject(await api.getProject(id));
+      } catch {
+        // If the delete actually completed but its response was interrupted,
+        // the next normal navigation/reconciliation will reflect that state.
+      }
       toast.error((e as Error).message);
       setDeleting(false);
     }

@@ -455,25 +455,55 @@ export class SftpProvider implements DeploymentProvider {
       await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}`);
       return;
     }
+    const quarantineRoot = `${cfg.remoteRoot}/.initpad-quarantine`;
+    const quarantineStamp = Date.now().toString(36);
     const publicPaths = [
-      `${cfg.remoteRoot}/${slug}`,
-      `${cfg.remoteRoot}/${slug}__deploying`,
-      `${cfg.remoteRoot}/${slug}.deploy.tar`,
+      {
+        path: `${cfg.remoteRoot}/${slug}`,
+        quarantine: `${quarantineRoot}/${slug}-legacy-${quarantineStamp}`,
+      },
+      {
+        path: `${cfg.remoteRoot}/${slug}__deploying`,
+        quarantine: `${quarantineRoot}/${slug}-staging-${quarantineStamp}`,
+      },
+      {
+        path: `${cfg.remoteRoot}/${slug}.deploy.tar`,
+        quarantine: `${quarantineRoot}/${slug}-archive-${quarantineStamp}`,
+      },
     ];
+    // Legacy PHP releases kept writable runtime data directly below the
+    // public project path. `rm -rf` can therefore remove most of the site and
+    // still fail on a foreign-owned cache descendant. Move any such remainder
+    // out of the canonical path so a future project may safely reuse the same
+    // name. A failed move remains a hard error: in that case name reuse is not
+    // proven safe and the control-plane record must stay retryable.
     const publicRemoved = await sshExec(
       conn,
-      `rm -rf -- ${publicPaths.map(shellQuote).join(' ')}`,
+      publicPaths
+        .map(
+          ({ path, quarantine }) =>
+            `if rm -rf -- ${shellQuote(path)}; then :; else ` +
+            `mkdir -p -- ${shellQuote(quarantineRoot)} && chmod 0700 ${shellQuote(quarantineRoot)} && ` +
+            `mv -- ${shellQuote(path)} ${shellQuote(quarantine)} && ` +
+            `echo ${shellQuote(`INITPAD_QUARANTINED:${quarantine}`)}; fi`,
+        )
+        .join(' && '),
     );
     if (publicRemoved.code !== 0) {
       throw new Error(
-        `Remote public teardown failed: ${(publicRemoved.stderr || publicRemoved.stdout).trim().slice(-300)}`,
+        `Remote public teardown failed and the deployment name could not be released: ${(publicRemoved.stderr || publicRemoved.stdout).trim().slice(-300)}`,
+      );
+    }
+    if (publicRemoved.stdout.includes('INITPAD_QUARANTINED:')) {
+      this.logger.warn(
+        `Legacy runtime-owned public data for ${slug} was moved to protected quarantine. ` +
+          'The canonical deployment path is free; target-admin cleanup is still required.',
       );
     }
 
     const dataPath = `${cfg.remoteRoot}/.initpad-data/${slug}`;
     const dataRemoved = await sshExec(conn, `rm -rf -- ${shellQuote(dataPath)}`);
     if (dataRemoved.code !== 0) {
-      const quarantineRoot = `${cfg.remoteRoot}/.initpad-quarantine`;
       const quarantine = `${quarantineRoot}/${slug}-runtime-${Date.now().toString(36)}`;
       const quarantined = await sshExec(
         conn,
@@ -489,7 +519,6 @@ export class SftpProvider implements DeploymentProvider {
       );
     }
 
-    const quarantineRoot = `${cfg.remoteRoot}/.initpad-quarantine`;
     const pending = await sshExec(
       conn,
       `if [ -d ${shellQuote(quarantineRoot)} ]; then find ${shellQuote(quarantineRoot)} -mindepth 1 -maxdepth 1 -type d -name ${shellQuote(`${slug}-*`)} -print; fi`,

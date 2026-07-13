@@ -54,6 +54,50 @@ describe('SftpProvider teardown', () => {
     expect(jest.mocked(sshExec).mock.calls[1][1]).toContain("'/srv/student/team-app-prod'");
   });
 
+  it('quarantines an undeletable legacy public tree and releases its canonical name', async () => {
+    jest
+      .mocked(sshExec)
+      .mockResolvedValueOnce({ code: 0, stdout: 'ok\n', stderr: '' })
+      .mockResolvedValueOnce({
+        code: 0,
+        stdout:
+          'INITPAD_QUARANTINED:/srv/student/.initpad-quarantine/team-app-prod-legacy-one\n',
+        stderr: '',
+      })
+      .mockResolvedValueOnce({ code: 0, stdout: '', stderr: '' })
+      .mockResolvedValueOnce({
+        code: 0,
+        stdout: '/srv/student/.initpad-quarantine/team-app-prod-legacy-one\n',
+        stderr: '',
+      });
+
+    const result = await new SftpProvider().teardown({
+      projectName: 'team-app',
+      env: 'prod',
+      connection,
+    });
+
+    const publicCommand = jest.mocked(sshExec).mock.calls[1][1];
+    expect(publicCommand).toContain("mv -- '/srv/student/team-app-prod'");
+    expect(publicCommand).toContain("'/srv/student/.initpad-quarantine/team-app-prod-legacy-");
+    expect(result?.warning).toContain('team-app-prod-legacy-one');
+  });
+
+  it('keeps the project retryable when a legacy public tree cannot be quarantined', async () => {
+    jest
+      .mocked(sshExec)
+      .mockResolvedValueOnce({ code: 0, stdout: 'ok\n', stderr: '' })
+      .mockResolvedValueOnce({ code: 1, stdout: '', stderr: 'mv: Permission denied' });
+
+    await expect(
+      new SftpProvider().teardown({
+        projectName: 'team-app',
+        env: 'prod',
+        connection,
+      }),
+    ).rejects.toThrow('deployment name could not be released');
+  });
+
   it('fails closed when the protected quarantine cannot be inspected', async () => {
     jest
       .mocked(sshExec)

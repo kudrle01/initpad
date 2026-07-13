@@ -111,7 +111,7 @@ export function DeleteProjectDialog({
             </li>
             <li className="flex items-center justify-between gap-3">
               <span>InitPad project record</span>
-              <span className="text-xs">remove</span>
+              <span className="text-xs">remove · release workspace name</span>
             </li>
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
@@ -170,9 +170,13 @@ export function DeleteProjectDialog({
                 disabled={deleting}
               />
               <span>
-                <span className="block font-medium">Also delete the source repository</span>
+                <span className="block font-medium">
+                  Also delete the source repository and release its name
+                </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Optional and irreversible. Leave unchecked to preserve the code in Gitea.
+                  Optional and irreversible. If you preserve the repository, its name remains
+                  occupied in Gitea and should later be added back as an existing project. Delete
+                  it if a brand-new project must reuse the same name.
                 </span>
               </span>
             </label>
