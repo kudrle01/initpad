@@ -8,6 +8,7 @@ export interface User {
   // Set while the account must choose a new password before doing anything else
   // (admin-provisioned temporary credentials, post-reset).
   mustChangePassword: boolean;
+  emailVerified: boolean;
 }
 
 // Instance-administration view of an account (self-hosted edition).

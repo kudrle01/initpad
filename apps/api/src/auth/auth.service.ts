@@ -29,6 +29,8 @@ export interface SessionUser {
   // (admin-provisioned temporary credentials, post-reset). The web app uses it
   // to route the user straight to the change-password screen.
   mustChangePassword: boolean;
+  // Whether the account's e-mail address has been verified.
+  emailVerified: boolean;
 }
 
 /**
@@ -292,6 +294,7 @@ export class AuthService {
     platformRole: string;
     tokenVersion?: number;
     mustChangePassword?: boolean;
+    emailVerifiedAt?: Date | null;
   }): { token: string; user: SessionUser } {
     return { token: this.signToken(user), user: this.toSession(user) };
   }
@@ -308,6 +311,7 @@ export class AuthService {
     avatarUrl: string | null;
     platformRole: string;
     mustChangePassword?: boolean;
+    emailVerifiedAt?: Date | null;
   }): SessionUser {
     return {
       id: user.id,
@@ -317,6 +321,7 @@ export class AuthService {
       avatarUrl: user.avatarUrl,
       platformRole: user.platformRole === 'admin' ? 'admin' : 'user',
       mustChangePassword: user.mustChangePassword === true,
+      emailVerified: user.emailVerifiedAt != null,
     };
   }
 

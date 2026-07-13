@@ -177,6 +177,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  requestEmailVerification: () =>
+    http<{ verifyUrl: string }>('/auth/email/request-verification', { method: 'POST' }),
+  verifyEmail: (token: string) =>
+    http<void>('/auth/email/verify', { method: 'POST', body: JSON.stringify({ token }) }),
+  requestPasswordReset: (identity: string) =>
+    http<{ ok: boolean }>('/auth/password/request-reset', {
+      method: 'POST',
+      body: JSON.stringify({ identity }),
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    http<void>('/auth/password/reset', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    }),
   logout: () => http<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
   getGitAccess: () =>
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),

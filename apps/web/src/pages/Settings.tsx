@@ -39,7 +39,8 @@ export default function Settings() {
   const [inviteRole, setInviteRole] = useState<AssignableRole>('member');
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [renameWorkspace, setRenameWorkspace] = useState('');
-  const { activeWorkspace, refreshWorkspaces } = useAuth();
+  const [verifyLink, setVerifyLink] = useState<string | null>(null);
+  const { user, activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
   const canManageMembers = canAdmin && activeWorkspace?.type !== 'personal';
@@ -142,6 +143,16 @@ export default function Settings() {
     }
   }
 
+  async function sendVerification() {
+    try {
+      const { verifyUrl } = await api.requestEmailVerification();
+      setVerifyLink(verifyUrl);
+      toast.success('Verification link created');
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
   async function reveal() {
     setLoading(true);
     setError(null);
@@ -159,6 +170,32 @@ export default function Settings() {
       <PageHeader title="Settings" />
 
       <div className="flex max-w-2xl flex-col gap-6">
+      {user && user.email && !user.emailVerified && (
+        <div className="rounded-lg border border-warning/40 bg-warning/5 p-6">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-warning/10 text-warning">
+              <Mail className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-[15px] font-semibold">Verify your e-mail</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Confirm <strong className="font-medium text-foreground">{user.email}</strong> to secure account
+                recovery. On an instance without e-mail delivery, open the link shown below.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4">
+            {!verifyLink ? (
+              <Button variant="secondary" onClick={sendVerification}>Send verification link</Button>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">Open this link to verify (shown once):</p>
+                <CopyField command={verifyLink} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">

@@ -6,6 +6,9 @@ import { ToastProvider } from '@/toast';
 import App from '@/App';
 import Login from '@/pages/Login';
 import AcceptInvite from '@/pages/AcceptInvite';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
+import VerifyEmail from '@/pages/VerifyEmail';
 import Dashboard from '@/pages/Dashboard';
 import Projects from '@/pages/Projects';
 import Templates from '@/pages/Templates';
@@ -22,6 +25,9 @@ import '@/index.css';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/reset-password/:token', element: <ResetPassword /> },
+  { path: '/verify-email/:token', element: <VerifyEmail /> },
   { path: '/invite/:token', element: <AcceptInvite /> },
   {
     path: '/',

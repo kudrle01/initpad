@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
@@ -141,6 +141,12 @@ export default function Login() {
             {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
           </Button>
         </form>
+
+        {mode === 'signin' && (
+          <Link to="/forgot-password" className="mt-3 inline-block text-xs text-muted-foreground hover:text-foreground">
+            Forgot your password?
+          </Link>
+        )}
 
         {!registrationAvailable && !configError && (
           <p className="mt-4 text-xs text-muted-foreground">
