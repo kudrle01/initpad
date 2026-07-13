@@ -24,6 +24,7 @@ import {
   sftpRmrf,
   sftpSymlink,
   sftpUnlink,
+  shellQuote,
   sshConnect,
   sshEnd,
   sshExec,
@@ -194,10 +195,17 @@ export class SftpProvider implements DeploymentProvider {
       if (cfg.custom) {
         // Real host: the served folder is a real directory (no releases/symlink).
         if (await this.execWorks(conn)) {
-          await sshExec(
-            conn,
-            `rm -rf ${cfg.remoteRoot}/${slug} ${cfg.remoteRoot}/${slug}__deploying ${cfg.remoteRoot}/${slug}.deploy.tar`,
-          );
+          const paths = [
+            `${cfg.remoteRoot}/${slug}`,
+            `${cfg.remoteRoot}/${slug}__deploying`,
+            `${cfg.remoteRoot}/${slug}.deploy.tar`,
+          ];
+          const removed = await sshExec(conn, `rm -rf -- ${paths.map(shellQuote).join(' ')}`);
+          if (removed.code !== 0) {
+            throw new Error(
+              `Remote teardown failed: ${(removed.stderr || removed.stdout).trim().slice(-300)}`,
+            );
+          }
         } else {
           await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}`);
         }
@@ -325,21 +333,44 @@ export class SftpProvider implements DeploymentProvider {
 
     if (await this.execWorks(conn)) {
       const tarPath = `${cfg.remoteRoot}/${slug}.deploy.tar`;
+      const qTar = shellQuote(tarPath);
+      const qStaging = shellQuote(staging);
+      const qDest = shellQuote(dest);
       input.onProgress?.('Uploading archive');
       await uploadTar(sftp, localDir, tarPath);
       input.onProgress?.('Extracting on the server');
-      await sshExec(conn, `rm -rf ${staging} && mkdir -p ${staging}`);
-      const ex = await sshExec(conn, `tar xf ${tarPath} -C ${staging}`);
-      await sshExec(conn, `rm -f ${tarPath}`);
+      const prepared = await sshExec(conn, `rm -rf -- ${qStaging} && mkdir -p -- ${qStaging}`);
+      if (prepared.code !== 0) {
+        throw new Error(`Remote staging failed: ${(prepared.stderr || prepared.stdout).trim().slice(-300)}`);
+      }
+      const ex = await sshExec(conn, `tar xf ${qTar} -C ${qStaging}`);
+      await sshExec(conn, `rm -f -- ${qTar}`);
       if (ex.code !== 0) {
         throw new Error(`Remote extract failed: ${(ex.stderr || ex.stdout).trim().slice(-300)}`);
       }
       // Web-readable: files get +r, directories +rx (traversable). Runtime dirs
       // (Nette temp/log …) world-writable.
-      await sshExec(conn, `chmod -R a+rX ${staging}`);
-      for (const d of writable) await sshExec(conn, `chmod -R 0777 ${staging}/${d} 2>/dev/null; true`);
+      const readable = await sshExec(conn, `chmod -R a+rX ${qStaging}`);
+      if (readable.code !== 0) {
+        throw new Error(`Remote chmod failed: ${(readable.stderr || readable.stdout).trim().slice(-300)}`);
+      }
+      for (const d of writable) {
+        const path = shellQuote(`${staging}/${d}`);
+        await sshExec(conn, `chmod -R 0777 ${path} 2>/dev/null || true`);
+        // PHP-FPM/Apache may create cache children as another Unix identity.
+        // A default ACL makes the SFTP/deploy identity retain access to those
+        // descendants, preventing undeletable releases. Hosts without POSIX
+        // ACL support keep the compatibility chmod fallback above.
+        const acl = await sshExec(
+          conn,
+          `if command -v setfacl >/dev/null 2>&1; then find ${path} -type d -exec setfacl -m "u:$(id -u):rwx,d:u:$(id -u):rwx" {} +; fi`,
+        );
+        if (acl.code !== 0) {
+          this.logger.warn(`Could not set persistent deploy ACL on ${staging}/${d}`);
+        }
+      }
       input.onProgress?.('Publishing');
-      const swap = await sshExec(conn, `rm -rf ${dest} && mv ${staging} ${dest}`);
+      const swap = await sshExec(conn, `rm -rf -- ${qDest} && mv -- ${qStaging} ${qDest}`);
       if (swap.code !== 0) {
         throw new Error(`Remote publish failed: ${(swap.stderr || swap.stdout).trim().slice(-300)}`);
       }

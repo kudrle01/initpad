@@ -26,6 +26,13 @@ export interface ExecResult {
   stderr: string;
 }
 
+// POSIX-shell single-quote escaping for remote commands. Target paths are
+// validated before storage, but quoting here keeps command construction safe
+// and makes these helpers robust when reused with less restrictive input.
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
 export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client> {
   const conn = new Client();
   await new Promise<void>((resolve, reject) => {
@@ -181,16 +188,54 @@ export function sftpRmdir(sftp: SFTPWrapper, path: string): Promise<void> {
   return new Promise((resolve) => sftp.rmdir(path, () => resolve()));
 }
 
+type SftpError = Error & { code?: number | string };
+
+function missingRemotePath(error: SftpError): boolean {
+  return error.code === 2 || /no such file|not found/i.test(error.message);
+}
+
+function sftpReaddirForRemoval(
+  sftp: SFTPWrapper,
+  path: string,
+): Promise<RemoteEntry[] | null> {
+  return new Promise((resolve, reject) =>
+    sftp.readdir(path, (err, list) => {
+      if (err) return missingRemotePath(err) ? resolve(null) : reject(err);
+      resolve(
+        (list ?? []).map((e) => ({
+          name: e.filename,
+          isDir: (e.attrs.mode & 0o170000) === 0o040000,
+        })),
+      );
+    }),
+  );
+}
+
+function sftpUnlinkRequired(sftp: SFTPWrapper, path: string): Promise<void> {
+  return new Promise((resolve, reject) =>
+    sftp.unlink(path, (err) => (err ? reject(err) : resolve())),
+  );
+}
+
+function sftpRmdirRequired(sftp: SFTPWrapper, path: string): Promise<void> {
+  return new Promise((resolve, reject) =>
+    sftp.rmdir(path, (err) => (err ? reject(err) : resolve())),
+  );
+}
+
 // Recursive removal of a remote directory using SFTP operations only
-// (no shell available on atmoz/sftp targets).
+// (no shell available on atmoz/sftp targets). A missing root is idempotent,
+// but permission and I/O failures are propagated so callers never report a
+// successful teardown while remote files remain.
 export async function sftpRmrf(sftp: SFTPWrapper, path: string): Promise<void> {
-  const entries = await sftpReaddir(sftp, path);
+  const entries = await sftpReaddirForRemoval(sftp, path);
+  if (entries === null) return;
   for (const e of entries) {
     const child = `${path}/${e.name}`;
     if (e.isDir) await sftpRmrf(sftp, child);
-    else await sftpUnlink(sftp, child);
+    else await sftpUnlinkRequired(sftp, child);
   }
-  await sftpRmdir(sftp, path);
+  await sftpRmdirRequired(sftp, path);
 }
 
 // Best-effort chmod over SFTP (setstat). Errors are swallowed — some servers

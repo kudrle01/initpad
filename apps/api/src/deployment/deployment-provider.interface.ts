@@ -47,8 +47,8 @@ export interface DeployInput {
   // Public docroot subfolder (SFTP): the app is served at
   // <publicUrl>/<slug>/<webRoot>/ (e.g. 'www' for Nette).
   webRoot?: string;
-  // Directories made world-writable (0777) after an SFTP upload (framework
-  // runtime dirs, e.g. Nette 'temp'/'log').
+  // Directories prepared for the remote web runtime after an SFTP upload
+  // (framework runtime dirs, e.g. Nette 'temp'/'log').
   writableDirs?: string[];
   // Application port allocated by the platform for source-based deployments
   // on a shared host (SSH). Allocated from the database, so it is unique
