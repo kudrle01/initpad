@@ -4,6 +4,7 @@ export interface User {
   name: string | null;
   email: string | null;
   avatarUrl: string | null;
+  platformRole: 'admin' | 'user';
 }
 
 export type WorkspaceRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
@@ -15,6 +16,7 @@ export interface Workspace {
   name: string;
   type: WorkspaceType;
   role: WorkspaceRole;
+  managedBy: 'course' | 'course-team' | null;
   createdAt: string;
 }
 
@@ -25,6 +27,50 @@ export interface WorkspaceMember {
   avatarUrl: string | null;
   role: WorkspaceRole;
   createdAt: string;
+}
+
+export type CourseRole = 'instructor' | 'student';
+
+export interface CourseSummary {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  workspaceId: string;
+  role: CourseRole;
+  enrollmentOpen: boolean;
+  membershipLocked: boolean;
+  memberCount: number;
+  teamCount: number;
+  createdAt: string;
+}
+
+export interface CourseMember {
+  userId: string;
+  username: string;
+  name: string | null;
+  role: CourseRole;
+  teamId: string | null;
+  createdAt: string;
+}
+
+export interface CourseTeam {
+  id: string;
+  workspaceId: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  members: CourseMember[];
+}
+
+export interface CourseDetail extends CourseSummary {
+  instructors: CourseMember[];
+  students: CourseMember[];
+  teams: CourseTeam[];
+}
+
+export interface CreatedCourse extends CourseSummary {
+  enrollmentCode: string;
 }
 
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';

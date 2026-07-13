@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-type Mode = 'signin' | 'register';
+type Mode = 'signin' | 'register' | 'enroll';
 
 export default function Login() {
   const { user, loading, signIn } = useAuth();
@@ -17,14 +17,19 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [enrollmentCode, setEnrollmentCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
+  const [enrollmentRegistrationAvailable, setEnrollmentRegistrationAvailable] = useState(false);
   const [configError, setConfigError] = useState(false);
 
   useEffect(() => {
     api.authConfig()
-      .then((x) => setRegistrationAvailable(x.registrationAvailable))
+      .then((x) => {
+        setRegistrationAvailable(x.registrationAvailable);
+        setEnrollmentRegistrationAvailable(x.enrollmentRegistrationAvailable);
+      })
       .catch(() => setConfigError(true));
   }, []);
 
@@ -42,8 +47,11 @@ export default function Login() {
     setError(null);
     try {
       const u =
-        mode === 'register'
-          ? await api.register(username.trim(), email.trim(), password)
+        mode !== 'signin'
+          ? await api.register(
+              username.trim(), email.trim(), password,
+              mode === 'enroll' ? enrollmentCode.trim() : undefined,
+            )
           : await api.signin(username.trim(), password);
       signIn(u);
     } catch (err) {
@@ -62,7 +70,11 @@ export default function Login() {
         <p className="text-sm text-muted-foreground">Internal developer platform</p>
 
         <div className="mb-4 mt-6 flex gap-1 rounded-md bg-secondary p-1">
-          {(['signin', ...(registrationAvailable ? ['register' as const] : [])] as const).map((m) => (
+          {([
+            'signin',
+            ...(registrationAvailable ? ['register' as const] : []),
+            ...(enrollmentRegistrationAvailable ? ['enroll' as const] : []),
+          ] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -78,7 +90,7 @@ export default function Login() {
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              {m === 'signin' ? 'Sign in' : 'Create account'}
+              {m === 'signin' ? 'Sign in' : m === 'register' ? 'Create account' : 'Join course'}
             </button>
           ))}
         </div>
@@ -93,7 +105,7 @@ export default function Login() {
             onChange={(e) => setUsername(e.target.value)}
             required
           />
-          {mode === 'register' && (
+          {mode !== 'signin' && (
             <>
               <label htmlFor="login-email" className="sr-only">E-mail</label>
               <Input
@@ -112,14 +124,30 @@ export default function Login() {
             id="login-password"
             type="password"
             placeholder="Password"
-            autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+            autoComplete={mode !== 'signin' ? 'new-password' : 'current-password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={mode === 'register' ? 12 : undefined}
+            minLength={mode !== 'signin' ? 12 : undefined}
           />
 
-          {mode === 'register' && (
+          {mode === 'enroll' && (
+            <>
+              <label htmlFor="login-enrollment" className="sr-only">Course enrollment code</label>
+              <Input
+                id="login-enrollment"
+                placeholder="INIT-XXXX-XXXX-XXXX-XXXX"
+                autoComplete="off"
+                spellCheck={false}
+                value={enrollmentCode}
+                onChange={(e) => setEnrollmentCode(e.target.value.toUpperCase())}
+                required
+                minLength={10}
+              />
+            </>
+          )}
+
+          {mode !== 'signin' && (
             <p className="text-xs text-muted-foreground">Use at least 12 characters.</p>
           )}
 
@@ -131,9 +159,15 @@ export default function Login() {
           )}
 
           <Button type="submit" disabled={busy} className="mt-1 w-full">
-            {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
+            {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : mode === 'enroll' ? 'Create account & join' : 'Sign in'}
           </Button>
         </form>
+
+        {!registrationAvailable && enrollmentRegistrationAvailable && (
+          <p className="mt-5 text-xs text-muted-foreground">
+            Public registration is closed. Students can still create an account with a course code.
+          </p>
+        )}
 
       </div>
     </div>

@@ -16,6 +16,8 @@ import NewProject from '@/pages/NewProject';
 import ProjectDetail from '@/pages/ProjectDetail';
 import NotFound from '@/pages/NotFound';
 import RouteError from '@/pages/RouteError';
+import Courses from '@/pages/Courses';
+import CourseDetail from '@/pages/CourseDetail';
 import '@/index.css';
 
 const router = createBrowserRouter([
@@ -28,6 +30,8 @@ const router = createBrowserRouter([
       { index: true, element: <Dashboard /> },
       { path: 'projects', element: <Projects /> },
       { path: 'templates', element: <Templates /> },
+      { path: 'courses', element: <Courses /> },
+      { path: 'courses/:id', element: <CourseDetail /> },
       { path: 'environments', element: <Environments /> },
       { path: 'activity', element: <Activity /> },
       { path: 'infrastructure', element: <Infrastructure /> },

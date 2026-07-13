@@ -13,6 +13,7 @@ import {
   Settings,
   Building2,
   Check,
+  GraduationCap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -41,6 +42,7 @@ const NAV: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/projects', label: 'Projects', icon: Layers },
   { to: '/templates', label: 'Templates', icon: FolderClosed },
+  { to: '/courses', label: 'Courses', icon: GraduationCap },
   { to: '/new', label: 'New project', icon: Plus },
 ];
 
