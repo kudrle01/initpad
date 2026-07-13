@@ -5,6 +5,8 @@ import { JwtAuthGuard, TOKEN_COOKIE } from './jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { AllowDuringPasswordChange } from './allow-password-change.decorator';
 import { AuthRateLimitGuard } from './auth-rate-limit.guard';
 import { config } from '../config';
 
@@ -52,8 +54,29 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
+  @AllowDuringPasswordChange()
   me(@CurrentUser() userId: string) {
     return this.auth.me(userId);
+  }
+
+  // Change the signed-in user's own password. Reachable during a forced
+  // password change; re-issues the session cookie so the caller stays signed in
+  // while all other sessions are invalidated.
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @AllowDuringPasswordChange()
+  async changePassword(
+    @CurrentUser() userId: string,
+    @Body() dto: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { token, user } = await this.auth.changePassword(
+      userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+    this.setSession(res, token);
+    return user;
   }
 
   @Post('logout')

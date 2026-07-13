@@ -5,6 +5,9 @@ export interface User {
   email: string | null;
   avatarUrl: string | null;
   platformRole: 'admin' | 'user';
+  // Set while the account must choose a new password before doing anything else
+  // (admin-provisioned temporary credentials, post-reset).
+  mustChangePassword: boolean;
 }
 
 export type WorkspaceRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';

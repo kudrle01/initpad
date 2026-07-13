@@ -150,6 +150,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    http<User>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
   logout: () => http<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
   getGitAccess: () =>
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),

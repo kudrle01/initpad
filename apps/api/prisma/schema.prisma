@@ -23,6 +23,15 @@ model User {
   // Platform-wide authority is deliberately small. Workspace roles carry
   // project and team permissions; this role is for instance administration.
   platformRole      String            @default("user") // admin | user
+  // Account lifecycle (ADR-040). Deactivated accounts cannot sign in and their
+  // live sessions are rejected. `mustChangePassword` forces a password change
+  // (admin-provisioned temporary credentials, post-reset) before any other API
+  // call is allowed. `tokenVersion` is embedded in the session JWT; bumping it
+  // invalidates every previously issued session (reset, deactivate, change).
+  active            Boolean           @default(true)
+  mustChangePassword Boolean          @default(false)
+  tokenVersion      Int               @default(0)
+  emailVerifiedAt   DateTime?
   createdAt         DateTime          @default(now())
   projects          Project[]
   targets           Target[]

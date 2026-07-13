@@ -20,6 +20,10 @@ export interface SessionUser {
   email: string | null;
   avatarUrl: string | null;
   platformRole: 'admin' | 'user';
+  // True while the account must set a new password before doing anything else
+  // (admin-provisioned temporary credentials, post-reset). The web app uses it
+  // to route the user straight to the change-password screen.
+  mustChangePassword: boolean;
 }
 
 /**
@@ -114,7 +118,7 @@ export class AuthService {
           },
         },
       });
-      return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };
+      return { token: this.signToken(user), user: this.toSession(user) };
     } catch (e) {
       if (provisionedUsername) await this.gitea.deleteUser(provisionedUsername);
       throw e;
@@ -130,7 +134,42 @@ export class AuthService {
     if (!user || !user.passwordHash || !verifyPassword(dto.password, user.passwordHash)) {
       throw new UnauthorizedException('Invalid username or password');
     }
-    return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };
+    if (user.active === false) {
+      throw new UnauthorizedException('This account has been deactivated');
+    }
+    return { token: this.signToken(user), user: this.toSession(user) };
+  }
+
+  /**
+   * Change the signed-in user's own password. Verifies the current password,
+   * clears any forced-change flag, and bumps the session generation so every
+   * other session is invalidated; the caller's cookie is re-issued fresh.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ token: string; user: SessionUser }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.passwordHash || !verifyPassword(currentPassword, user.passwordHash)) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    if (verifyPassword(newPassword, user.passwordHash)) {
+      throw new BadRequestException('New password must differ from the current one');
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: hashPassword(newPassword),
+        mustChangePassword: false,
+        tokenVersion: { increment: 1 },
+      },
+    });
+    return { token: this.signToken(updated), user: this.toSession(updated) };
+  }
+
+  private signToken(user: { id: string; tokenVersion?: number }): string {
+    return this.jwt.sign({ sub: user.id, ver: user.tokenVersion ?? 0 });
   }
 
   private toSession(user: {
@@ -140,6 +179,7 @@ export class AuthService {
     email: string | null;
     avatarUrl: string | null;
     platformRole: string;
+    mustChangePassword?: boolean;
   }): SessionUser {
     return {
       id: user.id,
@@ -148,19 +188,13 @@ export class AuthService {
       email: user.email,
       avatarUrl: user.avatarUrl,
       platformRole: user.platformRole === 'admin' ? 'admin' : 'user',
+      mustChangePassword: user.mustChangePassword === true,
     };
   }
 
-  async me(userId: string) {
+  async me(userId: string): Promise<SessionUser> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
-    return {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      email: user.email,
-      avatarUrl: user.avatarUrl,
-      platformRole: user.platformRole === 'admin' ? 'admin' : 'user',
-    };
+    return this.toSession(user);
   }
 }

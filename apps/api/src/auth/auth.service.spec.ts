@@ -65,6 +65,7 @@ describe('AuthService', () => {
     const user = {
       id: 'u1', username: 'alice', email: 'alice@example.test', name: null, avatarUrl: null,
       passwordHash: hashPassword('long-password'), accessToken: '', platformRole: 'user',
+      active: true, tokenVersion: 0, mustChangePassword: false,
     };
     const prisma = { user: { findFirst: jest.fn(async () => user) } };
     const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
@@ -72,5 +73,52 @@ describe('AuthService', () => {
     expect(prisma.user.findFirst).toHaveBeenCalledWith({
       where: { OR: [{ username: 'ALICE@EXAMPLE.TEST' }, { email: 'alice@example.test' }] },
     });
+  });
+
+  it('refuses sign-in for a deactivated account', async () => {
+    const user = {
+      id: 'u1', username: 'bob', email: 'bob@example.test', name: null, avatarUrl: null,
+      passwordHash: hashPassword('long-password'), accessToken: '', platformRole: 'user',
+      active: false, tokenVersion: 0, mustChangePassword: false,
+    };
+    const prisma = { user: { findFirst: jest.fn(async () => user) } };
+    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
+    await expect(service.login({ username: 'bob', password: 'long-password' }))
+      .rejects.toThrow('deactivated');
+  });
+
+  it('clears the forced-change flag and bumps the session generation on change', async () => {
+    const stored = {
+      id: 'u1', username: 'carol', email: null, name: null, avatarUrl: null,
+      passwordHash: hashPassword('old-password-1'), accessToken: '', platformRole: 'user',
+      active: true, tokenVersion: 2, mustChangePassword: true,
+    };
+    let updateArgs: Record<string, unknown> | undefined;
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => stored),
+        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          updateArgs = data;
+          return { ...stored, ...data, tokenVersion: 3, mustChangePassword: false };
+        }),
+      },
+    };
+    const service = new AuthService(prisma as never, { sign: (p: unknown) => JSON.stringify(p) } as never, {} as never);
+    const result = await service.changePassword('u1', 'old-password-1', 'brand-new-password-9');
+    expect(updateArgs?.mustChangePassword).toBe(false);
+    expect(updateArgs?.tokenVersion).toEqual({ increment: 1 });
+    expect(result.user.mustChangePassword).toBe(false);
+    expect(result.token).toContain('"ver":3');
+  });
+
+  it('rejects a password change with the wrong current password', async () => {
+    const stored = {
+      id: 'u1', passwordHash: hashPassword('old-password-1'), active: true, tokenVersion: 0,
+    };
+    const prisma = { user: { findUnique: jest.fn(async () => stored), update: jest.fn() } };
+    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
+    await expect(service.changePassword('u1', 'wrong-password', 'brand-new-password-9'))
+      .rejects.toThrow('incorrect');
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });
