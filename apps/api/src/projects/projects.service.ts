@@ -438,8 +438,11 @@ export class ProjectsService implements OnModuleInit {
   async deployFromCi(repo: string, sha: string, ref: string, token: string): Promise<void> {
     const [owner, name] = repo.split('/');
     if (!owner || !name) throw new BadRequestException('Invalid repo');
-    // Deploy from the main branch only.
-    if (ref && ref !== 'main' && ref !== 'refs/heads/main') return;
+    const retryTag = ref.replace(/^refs\/tags\//, '');
+    const isRetry = /^initpad-retry-[a-z0-9-]+$/.test(retryTag);
+    // Deploy from main, or from an InitPad-owned retry tag pointing at main's
+    // exact commit. Arbitrary user tags never deploy automatically.
+    if (ref && ref !== 'main' && ref !== 'refs/heads/main' && !isRetry) return;
 
     const user = await this.prisma.user.findFirst({ where: { username: owner } });
     const project = await this.prisma.project.findFirst({
@@ -454,6 +457,49 @@ export class ProjectsService implements OnModuleInit {
     }
     if (!/^[0-9a-f]{40}$/i.test(sha)) {
       throw new BadRequestException('CI deploy requires a full 40-character commit SHA');
+    }
+
+    const dev = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId: project.id, name: 'dev' } },
+    });
+    if (!dev) throw new BadRequestException("Project has no 'dev' environment");
+
+    if (isRetry) {
+      const actor = await this.actorForProject(project.id);
+      try {
+        const operation = dev.activeOperationId
+          ? await this.prisma.deploymentOperation.findUnique({
+              where: { id: dev.activeOperationId },
+            })
+          : null;
+        // Only the currently requested retry may deploy. Cancel clears the
+        // active operation, so a late CI callback is harmless.
+        if (
+          !operation ||
+          operation.kind !== 'ci-retry' ||
+          operation.status !== 'running' ||
+          operation.version !== sha
+        ) {
+          this.logger.log(`Ignoring stale CI retry for ${repo} (${retryTag})`);
+          return;
+        }
+        await this.prisma.project.update({
+          where: { id: project.id },
+          data: { lastCommit: `ci: retry ${sha.slice(0, 7)}` },
+        });
+        void this.deployEnvInBackground(project.id, 'dev', sha, true, operation.id);
+        this.logger.log(`CI retry deploy: ${repo} → dev (${sha})`);
+        return;
+      } finally {
+        await this.gitea.deleteTag(name, retryTag, actor);
+      }
+    }
+
+    // Removing/cancelling an empty dev environment opts out of a late CI
+    // callback. A deliberate Run again creates the tracked operation above.
+    if (dev.status === 'empty') {
+      this.logger.log(`Ignoring CI deploy for disabled dev environment: ${repo}`);
+      return;
     }
 
     // Version = the full commit hash (unambiguous, matches the CI image tag).
@@ -528,6 +574,64 @@ export class ProjectsService implements OnModuleInit {
     return this.get(id);
   }
 
+  // Restarts dev after a cancelled/failed first deployment. If CI already
+  // produced an image, retry only the deployment. Otherwise queue CI for the
+  // latest main commit through a temporary tag and track the wait as an
+  // operation so Cancel also invalidates a late callback.
+  async runAgain(id: string): Promise<Project> {
+    const env = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId: id, name: 'dev' } },
+    });
+    if (!env) throw new NotFoundException("Environment 'dev' not found");
+    if (env.activeOperationId || !['empty', 'failed'].includes(env.status)) {
+      throw new BadRequestException("Dev can only run again after it was cancelled or failed");
+    }
+
+    const previousOperation = await this.prisma.deploymentOperation.findFirst({
+      where: {
+        environmentId: env.id,
+        status: { in: ['cancelled', 'failed'] },
+        kind: { not: 'ci-retry' },
+        version: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (previousOperation?.version) {
+      const useRegistry = /^[0-9a-f]{40}$/i.test(previousOperation.version);
+      await this.scheduleDeployment(id, 'dev', previousOperation.version, useRegistry, 'retry');
+      return this.get(id);
+    }
+
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const actor = await this.actorForProject(id);
+    const commits = await this.gitea.listCommits(project.name, actor, 1);
+    const sha = commits?.[0]?.sha;
+    if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) {
+      throw new BadRequestException('No repository commit is available to run');
+    }
+
+    const operationId = await this.beginOperation(id, 'dev', 'ci-retry', sha);
+    await this.prisma.environment.updateMany({
+      where: { id: env.id, activeOperationId: operationId },
+      data: { statusReason: 'Waiting for CI retry' },
+    });
+    try {
+      await this.gitea.createRetryTag(project.name, sha, actor);
+    } catch (e) {
+      await this.prisma.environment.updateMany({
+        where: { id: env.id, activeOperationId: operationId },
+        data: {
+          status: env.status,
+          statusReason: env.statusReason,
+          activeOperationId: null,
+        },
+      });
+      await this.completeOperation(operationId, 'failed', (e as Error).message);
+      throw new BadRequestException((e as Error).message);
+    }
+    return this.get(id);
+  }
+
   // Suspends a running environment (stops the container/process). The version
   // is kept so it remains visible what is deployed; Start resumes it.
   async stopEnv(id: string, envName: EnvName): Promise<Project> {
@@ -570,6 +674,35 @@ export class ProjectsService implements OnModuleInit {
   async removeEnv(id: string, envName: EnvName): Promise<Project> {
     const { env, slug } = await this.envContext(id, envName);
     if (env.activeOperationId) {
+      const operation = await this.prisma.deploymentOperation.findUnique({
+        where: { id: env.activeOperationId },
+      });
+      // A CI retry is only waiting for Gitea and has no deployment process to
+      // clean up. Finish it synchronously so its eventual callback is stale.
+      if (operation?.kind === 'ci-retry') {
+        await this.prisma.$transaction([
+          this.prisma.deploymentOperation.update({
+            where: { id: operation.id },
+            data: {
+              status: 'cancelled',
+              message: 'Cancellation requested by user',
+              finishedAt: new Date(),
+            },
+          }),
+          this.prisma.environment.update({
+            where: { id: env.id },
+            data: {
+              status: 'empty',
+              version: null,
+              url: null,
+              statusReason: null,
+              allocatedPort: null,
+              activeOperationId: null,
+            },
+          }),
+        ]);
+        return this.get(id);
+      }
       await this.prisma.$transaction([
         this.prisma.deploymentOperation.update({
           where: { id: env.activeOperationId },

@@ -49,6 +49,7 @@ interface Props {
   commitsBySha: Record<string, Commit>;
   onPromote: (target: EnvName) => void;
   onRedeploy: (env: EnvName) => void;
+  onRunAgain: () => void;
   onStop: (env: EnvName) => void;
   onStart: (env: EnvName) => void;
   onRemoveEnv: (env: EnvName) => void;
@@ -63,6 +64,7 @@ export function EnvironmentPipeline({
   commitsBySha,
   onPromote,
   onRedeploy,
+  onRunAgain,
   onStop,
   onStart,
   onRemoveEnv,
@@ -98,6 +100,10 @@ export function EnvironmentPipeline({
         // Stop/Start only makes sense for process targets (Docker/SSH), not static hosting (SFTP).
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
+        const canRunAgain =
+          env.name === 'dev' &&
+          !env.version &&
+          (env.status === 'empty' || env.status === 'failed');
         // Any environment can be pointed at a different target.
         const canTarget = true;
 
@@ -132,6 +138,11 @@ export function EnvironmentPipeline({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
+                        {canRunAgain && (
+                          <DropdownMenuItem onSelect={onRunAgain}>
+                            <Play className="h-4 w-4" /> Run again
+                          </DropdownMenuItem>
+                        )}
                         {hasDeployment && (
                           <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
                             <RefreshCw className="h-4 w-4" /> Redeploy

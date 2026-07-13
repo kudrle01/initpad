@@ -101,6 +101,8 @@ export const api = {
     http<Project>(`/projects/${id}/promote/${env}`, { method: 'POST' }),
   redeploy: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/redeploy/${env}`, { method: 'POST' }),
+  runAgain: (id: string) =>
+    http<Project>(`/projects/${id}/run-again`, { method: 'POST' }),
   stopEnv: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/stop/${env}`, { method: 'POST' }),
   startEnv: (id: string, env: EnvName) =>

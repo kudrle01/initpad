@@ -198,6 +198,19 @@ export default function ProjectDetail() {
     }
   }
 
+  async function runAgain() {
+    if (!id) return;
+    setBusy('run-again-dev');
+    try {
+      setProject(await api.runAgain(id));
+      toast.success('Running dev again…');
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function envAction(
     key: string,
     envName: EnvName,
@@ -352,6 +365,7 @@ export default function ProjectDetail() {
           commitsBySha={commitsBySha}
           onPromote={promote}
           onRedeploy={redeploy}
+          onRunAgain={runAgain}
           onStop={stopEnvironment}
           onStart={startEnvironment}
           onRemoveEnv={removeEnvironment}

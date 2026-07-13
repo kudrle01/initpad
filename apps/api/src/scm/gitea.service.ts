@@ -361,6 +361,54 @@ export class GiteaService implements OnModuleInit {
     }
   }
 
+  // Gitea 1.22 has no REST endpoint for re-running an Actions workflow. A
+  // temporary tag produces a regular push event for the exact same commit,
+  // so CI can retry without adding an empty commit or changing source history.
+  // Stale InitPad retry tags are removed before creating the next one.
+  async createRetryTag(
+    name: string,
+    sha: string,
+    actor: GiteaActor,
+  ): Promise<string> {
+    const url = config.gitea.internalUrl;
+    const token = config.gitea.adminToken || actor.token;
+    if (!url || !token) throw new Error('Gitea is not configured');
+
+    const repo = `${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`;
+    const headers = { Authorization: `token ${token}` };
+    const listed = await fetch(`${url}/api/v1/repos/${repo}/tags?limit=50`, { headers });
+    if (listed.ok) {
+      const tags = (await listed.json()) as Array<{ name?: string }>;
+      await Promise.all(
+        tags
+          .map((tag) => tag.name ?? '')
+          .filter((tag) => tag.startsWith('initpad-retry-'))
+          .map((tag) => this.deleteTag(name, tag, actor)),
+      );
+    }
+
+    const tag = `initpad-retry-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
+    const created = await fetch(`${url}/api/v1/repos/${repo}/tags`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag_name: tag, target: sha }),
+    });
+    if (!created.ok) {
+      throw new Error(`Could not queue the CI retry in Gitea (HTTP ${created.status})`);
+    }
+    return tag;
+  }
+
+  async deleteTag(name: string, tag: string, actor: GiteaActor): Promise<void> {
+    const url = config.gitea.internalUrl;
+    const token = config.gitea.adminToken || actor.token;
+    if (!url || !token || !tag.startsWith('initpad-retry-')) return;
+    await fetch(
+      `${url}/api/v1/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}/tags/${encodeURIComponent(tag)}`,
+      { method: 'DELETE', headers: { Authorization: `token ${token}` } },
+    ).catch(() => undefined);
+  }
+
   // Returns commit statuses (one per CI job) for the given commit — the
   // platform assembles the pipeline view from them. Statuses arrive sorted
   // most-recently-updated first.
