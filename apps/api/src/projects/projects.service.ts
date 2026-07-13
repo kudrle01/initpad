@@ -722,11 +722,24 @@ export class ProjectsService implements OnModuleInit {
     }
     const provider = env.provider as ProviderKind;
     const connection = this.targetConnection(env);
-    await this.deployment.teardown(provider, { projectName: slug, env: envName, connection });
+    const teardown = await this.deployment.teardown(provider, {
+      projectName: slug,
+      env: envName,
+      connection,
+    });
+    const cleanupWarning = teardown?.warning
+      ? `Cleanup pending: ${teardown.warning}`
+      : null;
     await this.prisma.environment.update({
       where: { projectId_name: { projectId: id, name: envName } },
       // Releasing allocatedPort returns the port to the pool.
-      data: { status: 'empty', version: null, url: null, statusReason: null, allocatedPort: null },
+      data: {
+        status: 'empty',
+        version: null,
+        url: null,
+        statusReason: cleanupWarning,
+        allocatedPort: null,
+      },
     });
     return this.get(id);
   }
@@ -750,14 +763,20 @@ export class ProjectsService implements OnModuleInit {
         connection: this.targetConnection(env),
       });
       if (await this.operationCancelled(operationId)) {
-        await this.deployment.teardown(env.provider as ProviderKind, {
+        const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: slug,
           env: envName,
           connection: this.targetConnection(env),
         });
         await this.prisma.environment.updateMany({
           where: { projectId: id, name: envName, activeOperationId: operationId },
-          data: { status: 'empty', version: null, url: null, statusReason: null, activeOperationId: null },
+          data: {
+            status: 'empty',
+            version: null,
+            url: null,
+            statusReason: teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
+            activeOperationId: null,
+          },
         });
         await this.completeOperation(operationId, 'cancelled', 'Cancelled by user');
         return;
@@ -845,7 +864,11 @@ export class ProjectsService implements OnModuleInit {
   // requires a separate acknowledgement enforced by the API.
   async remove(
     id: string,
-    opts: { deleteRemoteRepo: boolean; confirmProduction: boolean },
+    opts: {
+      deleteRemoteRepo: boolean;
+      confirmProduction: boolean;
+      confirmCleanupDebt?: boolean;
+    },
   ): Promise<void> {
     const row = await this.prisma.project.findUnique({
       where: { id },
@@ -862,7 +885,10 @@ export class ProjectsService implements OnModuleInit {
         'Production still has deployment state. Confirm production removal explicitly.',
       );
     }
-    await this.cleanupProject(row, { repoAction: opts.deleteRemoteRepo ? 'delete' : 'detach' });
+    await this.cleanupProject(row, {
+      repoAction: opts.deleteRemoteRepo ? 'delete' : 'detach',
+      confirmCleanupDebt: opts.confirmCleanupDebt === true,
+    });
   }
 
   /**
@@ -890,7 +916,10 @@ export class ProjectsService implements OnModuleInit {
     row: Prisma.ProjectGetPayload<{
       include: { environments: { include: { target: true } }; owner: true };
     }>,
-    opts: { repoAction: 'delete' | 'detach' | 'gone' },
+    opts: {
+      repoAction: 'delete' | 'detach' | 'gone';
+      confirmCleanupDebt?: boolean;
+    },
   ): Promise<void> {
     await this.prisma.deploymentOperation.updateMany({
       where: { environment: { projectId: row.id }, finishedAt: null },
@@ -898,12 +927,14 @@ export class ProjectsService implements OnModuleInit {
     });
     const slug = this.deploySlug(row.repoUrl, row.name);
     for (const env of row.environments) {
+      let teardownWarning: string | null = null;
       try {
-        await this.deployment.teardown(env.provider as ProviderKind, {
+        const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: slug,
           env: env.name,
           connection: this.targetConnection(env),
         });
+        teardownWarning = teardown?.warning ?? null;
         // If a later target fails, keep an accurate, retryable project record
         // instead of claiming that resources already removed still run.
         await this.prisma.environment.update({
@@ -912,7 +943,7 @@ export class ProjectsService implements OnModuleInit {
             status: 'empty',
             version: null,
             url: null,
-            statusReason: null,
+            statusReason: teardownWarning ? `Cleanup pending: ${teardownWarning}` : null,
             allocatedPort: null,
             activeOperationId: null,
           },
@@ -929,6 +960,16 @@ export class ProjectsService implements OnModuleInit {
         });
         throw new BadRequestException(
           `Could not remove ${env.name} deployment from ${env.target?.name ?? env.provider}: ${reason}`,
+        );
+      }
+      if (teardownWarning) {
+        if (!opts.confirmCleanupDebt) {
+          throw new BadRequestException(
+            `Public ${env.name} deployment was removed from ${env.target?.name ?? env.provider}, but project deletion is waiting for target cleanup: ${teardownWarning}`,
+          );
+        }
+        this.logger.warn(
+          `Project ${row.id} deletion explicitly detached pending ${env.name} cleanup: ${teardownWarning}`,
         );
       }
     }
@@ -1177,7 +1218,7 @@ export class ProjectsService implements OnModuleInit {
         allowBuildFallback: !useRegistry,
       });
       if (await this.operationCancelled(operationId)) {
-        await this.deployment.teardown(env.provider as ProviderKind, {
+        const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: this.deploySlug(project.repoUrl, project.name),
           env: envName,
           connection: this.targetConnection(env),
@@ -1188,7 +1229,7 @@ export class ProjectsService implements OnModuleInit {
             status: 'empty',
             version: null,
             url: null,
-            statusReason: null,
+            statusReason: teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
             allocatedPort: null,
             activeOperationId: null,
           },
@@ -1402,11 +1443,26 @@ export class ProjectsService implements OnModuleInit {
       const slug = this.deploySlug(project.repoUrl, project.name);
       // Do not bind the new target until teardown succeeds; otherwise a failed
       // cleanup would leave an unreachable orphan on the old infrastructure.
-      await this.deployment.teardown(env.provider as ProviderKind, {
+      const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
         projectName: slug,
         env: envName,
         connection: this.targetConnection(env),
       });
+      if (teardown?.warning) {
+        await this.prisma.environment.update({
+          where: { id: env.id },
+          data: {
+            status: 'empty',
+            version: null,
+            url: null,
+            statusReason: `Cleanup pending: ${teardown.warning}`,
+            allocatedPort: null,
+          },
+        });
+        throw new BadRequestException(
+          `Public deployment was removed, but the target cannot be changed until cleanup finishes: ${teardown.warning}`,
+        );
+      }
     }
 
     await this.prisma.environment.update({

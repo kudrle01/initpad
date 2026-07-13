@@ -100,6 +100,7 @@ export function EnvironmentPipeline({
         // Stop/Start only makes sense for process targets (Docker/SSH), not static hosting (SFTP).
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
+        const cleanupPending = env.status === 'empty' && !!env.statusReason;
         const canRunAgain =
           env.name === 'dev' &&
           !env.version &&
@@ -167,12 +168,16 @@ export function EnvironmentPipeline({
                             <Server className="h-4 w-4" /> Change target
                           </DropdownMenuItem>
                         )}
-                        {(hasDeployment || env.status === 'deploying') && (
+                        {(hasDeployment || env.status === 'deploying' || cleanupPending) && (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem destructive onSelect={() => onRemoveEnv(env.name)}>
                               <Trash2 className="h-4 w-4" />{' '}
-                              {env.status === 'deploying' ? 'Cancel deploy' : 'Remove deployment'}
+                              {env.status === 'deploying'
+                                ? 'Cancel deploy'
+                                : cleanupPending
+                                  ? 'Retry cleanup'
+                                  : 'Remove deployment'}
                             </DropdownMenuItem>
                           </>
                         )}
@@ -245,6 +250,13 @@ export function EnvironmentPipeline({
                 >
                   <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
                 </button>
+              )}
+
+              {cleanupPending && (
+                <div className="mt-2 flex items-start gap-1 text-xs text-warning">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>{env.statusReason}</span>
+                </div>
               )}
             </div>
 

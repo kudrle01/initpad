@@ -82,6 +82,12 @@ export interface TeardownInput {
   connection?: ProviderConnection;
 }
 
+export interface TeardownResult {
+  // The public workload is gone, but an external target still contains
+  // protected data that needs target-administrator cleanup.
+  warning?: string;
+}
+
 // Restart of a previously deployed environment (after Stop). The version does
 // not change — the provider re-runs what was already deployed.
 export interface StartInput {
@@ -114,7 +120,7 @@ export interface DeploymentProvider {
   // SFTP-uploadable artifact without executing project code in the API.
   extractArtifact?(imageRef: string, srcPath: string, destDir: string): Promise<void>;
   // Removes the deployment of the given environment; optional.
-  teardown?(input: TeardownInput): Promise<void>;
+  teardown?(input: TeardownInput): Promise<TeardownResult | void>;
   // Returns the last ~N lines of the running deployment's log; optional.
   logs?(input: TeardownInput): Promise<string>;
   // Removes all local images of the given repository (<registry>/<owner>/<name>:*).

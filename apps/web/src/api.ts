@@ -35,6 +35,7 @@ export interface TargetInput {
 export interface DeleteProjectOptions {
   deleteRepository: boolean;
   confirmProduction: boolean;
+  confirmCleanupDebt: boolean;
 }
 
 const BASE = '/api';

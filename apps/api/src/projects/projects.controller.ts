@@ -144,6 +144,7 @@ export class ProjectsController {
     return this.projects.remove(id, {
       deleteRemoteRepo: dto?.deleteRepository === true,
       confirmProduction: dto?.confirmProduction === true,
+      confirmCleanupDebt: dto?.confirmCleanupDebt === true,
     });
   }
 }

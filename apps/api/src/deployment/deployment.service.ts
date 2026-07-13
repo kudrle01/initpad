@@ -7,6 +7,7 @@ import {
   ProviderConnection,
   StartInput,
   TeardownInput,
+  TeardownResult,
   VerifyResult,
 } from './deployment-provider.interface';
 import { DockerProvider } from './providers/docker.provider';
@@ -39,8 +40,8 @@ export class DeploymentService {
     return impl.deploy(input);
   }
 
-  async teardown(provider: ProviderKind, input: TeardownInput): Promise<void> {
-    await this.registry.get(provider)?.teardown?.(input);
+  async teardown(provider: ProviderKind, input: TeardownInput): Promise<TeardownResult | void> {
+    return this.registry.get(provider)?.teardown?.(input);
   }
 
   async stop(provider: ProviderKind, input: TeardownInput): Promise<void> {

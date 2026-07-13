@@ -231,8 +231,21 @@ export default function ProjectDetail() {
 
   const stopEnvironment = (env: EnvName) => envAction('stop', env, api.stopEnv, `Stopped ${env}`);
   const startEnvironment = (env: EnvName) => envAction('start', env, api.startEnv, `Starting ${env}`);
-  const removeEnvironment = (env: EnvName) =>
-    envAction('remove', env, api.removeEnv, `Removed ${env} deployment`);
+  async function removeEnvironment(env: EnvName) {
+    if (!id) return;
+    setBusy(`remove-${env}`);
+    try {
+      const updated = await api.removeEnv(id, env);
+      setProject(updated);
+      const warning = updated.environments.find((item) => item.name === env)?.statusReason;
+      if (warning) toast.warning(warning);
+      else toast.success(`Removed ${env} deployment`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function bindTarget(env: EnvName, targetId: string) {
     if (!id) return;

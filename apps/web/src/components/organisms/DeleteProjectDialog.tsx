@@ -35,22 +35,30 @@ export function DeleteProjectDialog({
 }: Props) {
   const [text, setText] = useState('');
   const [confirmProduction, setConfirmProduction] = useState(false);
+  const [confirmCleanupDebt, setConfirmCleanupDebt] = useState(false);
   const [deleteRepository, setDeleteRepository] = useState(false);
   const match = text === projectName;
   const deployed = environments.filter(
     (env) => env.status !== 'empty' || env.version !== null || env.url !== null,
   );
   const productionDeployed = deployed.some((env) => env.name === 'prod');
-  const confirmed = match && (!productionDeployed || confirmProduction);
+  const cleanupPending = environments.filter(
+    (env) => env.status === 'empty' && env.statusReason?.startsWith('Cleanup pending:'),
+  );
+  const confirmed =
+    match &&
+    (!productionDeployed || confirmProduction) &&
+    (!cleanupPending.length || confirmCleanupDebt);
 
   function confirm() {
     if (!confirmed) return;
-    onConfirm({ deleteRepository, confirmProduction });
+    onConfirm({ deleteRepository, confirmProduction, confirmCleanupDebt });
   }
 
   function reset() {
     setText('');
     setConfirmProduction(false);
+    setConfirmCleanupDebt(false);
     setDeleteRepository(false);
   }
 
@@ -71,7 +79,8 @@ export function DeleteProjectDialog({
           </DialogTitle>
           <DialogDescription>
             InitPad will remove every managed deployment before deleting its project record.
-            Cleanup must succeed on every target, otherwise the project stays available for retry.
+            Cleanup must succeed on every target by default. Protected leftovers can only be
+            detached through a separate explicit acknowledgement.
           </DialogDescription>
         </DialogHeader>
 
@@ -90,6 +99,12 @@ export function DeleteProjectDialog({
             ) : (
               <li>No active deployments</li>
             )}
+            {cleanupPending.map((env) => (
+              <li key={`${env.name}-cleanup`} className="text-warning">
+                <span className="capitalize">{env.name} cleanup pending</span>
+                <span className="mt-0.5 block break-all text-xs">{env.statusReason}</span>
+              </li>
+            ))}
             <li className="flex items-center justify-between gap-3">
               <span>Generated images and packages</span>
               <span className="text-xs">remove</span>
@@ -118,6 +133,28 @@ export function DeleteProjectDialog({
                 <span className="block font-medium">Remove the production deployment</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
                   Production will become unavailable and its deployed files will be deleted.
+                </span>
+              </span>
+            </label>
+          )}
+
+          {cleanupPending.length > 0 && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-warning"
+                checked={confirmCleanupDebt}
+                onChange={(e) => setConfirmCleanupDebt(e.target.checked)}
+                disabled={deleting}
+              />
+              <span>
+                <span className="block font-medium">
+                  Delete the InitPad record with protected cleanup still pending
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  The public application is already gone. A target administrator must still
+                  delete the listed quarantined paths. InitPad cannot retry that cleanup after
+                  this project record is deleted.
                 </span>
               </span>
             </label>

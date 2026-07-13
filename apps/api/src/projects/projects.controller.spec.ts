@@ -10,7 +10,7 @@ describe('ProjectsController project deletion', () => {
 
     await controller.remove(
       'project-1',
-      { deleteRepository: true, confirmProduction: true },
+      { deleteRepository: true, confirmProduction: true, confirmCleanupDebt: true },
       'user-1',
     );
 
@@ -18,6 +18,7 @@ describe('ProjectsController project deletion', () => {
     expect(projects.remove).toHaveBeenCalledWith('project-1', {
       deleteRemoteRepo: true,
       confirmProduction: true,
+      confirmCleanupDebt: true,
     });
   });
 });

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 import { CheckCircle2, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type ToastKind = 'error' | 'success';
+type ToastKind = 'error' | 'success' | 'warning';
 interface Toast {
   id: number;
   kind: ToastKind;
@@ -12,9 +12,14 @@ interface Toast {
 interface ToastApi {
   error: (message: string) => void;
   success: (message: string) => void;
+  warning: (message: string) => void;
 }
 
-const ToastContext = createContext<ToastApi>({ error: () => {}, success: () => {} });
+const ToastContext = createContext<ToastApi>({
+  error: () => {},
+  success: () => {},
+  warning: () => {},
+});
 
 let nextId = 1;
 
@@ -30,6 +35,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const api: ToastApi = {
     error: (m) => push('error', m),
     success: (m) => push('success', m),
+    warning: (m) => push('warning', m),
   };
 
   return (
@@ -42,10 +48,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             className={cn(
               'pointer-events-auto flex items-center gap-2.5 rounded-lg border bg-card px-4 py-3 text-sm font-medium shadow-lg',
               'animate-in slide-in-from-top-2 fade-in',
-              t.kind === 'success' ? 'border-success/25' : 'border-destructive/25',
+              t.kind === 'success'
+                ? 'border-success/25'
+                : t.kind === 'warning'
+                  ? 'border-warning/25'
+                  : 'border-destructive/25',
             )}
           >
-            <span className={t.kind === 'success' ? 'text-success' : 'text-destructive'}>
+            <span
+              className={
+                t.kind === 'success'
+                  ? 'text-success'
+                  : t.kind === 'warning'
+                    ? 'text-warning'
+                    : 'text-destructive'
+              }
+            >
               {t.kind === 'success' ? (
                 <CheckCircle2 className="h-[18px] w-[18px]" />
               ) : (

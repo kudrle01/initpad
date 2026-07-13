@@ -13,4 +13,10 @@ export class DeleteProjectDto {
   @IsOptional()
   @IsBoolean()
   confirmProduction?: boolean;
+
+  // Explicit escape hatch for shared hosting where the public application is
+  // gone but protected, foreign-owned files require target-admin cleanup.
+  @IsOptional()
+  @IsBoolean()
+  confirmCleanupDebt?: boolean;
 }

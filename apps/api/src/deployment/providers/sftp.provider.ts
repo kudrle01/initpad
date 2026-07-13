@@ -11,6 +11,7 @@ import {
   ProviderConnection,
   StartInput,
   TeardownInput,
+  TeardownResult,
   VerifyResult,
 } from '../deployment-provider.interface';
 import {
@@ -198,7 +199,7 @@ export class SftpProvider implements DeploymentProvider {
     }
   }
 
-  async teardown(input: TeardownInput): Promise<void> {
+  async teardown(input: TeardownInput): Promise<TeardownResult | void> {
     const cfg = this.eff(input);
     const slug = this.slug(input);
     let conn: Client;
@@ -209,13 +210,15 @@ export class SftpProvider implements DeploymentProvider {
     }
     try {
       const sftp = await getSftp(conn);
+      let result: TeardownResult | void = undefined;
       if (cfg.custom) {
-        await this.removeCustom(conn, sftp, cfg, slug);
+        result = await this.removeCustom(conn, sftp, cfg, slug);
       } else {
         await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}`);
         await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}-releases`);
       }
       this.logger.log(`Torn down SFTP deploy: ${input.projectName} (${input.env})`);
+      return result;
     } finally {
       sshEnd(conn);
     }
@@ -445,23 +448,65 @@ export class SftpProvider implements DeploymentProvider {
     sftp: SFTPWrapper,
     cfg: EffCfg,
     slug: string,
-  ): Promise<void> {
+  ): Promise<TeardownResult | void> {
     // Real host: the served folder is a real directory (no releases/symlink).
     if (!(await this.execWorks(conn))) {
       await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}`);
       return;
     }
-    const paths = [
+    const publicPaths = [
       `${cfg.remoteRoot}/${slug}`,
       `${cfg.remoteRoot}/${slug}__deploying`,
       `${cfg.remoteRoot}/${slug}.deploy.tar`,
-      `${cfg.remoteRoot}/.initpad-data/${slug}`,
     ];
-    const removed = await sshExec(conn, `rm -rf -- ${paths.map(shellQuote).join(' ')}`);
-    if (removed.code !== 0) {
+    const publicRemoved = await sshExec(
+      conn,
+      `rm -rf -- ${publicPaths.map(shellQuote).join(' ')}`,
+    );
+    if (publicRemoved.code !== 0) {
       throw new Error(
-        `Remote teardown failed: ${(removed.stderr || removed.stdout).trim().slice(-300)}`,
+        `Remote public teardown failed: ${(publicRemoved.stderr || publicRemoved.stdout).trim().slice(-300)}`,
       );
+    }
+
+    const dataPath = `${cfg.remoteRoot}/.initpad-data/${slug}`;
+    const dataRemoved = await sshExec(conn, `rm -rf -- ${shellQuote(dataPath)}`);
+    if (dataRemoved.code !== 0) {
+      const quarantineRoot = `${cfg.remoteRoot}/.initpad-quarantine`;
+      const quarantine = `${quarantineRoot}/${slug}-runtime-${Date.now().toString(36)}`;
+      const quarantined = await sshExec(
+        conn,
+        `mkdir -p -- ${shellQuote(quarantineRoot)} && chmod 0700 ${shellQuote(quarantineRoot)} && mv -- ${shellQuote(dataPath)} ${shellQuote(quarantine)}`,
+      );
+      if (quarantined.code !== 0) {
+        throw new Error(
+          `Public deployment was removed, but protected runtime data cleanup failed: ${(quarantined.stderr || quarantined.stdout).trim().slice(-300)}`,
+        );
+      }
+      this.logger.warn(
+        `Runtime-owned data moved to protected quarantine: ${quarantine}. Ask the target administrator to remove it.`,
+      );
+    }
+
+    const quarantineRoot = `${cfg.remoteRoot}/.initpad-quarantine`;
+    const pending = await sshExec(
+      conn,
+      `if [ -d ${shellQuote(quarantineRoot)} ]; then find ${shellQuote(quarantineRoot)} -mindepth 1 -maxdepth 1 -type d -name ${shellQuote(`${slug}-*`)} -print; fi`,
+    );
+    if (pending.code !== 0) {
+      this.logger.warn(`Could not inspect protected quarantine for ${slug}`);
+      return {
+        warning: `Public deployment removed, but protected quarantine state could not be verified at ${quarantineRoot}.`,
+      };
+    }
+    const paths = pending.stdout
+      .split('\n')
+      .map((path) => path.trim())
+      .filter(Boolean);
+    if (paths.length) {
+      return {
+        warning: `Public deployment removed. Target administrator cleanup is still required for: ${paths.join(', ')}`,
+      };
     }
   }
 
