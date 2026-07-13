@@ -13,6 +13,7 @@ import {
   Settings,
   Building2,
   Check,
+  ShieldCheck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -143,6 +144,9 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
         {PLATFORM_NAV.map((item) => (
           <Item key={item.to} {...item} />
         ))}
+        {user.platformRole === 'admin' && (
+          <Item to="/admin" label="Administration" icon={ShieldCheck} />
+        )}
       </nav>
 
       <div className="border-t border-border p-2.5">

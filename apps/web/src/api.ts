@@ -10,6 +10,7 @@ import type {
   Workspace,
   WorkspaceMember,
   WorkspaceRole,
+  AdminUser,
 } from '@/types';
 
 export interface EnvConfig {
@@ -158,4 +159,17 @@ export const api = {
   logout: () => http<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
   getGitAccess: () =>
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
+  // Instance administration (platform admin only).
+  adminListUsers: () => http<AdminUser[]>('/admin/users'),
+  adminCreateUser: (body: { username: string; email: string; name?: string; platformRole?: 'admin' | 'user' }) =>
+    http<{ user: AdminUser; temporaryPassword: string }>('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  adminDeactivateUser: (id: string) =>
+    http<AdminUser>(`/admin/users/${id}/deactivate`, { method: 'POST' }),
+  adminActivateUser: (id: string) =>
+    http<AdminUser>(`/admin/users/${id}/activate`, { method: 'POST' }),
+  adminResetPassword: (id: string) =>
+    http<{ temporaryPassword: string }>(`/admin/users/${id}/reset-password`, { method: 'POST' }),
 };

@@ -12,6 +12,7 @@ import Environments from '@/pages/Environments';
 import Activity from '@/pages/Activity';
 import Infrastructure from '@/pages/Infrastructure';
 import Settings from '@/pages/Settings';
+import Admin from '@/pages/Admin';
 import NewProject from '@/pages/NewProject';
 import ProjectDetail from '@/pages/ProjectDetail';
 import NotFound from '@/pages/NotFound';
@@ -32,6 +33,7 @@ const router = createBrowserRouter([
       { path: 'activity', element: <Activity /> },
       { path: 'infrastructure', element: <Infrastructure /> },
       { path: 'settings', element: <Settings /> },
+      { path: 'admin', element: <Admin /> },
       { path: 'new', element: <NewProject /> },
       { path: 'projects/:id', element: <ProjectDetail /> },
       { path: '*', element: <NotFound /> },

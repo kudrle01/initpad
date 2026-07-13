@@ -10,6 +10,19 @@ export interface User {
   mustChangePassword: boolean;
 }
 
+// Instance-administration view of an account (self-hosted edition).
+export interface AdminUser {
+  id: string;
+  username: string;
+  name: string | null;
+  email: string | null;
+  platformRole: 'admin' | 'user';
+  active: boolean;
+  mustChangePassword: boolean;
+  emailVerified: boolean;
+  createdAt: string;
+}
+
 export type WorkspaceRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
 export type WorkspaceType = 'personal' | 'team';
 
