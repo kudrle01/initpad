@@ -1,8 +1,9 @@
 import { TargetsService, TargetRow } from './targets.service';
 import { encryptSecret } from '../common/secret';
+import { ForbiddenException } from '@nestjs/common';
 
 // parseCaps and connectionForTarget are pure — no Prisma/Deployment needed.
-const svc = new TargetsService({} as never, {} as never);
+const svc = new TargetsService({} as never, {} as never, {} as never);
 
 describe('parseCaps', () => {
   it('splits, trims and drops empty entries', () => {
@@ -29,6 +30,7 @@ describe('connectionForTarget', () => {
     publicUrl: 'https://eso.example.edu/~kudj05',
     verifiedAt: null,
     ownerId: 'u1',
+    workspaceId: 'w1',
     createdAt: new Date(),
   };
 
@@ -49,5 +51,32 @@ describe('connectionForTarget', () => {
     const c = svc.connectionForTarget({ ...base, auth: 'key', secret: encryptSecret('PEMKEY') })!;
     expect(c.privateKey).toBe('PEMKEY');
     expect(c.password).toBeUndefined();
+  });
+});
+
+describe('target authorization', () => {
+  it('requires maintainer access before testing a built-in target', async () => {
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'builtin-docker',
+          scope: 'builtin',
+          kind: 'docker',
+        })),
+      },
+    };
+    const deployment = { verify: jest.fn() };
+    const workspaces = {
+      resolve: jest.fn(async () => ({ id: 'w1', role: 'viewer' })),
+      require: jest.fn(async () => {
+        throw new ForbiddenException();
+      }),
+    };
+    const service = new TargetsService(prisma as never, deployment as never, workspaces as never);
+
+    await expect(service.verify('builtin-docker', 'u1', 'w1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(deployment.verify).not.toHaveBeenCalled();
   });
 });

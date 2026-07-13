@@ -10,9 +10,10 @@ import { DeploymentModule } from '../deployment/deployment.module';
 import { TargetsModule } from '../targets/targets.module';
 import { ScmModule } from '../scm/scm.module';
 import { AuthModule } from '../auth/auth.module';
+import { WorkspacesModule } from '../workspaces/workspaces.module';
 
 @Module({
-  imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, ScmModule, AuthModule],
+  imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, ScmModule, AuthModule, WorkspacesModule],
   providers: [ProjectsService],
   controllers: [ProjectsController, ActivityController, CiController, ScmWebhookController],
 })

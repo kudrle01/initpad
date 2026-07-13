@@ -95,6 +95,7 @@ export interface Environment {
 
 export interface Project {
   id: string;
+  workspaceId: string;
   name: string;
   templateId: string;
   repoPath: string;

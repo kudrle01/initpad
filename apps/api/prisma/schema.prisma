@@ -88,8 +88,9 @@ model Target {
   createdAt    DateTime      @default(now())
   environments Environment[]
 
-  // A user cannot have two targets with the same name.
-  @@unique([ownerId, name])
+  // A workspace cannot have two user targets with the same name. Built-ins
+  // have null workspaceId and stable ids (Postgres permits multiple NULLs).
+  @@unique([workspaceId, name])
 }
 
 model Project {

@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   Post,
@@ -24,13 +25,17 @@ export class TargetsController {
   constructor(private readonly targets: TargetsService) {}
 
   @Get()
-  list(@CurrentUser() userId: string) {
-    return this.targets.listForUser(userId);
+  list(@CurrentUser() userId: string, @Headers('x-workspace-id') workspaceId?: string) {
+    return this.targets.listForUser(userId, workspaceId);
   }
 
   @Post()
-  create(@Body() dto: CreateTargetDto, @CurrentUser() userId: string) {
-    return this.targets.create(userId, dto);
+  create(
+    @Body() dto: CreateTargetDto,
+    @CurrentUser() userId: string,
+    @Headers('x-workspace-id') workspaceId?: string,
+  ) {
+    return this.targets.create(userId, dto, workspaceId);
   }
 
   @Put(':id')
@@ -50,7 +55,11 @@ export class TargetsController {
 
   // Live connection test ("Test connection"). Stamps the target as verified.
   @Post(':id/verify')
-  verify(@Param('id') id: string, @CurrentUser() userId: string) {
-    return this.targets.verify(id, userId);
+  verify(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Headers('x-workspace-id') workspaceId?: string,
+  ) {
+    return this.targets.verify(id, userId, workspaceId);
   }
 }

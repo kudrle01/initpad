@@ -9,6 +9,7 @@ import { DeploymentModule } from './deployment/deployment.module';
 import { TargetsModule } from './targets/targets.module';
 import { OidcModule } from './oauth/oidc.module';
 import { MeModule } from './me/me.module';
+import { WorkspacesModule } from './workspaces/workspaces.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { MeModule } from './me/me.module';
     TargetsModule,
     ProjectsModule,
     MeModule,
+    WorkspacesModule,
   ],
   controllers: [HealthController],
 })

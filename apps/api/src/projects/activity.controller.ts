@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Headers, UseGuards } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -11,7 +11,7 @@ export class ActivityController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get()
-  list(@CurrentUser() userId: string) {
-    return this.projects.activity(userId);
+  list(@CurrentUser() userId: string, @Headers('x-workspace-id') workspaceId?: string) {
+    return this.projects.activity(userId, workspaceId);
   }
 }

@@ -19,6 +19,7 @@ import {
 import type { ProviderConnection, VerifyResult } from '../deployment/deployment-provider.interface';
 import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
+import { WorkspacesService } from '../workspaces/workspaces.service';
 
 // Stable ids for the seeded built-in targets (the simulated infrastructure).
 export const BUILTIN_DOCKER = 'builtin-docker';
@@ -41,6 +42,7 @@ export interface TargetRow {
   publicUrl: string | null;
   verifiedAt: Date | null;
   ownerId: string | null;
+  workspaceId: string | null;
   createdAt: Date;
 }
 
@@ -57,6 +59,7 @@ export class TargetsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly deployment: DeploymentService,
+    private readonly workspaces: WorkspacesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -82,6 +85,7 @@ export class TargetsService implements OnModuleInit {
         remotePath: null,
         publicUrl: null,
         ownerId: null,
+        workspaceId: null,
       },
       {
         id: BUILTIN_SSH,
@@ -97,6 +101,7 @@ export class TargetsService implements OnModuleInit {
         remotePath: ssh.remoteRoot,
         publicUrl: null,
         ownerId: null,
+        workspaceId: null,
       },
       {
         id: BUILTIN_SFTP,
@@ -112,6 +117,7 @@ export class TargetsService implements OnModuleInit {
         remotePath: sftp.remoteRoot,
         publicUrl: sftp.publicUrl,
         ownerId: null,
+        workspaceId: null,
       },
     ];
 
@@ -146,9 +152,10 @@ export class TargetsService implements OnModuleInit {
 
   // Built-ins + the user's own targets, as API summaries (no secret), with an
   // inUse flag so the UI can block deletion of targets in use.
-  async listForUser(ownerId: string): Promise<Target[]> {
+  async listForUser(userId: string, requestedWorkspaceId?: string): Promise<Target[]> {
+    const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const rows = (await this.prisma.target.findMany({
-      where: { OR: [{ scope: 'builtin' }, { ownerId }] },
+      where: { OR: [{ scope: 'builtin' }, { workspaceId }] },
       orderBy: [{ scope: 'asc' }, { createdAt: 'asc' }],
     })) as TargetRow[];
 
@@ -163,16 +170,18 @@ export class TargetsService implements OnModuleInit {
 
   // Raw rows (with secrets) for internal use by ProjectsService (default
   // selection + capability checks at project creation).
-  async listEntities(ownerId: string): Promise<TargetRow[]> {
+  async listEntities(workspaceId: string): Promise<TargetRow[]> {
     return (await this.prisma.target.findMany({
-      where: { OR: [{ scope: 'builtin' }, { ownerId }] },
+      where: { OR: [{ scope: 'builtin' }, { workspaceId }] },
     })) as TargetRow[];
   }
 
-  async create(ownerId: string, dto: CreateTargetDto): Promise<Target> {
+  async create(userId: string, dto: CreateTargetDto, requestedWorkspaceId?: string): Promise<Target> {
+    const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
+    await this.workspaces.require(userId, workspaceId, 'maintain');
     this.assertSafeEndpoint(dto.host, dto.publicUrl);
-    if (await this.prisma.target.findFirst({ where: { ownerId, name: dto.name } })) {
-      throw new BadRequestException(`You already have a target named '${dto.name}'`);
+    if (await this.prisma.target.findFirst({ where: { workspaceId, name: dto.name } })) {
+      throw new BadRequestException(`This workspace already has a target named '${dto.name}'`);
     }
     const row = (await this.prisma.target.create({
       data: {
@@ -187,18 +196,19 @@ export class TargetsService implements OnModuleInit {
         secret: encryptSecret(dto.secret),
         remotePath: dto.remotePath,
         publicUrl: dto.publicUrl,
-        ownerId,
+        ownerId: userId,
+        workspaceId,
       },
     })) as TargetRow;
     return this.toSummary(row, false);
   }
 
   async update(id: string, ownerId: string, dto: UpdateTargetDto): Promise<Target> {
-    const row = await this.getUserTarget(id, ownerId);
+    const row = await this.getUserTarget(id, ownerId, 'maintain');
     this.assertSafeEndpoint(dto.host ?? row.host ?? '', dto.publicUrl ?? row.publicUrl ?? '');
     if (dto.name && dto.name !== row.name) {
       const duplicate = await this.prisma.target.findFirst({
-        where: { ownerId, name: dto.name, id: { not: row.id } },
+        where: { workspaceId: row.workspaceId, name: dto.name, id: { not: row.id } },
       });
       if (duplicate) throw new BadRequestException(`You already have a target named '${dto.name}'`);
     }
@@ -253,7 +263,7 @@ export class TargetsService implements OnModuleInit {
   }
 
   async remove(id: string, ownerId: string): Promise<void> {
-    const row = await this.getUserTarget(id, ownerId);
+    const row = await this.getUserTarget(id, ownerId, 'maintain');
     const inUse = await this.prisma.environment.count({ where: { targetId: row.id } });
     if (inUse > 0) {
       throw new BadRequestException(
@@ -264,8 +274,12 @@ export class TargetsService implements OnModuleInit {
   }
 
   // Runs a live connection test and stamps verifiedAt on success.
-  async verify(id: string, ownerId: string): Promise<VerifyResult> {
-    const row = await this.getVisibleTarget(id, ownerId);
+  async verify(id: string, userId: string, requestedWorkspaceId?: string): Promise<VerifyResult> {
+    const row = await this.getVisibleTarget(id, userId, 'maintain');
+    if (row.scope === 'builtin') {
+      const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
+      await this.workspaces.require(userId, workspaceId, 'maintain');
+    }
     const result = await this.deployment.verify(
       row.kind as ProviderKind,
       this.connectionForTarget(row),
@@ -280,17 +294,26 @@ export class TargetsService implements OnModuleInit {
   }
 
   // A target the user may read (their own or a built-in).
-  async getVisibleTarget(id: string, ownerId: string): Promise<TargetRow> {
+  async getVisibleTarget(
+    id: string,
+    userId: string,
+    permission: 'read' | 'write' | 'maintain' = 'read',
+  ): Promise<TargetRow> {
     const row = (await this.prisma.target.findUnique({ where: { id } })) as TargetRow | null;
     if (!row) throw new NotFoundException(`Target '${id}' not found`);
-    if (row.scope !== 'builtin' && row.ownerId !== ownerId) {
-      throw new ForbiddenException('Not your target');
+    if (row.scope !== 'builtin') {
+      if (!row.workspaceId) throw new ForbiddenException('Target has no workspace assignment');
+      await this.workspaces.require(userId, row.workspaceId, permission);
     }
     return row;
   }
 
-  private async getUserTarget(id: string, ownerId: string): Promise<TargetRow> {
-    const row = await this.getVisibleTarget(id, ownerId);
+  private async getUserTarget(
+    id: string,
+    userId: string,
+    permission: 'read' | 'write' | 'maintain',
+  ): Promise<TargetRow> {
+    const row = await this.getVisibleTarget(id, userId, permission);
     if (row.scope === 'builtin') {
       throw new BadRequestException('Built-in targets cannot be modified');
     }

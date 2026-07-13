@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   Post,
@@ -16,22 +17,21 @@ import { EnvName } from '../domain/types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
-// Every operation on a concrete project first verifies ownership
-// (assertOwner) — knowing a UUID must not grant access to someone else's
-// project.
+// Project access is derived from workspace membership. Read operations allow
+// every member; mutations require a non-viewer role.
 @Controller('projects')
 @UseGuards(JwtAuthGuard)
 export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get()
-  list(@CurrentUser() userId: string) {
-    return this.projects.list(userId);
+  list(@CurrentUser() userId: string, @Headers('x-workspace-id') workspaceId?: string) {
+    return this.projects.list(userId, workspaceId);
   }
 
   @Get(':id')
   async get(@Param('id') id: string, @CurrentUser() userId: string) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'read');
     // Detail reads reconcile too — refreshing the detail of a project whose
     // repository was deleted in Gitea cleans it up and returns 404.
     await this.projects.reconcileProject(id);
@@ -40,13 +40,17 @@ export class ProjectsController {
 
   @Get(':id/commits')
   async commits(@Param('id') id: string, @CurrentUser() userId: string) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'read');
     return this.projects.getCommits(id);
   }
 
   @Post()
-  create(@Body() dto: CreateProjectDto, @CurrentUser() userId: string) {
-    return this.projects.create(dto, userId);
+  create(
+    @Body() dto: CreateProjectDto,
+    @CurrentUser() userId: string,
+    @Headers('x-workspace-id') workspaceId?: string,
+  ) {
+    return this.projects.create(dto, userId, workspaceId);
   }
 
   @Post(':id/promote/:env')
@@ -55,7 +59,7 @@ export class ProjectsController {
     @Param('env') env: EnvName,
     @CurrentUser() userId: string,
   ) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'write');
     return this.projects.promote(id, env);
   }
 
@@ -65,7 +69,7 @@ export class ProjectsController {
     @Param('env') env: EnvName,
     @CurrentUser() userId: string,
   ) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'write');
     return this.projects.redeploy(id, env);
   }
 
@@ -75,7 +79,7 @@ export class ProjectsController {
     @Param('env') env: EnvName,
     @CurrentUser() userId: string,
   ) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'write');
     return this.projects.stopEnv(id, env);
   }
 
@@ -85,7 +89,7 @@ export class ProjectsController {
     @Param('env') env: EnvName,
     @CurrentUser() userId: string,
   ) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'write');
     return this.projects.startEnv(id, env);
   }
 
@@ -95,7 +99,7 @@ export class ProjectsController {
     @Param('env') env: EnvName,
     @CurrentUser() userId: string,
   ) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'write');
     return this.projects.removeEnv(id, env);
   }
 
@@ -108,7 +112,7 @@ export class ProjectsController {
     @Body() dto: SetTargetDto,
     @CurrentUser() userId: string,
   ) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'write');
     return this.projects.bindTarget(id, env, dto.targetId);
   }
 
@@ -118,13 +122,14 @@ export class ProjectsController {
     @Param('env') env: EnvName,
     @CurrentUser() userId: string,
   ) {
-    await this.projects.assertOwner(id, userId);
+    await this.projects.assertAccess(id, userId, 'read');
     return { logs: await this.projects.envLogs(id, env) };
   }
 
   @Delete(':id')
   @HttpCode(204)
-  remove(@Param('id') id: string, @CurrentUser() userId: string) {
-    return this.projects.remove(id, userId);
+  async remove(@Param('id') id: string, @CurrentUser() userId: string) {
+    await this.projects.assertAccess(id, userId, 'maintain');
+    return this.projects.remove(id);
   }
 }

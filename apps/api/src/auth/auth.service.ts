@@ -93,7 +93,7 @@ export class AuthService {
               role: 'owner',
               workspace: {
                 create: {
-                  slug: giteaUser.login.toLowerCase(),
+                  slug: `personal-${giteaUser.login.toLowerCase()}`,
                   name: `${giteaUser.login}'s workspace`,
                   type: 'personal',
                 },

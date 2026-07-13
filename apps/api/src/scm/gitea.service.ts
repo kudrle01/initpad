@@ -260,6 +260,49 @@ export class GiteaService implements OnModuleInit {
     }).catch(() => undefined);
   }
 
+  async setCollaborator(
+    repoUrl: string | null,
+    username: string,
+    role: string,
+  ): Promise<void> {
+    const repo = this.repoCoordinates(repoUrl);
+    if (!repo || repo.owner === username) return;
+    const permission = role === 'viewer' ? 'read' : role === 'admin' || role === 'owner' ? 'admin' : 'write';
+    const res = await fetch(
+      `${config.gitea.internalUrl}/api/v1/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/collaborators/${encodeURIComponent(username)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `token ${config.gitea.adminToken}` },
+        body: JSON.stringify({ permission }),
+      },
+    );
+    if (!res.ok && res.status !== 204) {
+      throw new Error(`Could not grant ${permission} repository access to '${username}' (HTTP ${res.status})`);
+    }
+  }
+
+  async removeCollaborator(repoUrl: string | null, username: string): Promise<void> {
+    const repo = this.repoCoordinates(repoUrl);
+    if (!repo || repo.owner === username) return;
+    const res = await fetch(
+      `${config.gitea.internalUrl}/api/v1/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/collaborators/${encodeURIComponent(username)}`,
+      { method: 'DELETE', headers: { Authorization: `token ${config.gitea.adminToken}` } },
+    );
+    if (!res.ok && res.status !== 204 && res.status !== 404) {
+      throw new Error(`Could not revoke repository access from '${username}' (HTTP ${res.status})`);
+    }
+  }
+
+  private repoCoordinates(repoUrl: string | null): { owner: string; name: string } | null {
+    if (!repoUrl) return null;
+    try {
+      const parts = new URL(repoUrl).pathname.replace(/\.git$/, '').split('/').filter(Boolean);
+      return parts.length >= 2 ? { owner: parts[parts.length - 2], name: parts[parts.length - 1] } : null;
+    } catch {
+      return null;
+    }
+  }
+
   // True only when Gitea explicitly reports the repository as absent (404).
   // Network failures, auth errors etc. return false — the caller must never
   // treat an outage as a deletion.

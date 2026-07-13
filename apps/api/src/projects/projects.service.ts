@@ -4,7 +4,6 @@ import {
   OnModuleInit,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { mkdtempSync, rmSync } from 'fs';
@@ -37,6 +36,7 @@ import { config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 import { generateToken, hashToken, tokenMatches } from '../common/token';
 import type { ProviderConnection } from '../deployment/deployment-provider.interface';
+import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -60,6 +60,7 @@ export class ProjectsService implements OnModuleInit {
     private readonly deployment: DeploymentService,
     private readonly targets: TargetsService,
     private readonly gitea: GiteaService,
+    private readonly workspaces: WorkspacesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -209,14 +210,15 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
-  async list(ownerId: string): Promise<Project[]> {
+  async list(userId: string, requestedWorkspaceId?: string): Promise<Project[]> {
+    const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     // Reconcile on read: refreshing the project list is the moment the user
     // expects reality — projects whose repositories were deleted directly in
     // Gitea are cleaned up here (the webhook remains as an instant path when
     // a Gitea version delivers it). No background timers needed.
-    await this.pruneMissingRepos(ownerId);
+    await this.pruneMissingRepos(workspaceId);
     const rows = await this.prisma.project.findMany({
-      where: { ownerId },
+      where: { workspaceId },
       include: { environments: { include: { target: true } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -227,10 +229,10 @@ export class ProjectsService implements OnModuleInit {
   // A repository counts as gone ONLY on an explicit 404 (with a short request
   // timeout) — an outage never deletes anything and never blocks the list
   // for long. Checks run in parallel; cheap at per-user scale.
-  private async pruneMissingRepos(ownerId: string): Promise<void> {
+  private async pruneMissingRepos(workspaceId: string): Promise<void> {
     try {
       const rows = await this.prisma.project.findMany({
-        where: { ownerId },
+        where: { workspaceId },
         include: { owner: true },
       });
       await Promise.all(
@@ -282,34 +284,20 @@ export class ProjectsService implements OnModuleInit {
     return this.toDomain(row);
   }
 
-  // Verifies the project belongs to the signed-in user. Called at the start
-  // of every user-facing operation (IDOR protection); internal flows (the CI
-  // webhook) bypass it and authenticate differently.
-  async assertOwner(id: string, ownerId: string): Promise<void> {
-    const row = await this.prisma.project.findUnique({
-      where: { id },
-      select: { ownerId: true },
-    });
-    if (!row) throw new NotFoundException(`Project '${id}' not found`);
-    if (row.ownerId && row.ownerId !== ownerId) {
-      throw new ForbiddenException('Not your project');
-    }
+  // Central workspace authorization boundary. Internal CI/SCM flows use their
+  // own scoped credentials and intentionally do not call this method.
+  async assertAccess(id: string, userId: string, permission: WorkspacePermission): Promise<void> {
+    await this.workspaces.requireProject(userId, id, permission);
   }
 
-  async create(dto: CreateProjectDto, ownerId: string): Promise<Project> {
-    // Project names are unique per account, not globally.
-    if (await this.prisma.project.findFirst({ where: { ownerId, name: dto.name } })) {
-      throw new BadRequestException(`You already have a project named '${dto.name}'`);
+  async create(dto: CreateProjectDto, ownerId: string, requestedWorkspaceId?: string): Promise<Project> {
+    const { id: workspaceId } = await this.workspaces.resolve(ownerId, requestedWorkspaceId);
+    await this.workspaces.require(ownerId, workspaceId, 'write');
+    if (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.name } })) {
+      throw new BadRequestException(`This workspace already has a project named '${dto.name}'`);
     }
     const template = this.templates.get(dto.templateId);
     const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
-    // Until the workspace selector reaches the API, preserve existing behavior
-    // by creating in the user's personal workspace. The next tenancy slice
-    // replaces this lookup with the explicitly selected authorized workspace.
-    const membership = await this.prisma.workspaceMember.findFirstOrThrow({
-      where: { userId: ownerId, workspace: { type: 'personal' } },
-      select: { workspaceId: true },
-    });
     const actor: GiteaActor = {
       username: owner.username,
       token: decryptSecret(owner.accessToken),
@@ -317,7 +305,7 @@ export class ProjectsService implements OnModuleInit {
 
     // Resolve every target before creating external state. Invalid target
     // configuration must not leave a repository behind in Gitea.
-    const targets = await this.targets.listEntities(ownerId);
+    const targets = await this.targets.listEntities(workspaceId);
     const envTargets = ENV_ORDER.map((name) => {
       const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
       return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
@@ -344,6 +332,25 @@ export class ProjectsService implements OnModuleInit {
       );
     }
 
+    try {
+      const collaborators = await this.prisma.workspaceMember.findMany({
+        where: { workspaceId, userId: { not: ownerId } },
+        include: { user: true },
+      });
+      for (const collaborator of collaborators) {
+        await this.gitea.setCollaborator(
+          repo.repoUrl,
+          collaborator.user.username,
+          collaborator.role,
+        );
+      }
+    } catch (e) {
+      await this.gitea.deleteRepo(dto.name, actor);
+      throw new BadRequestException(
+        `Repository collaborators could not be configured: ${(e as Error).message}`,
+      );
+    }
+
     // The scaffold has been pushed — Gitea is now the source of truth and the
     // local working copy is no longer needed (deployments download the exact
     // commit from Gitea). Keeping the platform stateless w.r.t. code.
@@ -360,7 +367,7 @@ export class ProjectsService implements OnModuleInit {
           lastCommit: 'init: scaffold from template',
           ciDeployTokenHash: hashToken(ciDeployToken),
           ownerId,
-          workspaceId: membership.workspaceId,
+          workspaceId,
           environments: {
             create: envTargets.map(({ name, target }, order) => ({
               name,
@@ -680,15 +687,12 @@ export class ProjectsService implements OnModuleInit {
   // Deletes the project: tears down all environment deployments, removes the
   // Gitea repository, the workspace directory and the DB row (environments
   // are removed by cascade).
-  async remove(id: string, ownerId: string): Promise<void> {
+  async remove(id: string): Promise<void> {
     const row = await this.prisma.project.findUnique({
       where: { id },
       include: { environments: { include: { target: true } }, owner: true },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
-    if (row.ownerId && row.ownerId !== ownerId) {
-      throw new ForbiddenException('Not your project');
-    }
     await this.cleanupProject(row, { deleteRemoteRepo: true });
   }
 
@@ -832,9 +836,10 @@ export class ProjectsService implements OnModuleInit {
   // Cross-project activity feed: the recent commits of every owned project with
   // their CI/deploy pipeline state, merged newest-first. A failing project
   // (e.g. its Gitea repo is unreachable) is skipped, not fatal.
-  async activity(ownerId: string): Promise<ActivityEvent[]> {
+  async activity(userId: string, requestedWorkspaceId?: string): Promise<ActivityEvent[]> {
+    const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const rows = await this.prisma.project.findMany({
-      where: { ownerId },
+      where: { workspaceId },
       select: { id: true, name: true },
     });
     const perProject = await Promise.all(
@@ -1126,6 +1131,7 @@ export class ProjectsService implements OnModuleInit {
   private toDomain(row: ProjectRow): Project {
     return {
       id: row.id,
+      workspaceId: row.workspaceId,
       name: row.name,
       templateId: row.templateId,
       repoPath: row.repoPath,
@@ -1173,7 +1179,7 @@ export class ProjectsService implements OnModuleInit {
       );
     }
 
-    const entities = await this.targets.listEntities(project.ownerId ?? '');
+    const entities = await this.targets.listEntities(project.workspaceId);
     const target = entities.find((e) => e.id === targetId);
     if (!target) throw new NotFoundException(`Target '${targetId}' not found`);
     this.assertUsable(target, template);
