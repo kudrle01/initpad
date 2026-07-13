@@ -148,6 +148,23 @@ export class GiteaService implements OnModuleInit {
     return { id: data.id, login: data.login };
   }
 
+  // Enables or disables the Gitea account so instance-level deactivation stays
+  // consistent with the SCM: a disabled Gitea user cannot authenticate or use
+  // tokens. EditUserOption requires login_name + source_id for local accounts.
+  async setUserActive(username: string, active: boolean): Promise<void> {
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
+    if (!url || !adminToken) throw new Error('Gitea admin is not configured');
+    const res = await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
+      body: JSON.stringify({ login_name: username, source_id: 0, active }),
+    });
+    if (!res.ok) {
+      throw new Error(`Could not ${active ? 'activate' : 'deactivate'} the Gitea account (HTTP ${res.status})`);
+    }
+  }
+
   async deleteUser(username: string): Promise<void> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;

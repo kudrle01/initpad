@@ -79,9 +79,33 @@ export class AuthService {
       throw new ForbiddenException('Account registration is closed. Ask the platform administrator for access.');
     }
     const userCount = await this.prisma.user.count();
-    const email = dto.email.trim().toLowerCase();
+    const user = await this.provisionManagedUser({
+      username: dto.username,
+      email: dto.email,
+      password: dto.password,
+      // The very first account bootstraps the instance administrator.
+      platformRole: userCount === 0 ? 'admin' : 'user',
+    });
+    return { token: this.signToken(user), user: this.toSession(user) };
+  }
+
+  /**
+   * Provisions a managed account: creates the Gitea user + access token, then
+   * persists the platform user with a personal workspace. Any failure after the
+   * Gitea account exists rolls it back, so provisioning stays consistent with
+   * Gitea (ADR-040). Shared by self-service registration and admin creation.
+   */
+  async provisionManagedUser(input: {
+    username: string;
+    email: string;
+    name?: string | null;
+    password: string;
+    platformRole?: 'admin' | 'user';
+    mustChangePassword?: boolean;
+  }) {
+    const email = input.email.trim().toLowerCase();
     const existing = await this.prisma.user.findFirst({
-      where: { OR: [{ username: dto.username }, { email }] },
+      where: { OR: [{ username: input.username }, { email }] },
     });
     if (existing) {
       throw new BadRequestException('Username or e-mail is already taken');
@@ -90,19 +114,21 @@ export class AuthService {
     let provisionedUsername: string | null = null;
     try {
       const giteaUser = await this.gitea.createUser({
-        username: dto.username,
+        username: input.username,
         email,
-        password: dto.password,
+        password: input.password,
       });
       provisionedUsername = giteaUser.login;
-      const accessToken = await this.gitea.createUserToken(dto.username, dto.password);
-      const user = await this.prisma.user.create({
+      const accessToken = await this.gitea.createUserToken(input.username, input.password);
+      return await this.prisma.user.create({
         data: {
           giteaId: giteaUser.id,
           username: giteaUser.login,
           email,
-          platformRole: userCount === 0 ? 'admin' : 'user',
-          passwordHash: hashPassword(dto.password),
+          name: input.name ?? undefined,
+          platformRole: input.platformRole ?? 'user',
+          mustChangePassword: input.mustChangePassword ?? false,
+          passwordHash: hashPassword(input.password),
           accessToken: encryptSecret(accessToken),
           memberships: {
             create: {
@@ -118,7 +144,6 @@ export class AuthService {
           },
         },
       });
-      return { token: this.signToken(user), user: this.toSession(user) };
     } catch (e) {
       if (provisionedUsername) await this.gitea.deleteUser(provisionedUsername);
       throw e;
