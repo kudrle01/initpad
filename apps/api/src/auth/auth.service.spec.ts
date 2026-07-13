@@ -46,7 +46,7 @@ describe('AuthService', () => {
   it('normalizes an e-mail address during sign-in', async () => {
     const user = {
       id: 'u1', username: 'alice', email: 'alice@example.test', name: null, avatarUrl: null,
-      passwordHash: hashPassword('long-password'), accessToken: '',
+      passwordHash: hashPassword('long-password'), accessToken: '', platformRole: 'user',
     };
     const prisma = { user: { findFirst: jest.fn(async () => user) } };
     const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
@@ -54,5 +54,42 @@ describe('AuthService', () => {
     expect(prisma.user.findFirst).toHaveBeenCalledWith({
       where: { OR: [{ username: 'ALICE@EXAMPLE.TEST' }, { email: 'alice@example.test' }] },
     });
+  });
+
+  it('allows closed registration only with a valid open course code', async () => {
+    config.auth.registrationMode = 'closed';
+    const prisma = {
+      user: {
+        count: jest.fn(async () => 3),
+        findFirst: jest.fn(async () => null),
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          id: 'student', username: 'student', email: 'student@example.test', name: null,
+          avatarUrl: null, platformRole: 'user', ...data,
+        })),
+      },
+      course: {
+        findUnique: jest.fn(async () => ({
+          id: 'course-1', enrollmentOpen: true, membershipLocked: false,
+        })),
+      },
+    };
+    const gitea = {
+      createUser: jest.fn(async () => ({ id: 10, login: 'student' })),
+      createUserToken: jest.fn(async () => 'a'.repeat(40)),
+      deleteUser: jest.fn(),
+    };
+    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, gitea as never);
+
+    await service.register({
+      username: 'student', email: 'student@example.test', password: 'long-password',
+      enrollmentCode: 'INIT-0000-0000-0000-0000',
+    });
+
+    expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        platformRole: 'user',
+        courseMemberships: { create: { courseId: 'course-1', role: 'student' } },
+      }),
+    }));
   });
 });

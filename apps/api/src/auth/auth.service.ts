@@ -12,6 +12,7 @@ import { LoginDto } from './dto/login.dto';
 import { hashPassword, verifyPassword } from './password';
 import { encryptSecret } from '../common/secret';
 import { config } from '../config';
+import { hashEnrollmentCode } from '../courses/enrollment-code';
 
 export interface SessionUser {
   id: string;
@@ -19,6 +20,7 @@ export interface SessionUser {
   name: string | null;
   email: string | null;
   avatarUrl: string | null;
+  platformRole: 'admin' | 'user';
 }
 
 /**
@@ -61,7 +63,26 @@ export class AuthService {
   private async registerUnlocked(
     dto: RegisterDto,
   ): Promise<{ token: string; user: SessionUser }> {
-    if (!(await this.registrationAvailable())) {
+    const userCount = await this.prisma.user.count();
+    const publicRegistrationAvailable =
+      config.auth.registrationMode === 'open' ||
+      (config.auth.registrationMode === 'first-user' && userCount === 0);
+    const enrollmentCode = dto.enrollmentCode?.trim();
+    const course = enrollmentCode
+      ? await this.prisma.course.findUnique({
+          where: { enrollmentCodeHash: hashEnrollmentCode(enrollmentCode) },
+          select: { id: true, enrollmentOpen: true, membershipLocked: true },
+        })
+      : null;
+    if (enrollmentCode && !course) {
+      throw new BadRequestException('Enrollment code is invalid');
+    }
+    if (course && (!course.enrollmentOpen || course.membershipLocked)) {
+      throw new ForbiddenException(
+        course.membershipLocked ? 'Course membership is locked' : 'Course enrollment is closed',
+      );
+    }
+    if (!publicRegistrationAvailable && !course) {
       throw new ForbiddenException('Account registration is closed. Ask the platform administrator for access.');
     }
     const email = dto.email.trim().toLowerCase();
@@ -86,6 +107,7 @@ export class AuthService {
           giteaId: giteaUser.id,
           username: giteaUser.login,
           email,
+          platformRole: userCount === 0 ? 'admin' : 'user',
           passwordHash: hashPassword(dto.password),
           accessToken: encryptSecret(accessToken),
           memberships: {
@@ -100,6 +122,9 @@ export class AuthService {
               },
             },
           },
+          ...(course
+            ? { courseMemberships: { create: { courseId: course.id, role: 'student' } } }
+            : {}),
         },
       });
       return { token: this.jwt.sign({ sub: user.id }), user: this.toSession(user) };
@@ -127,6 +152,7 @@ export class AuthService {
     name: string | null;
     email: string | null;
     avatarUrl: string | null;
+    platformRole: string;
   }): SessionUser {
     return {
       id: user.id,
@@ -134,6 +160,7 @@ export class AuthService {
       name: user.name,
       email: user.email,
       avatarUrl: user.avatarUrl,
+      platformRole: user.platformRole === 'admin' ? 'admin' : 'user',
     };
   }
 
@@ -146,6 +173,7 @@ export class AuthService {
       name: user.name,
       email: user.email,
       avatarUrl: user.avatarUrl,
+      platformRole: user.platformRole === 'admin' ? 'admin' : 'user',
     };
   }
 }
