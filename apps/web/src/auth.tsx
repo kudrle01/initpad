@@ -44,7 +44,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.me()
       .then(async (current) => {
         setUser(current);
-        await refreshWorkspaces();
+        // A forced password change blocks workspace endpoints (they are not on
+        // the allowlist), so skip the fetch — the change-password gate renders
+        // instead. A transient workspaces error must not sign the user out.
+        if (!current.mustChangePassword) {
+          await refreshWorkspaces().catch(() => undefined);
+        }
       })
       .catch(() => {
         localStorage.removeItem('initpad.workspace');
@@ -63,7 +68,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setWorkspaces([]);
     setActiveWorkspace(null);
     setUser(next);
-    void refreshWorkspaces();
+    // Skip while a password change is forced (workspace endpoints are blocked
+    // until it is done); the change-password gate handles the next step.
+    if (!next.mustChangePassword) void refreshWorkspaces();
   }
 
   function switchWorkspace(workspaceId: string) {
