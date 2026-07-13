@@ -168,6 +168,10 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 - Docker agent spouští OCI image; ESO provider nahraje tentýž extrahovaný PHP či
   statický artefakt do přidělené cesty.
 - Destruktivní akce a prod promotion ukazují target, verzi a dopad.
+- Smazání projektu je cleanup plán: všechna řízená nasazení se musí odstranit,
+  aktivní prod vyžaduje samostatné potvrzení a zdrojový repozitář je opt-in.
+  Při chybě targetu zůstane projekt evidovaný a akci lze bezpečně zopakovat;
+  fyzický target se s projektem nikdy nemaže.
 - Rollback vybírá předchozí úspěšný artefakt, nic znovu nestaví.
 - Deployment stavový automat je explicitní: queued → assigned → running →
   verifying → succeeded; chybové větve failed/unhealthy mohou přejít do ručně
@@ -218,7 +222,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 5 — import repa/SCM | ano | Gitea: výběr repa a preflight bez změny kódu. Cloud: GitHub login/link, instalace App pro vybrané repo, create/import; odvolání instalace zablokuje další SCM operace, ne účet. |
 | 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
-| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. |
+| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. Delete dialog ukáže všechny targety, bez potvrzení produ odmítne pokračovat a simulované selhání teardownu ponechá projekt pro retry. |
 | 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
 
 ### Aktuální výsledek milníku 3

@@ -1004,3 +1004,55 @@ detail pouze server-side a klientovi vrátí HTTP 500 s obecným JSON.
 **Důsledky.** Chybný runtime autoload zastaví už CI build. Pokud selže pozdější
 bootstrap/configurace, deployment health check uvidí 500 a prostředí se
 neoznačí za zdravé.
+
+---
+
+## ADR-034 — Smazání projektu je ověřený cleanup plán, ne odstranění jednoho řádku
+
+**Kontext.** Projekt může mít kontejnery, procesy nebo soubory na dev/test/prod
+targetech, image v registry, CI credentials a zdrojový repozitář. Původní dialog
+všechny dopady skryl do jedné věty a backend po SFTP `rm -rf` nekontroloval
+návratový kód. Control-plane záznam tak mohl zmizet, i když externí workload
+nebo adresář zůstal bez vlastníka.
+
+**Rozhodnutí.** Skutečné smazání projektu vždy uklidí všechna nasazení,
+protože ponechat běžící prod bez řídicího záznamu není podporovaný stav.
+Aktivní, zastavený nebo neúspěšný prod vyžaduje vedle opsání názvu
+samostatné potvrzení v UI i API. Zdrojový repozitář se maže jen po
+explicitním opt-in; jinak se zachová kód, odstraní InitPad Actions secrets a
+Actions se vypnou. Vygenerované artefakty a project record se uklidí vždy.
+Deployment target reprezentuje sdílený server, a proto se nikdy nemaže spolu
+s projektem.
+
+Teardown každého prostředí musí prokazatelně uspět. Po dílčím úspěchu se
+prostředí označí jako prázdné; při pozdější chybě zůstane projekt i chybový
+stav v databázi a uživatel může cleanup zopakovat. Repo a project record se
+odstraní až po úspěchu všech targetů.
+
+**Důsledky.** Delete dialog funguje jako přehled dopadu, ne jako falešně
+jednoduché tlačítko. Uživatel nemůže omylem vytvořit neřízený produkční
+workload a výpadek nebo `Permission denied` na externím serveru je viditelný a
+retryable. Pozdější funkce Archive bude samostatný nedestruktivní lifecycle
+stav, nikoli varianta neúplného delete.
+
+---
+
+## ADR-035 — SFTP runtime adresáře zachovávají přístup deploy identity
+
+**Kontext.** PHP aplikaci nahraje na sdílený hosting SFTP uživatel, ale Nette,
+Laravel nebo Symfony může za běhu vytvářet cache a logy pod jinou identitou
+PHP-FPM/Apache. Samotné `chmod 0777` kořenového `temp` nestačí: nový podadresář
+se řídí umask web procesu a deploy uživatel pak nemusí umět release odstranit.
+
+**Rozhodnutí.** SFTP provider na targetu se shell přístupem vedle kompatibilních
+práv nastaví na runtime adresáře defaultní POSIX ACL pro aktuální deploy UID.
+Nové cache podadresáře tak zdědí právo deploy identity. Targety bez `setfacl`
+zachovají kompatibilní chmod fallback, ale SFTP odstranění nově propaguje
+permission/I/O chyby a shell teardown kontroluje exit code. Vzdálené cesty se
+v příkazech shellově quoteují.
+
+**Důsledky.** Nové deploymenty na ACL-capable hostingu lze redeployovat a
+odstranit, i když PHP běží pod jiným Unix uživatelem. Již existující cizí
+soubory ACL zpětně neopraví; jednorázově je musí odstranit jejich vlastník
+nebo správce serveru. SFTP-only PHP hosting bez shellu/ACL musí tuto ownership
+vlastnost splnit jiným mechanismem nebo neprojde budoucím capability preflightem.
