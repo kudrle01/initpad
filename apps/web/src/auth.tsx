@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await refreshWorkspaces();
       })
       .catch(() => {
+        localStorage.removeItem('initpad.workspace');
         setUser(null);
         setWorkspaces([]);
         setActiveWorkspace(null);
@@ -55,6 +56,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshWorkspaces]);
 
   function signIn(next: User) {
+    // A workspace selector belongs to the authenticated identity. Clear a
+    // selector left by an expired/different session before page data starts
+    // loading; refreshWorkspaces immediately chooses this user's personal one.
+    localStorage.removeItem('initpad.workspace');
+    setWorkspaces([]);
+    setActiveWorkspace(null);
     setUser(next);
     void refreshWorkspaces();
   }

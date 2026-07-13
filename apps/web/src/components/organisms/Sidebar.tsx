@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Activity,
@@ -25,6 +26,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { useAuth } from '@/auth';
+import { CreateWorkspaceDialog } from '@/components/organisms/CreateWorkspaceDialog';
 
 function initials(name: string) {
   return name
@@ -77,6 +79,7 @@ function Item({ to, label, icon: I, end }: { to: string; label: string; icon: Lu
 export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }) {
   const display = user.name || user.username;
   const { workspaces, activeWorkspace, switchWorkspace } = useAuth();
+  const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   return (
     <aside className="fixed inset-y-0 left-0 z-40 flex w-16 flex-col border-r border-border bg-card lg:w-60">
       <div className="flex items-center justify-center gap-2 px-3 py-5 lg:justify-start lg:px-5">
@@ -119,6 +122,11 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
                 {workspace.id === activeWorkspace?.id && <Check className="h-4 w-4" />}
               </DropdownMenuItem>
             ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setCreateWorkspaceOpen(true)}>
+              <Plus className="h-4 w-4" />
+              <span>Add new workspace</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -166,6 +174,7 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
     </aside>
   );
 }

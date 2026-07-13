@@ -32,10 +32,8 @@ export default function Settings() {
   const [membersLoading, setMembersLoading] = useState(false);
   const [identity, setIdentity] = useState('');
   const [memberRole, setMemberRole] = useState<Exclude<WorkspaceRole, 'owner'>>('member');
-  const [workspaceName, setWorkspaceName] = useState('');
-  const [workspaceSlug, setWorkspaceSlug] = useState('');
   const [renameWorkspace, setRenameWorkspace] = useState('');
-  const { activeWorkspace, refreshWorkspaces, switchWorkspace } = useAuth();
+  const { activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
   const canManageMembers = canAdmin && activeWorkspace?.type !== 'personal';
@@ -49,17 +47,6 @@ export default function Settings() {
       .catch((e) => toast.error((e as Error).message))
       .finally(() => setMembersLoading(false));
   }, [activeWorkspace?.id]);
-
-  async function createWorkspace() {
-    try {
-      const created = await api.createWorkspace(workspaceName.trim(), workspaceSlug.trim());
-      await refreshWorkspaces();
-      toast.success(`Created ${created.name}`);
-      switchWorkspace(created.id);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  }
 
   async function addMember() {
     if (!activeWorkspace) return;
@@ -251,7 +238,8 @@ export default function Settings() {
 
         {activeWorkspace?.type === 'personal' && (
           <p className="mt-4 rounded-md bg-secondary p-3 text-sm text-muted-foreground">
-            Personal workspaces stay private. Create a team workspace to collaborate.
+            Personal workspaces stay private. Use “Add new workspace” in the workspace switcher
+            to create a shared team space.
           </p>
         )}
 
@@ -286,32 +274,24 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-6">
-        <h2 className="text-[15px] font-semibold">Create team workspace</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Projects and targets in a team workspace are shared according to member roles.</p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <input className="h-9 rounded-md border border-input bg-card px-3 text-sm" placeholder="Team name" aria-label="Team workspace name" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} />
-          <input className="h-9 rounded-md border border-input bg-card px-3 text-sm" placeholder="team-slug" aria-label="Team workspace slug" value={workspaceSlug} onChange={(e) => setWorkspaceSlug(e.target.value.toLowerCase())} />
-        </div>
-        <Button className="mt-3" onClick={createWorkspace} disabled={workspaceName.trim().length < 2 || !/^(?!personal-)[a-z][a-z0-9-]{1,39}$/.test(workspaceSlug)}>
-          <Plus className="h-4 w-4" /> Create workspace
-        </Button>
-        {activeWorkspace?.type !== 'personal' && canAdmin && (
-          <div className="mt-6 border-t border-border pt-5">
-            <h3 className="text-sm font-semibold">Current team workspace</h3>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <input
-                className="h-9 flex-1 rounded-md border border-input bg-card px-3 text-sm"
-                aria-label="Current workspace name"
-                value={renameWorkspace}
-                onChange={(e) => setRenameWorkspace(e.target.value)}
-              />
-              <Button variant="secondary" onClick={saveWorkspaceName} disabled={renameWorkspace.trim().length < 2 || renameWorkspace.trim() === activeWorkspace.name}>Rename</Button>
-              {activeWorkspace.role === 'owner' && <Button variant="destructive" onClick={deleteWorkspace}>Delete empty workspace</Button>}
-            </div>
+      {activeWorkspace?.type !== 'personal' && canAdmin && (
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="text-[15px] font-semibold">Current team workspace</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Rename this workspace or delete it after all of its projects and targets are removed.
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <input
+              className="h-9 flex-1 rounded-md border border-input bg-card px-3 text-sm"
+              aria-label="Current workspace name"
+              value={renameWorkspace}
+              onChange={(e) => setRenameWorkspace(e.target.value)}
+            />
+            <Button variant="secondary" onClick={saveWorkspaceName} disabled={renameWorkspace.trim().length < 2 || renameWorkspace.trim() === activeWorkspace.name}>Rename</Button>
+            {activeWorkspace.role === 'owner' && <Button variant="destructive" onClick={deleteWorkspace}>Delete empty workspace</Button>}
           </div>
-        )}
-      </div>
+        </div>
+      )}
       </div>
     </div>
   );
