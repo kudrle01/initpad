@@ -1054,5 +1054,43 @@ v příkazech shellově quoteují.
 **Důsledky.** Nové deploymenty na ACL-capable hostingu lze redeployovat a
 odstranit, i když PHP běží pod jiným Unix uživatelem. Již existující cizí
 soubory ACL zpětně neopraví; jednorázově je musí odstranit jejich vlastník
-nebo správce serveru. SFTP-only PHP hosting bez shellu/ACL musí tuto ownership
-vlastnost splnit jiným mechanismem nebo neprojde budoucím capability preflightem.
+nebo správce serveru. PHP hosting bez shellu provider odmítne, protože bezpečné
+oddělení runtime dat a opakovatelný teardown nedokáže garantovat.
+
+---
+
+## ADR-036 — SFTP publikuje pouze CI artefakt a chráněný webroot
+
+**Kontext.** Statické React/Vue šablony původně spouštěly `npm ci` a build až
+uvnitř API kontejneru. Kromě nereprodukovatelného výsledku to znamenalo spuštění
+projektového kódu v control plane, který má platformní secrets a přístup k Docker
+socketu. U PHP frameworků se naopak celá aplikace nahrála pod veřejný adresář a
+URL obsahovala `/www/` nebo `/public/`; kořen vracel Apache `403` a chybná
+konfigurace mohla zpřístupnit Composer metadata, konfiguraci nebo zdrojové soubory.
+Runtime cache uvnitř releasu navíc bránila jeho výměně, pokud ji vytvořil jiný
+Unix uživatel.
+
+**Rozhodnutí.** Všechny SFTP-kompatibilní šablony deklarují absolutní
+`buildArtifactPath` a provider extrahuje přesně tento strom z OCI image, který
+už prošel CI. Control plane nikdy nespouští `buildCommand` z projektu. U statické
+aplikace se publikuje hotový nginx document root; u Nette/Laravel/Symfony se
+obsah `www`/`public` publikuje do čistého kořene `<slug>/` a kompletní testovaná
+aplikace zůstává pod HTTP-zakázaným `<slug>/.initpad-app/`. Malý kořenový wrapper
+načítá původní front controller v jeho nezměněném umístění.
+
+Po health checku provider provede negativní bezpečnostní test: soukromý
+`composer.json` a runtime probe nesmějí vrátit HTTP 2xx. Pokud ochranu
+`.htaccess` nelze prokázat, deployment se označí za neúspěšný a odstraní.
+Zapisovatelné adresáře leží stabilně v neveřejném
+`<root>/.initpad-data/<slug>/` a immutable aplikace na ně odkazuje symlinky.
+Jejich obsah tak přežije výměnu releasu a webserverem vytvořená cache ji
+neblokuje. PHP deployment s runtime adresáři vyžaduje vedle SFTP také omezený
+shell přístup; čistý SFTP fallback zůstává podporovaný pro statické artefakty.
+
+**Migrace a důsledky.** Pokud první publish nedokáže starý release kvůli cizímu
+vlastnictví odstranit, přesune jeho zbytek do neveřejného adresáře
+`.initpad-quarantine` s právy `0700` a pokračuje novým layoutem. Cesta je zalogovaná
+a správce hostingu ji musí jednorázově smazat. Nové deploye jsou build-once/
+deploy-many, mají čistou URL a opakovaný deploy nemaže PHP runtime data. Target
+musí podporovat Apache `.htaccess`, symlinky a shell operace; pozdější target
+preflight má tyto schopnosti zobrazit ještě před prvním deploymentem.

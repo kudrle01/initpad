@@ -167,6 +167,11 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 - Automatický deploy do dev, ruční promotion do testu a approval do prod.
 - Docker agent spouští OCI image; ESO provider nahraje tentýž extrahovaný PHP či
   statický artefakt do přidělené cesty.
+- SFTP nikdy nespouští projektový build v control plane. Statický bundle i PHP
+  aplikace se extrahují z CI-tested image; chybějící image deployment zastaví.
+- PHP shared-hosting layout publikuje jen `www`/`public`, soukromou aplikaci a
+  perzistentní runtime data chrání před HTTP a po uploadu provede negativní
+  security probe. Uživatelská URL neobsahuje `/www/` ani `/public/`.
 - Destruktivní akce a prod promotion ukazují target, verzi a dopad.
 - Smazání projektu je cleanup plán: všechna řízená nasazení se musí odstranit,
   aktivní prod vyžaduje samostatné potvrzení a zdrojový repozitář je opt-in.
@@ -222,7 +227,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 5 — import repa/SCM | ano | Gitea: výběr repa a preflight bez změny kódu. Cloud: GitHub login/link, instalace App pro vybrané repo, create/import; odvolání instalace zablokuje další SCM operace, ne účet. |
 | 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
-| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. Delete dialog ukáže všechny targety, bez potvrzení produ odmítne pokračovat a simulované selhání teardownu ponechá projekt pro retry. |
+| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety, bez potvrzení produ odmítne pokračovat a simulované selhání teardownu ponechá projekt pro retry. |
 | 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
 
 ### Aktuální výsledek milníku 3
@@ -235,6 +240,17 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 - Reálná Gitea integrace: viewer měl `pull=true, push=false`, po změně na member
   `pull=true, push=true` a po odebrání už privátní repo vracelo 404.
 - Auditní projekt, Gitea repo, účty a workspaces byly po testu odstraněny.
+
+### Průběžné ověření delivery části milníku 8
+
+- React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez
+  spuštění `npm ci` v API; veřejná aplikace odpovídala.
+- Nette produkce odpověděla na čisté URL HTTP 200; soukromý `composer.json` a
+  runtime security probe vracely HTTP 403.
+- Po HTTP požadavku, který vytvořil frameworkovou cache, druhý redeploy znovu
+  skončil `running` bez permission chyby.
+- Jeden legacy release s již cizím vlastnictvím byl přesunut do chráněné
+  karantény; jeho fyzické odstranění zůstává jednorázovým úkolem správce ESO.
 
 ## Vyhodnocení pro diplomovou práci
 
