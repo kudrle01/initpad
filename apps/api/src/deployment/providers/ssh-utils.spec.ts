@@ -1,5 +1,5 @@
 import type { SFTPWrapper } from 'ssh2';
-import { portSlot, sftpRmrf, shellQuote } from './ssh-utils';
+import { assertSftpWritable, portSlot, sftpRmrf, shellQuote } from './ssh-utils';
 
 describe('portSlot', () => {
   it('is within [0, slots)', () => {
@@ -39,5 +39,33 @@ describe('sftpRmrf', () => {
     } as unknown as SFTPWrapper;
 
     await expect(sftpRmrf(sftp, '/owned-by-runtime')).rejects.toThrow('Permission denied');
+  });
+});
+
+describe('assertSftpWritable', () => {
+  it('creates and removes a child probe below an existing webroot', async () => {
+    const mkdir = jest.fn((_path: string, cb: (err?: Error) => void) => cb());
+    const rmdir = jest.fn((_path: string, cb: (err?: Error) => void) => cb());
+    const sftp = { mkdir, rmdir } as unknown as SFTPWrapper;
+
+    await expect(assertSftpWritable(sftp, '/www/')).resolves.toBeUndefined();
+    expect(mkdir).toHaveBeenCalledTimes(2);
+    expect(mkdir.mock.calls[0][0]).toBe('/www');
+    expect(mkdir.mock.calls[1][0]).toMatch(/^\/www\/\.initpad-write-/);
+    expect(rmdir.mock.calls[0][0]).toMatch(/^\/www\/\.initpad-write-/);
+  });
+
+  it('rejects a webroot that exists but does not allow child creation', async () => {
+    const sftp = {
+      mkdir: (path: string, cb: (err?: Error) => void) =>
+        cb(path === '/www' ? Object.assign(new Error('exists'), { code: 4 }) : new Error('Permission denied')),
+      stat: (path: string, cb: (err?: Error) => void) =>
+        cb(path === '/www' ? undefined : new Error('No such file')),
+      rmdir: jest.fn(),
+    } as unknown as SFTPWrapper;
+
+    await expect(assertSftpWritable(sftp, '/www')).rejects.toThrow(
+      'mkdir /www/.initpad-write-',
+    );
   });
 });

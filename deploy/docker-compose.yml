@@ -215,6 +215,22 @@ services:
 
   # --- simulated deployment targets (real protocols, stand-in containers) ---
 
+  # Named volumes mounted into nginx are otherwise populated from the image as
+  # root:root. Prepare the shared webroot before SFTP starts so the unprivileged
+  # deploy user can create versioned releases on both fresh and existing stacks.
+  sftp-volume-init:
+    image: alpine:3.22
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        touch /data/.initpad-volume
+        chown -R 1000:100 /data
+        chmod 0755 /data
+    volumes:
+      - sftp-www:/data
+    restart: "no"
+
   fake-sftp:
     image: atmoz/sftp
     # The image ships amd64 only; declare it so arm64 hosts (Apple Silicon)
@@ -223,6 +239,8 @@ services:
     command: deploy:${INITPAD_SFTP_PASSWORD:-deploy}:::www
     volumes:
       - sftp-www:/home/deploy/www
+    depends_on:
+      sftp-volume-init: { condition: service_completed_successfully }
     networks: [net-prod]
     restart: unless-stopped
 

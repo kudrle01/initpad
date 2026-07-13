@@ -1,5 +1,5 @@
 import { Client, type SFTPWrapper } from 'ssh2';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import * as tar from 'tar-fs';
@@ -144,6 +144,21 @@ export async function mkdirp(sftp: SFTPWrapper, remoteDir: string): Promise<void
       }),
     );
   }
+}
+
+// Confirm that an existing SFTP webroot is actually writable. Merely calling
+// mkdirp(root) is insufficient: it succeeds when a root-owned directory exists
+// even though the deploy identity cannot create a release below it.
+export async function assertSftpWritable(
+  sftp: SFTPWrapper,
+  remoteRoot: string,
+): Promise<void> {
+  const base = remoteRoot.replace(/\/+$/, '') || '/';
+  const probe = `${base === '/' ? '' : base}/.initpad-write-${randomUUID()}`;
+  await mkdirp(sftp, probe);
+  await new Promise<void>((resolve, reject) =>
+    sftp.rmdir(probe, (err) => (err ? reject(err) : resolve())),
+  );
 }
 
 export function sftpSymlink(sftp: SFTPWrapper, target: string, linkPath: string): Promise<void> {

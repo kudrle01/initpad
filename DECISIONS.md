@@ -1123,3 +1123,25 @@ project record už InitPad retry neprovede. Tato volba je transparentní
 workloadu, ale nejsou potichu zapomenuta. Plně automatický cleanup bez
 karantény vyžaduje, aby hosting poskytl společnou Unix identitu, POSIX ACL nebo
 InitPad Agenta s oprávněním spravovat runtime soubory.
+
+---
+
+## ADR-038 — Vestavěný SFTP webroot má explicitního vlastníka a write probe
+
+**Kontext.** Pojmenovaný Docker volume připojený do nginx může být při prvním
+vytvoření naplněn obsahem image pod `root:root`. SFTP proces se přitom správně
+přihlašoval jako neprivilegovaný uživatel `deploy`, který existující `/www`
+viděl, ale kvůli právům `0755` v něm nemohl vytvořit projektový release.
+Původní ověření targetu volalo pouze `mkdirp` nad existujícím webrootem, a proto
+falešně hlásilo zapisovatelný cíl.
+
+**Rozhodnutí.** Compose stack obsahuje jednorázovou inicializační službu, která
+před startem SFTP nastaví sdílený volume na UID/GID uživatele `deploy`; oprava
+je idempotentní a napraví i již existující volume. SFTP preflight v kořeni
+vytvoří a opět odstraní náhodně pojmenovaný probe adresář. Samotná existence
+nebo čitelnost cesty se za důkaz zápisu nepovažuje.
+
+**Důsledky.** Čerstvá i upgradovaná instalace umí na vestavěný statický hosting
+nasadit React/Vue release. Chybná práva u vlastního SFTP targetu se odhalí už
+při `Verify`, nikoli až po CI a pokusu o produkční deploy. Inicializace se týká
+jen simulačního volume InitPadu; na uživatelském serveru vlastnictví neměníme.

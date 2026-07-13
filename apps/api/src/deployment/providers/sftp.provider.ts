@@ -15,6 +15,7 @@ import {
   VerifyResult,
 } from '../deployment-provider.interface';
 import {
+  assertSftpWritable,
   getSftp,
   mkdirp,
   sftpChmodTree,
@@ -100,7 +101,7 @@ export class SftpProvider implements DeploymentProvider {
     }
     try {
       const sftp = await getSftp(conn);
-      await mkdirp(sftp, cfg.remoteRoot);
+      await assertSftpWritable(sftp, cfg.remoteRoot);
       return { ok: true, message: `Connected to ${cfg.host} over SFTP. Web root ${cfg.remoteRoot} is writable.` };
     } catch (e) {
       return { ok: false, message: `Connected, but ${cfg.remoteRoot} is not writable: ${(e as Error).message}` };

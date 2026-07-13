@@ -103,6 +103,19 @@ services:
   # SFTP target for static/PHP applications. The platform uploads releases
   # here over SFTP; the content (per-project symlinks) is served by the nginx
   # service below. The volume is shared with nginx.
+  sftp-volume-init:
+    image: alpine:3.22
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        touch /data/.initpad-volume
+        chown -R 1000:100 /data
+        chmod 0755 /data
+    volumes:
+      - sftp-www:/data
+    restart: "no"
+
   fake-sftp:
     image: atmoz/sftp
     command: deploy:deploy:::www
@@ -110,6 +123,8 @@ services:
       - "2222:22" # SFTP reachable from the API on the host (config.providers.sftp.port)
     volumes:
       - sftp-www:/home/deploy/www
+    depends_on:
+      sftp-volume-init: { condition: service_completed_successfully }
     networks: [net-prod]
 
   # Serves the uploaded static content (releases published via symlinks).
