@@ -39,6 +39,26 @@ model User {
   sentInvitations     WorkspaceInvitation[] @relation("InvitedBy")
   acceptedInvitations WorkspaceInvitation[] @relation("AcceptedBy")
   authTokens        AuthToken[]
+  externalIdentities ExternalIdentity[]
+}
+
+// A linked external SCM identity (GitHub today, GitLab later) — ADR-030/039.
+// The account is bound by the provider's IMMUTABLE user id, never by e-mail, so
+// a matching address can never silently merge accounts. A provider account
+// links to at most one InitPad user, and an InitPad user links at most one
+// account per provider.
+model ExternalIdentity {
+  id             String   @id @default(uuid())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  provider       String // github | gitlab
+  providerUserId String // immutable id from the provider
+  username       String? // provider login at link time (display only, mutable)
+  createdAt      DateTime @default(now())
+
+  @@unique([provider, providerUserId])
+  @@unique([provider, userId])
+  @@index([userId])
 }
 
 // Single-use, hashed, expiring tokens for e-mail verification and password

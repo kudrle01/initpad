@@ -11,6 +11,7 @@ import { OidcModule } from './oauth/oidc.module';
 import { MeModule } from './me/me.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { AdminModule } from './admin/admin.module';
+import { IdentityModule } from './identity/identity.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AdminModule } from './admin/admin.module';
     MeModule,
     WorkspacesModule,
     AdminModule,
+    IdentityModule,
   ],
   controllers: [HealthController],
 })
