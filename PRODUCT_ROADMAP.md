@@ -118,8 +118,10 @@ adapter zůstávají samostatným navazujícím krokem (Fáze 3).
 Hotový základ (ADR-041): rozhraní `ScmProvider` s DI tokenem `SCM_PROVIDER`,
 Gitea jako jeho adapter a projektová doména napojená na rozhraní; model
 `ExternalIdentity` vázaný na neměnné provider ID; `GitHubAppService` pro ražení
-krátkodobých installation tokenů s minimálními oprávněními (inertní bez
-nakonfigurované App). Zbývá: GitHub OAuth flow (sign-in/link), GitHub
+krátkodobých installation tokenů s minimálními oprávněními; GitHub OAuth flow
+(sign-in/link přes immutable ID) s CSRF ochranou a UI (Continue with GitHub,
+propojení účtu v Settings) — vše inertní bez nakonfigurované App. Zbývá:
+vytvoření GitHub-only účtu při prvním loginu (edition-neutral `User`), GitHub
 `ScmProvider` adapter (create/import/list/checks) a UI importu existujícího repa.
 
 - SCM rozhraní oddělí seznam repozitářů, import, secrets, webhooky a archivy.
