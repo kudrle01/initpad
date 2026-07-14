@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { GitBranch, KeyRound, ExternalLink, ShieldAlert, Users, Plus, Trash2, Mail } from 'lucide-react';
+import { GitBranch, KeyRound, ExternalLink, ShieldAlert, Users, Plus, Trash2, Mail, Github } from 'lucide-react';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/molecules/PageHeader';
@@ -7,7 +7,7 @@ import { CopyField } from '@/components/molecules/CopyField';
 import { Spinner } from '@/components/atoms/Spinner';
 import { useAuth } from '@/auth';
 import { useToast } from '@/toast';
-import type { WorkspaceInvitation, WorkspaceMember, WorkspaceRole } from '@/types';
+import type { LinkedIdentity, WorkspaceInvitation, WorkspaceMember, WorkspaceRole } from '@/types';
 
 type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
 
@@ -40,6 +40,8 @@ export default function Settings() {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [renameWorkspace, setRenameWorkspace] = useState('');
   const [verifyLink, setVerifyLink] = useState<string | null>(null);
+  const [githubEnabled, setGithubEnabled] = useState(false);
+  const [identities, setIdentities] = useState<LinkedIdentity[]>([]);
   const { user, activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
@@ -62,6 +64,36 @@ export default function Settings() {
       setInvitations([]);
     }
   }, [activeWorkspace?.id]);
+
+  useEffect(() => {
+    api.authConfig()
+      .then((c) => {
+        setGithubEnabled(c.githubEnabled);
+        if (c.githubEnabled) api.listIdentities().then(setIdentities).catch(() => undefined);
+      })
+      .catch(() => undefined);
+    // Surface the result of a GitHub link redirect, then clean the URL.
+    const q = new URLSearchParams(window.location.search);
+    const gh = q.get('github');
+    if (gh === 'linked') {
+      toast.success('GitHub account linked');
+      api.listIdentities().then(setIdentities).catch(() => undefined);
+    } else if (gh === 'error') {
+      toast.error(q.get('reason') || 'Could not link GitHub account');
+    }
+    if (gh) window.history.replaceState({}, '', '/settings');
+  }, []);
+
+  async function unlinkGithub(provider: string) {
+    if (!window.confirm('Unlink this GitHub account from InitPad?')) return;
+    try {
+      await api.unlinkIdentity(provider);
+      setIdentities((rows) => rows.filter((i) => i.provider !== provider));
+      toast.success('GitHub account unlinked');
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
 
   async function addMember() {
     if (!activeWorkspace) return;
@@ -273,6 +305,49 @@ export default function Settings() {
           )}
         </div>
       </div>
+
+      {githubEnabled && (
+        <div className="rounded-lg border border-border bg-card p-6">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+              <Github className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-[15px] font-semibold">GitHub account</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Link GitHub to sign in with it and (once a GitHub App is installed) create or import
+                GitHub repositories.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4">
+            {identities.filter((i) => i.provider === 'github').length === 0 ? (
+              <a
+                href="/api/auth/github?mode=link"
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm font-medium hover:bg-secondary"
+              >
+                <Github className="h-4 w-4" /> Link GitHub account
+              </a>
+            ) : (
+              <div className="divide-y divide-border rounded-md border border-border">
+                {identities.filter((i) => i.provider === 'github').map((identity) => (
+                  <div key={identity.provider} className="flex flex-wrap items-center gap-3 p-3">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {identity.username ? `@${identity.username}` : 'GitHub'}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        linked {new Date(identity.linkedAt).toLocaleDateString()}
+                      </span>
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => unlinkGithub(identity.provider)}>Unlink</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start gap-3">

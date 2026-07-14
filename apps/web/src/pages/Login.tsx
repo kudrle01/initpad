@@ -21,13 +21,16 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
   const [registrationMode, setRegistrationMode] = useState<string>('open');
+  const [githubEnabled, setGithubEnabled] = useState(false);
   const [configError, setConfigError] = useState(false);
+  const oauthError = oauthErrorMessage(params.get('error'));
 
   useEffect(() => {
     api.authConfig()
       .then((x) => {
         setRegistrationAvailable(x.registrationAvailable);
         setRegistrationMode(x.registrationMode);
+        setGithubEnabled(x.githubEnabled);
       })
       .catch(() => setConfigError(true));
   }, []);
@@ -65,7 +68,27 @@ export default function Login() {
         <h1 className="mt-4 text-[22px] font-semibold tracking-tight">InitPad</h1>
         <p className="text-sm text-muted-foreground">Internal developer platform</p>
 
-        <div className="mb-4 mt-6 flex gap-1 rounded-md bg-secondary p-1">
+        {oauthError && (
+          <p role="alert" className="mt-4 rounded-md bg-destructive/10 p-2.5 text-sm text-destructive">
+            {oauthError}
+          </p>
+        )}
+
+        {githubEnabled && (
+          <div className="mt-6">
+            <a
+              href="/api/auth/github?mode=login"
+              className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-input bg-card text-sm font-medium hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <GithubIcon /> Continue with GitHub
+            </a>
+            <div className="my-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">
+              <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
+            </div>
+          </div>
+        )}
+
+        <div className={cn('mb-4 flex gap-1 rounded-md bg-secondary p-1', !githubEnabled && 'mt-6')}>
           {([
             'signin',
             ...(registrationAvailable ? ['register' as const] : []),
@@ -161,6 +184,31 @@ export default function Login() {
       </div>
     </div>
   );
+}
+
+function GithubIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+  );
+}
+
+function oauthErrorMessage(code: string | null): string | null {
+  switch (code) {
+    case 'github_no_account':
+      return 'No InitPad account is linked to that GitHub account. Sign in another way, then link GitHub in Settings.';
+    case 'github_state':
+      return 'The GitHub sign-in could not be verified. Please try again.';
+    case 'github_exchange':
+      return 'GitHub sign-in failed. Please try again.';
+    case 'github_unavailable':
+      return 'GitHub sign-in is not enabled on this instance.';
+    case 'login_required':
+      return 'Please sign in first, then link your GitHub account.';
+    default:
+      return null;
+  }
 }
 
 function safeLocalDestination(value: string | null): string | null {

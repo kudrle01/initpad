@@ -58,6 +58,14 @@ export interface WorkspaceInvitation {
   createdAt: string;
 }
 
+// A linked external SCM identity (GitHub today).
+export interface LinkedIdentity {
+  provider: string;
+  providerUserId: string;
+  username: string | null;
+  linkedAt: string;
+}
+
 // Public view of an invitation shown on the acceptance page.
 export interface InvitationPreview {
   workspaceName: string;
