@@ -2,13 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.dto';
 import { AddWorkspaceMemberDto, AssignableRole, UpdateWorkspaceMemberDto } from './dto/member.dto';
-import { GiteaService } from '../scm/gitea.service';
+import { ScmProvider, SCM_PROVIDER } from '../scm/scm-provider';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
 export type WorkspacePermission = 'read' | 'write' | 'maintain' | 'admin';
@@ -24,7 +25,7 @@ const PERMISSIONS: Record<WorkspacePermission, ReadonlySet<WorkspaceRole>> = {
 export class WorkspacesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly gitea: GiteaService,
+    @Inject(SCM_PROVIDER) private readonly scm: ScmProvider,
   ) {}
 
   async list(userId: string) {
@@ -251,7 +252,7 @@ export class WorkspacesService {
       where: { workspaceId },
       select: { repoUrl: true },
     });
-    for (const project of projects) await this.gitea.setCollaborator(project.repoUrl, username, role);
+    for (const project of projects) await this.scm.setCollaborator(project.repoUrl, username, role);
   }
 
   private async revokeRepositoryAccess(workspaceId: string, username: string): Promise<void> {
@@ -259,6 +260,6 @@ export class WorkspacesService {
       where: { workspaceId },
       select: { repoUrl: true },
     });
-    for (const project of projects) await this.gitea.removeCollaborator(project.repoUrl, username);
+    for (const project of projects) await this.scm.removeCollaborator(project.repoUrl, username);
   }
 }

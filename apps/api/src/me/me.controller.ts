@@ -1,6 +1,6 @@
-import { Controller, Get, Logger, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, Logger, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { GiteaService } from '../scm/gitea.service';
+import { ScmProvider, SCM_PROVIDER } from '../scm/scm-provider';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { config } from '../config';
@@ -23,7 +23,7 @@ export class MeController {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly gitea: GiteaService,
+    @Inject(SCM_PROVIDER) private readonly scm: ScmProvider,
   ) {}
 
   @Get('git-access')
@@ -36,7 +36,7 @@ export class MeController {
     // persist it for next time.
     if (!isPat(token)) {
       try {
-        token = await this.gitea.issueCloneToken(user.username);
+        token = await this.scm.issueCloneToken(user.username);
         await this.prisma.user.update({
           where: { id: user.id },
           data: { accessToken: encryptSecret(token) },

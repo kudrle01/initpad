@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnModuleInit,
@@ -30,7 +31,7 @@ import { TemplatesService } from '../templates/templates.service';
 import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { TargetsService, TargetRow, BUILTIN_DOCKER } from '../targets/targets.service';
-import { GiteaService, GiteaActor, RepoArchive } from '../scm/gitea.service';
+import { ScmProvider, ScmActor, RepoArchive, SCM_PROVIDER } from '../scm/scm-provider';
 import { exportVersion } from '../deployment/providers/source-export';
 import { config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
@@ -60,7 +61,7 @@ export class ProjectsService implements OnModuleInit {
     private readonly generator: GeneratorService,
     private readonly deployment: DeploymentService,
     private readonly targets: TargetsService,
-    private readonly gitea: GiteaService,
+    @Inject(SCM_PROVIDER) private readonly scm: ScmProvider,
     private readonly workspaces: WorkspacesService,
   ) {}
 
@@ -79,7 +80,7 @@ export class ProjectsService implements OnModuleInit {
         projects.map((project) => {
           const owner =
             this.ownerFromRepoUrl(project.repoUrl) ?? project.owner?.username ?? config.gitea.user;
-          return this.gitea.configureRepoRuntimeSecrets(owner, project.name);
+          return this.scm.configureRepoRuntimeSecrets(owner, project.name);
         }),
       );
     } catch (e) {
@@ -205,14 +206,14 @@ export class ProjectsService implements OnModuleInit {
       for (const projects of byOwner.values()) {
         const owner = projects[0].owner!;
         try {
-          const ownerToken = await this.gitea.issueCloneToken(owner.username);
+          const ownerToken = await this.scm.issueCloneToken(owner.username);
           await this.prisma.user.update({
             where: { id: owner.id },
             data: { accessToken: encryptSecret(ownerToken) },
           });
           for (const project of projects) {
             const token = generateToken();
-            await this.gitea.configureRepoSecrets(owner.username, project.name, ownerToken, token);
+            await this.scm.configureRepoSecrets(owner.username, project.name, ownerToken, token);
             await this.prisma.project.update({
               where: { id: project.id },
               data: { ciDeployTokenHash: hashToken(token) },
@@ -257,7 +258,7 @@ export class ProjectsService implements OnModuleInit {
       await Promise.all(
         rows.map(async (row) => {
           const actor = this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner });
-          if (await this.gitea.repoMissing(row.name, actor)) {
+          if (await this.scm.repoMissing(row.name, actor)) {
             this.logger.log(
               `Repository ${actor.username}/${row.name} no longer exists in Gitea — cleaning up`,
             );
@@ -283,7 +284,7 @@ export class ProjectsService implements OnModuleInit {
     });
     if (!row) return; // get() reports the 404
     const actor = this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner });
-    if (await this.gitea.repoMissing(row.name, actor)) {
+    if (await this.scm.repoMissing(row.name, actor)) {
       this.logger.log(
         `Repository ${actor.username}/${row.name} no longer exists in Gitea — cleaning up`,
       );
@@ -317,7 +318,7 @@ export class ProjectsService implements OnModuleInit {
     }
     const template = this.templates.get(dto.templateId);
     const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
-    const actor: GiteaActor = {
+    const actor: ScmActor = {
       username: owner.username,
       token: decryptSecret(owner.accessToken),
     };
@@ -339,12 +340,12 @@ export class ProjectsService implements OnModuleInit {
     );
     // The scaffold commit is authored by the platform's service account (bot),
     // see config.git. The developer's own commits carry their identity.
-    await this.gitea.initLocal(repoPath);
+    await this.scm.initLocal(repoPath);
 
     let repo: { repoUrl: string };
     const ciDeployToken = generateToken();
     try {
-      repo = await this.gitea.provision(dto.name, repoPath, actor, ciDeployToken);
+      repo = await this.scm.provision(dto.name, repoPath, actor, ciDeployToken);
     } catch (e) {
       throw new BadRequestException(
         `Repository could not be created in Gitea: ${(e as Error).message}`,
@@ -357,14 +358,14 @@ export class ProjectsService implements OnModuleInit {
         include: { user: true },
       });
       for (const collaborator of collaborators) {
-        await this.gitea.setCollaborator(
+        await this.scm.setCollaborator(
           repo.repoUrl,
           collaborator.user.username,
           collaborator.role,
         );
       }
     } catch (e) {
-      await this.gitea.deleteRepo(dto.name, actor).catch((cleanupError) =>
+      await this.scm.deleteRepo(dto.name, actor).catch((cleanupError) =>
         this.logger.warn(`Repository rollback failed: ${(cleanupError as Error).message}`),
       );
       throw new BadRequestException(
@@ -401,7 +402,7 @@ export class ProjectsService implements OnModuleInit {
         },
       });
     } catch (e) {
-      await this.gitea.deleteRepo(dto.name, actor).catch((cleanupError) =>
+      await this.scm.deleteRepo(dto.name, actor).catch((cleanupError) =>
         this.logger.warn(`Repository rollback failed: ${(cleanupError as Error).message}`),
       );
       throw e;
@@ -496,7 +497,7 @@ export class ProjectsService implements OnModuleInit {
         this.logger.log(`CI retry deploy: ${repo} → dev (${sha})`);
         return;
       } finally {
-        await this.gitea.deleteTag(name, retryTag, actor);
+        await this.scm.deleteTag(name, retryTag, actor);
       }
     }
 
@@ -609,7 +610,7 @@ export class ProjectsService implements OnModuleInit {
 
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
     const actor = await this.actorForProject(id);
-    const commits = await this.gitea.listCommits(project.name, actor, 1);
+    const commits = await this.scm.listCommits(project.name, actor, 1);
     const sha = commits?.[0]?.sha;
     if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) {
       throw new BadRequestException('No repository commit is available to run');
@@ -621,7 +622,7 @@ export class ProjectsService implements OnModuleInit {
       data: { statusReason: 'Waiting for CI retry' },
     });
     try {
-      await this.gitea.createRetryTag(project.name, sha, actor);
+      await this.scm.createRetryTag(project.name, sha, actor);
     } catch (e) {
       await this.prisma.environment.updateMany({
         where: { id: env.id, activeOperationId: operationId },
@@ -979,14 +980,14 @@ export class ProjectsService implements OnModuleInit {
     // Also delete the images from the Gitea registry (Packages) so no
     // orphaned artifacts remain.
     const owner = this.ownerFromRepoUrl(row.repoUrl) ?? config.gitea.user;
-    await this.gitea.deletePackages(owner, row.name);
+    await this.scm.deletePackages(owner, row.name);
     if (opts.repoAction === 'delete') {
-      await this.gitea.deleteRepo(
+      await this.scm.deleteRepo(
         row.name,
         this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
       );
     } else if (opts.repoAction === 'detach') {
-      await this.gitea.detachRepo(
+      await this.scm.detachRepo(
         row.name,
         this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
       );
@@ -1001,7 +1002,7 @@ export class ProjectsService implements OnModuleInit {
   private actorForRepo(row: {
     repoUrl: string | null;
     owner: { username: string; accessToken: string } | null;
-  }): GiteaActor {
+  }): ScmActor {
     const token = row.owner?.accessToken
       ? decryptSecret(row.owner.accessToken)
       : config.gitea.token;
@@ -1043,7 +1044,7 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
-  private async actorForProject(projectId: string): Promise<GiteaActor> {
+  private async actorForProject(projectId: string): Promise<ScmActor> {
     const row = await this.prisma.project.findUnique({
       where: { id: projectId },
       include: { owner: true },
@@ -1056,11 +1057,11 @@ export class ProjectsService implements OnModuleInit {
     const template = this.templates.get(project.templateId);
     const actor = await this.actorForProject(id);
 
-    const fromGitea = await this.gitea.listCommits(project.name, actor);
+    const fromGitea = await this.scm.listCommits(project.name, actor);
     if (fromGitea && fromGitea.length > 0) {
       return Promise.all(
         fromGitea.map(async (c) => {
-          const statuses = await this.gitea.listCommitStatuses(project.name, c.sha, actor);
+          const statuses = await this.scm.listCommitStatuses(project.name, c.sha, actor);
           return { ...c, pipeline: this.pipelineStages(template, statuses) };
         }),
       );
@@ -1191,7 +1192,7 @@ export class ProjectsService implements OnModuleInit {
     } else if (needsSource) {
       const actor = await this.actorForProject(projectId);
       source =
-        (await this.gitea.downloadArchive(project.name, version, actor)) ??
+        (await this.scm.downloadArchive(project.name, version, actor)) ??
         (await exportVersion(project.repoPath, version));
       deployRepoPath = source?.dir ?? project.repoPath;
     }
