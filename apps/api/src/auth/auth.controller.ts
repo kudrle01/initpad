@@ -24,6 +24,10 @@ export class AuthController {
     return {
       registrationAvailable: await this.auth.registrationAvailable(),
       registrationMode: this.auth.registrationMode(),
+      // Whether "Sign in with GitHub" / account linking is available.
+      githubEnabled: Boolean(
+        config.github.clientId && config.github.clientSecret && config.github.callbackUrl,
+      ),
     };
   }
 

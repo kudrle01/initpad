@@ -173,6 +173,10 @@ export const config = {
     privateKey: (process.env.INITPAD_GITHUB_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
     webhookSecret: process.env.INITPAD_GITHUB_WEBHOOK_SECRET || '',
     apiBaseUrl: process.env.INITPAD_GITHUB_API_URL || 'https://api.github.com',
+    // Base for the OAuth authorize/token endpoints (github.com; overridable for
+    // GitHub Enterprise). The callback must match the App's configured URL.
+    oauthBaseUrl: process.env.INITPAD_GITHUB_OAUTH_URL || 'https://github.com',
+    callbackUrl: process.env.INITPAD_GITHUB_CALLBACK_URL || '',
   },
   // The platform as an OIDC provider (SSO into Gitea); Gitea registers as a
   // client. issuer = address the Gitea SERVER calls (from its container via
