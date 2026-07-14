@@ -10,29 +10,23 @@ import { pipeline } from 'stream/promises';
 import { createGunzip } from 'zlib';
 import * as tar from 'tar-fs';
 import { config } from '../config';
+import { RepoArchive, ScmActor, ScmProvider } from './scm-provider';
 
 const exec = promisify(execFile);
 
-// A commit's source tree downloaded into a temporary directory. The caller
-// must invoke cleanup() once the contents are no longer needed.
-export interface RepoArchive {
-  dir: string;
-  cleanup: () => void;
-}
-
-// Identity used for repository operations (the project owner).
-export interface GiteaActor {
-  username: string;
-  token: string;
-}
+export type { RepoArchive } from './scm-provider';
+// Backwards-compatible alias: the Gitea actor is just an ScmActor.
+export type GiteaActor = ScmActor;
 
 /**
- * Integration with the Gitea SCM. Creates repositories and pushes scaffolds
- * on behalf of the owning user, provisions accounts via the admin API
- * (managed registration) and reads commits / CI commit statuses.
+ * The Gitea adapter of {@link ScmProvider} for the self-contained edition. It
+ * creates repositories and pushes scaffolds on behalf of the owning user, and
+ * reads commits / CI commit statuses. It additionally provisions managed
+ * accounts via the admin API — that identity concern is edition-specific and
+ * intentionally outside the ScmProvider interface.
  */
 @Injectable()
-export class GiteaService implements OnModuleInit {
+export class GiteaService implements OnModuleInit, ScmProvider {
   private readonly logger = new Logger('GiteaService');
 
   // Registers the platform's system webhook in Gitea (idempotent, best
