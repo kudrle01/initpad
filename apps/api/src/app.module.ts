@@ -12,6 +12,7 @@ import { MeModule } from './me/me.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { AdminModule } from './admin/admin.module';
 import { IdentityModule } from './identity/identity.module';
+import { GitHubModule } from './scm/github/github.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { IdentityModule } from './identity/identity.module';
     WorkspacesModule,
     AdminModule,
     IdentityModule,
+    GitHubModule,
   ],
   controllers: [HealthController],
 })

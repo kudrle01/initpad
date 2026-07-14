@@ -158,6 +158,22 @@ export const config = {
         `http://${deployHealthHost}:8085`,
     },
   },
+  // GitHub App for the hosted edition (ADR-030). One App provides two bindings:
+  // OAuth user authorization (Sign in with / link GitHub) and app installation
+  // (repository access via short-lived installation tokens). All values are
+  // optional: when unset the GitHub adapter stays inert and never blocks the
+  // Gitea path.
+  github: {
+    appId: process.env.INITPAD_GITHUB_APP_ID || '',
+    // OAuth user-authorization credentials (identity linking / sign-in).
+    clientId: process.env.INITPAD_GITHUB_CLIENT_ID || '',
+    clientSecret: process.env.INITPAD_GITHUB_CLIENT_SECRET || '',
+    // App private key (PEM). Env vars often carry it as a single line with
+    // escaped newlines, so unescape them here.
+    privateKey: (process.env.INITPAD_GITHUB_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+    webhookSecret: process.env.INITPAD_GITHUB_WEBHOOK_SECRET || '',
+    apiBaseUrl: process.env.INITPAD_GITHUB_API_URL || 'https://api.github.com',
+  },
   // The platform as an OIDC provider (SSO into Gitea); Gitea registers as a
   // client. issuer = address the Gitea SERVER calls (from its container via
   // host.docker.internal). publicUrl = address for the BROWSER (authorize
