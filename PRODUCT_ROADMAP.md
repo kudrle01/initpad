@@ -113,7 +113,14 @@ reálné workspace pozvánky s hashovaným jednorázovým tokenem, expirací a a
 ověření e-mailu a neenumerující reset hesla. GitHub login/link a `ScmProvider`
 adapter zůstávají samostatným navazujícím krokem (Fáze 3).
 
-### Fáze 3 — existující repozitáře
+### Fáze 3 — existující repozitáře — rozpracováno
+
+Hotový základ (ADR-041): rozhraní `ScmProvider` s DI tokenem `SCM_PROVIDER`,
+Gitea jako jeho adapter a projektová doména napojená na rozhraní; model
+`ExternalIdentity` vázaný na neměnné provider ID; `GitHubAppService` pro ražení
+krátkodobých installation tokenů s minimálními oprávněními (inertní bez
+nakonfigurované App). Zbývá: GitHub OAuth flow (sign-in/link), GitHub
+`ScmProvider` adapter (create/import/list/checks) a UI importu existujícího repa.
 
 - SCM rozhraní oddělí seznam repozitářů, import, secrets, webhooky a archivy.
 - První implementace importuje existující Gitea repo dostupné uživateli.

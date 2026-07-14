@@ -1259,3 +1259,47 @@ samostatným navazujícím krokem a tuto vrstvu nemění.
 registrace; admin-provisioned účet s vynucenou změnou dočasného hesla; pozvání dvou
 účtů (existující i nový e-mail) do týmu a ověření role v privátním SCM; reset hesla
 zneplatní staré session; deaktivace odepře přihlášení i použití session.
+
+---
+
+## ADR-041 — ScmProvider šev, externí identita a GitHub installation tokeny
+
+**Kontext.** ADR-030/039 rozhodly, že projektová doména bude znát jen rozhraní
+`ScmProvider` a že hosted edice použije GitHub App. Tento krok zavádí konkrétní
+základ: abstrakci nad SCM, ukládání externí identity podle immutable ID a ražení
+krátkodobých installation tokenů — bez blokování hlavního (Gitea) scénáře.
+
+**Rozhodnutí.**
+
+1. **Rozhraní `ScmProvider`.** Repository-doménové operace (provision, delete/detach,
+   collaborators, commits, statuses, secrets, archive, retry tag, packages, clone
+   token) tvoří rozhraní `ScmProvider` s DI tokenem `SCM_PROVIDER`. Gitea je jeho
+   self-contained adapter; hosted build napojí GitHub adapter za stejný token.
+   Projektová doména (projects, workspaces, git-access) injektuje rozhraní, ne
+   konkrétní třídu. Provisioning účtů (createUser/token, setUserActive) zůstává mimo
+   `ScmProvider`, protože je to edition-specific identita (managed Gitea účty vs.
+   GitHub OAuth).
+
+2. **Externí identita podle immutable ID.** `ExternalIdentity` váže InitPad uživatele
+   na (provider, providerUserId) — neměnné ID poskytovatele. Unikáty zajišťují, že
+   jeden poskytovatelský účet patří max. jednomu InitPad uživateli a jeden uživatel má
+   max. jednu identitu na providera. Shoda e-mailu nikdy neslučuje účty; „Sign in with
+   GitHub" hledá výhradně podle immutable ID.
+
+3. **GitHub App a installation tokeny.** `GitHubAppService` podepíše App JWT (RS256,
+   `iat` −60 s, `exp` ≤ 10 min) a vymění ho za krátkodobý installation access token s
+   minimálními oprávněními (metadata read, contents read/write, checks write;
+   administration write jen explicitně pro vytvoření repozitáře) a volitelně omezený na
+   konkrétní repozitáře. Tokeny se neukládají. Bez `INITPAD_GITHUB_APP_ID`/`PRIVATE_KEY`
+   je adapter inertní.
+
+**Důsledky.** Vznikl čistý šev pro druhý SCM adapter za stejným rozhraním, identita je
+bezpečně vázaná na neměnné ID a přístup k repozitářům běží na pomíjivých tokenech.
+Zbývá: GitHub OAuth flow (sign-in/link), GitHub `ScmProvider` adapter (create/import/
+list/checks) a UI importu; jsou plně ověřitelné až proti reálné GitHub App a nesmí
+blokovat Gitea E2E (ADR-030).
+
+**Uživatelské testování.** Šev a identita jsou ověřeny API unit testy a typecheckem;
+chování Gitea zůstává beze změny (regresní testy zelené). GitHub část je bez
+nakonfigurované App inertní a ověří se samostatným cloud acceptance testem po dodání
+OAuth flow a adapteru.

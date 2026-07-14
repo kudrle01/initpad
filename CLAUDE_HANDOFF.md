@@ -27,9 +27,16 @@ Kroky 1–4 jsou hotové (ADR-040). Zbývá krok 5 — GitHub adapter.
    se odkaz zobrazí ownerovi jednou; po přijetí se synchronizuje Gitea collaborator.
 4. [hotovo] Ověření e-mailu, bezpečný reset hesla a rate limiting. Tokeny se
    nikdy neukládají v plaintextu a reset zneplatní staré sessions.
-5. [další krok] Vytvoř `ScmProvider` a odděl stávající Gitea adapter od GitHub SaaS
+5. [rozpracováno] Vytvoř `ScmProvider` a odděl stávající Gitea adapter od GitHub SaaS
    adapteru. GitHub identitu ukládej podle immutable provider user ID; repo access
    řeš krátkodobými installation tokeny a minimálními permissions.
+   - Hotovo (ADR-041): rozhraní `ScmProvider` + token `SCM_PROVIDER`, Gitea adapter,
+     projektová doména na rozhraní; `ExternalIdentity` podle immutable ID;
+     `GitHubAppService` (App JWT + installation tokeny, minimální oprávnění, inertní
+     bez konfigurace).
+   - Zbývá: GitHub OAuth flow (sign-in/link přes immutable ID), GitHub `ScmProvider`
+     adapter (create/import/list/checks/secrets), evidence App instalací a UI importu.
+     Plná GitHub implementace nesmí blokovat Gitea E2E; GitLab až potom.
 
 ## Povinné ověření
 
