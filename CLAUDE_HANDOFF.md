@@ -11,20 +11,25 @@ a zachovej existující uživatelská data.
 - Public SaaS: GitHub login/link, GitHub App, GitHub Actions a GHCR. Bez SaaS Gitey.
 - Self-hosted: vestavěná Gitea; instance admin spravuje onboarding a uživatele.
 - GitHub App instalace je nutná pro create/import GitHub repa, ne pro vznik účtu.
+- Onboarding (ADR-042): dva registrační režimy — `open` (veřejné, samoobsluha) a
+  `admin-provisioned` (soukromé, účty zakládá admin + aktivační odkaz). Do týmu se
+  přidávají jen existující účty podle username/e-mailu; žádné tokenové pozvánky.
 
 ## Nejbližší milník — identity a workspace onboarding
 
 Kroky 1–4 jsou hotové (ADR-040). Zbývá krok 5 — GitHub adapter.
 
-1. [hotovo] Edition-aware registration policy: `open`, `invite-only`,
-   `admin-provisioned`; bezpečný first-user bootstrap administrátora zachován.
+1. [hotovo] Registration policy zjednodušená na dva režimy (ADR-042): `open`
+   (veřejné) a `admin-provisioned` (soukromé); `invite-only`/`first-user`/`closed`
+   jsou tiché aliasy. Bezpečný first-user bootstrap administrátora zachován.
 2. [hotovo] Platform-admin API a UI pro seznam, vytvoření, deaktivaci a reset
-   uživatelů self-hosted instance. Vytvoření vrátí náhodné dočasné heslo pouze
-   jednou, uloží jen hash a serverově vynutí změnu hesla před ostatními operacemi.
-   Provisioning/rollback zůstává konzistentní s Giteou.
-3. [hotovo] Skutečné workspace invitations pro existující i nový e-mail:
-   hashovaný jednorázový token, expirace, role, revoke, accept a audit. Bez SMTP
-   se odkaz zobrazí ownerovi jednou; po přijetí se synchronizuje Gitea collaborator.
+   uživatelů self-hosted instance. Vytvoření vrátí dočasné heslo i **aktivační
+   odkaz** (uživatel si nastaví heslo a je přihlášen); ukládá se jen hash a
+   serverově se vynutí změnu hesla. Provisioning/rollback konzistentní s Giteou.
+3. [hotovo, zjednodušeno v ADR-042] Členství v týmu **jen pro existující účty**
+   přes přímé přidání podle username/e-mailu (addMember), se synchronizací Gitea
+   collaboratora. Tokenový `WorkspaceInvitation` systém byl odstraněn jako
+   redundantní.
 4. [hotovo] Ověření e-mailu, bezpečný reset hesla a rate limiting. Tokeny se
    nikdy neukládají v plaintextu a reset zneplatní staré sessions.
 5. [rozpracováno] Vytvoř `ScmProvider` a odděl stávající Gitea adapter od GitHub SaaS

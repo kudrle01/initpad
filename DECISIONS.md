@@ -1303,3 +1303,43 @@ blokovat Gitea E2E (ADR-030).
 chování Gitea zůstává beze změny (regresní testy zelené). GitHub část je bez
 nakonfigurované App inertní a ověří se samostatným cloud acceptance testem po dodání
 OAuth flow a adapteru.
+
+---
+
+## ADR-042 — Zjednodušení onboardingu: dva režimy, aktivační odkazy, členství jen pro existující účty
+
+**Kontext.** ADR-040 zavedl tři registrační režimy (`open`, `invite-only`,
+`admin-provisioned`) a tokenové workspace pozvánky schopné založit nový účet z
+pozvaného e-mailu. V praxi se ale `invite-only` a `admin-provisioned` chovaly
+stejně (oba jen vypnou veřejnou registraci; pozvánky i admin-create fungují ve
+všech režimech), takže třetí režim přidával jen jiný text. Tokenové pozvánky
+zakládající nové účty navíc duplikovaly přímé přidání člena (`addMember`) a
+rozostřovaly, kdo účty vytváří.
+
+**Rozhodnutí.**
+
+1. **Dva registrační režimy.** Jen `open` (veřejné nasazení, samoobslužná
+   registrace) a `admin-provisioned` (soukromé, účty zakládá správce).
+   `invite-only` (a legacy `first-user`/`closed`) zůstávají jako tiché aliasy
+   `admin-provisioned`. První účet dál bootstrapuje administrátora.
+
+2. **Aktivační odkazy.** Účet založený adminem má vedle jednorázového dočasného
+   hesla i **aktivační odkaz**: jednorázový token (`AuthToken` kind `activation`),
+   přes který si uživatel nastaví vlastní heslo a je rovnou přihlášen. To je
+   preferovaná cesta onboardingu v soukromém režimu.
+
+3. **Členství v týmu jen pro existující účty.** Přidání do týmu probíhá výhradně
+   přímým přidáním existujícího uživatele podle username/e-mailu (`addMember`).
+   Tokenový systém `WorkspaceInvitation` (včetně registrace přes pozvánku a
+   přijímací stránky) je odstraněn reverzní migrací; ruší jen čekající pozvánky,
+   účty/workspaces/členství zůstávají.
+
+**Důsledky.** Model je jednodušší a bez redundance: účty vznikají buď
+samoobsluhou (veřejné), nebo je zakládá admin (soukromé); do týmů se přiřazují
+už existující účty. Nahrazuje body 1 a 4 ADR-040; body 2, 3 a 5 (životní cyklus
+účtu, správa uživatelů, ověření e-mailu/reset) platí dál.
+
+**Uživatelské testování.** Veřejné: samoobslužná registrace. Soukromé: admin
+vytvoří účet → aktivační odkaz → uživatel si nastaví heslo a je přihlášen (nebo
+dočasné heslo s vynucenou změnou). Tým: majitel přidá existujícího uživatele
+podle e-mailu; přidání neexistujícího účtu selže.

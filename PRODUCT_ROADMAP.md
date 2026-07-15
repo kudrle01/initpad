@@ -105,13 +105,14 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
   uživatele a vydává jednorázové dočasné přihlašovací údaje s vynucenou změnou hesla.
 - Ochrana proti automatizovanému zneužití, ověření e-mailu a bezpečný reset hesla.
 
-Implementováno (ADR-040): edition-aware registrační politika s bezpečným
+Implementováno (ADR-040, zjednodušeno v ADR-042): registrační politika se
+dvěma režimy (`open` veřejně / `admin-provisioned` soukromě) s bezpečným
 first-user bootstrapem; stavové session s generací tokenu (deaktivace i reset
 zneplatní staré session); platform-admin API a UI pro seznam/vytvoření/
-deaktivaci/reset uživatelů s jednorázovým dočasným heslem a vynucenou změnou;
-reálné workspace pozvánky s hashovaným jednorázovým tokenem, expirací a auditem;
-ověření e-mailu a neenumerující reset hesla. GitHub login/link a `ScmProvider`
-adapter zůstávají samostatným navazujícím krokem (Fáze 3).
+deaktivaci/reset uživatelů s jednorázovým dočasným heslem NEBO aktivačním
+odkazem (uživatel si nastaví vlastní heslo a je přihlášen); přidávání do týmu
+jen pro existující účty podle username/e-mailu; ověření e-mailu a neenumerující
+reset hesla. GitHub login/link a `ScmProvider` adapter jsou ve Fázi 3.
 
 ### Fáze 3 — existující repozitáře — rozpracováno
 
@@ -245,7 +246,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 1 — bezpečný baseline | ano | Přihlášení, vytvoření projektu, viditelné CI a responzivní UI; build/test/health jsou zelené. |
 | 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
 | 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 403. |
-| 4 — identity/onboarding | ano | Normální registrace; owner pozve dva uživatele do workspace a role platí i v SCM. V `admin-provisioned` režimu správce vytvoří účet, dočasné heslo je zobrazeno jednou a uživatel je musí změnit. |
+| 4 — identity/onboarding | ano | Veřejně: samoobslužná registrace. Soukromě: admin vytvoří účet a pošle aktivační odkaz (uživatel si nastaví heslo a je přihlášen) nebo dočasné heslo s vynucenou změnou. Majitel přidá do týmu existující účet podle e-mailu; role platí i v SCM. |
 | 5 — import repa/SCM | ano | Gitea: výběr repa a preflight bez změny kódu. Cloud: GitHub login/link, instalace App pro vybrané repo, create/import; odvolání instalace zablokuje další SCM operace, ne účet. |
 | 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
@@ -273,16 +274,16 @@ proti běžící instalaci; testovatelné scénáře:
 
 - Normální registrace v `open`; v `admin-provisioned` je self-service zavřená
   (kromě prvního bootstrap účtu) a login screen to vysvětlí.
-- Správce vytvoří účet → jednorázové dočasné heslo se zobrazí jednou → uživatel
-  je při přihlášení nucen ho změnit, než smí cokoli dalšího.
-- Owner pozve dva e-maily (jeden existující účet, jeden nový) → nový se
-  zaregistruje vázaně na pozvaný e-mail → oba jsou členy a role platí i v
-  privátním Gitea repu.
+- Správce vytvoří účet → dostane aktivační odkaz i jednorázové dočasné heslo.
+  Aktivační odkaz: uživatel si nastaví vlastní heslo a je přihlášen. Dočasné
+  heslo: uživatel je při přihlášení nucen ho změnit, než smí cokoli dalšího.
+- Majitel týmu přidá do workspace existující účet podle username/e-mailu → je
+  členem a role platí i v privátním Gitea repu; přidání neexistujícího účtu selže.
 - Reset hesla přes `/forgot-password` → odkaz (log/e-mail) → nastavení nového
   hesla zneplatní původní session.
 - Deaktivace účtu odepře přihlášení i běžící session; poslední aktivní
   administrátor a sebe-deaktivace jsou chráněny.
-- Po testu se smažou všechny dočasné účty, workspaces, pozvánky a repozitáře.
+- Po testu se smažou všechny dočasné účty, workspaces a repozitáře.
 
 ### Průběžné ověření delivery části milníku 8
 
