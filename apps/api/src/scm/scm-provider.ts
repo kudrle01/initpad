@@ -33,6 +33,16 @@ export interface ScmCommitStatus {
   targetUrl: string | null;
 }
 
+// A repository the user can import (owns or collaborates on).
+export interface ScmRepo {
+  name: string;
+  fullName: string;
+  private: boolean;
+  defaultBranch: string;
+  updatedAt: string;
+  empty: boolean;
+}
+
 // The operations the project domain needs from an SCM. Kept intentionally close
 // to the existing Gitea surface so the first adapter is a pure conformance step;
 // a GitHub adapter implements the same contract with installation tokens and
@@ -59,6 +69,10 @@ export interface ScmProvider {
   deletePackages(owner: string, name: string): Promise<void>;
   // Issue a short-lived credential for git-over-HTTP cloning of the user's repos.
   issueCloneToken(username: string): Promise<string>;
+  // List repositories the user can import (for existing-repo import).
+  listRepositories(actor: ScmActor): Promise<ScmRepo[]>;
+  // Read a file's text content at a ref, or null if it does not exist (preflight).
+  readFile(name: string, path: string, ref: string, actor: ScmActor): Promise<string | null>;
 }
 
 // DI token so consumers inject the interface, not the concrete class.

@@ -316,6 +316,57 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     }
   }
 
+  // Lists repositories the user owns/collaborates on (for existing-repo import).
+  // Uses the admin token against the user's namespace so it works even when the
+  // stored per-user token is an OAuth JWT rather than a PAT.
+  async listRepositories(actor: ScmActor): Promise<import('./scm-provider').ScmRepo[]> {
+    const url = config.gitea.internalUrl;
+    const token = config.gitea.adminToken || actor.token;
+    if (!url || !token) return [];
+    const res = await fetch(
+      `${url}/api/v1/users/${encodeURIComponent(actor.username)}/repos?limit=100`,
+      { headers: { Authorization: `token ${token}` } },
+    );
+    if (!res.ok) {
+      throw new Error(`Could not list repositories for '${actor.username}' (HTTP ${res.status})`);
+    }
+    const data = (await res.json()) as Array<{
+      name: string;
+      full_name: string;
+      private: boolean;
+      default_branch?: string;
+      updated_at?: string;
+      empty?: boolean;
+    }>;
+    return data.map((r) => ({
+      name: r.name,
+      fullName: r.full_name,
+      private: Boolean(r.private),
+      defaultBranch: r.default_branch || 'main',
+      updatedAt: r.updated_at || '',
+      empty: Boolean(r.empty),
+    }));
+  }
+
+  // Reads a file's text content at a ref (preflight), or null when it is absent.
+  async readFile(name: string, path: string, ref: string, actor: ScmActor): Promise<string | null> {
+    const url = config.gitea.internalUrl;
+    const token = config.gitea.adminToken || actor.token;
+    if (!url || !token) return null;
+    const res = await fetch(
+      `${url}/api/v1/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}/contents/${path
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}?ref=${encodeURIComponent(ref)}`,
+      { headers: { Authorization: `token ${token}` } },
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) return null;
+    const data = (await res.json()) as { content?: string; encoding?: string };
+    if (!data.content) return null;
+    return Buffer.from(data.content, data.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+  }
+
   async setCollaborator(
     repoUrl: string | null,
     username: string,
