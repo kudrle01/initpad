@@ -144,8 +144,16 @@ v edici `saas` se založí účet z GitHub identity (bez Gitea, s propojenou
 identitou a osobním workspace); e-mail se nikdy neslévá s existujícím účtem.
 V self-hosted edici GitHub slouží jen k propojení existujícího účtu.
 
-Zbývá: GitHub `ScmProvider` adapter (create/import/list/checks) za stejným
-`SCM_PROVIDER` tokenem, který použije `GitHubInstallationService.tokenForOwner`.
+GitHub `ScmProvider` adapter — čtecí cesta: `GitHubScmProvider` implementuje
+rozhraní a čtecí operace (`listRepositories`, `readFile`, `repoMissing`,
+`listCommits`, `listCommitStatuses`) běží na krátkodobých installation tokenech
+podle ownera; zápisové/deploy/credential operace jasně odmítnou (`not
+implemented`), takže neblokují Gitea E2E. `ScmRegistry` vybírá gitea|github
+adapter za stejným rozhraním.
+
+Zbývá (živá GitHub App): zápisová cesta GitHub adapteru — vytvoření repa, push
+scaffoldu, GitHub Actions secrets (libsodium) a GHCR — a napojení create/import
+na `ScmRegistry` podle zdroje. GitLab až potom.
 
 - SCM rozhraní oddělí seznam repozitářů, import, secrets, webhooky a archivy.
 - První implementace importuje existující Gitea repo dostupné uživateli.
