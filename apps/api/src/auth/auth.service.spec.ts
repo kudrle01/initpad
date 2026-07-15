@@ -122,6 +122,47 @@ describe('AuthService', () => {
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
+  it('creates a GitHub-only account with a linked identity and no Gitea id', async () => {
+    let createData: Record<string, unknown> | undefined;
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => null), // username free, e-mail free
+        count: jest.fn(async () => 3),
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { createData = data; return { id: 'u9', ...data }; }),
+      },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await service.provisionExternalUser({
+      provider: 'github', providerUserId: '555', login: 'octocat', email: 'octo@example.test', name: 'Octo', avatarUrl: null,
+    });
+    expect(createData?.giteaId).toBeNull();
+    expect(createData?.accessToken).toBe('');
+    expect(createData?.passwordHash).toBeNull();
+    expect(createData?.username).toBe('octocat');
+    expect(createData?.emailVerifiedAt).toBeInstanceOf(Date);
+    expect(createData?.externalIdentities).toEqual({
+      create: { provider: 'github', providerUserId: '555', username: 'octocat' },
+    });
+  });
+
+  it('never attaches a taken e-mail to a new external account', async () => {
+    let createData: Record<string, unknown> | undefined;
+    const prisma = {
+      user: {
+        // username free (1st call) then e-mail already taken (2nd call).
+        findUnique: jest.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ id: 'other' }),
+        count: jest.fn(async () => 3),
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { createData = data; return { id: 'u9', ...data }; }),
+      },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await service.provisionExternalUser({ provider: 'github', providerUserId: '9', login: 'dev', email: 'taken@example.test' });
+    expect(createData?.email).toBeNull();
+    expect(createData?.emailVerifiedAt).toBeNull();
+  });
+
   it('does not reveal whether an account exists on reset request', async () => {
     const prisma = {
       user: { findFirst: jest.fn(async () => null) },

@@ -29,6 +29,10 @@ export class MeController {
   @Get('git-access')
   async gitAccess(@CurrentUser() userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    // GitHub-only (SaaS) accounts have no embedded-Gitea credential.
+    if (!user.accessToken) {
+      return { username: user.username, token: null, giteaUrl: config.gitea.url };
+    }
     let token = decryptSecret(user.accessToken);
 
     // The stored token may not be a usable PAT (SSO accounts store an OAuth2

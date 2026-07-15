@@ -193,6 +193,8 @@ function oauthErrorMessage(code: string | null): string | null {
   switch (code) {
     case 'github_no_account':
       return 'No InitPad account is linked to that GitHub account. Sign in another way, then link GitHub in Settings.';
+    case 'account_deactivated':
+      return 'This account has been deactivated. Contact your administrator.';
     case 'github_state':
       return 'The GitHub sign-in could not be verified. Please try again.';
     case 'github_exchange':

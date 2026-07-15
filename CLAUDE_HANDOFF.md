@@ -51,11 +51,12 @@ Kroky 1–4 jsou hotové (ADR-040). Zbývá krok 5 — GitHub adapter.
      CI secret, prostředí `empty`, rollback DB delete) + UI stránka Importu.
      Persistentní `ProvisioningOperation` (audit + kroky) pro create i import;
      `GET /projects/:id/provisioning` a banner na detailu projektu.
-   - Zbývá: vytvoření GitHub-only účtu při prvním loginu (vyžaduje edition-neutral
-     `User` — `giteaId`/`accessToken` volitelné); GitHub `ScmProvider` adapter
-     (create/import/list/checks/secrets) za stejným tokenem, který použije
-     `GitHubInstallationService.tokenForOwner`. Plná GitHub implementace nesmí
-     blokovat Gitea E2E; GitLab až potom.
+   - Hotovo: GitHub-only účet — `User.giteaId` je volitelný a při prvním loginu přes
+     GitHub v edici `saas` se založí účet z identity (bez Gitea, propojená identita +
+     osobní workspace, e-mail se neslévá); self-hosted GitHub jen propojuje.
+   - Zbývá: GitHub `ScmProvider` adapter (create/import/list/checks/secrets) za
+     stejným tokenem, který použije `GitHubInstallationService.tokenForOwner`. Plná
+     GitHub implementace nesmí blokovat Gitea E2E; GitLab až potom.
 
 ## Povinné ověření
 

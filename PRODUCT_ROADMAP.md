@@ -139,8 +139,13 @@ obalen kolem nezměněného `createInternal`; zápis je best-effort a nikdy nem�
 výsledek. `GET /projects/:id/provisioning` a banner na detailu projektu, když
 setup neskončil úspěšně.
 
-Zbývá: vytvoření GitHub-only účtu při prvním loginu (edition-neutral `User`) a
-GitHub `ScmProvider` adapter (create/import/list/checks) za stejným tokenem.
+GitHub-only účet: `User.giteaId` je volitelný a při prvním přihlášení přes GitHub
+v edici `saas` se založí účet z GitHub identity (bez Gitea, s propojenou
+identitou a osobním workspace); e-mail se nikdy neslévá s existujícím účtem.
+V self-hosted edici GitHub slouží jen k propojení existujícího účtu.
+
+Zbývá: GitHub `ScmProvider` adapter (create/import/list/checks) za stejným
+`SCM_PROVIDER` tokenem, který použije `GitHubInstallationService.tokenForOwner`.
 
 - SCM rozhraní oddělí seznam repozitářů, import, secrets, webhooky a archivy.
 - První implementace importuje existující Gitea repo dostupné uživateli.

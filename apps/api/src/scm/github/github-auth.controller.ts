@@ -72,11 +72,25 @@ export class GitHubAuthController {
       }
     }
 
-    // login mode: only an already-linked identity signs in. Creating a
-    // GitHub-only account is deferred until the User model is edition-neutral.
-    const user = await this.identities.findUser('github', ghUser.providerUserId);
-    if (!user || user.active === false) {
-      return res.redirect(this.frontend('/login?error=github_no_account'));
+    // login mode. An already-linked identity signs in. On the SaaS edition a
+    // first-time GitHub user gets an account created from their identity; the
+    // self-hosted edition keeps GitHub for linking to an existing account only.
+    let user = await this.identities.findUser('github', ghUser.providerUserId);
+    if (user && user.active === false) {
+      return res.redirect(this.frontend('/login?error=account_deactivated'));
+    }
+    if (!user) {
+      if (config.edition !== 'saas') {
+        return res.redirect(this.frontend('/login?error=github_no_account'));
+      }
+      user = await this.auth.provisionExternalUser({
+        provider: 'github',
+        providerUserId: ghUser.providerUserId,
+        login: ghUser.login,
+        email: ghUser.email,
+        name: ghUser.name,
+        avatarUrl: ghUser.avatarUrl,
+      });
     }
     const { token } = this.auth.createSession(user);
     res.cookie(TOKEN_COOKIE, token, {

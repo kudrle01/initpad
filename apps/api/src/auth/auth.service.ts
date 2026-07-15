@@ -159,6 +159,74 @@ export class AuthService {
     }
   }
 
+  /**
+   * Creates a SaaS account from an external identity (GitHub sign-in) — no
+   * Gitea account, no password. The linked identity and personal workspace are
+   * created in the same write, so a failure never leaves a half-linked account.
+   * A matching e-mail never attaches to an existing account (ADR-030/039): if
+   * the address is taken, the account is created without it.
+   */
+  async provisionExternalUser(input: {
+    provider: 'github' | 'gitlab';
+    providerUserId: string;
+    login: string;
+    email?: string | null;
+    name?: string | null;
+    avatarUrl?: string | null;
+  }) {
+    const username = await this.uniqueUsername(input.login);
+    const userCount = await this.prisma.user.count();
+    const emailRaw = input.email?.trim().toLowerCase() || null;
+    const emailTaken = emailRaw
+      ? (await this.prisma.user.findUnique({ where: { email: emailRaw } })) != null
+      : false;
+    const email = emailTaken ? null : emailRaw;
+    return this.prisma.user.create({
+      data: {
+        username,
+        email,
+        name: input.name ?? null,
+        avatarUrl: input.avatarUrl ?? null,
+        platformRole: userCount === 0 ? 'admin' : 'user',
+        passwordHash: null,
+        accessToken: '',
+        giteaId: null,
+        // GitHub returns a verified account e-mail; mark it verified when kept.
+        emailVerifiedAt: email ? new Date() : null,
+        memberships: {
+          create: {
+            role: 'owner',
+            workspace: {
+              create: {
+                slug: `personal-${username.toLowerCase()}`,
+                name: `${username}'s workspace`,
+                type: 'personal',
+              },
+            },
+          },
+        },
+        externalIdentities: {
+          create: { provider: input.provider, providerUserId: input.providerUserId, username: input.login },
+        },
+      },
+    });
+  }
+
+  private async uniqueUsername(login: string): Promise<string> {
+    let base = (login || 'user')
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]/g, '-')
+      .replace(/^[^a-z0-9]+/, '')
+      .slice(0, 30);
+    if (base.length < 2) base = `${base}gh`;
+    let candidate = base;
+    for (let i = 1; i <= 50; i++) {
+      if (!(await this.prisma.user.findUnique({ where: { username: candidate } }))) return candidate;
+      candidate = `${base}-${i}`;
+    }
+    return `${base}-${generateToken(3)}`;
+  }
+
   /** Sign-in with a platform-native account (password verified locally). */
   async login(dto: LoginDto): Promise<{ token: string; user: SessionUser }> {
     const identity = dto.username.trim();
