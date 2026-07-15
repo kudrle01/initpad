@@ -38,6 +38,10 @@ export default function Settings() {
   const [verifyLink, setVerifyLink] = useState<string | null>(null);
   const [githubEnabled, setGithubEnabled] = useState(false);
   const [identities, setIdentities] = useState<LinkedIdentity[]>([]);
+  const [ghStatus, setGhStatus] = useState<{
+    installUrl: string | null;
+    installation: { present: boolean; suspended: boolean };
+  } | null>(null);
   const { user, activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
@@ -57,7 +61,10 @@ export default function Settings() {
     api.authConfig()
       .then((c) => {
         setGithubEnabled(c.githubEnabled);
-        if (c.githubEnabled) api.listIdentities().then(setIdentities).catch(() => undefined);
+        if (c.githubEnabled) {
+          api.listIdentities().then(setIdentities).catch(() => undefined);
+          api.githubStatus().then(setGhStatus).catch(() => undefined);
+        }
       })
       .catch(() => undefined);
     // Surface the result of a GitHub link redirect, then clean the URL.
@@ -302,8 +309,25 @@ export default function Settings() {
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
                         linked {new Date(identity.linkedAt).toLocaleDateString()}
+                        {ghStatus && (
+                          ghStatus.installation.suspended
+                            ? ' · App installation suspended'
+                            : ghStatus.installation.present
+                              ? ' · App installed'
+                              : ' · App not installed'
+                        )}
                       </span>
                     </span>
+                    {ghStatus && !ghStatus.installation.present && ghStatus.installUrl && (
+                      <a
+                        href={ghStatus.installUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-card px-2.5 text-xs font-medium hover:bg-secondary"
+                      >
+                        Install GitHub App
+                      </a>
+                    )}
                     <Button variant="ghost" size="sm" onClick={() => unlinkGithub(identity.provider)}>Unlink</Button>
                   </div>
                 ))}

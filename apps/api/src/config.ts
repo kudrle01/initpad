@@ -173,6 +173,8 @@ export const config = {
     // escaped newlines, so unescape them here.
     privateKey: (process.env.INITPAD_GITHUB_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
     webhookSecret: process.env.INITPAD_GITHUB_WEBHOOK_SECRET || '',
+    // Public App slug, used to build the "Install GitHub App" link.
+    appSlug: process.env.INITPAD_GITHUB_APP_SLUG || '',
     apiBaseUrl: process.env.INITPAD_GITHUB_API_URL || 'https://api.github.com',
     // Base for the OAuth authorize/token endpoints (github.com; overridable for
     // GitHub Enterprise). The callback must match the App's configured URL.

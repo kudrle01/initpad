@@ -145,6 +145,14 @@ export const api = {
   listIdentities: () => http<LinkedIdentity[]>('/me/identities'),
   unlinkIdentity: (provider: string) =>
     http<void>(`/me/identities/${provider}`, { method: 'DELETE' }),
+  githubStatus: () =>
+    http<{
+      enabled: boolean;
+      installUrl: string | null;
+      linked: boolean;
+      login: string | null;
+      installation: { present: boolean; suspended: boolean };
+    }>('/scm/github/status'),
   register: (username: string, email: string, password: string) =>
     http<User>('/auth/register', {
       method: 'POST',
