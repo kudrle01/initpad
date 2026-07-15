@@ -40,12 +40,15 @@ Kroky 1–4 jsou hotové (ADR-040). Zbývá krok 5 — GitHub adapter.
      `GitHubAppService` (App JWT + installation tokeny, minimální oprávnění, inertní
      bez konfigurace); GitHub OAuth flow (sign-in/link přes immutable ID) s CSRF
      state + nonce, `/me/identities` list/unlink a UI „Continue with GitHub" a
-     propojení v Settings; vše inertní bez konfigurace.
+     propojení v Settings; `GitHubInstallation` evidence instalací synchronizovaná
+     podepsanými webhooky (`/scm/github/webhook`), ražení tokenu pro ownera a
+     status/preflight (`/scm/github/status`) s „Install GitHub App" v UI; vše
+     inertní bez konfigurace.
    - Zbývá: vytvoření GitHub-only účtu při prvním loginu (vyžaduje edition-neutral
      `User` — `giteaId`/`accessToken` volitelné); GitHub `ScmProvider` adapter
-     (create/import/list/checks/secrets) za stejným tokenem; evidence App instalací
-     a UI importu existujícího repa. Plná GitHub implementace nesmí blokovat Gitea
-     E2E; GitLab až potom.
+     (create/import/list/checks/secrets) za stejným tokenem, který použije
+     `GitHubInstallationService.tokenForOwner`; a UI importu existujícího repa. Plná
+     GitHub implementace nesmí blokovat Gitea E2E; GitLab až potom.
 
 ## Povinné ověření
 

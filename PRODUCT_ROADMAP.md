@@ -121,9 +121,11 @@ Gitea jako jeho adapter a projektová doména napojená na rozhraní; model
 `ExternalIdentity` vázaný na neměnné provider ID; `GitHubAppService` pro ražení
 krátkodobých installation tokenů s minimálními oprávněními; GitHub OAuth flow
 (sign-in/link přes immutable ID) s CSRF ochranou a UI (Continue with GitHub,
-propojení účtu v Settings) — vše inertní bez nakonfigurované App. Zbývá:
-vytvoření GitHub-only účtu při prvním loginu (edition-neutral `User`), GitHub
-`ScmProvider` adapter (create/import/list/checks) a UI importu existujícího repa.
+propojení účtu v Settings); `GitHubInstallation` evidence instalací synchronizovaná
+podepsanými webhooky, ražení tokenu pro konkrétního ownera a status/preflight
+endpoint s „Install GitHub App" v UI — vše inertní bez nakonfigurované App.
+Zbývá: vytvoření GitHub-only účtu při prvním loginu (edition-neutral `User`),
+GitHub `ScmProvider` adapter (create/import/list/checks) a UI importu repa.
 
 - SCM rozhraní oddělí seznam repozitářů, import, secrets, webhooky a archivy.
 - První implementace importuje existující Gitea repo dostupné uživateli.
