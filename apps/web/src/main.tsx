@@ -18,6 +18,7 @@ import Infrastructure from '@/pages/Infrastructure';
 import Settings from '@/pages/Settings';
 import Admin from '@/pages/Admin';
 import NewProject from '@/pages/NewProject';
+import ImportRepo from '@/pages/ImportRepo';
 import ProjectDetail from '@/pages/ProjectDetail';
 import NotFound from '@/pages/NotFound';
 import RouteError from '@/pages/RouteError';
@@ -43,6 +44,7 @@ const router = createBrowserRouter([
       { path: 'settings', element: <Settings /> },
       { path: 'admin', element: <Admin /> },
       { path: 'new', element: <NewProject /> },
+      { path: 'import', element: <ImportRepo /> },
       { path: 'projects/:id', element: <ProjectDetail /> },
       { path: '*', element: <NotFound /> },
     ],

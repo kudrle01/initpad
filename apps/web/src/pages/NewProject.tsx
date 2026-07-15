@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Check, Rocket, ArrowRight, Container } from 'lucide-react';
+import { Check, Rocket, ArrowRight, Container, DownloadCloud } from 'lucide-react';
 import { api, type EnvConfig } from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
@@ -110,6 +110,10 @@ export default function NewProject() {
         title="New project"
         subtitle="Pick a golden path and the platform prepares source code, a Git repository and a deployment pipeline."
       />
+
+      <Link to="/import" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <DownloadCloud className="h-4 w-4" /> Import an existing repository instead
+      </Link>
 
       {loadError && <p role="alert" className="mb-4 text-sm text-destructive">{loadError}</p>}
       {readOnly && <p role="alert" className="mb-4 rounded-md border border-border bg-secondary p-3 text-sm text-muted-foreground">Viewer access is read-only. Ask a workspace admin for a member or maintainer role to create projects.</p>}

@@ -47,6 +47,27 @@ export interface WorkspaceMember {
 
 export type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
 
+// A repository the user can import (existing-repo import).
+export interface ImportableRepo {
+  name: string;
+  fullName: string;
+  private: boolean;
+  defaultBranch: string;
+  updatedAt: string;
+  empty: boolean;
+  alreadyImported: boolean;
+}
+
+export interface ImportPreflight {
+  repo: string;
+  branch: string;
+  runtime: string;
+  hasDockerfile: boolean;
+  alreadyImported: boolean;
+  canImport: boolean;
+  warnings: string[];
+}
+
 // A linked external SCM identity (GitHub today).
 export interface LinkedIdentity {
   provider: string;
