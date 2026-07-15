@@ -49,12 +49,13 @@ Kroky 1–4 jsou hotové (ADR-040). Zbývá krok 5 — GitHub adapter.
      `POST /projects/import/preflight` (branch/Dockerfile/runtime/kolize/prázdné) a
      `POST /projects/import` (záznam nad existujícím repem bez přepsání kódu, per-repo
      CI secret, prostředí `empty`, rollback DB delete) + UI stránka Importu.
+     Persistentní `ProvisioningOperation` (audit + kroky) pro create i import;
+     `GET /projects/:id/provisioning` a banner na detailu projektu.
    - Zbývá: vytvoření GitHub-only účtu při prvním loginu (vyžaduje edition-neutral
      `User` — `giteaId`/`accessToken` volitelné); GitHub `ScmProvider` adapter
      (create/import/list/checks/secrets) za stejným tokenem, který použije
-     `GitHubInstallationService.tokenForOwner`; a persistentní `ProvisioningOperation`
-     (validate → repository → preflight → CI → first deploy) pro create i import.
-     Plná GitHub implementace nesmí blokovat Gitea E2E; GitLab až potom.
+     `GitHubInstallationService.tokenForOwner`. Plná GitHub implementace nesmí
+     blokovat Gitea E2E; GitLab až potom.
 
 ## Povinné ověření
 

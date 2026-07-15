@@ -133,10 +133,14 @@ Dockerfile, runtime kontraktu, kolize jména, prázdné repo) a `POST /projects/
 per-repo CI secret, prostředí startují `empty`, rollback DB delete při chybě) +
 UI stránka Importu. Import kód nikdy nepřepisuje.
 
-Zbývá: vytvoření GitHub-only účtu při prvním loginu (edition-neutral `User`),
-GitHub `ScmProvider` adapter (create/import/list/checks) za stejným tokenem,
-a persistentní `ProvisioningOperation` (validate → repository → preflight → CI →
-first deploy) sjednocující create i import.
+Persistentní `ProvisioningOperation` (audit + krok validate → repository → ci →
+done) pro create i import: import zaznamenává celou sekvenci kroků, create je
+obalen kolem nezměněného `createInternal`; zápis je best-effort a nikdy nemění
+výsledek. `GET /projects/:id/provisioning` a banner na detailu projektu, když
+setup neskončil úspěšně.
+
+Zbývá: vytvoření GitHub-only účtu při prvním loginu (edition-neutral `User`) a
+GitHub `ScmProvider` adapter (create/import/list/checks) za stejným tokenem.
 
 - SCM rozhraní oddělí seznam repozitářů, import, secrets, webhooky a archivy.
 - První implementace importuje existující Gitea repo dostupné uživateli.
