@@ -47,32 +47,12 @@ export interface WorkspaceMember {
 
 export type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
 
-export interface WorkspaceInvitation {
-  id: string;
-  email: string;
-  role: WorkspaceRole;
-  status: 'pending' | 'accepted' | 'revoked' | 'expired';
-  invitedBy: string;
-  acceptedBy: string | null;
-  expiresAt: string;
-  createdAt: string;
-}
-
 // A linked external SCM identity (GitHub today).
 export interface LinkedIdentity {
   provider: string;
   providerUserId: string;
   username: string | null;
   linkedAt: string;
-}
-
-// Public view of an invitation shown on the acceptance page.
-export interface InvitationPreview {
-  workspaceName: string;
-  email: string;
-  role: WorkspaceRole;
-  invitedBy: string;
-  expiresAt: string;
 }
 
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';

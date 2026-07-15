@@ -3,17 +3,12 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.dto';
 import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto } from './dto/member.dto';
-import { CreateInvitationDto } from './dto/invitation.dto';
 import { WorkspacesService } from './workspaces.service';
-import { InvitationsService } from './invitations.service';
 
 @Controller('workspaces')
 @UseGuards(JwtAuthGuard)
 export class WorkspacesController {
-  constructor(
-    private readonly workspaces: WorkspacesService,
-    private readonly invitations: InvitationsService,
-  ) {}
+  constructor(private readonly workspaces: WorkspacesService) {}
 
   @Get()
   list(@CurrentUser() userId: string) {
@@ -72,29 +67,5 @@ export class WorkspacesController {
     @Param('memberId') memberId: string,
   ) {
     return this.workspaces.removeMember(userId, id, memberId);
-  }
-
-  @Get(':id/invitations')
-  listInvitations(@CurrentUser() userId: string, @Param('id') id: string) {
-    return this.invitations.list(userId, id);
-  }
-
-  @Post(':id/invitations')
-  createInvitation(
-    @CurrentUser() userId: string,
-    @Param('id') id: string,
-    @Body() dto: CreateInvitationDto,
-  ) {
-    return this.invitations.create(userId, id, dto);
-  }
-
-  @Delete(':id/invitations/:invitationId')
-  @HttpCode(204)
-  revokeInvitation(
-    @CurrentUser() userId: string,
-    @Param('id') id: string,
-    @Param('invitationId') invitationId: string,
-  ) {
-    return this.invitations.revoke(userId, id, invitationId);
   }
 }

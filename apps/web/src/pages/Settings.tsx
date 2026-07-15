@@ -7,7 +7,7 @@ import { CopyField } from '@/components/molecules/CopyField';
 import { Spinner } from '@/components/atoms/Spinner';
 import { useAuth } from '@/auth';
 import { useToast } from '@/toast';
-import type { LinkedIdentity, WorkspaceInvitation, WorkspaceMember, WorkspaceRole } from '@/types';
+import type { LinkedIdentity, WorkspaceMember, WorkspaceRole } from '@/types';
 
 type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
 
@@ -34,10 +34,6 @@ export default function Settings() {
   const [membersLoading, setMembersLoading] = useState(false);
   const [identity, setIdentity] = useState('');
   const [memberRole, setMemberRole] = useState<AssignableRole>('member');
-  const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([]);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<AssignableRole>('member');
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [renameWorkspace, setRenameWorkspace] = useState('');
   const [verifyLink, setVerifyLink] = useState<string | null>(null);
   const [githubEnabled, setGithubEnabled] = useState(false);
@@ -50,19 +46,11 @@ export default function Settings() {
   useEffect(() => {
     if (!activeWorkspace) return;
     setRenameWorkspace(activeWorkspace.name);
-    setInviteLink(null);
     setMembersLoading(true);
     api.listWorkspaceMembers(activeWorkspace.id)
       .then(setMembers)
       .catch((e) => toast.error((e as Error).message))
       .finally(() => setMembersLoading(false));
-    if (canManageMembers) {
-      api.listInvitations(activeWorkspace.id)
-        .then(setInvitations)
-        .catch((e) => toast.error((e as Error).message));
-    } else {
-      setInvitations([]);
-    }
   }, [activeWorkspace?.id]);
 
   useEffect(() => {
@@ -122,30 +110,6 @@ export default function Settings() {
       await api.removeWorkspaceMember(activeWorkspace.id, member.userId);
       setMembers((rows) => rows.filter((row) => row.userId !== member.userId));
       toast.success(`Removed @${member.username}`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  }
-
-  async function createInvite() {
-    if (!activeWorkspace || !inviteEmail.trim()) return;
-    try {
-      const { invitation, acceptUrl } = await api.createInvitation(activeWorkspace.id, inviteEmail.trim(), inviteRole);
-      setInvitations((rows) => [invitation, ...rows]);
-      setInviteLink(acceptUrl);
-      setInviteEmail('');
-      toast.success(`Invitation created for ${invitation.email}`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  }
-
-  async function revokeInvite(invitation: WorkspaceInvitation) {
-    if (!activeWorkspace) return;
-    try {
-      await api.revokeInvitation(activeWorkspace.id, invitation.id);
-      setInvitations((rows) => rows.map((r) => (r.id === invitation.id ? { ...r, status: 'revoked' } : r)));
-      toast.success(`Revoked invitation for ${invitation.email}`);
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -424,80 +388,6 @@ export default function Settings() {
         </div>
       </div>
 
-      {canManageMembers && (
-        <div className="rounded-lg border border-border bg-card p-6">
-          <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-              <Mail className="h-5 w-5" />
-            </span>
-            <div>
-              <h2 className="text-[15px] font-semibold">Invitations</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Invite by e-mail. The person accepts with an existing account or creates one bound to
-                that address. Without e-mail delivery, share the one-time link shown here.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-2 sm:grid-cols-[1fr_140px_auto]">
-            <input
-              className="h-9 rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              type="email"
-              placeholder="person@example.com"
-              aria-label="Invitation e-mail"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-            />
-            <select
-              className="h-9 rounded-md border border-input bg-card px-2 text-sm"
-              aria-label="Invitation role"
-              value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as AssignableRole)}
-            >
-              <option value="member">Member</option>
-              <option value="maintainer">Maintainer</option>
-              <option value="viewer">Viewer</option>
-              <option value="admin">Admin</option>
-            </select>
-            <Button onClick={createInvite} disabled={!inviteEmail.trim()}><Plus className="h-4 w-4" /> Invite</Button>
-          </div>
-
-          {inviteLink && (
-            <div className="mt-4 rounded-md border border-primary/40 bg-primary/5 p-3">
-              <p className="text-xs text-muted-foreground">
-                One-time acceptance link — shown <strong className="font-medium text-foreground">once</strong>. Send it to the invitee.
-              </p>
-              <div className="mt-2">
-                <CopyField command={inviteLink} />
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 divide-y divide-border rounded-md border border-border">
-            {invitations.length === 0 && (
-              <p className="p-3 text-sm text-muted-foreground">No invitations yet.</p>
-            )}
-            {invitations.map((inv) => (
-              <div key={inv.id} className="flex flex-wrap items-center gap-3 p-3">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{inv.email}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    invited by @{inv.invitedBy} · {inv.role}
-                  </span>
-                </span>
-                <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                  {inv.status}
-                </span>
-                {inv.status === 'pending' && (
-                  <Button variant="ghost" size="icon" aria-label={`Revoke invitation for ${inv.email}`} onClick={() => revokeInvite(inv)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {activeWorkspace?.type !== 'personal' && canAdmin && (
         <div className="rounded-lg border border-border bg-card p-6">

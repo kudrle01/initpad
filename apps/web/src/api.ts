@@ -11,9 +11,6 @@ import type {
   WorkspaceMember,
   WorkspaceRole,
   AdminUser,
-  WorkspaceInvitation,
-  InvitationPreview,
-  AssignableRole,
   LinkedIdentity,
 } from '@/types';
 
@@ -98,24 +95,6 @@ export const api = {
   }),
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
-  listInvitations: (workspaceId: string) =>
-    http<WorkspaceInvitation[]>(`/workspaces/${workspaceId}/invitations`),
-  createInvitation: (workspaceId: string, email: string, role: AssignableRole) =>
-    http<{ invitation: WorkspaceInvitation; token: string; acceptUrl: string }>(
-      `/workspaces/${workspaceId}/invitations`,
-      { method: 'POST', body: JSON.stringify({ email, role }) },
-    ),
-  revokeInvitation: (workspaceId: string, invitationId: string) =>
-    http<void>(`/workspaces/${workspaceId}/invitations/${invitationId}`, { method: 'DELETE' }),
-  previewInvitation: (token: string) =>
-    http<InvitationPreview>(`/invitations/${token}`),
-  acceptInvitation: (token: string) =>
-    http<void>(`/invitations/${token}/accept`, { method: 'POST' }),
-  registerViaInvitation: (token: string, username: string, password: string) =>
-    http<User>(`/invitations/${token}/register`, {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    }),
   listProjects: () => http<Project[]>('/projects'),
   getProject: (id: string) => http<Project>(`/projects/${id}`),
   getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),
