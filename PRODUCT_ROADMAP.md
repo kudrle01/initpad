@@ -124,8 +124,19 @@ krátkodobých installation tokenů s minimálními oprávněními; GitHub OAuth
 propojení účtu v Settings); `GitHubInstallation` evidence instalací synchronizovaná
 podepsanými webhooky, ražení tokenu pro konkrétního ownera a status/preflight
 endpoint s „Install GitHub App" v UI — vše inertní bez nakonfigurované App.
+
+Import existujícího repozitáře (přes `ScmProvider`, zatím Gitea): `listRepositories`
+a `readFile` na rozhraní; `GET /projects/import/repos` (repa uživatele, označená
+už-importovaná), `POST /projects/import/preflight` (kontrola default branch,
+Dockerfile, runtime kontraktu, kolize jména, prázdné repo) a `POST /projects/import`
+(vytvoří projektový záznam nad existujícím repem bez přepsání kódu, nakonfiguruje
+per-repo CI secret, prostředí startují `empty`, rollback DB delete při chybě) +
+UI stránka Importu. Import kód nikdy nepřepisuje.
+
 Zbývá: vytvoření GitHub-only účtu při prvním loginu (edition-neutral `User`),
-GitHub `ScmProvider` adapter (create/import/list/checks) a UI importu repa.
+GitHub `ScmProvider` adapter (create/import/list/checks) za stejným tokenem,
+a persistentní `ProvisioningOperation` (validate → repository → preflight → CI →
+first deploy) sjednocující create i import.
 
 - SCM rozhraní oddělí seznam repozitářů, import, secrets, webhooky a archivy.
 - První implementace importuje existující Gitea repo dostupné uživateli.
