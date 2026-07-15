@@ -174,16 +174,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ token, newPassword }),
     }),
+  activateAccount: (token: string, newPassword: string) =>
+    http<User>('/auth/activate', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    }),
   logout: () => http<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
   getGitAccess: () =>
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).
   adminListUsers: () => http<AdminUser[]>('/admin/users'),
   adminCreateUser: (body: { username: string; email: string; name?: string; platformRole?: 'admin' | 'user' }) =>
-    http<{ user: AdminUser; temporaryPassword: string }>('/admin/users', {
+    http<{ user: AdminUser; temporaryPassword: string; activationUrl: string }>('/admin/users', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  adminCreateActivationLink: (id: string) =>
+    http<{ activationUrl: string }>(`/admin/users/${id}/activation-link`, { method: 'POST' }),
   adminDeactivateUser: (id: string) =>
     http<AdminUser>(`/admin/users/${id}/deactivate`, { method: 'POST' }),
   adminActivateUser: (id: string) =>

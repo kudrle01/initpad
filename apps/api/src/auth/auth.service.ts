@@ -17,6 +17,7 @@ import { config } from '../config';
 
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+const ACTIVATION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 export interface SessionUser {
   id: string;
@@ -255,6 +256,30 @@ export class AuthService {
         tokenVersion: { increment: 1 },
       },
     });
+  }
+
+  /**
+   * Issues an activation link for an admin-provisioned account: a single-use
+   * link where the user sets their own password and is signed in. This is the
+   * private-edition onboarding alternative to reading out a temporary password.
+   */
+  async createActivationLink(userId: string): Promise<string> {
+    const token = await this.issueAuthToken(userId, 'activation', ACTIVATION_TTL_MS);
+    return `${this.frontendBase()}/activate/${token}`;
+  }
+
+  async activate(token: string, newPassword: string): Promise<{ token: string; user: SessionUser }> {
+    const record = await this.consumeAuthToken(token, 'activation');
+    const updated = await this.prisma.user.update({
+      where: { id: record.userId },
+      data: {
+        passwordHash: hashPassword(newPassword),
+        mustChangePassword: false,
+        // A fresh generation; any earlier temporary credential is invalidated.
+        tokenVersion: { increment: 1 },
+      },
+    });
+    return this.createSession(updated);
   }
 
   private frontendBase(): string {

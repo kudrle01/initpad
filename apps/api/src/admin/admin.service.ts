@@ -81,7 +81,9 @@ export class AdminService {
     return rows.map(toAdminUser);
   }
 
-  async createUser(dto: CreateUserDto): Promise<{ user: AdminUser; temporaryPassword: string }> {
+  async createUser(
+    dto: CreateUserDto,
+  ): Promise<{ user: AdminUser; temporaryPassword: string; activationUrl: string }> {
     const temporaryPassword = generateTemporaryPassword();
     const user = await this.auth.provisionManagedUser({
       username: dto.username,
@@ -91,7 +93,16 @@ export class AdminService {
       platformRole: dto.platformRole ?? 'user',
       mustChangePassword: true,
     });
-    return { user: toAdminUser(user as UserRow), temporaryPassword };
+    // Two ways to onboard: read out the temporary password, or send the
+    // activation link where the user sets their own password.
+    const activationUrl = await this.auth.createActivationLink(user.id);
+    return { user: toAdminUser(user as UserRow), temporaryPassword, activationUrl };
+  }
+
+  async createActivationLink(targetId: string): Promise<{ activationUrl: string }> {
+    const target = await this.prisma.user.findUnique({ where: { id: targetId } });
+    if (!target) throw new NotFoundException('User not found');
+    return { activationUrl: await this.auth.createActivationLink(targetId) };
   }
 
   async setActive(actingUserId: string, targetId: string, active: boolean): Promise<AdminUser> {

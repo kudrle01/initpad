@@ -36,4 +36,9 @@ export class AdminController {
   resetPassword(@Param('id') id: string) {
     return this.admin.resetPassword(id);
   }
+
+  @Post('users/:id/activation-link')
+  createActivationLink(@Param('id') id: string) {
+    return this.admin.createActivationLink(id);
+  }
 }

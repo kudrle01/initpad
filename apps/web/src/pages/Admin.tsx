@@ -11,11 +11,13 @@ import { CopyField } from '@/components/molecules/CopyField';
 import { Spinner } from '@/components/atoms/Spinner';
 import type { AdminUser } from '@/types';
 
-// One-time credential surfaced after create/reset. Shown once; there is no way
-// to retrieve it again because only the hash is stored.
+// One-time credentials surfaced after create/reset. Shown once; there is no way
+// to retrieve them again. Either a temporary password (admin reads it out) or an
+// activation link (user sets their own password) — create returns both.
 interface OneTime {
   username: string;
-  password: string;
+  password?: string;
+  activationUrl?: string;
 }
 
 export default function Admin() {
@@ -48,13 +50,13 @@ export default function Admin() {
     e.preventDefault();
     setCreating(true);
     try {
-      const { user: created, temporaryPassword } = await api.adminCreateUser({
+      const { user: created, temporaryPassword, activationUrl } = await api.adminCreateUser({
         username: username.trim(),
         email: email.trim(),
         name: name.trim() || undefined,
         platformRole: role,
       });
-      setOneTime({ username: created.username, password: temporaryPassword });
+      setOneTime({ username: created.username, password: temporaryPassword, activationUrl });
       setUsername('');
       setEmail('');
       setName('');
@@ -92,6 +94,16 @@ export default function Admin() {
     }
   }
 
+  async function activationLink(target: AdminUser) {
+    try {
+      const { activationUrl } = await api.adminCreateActivationLink(target.id);
+      setOneTime({ username: target.username, activationUrl });
+      toast.success(`Activation link created for @${target.username}`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Instance administration" />
@@ -104,16 +116,25 @@ export default function Admin() {
                 <KeyRound className="h-5 w-5" />
               </span>
               <div className="min-w-0">
-                <h2 className="text-[15px] font-semibold">One-time password for @{oneTime.username}</h2>
+                <h2 className="text-[15px] font-semibold">Onboarding for @{oneTime.username}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Share it securely. It is shown <strong className="font-medium text-foreground">once</strong> — the
-                  user must change it at first sign-in and it cannot be retrieved again.
+                  Share securely. Shown <strong className="font-medium text-foreground">once</strong> and cannot be
+                  retrieved again. Send the activation link, or give the temporary password.
                 </p>
               </div>
             </div>
-            <div className="mt-4">
-              <CopyField command={oneTime.password} />
-            </div>
+            {oneTime.activationUrl && (
+              <div className="mt-4">
+                <p className="mb-1 text-xs text-muted-foreground">Activation link — the user sets their own password:</p>
+                <CopyField command={oneTime.activationUrl} />
+              </div>
+            )}
+            {oneTime.password && (
+              <div className="mt-3">
+                <p className="mb-1 text-xs text-muted-foreground">Temporary password (must be changed at first sign-in):</p>
+                <CopyField command={oneTime.password} />
+              </div>
+            )}
             <Button variant="secondary" className="mt-3" onClick={() => setOneTime(null)}>Done</Button>
           </div>
         )}
@@ -175,6 +196,7 @@ export default function Admin() {
                   {!u.emailVerified && <Badge tone="muted">E-mail unverified</Badge>}
                 </span>
                 <span className="flex items-center gap-1.5">
+                  <Button variant="ghost" size="sm" onClick={() => activationLink(u)}>Activation link</Button>
                   <Button variant="ghost" size="sm" onClick={() => resetPassword(u)}>Reset password</Button>
                   {u.id !== user?.id && (
                     u.active

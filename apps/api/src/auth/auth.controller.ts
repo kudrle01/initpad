@@ -6,7 +6,7 @@ import { CurrentUser } from './current-user.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
+import { ActivateAccountDto, RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AllowDuringPasswordChange } from './allow-password-change.decorator';
 import { AuthRateLimitGuard } from './auth-rate-limit.guard';
@@ -119,6 +119,16 @@ export class AuthController {
       secure: config.auth.secureCookie,
       path: '/',
     });
+  }
+
+  // Activates an admin-provisioned account: the user sets their own password via
+  // the link and is signed in immediately.
+  @Post('activate')
+  @UseGuards(AuthRateLimitGuard)
+  async activate(@Body() dto: ActivateAccountDto, @Res({ passthrough: true }) res: Response) {
+    const { token, user } = await this.auth.activate(dto.token, dto.newPassword);
+    this.setSession(res, token);
+    return user;
   }
 
   @Post('logout')

@@ -8,6 +8,7 @@ import Login from '@/pages/Login';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import VerifyEmail from '@/pages/VerifyEmail';
+import Activate from '@/pages/Activate';
 import Dashboard from '@/pages/Dashboard';
 import Projects from '@/pages/Projects';
 import Templates from '@/pages/Templates';
@@ -27,6 +28,7 @@ const router = createBrowserRouter([
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/reset-password/:token', element: <ResetPassword /> },
   { path: '/verify-email/:token', element: <VerifyEmail /> },
+  { path: '/activate/:token', element: <Activate /> },
   {
     path: '/',
     element: <App />,

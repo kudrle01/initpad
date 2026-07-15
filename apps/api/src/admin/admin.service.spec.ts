@@ -19,6 +19,7 @@ describe('AdminService', () => {
         provisionInput = input;
         return row({ mustChangePassword: true, username: input.username as string });
       }),
+      createActivationLink: jest.fn(async () => 'https://frontend/activate/tok'),
     };
     const service = new AdminService({} as never, auth as never, {} as never);
     const result = await service.createUser({ username: 'alice', email: 'a@example.test' });
@@ -26,6 +27,7 @@ describe('AdminService', () => {
     expect(provisionInput?.platformRole).toBe('user');
     expect(result.temporaryPassword.length).toBeGreaterThanOrEqual(12);
     expect(result.user.mustChangePassword).toBe(true);
+    expect(result.activationUrl).toContain('/activate/');
   });
 
   it('refuses to deactivate your own account', async () => {

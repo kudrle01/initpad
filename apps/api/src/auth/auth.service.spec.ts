@@ -191,6 +191,26 @@ describe('AuthService', () => {
     expect(userUpdate?.emailVerifiedAt).toBeInstanceOf(Date);
   });
 
+  it('activates an account: sets the password, clears the flag and signs in', async () => {
+    const record = { id: 't4', userId: 'u1', kind: 'activation', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
+    let userUpdate: Record<string, unknown> | undefined;
+    const prisma = {
+      authToken: { findUnique: jest.fn(async () => record), update: jest.fn(async () => ({})) },
+      user: {
+        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          userUpdate = data;
+          return { id: 'u1', username: 'newbie', name: null, email: null, avatarUrl: null, platformRole: 'user', tokenVersion: 1, mustChangePassword: false };
+        }),
+      },
+    };
+    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
+    const result = await service.activate('tok', 'a-brand-new-password');
+    expect(userUpdate?.mustChangePassword).toBe(false);
+    expect(userUpdate?.tokenVersion).toEqual({ increment: 1 });
+    expect(result.token).toBe('jwt');
+    expect(result.user.mustChangePassword).toBe(false);
+  });
+
   it('does not accept a reset token for e-mail verification', async () => {
     const record = { id: 't3', userId: 'u1', kind: 'password_reset', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
     const prisma = { authToken: { findUnique: jest.fn(async () => record), update: jest.fn() }, user: { update: jest.fn() } };
