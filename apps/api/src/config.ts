@@ -13,15 +13,16 @@ export type Edition = 'self-hosted' | 'saas';
 const EDITIONS: readonly Edition[] = ['self-hosted', 'saas'];
 const edition = (process.env.INITPAD_EDITION || 'self-hosted') as Edition;
 
-// Registration policy for the self-hosted edition (ADR-040). `open` is normal
-// self-service registration; `invite-only` accepts only users holding a valid
-// workspace invitation; `admin-provisioned` means only the instance admin
-// creates accounts. A brand-new instance always allows the very first account
-// to bootstrap its administrator, regardless of the policy. The historical
-// `first-user`/`closed` values keep working as bootstrap-only aliases.
-export const REGISTRATION_MODES = ['open', 'invite-only', 'admin-provisioned'] as const;
+// Registration policy for the self-hosted edition (ADR-040). Two modes: `open`
+// is normal self-service registration (public deployment); `admin-provisioned`
+// means only the instance admin creates accounts (private deployment). A
+// brand-new instance always allows the very first account to bootstrap its
+// administrator, regardless of the policy. Historical `invite-only`/`first-user`
+// /`closed` values keep working as aliases for `admin-provisioned`.
+export const REGISTRATION_MODES = ['open', 'admin-provisioned'] as const;
 export type RegistrationMode = (typeof REGISTRATION_MODES)[number];
 const LEGACY_REGISTRATION_ALIASES: Record<string, RegistrationMode> = {
+  'invite-only': 'admin-provisioned',
   'first-user': 'admin-provisioned',
   closed: 'admin-provisioned',
 };

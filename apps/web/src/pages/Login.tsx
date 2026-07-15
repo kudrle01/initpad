@@ -20,7 +20,6 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
-  const [registrationMode, setRegistrationMode] = useState<string>('open');
   const [githubEnabled, setGithubEnabled] = useState(false);
   const [configError, setConfigError] = useState(false);
   const oauthError = oauthErrorMessage(params.get('error'));
@@ -29,7 +28,6 @@ export default function Login() {
     api.authConfig()
       .then((x) => {
         setRegistrationAvailable(x.registrationAvailable);
-        setRegistrationMode(x.registrationMode);
         setGithubEnabled(x.githubEnabled);
       })
       .catch(() => setConfigError(true));
@@ -173,11 +171,8 @@ export default function Login() {
 
         {!registrationAvailable && !configError && (
           <p className="mt-4 text-xs text-muted-foreground">
-            {registrationMode === 'invite-only'
-              ? 'Registration is by invitation. Open the invite link a workspace owner sent you, or ask them for one.'
-              : registrationMode === 'admin-provisioned'
-                ? 'Accounts are created by the instance administrator. Ask your InitPad admin for sign-in details.'
-                : 'Self-service registration is currently closed.'}
+            Accounts are created by the instance administrator. Ask your InitPad admin for a
+            sign-in link.
           </p>
         )}
 
