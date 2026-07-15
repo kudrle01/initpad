@@ -3,6 +3,7 @@ import { ProjectsService } from './projects.service';
 import { ProjectsController } from './projects.controller';
 import { ImportController } from './import.controller';
 import { ImportService } from './import.service';
+import { ProvisioningService } from './provisioning.service';
 import { ActivityController } from './activity.controller';
 import { CiController } from './ci.controller';
 import { ScmWebhookController } from './scm-webhook.controller';
@@ -16,7 +17,7 @@ import { WorkspacesModule } from '../workspaces/workspaces.module';
 
 @Module({
   imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, ScmModule, AuthModule, WorkspacesModule],
-  providers: [ProjectsService, ImportService],
+  providers: [ProjectsService, ImportService, ProvisioningService],
   controllers: [ProjectsController, ImportController, ActivityController, CiController, ScmWebhookController],
 })
 export class ProjectsModule {}

@@ -30,6 +30,7 @@ describe('ProjectsService project deletion', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
@@ -76,6 +77,7 @@ describe('ProjectsService project deletion', () => {
       { get: jest.fn().mockReturnValue({}) } as never,
       {} as never,
       deployment as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -139,6 +141,7 @@ describe('ProjectsService project deletion', () => {
       deployment as never,
       { connectionForTarget: jest.fn().mockReturnValue(undefined) } as never,
       gitea as never,
+      {} as never,
       {} as never,
     );
 

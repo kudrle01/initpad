@@ -214,6 +214,27 @@ model Environment {
   @@unique([projectId, name])
 }
 
+// Persistent audit of provisioning a project (create or import) — ADR-025/Phase
+// 3. It records the step reached (validate → repository → ci → done) and the
+// outcome, so a failed setup is observable and no external state is claimed to
+// exist before its step succeeded. Kept as a plain audit row (no FK) so it
+// survives project deletion.
+model ProvisioningOperation {
+  id          String    @id @default(uuid())
+  workspaceId String
+  projectId   String?
+  projectName String
+  kind        String // create | import
+  status      String    @default("running") // running | succeeded | failed
+  step        String    @default("validate") // validate | repository | ci | done
+  message     String?
+  createdAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  @@index([workspaceId, createdAt])
+  @@index([projectId])
+}
+
 model DeploymentOperation {
   id            String      @id @default(uuid())
   environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)

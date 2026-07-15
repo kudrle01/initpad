@@ -3,7 +3,14 @@ import { ProjectsService } from './projects.service';
 
 jest.mock('../common/secret', () => ({ decryptSecret: () => 'tok', encryptSecret: (v: string) => v }));
 
-// Constructor order: prisma, templates, generator, deployment, targets, scm, workspaces.
+const provisioning = {
+  start: jest.fn(async () => 'op1'),
+  step: jest.fn(async () => undefined),
+  succeed: jest.fn(async () => undefined),
+  fail: jest.fn(async () => undefined),
+};
+
+// Constructor order: prisma, templates, generator, deployment, targets, scm, workspaces, provisioning.
 function build(parts: { prisma?: unknown; templates?: unknown; targets?: unknown; scm?: unknown; workspaces?: unknown }) {
   return new ProjectsService(
     parts.prisma as never,
@@ -13,6 +20,7 @@ function build(parts: { prisma?: unknown; templates?: unknown; targets?: unknown
     parts.targets as never,
     parts.scm as never,
     parts.workspaces as never,
+    provisioning as never,
   );
 }
 

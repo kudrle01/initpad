@@ -39,6 +39,7 @@ import { decryptSecret, encryptSecret } from '../common/secret';
 import { generateToken, hashToken, tokenMatches } from '../common/token';
 import type { ProviderConnection } from '../deployment/deployment-provider.interface';
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
+import { ProvisioningService } from './provisioning.service';
 import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
@@ -64,6 +65,7 @@ export class ProjectsService implements OnModuleInit {
     private readonly targets: TargetsService,
     @Inject(SCM_PROVIDER) private readonly scm: ScmProvider,
     private readonly workspaces: WorkspacesService,
+    private readonly provisioning: ProvisioningService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -311,8 +313,31 @@ export class ProjectsService implements OnModuleInit {
     await this.workspaces.requireProject(userId, id, permission);
   }
 
+  // The most recent provisioning operation (create/import) for a project.
+  latestProvisioning(id: string) {
+    return this.provisioning.latestForProject(id);
+  }
+
   async create(dto: CreateProjectDto, ownerId: string, requestedWorkspaceId?: string): Promise<Project> {
     const { id: workspaceId } = await this.workspaces.resolve(ownerId, requestedWorkspaceId);
+    // Record the provisioning around the (unchanged) create flow. Recording is
+    // best-effort and never alters the outcome.
+    const op = await this.provisioning.start(workspaceId, dto.name, 'create');
+    try {
+      const project = await this.createInternal(dto, ownerId, workspaceId);
+      await this.provisioning.succeed(op, project.id);
+      return project;
+    } catch (e) {
+      await this.provisioning.fail(op, (e as Error).message);
+      throw e;
+    }
+  }
+
+  private async createInternal(
+    dto: CreateProjectDto,
+    ownerId: string,
+    workspaceId: string,
+  ): Promise<Project> {
     await this.workspaces.require(ownerId, workspaceId, 'write');
     if (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.name } })) {
       throw new BadRequestException(`This workspace already has a project named '${dto.name}'`);
@@ -431,75 +456,84 @@ export class ProjectsService implements OnModuleInit {
   ): Promise<Project> {
     const { id: workspaceId } = await this.workspaces.resolve(ownerId, requestedWorkspaceId);
     await this.workspaces.require(ownerId, workspaceId, 'write');
-    if (!/^[a-z][a-z0-9-]{1,40}$/.test(dto.repo)) {
-      throw new BadRequestException(
-        'Repository name is not a valid project name (lowercase letters, digits and hyphens).',
-      );
-    }
-    if (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.repo } })) {
-      throw new BadRequestException(`This workspace already has a project named '${dto.repo}'`);
-    }
-    const template = this.templates.get(dto.templateId);
-    const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
-    const actor: ScmActor = { username: owner.username, token: decryptSecret(owner.accessToken) };
-
-    const repo = (await this.scm.listRepositories(actor)).find((r) => r.name === dto.repo);
-    if (!repo) throw new NotFoundException(`Repository '${dto.repo}' not found`);
-    if (repo.empty) {
-      throw new BadRequestException('Cannot import an empty repository — push code first.');
-    }
-
-    const targets = await this.targets.listEntities(workspaceId);
-    const envTargets = ENV_ORDER.map((name) => {
-      const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
-      return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
-    });
-
-    const repoUrl = `${config.gitea.url}/${owner.username}/${dto.repo}`;
-    const ciDeployToken = generateToken();
-    const created = await this.prisma.project.create({
-      data: {
-        name: dto.repo,
-        templateId: template.id,
-        repoPath: `${owner.username}/${dto.repo}`,
-        repoUrl,
-        lastCommit: 'import: existing repository',
-        ciDeployTokenHash: hashToken(ciDeployToken),
-        ownerId,
-        workspaceId,
-        environments: {
-          create: envTargets.map(({ name, target }, order) => ({
-            name,
-            order,
-            provider: target.kind,
-            targetId: target.id,
-            status: 'empty',
-          })),
-        },
-      },
-    });
-
+    const op = await this.provisioning.start(workspaceId, dto.repo, 'import');
     try {
-      const ownerToken = await this.scm.issueCloneToken(owner.username);
-      await this.prisma.user.update({
-        where: { id: owner.id },
-        data: { accessToken: encryptSecret(ownerToken) },
-      });
-      await this.scm.configureRepoSecrets(owner.username, dto.repo, ownerToken, ciDeployToken);
-      const collaborators = await this.prisma.workspaceMember.findMany({
-        where: { workspaceId, userId: { not: ownerId } },
-        include: { user: true },
-      });
-      for (const collaborator of collaborators) {
-        await this.scm.setCollaborator(repoUrl, collaborator.user.username, collaborator.role);
+      if (!/^[a-z][a-z0-9-]{1,40}$/.test(dto.repo)) {
+        throw new BadRequestException(
+          'Repository name is not a valid project name (lowercase letters, digits and hyphens).',
+        );
       }
+      if (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.repo } })) {
+        throw new BadRequestException(`This workspace already has a project named '${dto.repo}'`);
+      }
+      const template = this.templates.get(dto.templateId);
+      const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
+      const actor: ScmActor = { username: owner.username, token: decryptSecret(owner.accessToken) };
+
+      await this.provisioning.step(op, 'repository');
+      const repo = (await this.scm.listRepositories(actor)).find((r) => r.name === dto.repo);
+      if (!repo) throw new NotFoundException(`Repository '${dto.repo}' not found`);
+      if (repo.empty) {
+        throw new BadRequestException('Cannot import an empty repository — push code first.');
+      }
+
+      const targets = await this.targets.listEntities(workspaceId);
+      const envTargets = ENV_ORDER.map((name) => {
+        const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
+        return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
+      });
+
+      const repoUrl = `${config.gitea.url}/${owner.username}/${dto.repo}`;
+      const ciDeployToken = generateToken();
+      const created = await this.prisma.project.create({
+        data: {
+          name: dto.repo,
+          templateId: template.id,
+          repoPath: `${owner.username}/${dto.repo}`,
+          repoUrl,
+          lastCommit: 'import: existing repository',
+          ciDeployTokenHash: hashToken(ciDeployToken),
+          ownerId,
+          workspaceId,
+          environments: {
+            create: envTargets.map(({ name, target }, order) => ({
+              name,
+              order,
+              provider: target.kind,
+              targetId: target.id,
+              status: 'empty',
+            })),
+          },
+        },
+      });
+
+      await this.provisioning.step(op, 'ci');
+      try {
+        const ownerToken = await this.scm.issueCloneToken(owner.username);
+        await this.prisma.user.update({
+          where: { id: owner.id },
+          data: { accessToken: encryptSecret(ownerToken) },
+        });
+        await this.scm.configureRepoSecrets(owner.username, dto.repo, ownerToken, ciDeployToken);
+        const collaborators = await this.prisma.workspaceMember.findMany({
+          where: { workspaceId, userId: { not: ownerId } },
+          include: { user: true },
+        });
+        for (const collaborator of collaborators) {
+          await this.scm.setCollaborator(repoUrl, collaborator.user.username, collaborator.role);
+        }
+      } catch (e) {
+        await this.prisma.project.delete({ where: { id: created.id } }).catch(() => undefined);
+        throw new BadRequestException(
+          `Import failed while configuring the repository: ${(e as Error).message}`,
+        );
+      }
+      await this.provisioning.succeed(op, created.id);
+      return this.get(created.id);
     } catch (e) {
-      await this.prisma.project.delete({ where: { id: created.id } }).catch(() => undefined);
-      throw new BadRequestException(
-        `Import failed while configuring the repository: ${(e as Error).message}`,
-      );
+      await this.provisioning.fail(op, (e as Error).message);
+      throw e;
     }
-    return this.get(created.id);
   }
 
   // Wraps deployEnv so a failure never escapes as an unhandled rejection —
