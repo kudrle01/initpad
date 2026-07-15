@@ -58,6 +58,17 @@ export interface ImportableRepo {
   alreadyImported: boolean;
 }
 
+// A project's provisioning operation (create/import) audit record.
+export interface ProvisioningStatus {
+  id: string;
+  kind: string;
+  status: 'running' | 'succeeded' | 'failed';
+  step: string;
+  message: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
 export interface ImportPreflight {
   repo: string;
   branch: string;

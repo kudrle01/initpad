@@ -20,8 +20,8 @@ import { CommitList } from '@/components/organisms/CommitList';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { EnvLogsDialog } from '@/components/organisms/EnvLogsDialog';
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
-import { giteaLink } from '@/lib/utils';
-import type { Commit, EnvName, Project, Target, TemplateManifest } from '@/types';
+import { cn, giteaLink } from '@/lib/utils';
+import type { Commit, EnvName, Project, ProvisioningStatus, Target, TemplateManifest } from '@/types';
 
 // After creation the project finishes in the background (dev: deploying →
 // running) and CI runs asynchronously — while anything is "working", the
@@ -72,6 +72,7 @@ export default function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null);
   const [template, setTemplate] = useState<TemplateManifest | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
+  const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null);
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -126,12 +127,14 @@ export default function ProjectDetail() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [p, c] = await Promise.all([
+      const [p, c, prov] = await Promise.all([
         api.getProject(id),
         api.getCommits(id).catch(() => [] as Commit[]),
+        api.getProvisioning(id).catch(() => null),
       ]);
       setProject(p);
       setCommits(c);
+      setProvisioning(prov ?? null);
       setOpenSha((cur) => cur ?? c[0]?.sha ?? null);
     } catch (e) {
       // 404 = the project is gone (deleted here, or its repository was
@@ -359,6 +362,21 @@ export default function ProjectDetail() {
       <p className="mt-2 text-sm text-muted-foreground">
         {template?.name ?? project.templateId} · created {created}
       </p>
+
+      {provisioning && provisioning.status !== 'succeeded' && (
+        <div
+          className={cn(
+            'mt-4 rounded-md border p-3 text-sm',
+            provisioning.status === 'failed'
+              ? 'border-destructive/40 bg-destructive/5 text-destructive'
+              : 'border-border bg-secondary/50 text-muted-foreground',
+          )}
+        >
+          {provisioning.status === 'failed'
+            ? `Setup (${provisioning.kind}) failed at the ${provisioning.step} step${provisioning.message ? `: ${provisioning.message}` : '.'}`
+            : `Setting up (${provisioning.kind})… current step: ${provisioning.step}.`}
+        </div>
+      )}
 
       <Section title="Repository">
         {project.repoUrl && (
