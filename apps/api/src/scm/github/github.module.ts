@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { GitHubAppService } from './github-app.service';
 import { GitHubOAuthService } from './github-oauth.service';
+import { GitHubInstallationService } from './github-installation.service';
 import { GitHubAuthController } from './github-auth.controller';
+import { GitHubWebhookController } from './github-webhook.controller';
 import { AuthModule } from '../../auth/auth.module';
 import { IdentityModule } from '../../identity/identity.module';
 
@@ -10,8 +12,8 @@ import { IdentityModule } from '../../identity/identity.module';
 // IdentityModule provides ExternalIdentityService (immutable-id linking).
 @Module({
   imports: [AuthModule, IdentityModule],
-  controllers: [GitHubAuthController],
-  providers: [GitHubAppService, GitHubOAuthService],
-  exports: [GitHubAppService, GitHubOAuthService],
+  controllers: [GitHubAuthController, GitHubWebhookController],
+  providers: [GitHubAppService, GitHubOAuthService, GitHubInstallationService],
+  exports: [GitHubAppService, GitHubOAuthService, GitHubInstallationService],
 })
 export class GitHubModule {}

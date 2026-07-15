@@ -40,6 +40,24 @@ model User {
   externalIdentities ExternalIdentity[]
 }
 
+// A GitHub App installation on a user or organization account (ADR-030). It is
+// the trust binding that lets automation reach selected repositories through
+// short-lived installation tokens; its lifecycle arrives via webhooks. The
+// numeric installation id is stored as text to avoid 32-bit overflow. No direct
+// User relation — the InitPad owner is resolved via a linked identity.
+model GitHubInstallation {
+  id                  String    @id @default(uuid())
+  installationId      String    @unique
+  accountLogin        String
+  accountType         String // User | Organization
+  repositorySelection String    @default("selected") // all | selected
+  suspendedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([accountLogin])
+}
+
 // A linked external SCM identity (GitHub today, GitLab later) — ADR-030/039.
 // The account is bound by the provider's IMMUTABLE user id, never by e-mail, so
 // a matching address can never silently merge accounts. A provider account
