@@ -69,3 +69,58 @@ describe('GitHubScmProvider reads', () => {
     await expect(provider.configureRepoSecrets()).rejects.toThrow('not implemented');
   });
 });
+
+describe('GitHubScmProvider writes', () => {
+  it('deletes a repository and tolerates 404', async () => {
+    const del = make(jest.fn(async () => ({ ok: true, status: 204 })));
+    await expect(del.provider.deleteRepo('api', actor)).resolves.toBeUndefined();
+    const gone = make(jest.fn(async () => ({ ok: false, status: 404 })));
+    await expect(gone.provider.deleteRepo('api', actor)).resolves.toBeUndefined();
+    const err = make(jest.fn(async () => ({ ok: false, status: 500 })));
+    await expect(err.provider.deleteRepo('api', actor)).rejects.toThrow('HTTP 500');
+  });
+
+  it('grants a collaborator the mapped permission and skips the owner', async () => {
+    const fetchMock = jest.fn(async () => ({ ok: true, status: 201 }));
+    const { provider } = make(fetchMock);
+    await provider.setCollaborator('https://github.com/acme/api', 'dev', 'viewer');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/repos/acme/api/collaborators/dev');
+    expect(JSON.parse(init.body as string)).toEqual({ permission: 'pull' });
+    // Owner is never added as their own collaborator.
+    fetchMock.mockClear();
+    await provider.setCollaborator('https://github.com/acme/api', 'acme', 'admin');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('replaces stale retry tags and creates a new one at the sha', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ([{ ref: 'refs/tags/initpad-retry-old' }]) }) // list
+      .mockResolvedValueOnce({ ok: true, status: 204 }) // delete stale (deleteTag → new token + DELETE)
+      .mockResolvedValueOnce({ ok: true, status: 201 }); // create
+    const { provider } = make(fetchMock);
+    const tag = await provider.createRetryTag('api', 'deadbeef', actor);
+    expect(tag).toMatch(/^initpad-retry-/);
+    const createCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1] as unknown as [string, RequestInit];
+    expect(createCall[0]).toContain('/repos/acme/api/git/refs');
+    expect(JSON.parse(createCall[1].body as string).sha).toBe('deadbeef');
+  });
+
+  it('detaches by removing platform secrets and disabling Actions', async () => {
+    const fetchMock = jest.fn(async () => ({ ok: true, status: 204 }));
+    const { provider } = make(fetchMock);
+    await provider.detachRepo('api', actor);
+    // 5 secret deletions + 1 permissions PUT.
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    const last = fetchMock.mock.calls[5] as unknown as [string, RequestInit];
+    expect(last[0]).toContain('/actions/permissions');
+    expect(JSON.parse(last[1].body as string)).toEqual({ enabled: false });
+  });
+
+  it('issues an installation token as the clone credential', async () => {
+    const { provider, installations } = make(jest.fn());
+    expect(await provider.issueCloneToken('acme')).toBe('ghs_x');
+    expect(installations.tokenForOwner).toHaveBeenCalledWith('acme');
+  });
+});

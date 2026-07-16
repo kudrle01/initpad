@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { config } from '../../config';
 import {
   RepoArchive,
@@ -31,14 +32,38 @@ export class GitHubScmProvider implements ScmProvider {
     return (await this.installations.tokenForOwner(owner)).token;
   }
 
-  private async gh(path: string, token: string): Promise<Response> {
+  private async gh(
+    path: string,
+    token: string,
+    init?: { method?: string; body?: unknown },
+  ): Promise<Response> {
     return fetch(`${config.github.apiBaseUrl}${path}`, {
+      method: init?.method ?? 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
+        ...(init?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       },
+      ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
     });
+  }
+
+  // Parses owner/name from a stored browser repo URL (…/owner/name[.git]).
+  private coords(repoUrl: string | null): { owner: string; name: string } | null {
+    if (!repoUrl) return null;
+    const parts = repoUrl.replace(/\.git$/, '').replace(/\/+$/, '').split('/');
+    const name = parts.pop();
+    const owner = parts.pop();
+    return owner && name ? { owner, name } : null;
+  }
+
+  // Maps a workspace role to a GitHub collaborator permission.
+  private permissionFor(role: string): string {
+    if (role === 'viewer') return 'pull';
+    if (role === 'admin' || role === 'owner') return 'admin';
+    if (role === 'maintainer') return 'maintain';
+    return 'push';
   }
 
   async listRepositories(actor: ScmActor): Promise<ScmRepo[]> {
@@ -135,33 +160,131 @@ export class GitHubScmProvider implements ScmProvider {
     }
   }
 
-  // --- Not wired yet (write / deploy / credentials) --------------------------
+  async deleteRepo(name: string, actor: ScmActor): Promise<void> {
+    const token = await this.token(actor.username);
+    const res = await this.gh(
+      `/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`,
+      token,
+      { method: 'DELETE' },
+    );
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Could not delete the GitHub repository (HTTP ${res.status})`);
+    }
+  }
+
+  // Severs the repo's trust with a deleted project: remove platform secrets and
+  // disable Actions, keeping the source code (mirrors the Gitea adapter).
+  async detachRepo(name: string, actor: ScmActor): Promise<void> {
+    const token = await this.token(actor.username);
+    const repo = `${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`;
+    for (const secret of PLATFORM_SECRETS) {
+      const res = await this.gh(`/repos/${repo}/actions/secrets/${secret}`, token, { method: 'DELETE' });
+      if (!res.ok && res.status !== 404) {
+        throw new Error(`Could not remove Actions secret '${secret}' (HTTP ${res.status})`);
+      }
+    }
+    const disabled = await this.gh(`/repos/${repo}/actions/permissions`, token, {
+      method: 'PUT',
+      body: { enabled: false },
+    });
+    if (!disabled.ok) {
+      throw new Error(`Could not disable Actions on the detached repository (HTTP ${disabled.status})`);
+    }
+  }
+
+  async setCollaborator(repoUrl: string | null, username: string, role: string): Promise<void> {
+    const repo = this.coords(repoUrl);
+    if (!repo || repo.owner === username) return;
+    const token = await this.token(repo.owner);
+    const res = await this.gh(
+      `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/collaborators/${encodeURIComponent(username)}`,
+      token,
+      { method: 'PUT', body: { permission: this.permissionFor(role) } },
+    );
+    if (!res.ok && res.status !== 201 && res.status !== 204) {
+      throw new Error(`Could not grant repository access to '${username}' (HTTP ${res.status})`);
+    }
+  }
+
+  async removeCollaborator(repoUrl: string | null, username: string): Promise<void> {
+    const repo = this.coords(repoUrl);
+    if (!repo || repo.owner === username) return;
+    const token = await this.token(repo.owner);
+    const res = await this.gh(
+      `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/collaborators/${encodeURIComponent(username)}`,
+      token,
+      { method: 'DELETE' },
+    );
+    if (!res.ok && res.status !== 204 && res.status !== 404) {
+      throw new Error(`Could not revoke repository access from '${username}' (HTTP ${res.status})`);
+    }
+  }
+
+  // Queues a CI re-run by tagging the exact commit, replacing any stale
+  // InitPad retry tags first (the "run again without an empty commit" path).
+  async createRetryTag(name: string, sha: string, actor: ScmActor): Promise<string> {
+    const token = await this.token(actor.username);
+    const repo = `${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`;
+    const listed = await this.gh(`/repos/${repo}/git/matching-refs/tags/initpad-retry-`, token);
+    if (listed.ok) {
+      const refs = (await listed.json()) as Array<{ ref?: string }>;
+      await Promise.all(
+        refs
+          .map((r) => (r.ref ?? '').replace(/^refs\/tags\//, ''))
+          .filter((t) => t.startsWith('initpad-retry-'))
+          .map((t) => this.deleteTag(name, t, actor)),
+      );
+    }
+    const tag = `initpad-retry-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
+    const created = await this.gh(`/repos/${repo}/git/refs`, token, {
+      method: 'POST',
+      body: { ref: `refs/tags/${tag}`, sha },
+    });
+    if (!created.ok) throw new Error(`Could not queue the CI retry on GitHub (HTTP ${created.status})`);
+    return tag;
+  }
+
+  async deleteTag(name: string, tag: string, actor: ScmActor): Promise<void> {
+    const token = await this.token(actor.username);
+    const res = await this.gh(
+      `/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}/git/refs/tags/${encodeURIComponent(tag)}`,
+      token,
+      { method: 'DELETE' },
+    );
+    if (!res.ok && res.status !== 404 && res.status !== 422) {
+      throw new Error(`Could not delete tag '${tag}' (HTTP ${res.status})`);
+    }
+  }
+
+  // Best-effort GHCR container package removal after project deletion.
+  async deletePackages(owner: string, name: string): Promise<void> {
+    try {
+      const token = await this.token(owner);
+      await this.gh(
+        `/users/${encodeURIComponent(owner)}/packages/container/${encodeURIComponent(name.toLowerCase())}`,
+        token,
+        { method: 'DELETE' },
+      );
+    } catch {
+      // Best-effort; a missing package or permission is not fatal to cleanup.
+    }
+  }
+
+  // Git-over-HTTP clone credential = a short-lived installation token used with
+  // the x-access-token user. Callers embed it as the password.
+  async issueCloneToken(username: string): Promise<string> {
+    return (await this.installations.tokenForOwner(username)).token;
+  }
+
+  // --- Still stubbed: need libsodium (secrets) or git subprocess (scaffold) ---
   provision(): Promise<{ repoUrl: string }> {
     return notImplemented('provision');
   }
-  deleteRepo(): Promise<void> {
-    return notImplemented('deleteRepo');
-  }
-  detachRepo(): Promise<void> {
-    return notImplemented('detachRepo');
-  }
-  setCollaborator(): Promise<void> {
-    return notImplemented('setCollaborator');
-  }
-  removeCollaborator(): Promise<void> {
-    return notImplemented('removeCollaborator');
-  }
-  createRetryTag(): Promise<string> {
-    return notImplemented('createRetryTag');
-  }
-  deleteTag(): Promise<void> {
-    return notImplemented('deleteTag');
-  }
   configureRepoSecrets(): Promise<void> {
-    return notImplemented('configureRepoSecrets');
+    return notImplemented('configureRepoSecrets (needs libsodium-encrypted Actions secrets)');
   }
   configureRepoRuntimeSecrets(): Promise<void> {
-    return notImplemented('configureRepoRuntimeSecrets');
+    return notImplemented('configureRepoRuntimeSecrets (needs libsodium-encrypted Actions secrets)');
   }
   downloadArchive(): Promise<RepoArchive | null> {
     return notImplemented('downloadArchive');
@@ -169,10 +292,12 @@ export class GitHubScmProvider implements ScmProvider {
   initLocal(): Promise<void> {
     return notImplemented('initLocal');
   }
-  deletePackages(): Promise<void> {
-    return notImplemented('deletePackages');
-  }
-  issueCloneToken(): Promise<string> {
-    return notImplemented('issueCloneToken');
-  }
 }
+
+const PLATFORM_SECRETS = [
+  'INITPAD_DEPLOY_TOKEN',
+  'INITPAD_REGISTRY',
+  'INITPAD_PLATFORM_URL',
+  'INITPAD_REGISTRY_USER',
+  'INITPAD_REGISTRY_PASSWORD',
+];
