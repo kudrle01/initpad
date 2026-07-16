@@ -144,16 +144,18 @@ v edici `saas` se založí účet z GitHub identity (bez Gitea, s propojenou
 identitou a osobním workspace); e-mail se nikdy neslévá s existujícím účtem.
 V self-hosted edici GitHub slouží jen k propojení existujícího účtu.
 
-GitHub `ScmProvider` adapter — čtecí cesta: `GitHubScmProvider` implementuje
-rozhraní a čtecí operace (`listRepositories`, `readFile`, `repoMissing`,
-`listCommits`, `listCommitStatuses`) běží na krátkodobých installation tokenech
-podle ownera; zápisové/deploy/credential operace jasně odmítnou (`not
-implemented`), takže neblokují Gitea E2E. `ScmRegistry` vybírá gitea|github
-adapter za stejným rozhraním.
+GitHub `ScmProvider` adapter: `GitHubScmProvider` implementuje rozhraní. Čtecí
+operace (`listRepositories`, `readFile`, `repoMissing`, `listCommits`,
+`listCommitStatuses`) i čistě‑HTTP zápisové operace (`deleteRepo`, `detachRepo`,
+set/removeCollaborator s mapováním role→permission, createRetryTag/deleteTag,
+GHCR `deletePackages`, `issueCloneToken` = installation token) běží na
+krátkodobých installation tokenech podle ownera. `ScmRegistry` vybírá gitea|github
+za stejným rozhraním.
 
-Zbývá (živá GitHub App): zápisová cesta GitHub adapteru — vytvoření repa, push
-scaffoldu, GitHub Actions secrets (libsodium) a GHCR — a napojení create/import
-na `ScmRegistry` podle zdroje. GitLab až potom.
+Zbývá (živá GitHub App): `provision` (create repo + push scaffoldu),
+`configureRepoSecrets` (Actions secrets šifrované libsodium sealed‑boxem) a
+`downloadArchive`; a napojení create/import na `ScmRegistry` podle zdroje. Tyto
+operace se neručně‑nešifrují a jsou jasně označené `not implemented`. GitLab až potom.
 
 - SCM rozhraní oddělí seznam repozitářů, import, secrets, webhooky a archivy.
 - První implementace importuje existující Gitea repo dostupné uživateli.

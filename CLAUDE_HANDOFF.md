@@ -54,13 +54,14 @@ Kroky 1–4 jsou hotové (ADR-040). Zbývá krok 5 — GitHub adapter.
    - Hotovo: GitHub-only účet — `User.giteaId` je volitelný a při prvním loginu přes
      GitHub v edici `saas` se založí účet z identity (bez Gitea, propojená identita +
      osobní workspace, e-mail se neslévá); self-hosted GitHub jen propojuje.
-   - Hotovo: GitHub `ScmProvider` adapter — čtecí cesta (`GitHubScmProvider`:
-     listRepositories/readFile/repoMissing/listCommits/listCommitStatuses přes
-     installation tokeny; zápisové operace zatím `not implemented`). `ScmRegistry`
+   - Hotovo: GitHub `ScmProvider` adapter — čtecí operace + čistě‑HTTP zápisové
+     (deleteRepo, detachRepo, set/removeCollaborator, createRetryTag/deleteTag,
+     GHCR deletePackages, issueCloneToken) přes installation tokeny. `ScmRegistry`
      vybírá gitea|github za stejným rozhraním.
-   - Zbývá (živá GitHub App): zápisová cesta adapteru — create repo, push scaffoldu,
-     GitHub Actions secrets (libsodium), GHCR — a napojení create/import na
-     `ScmRegistry` podle zdroje. Nesmí blokovat Gitea E2E; GitLab až potom.
+   - Zbývá (živá GitHub App): `provision` (create repo + push scaffoldu),
+     `configureRepoSecrets` (Actions secrets přes libsodium sealed‑box — nehardcodovat
+     vlastní crypto, přidat `libsodium-wrappers`), `downloadArchive`; a napojení
+     create/import na `ScmRegistry` podle zdroje. Nesmí blokovat Gitea E2E; GitLab potom.
 
 ## Povinné ověření
 
