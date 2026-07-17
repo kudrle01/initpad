@@ -67,13 +67,16 @@ export class GitHubInstallationService {
   }
 
   /** Resolves the owner's installation and mints a short-lived scoped token. */
-  async tokenForOwner(login: string, repositoryIds?: number[]): Promise<InstallationToken> {
+  async tokenForOwner(
+    login: string,
+    options?: { repositoryIds?: number[]; permissions?: Record<string, string> },
+  ): Promise<InstallationToken> {
     const installation = await this.findByOwner(login);
     if (!installation) throw new Error(`No GitHub App installation found for '${login}'`);
     if (installation.suspendedAt) throw new Error(`The GitHub App installation for '${login}' is suspended`);
     return this.app.createInstallationToken(
       installation.installationId,
-      repositoryIds ? { repositoryIds } : undefined,
+      options,
     );
   }
 }

@@ -57,4 +57,14 @@ describe('GitHubWebhookController', () => {
     expect(res).toEqual({ accepted: true });
     expect(service.handleEvent).not.toHaveBeenCalled();
   });
+
+  it('returns a failure when installation state cannot be persisted so GitHub can retry', async () => {
+    config.github.webhookSecret = 'whsec';
+    const service = { handleEvent: jest.fn(async () => { throw new Error('database unavailable'); }) };
+    const controller = new GitHubWebhookController(service as never);
+    const body = { action: 'created', installation: { id: 1, account: { login: 'a' } } };
+    const raw = Buffer.from(JSON.stringify(body));
+    await expect(controller.handle(sign(raw, 'whsec'), 'installation', reqWith(raw), body))
+      .rejects.toThrow('database unavailable');
+  });
 });

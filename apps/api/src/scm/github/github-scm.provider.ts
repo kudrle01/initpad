@@ -11,6 +11,17 @@ import {
 } from '../scm-provider';
 import { GitHubInstallationService } from './github-installation.service';
 
+const READ_CONTENTS = { metadata: 'read', contents: 'read' };
+const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
+const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
+const WRITE_ADMINISTRATION = { metadata: 'read', administration: 'write' };
+const DETACH_REPOSITORY = {
+  metadata: 'read',
+  administration: 'write',
+  secrets: 'write',
+};
+const WRITE_PACKAGES = { metadata: 'read', packages: 'write' };
+
 // The write/deploy half of the GitHub adapter (repo creation, Actions secrets
 // via libsodium, GHCR, git push) is a separate, live-App piece; until then it
 // throws clearly rather than pretending. This keeps the read/import path usable
@@ -28,8 +39,11 @@ function notImplemented(op: string): Promise<never> {
 export class GitHubScmProvider implements ScmProvider {
   constructor(private readonly installations: GitHubInstallationService) {}
 
-  private async token(owner: string): Promise<string> {
-    return (await this.installations.tokenForOwner(owner)).token;
+  private async token(
+    owner: string,
+    permissions: Record<string, string> = READ_CONTENTS,
+  ): Promise<string> {
+    return (await this.installations.tokenForOwner(owner, { permissions })).token;
   }
 
   private async gh(
@@ -99,7 +113,10 @@ export class GitHubScmProvider implements ScmProvider {
         .join('/')}?ref=${encodeURIComponent(ref)}`,
       token,
     );
-    if (res.status === 404 || !res.ok) return null;
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(`Could not read '${path}' from ${actor.username}/${name} (HTTP ${res.status})`);
+    }
     const data = (await res.json()) as { content?: string; encoding?: string };
     if (!data.content) return null;
     return Buffer.from(data.content, data.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
@@ -141,7 +158,7 @@ export class GitHubScmProvider implements ScmProvider {
 
   async listCommitStatuses(name: string, sha: string, actor: ScmActor): Promise<ScmCommitStatus[] | null> {
     try {
-      const token = await this.token(actor.username);
+      const token = await this.token(actor.username, READ_STATUSES);
       const res = await this.gh(
         `/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}/status`,
         token,
@@ -161,7 +178,7 @@ export class GitHubScmProvider implements ScmProvider {
   }
 
   async deleteRepo(name: string, actor: ScmActor): Promise<void> {
-    const token = await this.token(actor.username);
+    const token = await this.token(actor.username, WRITE_ADMINISTRATION);
     const res = await this.gh(
       `/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`,
       token,
@@ -175,7 +192,7 @@ export class GitHubScmProvider implements ScmProvider {
   // Severs the repo's trust with a deleted project: remove platform secrets and
   // disable Actions, keeping the source code (mirrors the Gitea adapter).
   async detachRepo(name: string, actor: ScmActor): Promise<void> {
-    const token = await this.token(actor.username);
+    const token = await this.token(actor.username, DETACH_REPOSITORY);
     const repo = `${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`;
     for (const secret of PLATFORM_SECRETS) {
       const res = await this.gh(`/repos/${repo}/actions/secrets/${secret}`, token, { method: 'DELETE' });
@@ -195,7 +212,7 @@ export class GitHubScmProvider implements ScmProvider {
   async setCollaborator(repoUrl: string | null, username: string, role: string): Promise<void> {
     const repo = this.coords(repoUrl);
     if (!repo || repo.owner === username) return;
-    const token = await this.token(repo.owner);
+    const token = await this.token(repo.owner, WRITE_ADMINISTRATION);
     const res = await this.gh(
       `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/collaborators/${encodeURIComponent(username)}`,
       token,
@@ -209,7 +226,7 @@ export class GitHubScmProvider implements ScmProvider {
   async removeCollaborator(repoUrl: string | null, username: string): Promise<void> {
     const repo = this.coords(repoUrl);
     if (!repo || repo.owner === username) return;
-    const token = await this.token(repo.owner);
+    const token = await this.token(repo.owner, WRITE_ADMINISTRATION);
     const res = await this.gh(
       `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/collaborators/${encodeURIComponent(username)}`,
       token,
@@ -223,7 +240,7 @@ export class GitHubScmProvider implements ScmProvider {
   // Queues a CI re-run by tagging the exact commit, replacing any stale
   // InitPad retry tags first (the "run again without an empty commit" path).
   async createRetryTag(name: string, sha: string, actor: ScmActor): Promise<string> {
-    const token = await this.token(actor.username);
+    const token = await this.token(actor.username, WRITE_CONTENTS);
     const repo = `${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`;
     const listed = await this.gh(`/repos/${repo}/git/matching-refs/tags/initpad-retry-`, token);
     if (listed.ok) {
@@ -245,7 +262,7 @@ export class GitHubScmProvider implements ScmProvider {
   }
 
   async deleteTag(name: string, tag: string, actor: ScmActor): Promise<void> {
-    const token = await this.token(actor.username);
+    const token = await this.token(actor.username, WRITE_CONTENTS);
     const res = await this.gh(
       `/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}/git/refs/tags/${encodeURIComponent(tag)}`,
       token,
@@ -259,7 +276,7 @@ export class GitHubScmProvider implements ScmProvider {
   // Best-effort GHCR container package removal after project deletion.
   async deletePackages(owner: string, name: string): Promise<void> {
     try {
-      const token = await this.token(owner);
+      const token = await this.token(owner, WRITE_PACKAGES);
       await this.gh(
         `/users/${encodeURIComponent(owner)}/packages/container/${encodeURIComponent(name.toLowerCase())}`,
         token,
@@ -273,7 +290,7 @@ export class GitHubScmProvider implements ScmProvider {
   // Git-over-HTTP clone credential = a short-lived installation token used with
   // the x-access-token user. Callers embed it as the password.
   async issueCloneToken(username: string): Promise<string> {
-    return (await this.installations.tokenForOwner(username)).token;
+    return (await this.installations.tokenForOwner(username, { permissions: READ_CONTENTS })).token;
   }
 
   // --- Still stubbed: need libsodium (secrets) or git subprocess (scaffold) ---

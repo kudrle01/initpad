@@ -3,7 +3,6 @@ import {
   Controller,
   Headers,
   HttpCode,
-  Logger,
   Post,
   RawBodyRequest,
   Req,
@@ -19,8 +18,6 @@ import { GitHubInstallationService, InstallationEvent } from './github-installat
 // touching any state, and refuse everything when no secret is configured.
 @Controller('scm/github')
 export class GitHubWebhookController {
-  private readonly logger = new Logger('GitHubWebhookController');
-
   constructor(private readonly installations: GitHubInstallationService) {}
 
   @Post('webhook')
@@ -37,9 +34,10 @@ export class GitHubWebhookController {
       throw new UnauthorizedException('Invalid webhook signature');
     }
     if (event === 'installation') {
-      await this.installations
-        .handleEvent(body)
-        .catch((e) => this.logger.error(`installation event failed: ${(e as Error).message}`));
+      // Let persistence failures return 5xx so GitHub retries the delivery.
+      // A logged-and-accepted failure would permanently lose installation
+      // state and make repository access disagree with GitHub.
+      await this.installations.handleEvent(body);
     }
     return { accepted: true };
   }

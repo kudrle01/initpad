@@ -27,7 +27,9 @@ describe('GitHubScmProvider reads', () => {
     }));
     const { provider, installations } = make(fetchMock);
     const repos = await provider.listRepositories(actor);
-    expect(installations.tokenForOwner).toHaveBeenCalledWith('acme');
+    expect(installations.tokenForOwner).toHaveBeenCalledWith('acme', {
+      permissions: { metadata: 'read', contents: 'read' },
+    });
     expect(repos[0]).toMatchObject({ name: 'api', fullName: 'acme/api', empty: false });
     expect(repos[1].empty).toBe(true); // size 0
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -43,6 +45,11 @@ describe('GitHubScmProvider reads', () => {
     const { provider } = make(fetchMock);
     expect(await provider.readFile('api', 'Dockerfile', 'main', actor)).toBe('FROM node');
     expect(await provider.readFile('api', 'nope', 'main', actor)).toBeNull();
+  });
+
+  it('does not turn a permission failure into a missing file', async () => {
+    const { provider } = make(jest.fn(async () => ({ ok: false, status: 403 })));
+    await expect(provider.readFile('api', 'Dockerfile', 'main', actor)).rejects.toThrow('HTTP 403');
   });
 
   it('reports a missing repository only on 404, never on error', async () => {
@@ -74,6 +81,9 @@ describe('GitHubScmProvider writes', () => {
   it('deletes a repository and tolerates 404', async () => {
     const del = make(jest.fn(async () => ({ ok: true, status: 204 })));
     await expect(del.provider.deleteRepo('api', actor)).resolves.toBeUndefined();
+    expect(del.installations.tokenForOwner).toHaveBeenCalledWith('acme', {
+      permissions: { metadata: 'read', administration: 'write' },
+    });
     const gone = make(jest.fn(async () => ({ ok: false, status: 404 })));
     await expect(gone.provider.deleteRepo('api', actor)).resolves.toBeUndefined();
     const err = make(jest.fn(async () => ({ ok: false, status: 500 })));
@@ -82,8 +92,11 @@ describe('GitHubScmProvider writes', () => {
 
   it('grants a collaborator the mapped permission and skips the owner', async () => {
     const fetchMock = jest.fn(async () => ({ ok: true, status: 201 }));
-    const { provider } = make(fetchMock);
+    const { provider, installations } = make(fetchMock);
     await provider.setCollaborator('https://github.com/acme/api', 'dev', 'viewer');
+    expect(installations.tokenForOwner).toHaveBeenCalledWith('acme', {
+      permissions: { metadata: 'read', administration: 'write' },
+    });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain('/repos/acme/api/collaborators/dev');
     expect(JSON.parse(init.body as string)).toEqual({ permission: 'pull' });
@@ -121,6 +134,8 @@ describe('GitHubScmProvider writes', () => {
   it('issues an installation token as the clone credential', async () => {
     const { provider, installations } = make(jest.fn());
     expect(await provider.issueCloneToken('acme')).toBe('ghs_x');
-    expect(installations.tokenForOwner).toHaveBeenCalledWith('acme');
+    expect(installations.tokenForOwner).toHaveBeenCalledWith('acme', {
+      permissions: { metadata: 'read', contents: 'read' },
+    });
   });
 });

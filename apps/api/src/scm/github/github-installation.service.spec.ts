@@ -65,8 +65,14 @@ describe('GitHubInstallationService', () => {
     };
     const app = { createInstallationToken: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })) };
     const service = new GitHubInstallationService(prisma as never, app as never);
-    const token = await service.tokenForOwner('acme', [111]);
-    expect(app.createInstallationToken).toHaveBeenCalledWith('42', { repositoryIds: [111] });
+    const token = await service.tokenForOwner('acme', {
+      repositoryIds: [111],
+      permissions: { contents: 'read' },
+    });
+    expect(app.createInstallationToken).toHaveBeenCalledWith('42', {
+      repositoryIds: [111],
+      permissions: { contents: 'read' },
+    });
     expect(token.token).toBe('ghs_x');
   });
 

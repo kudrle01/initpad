@@ -22,13 +22,12 @@ export function signAppJwt(appId: string, privateKeyPem: string, nowMs = Date.no
   return `${data}.${base64url(signature)}`;
 }
 
-// Least-privilege default for repository automation (ADR-030): read metadata,
-// read/write contents, and write checks. Administration write is requested
-// explicitly and only for repository creation.
+// Least-privilege default for repository inspection. Mutating callers request
+// their operation-specific permissions explicitly; an installation token must
+// never receive write permissions merely because another endpoint needs them.
 export const DEFAULT_INSTALLATION_PERMISSIONS = {
   metadata: 'read',
-  contents: 'write',
-  checks: 'write',
+  contents: 'read',
 } as const;
 
 export interface InstallationToken {
