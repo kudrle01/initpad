@@ -19,20 +19,22 @@ class ImportEnvironmentDto {
   targetId?: string;
 }
 
-// Gitea repository name (owned by the user), not the full owner/name.
-const REPO_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/;
+// Immutable opaque provider repository id. Gitea and GitHub currently use
+// decimal ids; the conservative token shape leaves room for another adapter
+// without accepting paths or URLs from the client.
+const REPOSITORY_ID = /^[a-zA-Z0-9:_-]{1,128}$/;
 
 export class ImportPreflightDto {
-  @Matches(REPO_NAME, { message: 'Invalid repository name' })
-  repo!: string;
+  @Matches(REPOSITORY_ID, { message: 'Invalid repository id' })
+  repositoryId!: string;
 
   @Matches(/^[a-z0-9-]{1,64}$/)
   templateId!: string;
 }
 
 export class ImportProjectDto {
-  @Matches(REPO_NAME, { message: 'Invalid repository name' })
-  repo!: string;
+  @Matches(REPOSITORY_ID, { message: 'Invalid repository id' })
+  repositoryId!: string;
 
   @Matches(/^[a-z0-9-]{1,64}$/)
   templateId!: string;

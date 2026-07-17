@@ -76,6 +76,28 @@ describe('GitHubInstallationService', () => {
     expect(token.token).toBe('ghs_x');
   });
 
+  it('mints through the immutable project installation binding', async () => {
+    const prisma = {
+      gitHubInstallation: {
+        findUnique: jest.fn(async () => ({
+          id: 'installation-row-1',
+          installationId: '42',
+          accountLogin: 'acme-renamed',
+          suspendedAt: null,
+        })),
+      },
+    };
+    const app = { createInstallationToken: jest.fn(async () => ({ token: 'ghs_bound', expiresAt: 'z' })) };
+    const service = new GitHubInstallationService(prisma as never, app as never);
+
+    await expect(
+      service.tokenForBinding('installation-row-1', { permissions: { contents: 'read' } }),
+    ).resolves.toMatchObject({ token: 'ghs_bound' });
+    expect(app.createInstallationToken).toHaveBeenCalledWith('42', {
+      permissions: { contents: 'read' },
+    });
+  });
+
   it('refuses a token when there is no installation or it is suspended', async () => {
     const none = { gitHubInstallation: { findFirst: jest.fn(async () => null) } };
     await expect(new GitHubInstallationService(none as never, {} as never).tokenForOwner('nobody'))

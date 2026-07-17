@@ -2,12 +2,24 @@ jest.mock('../config', () => ({
   config: {
     gitea: {
       internalUrl: 'http://gitea:3000',
+      url: 'http://localhost:3000',
       adminToken: 'admin-token',
     },
   },
 }));
 
 import { GiteaService } from './gitea.service';
+
+const repository = (name = 'nette') => ({
+  provider: 'gitea' as const,
+  repositoryId: '101',
+  owner: 'kudrla',
+  name,
+  fullName: `kudrla/${name}`,
+  defaultBranch: 'main',
+  repoUrl: `http://localhost:3000/kudrla/${name}`,
+  installationId: null,
+});
 
 describe('GiteaService CI retry tags', () => {
   afterEach(() => {
@@ -27,7 +39,7 @@ describe('GiteaService CI retry tags', () => {
 
     const service = new GiteaService();
     const tag = await service.createRetryTag(
-      'nette',
+      repository(),
       '73dd7a50580d86c71bb380cf810b6e11cdf1f83a',
       { username: 'kudrla', token: 'owner-token' },
     );
@@ -50,7 +62,7 @@ describe('GiteaService CI retry tags', () => {
 
   it('never deletes non-InitPad tags', async () => {
     const fetchMock = jest.spyOn(global, 'fetch');
-    await new GiteaService().deleteTag('nette', 'v1.0.0', {
+    await new GiteaService().deleteTag(repository(), 'v1.0.0', {
       username: 'kudrla',
       token: 'owner-token',
     });
@@ -68,7 +80,7 @@ describe('GiteaService repository detach', () => {
     for (let i = 0; i < 5; i++) fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     fetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));
 
-    await new GiteaService().detachRepo('nette', {
+    await new GiteaService().detachRepo(repository(), {
       username: 'kudrla',
       token: 'owner-token',
     });
@@ -91,8 +103,19 @@ describe('GiteaService repository detach', () => {
     jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('forbidden', { status: 403 }));
 
     await expect(
-      new GiteaService().detachRepo('nette', { username: 'kudrla', token: 'owner-token' }),
+      new GiteaService().detachRepo(repository(), { username: 'kudrla', token: 'owner-token' }),
     ).rejects.toThrow("Could not remove Actions secret 'INITPAD_DEPLOY_TOKEN'");
+  });
+
+  it('refuses a locator owned by another provider before making a request', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch');
+    await expect(
+      new GiteaService().deleteRepo(
+        { ...repository(), provider: 'github' },
+        { username: 'kudrla', token: 'owner-token' },
+      ),
+    ).rejects.toThrow('Gitea adapter cannot operate on github');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -103,14 +126,19 @@ describe('GiteaService import helpers', () => {
     jest.spyOn(global, 'fetch').mockResolvedValueOnce(
       new Response(
         JSON.stringify([
-          { name: 'api', full_name: 'kudrla/api', private: true, default_branch: 'main', updated_at: '2026-01-01T00:00:00Z', empty: false },
+          { id: 101, name: 'api', full_name: 'kudrla/api', private: true, default_branch: 'main', updated_at: '2026-01-01T00:00:00Z', empty: false },
         ]),
         { status: 200 },
       ),
     );
     const repos = await new GiteaService().listRepositories({ username: 'kudrla', token: 't' });
     expect(repos).toEqual([
-      { name: 'api', fullName: 'kudrla/api', private: true, defaultBranch: 'main', updatedAt: '2026-01-01T00:00:00Z', empty: false },
+      {
+        provider: 'gitea', repositoryId: '101', owner: 'kudrla', name: 'api',
+        fullName: 'kudrla/api', repoUrl: 'http://localhost:3000/kudrla/api',
+        installationId: null, private: true, defaultBranch: 'main',
+        updatedAt: '2026-01-01T00:00:00Z', empty: false,
+      },
     ]);
   });
 
@@ -122,8 +150,8 @@ describe('GiteaService import helpers', () => {
       )
       .mockResolvedValueOnce(new Response('not found', { status: 404 }));
     const service = new GiteaService();
-    expect(await service.readFile('api', 'Dockerfile', 'main', { username: 'kudrla', token: 't' })).toBe('FROM node');
-    expect(await service.readFile('api', 'missing', 'main', { username: 'kudrla', token: 't' })).toBeNull();
+    expect(await service.readFile(repository('api'), 'Dockerfile', 'main', { username: 'kudrla', token: 't' })).toBe('FROM node');
+    expect(await service.readFile(repository('api'), 'missing', 'main', { username: 'kudrla', token: 't' })).toBeNull();
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       'http://gitea:3000/api/v1/repos/kudrla/api/contents/Dockerfile?ref=main',
@@ -134,7 +162,7 @@ describe('GiteaService import helpers', () => {
   it('does not misreport an authorization or server failure as a missing file', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('forbidden', { status: 403 }));
     await expect(
-      new GiteaService().readFile('api', 'Dockerfile', 'main', { username: 'kudrla', token: 't' }),
+      new GiteaService().readFile(repository('api'), 'Dockerfile', 'main', { username: 'kudrla', token: 't' }),
     ).rejects.toThrow('HTTP 403');
   });
 });

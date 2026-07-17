@@ -16,7 +16,7 @@ import { ProjectsService } from './projects.service';
 
 interface RepositoryEventDto {
   action?: string;
-  repository?: { full_name?: string };
+  repository?: { id?: number | string; full_name?: string };
 }
 
 /**
@@ -57,9 +57,15 @@ export class ScmWebhookController {
     this.logger.log(`SCM webhook received: ${event ?? '?'} / ${body.action ?? '-'}`);
     if (event === 'repository' && body.action === 'deleted' && body.repository?.full_name) {
       // Run in the background — webhook deliveries should return quickly.
-      void this.projects.removeByRepo(body.repository.full_name).catch((e) =>
-        this.logger.error(`Cleanup after repository deletion failed: ${(e as Error).message}`),
-      );
+      void this.projects
+        .removeByRepo(
+          body.repository.full_name,
+          'gitea',
+          body.repository.id == null ? undefined : String(body.repository.id),
+        )
+        .catch((e) =>
+          this.logger.error(`Cleanup after repository deletion failed: ${(e as Error).message}`),
+        );
     }
     return { accepted: true };
   }

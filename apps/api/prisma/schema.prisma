@@ -56,6 +56,7 @@ model GitHubInstallation {
   suspendedAt         DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+  projects            Project[]
 
   @@index([accountLogin])
 }
@@ -168,6 +169,19 @@ model Project {
   templateId        String
   repoPath          String
   repoUrl           String?
+  // Stable SCM identity (ADR-043). Display name and URL may change; provider +
+  // repositoryId is the immutable identity once the provider has resolved it.
+  // repositoryId is nullable only for legacy rows while startup reconciliation
+  // resolves the real Gitea id. The explicit coordinates remove every implicit
+  // owner/name parse from repoUrl and prepare organization-owned GitHub repos.
+  scmProvider       String  @default("gitea") // gitea | github
+  scmRepositoryId   String?
+  scmOwner          String
+  scmRepositoryName String
+  scmFullName       String
+  scmDefaultBranch  String  @default("main")
+  scmInstallation   GitHubInstallation? @relation(fields: [scmInstallationId], references: [id], onDelete: SetNull)
+  scmInstallationId String?
   lastCommit        String
   // SHA-256 hash of the repository-specific CI webhook token. The plaintext
   // exists only as a Gitea Actions secret and is never persisted by InitPad.
@@ -182,6 +196,9 @@ model Project {
   environments      Environment[]
 
   @@unique([workspaceId, name])
+  @@unique([scmProvider, scmRepositoryId])
+  @@index([scmProvider, scmFullName])
+  @@index([scmInstallationId])
 }
 
 model Environment {

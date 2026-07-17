@@ -71,9 +71,21 @@ describe('WorkspacesService tenant isolation', () => {
       workspaceMember: {
         findUnique: jest.fn(async () => null),
         create: jest.fn(async () => ({})),
+        delete: jest.fn(async () => ({})),
         findMany: jest.fn(async () => []),
       },
-      project: { findMany: jest.fn(async () => [{ repoUrl: 'https://git.example/alice/app' }]) },
+      project: {
+        findMany: jest.fn(async () => [{
+          repoUrl: 'https://git.example/alice/app',
+          scmProvider: 'gitea',
+          scmRepositoryId: '101',
+          scmOwner: 'alice',
+          scmRepositoryName: 'app',
+          scmFullName: 'alice/app',
+          scmDefaultBranch: 'main',
+          scmInstallationId: null,
+        }]),
+      },
     };
     const gitea = { setCollaborator: jest.fn(async () => undefined) };
     const service = new WorkspacesService(prisma as never, gitea as never);
@@ -82,7 +94,9 @@ describe('WorkspacesService tenant isolation', () => {
     await service.addMember('admin', 'team', { identity: 'bob', role: 'viewer' });
 
     expect(gitea.setCollaborator).toHaveBeenCalledWith(
-      'https://git.example/alice/app',
+      expect.objectContaining({
+        provider: 'gitea', repositoryId: '101', owner: 'alice', name: 'app',
+      }),
       'bob',
       'viewer',
     );

@@ -1,6 +1,16 @@
 import { BadRequestException } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 
+const SCM_FIELDS = {
+  scmProvider: 'gitea',
+  scmRepositoryId: '101',
+  scmOwner: 'team',
+  scmRepositoryName: 'app',
+  scmFullName: 'team/app',
+  scmDefaultBranch: 'main',
+  scmInstallationId: null,
+};
+
 describe('ProjectsService project deletion', () => {
   it('requires an explicit acknowledgement for production cleanup', async () => {
     const prisma = {
@@ -59,6 +69,7 @@ describe('ProjectsService project deletion', () => {
           id: 'project-1',
           name: 'app',
           repoUrl: 'https://git.test/team/app',
+          ...SCM_FIELDS,
           templateId: 'nette',
         }),
       },
@@ -115,6 +126,7 @@ describe('ProjectsService project deletion', () => {
           id: 'project-1',
           name: 'app',
           repoUrl: 'https://git.test/team/app',
+          ...SCM_FIELDS,
           repoPath: '/tmp/initpad-nonexistent-project-1',
           environments: [environment],
           owner: null,

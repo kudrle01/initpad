@@ -21,7 +21,7 @@ export default function ImportRepo() {
 
   const [repos, setRepos] = useState<ImportableRepo[]>([]);
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
-  const [repo, setRepo] = useState('');
+  const [repositoryId, setRepositoryId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [preflight, setPreflight] = useState<ImportPreflight | null>(null);
   const [checking, setChecking] = useState(false);
@@ -35,21 +35,24 @@ export default function ImportRepo() {
         setTemplates(t);
         if (t[0]) setTemplateId(t[0].id);
         const firstImportable = r.find((x) => !x.alreadyImported && !x.empty);
-        if (firstImportable) setRepo(firstImportable.name);
+        if (firstImportable) setRepositoryId(firstImportable.repositoryId);
       })
       .catch((e) => setLoadError((e as Error).message));
   }, []);
 
   // A fresh choice invalidates the previous preflight.
-  useEffect(() => setPreflight(null), [repo, templateId]);
+  useEffect(() => setPreflight(null), [repositoryId, templateId]);
 
-  const selectedRepo = useMemo(() => repos.find((r) => r.name === repo) ?? null, [repos, repo]);
+  const selectedRepo = useMemo(
+    () => repos.find((repo) => repo.repositoryId === repositoryId) ?? null,
+    [repos, repositoryId],
+  );
 
   async function runPreflight() {
-    if (!repo || !templateId) return;
+    if (!repositoryId || !templateId) return;
     setChecking(true);
     try {
-      setPreflight(await api.importPreflight(repo, templateId));
+      setPreflight(await api.importPreflight(repositoryId, templateId));
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -61,7 +64,7 @@ export default function ImportRepo() {
     if (readOnly || !preflight?.canImport) return;
     setBusy(true);
     try {
-      const project = await api.importRepo(repo, templateId);
+      const project = await api.importRepo(repositoryId, templateId);
       toast.success('Repository imported');
       navigate(`/projects/${project.id}`);
     } catch (e) {
@@ -91,10 +94,18 @@ export default function ImportRepo() {
       <div className="flex max-w-2xl flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <Label>Repository</Label>
-          <Select value={repo} aria-label="Repository" onChange={(e) => setRepo(e.target.value)}>
+          <Select
+            value={repositoryId}
+            aria-label="Repository"
+            onChange={(e) => setRepositoryId(e.target.value)}
+          >
             <option value="" disabled>Choose a repository…</option>
             {repos.map((r) => (
-              <option key={r.name} value={r.name} disabled={r.alreadyImported || r.empty}>
+              <option
+                key={`${r.provider}:${r.repositoryId}`}
+                value={r.repositoryId}
+                disabled={r.alreadyImported || r.empty}
+              >
                 {r.fullName}
                 {r.alreadyImported ? ' — already imported' : r.empty ? ' — empty' : ''}
               </option>
@@ -118,7 +129,7 @@ export default function ImportRepo() {
         </div>
 
         <div>
-          <Button variant="secondary" onClick={runPreflight} disabled={!repo || !templateId || checking}>
+          <Button variant="secondary" onClick={runPreflight} disabled={!repositoryId || !templateId || checking}>
             {checking ? <Spinner className="h-4 w-4" /> : <Check className="h-4 w-4" />}
             {checking ? 'Checking…' : 'Run preflight check'}
           </Button>

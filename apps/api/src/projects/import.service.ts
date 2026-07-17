@@ -10,8 +10,13 @@ import { ImportPreflightDto } from './dto/import-project.dto';
 const PROJECT_NAME = /^[a-z][a-z0-9-]{1,40}$/;
 
 export interface ImportableRepo {
+  provider: 'gitea' | 'github';
+  repositoryId: string;
+  owner: string;
   name: string;
   fullName: string;
+  repoUrl: string;
+  installationId: string | null;
   private: boolean;
   defaultBranch: string;
   updatedAt: string;
@@ -54,12 +59,22 @@ export class ImportService {
     await this.workspaces.require(userId, workspaceId, 'read');
     const actor = await this.actorFor(userId);
     const repos = await this.scm.listRepositories(actor);
-    const existing = new Set(
-      (await this.prisma.project.findMany({ where: { workspaceId }, select: { name: true } })).map(
-        (p) => p.name,
+    const existing = await this.prisma.project.findMany({
+      where: { workspaceId },
+      select: { scmProvider: true, scmRepositoryId: true, scmFullName: true },
+    });
+    return repos.map((r) => ({
+      ...r,
+      alreadyImported: existing.some(
+        (project) =>
+          (project.scmRepositoryId != null &&
+            project.scmProvider === r.provider &&
+            project.scmRepositoryId === r.repositoryId) ||
+          (project.scmRepositoryId == null &&
+            project.scmProvider === r.provider &&
+            project.scmFullName === r.fullName),
       ),
-    );
-    return repos.map((r) => ({ ...r, alreadyImported: existing.has(r.name) }));
+    }));
   }
 
   async preflight(
@@ -72,8 +87,10 @@ export class ImportService {
     const template = this.templates.get(dto.templateId);
     const actor = await this.actorFor(userId);
 
-    const repo = (await this.scm.listRepositories(actor)).find((r) => r.name === dto.repo);
-    if (!repo) throw new NotFoundException(`Repository '${dto.repo}' not found`);
+    const repo = (await this.scm.listRepositories(actor)).find(
+      (candidate) => candidate.repositoryId === dto.repositoryId,
+    );
+    if (!repo) throw new NotFoundException(`Repository '${dto.repositoryId}' not found`);
 
     const runtime = templateRuntime(template);
     const warnings: string[] = [];
@@ -81,7 +98,7 @@ export class ImportService {
 
     const dockerfile = repo.empty
       ? null
-      : await this.scm.readFile(dto.repo, 'Dockerfile', repo.defaultBranch, actor);
+      : await this.scm.readFile(repo, 'Dockerfile', repo.defaultBranch, actor);
     const hasDockerfile = dockerfile != null;
     // Runtime contract: everything but a static site builds from a Dockerfile.
     if (!hasDockerfile && runtime !== 'static') {
@@ -91,12 +108,12 @@ export class ImportService {
     }
 
     const nameTaken =
-      (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.repo } })) != null;
-    if (nameTaken) warnings.push(`This workspace already has a project named '${dto.repo}'.`);
-    const nameValid = PROJECT_NAME.test(dto.repo);
+      (await this.prisma.project.findFirst({ where: { workspaceId, name: repo.name } })) != null;
+    if (nameTaken) warnings.push(`This workspace already has a project named '${repo.name}'.`);
+    const nameValid = PROJECT_NAME.test(repo.name);
     if (!nameValid) {
       warnings.push(
-        `'${dto.repo}' is not a valid project name (lowercase letters, digits and hyphens, 2–41 chars).`,
+        `'${repo.name}' is not a valid project name (lowercase letters, digits and hyphens, 2–41 chars).`,
       );
     }
 

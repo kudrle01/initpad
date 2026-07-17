@@ -32,7 +32,16 @@ import { TemplatesService } from '../templates/templates.service';
 import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { TargetsService, TargetRow, BUILTIN_DOCKER } from '../targets/targets.service';
-import { ScmProvider, ScmActor, RepoArchive, SCM_PROVIDER } from '../scm/scm-provider';
+import {
+  ScmProvider,
+  ScmActor,
+  RepoArchive,
+  SCM_PROVIDER,
+  ScmRepositoryIdentity,
+  ScmRepositoryRef,
+  ScmKind,
+  repositoryRef,
+} from '../scm/scm-provider';
 import { exportVersion } from '../deployment/providers/source-export';
 import { config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
@@ -69,21 +78,93 @@ export class ProjectsService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    await this.reconcileRepositoryIdentities();
     await this.migrateLegacyCiTokens();
     await this.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedOperations();
   }
 
+  // The SQL migration can safely backfill provider + owner/name without
+  // contacting an external service, but it must not invent an immutable id.
+  // On startup, resolve missing ids and refresh mutable coordinates by matching
+  // existing rows on provider + immutable id. An SCM outage only postpones the
+  // enrichment and never blocks the API.
+  private async reconcileRepositoryIdentities(): Promise<void> {
+    try {
+      const projects = await this.prisma.project.findMany({
+        where: { scmProvider: 'gitea' },
+        include: { owner: true },
+      });
+      const repositoriesByOwner = new Map<
+        string,
+        Awaited<ReturnType<ScmProvider['listRepositories']>>
+      >();
+      for (const project of projects) {
+        const actor = this.actorForRepo(project);
+        let repositories = repositoriesByOwner.get(actor.username);
+        if (!repositories) {
+          repositories = await this.scm.listRepositories(actor);
+          repositoriesByOwner.set(actor.username, repositories);
+        }
+        const match = repositories.find(
+          (repository) =>
+            repository.provider === 'gitea' &&
+            (project.scmRepositoryId
+              ? repository.repositoryId === project.scmRepositoryId
+              : repository.fullName === project.scmFullName ||
+                (repository.owner === project.scmOwner &&
+                  repository.name === project.scmRepositoryName)),
+        );
+        if (!match) continue;
+        try {
+          await this.prisma.project.update({
+            where: { id: project.id },
+            data: {
+              scmRepositoryId: match.repositoryId,
+              scmOwner: match.owner,
+              scmRepositoryName: match.name,
+              scmFullName: match.fullName,
+              scmDefaultBranch: match.defaultBranch,
+              repoUrl: match.repoUrl,
+            },
+          });
+        } catch (error) {
+          this.logger.warn(
+            `SCM identity reconciliation failed for project ${project.id}: ${(error as Error).message}`,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`SCM identity reconciliation skipped: ${(error as Error).message}`);
+    }
+  }
+
   private async reconcileCiRuntimeSecrets(): Promise<void> {
     try {
       const projects = await this.prisma.project.findMany({
-        select: { name: true, repoUrl: true, owner: { select: { username: true } } },
+        select: {
+          scmProvider: true,
+          scmRepositoryId: true,
+          scmOwner: true,
+          scmRepositoryName: true,
+          scmFullName: true,
+          scmDefaultBranch: true,
+          scmInstallationId: true,
+          repoUrl: true,
+        },
       });
       await Promise.all(
-        projects.map((project) => {
-          const owner =
-            this.ownerFromRepoUrl(project.repoUrl) ?? project.owner?.username ?? config.gitea.user;
-          return this.scm.configureRepoRuntimeSecrets(owner, project.name);
+        projects.map(async (project) => {
+          const repository = repositoryRef(project);
+          try {
+            await this.scm.configureRepoRuntimeSecrets(repository);
+          } catch (error) {
+            // One externally deleted/inaccessible repository must not prevent
+            // configuration reconciliation for every healthy project.
+            this.logger.warn(
+              `CI runtime-secret reconciliation failed for ${repository.provider}:${repository.fullName}: ${(error as Error).message}`,
+            );
+          }
         }),
       );
     } catch (e) {
@@ -216,7 +297,7 @@ export class ProjectsService implements OnModuleInit {
           });
           for (const project of projects) {
             const token = generateToken();
-            await this.scm.configureRepoSecrets(owner.username, project.name, ownerToken, token);
+            await this.scm.configureRepoSecrets(repositoryRef(project), ownerToken, token);
             await this.prisma.project.update({
               where: { id: project.id },
               data: { ciDeployTokenHash: hashToken(token) },
@@ -260,14 +341,17 @@ export class ProjectsService implements OnModuleInit {
       });
       await Promise.all(
         rows.map(async (row) => {
-          const actor = this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner });
-          if (await this.scm.repoMissing(row.name, actor)) {
+          const repository = repositoryRef(row);
+          const actor = this.actorForRepo(row);
+          if (await this.scm.repoMissing(repository, actor)) {
             this.logger.log(
-              `Repository ${actor.username}/${row.name} no longer exists in Gitea — cleaning up`,
+              `Repository ${repository.fullName} no longer exists in ${repository.provider} — cleaning up`,
             );
-            await this.removeByRepo(`${actor.username}/${row.name}`).catch((e) =>
-              this.logger.error(`Cleanup failed: ${(e as Error).message}`),
-            );
+            await this.removeByRepo(
+              repository.fullName,
+              repository.provider,
+              repository.repositoryId ?? undefined,
+            ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
           }
         }),
       );
@@ -286,14 +370,17 @@ export class ProjectsService implements OnModuleInit {
       include: { owner: true },
     });
     if (!row) return; // get() reports the 404
-    const actor = this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner });
-    if (await this.scm.repoMissing(row.name, actor)) {
+    const repository = repositoryRef(row);
+    const actor = this.actorForRepo(row);
+    if (await this.scm.repoMissing(repository, actor)) {
       this.logger.log(
-        `Repository ${actor.username}/${row.name} no longer exists in Gitea — cleaning up`,
+        `Repository ${repository.fullName} no longer exists in ${repository.provider} — cleaning up`,
       );
-      await this.removeByRepo(`${actor.username}/${row.name}`).catch((e) =>
-        this.logger.error(`Cleanup failed: ${(e as Error).message}`),
-      );
+      await this.removeByRepo(
+        repository.fullName,
+        repository.provider,
+        repository.repositoryId ?? undefined,
+      ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
       throw new NotFoundException(`Project '${id}' not found`);
     }
   }
@@ -368,7 +455,7 @@ export class ProjectsService implements OnModuleInit {
     // see config.git. The developer's own commits carry their identity.
     await this.scm.initLocal(repoPath);
 
-    let repo: { repoUrl: string };
+    let repo: ScmRepositoryIdentity;
     const ciDeployToken = generateToken();
     try {
       repo = await this.scm.provision(dto.name, repoPath, actor, ciDeployToken);
@@ -385,13 +472,13 @@ export class ProjectsService implements OnModuleInit {
       });
       for (const collaborator of collaborators) {
         await this.scm.setCollaborator(
-          repo.repoUrl,
+          repo,
           collaborator.user.username,
           collaborator.role,
         );
       }
     } catch (e) {
-      await this.scm.deleteRepo(dto.name, actor).catch((cleanupError) =>
+      await this.scm.deleteRepo(repo, actor).catch((cleanupError) =>
         this.logger.warn(`Repository rollback failed: ${(cleanupError as Error).message}`),
       );
       throw new BadRequestException(
@@ -412,6 +499,13 @@ export class ProjectsService implements OnModuleInit {
           templateId: template.id,
           repoPath,
           repoUrl: repo.repoUrl,
+          scmProvider: repo.provider,
+          scmRepositoryId: repo.repositoryId,
+          scmOwner: repo.owner,
+          scmRepositoryName: repo.name,
+          scmFullName: repo.fullName,
+          scmDefaultBranch: repo.defaultBranch,
+          scmInstallationId: repo.installationId,
           lastCommit: 'init: scaffold from template',
           ciDeployTokenHash: hashToken(ciDeployToken),
           ownerId,
@@ -428,7 +522,7 @@ export class ProjectsService implements OnModuleInit {
         },
       });
     } catch (e) {
-      await this.scm.deleteRepo(dto.name, actor).catch((cleanupError) =>
+      await this.scm.deleteRepo(repo, actor).catch((cleanupError) =>
         this.logger.warn(`Repository rollback failed: ${(cleanupError as Error).message}`),
       );
       throw e;
@@ -456,25 +550,36 @@ export class ProjectsService implements OnModuleInit {
   ): Promise<Project> {
     const { id: workspaceId } = await this.workspaces.resolve(ownerId, requestedWorkspaceId);
     await this.workspaces.require(ownerId, workspaceId, 'write');
-    const op = await this.provisioning.start(workspaceId, dto.repo, 'import');
+    const op = await this.provisioning.start(workspaceId, dto.repositoryId, 'import');
     try {
-      if (!/^[a-z][a-z0-9-]{1,40}$/.test(dto.repo)) {
-        throw new BadRequestException(
-          'Repository name is not a valid project name (lowercase letters, digits and hyphens).',
-        );
-      }
-      if (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.repo } })) {
-        throw new BadRequestException(`This workspace already has a project named '${dto.repo}'`);
-      }
       const template = this.templates.get(dto.templateId);
       const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
       const actor: ScmActor = { username: owner.username, token: decryptSecret(owner.accessToken) };
 
       await this.provisioning.step(op, 'repository');
-      const repo = (await this.scm.listRepositories(actor)).find((r) => r.name === dto.repo);
-      if (!repo) throw new NotFoundException(`Repository '${dto.repo}' not found`);
+      const repo = (await this.scm.listRepositories(actor)).find(
+        (candidate) => candidate.repositoryId === dto.repositoryId,
+      );
+      if (!repo) throw new NotFoundException(`Repository '${dto.repositoryId}' not found`);
       if (repo.empty) {
         throw new BadRequestException('Cannot import an empty repository — push code first.');
+      }
+      if (!/^[a-z][a-z0-9-]{1,40}$/.test(repo.name)) {
+        throw new BadRequestException(
+          'Repository name is not a valid project name (lowercase letters, digits and hyphens).',
+        );
+      }
+      if (await this.prisma.project.findFirst({ where: { workspaceId, name: repo.name } })) {
+        throw new BadRequestException(`This workspace already has a project named '${repo.name}'`);
+      }
+      if (
+        await this.prisma.project.findFirst({
+          where: { scmProvider: repo.provider, scmRepositoryId: repo.repositoryId },
+        })
+      ) {
+        throw new BadRequestException(
+          `Repository '${repo.fullName}' is already connected to InitPad`,
+        );
       }
 
       const targets = await this.targets.listEntities(workspaceId);
@@ -483,14 +588,20 @@ export class ProjectsService implements OnModuleInit {
         return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
       });
 
-      const repoUrl = `${config.gitea.url}/${owner.username}/${dto.repo}`;
       const ciDeployToken = generateToken();
       const created = await this.prisma.project.create({
         data: {
-          name: dto.repo,
+          name: repo.name,
           templateId: template.id,
-          repoPath: `${owner.username}/${dto.repo}`,
-          repoUrl,
+          repoPath: repo.fullName,
+          repoUrl: repo.repoUrl,
+          scmProvider: repo.provider,
+          scmRepositoryId: repo.repositoryId,
+          scmOwner: repo.owner,
+          scmRepositoryName: repo.name,
+          scmFullName: repo.fullName,
+          scmDefaultBranch: repo.defaultBranch,
+          scmInstallationId: repo.installationId,
           lastCommit: 'import: existing repository',
           ciDeployTokenHash: hashToken(ciDeployToken),
           ownerId,
@@ -514,13 +625,13 @@ export class ProjectsService implements OnModuleInit {
           where: { id: owner.id },
           data: { accessToken: encryptSecret(ownerToken) },
         });
-        await this.scm.configureRepoSecrets(owner.username, dto.repo, ownerToken, ciDeployToken);
+        await this.scm.configureRepoSecrets(repo, ownerToken, ciDeployToken);
         const collaborators = await this.prisma.workspaceMember.findMany({
           where: { workspaceId, userId: { not: ownerId } },
           include: { user: true },
         });
         for (const collaborator of collaborators) {
-          await this.scm.setCollaborator(repoUrl, collaborator.user.username, collaborator.role);
+          await this.scm.setCollaborator(repo, collaborator.user.username, collaborator.role);
         }
       } catch (e) {
         await this.prisma.project.delete({ where: { id: created.id } }).catch(() => undefined);
@@ -564,22 +675,24 @@ export class ProjectsService implements OnModuleInit {
   // deploy it to dev. Closes the E2E loop: commit → CI build/test/docker →
   // a running dev environment with the real code.
   async deployFromCi(repo: string, sha: string, ref: string, token: string): Promise<void> {
-    const [owner, name] = repo.split('/');
-    if (!owner || !name) throw new BadRequestException('Invalid repo');
+    const coordinates = repo.split('/');
+    if (coordinates.length !== 2 || coordinates.some((part) => !part)) {
+      throw new BadRequestException('Invalid repo');
+    }
     const retryTag = ref.replace(/^refs\/tags\//, '');
     const isRetry = /^initpad-retry-[a-z0-9-]+$/.test(retryTag);
-    // Deploy from main, or from an InitPad-owned retry tag pointing at main's
-    // exact commit. Arbitrary user tags never deploy automatically.
-    if (ref && ref !== 'main' && ref !== 'refs/heads/main' && !isRetry) return;
-
-    const user = await this.prisma.user.findFirst({ where: { username: owner } });
     const project = await this.prisma.project.findFirst({
-      where: { name, ownerId: user?.id ?? undefined },
+      where: { scmProvider: 'gitea', scmFullName: repo },
     });
     if (!project) {
       this.logger.warn(`CI deploy: project '${repo}' not found`);
       return;
     }
+    const repository = repositoryRef(project);
+    // Deploy from the repository's recorded default branch, or from an
+    // InitPad-owned retry tag pointing at that branch's exact commit.
+    const branch = repository.defaultBranch;
+    if (ref && ref !== branch && ref !== `refs/heads/${branch}` && !isRetry) return;
     if (!tokenMatches(token, project.ciDeployTokenHash)) {
       throw new UnauthorizedException('Invalid CI token for this repository');
     }
@@ -619,7 +732,7 @@ export class ProjectsService implements OnModuleInit {
         this.logger.log(`CI retry deploy: ${repo} → dev (${sha})`);
         return;
       } finally {
-        await this.scm.deleteTag(name, retryTag, actor);
+        await this.scm.deleteTag(repository, retryTag, actor);
       }
     }
 
@@ -674,7 +787,7 @@ export class ProjectsService implements OnModuleInit {
     });
     if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
     return this.deployment.logs(env.provider as ProviderKind, {
-      projectName: this.deploySlug(project.repoUrl, project.name),
+      projectName: this.deploySlug(repositoryRef(project)),
       env: envName,
       connection: this.targetConnection(env),
     });
@@ -731,8 +844,9 @@ export class ProjectsService implements OnModuleInit {
     }
 
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const repository = repositoryRef(project);
     const actor = await this.actorForProject(id);
-    const commits = await this.scm.listCommits(project.name, actor, 1);
+    const commits = await this.scm.listCommits(repository, actor, 1);
     const sha = commits?.[0]?.sha;
     if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) {
       throw new BadRequestException('No repository commit is available to run');
@@ -744,7 +858,7 @@ export class ProjectsService implements OnModuleInit {
       data: { statusReason: 'Waiting for CI retry' },
     });
     try {
-      await this.scm.createRetryTag(project.name, sha, actor);
+      await this.scm.createRetryTag(repository, sha, actor);
     } catch (e) {
       await this.prisma.environment.updateMany({
         where: { id: env.id, activeOperationId: operationId },
@@ -972,7 +1086,7 @@ export class ProjectsService implements OnModuleInit {
       where: { projectId_name: { projectId: id, name: envName } },
       include: { target: true },
     });
-    const slug = this.deploySlug(project.repoUrl, project.name);
+    const slug = this.deploySlug(repositoryRef(project));
     return { project, template, env, slug };
   }
 
@@ -1020,16 +1134,32 @@ export class ProjectsService implements OnModuleInit {
    * record, so no orphaned containers or rows remain. No-op when nothing
    * matches — e.g. when the deletion originated from the platform itself.
    */
-  async removeByRepo(fullName: string): Promise<void> {
-    const [owner, name] = fullName.split('/');
-    if (!owner || !name) return;
-    const user = await this.prisma.user.findFirst({ where: { username: owner } });
+  async removeByRepo(
+    fullName: string,
+    provider: ScmKind = 'gitea',
+    repositoryId?: string,
+  ): Promise<void> {
+    if (fullName.split('/').length !== 2) return;
     const row = await this.prisma.project.findFirst({
-      where: { name, ownerId: user?.id ?? undefined },
+      where: {
+        scmProvider: provider,
+        ...(repositoryId
+          ? {
+              OR: [
+                { scmRepositoryId: repositoryId },
+                // Legacy rows have no immutable id yet; retain the coordinate
+                // fallback only for those rows, never for a conflicting id.
+                { scmRepositoryId: null, scmFullName: fullName },
+              ],
+            }
+          : { scmFullName: fullName }),
+      },
       include: { environments: { include: { target: true } }, owner: true },
     });
     if (!row) return;
-    this.logger.log(`Repository ${fullName} was deleted in Gitea — cleaning up project ${row.id}`);
+    this.logger.log(
+      `Repository ${provider}:${repositoryId ?? fullName} was deleted — cleaning up project ${row.id}`,
+    );
     // The repository itself is already gone; clean up everything else.
     await this.cleanupProject(row, { repoAction: 'gone' });
   }
@@ -1044,11 +1174,12 @@ export class ProjectsService implements OnModuleInit {
       confirmCleanupDebt?: boolean;
     },
   ): Promise<void> {
+    const repository = repositoryRef(row);
     await this.prisma.deploymentOperation.updateMany({
       where: { environment: { projectId: row.id }, finishedAt: null },
       data: { status: 'cancelled', message: 'Project deletion requested', finishedAt: new Date() },
     });
-    const slug = this.deploySlug(row.repoUrl, row.name);
+    const slug = this.deploySlug(repository);
     for (const env of row.environments) {
       let teardownWarning: string | null = null;
       try {
@@ -1098,47 +1229,36 @@ export class ProjectsService implements OnModuleInit {
     }
     // Only after all containers are stopped, remove the locally pulled
     // registry images of the project.
-    await this.deployment.removeImages(this.imageRepo(row.repoUrl, row.name));
+    await this.deployment.removeImages(this.imageRepo(repository));
     // Also delete the images from the Gitea registry (Packages) so no
     // orphaned artifacts remain.
-    const owner = this.ownerFromRepoUrl(row.repoUrl) ?? config.gitea.user;
-    await this.scm.deletePackages(owner, row.name);
+    await this.scm.deletePackages(repository);
     if (opts.repoAction === 'delete') {
-      await this.scm.deleteRepo(
-        row.name,
-        this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
-      );
+      await this.scm.deleteRepo(repository, this.actorForRepo(row));
     } else if (opts.repoAction === 'detach') {
-      await this.scm.detachRepo(
-        row.name,
-        this.actorForRepo({ repoUrl: row.repoUrl, owner: row.owner }),
-      );
+      await this.scm.detachRepo(repository, this.actorForRepo(row));
     }
     rmSync(row.repoPath, { recursive: true, force: true });
     await this.prisma.project.delete({ where: { id: row.id } });
   }
 
-  // Identity for repository operations: username = the ACTUAL repo owner
-  // parsed from repoUrl (.../<owner>/<name>), token = the owner's token
-  // (with the platform token as fallback).
+  // Identity for repository operations. Coordinates come from the explicit
+  // SCM locator; the legacy owner relation still supplies the stored user PAT.
   private actorForRepo(row: {
-    repoUrl: string | null;
+    scmOwner: string;
     owner: { username: string; accessToken: string } | null;
   }): ScmActor {
     const token = row.owner?.accessToken
       ? decryptSecret(row.owner.accessToken)
       : config.gitea.token;
-    const username =
-      this.ownerFromRepoUrl(row.repoUrl) ?? row.owner?.username ?? config.gitea.user;
-    return { username, token };
+    return { username: row.owner?.username || row.scmOwner || config.gitea.user, token };
   }
 
   // Docker-safe deployment key namespaced by repo owner: <owner>-<name>.
   // Guarantees unique image/container names even for same-named projects of
   // different users.
-  private deploySlug(repoUrl: string | null, name: string): string {
-    const owner = this.ownerFromRepoUrl(repoUrl) ?? 'anon';
-    return `${owner}-${name}`
+  private deploySlug(repository: ScmRepositoryRef): string {
+    return `${repository.owner}-${repository.name}`
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, '-')
       .replace(/^-+|-+$/g, '');
@@ -1146,24 +1266,13 @@ export class ProjectsService implements OnModuleInit {
 
   // Registry image tag: <registry>/<owner>/<name>:<version>. Must match what
   // CI pushes (see ci.yml). Everything lowercase (registry requirement).
-  private imageRef(repoUrl: string | null, name: string, version: string): string {
-    return `${this.imageRepo(repoUrl, name)}:${version}`;
+  private imageRef(repository: ScmRepositoryRef, version: string): string {
+    return `${this.imageRepo(repository)}:${version}`;
   }
 
   // Registry repository without a tag: <registry>/<owner>/<name> (lowercase).
-  private imageRepo(repoUrl: string | null, name: string): string {
-    const owner = this.ownerFromRepoUrl(repoUrl) ?? config.gitea.user;
-    return `${config.registry.host}/${owner}/${name}`.toLowerCase();
-  }
-
-  private ownerFromRepoUrl(repoUrl: string | null): string | null {
-    if (!repoUrl) return null;
-    try {
-      const parts = new URL(repoUrl).pathname.split('/').filter(Boolean);
-      return parts[0] ?? null; // /<owner>/<name>
-    } catch {
-      return null;
-    }
+  private imageRepo(repository: ScmRepositoryRef): string {
+    return `${config.registry.host}/${repository.owner}/${repository.name}`.toLowerCase();
   }
 
   private async actorForProject(projectId: string): Promise<ScmActor> {
@@ -1171,7 +1280,8 @@ export class ProjectsService implements OnModuleInit {
       where: { id: projectId },
       include: { owner: true },
     });
-    return this.actorForRepo({ repoUrl: row?.repoUrl ?? null, owner: row?.owner ?? null });
+    if (!row) throw new NotFoundException(`Project '${projectId}' not found`);
+    return this.actorForRepo(row);
   }
 
   async getCommits(id: string): Promise<Commit[]> {
@@ -1179,11 +1289,11 @@ export class ProjectsService implements OnModuleInit {
     const template = this.templates.get(project.templateId);
     const actor = await this.actorForProject(id);
 
-    const fromGitea = await this.scm.listCommits(project.name, actor);
-    if (fromGitea && fromGitea.length > 0) {
+    const fromScm = await this.scm.listCommits(project.scm, actor);
+    if (fromScm && fromScm.length > 0) {
       return Promise.all(
-        fromGitea.map(async (c) => {
-          const statuses = await this.scm.listCommitStatuses(project.name, c.sha, actor);
+        fromScm.map(async (c) => {
+          const statuses = await this.scm.listCommitStatuses(project.scm, c.sha, actor);
           return { ...c, pipeline: this.pipelineStages(template, statuses) };
         }),
       );
@@ -1243,6 +1353,7 @@ export class ProjectsService implements OnModuleInit {
     operationId: string,
   ): Promise<boolean> {
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    const repository = repositoryRef(project);
     const template = this.templates.get(project.templateId);
     const env = await this.prisma.environment.findUniqueOrThrow({
       where: { projectId_name: { projectId, name: envName } },
@@ -1294,7 +1405,7 @@ export class ProjectsService implements OnModuleInit {
 
     if (useBuildExtract) {
       setStage('Fetching & extracting tested artifact');
-      const imageRef = this.imageRef(project.repoUrl, project.name, version);
+      const imageRef = this.imageRef(repository, version);
       extractedDir = mkdtempSync(join(tmpdir(), 'initpad-artifact-'));
       await this.deployment.extractArtifact(imageRef, template.buildArtifactPath!, extractedDir);
       // getArchive packs the directory itself, so its tree is under the basename.
@@ -1314,14 +1425,14 @@ export class ProjectsService implements OnModuleInit {
     } else if (needsSource) {
       const actor = await this.actorForProject(projectId);
       source =
-        (await this.scm.downloadArchive(project.name, version, actor)) ??
+        (await this.scm.downloadArchive(repository, version, actor)) ??
         (await exportVersion(project.repoPath, version));
       deployRepoPath = source?.dir ?? project.repoPath;
     }
 
     try {
       const result = await this.deployment.deploy(env.provider as ProviderKind, {
-        projectName: this.deploySlug(project.repoUrl, project.name),
+        projectName: this.deploySlug(repository),
         version,
         env: envName,
         repoPath: deployRepoPath,
@@ -1336,13 +1447,13 @@ export class ProjectsService implements OnModuleInit {
         onProgress: setStage,
         connection: this.targetConnection(env),
         imageRef: useRegistry
-          ? this.imageRef(project.repoUrl, project.name, version)
+          ? this.imageRef(repository, version)
           : undefined,
         allowBuildFallback: !useRegistry,
       });
       if (await this.operationCancelled(operationId)) {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
-          projectName: this.deploySlug(project.repoUrl, project.name),
+          projectName: this.deploySlug(repository),
           env: envName,
           connection: this.targetConnection(env),
         });
@@ -1513,6 +1624,16 @@ export class ProjectsService implements OnModuleInit {
       templateId: row.templateId,
       repoPath: row.repoPath,
       repoUrl: row.repoUrl,
+      scm: {
+        provider: row.scmProvider as ScmKind,
+        repositoryId: row.scmRepositoryId,
+        owner: row.scmOwner,
+        name: row.scmRepositoryName,
+        fullName: row.scmFullName,
+        defaultBranch: row.scmDefaultBranch,
+        repoUrl: row.repoUrl,
+        installationId: row.scmInstallationId,
+      },
       createdAt: row.createdAt.toISOString(),
       lastCommit: row.lastCommit,
       environments: [...row.environments]
@@ -1563,7 +1684,7 @@ export class ProjectsService implements OnModuleInit {
 
     const movingAway = !!env.targetId && env.targetId !== target.id && env.status !== 'empty';
     if (movingAway) {
-      const slug = this.deploySlug(project.repoUrl, project.name);
+      const slug = this.deploySlug(repositoryRef(project));
       // Do not bind the new target until teardown succeeds; otherwise a failed
       // cleanup would leave an unreachable orphan on the old infrastructure.
       const teardown = await this.deployment.teardown(env.provider as ProviderKind, {

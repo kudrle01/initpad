@@ -66,6 +66,23 @@ export class GitHubInstallationService {
     return this.prisma.gitHubInstallation.findFirst({ where: { accountLogin: login } });
   }
 
+  findById(id: string) {
+    return this.prisma.gitHubInstallation.findUnique({ where: { id } });
+  }
+
+  /** Mints a token through the installation row permanently bound to a project. */
+  async tokenForBinding(
+    id: string,
+    options?: { repositoryIds?: number[]; permissions?: Record<string, string> },
+  ): Promise<InstallationToken> {
+    const installation = await this.findById(id);
+    if (!installation) throw new Error(`GitHub App installation binding '${id}' no longer exists`);
+    if (installation.suspendedAt) {
+      throw new Error(`The GitHub App installation for '${installation.accountLogin}' is suspended`);
+    }
+    return this.app.createInstallationToken(installation.installationId, options);
+  }
+
   /** Resolves the owner's installation and mints a short-lived scoped token. */
   async tokenForOwner(
     login: string,

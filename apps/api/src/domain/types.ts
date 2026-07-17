@@ -97,6 +97,16 @@ export interface Project {
   templateId: string;
   repoPath: string;
   repoUrl: string | null;
+  scm: {
+    provider: 'gitea' | 'github';
+    repositoryId: string | null;
+    owner: string;
+    name: string;
+    fullName: string;
+    defaultBranch: string;
+    repoUrl: string | null;
+    installationId: string | null;
+  };
   createdAt: string;
   lastCommit: string;
   environments: Environment[];

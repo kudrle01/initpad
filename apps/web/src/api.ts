@@ -111,15 +111,15 @@ export const api = {
       body: JSON.stringify({ name, templateId, environments }),
     }),
   listImportableRepos: () => http<ImportableRepo[]>('/projects/import/repos'),
-  importPreflight: (repo: string, templateId: string) =>
+  importPreflight: (repositoryId: string, templateId: string) =>
     http<ImportPreflight>('/projects/import/preflight', {
       method: 'POST',
-      body: JSON.stringify({ repo, templateId }),
+      body: JSON.stringify({ repositoryId, templateId }),
     }),
-  importRepo: (repo: string, templateId: string) =>
+  importRepo: (repositoryId: string, templateId: string) =>
     http<Project>('/projects/import', {
       method: 'POST',
-      body: JSON.stringify({ repo, templateId }),
+      body: JSON.stringify({ repositoryId, templateId }),
     }),
   promote: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/promote/${env}`, { method: 'POST' }),

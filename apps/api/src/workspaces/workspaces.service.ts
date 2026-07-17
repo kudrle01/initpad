@@ -9,7 +9,18 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.dto';
 import { AddWorkspaceMemberDto, AssignableRole, UpdateWorkspaceMemberDto } from './dto/member.dto';
-import { ScmProvider, SCM_PROVIDER } from '../scm/scm-provider';
+import { repositoryRef, ScmProvider, SCM_PROVIDER } from '../scm/scm-provider';
+
+const REPOSITORY_SELECT = {
+  scmProvider: true,
+  scmRepositoryId: true,
+  scmOwner: true,
+  scmRepositoryName: true,
+  scmFullName: true,
+  scmDefaultBranch: true,
+  scmInstallationId: true,
+  repoUrl: true,
+} as const;
 
 export type WorkspaceRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
 export type WorkspacePermission = 'read' | 'write' | 'maintain' | 'admin';
@@ -250,16 +261,20 @@ export class WorkspacesService {
   private async syncRepositoryAccess(workspaceId: string, username: string, role: string): Promise<void> {
     const projects = await this.prisma.project.findMany({
       where: { workspaceId },
-      select: { repoUrl: true },
+      select: REPOSITORY_SELECT,
     });
-    for (const project of projects) await this.scm.setCollaborator(project.repoUrl, username, role);
+    for (const project of projects) {
+      await this.scm.setCollaborator(repositoryRef(project), username, role);
+    }
   }
 
   private async revokeRepositoryAccess(workspaceId: string, username: string): Promise<void> {
     const projects = await this.prisma.project.findMany({
       where: { workspaceId },
-      select: { repoUrl: true },
+      select: REPOSITORY_SELECT,
     });
-    for (const project of projects) await this.scm.removeCollaborator(project.repoUrl, username);
+    for (const project of projects) {
+      await this.scm.removeCollaborator(repositoryRef(project), username);
+    }
   }
 }
