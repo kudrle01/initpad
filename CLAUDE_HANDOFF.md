@@ -22,6 +22,10 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   self-hosted účtů, aktivační odkazy, forced password change, reset/verifikace
   a přidání existujícího účtu do týmu se synchronizací Gitea collaboratora.
 - `ScmProvider` šev s aktivním Gitea adapterem.
+- Explicitní SCM identita projektu: provider, immutable repository ID,
+  owner/name/full name, default branch a installation binding. Import vybírá
+  podle ID; CI/reconcile/archive/deploy/delete používají `ScmRepositoryRef`.
+  Legacy Gitea řádky dostanou bezpečný backfill a provider reconciliation.
 - Import osobního Gitea repozitáře: list, preflight, import bez přepsání kódu,
   per-repo CI secret, prostředí `empty` a základní `ProvisioningOperation`.
 - GitHub OAuth sign-in/link podle immutable user ID, CSRF state+nonce,
@@ -37,9 +41,6 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 - `ScmRegistry` zatím nikdo z projektové domény nepoužívá; `SCM_PROVIDER` je stále
   Gitea. GitHub create/import proto nefunguje.
-- `Project` nemá provider ani bezpečný repository locator. Chybí immutable repo
-  ID, owner/full name, default branch a installation binding. Současné hledání
-  jen podle jména neumí korektně organizace, collaborator repa ani shodná jména.
 - `GitHubInstallation` ukládá mutable login, ne immutable account ID; chybí setup
   callback a autorizovaná vazba instalace na uživatele/workspace.
 - GitHub `provision`, push scaffoldu, `configureRepoSecrets`, runtime secrets,
@@ -55,25 +56,25 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 ## Nejbližší implementační pořadí
 
-1. Navrhni a migruj explicitní SCM identitu projektu/repozitáře; zachovej staré
-   Gitea projekty bezpečným backfillem.
-2. Rozšiř GitHub installation model o immutable account ID, setup callback,
+1. Rozšiř GitHub installation model o immutable account ID, setup callback,
    user/workspace binding a podporu organizací/rename.
-3. Uprav import/preflight/CI/reconcile/delete/archive tak, aby používaly repo ID
-   a full name, ne `actor.username + project.name`.
-4. Dokonči GitHub create/import, libsodium Actions secrets, archive a push.
-5. Zapoj `ScmRegistry` podle provideru uloženého u projektu a proveď rollback/
+2. Dokonči GitHub create/import, libsodium Actions secrets, archive a push.
+3. Zapoj `ScmRegistry` podle provideru uloženého u projektu a proveď rollback/
    reconciliation testy.
-6. Až poté spusť živý GitHub E2E a vytvoř skutečný SaaS deploy profil.
+4. Až poté spusť živý GitHub E2E a vytvoř skutečný SaaS deploy profil.
 
 GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 28 API suites / 154 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 30 API suites / 162 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config a Prisma schema validate prošly.
-- Stále je nutné spustit Prisma migrate proti reálné existující DB, browser
-  acceptance a živý GitHub App E2E.
+- Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy
+  projekty zachovaly URL a dostaly reálná Gitea repository ID. Health a
+  nepřihlášený browser smoke prošly.
+- Stále je nutný autentizovaný browser acceptance a živý GitHub App E2E.
+  Lokální `deploy/.env` je nyní `saas`, ale nemá nakonfigurovaný GitHub login,
+  takže browser správně skončil na hlášce o chybějící konfiguraci.
 - Identity acceptance: self-hosted open/admin-provisioned onboarding, forced
   change, reset/deaktivace; v týmu přidej dva existující účty a ověř role v
   privátním SCM i tenant isolation.

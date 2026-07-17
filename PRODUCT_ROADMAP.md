@@ -127,12 +127,15 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 
 **Hotovo a lokálně ověřeno**
 
-- `ScmProvider` odděluje projektovou doménu od konkrétního SCM; Gitea zůstává
+- `ScmProvider` odděluje projektovou doménu od konkrétního SCM; všechny
+  repository operace přijímají kanonický `ScmRepositoryRef`. Gitea zůstává
   aktivním adapterem self-contained edice.
 - Import osobního Gitea repozitáře umí seznam, preflight, vytvoření projektu bez
-  přepsání zdrojového kódu, per-repo CI secret a prázdná prostředí. Současný
-  kontrakt ale identifikuje repo jen názvem a ownerem uživatele; organizace,
-  collaborator repa a dvě stejně pojmenovaná repa zatím bezpečně nepokrývá.
+  přepsání zdrojového kódu, per-repo CI secret a prázdná prostředí. Výběr
+  i serverové dohledání používají immutable provider repository ID.
+- `Project` má explicitní provider/repository ID/owner/name/full name/default
+  branch/installation binding. Migrovaným Gitea projektům startup doplní reálné
+  ID a podle něj synchronizuje mutable souřadnice; URL už není zdroj identity.
 - `ProvisioningOperation` eviduje výsledek create/import. Import má dílčí kroky;
   create zatím eviduje pouze začátek a konečný stav, takže nejde o úplnou
   transakční orchestraci ani spolehlivý rollback všech externích efektů.
@@ -149,7 +152,7 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 
 **Následující podkroky v závazném pořadí**
 
-1. Rozšířit projekt o explicitní identitu SCM: provider, neměnné repository ID,
+1. ✅ Rozšířit projekt o explicitní identitu SCM: provider, neměnné repository ID,
    owner/full name, default branch a vazbu na instalaci. Stejné souřadnice použít
    v importu, CI callbacku, reconcile, mazání, archive i registry názvech.
 2. U GitHub instalace uložit neměnné account ID, bezpečně obsloužit rename a
@@ -162,7 +165,7 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 4. Napojit create/import a všechny následné operace přes `ScmRegistry` podle
    provideru projektu. Preflight musí proběhnout i serverově a rollback musí
    evidovat nebo uklidit každý již provedený externí efekt.
-5. Teprve potom provést migraci na skutečné DB, živý GitHub App E2E a browser
+5. Teprve potom dokončit migrace v cílových prostředích, živý GitHub App E2E a browser
    acceptance: login, instalace pro vybrané repo, create/import, CI, odebrání
    instalace, rename ownera a dvě repa se stejným názvem.
 
@@ -264,7 +267,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
 | 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 403. |
 | 4 — identity/onboarding | ano | Self-hosted `open`: samoobslužná registrace. Self-hosted soukromě: admin vytvoří účet a předá aktivační odkaz nebo dočasné heslo s vynucenou změnou. SaaS: pouze GitHub login. Majitel přidá do týmu existující účet podle e-mailu; role platí i v SCM. |
-| 5 — import repa/SCM | částečně | Dnes: osobní Gitea repo lze vybrat, zkontrolovat a importovat bez změny kódu. GitHub login/link lze ověřit se živou App, ale GitHub create/import ještě není hotový; plný cloudový scénář se testuje až po podkrocích Fáze 3. |
+| 5 — import repa/SCM | částečně | Dnes: po migraci musí stávající Gitea projekty beze změny URL projít detail/import/deploy/delete a nový import vybírá repo podle ID. GitHub login/link lze ověřit se živou App, ale GitHub create/import ještě není hotový; plný cloudový scénář se testuje až po podkrocích Fáze 3. |
 | 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
 | 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. |
@@ -302,9 +305,9 @@ proti běžící instalaci; testovatelné scénáře:
   administrátor a sebe-deaktivace jsou chráněny.
 - Po testu se smažou všechny dočasné účty, workspaces a repozitáře.
 
-### Revize handoffu po Fázi 3 (2026-07-17)
+### Revize a SCM identity podkrok Fáze 3 (2026-07-17)
 
-- Lokálně prošlo 28 API test suites / 154 testů, API production build a skutečný
+- Lokálně prošlo 30 API test suites / 162 testů, API production build a skutečný
   webový `tsc -b && vite build`. `docker compose config` a Prisma schema validate
   také prošly (schema validate s testovací `DATABASE_URL`).
 - Opravena hranice edic: SaaS neumožňuje native registraci/password login ani
@@ -318,8 +321,17 @@ proti běžící instalaci; testovatelné scénáře:
   profilový e-mail za ověřený; poslední použitelnou identitu nelze odpojit.
 - GitHub webhook při chybě DB neztratí událost tichým 202 a installation tokeny
   používají operation-specific podmnožiny oprávnění.
-- Neprovedeno: migrace proti reálné databázi, browser acceptance ani živý GitHub
-  App E2E. Public SaaS proto zatím není produkčně dokončený profil.
+- Dokončen explicitní repository contract: aditivní migrace, immutable provider
+  ID, mutable souřadnice, default branch, installation binding a jeden
+  `ScmRepositoryRef` pro import/CI/reconcile/deploy/archive/delete. Test pokrývá
+  rename dohledaný podle ID i delete webhook s legacy fallbackem.
+- Lokální existující Docker DB úspěšně aplikovala
+  `20260717232000_project_scm_identity`; tři původní projekty zachovaly URL a
+  startup jim doplnil reálná Gitea ID 5/9/15. Health i nepřihlášený browser
+  smoke jsou zelené. Autentizovaný browser acceptance nebyl možný, protože
+  lokální `deploy/.env` je v `saas` edici bez nakonfigurované GitHub App.
+- Neprovedeno: autentizovaný browser acceptance ani živý GitHub App E2E.
+  Public SaaS proto zatím není produkčně dokončený profil.
 
 ### Průběžné ověření delivery části milníku 8
 

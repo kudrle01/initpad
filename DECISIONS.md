@@ -1419,9 +1419,32 @@ implementační krok není přidání dalšího GitHub endpointu, nýbrž migrac
 identity repozitáře/instalace; až na ní lze bezpečně postavit organizace, import a
 stejnojmenná repa.
 
+**Implementace repository contractu (2026-07-17).** `Project` nyní ukládá
+`scmProvider`, providerem přidělené `scmRepositoryId`, owner/name/full name,
+default branch a volitelnou FK vazbu na interní záznam `GitHubInstallation`.
+Kanonický `ScmRepositoryRef` se předává do CI, commitů, collaborators,
+archive, deploy/registry názvů, reconcile i delete/detach. URL zůstává pouze
+klikací/display hodnota a už se z ní neparsuje owner. Import/preflight posílá
+opaque repository ID, takže stejné názvy repozitářů nejsou identita.
+
+Migrační SQL existující řádky označí jako Gitea a bezpečně doplní
+souřadnice; immutable ID si nevymýšlí a nechá jej `NULL`, dokud jej startup
+reconciliation nenajde u provideru. Následné starty podle uloženého ID obnovují
+mutable owner/name/full name/default branch po rename. Repository-delete webhook
+preferuje ID a full-name fallback dovoluje jen legacy řádku bez ID. GitHub
+operace s již navázaným projektem mintují token přes uložený installation
+záznam, ne nový lookup mutable owner loginu.
+
+Tím je dokončen datový základ bodu 6, nikoli celý GitHub tok. Samotný
+`GitHubInstallation` stále potřebuje immutable account ID, setup callback a
+autorizovanou user/workspace vazbu; projektová doména také zatím nevybírá
+adapter přes `ScmRegistry`.
+
 **Uživatelské testování.** Self-hosted: registrace/admin activation, forced change,
 reset/deaktivace a Gitea OIDC/PAT cesta. SaaS se živou OAuth konfigurací: nezobrazí
 se password forma, první GitHub účet není admin a poslední identitu nelze odpojit.
-Cloud create/import zůstává netestovatelný do dokončení bodů 6–7; po nich se ověří
+Datový základ se regresně ověří migrací existující DB a kompletním
+Gitea create/import/deploy/delete tokem bez změny URL. Cloud create/import
+zůstává netestovatelný do dokončení bodu 7; potom se ověří
 osobní i organizační repo, rename ownera, dvě stejně pojmenovaná repa, odvolání
 instalace a retry webhooku.
