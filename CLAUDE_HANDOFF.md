@@ -1,74 +1,84 @@
-# InitPad — handoff pro dalšího implementátora
+# InitPad — aktuální handoff pro dalšího implementátora
 
-Nejdřív přečti `AGENTS.md`, `DECISIONS.md` (hlavně ADR-027 a ADR-039) a
-`PRODUCT_ROADMAP.md`. Pokračuj po malých atomických commitech, neupravuj historii
-a zachovej existující uživatelská data.
+Nejdřív přečti `AGENTS.md`, `DECISIONS.md` (zejména ADR-027, ADR-030,
+ADR-039 a ADR-042/043) a `PRODUCT_ROADMAP.md`. Pokračuj po malých atomických
+commitech, neupravuj historii a zachovej existující data. Tvrzení „hotovo“ musí
+být podložené testem; existence rozhraní nebo nepoužívaného registru nestačí.
 
 ## Závazný produktový model
 
-- Žádná `Course` doména ani `Join course`. Škola je use case, ne jiný login.
-- Jediná organizační/autorizační hranice je `Workspace` + `WorkspaceMember`.
-- Public SaaS: GitHub login/link, GitHub App, GitHub Actions a GHCR. Bez SaaS Gitey.
-- Self-hosted: vestavěná Gitea; instance admin spravuje onboarding a uživatele.
-- GitHub App instalace je nutná pro create/import GitHub repa, ne pro vznik účtu.
-- Onboarding (ADR-042): dva registrační režimy — `open` (veřejné, samoobsluha) a
-  `admin-provisioned` (soukromé, účty zakládá admin + aktivační odkaz). Do týmu se
-  přidávají jen existující účty podle username/e-mailu; žádné tokenové pozvánky.
+- Žádná `Course` doména ani `Join course`; škola je use case nad workspaces.
+- Autorizační hranice je `Workspace` + `WorkspaceMember`.
+- Self-hosted: vestavěná Gitea a `open` nebo `admin-provisioned` onboarding.
+- Public SaaS: GitHub login, GitHub App, GitHub Actions a GHCR; bez SaaS Gitey
+  a bez vlastních hesel InitPadu.
+- GitHub App instalace je podmínka create/import repozitáře, ne vytvoření účtu.
+- Do týmu se přidávají existující účty podle username/e-mailu; tokenové
+  workspace pozvánky byly odstraněny v ADR-042.
 
-## Nejbližší milník — identity a workspace onboarding
+## Co je skutečně dokončeno
 
-Kroky 1–4 jsou hotové (ADR-040). Zbývá krok 5 — GitHub adapter.
+- Workspaces/RBAC, edition-aware identity lifecycle, platform-admin správa
+  self-hosted účtů, aktivační odkazy, forced password change, reset/verifikace
+  a přidání existujícího účtu do týmu se synchronizací Gitea collaboratora.
+- `ScmProvider` šev s aktivním Gitea adapterem.
+- Import osobního Gitea repozitáře: list, preflight, import bez přepsání kódu,
+  per-repo CI secret, prostředí `empty` a základní `ProvisioningOperation`.
+- GitHub OAuth sign-in/link podle immutable user ID, CSRF state+nonce,
+  `ExternalIdentity`, podepsané installation webhooky a krátkodobé tokeny.
+- `GitHubScmProvider` obsahuje čtecí operace a část HTTP mutací. Jeho tokeny jsou
+  operation-specific; webhook při chybě persistence vrací 5xx.
+- Audit 2026-07-17 opravil: native auth v SaaS, automatického prvního SaaS admina,
+  odpojení poslední použitelné identity, ověření GitHub e-mailu, atomický claim
+  jednorázových tokenů, oddělení platformního hesla od lokálního hesla Gitey a
+  OIDC kontrolu deaktivace/session generation/forced-change před Gitea SSO.
 
-1. [hotovo] Registration policy zjednodušená na dva režimy (ADR-042): `open`
-   (veřejné) a `admin-provisioned` (soukromé); `invite-only`/`first-user`/`closed`
-   jsou tiché aliasy. Bezpečný first-user bootstrap administrátora zachován.
-2. [hotovo] Platform-admin API a UI pro seznam, vytvoření, deaktivaci a reset
-   uživatelů self-hosted instance. Vytvoření vrátí dočasné heslo i **aktivační
-   odkaz** (uživatel si nastaví heslo a je přihlášen); ukládá se jen hash a
-   serverově se vynutí změnu hesla. Provisioning/rollback konzistentní s Giteou.
-3. [hotovo, zjednodušeno v ADR-042] Členství v týmu **jen pro existující účty**
-   přes přímé přidání podle username/e-mailu (addMember), se synchronizací Gitea
-   collaboratora. Tokenový `WorkspaceInvitation` systém byl odstraněn jako
-   redundantní.
-4. [hotovo] Ověření e-mailu, bezpečný reset hesla a rate limiting. Tokeny se
-   nikdy neukládají v plaintextu a reset zneplatní staré sessions.
-5. [rozpracováno] Vytvoř `ScmProvider` a odděl stávající Gitea adapter od GitHub SaaS
-   adapteru. GitHub identitu ukládej podle immutable provider user ID; repo access
-   řeš krátkodobými installation tokeny a minimálními permissions.
-   - Hotovo (ADR-041): rozhraní `ScmProvider` + token `SCM_PROVIDER`, Gitea adapter,
-     projektová doména na rozhraní; `ExternalIdentity` podle immutable ID;
-     `GitHubAppService` (App JWT + installation tokeny, minimální oprávnění, inertní
-     bez konfigurace); GitHub OAuth flow (sign-in/link přes immutable ID) s CSRF
-     state + nonce, `/me/identities` list/unlink a UI „Continue with GitHub" a
-     propojení v Settings; `GitHubInstallation` evidence instalací synchronizovaná
-     podepsanými webhooky (`/scm/github/webhook`), ražení tokenu pro ownera a
-     status/preflight (`/scm/github/status`) s „Install GitHub App" v UI; vše
-     inertní bez konfigurace.
-   - Hotovo (Fáze 3, přes `ScmProvider`, zatím Gitea): import existujícího repa —
-     `listRepositories`/`readFile` na rozhraní, `GET /projects/import/repos`,
-     `POST /projects/import/preflight` (branch/Dockerfile/runtime/kolize/prázdné) a
-     `POST /projects/import` (záznam nad existujícím repem bez přepsání kódu, per-repo
-     CI secret, prostředí `empty`, rollback DB delete) + UI stránka Importu.
-     Persistentní `ProvisioningOperation` (audit + kroky) pro create i import;
-     `GET /projects/:id/provisioning` a banner na detailu projektu.
-   - Hotovo: GitHub-only účet — `User.giteaId` je volitelný a při prvním loginu přes
-     GitHub v edici `saas` se založí účet z identity (bez Gitea, propojená identita +
-     osobní workspace, e-mail se neslévá); self-hosted GitHub jen propojuje.
-   - Hotovo: GitHub `ScmProvider` adapter — čtecí operace + čistě‑HTTP zápisové
-     (deleteRepo, detachRepo, set/removeCollaborator, createRetryTag/deleteTag,
-     GHCR deletePackages, issueCloneToken) přes installation tokeny. `ScmRegistry`
-     vybírá gitea|github za stejným rozhraním.
-   - Zbývá (živá GitHub App): `provision` (create repo + push scaffoldu),
-     `configureRepoSecrets` (Actions secrets přes libsodium sealed‑box — nehardcodovat
-     vlastní crypto, přidat `libsodium-wrappers`), `downloadArchive`; a napojení
-     create/import na `ScmRegistry` podle zdroje. Nesmí blokovat Gitea E2E; GitLab potom.
+## Co dokončeno není
 
-## Povinné ověření
+- `ScmRegistry` zatím nikdo z projektové domény nepoužívá; `SCM_PROVIDER` je stále
+  Gitea. GitHub create/import proto nefunguje.
+- `Project` nemá provider ani bezpečný repository locator. Chybí immutable repo
+  ID, owner/full name, default branch a installation binding. Současné hledání
+  jen podle jména neumí korektně organizace, collaborator repa ani shodná jména.
+- `GitHubInstallation` ukládá mutable login, ne immutable account ID; chybí setup
+  callback a autorizovaná vazba instalace na uživatele/workspace.
+- GitHub `provision`, push scaffoldu, `configureRepoSecrets`, runtime secrets,
+  `downloadArchive` a `initLocal` jsou stuby. Actions secrets vyžadují knihovní
+  libsodium sealed-box implementaci; nevymýšlet vlastní kryptografii.
+- GHCR cleanup nerozlišuje user/org cestu, seznam repozitářů nemá stránkování.
+- `ProvisioningOperation` pro create nemá podrobné kroky; rollback importu
+  nemusí vrátit všechny externí změny a neúspěšný create bez Project ID není v UI.
+- Neexistuje reálný public-SaaS deploy profil bez Gitey.
+- Není připojený SMTP/e-mail provider. Self-hosted odkazy v UI/logu jsou demo
+  mechanismus, ne produkční důkaz vlastnictví e-mailu; SaaS ukládá jen GitHubem
+  ověřenou adresu.
 
-- API unit testy, API/web production build, Prisma migration na existující DB,
-  `docker compose config` a browser acceptance test.
-- Otestuj nejméně: normální registraci, admin-provisioned forced password
-  change, pozvání dvou účtů do týmu, role v privátním SCM a tenant isolation.
-- Po browser testu smaž všechny dočasné účty, workspaces a repozitáře.
-- U každého milníku aktualizuj `DECISIONS.md`, `PRODUCT_ROADMAP.md` a napiš,
-  zda a jak jej lze uživatelsky otestovat.
+## Nejbližší implementační pořadí
+
+1. Navrhni a migruj explicitní SCM identitu projektu/repozitáře; zachovej staré
+   Gitea projekty bezpečným backfillem.
+2. Rozšiř GitHub installation model o immutable account ID, setup callback,
+   user/workspace binding a podporu organizací/rename.
+3. Uprav import/preflight/CI/reconcile/delete/archive tak, aby používaly repo ID
+   a full name, ne `actor.username + project.name`.
+4. Dokonči GitHub create/import, libsodium Actions secrets, archive a push.
+5. Zapoj `ScmRegistry` podle provideru uloženého u projektu a proveď rollback/
+   reconciliation testy.
+6. Až poté spusť živý GitHub E2E a vytvoř skutečný SaaS deploy profil.
+
+GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
+
+## Ověření před dalším handoffem
+
+- Aktuálně: 28 API suites / 154 testů, API build a web `tsc -b && vite build`
+  jsou zelené. Compose config a Prisma schema validate prošly.
+- Stále je nutné spustit Prisma migrate proti reálné existující DB, browser
+  acceptance a živý GitHub App E2E.
+- Identity acceptance: self-hosted open/admin-provisioned onboarding, forced
+  change, reset/deaktivace; v týmu přidej dva existující účty a ověř role v
+  privátním SCM i tenant isolation.
+- SaaS acceptance: GitHub-only login, žádný password formulář/API fallback,
+  první účet zůstane běžný uživatel a poslední sign-in identitu nelze odpojit.
+- Po browser testu odstraň dočasné účty, workspaces a repozitáře.
+- U každého milníku aktualizuj `DECISIONS.md`, `PRODUCT_ROADMAP.md` a uveď, zda a
+  jak je uživatelsky testovatelný.

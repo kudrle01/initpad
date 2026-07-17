@@ -913,15 +913,16 @@ App, nikoli široce oprávněný klasický OAuth App:
 - externí identita se ukládá jako provider + neměnné GitHub user ID. Shodný
   e-mail sám nikdy nesmí účty sloučit;
 - vytvoření/import GitHub projektu vyžaduje propojenou identitu a platnou
-  instalaci pro zvoleného ownera/repo. Uživatel se ale může přihlásit, přijmout
-  pozvánku nebo pracovat s Gitea projektem i bez instalace GitHub App;
+  instalaci pro zvoleného ownera/repo. Uživatel se ale může přihlásit, být přidán
+  do workspace nebo pracovat s Gitea projektem i bez instalace GitHub App;
 - workspace RBAC zůstává autorizačním zdrojem InitPadu. GitHub collaborator/team
   přístupy se synchronizují jako externí efekt a musí mít reconciliation/audit.
 
-Minimální oprávnění se volí podle funkce: metadata read, contents read/write,
-checks/statuses a Actions/workflows jen pokud je InitPad spravuje. Administration
-write se žádá pouze pro explicitní vytvoření repozitáře a musí být uživateli
-vysvětleno. Oficiální dokumentace doporučuje GitHub Apps kvůli jemnějším
+Minimální oprávnění se volí pro každou operaci zvlášť: běžné čtení dostane jen
+metadata/contents read; zápis obsahu, commit statuses, secrets, packages a
+administration se přidají pouze operaci, která je potřebuje. Široký univerzální
+installation token se nerazí. Konkrétní App permissions musí být uživateli
+vysvětlené při nasazení. Oficiální dokumentace doporučuje GitHub Apps kvůli jemnějším
 oprávněním, výběru repozitářů, krátkodobým tokenům a vestavěným webhookům:
 https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/differences-between-github-apps-and-oauth-apps
 
@@ -1177,27 +1178,28 @@ Speciální kurzová registrace duplikovala členství a tlačila jeden use case
 globální navigace.
 
 **Rozhodnutí.** Jedinou organizační a autorizační hranicí zůstává `Workspace`
-a `WorkspaceMember`. Uživatel se registruje normálně a do týmu vstupuje přes
-workspace pozvánku; škola je jen způsob použití téhož modelu. `Course` tabulky,
+a `WorkspaceMember`. Účet vzniká podle edice a owner/admin následně přidává
+existující účet do týmu; škola je jen způsob použití téhož modelu. `Course` tabulky,
 API, navigace a enrollment kód se odstraňují reverzní migrací.
 
 Public SaaS používá GitHub pro identitu/propojení a GitHub App pro SCM, Actions
 a GHCR. Self-hosted edice používá vestavěnou Giteu a její správce volí onboarding
-policy: otevřená registrace, pouze pozvánky, nebo administrátorem provisionované
-účty. Dočasné přihlašovací údaje se zobrazí pouze jednou a musí vynutit
+policy: otevřená registrace nebo administrátorem provisionované účty.
+Dočasné přihlašovací údaje se zobrazí pouze jednou a musí vynutit
 změnu hesla. GitHub instalace nikdy není podmínkou samotného vytvoření účtu;
 je podmínkou až pro create/import GitHub repozitáře.
 
 **Důsledky.** Produktový model je použitelný beze změny pro firmu i školu.
-Správa uživatelů, pozvánky, ověření e-mailu a GitHub adapter jsou samostatné
-navazující podkroky; do jejich dokončení se `closed`/`first-user` hodí jen pro
-bootstrap a normální registrace je v lokálním vývojovém profilu výchozí.
-Konkrétní implementace identity onboardingu je v ADR-040; GitHub adapter zůstává
-posledním navazujícím krokem.
+Správa uživatelů, členství, ověření e-mailu a GitHub adapter jsou samostatné
+navazující podkroky. Konkrétní implementaci identity onboardingu popisují
+ADR-040 a jeho zjednodušení ADR-042; stav GitHub adapteru zpřesňuje ADR-043.
 
 ---
 
 ## ADR-040 — Identity a workspace onboarding: registrační politika, správa účtů, pozvánky a obnova hesla
+
+**Stav.** Historické rozhodnutí; body 1 a 4 i související důsledky nahrazuje
+ADR-042. Aktuální produkt nemá `WorkspaceInvitation` ani `invite-only` režim.
 
 **Kontext.** ADR-039 zavedl jediný organizační model (workspaces) a vědomě odložil
 správu uživatelů, pozvánky, ověření e-mailu a bezpečný reset hesla jako navazující
@@ -1264,6 +1266,9 @@ zneplatní staré session; deaktivace odepře přihlášení i použití session
 
 ## ADR-041 — ScmProvider šev, externí identita a GitHub installation tokeny
 
+**Stav.** Implementační základ; aktuální bezpečnostní hranice a chybějící
+repository contract zpřesňuje ADR-043.
+
 **Kontext.** ADR-030/039 rozhodly, že projektová doména bude znát jen rozhraní
 `ScmProvider` a že hosted edice použije GitHub App. Tento krok zavádí konkrétní
 základ: abstrakci nad SCM, ukládání externí identity podle immutable ID a ražení
@@ -1288,16 +1293,15 @@ krátkodobých installation tokenů — bez blokování hlavního (Gitea) scén�
 
 3. **GitHub App a installation tokeny.** `GitHubAppService` podepíše App JWT (RS256,
    `iat` −60 s, `exp` ≤ 10 min) a vymění ho za krátkodobý installation access token s
-   minimálními oprávněními (metadata read, contents read/write, checks write;
-   administration write jen explicitně pro vytvoření repozitáře) a volitelně omezený na
-   konkrétní repozitáře. Tokeny se neukládají. Bez `INITPAD_GITHUB_APP_ID`/`PRIVATE_KEY`
-   je adapter inertní.
+   podmnožinou oprávnění vyžádanou konkrétní operací a volitelně omezený na
+   konkrétní repozitáře. Výchozí token má pouze metadata/contents read; write
+   oprávnění se nepřenášejí mezi nesouvisejícími operacemi. Tokeny se neukládají.
+   Bez `INITPAD_GITHUB_APP_ID`/`PRIVATE_KEY` je adapter inertní.
 
-**Důsledky.** Vznikl čistý šev pro druhý SCM adapter za stejným rozhraním, identita je
-bezpečně vázaná na neměnné ID a přístup k repozitářům běží na pomíjivých tokenech.
-Zbývá: GitHub OAuth flow (sign-in/link), GitHub `ScmProvider` adapter (create/import/
-list/checks) a UI importu; jsou plně ověřitelné až proti reálné GitHub App a nesmí
-blokovat Gitea E2E (ADR-030).
+**Důsledky.** Vznikl šev pro druhý SCM adapter, OAuth sign-in/link a část
+`GitHubScmProvider`. Šev však není dokončené přepínání provideru: projekt nemá
+provider/repository ID a `ScmRegistry` není zapojený do projektové domény. Přesný
+zbývající kontrakt popisuje ADR-043 a nesmí blokovat Gitea E2E (ADR-030).
 
 **Uživatelské testování.** Šev a identita jsou ověřeny API unit testy a typecheckem;
 chování Gitea zůstává beze změny (regresní testy zelené). GitHub část je bez
@@ -1318,10 +1322,11 @@ rozostřovaly, kdo účty vytváří.
 
 **Rozhodnutí.**
 
-1. **Dva registrační režimy.** Jen `open` (veřejné nasazení, samoobslužná
+1. **Dva registrační režimy self-hosted edice.** Jen `open` (samoobslužná
    registrace) a `admin-provisioned` (soukromé, účty zakládá správce).
    `invite-only` (a legacy `first-user`/`closed`) zůstávají jako tiché aliasy
-   `admin-provisioned`. První účet dál bootstrapuje administrátora.
+   `admin-provisioned`. První účet dál bootstrapuje administrátora. SaaS tuto
+   managed-password politiku nepoužívá; účet vzniká pouze z externí identity.
 
 2. **Aktivační odkazy.** Účet založený adminem má vedle jednorázového dočasného
    hesla i **aktivační odkaz**: jednorázový token (`AuthToken` kind `activation`),
@@ -1334,12 +1339,89 @@ rozostřovaly, kdo účty vytváří.
    přijímací stránky) je odstraněn reverzní migrací; ruší jen čekající pozvánky,
    účty/workspaces/členství zůstávají.
 
-**Důsledky.** Model je jednodušší a bez redundance: účty vznikají buď
-samoobsluhou (veřejné), nebo je zakládá admin (soukromé); do týmů se přiřazují
-už existující účty. Nahrazuje body 1 a 4 ADR-040; body 2, 3 a 5 (životní cyklus
+**Důsledky.** Model je jednodušší a bez redundance: self-hosted účty vznikají
+buď samoobsluhou, nebo je zakládá admin; do týmů se přiřazují už existující
+účty. Nahrazuje body 1 a 4 ADR-040; body 2, 3 a 5 (životní cyklus
 účtu, správa uživatelů, ověření e-mailu/reset) platí dál.
 
-**Uživatelské testování.** Veřejné: samoobslužná registrace. Soukromé: admin
-vytvoří účet → aktivační odkaz → uživatel si nastaví heslo a je přihlášen (nebo
-dočasné heslo s vynucenou změnou). Tým: majitel přidá existujícího uživatele
-podle e-mailu; přidání neexistujícího účtu selže.
+**Uživatelské testování.** Self-hosted `open`: samoobslužná registrace.
+Self-hosted `admin-provisioned`: admin vytvoří účet → aktivační odkaz → uživatel
+si nastaví heslo a je přihlášen (nebo dočasné heslo s vynucenou změnou). Tým:
+majitel přidá existujícího uživatele podle e-mailu; přidání neexistujícího účtu
+selže. SaaS onboarding se ověřuje samostatně přes GitHub podle ADR-043.
+
+---
+
+## ADR-043 — Edice jsou bezpečnostní hranice a GitHub vyžaduje explicitní repository contract
+
+**Kontext.** Revize implementace převzaté po handoffu odhalila, že některé
+hotové stavební bloky byly v dokumentaci zaměněné za dokončený SaaS tok.
+`ScmRegistry` existoval, ale nikdo jej nepoužíval; `Project` ukládal jen URL a
+název a GitHub installation jen mutable login. Zároveň SaaS stále zpřístupňoval
+native registraci/password login, první OAuth účet mohl získat platform-admin
+roli a OAuth-only účet mohl odpojit poslední identitu. Auth tokeny byly nejdřív
+načtené a až potom označené jako použité, takže dva souběžné requesty mohly
+projít stejným jednorázovým odkazem.
+
+**Rozhodnutí.**
+
+1. **Edition boundary se vynucuje v backendu.** SaaS nepovoluje managed
+   registraci, password login ani self-hosted platform-admin správu. První GitHub
+   uživatel je běžný uživatel; SaaS administrace dostane později explicitní
+   bootstrap, nikoli pravidlo „první návštěvník“. UI pouze odráží serverovou
+   politiku a není její bezpečnostní náhradou.
+
+2. **Každý účet musí zachovat použitelný login.** Poslední externí identitu nelze
+   odpojit, pokud nemá účet jinou identitu nebo v self-hosted edici platné lokální
+   heslo. Pouhá existence password hashe v SaaS není fallback, protože SaaS
+   password login nepovoluje. Externí identita se dál páruje jen immutable ID;
+   GitHub e-mail se označí ověřený pouze podle ověřeného záznamu `/user/emails`;
+   neověřený profilový e-mail se do SaaS účtu neuloží. Dokud není připojený
+   skutečný e-mail provider, SaaS nevydává samoobslužný verifikační odkaz.
+
+3. **Platformní a Gitea heslo nejsou stejný credential.** Managed účet použije
+   zadané/dočasné heslo jen k vytvoření Gitea účtu a PAT; potom Gitea dostane
+   náhodné neznámé lokální heslo. Při self-hosted startu se stejný hardening
+   best-effort aplikuje na legacy managed účty. Reset nebo deaktivaci InitPadu
+   proto nelze obejít přímým přihlášením stejným heslem do Gitey; běžný SCM login
+   vede přes OIDC a Git používá PAT. OIDC authorize/token/userinfo znovu ověřují
+   aktivní účet, session generation a `mustChangePassword`; `email_verified`
+   odráží skutečný `emailVerifiedAt`, nikoli konstantu.
+
+4. **Jednorázové tokeny a webhooky musí mít atomickou/retry sémantiku.** Claim
+   auth tokenu je podmíněný atomický update `unused && unexpired`; uspěje právě
+   jeden request. Chyba persistence installation webhooku se nevrací jako 202,
+   ale jako 5xx, aby ji GitHub mohl opakovat. Chyba čtení souboru 403/5xx není
+   maskovaná jako „soubor chybí“.
+
+5. **Installation token je operation-specific.** Výchozí GitHub token je read-only.
+   Contents, statuses, administration, secrets a packages write se žádají pouze
+   tam, kde je konkrétní endpoint potřebuje. Tokeny se neukládají. Toto rozhodnutí
+   neurčuje finální konfiguraci GitHub App; tu musí potvrdit živý integrační test.
+
+6. **GitHub projekty se nezapojí bez explicitní SCM identity.** Před použitím
+   `ScmRegistry` se do datového modelu doplní provider, immutable repository ID,
+   owner/full name, default branch a installation binding. GitHub installation
+   musí ukládat immutable account ID, rozlišit user/organization, přežít rename a
+   mít autorizovanou vazbu na uživatele/workspace. Všechny projektové operace
+   následně používají tento locator; odvozování `actor.username + project.name`
+   je pouze legacy Gitea kompatibilita.
+
+7. **„Hotovo“ znamená dosažitelný a otestovaný tok.** GitHub adapter není hotový,
+   dokud create/import, secrets, archive, CI callback, reconcile a delete používají
+   provider projektu a neprojdou živým App E2E. `ProvisioningOperation` musí před
+   označením za úplnou orchestraci evidovat kroky create i importu a kompenzovat
+   nebo přiznat každý externí efekt.
+
+**Důsledky.** Self-hosted Gitea cesta zůstává funkční a cloudový kód je bezpečnější,
+ale public SaaS se zatím nesmí prezentovat jako produkčně hotový profil. Nejbližší
+implementační krok není přidání dalšího GitHub endpointu, nýbrž migrace stabilní
+identity repozitáře/instalace; až na ní lze bezpečně postavit organizace, import a
+stejnojmenná repa.
+
+**Uživatelské testování.** Self-hosted: registrace/admin activation, forced change,
+reset/deaktivace a Gitea OIDC/PAT cesta. SaaS se živou OAuth konfigurací: nezobrazí
+se password forma, první GitHub účet není admin a poslední identitu nelze odpojit.
+Cloud create/import zůstává netestovatelný do dokončení bodů 6–7; po nich se ověří
+osobní i organizační repo, rename ownera, dvě stejně pojmenovaná repa, odvolání
+instalace a retry webhooku.
