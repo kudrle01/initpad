@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, Param, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, HttpCode, Param, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ExternalIdentityService, ScmProviderKind } from './external-identity.service';
@@ -17,7 +17,10 @@ export class IdentityController {
   @Delete(':provider')
   @HttpCode(204)
   unlink(@CurrentUser() userId: string, @Param('provider') provider: string) {
-    const kind: ScmProviderKind = provider === 'gitlab' ? 'gitlab' : 'github';
+    if (provider !== 'github' && provider !== 'gitlab') {
+      throw new BadRequestException(`Unsupported identity provider '${provider}'`);
+    }
+    const kind: ScmProviderKind = provider;
     return this.identities.unlink(userId, kind);
   }
 }

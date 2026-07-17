@@ -9,6 +9,7 @@ export interface GitHubUser {
   login: string;
   name: string | null;
   email: string | null;
+  emailVerified: boolean;
   avatarUrl: string | null;
 }
 
@@ -100,11 +101,40 @@ export class GitHubOAuthService {
       email?: string | null;
       avatar_url?: string | null;
     };
+    let email = u.email ?? null;
+    let emailVerified = false;
+    try {
+      const emailsRes = await fetch(`${config.github.apiBaseUrl}/user/emails`, {
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      });
+      if (emailsRes.ok) {
+        const emails = (await emailsRes.json()) as Array<{
+          email?: string;
+          primary?: boolean;
+          verified?: boolean;
+        }>;
+        const selected =
+          emails.find((candidate) => candidate.primary && candidate.verified && candidate.email) ??
+          emails.find((candidate) => candidate.verified && candidate.email);
+        if (selected?.email) {
+          email = selected.email;
+          emailVerified = true;
+        }
+      }
+    } catch {
+      // Identity sign-in can proceed without an e-mail; it simply remains
+      // unverified until a verified address can be read later.
+    }
     return {
       providerUserId: String(u.id),
       login: u.login,
       name: u.name ?? null,
-      email: u.email ?? null,
+      email,
+      emailVerified,
       avatarUrl: u.avatar_url ?? null,
     };
   }

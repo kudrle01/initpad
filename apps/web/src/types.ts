@@ -5,6 +5,7 @@ export interface User {
   email: string | null;
   avatarUrl: string | null;
   platformRole: 'admin' | 'user';
+  edition: 'self-hosted' | 'saas';
   // Set while the account must choose a new password before doing anything else
   // (admin-provisioned temporary credentials, post-reset).
   mustChangePassword: boolean;
@@ -85,6 +86,7 @@ export interface LinkedIdentity {
   providerUserId: string;
   username: string | null;
   linkedAt: string;
+  canUnlink: boolean;
 }
 
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';

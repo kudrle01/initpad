@@ -130,4 +130,24 @@ describe('GiteaService import helpers', () => {
       expect.anything(),
     );
   });
+
+  it('does not misreport an authorization or server failure as a missing file', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('forbidden', { status: 403 }));
+    await expect(
+      new GiteaService().readFile('api', 'Dockerfile', 'main', { username: 'kudrla', token: 't' }),
+    ).rejects.toThrow('HTTP 403');
+  });
+});
+
+describe('GiteaService managed account hardening', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('replaces a managed local password with a random unknown value', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    await new GiteaService().randomizeUserPassword('alice');
+    const [, init] = fetchMock.mock.calls[0] as [string | URL | Request, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({ login_name: 'alice', source_id: 0, must_change_password: false });
+    expect(body.password).toHaveLength(47);
+  });
 });

@@ -21,6 +21,8 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
   const [githubEnabled, setGithubEnabled] = useState(false);
+  const [passwordAuthEnabled, setPasswordAuthEnabled] = useState(false);
+  const [edition, setEdition] = useState<'self-hosted' | 'saas'>('self-hosted');
   const [configError, setConfigError] = useState(false);
   const oauthError = oauthErrorMessage(params.get('error'));
 
@@ -29,6 +31,8 @@ export default function Login() {
       .then((x) => {
         setRegistrationAvailable(x.registrationAvailable);
         setGithubEnabled(x.githubEnabled);
+        setPasswordAuthEnabled(x.passwordAuthEnabled);
+        setEdition(x.edition);
       })
       .catch(() => setConfigError(true));
   }, []);
@@ -80,12 +84,15 @@ export default function Login() {
             >
               <GithubIcon /> Continue with GitHub
             </a>
-            <div className="my-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">
-              <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
-            </div>
+            {passwordAuthEnabled && (
+              <div className="my-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">
+                <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
+              </div>
+            )}
           </div>
         )}
 
+        {passwordAuthEnabled && <>
         <div className={cn('mb-4 flex gap-1 rounded-md bg-secondary p-1', !githubEnabled && 'mt-6')}>
           {([
             'signin',
@@ -168,11 +175,25 @@ export default function Login() {
             Forgot your password?
           </Link>
         )}
+        </>}
 
-        {!registrationAvailable && !configError && (
+        {passwordAuthEnabled && !registrationAvailable && !configError && (
           <p className="mt-4 text-xs text-muted-foreground">
             Accounts are created by the instance administrator. Ask your InitPad admin for a
             sign-in link.
+          </p>
+        )}
+
+        {!passwordAuthEnabled && edition === 'saas' && githubEnabled && !configError && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            Your GitHub account creates or opens your InitPad account. Repository access is granted
+            separately through the GitHub App.
+          </p>
+        )}
+
+        {!passwordAuthEnabled && !githubEnabled && !configError && (
+          <p role="alert" className="mt-4 text-sm text-destructive">
+            GitHub sign-in is not configured for this SaaS installation.
           </p>
         )}
 

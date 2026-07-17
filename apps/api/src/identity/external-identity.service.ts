@@ -1,5 +1,6 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { config } from '../config';
 
 export type ScmProviderKind = 'github' | 'gitlab';
 
@@ -8,6 +9,7 @@ export interface LinkedIdentity {
   providerUserId: string;
   username: string | null;
   linkedAt: string;
+  canUnlink: boolean;
 }
 
 /**
@@ -35,15 +37,24 @@ export class ExternalIdentityService {
   }
 
   async listForUser(userId: string): Promise<LinkedIdentity[]> {
-    const rows = await this.prisma.externalIdentity.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'asc' },
-    });
+    const [rows, user] = await Promise.all([
+      this.prisma.externalIdentity.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } }),
+    ]);
+    // A stored password only remains a usable sign-in method in the
+    // self-hosted edition. Treating it as a fallback in SaaS would let a
+    // migrated account unlink GitHub and permanently lock itself out.
+    const hasUsablePassword = config.edition === 'self-hosted' && user?.passwordHash != null;
+    const canUnlink = hasUsablePassword || rows.length > 1;
     return rows.map((r) => ({
       provider: r.provider,
       providerUserId: r.providerUserId,
       username: r.username,
       linkedAt: r.createdAt.toISOString(),
+      canUnlink,
     }));
   }
 
@@ -76,6 +87,20 @@ export class ExternalIdentityService {
   }
 
   async unlink(userId: string, provider: ScmProviderKind): Promise<void> {
+    const [identity, user, identityCount] = await Promise.all([
+      this.prisma.externalIdentity.findUnique({
+        where: { provider_userId: { provider, userId } },
+      }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } }),
+      this.prisma.externalIdentity.count({ where: { userId } }),
+    ]);
+    if (!identity) return;
+    const hasUsablePassword = config.edition === 'self-hosted' && user?.passwordHash != null;
+    if (!hasUsablePassword && identityCount <= 1) {
+      throw new BadRequestException(
+        `You cannot unlink your only sign-in method. Add another identity first.`,
+      );
+    }
     await this.prisma.externalIdentity.deleteMany({ where: { userId, provider } });
   }
 }

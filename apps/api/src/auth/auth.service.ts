@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -26,6 +27,7 @@ export interface SessionUser {
   email: string | null;
   avatarUrl: string | null;
   platformRole: 'admin' | 'user';
+  edition: 'self-hosted' | 'saas';
   // True while the account must set a new password before doing anything else
   // (admin-provisioned temporary credentials, post-reset). The web app uses it
   // to route the user straight to the change-password screen.
@@ -41,7 +43,7 @@ export interface SessionUser {
  * so there is no reverse "sign in with Gitea" path (ADR-016).
  */
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   private readonly logger = new Logger('AuthService');
   private registrationLock: Promise<void> = Promise.resolve();
 
@@ -52,12 +54,40 @@ export class AuthService {
   ) {}
 
   /**
+   * Managed Gitea accounts are authenticated through InitPad OIDC. Rotate any
+   * legacy/local Gitea passwords on startup so a platform password (including
+   * an old password after reset) can never be used to bypass InitPad account
+   * lifecycle checks by signing in to Gitea directly.
+   */
+  async onModuleInit(): Promise<void> {
+    if (config.edition !== 'self-hosted') return;
+    try {
+      const users = await this.prisma.user.findMany({
+        where: { giteaId: { not: null } },
+        select: { username: true },
+      });
+      for (const user of users) {
+        await this.gitea.randomizeUserPassword(user.username).catch((error) =>
+          this.logger.warn(
+            `Could not harden the local Gitea password for ${user.username}: ${(error as Error).message}`,
+          ),
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`Managed Gitea password hardening skipped: ${(error as Error).message}`);
+    }
+  }
+
+  /**
    * Whether the public self-service registration form is available. `open`
    * allows it unconditionally; every other policy only lets the very first
-   * account bootstrap the instance administrator. Invited users register
-   * through a separate token-carrying path, not this public gate.
+   * account bootstrap the instance administrator. Further closed-instance
+   * accounts are provisioned explicitly by that administrator.
    */
   async registrationAvailable(): Promise<boolean> {
+    // Public SaaS identity is GitHub-only. Native password registration is a
+    // self-hosted feature and must never silently fall back to managed Gitea.
+    if (config.edition === 'saas') return false;
     if (config.auth.registrationMode === 'open') return true;
     return (await this.prisma.user.count()) === 0;
   }
@@ -129,6 +159,7 @@ export class AuthService {
       });
       provisionedUsername = giteaUser.login;
       const accessToken = await this.gitea.createUserToken(input.username, input.password);
+      await this.gitea.randomizeUserPassword(input.username);
       return await this.prisma.user.create({
         data: {
           giteaId: giteaUser.id,
@@ -171,12 +202,16 @@ export class AuthService {
     providerUserId: string;
     login: string;
     email?: string | null;
+    emailVerified?: boolean;
     name?: string | null;
     avatarUrl?: string | null;
   }) {
     const username = await this.uniqueUsername(input.login);
-    const userCount = await this.prisma.user.count();
-    const emailRaw = input.email?.trim().toLowerCase() || null;
+    // In SaaS the e-mail participates in account display and workspace lookup,
+    // so keep it only when GitHub explicitly attested it as verified.
+    const emailRaw = input.emailVerified
+      ? input.email?.trim().toLowerCase() || null
+      : null;
     const emailTaken = emailRaw
       ? (await this.prisma.user.findUnique({ where: { email: emailRaw } })) != null
       : false;
@@ -187,12 +222,14 @@ export class AuthService {
         email,
         name: input.name ?? null,
         avatarUrl: input.avatarUrl ?? null,
-        platformRole: userCount === 0 ? 'admin' : 'user',
+        // A public SaaS must never grant instance administration to whichever
+        // visitor happens to sign in first. SaaS administration needs an
+        // explicit, separately configured bootstrap policy.
+        platformRole: 'user',
         passwordHash: null,
         accessToken: '',
         giteaId: null,
-        // GitHub returns a verified account e-mail; mark it verified when kept.
-        emailVerifiedAt: email ? new Date() : null,
+        emailVerifiedAt: email && input.emailVerified ? new Date() : null,
         memberships: {
           create: {
             role: 'owner',
@@ -229,6 +266,9 @@ export class AuthService {
 
   /** Sign-in with a platform-native account (password verified locally). */
   async login(dto: LoginDto): Promise<{ token: string; user: SessionUser }> {
+    if (config.edition === 'saas') {
+      throw new ForbiddenException('Password sign-in is disabled in the SaaS edition');
+    }
     const identity = dto.username.trim();
     const user = await this.prisma.user.findFirst({
       where: { OR: [{ username: identity }, { email: identity.toLowerCase() }] },
@@ -276,6 +316,9 @@ export class AuthService {
    * logged; a production build wires this to actual delivery.
    */
   async requestEmailVerification(userId: string): Promise<{ verifyUrl: string }> {
+    if (config.edition === 'saas') {
+      throw new BadRequestException('SaaS e-mail verification is provided by GitHub');
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
     if (!user.email) throw new BadRequestException('No e-mail address on file');
@@ -373,11 +416,24 @@ export class AuthService {
     if (!record || record.kind !== kind || record.usedAt || record.expiresAt.getTime() < Date.now()) {
       throw new BadRequestException('This link is invalid or has expired');
     }
-    await this.prisma.authToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+    // Claim the token atomically. Two concurrent requests may both read the
+    // row above, but exactly one is allowed to transition it from unused.
+    const claimed = await this.prisma.authToken.updateMany({
+      where: {
+        id: record.id,
+        kind,
+        usedAt: null,
+        expiresAt: { gte: new Date() },
+      },
+      data: { usedAt: new Date() },
+    });
+    if (claimed.count !== 1) {
+      throw new BadRequestException('This link is invalid or has expired');
+    }
     return { userId: record.userId };
   }
 
-  /** Issues a signed session for an already-provisioned user (e.g. invite sign-up). */
+  /** Issues a signed session for an already-provisioned user (e.g. GitHub OAuth). */
   createSession(user: {
     id: string;
     username: string;
@@ -413,6 +469,7 @@ export class AuthService {
       email: user.email,
       avatarUrl: user.avatarUrl,
       platformRole: user.platformRole === 'admin' ? 'admin' : 'user',
+      edition: config.edition,
       mustChangePassword: user.mustChangePassword === true,
       emailVerified: user.emailVerifiedAt != null,
     };

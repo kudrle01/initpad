@@ -33,14 +33,20 @@ export default function Admin() {
   const [oneTime, setOneTime] = useState<OneTime | null>(null);
 
   useEffect(() => {
+    if (!user || user.edition !== 'self-hosted' || user.platformRole !== 'admin') {
+      setLoading(false);
+      return;
+    }
     api.adminListUsers()
       .then(setUsers)
       .catch((e) => toast.error((e as Error).message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [user?.id, user?.edition, user?.platformRole]);
 
   // Only platform administrators reach this page; ordinary users are redirected.
-  if (user && user.platformRole !== 'admin') return <Navigate to="/" replace />;
+  if (user && (user.edition !== 'self-hosted' || user.platformRole !== 'admin')) {
+    return <Navigate to="/" replace />;
+  }
 
   async function refresh() {
     setUsers(await api.adminListUsers());

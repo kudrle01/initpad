@@ -24,6 +24,7 @@ describe('OidcService redirect validation', () => {
   it('consumes an authorization code only once', () => {
     const code = service.issueCode({
       userId: 'u1',
+      tokenVersion: 0,
       clientId: 'gitea',
       redirectUri: 'https://git.example.test/user/oauth2/initpad/callback',
     });

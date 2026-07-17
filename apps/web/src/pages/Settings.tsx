@@ -173,7 +173,7 @@ export default function Settings() {
       <PageHeader title="Settings" />
 
       <div className="flex max-w-2xl flex-col gap-6">
-      {user && user.email && !user.emailVerified && (
+      {user?.edition === 'self-hosted' && user.email && !user.emailVerified && (
         <div className="rounded-lg border border-warning/40 bg-warning/5 p-6">
           <div className="flex items-start gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-warning/10 text-warning">
@@ -199,7 +199,7 @@ export default function Settings() {
           </div>
         </div>
       )}
-      <div className="rounded-lg border border-border bg-card p-6">
+      {user?.edition === 'self-hosted' && <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
             <GitBranch className="h-5 w-5" />
@@ -275,7 +275,7 @@ export default function Settings() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {githubEnabled && (
         <div className="rounded-lg border border-border bg-card p-6">
@@ -328,7 +328,15 @@ export default function Settings() {
                         Install GitHub App
                       </a>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => unlinkGithub(identity.provider)}>Unlink</Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={!identity.canUnlink}
+                      title={identity.canUnlink ? undefined : 'This is your only sign-in method'}
+                      onClick={() => unlinkGithub(identity.provider)}
+                    >
+                      {identity.canUnlink ? 'Unlink' : 'Required for sign-in'}
+                    </Button>
                   </div>
                 ))}
               </div>

@@ -5,9 +5,11 @@ import { hashPassword } from './password';
 
 describe('AuthService', () => {
   const originalMode = config.auth.registrationMode;
+  const originalEdition = config.edition;
 
   afterEach(() => {
     config.auth.registrationMode = originalMode;
+    config.edition = originalEdition;
   });
 
   it('serializes bootstrap registration so only one account is created', async () => {
@@ -27,6 +29,7 @@ describe('AuthService', () => {
     const gitea = {
       createUser: jest.fn(async ({ username }: { username: string }) => ({ id: 1, login: username })),
       createUserToken: jest.fn(async () => 'a'.repeat(40)),
+      randomizeUserPassword: jest.fn(async () => undefined),
       deleteUser: jest.fn(),
     };
     const jwt = { sign: jest.fn(() => 'jwt') };
@@ -51,6 +54,46 @@ describe('AuthService', () => {
     expect(prisma.user.count).not.toHaveBeenCalled();
   });
 
+  it('never exposes managed password registration in the SaaS edition', async () => {
+    config.edition = 'saas';
+    config.auth.registrationMode = 'open';
+    const prisma = { user: { count: jest.fn() } };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    expect(await service.registrationAvailable()).toBe(false);
+    expect(prisma.user.count).not.toHaveBeenCalled();
+  });
+
+  it('never accepts password sign-in in the SaaS edition', async () => {
+    config.edition = 'saas';
+    const prisma = { user: { findFirst: jest.fn() } };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await expect(
+      service.login({ username: 'alice', password: 'long-password' }),
+    ).rejects.toThrow('disabled in the SaaS edition');
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('hardens every legacy managed Gitea account when self-hosted starts', async () => {
+    config.edition = 'self-hosted';
+    const prisma = {
+      user: {
+        findMany: jest.fn(async () => [{ username: 'alice' }, { username: 'bob' }]),
+      },
+    };
+    const gitea = { randomizeUserPassword: jest.fn(async () => undefined) };
+    const service = new AuthService(prisma as never, {} as never, gitea as never);
+
+    await service.onModuleInit();
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith({
+      where: { giteaId: { not: null } },
+      select: { username: true },
+    });
+    expect(gitea.randomizeUserPassword).toHaveBeenCalledTimes(2);
+    expect(gitea.randomizeUserPassword).toHaveBeenNthCalledWith(1, 'alice');
+    expect(gitea.randomizeUserPassword).toHaveBeenNthCalledWith(2, 'bob');
+  });
+
   it('only allows the bootstrap admin under a non-open policy', async () => {
     config.auth.registrationMode = 'admin-provisioned';
     let count = 0;
@@ -62,6 +105,7 @@ describe('AuthService', () => {
   });
 
   it('normalizes an e-mail address during sign-in', async () => {
+    config.edition = 'self-hosted';
     const user = {
       id: 'u1', username: 'alice', email: 'alice@example.test', name: null, avatarUrl: null,
       passwordHash: hashPassword('long-password'), accessToken: '', platformRole: 'user',
@@ -76,6 +120,7 @@ describe('AuthService', () => {
   });
 
   it('refuses sign-in for a deactivated account', async () => {
+    config.edition = 'self-hosted';
     const user = {
       id: 'u1', username: 'bob', email: 'bob@example.test', name: null, avatarUrl: null,
       passwordHash: hashPassword('long-password'), accessToken: '', platformRole: 'user',
@@ -134,10 +179,12 @@ describe('AuthService', () => {
     const service = new AuthService(prisma as never, {} as never, {} as never);
     await service.provisionExternalUser({
       provider: 'github', providerUserId: '555', login: 'octocat', email: 'octo@example.test', name: 'Octo', avatarUrl: null,
+      emailVerified: true,
     });
     expect(createData?.giteaId).toBeNull();
     expect(createData?.accessToken).toBe('');
     expect(createData?.passwordHash).toBeNull();
+    expect(createData?.platformRole).toBe('user');
     expect(createData?.username).toBe('octocat');
     expect(createData?.emailVerifiedAt).toBeInstanceOf(Date);
     expect(createData?.externalIdentities).toEqual({
@@ -158,9 +205,40 @@ describe('AuthService', () => {
       },
     };
     const service = new AuthService(prisma as never, {} as never, {} as never);
-    await service.provisionExternalUser({ provider: 'github', providerUserId: '9', login: 'dev', email: 'taken@example.test' });
+    await service.provisionExternalUser({
+      provider: 'github', providerUserId: '9', login: 'dev',
+      email: 'taken@example.test', emailVerified: true,
+    });
     expect(createData?.email).toBeNull();
     expect(createData?.emailVerifiedAt).toBeNull();
+  });
+
+  it('does not store an unverified external profile e-mail', async () => {
+    let createData: Record<string, unknown> | undefined;
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          createData = data;
+          return { id: 'u9', ...data };
+        }),
+      },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await service.provisionExternalUser({
+      provider: 'github', providerUserId: '10', login: 'dev',
+      email: 'unverified@example.test', emailVerified: false,
+    });
+    expect(createData?.email).toBeNull();
+    expect(createData?.emailVerifiedAt).toBeNull();
+  });
+
+  it('does not issue self-verification links in the SaaS edition', async () => {
+    config.edition = 'saas';
+    const prisma = { user: { findUnique: jest.fn() } };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await expect(service.requestEmailVerification('u1')).rejects.toThrow('provided by GitHub');
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
   it('does not reveal whether an account exists on reset request', async () => {
@@ -199,20 +277,23 @@ describe('AuthService', () => {
     const prisma = {
       authToken: {
         findUnique: jest.fn(async () => record),
-        update: jest.fn(async (args: unknown) => { usedUpdate = args; return {}; }),
+        updateMany: jest.fn(async (args: unknown) => { usedUpdate = args; return { count: 1 }; }),
       },
       user: { update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { userUpdate = data; return {}; }) },
     };
     const service = new AuthService(prisma as never, {} as never, {} as never);
     await service.resetPassword('plaintext-token', 'a-brand-new-password');
-    expect(usedUpdate).toMatchObject({ where: { id: 't1' }, data: { usedAt: expect.any(Date) } });
+    expect(usedUpdate).toMatchObject({
+      where: { id: 't1', kind: 'password_reset', usedAt: null, expiresAt: { gte: expect.any(Date) } },
+      data: { usedAt: expect.any(Date) },
+    });
     expect(userUpdate?.mustChangePassword).toBe(false);
     expect(userUpdate?.tokenVersion).toEqual({ increment: 1 });
   });
 
   it('rejects an expired or unknown reset token', async () => {
     const prisma = {
-      authToken: { findUnique: jest.fn(async () => null), update: jest.fn() },
+      authToken: { findUnique: jest.fn(async () => null), updateMany: jest.fn() },
       user: { update: jest.fn() },
     };
     const service = new AuthService(prisma as never, {} as never, {} as never);
@@ -224,7 +305,7 @@ describe('AuthService', () => {
     const record = { id: 't2', userId: 'u1', kind: 'email_verify', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
     let userUpdate: Record<string, unknown> | undefined;
     const prisma = {
-      authToken: { findUnique: jest.fn(async () => record), update: jest.fn(async () => ({})) },
+      authToken: { findUnique: jest.fn(async () => record), updateMany: jest.fn(async () => ({ count: 1 })) },
       user: { update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { userUpdate = data; return {}; }) },
     };
     const service = new AuthService(prisma as never, {} as never, {} as never);
@@ -236,7 +317,7 @@ describe('AuthService', () => {
     const record = { id: 't4', userId: 'u1', kind: 'activation', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
     let userUpdate: Record<string, unknown> | undefined;
     const prisma = {
-      authToken: { findUnique: jest.fn(async () => record), update: jest.fn(async () => ({})) },
+      authToken: { findUnique: jest.fn(async () => record), updateMany: jest.fn(async () => ({ count: 1 })) },
       user: {
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
           userUpdate = data;
@@ -254,8 +335,22 @@ describe('AuthService', () => {
 
   it('does not accept a reset token for e-mail verification', async () => {
     const record = { id: 't3', userId: 'u1', kind: 'password_reset', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
-    const prisma = { authToken: { findUnique: jest.fn(async () => record), update: jest.fn() }, user: { update: jest.fn() } };
+    const prisma = { authToken: { findUnique: jest.fn(async () => record), updateMany: jest.fn() }, user: { update: jest.fn() } };
     const service = new AuthService(prisma as never, {} as never, {} as never);
     await expect(service.verifyEmail('tok')).rejects.toThrow('invalid or has expired');
+  });
+
+  it('rejects a token that another concurrent request already claimed', async () => {
+    const record = { id: 't5', userId: 'u1', kind: 'activation', usedAt: null, expiresAt: new Date(Date.now() + 60_000) };
+    const prisma = {
+      authToken: {
+        findUnique: jest.fn(async () => record),
+        updateMany: jest.fn(async () => ({ count: 0 })),
+      },
+      user: { update: jest.fn() },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    await expect(service.activate('tok', 'a-brand-new-password')).rejects.toThrow('invalid or has expired');
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,7 @@ import { config } from '../config';
 
 interface AuthCode {
   userId: string;
+  tokenVersion: number;
   clientId: string;
   redirectUri: string;
   nonce?: string;
@@ -36,7 +37,10 @@ export class OidcService {
   readonly kid: string;
 
   private readonly codes = new Map<string, AuthCode>();
-  private readonly accessTokens = new Map<string, { userId: string; expiresAt: number }>();
+  private readonly accessTokens = new Map<
+    string,
+    { userId: string; tokenVersion: number; expiresAt: number }
+  >();
 
   constructor() {
     this.privateKey = this.loadOrCreateKey();
@@ -144,16 +148,20 @@ export class OidcService {
 
   // --- access tokens (for the userinfo endpoint) ---
 
-  issueAccessToken(userId: string): string {
+  issueAccessToken(userId: string, tokenVersion: number): string {
     const token = randomBytes(32).toString('base64url');
-    this.accessTokens.set(token, { userId, expiresAt: Date.now() + 60 * 60_000 });
+    this.accessTokens.set(token, {
+      userId,
+      tokenVersion,
+      expiresAt: Date.now() + 60 * 60_000,
+    });
     return token;
   }
 
-  userIdForToken(token: string): string | null {
+  accessForToken(token: string): { userId: string; tokenVersion: number } | null {
     const entry = this.accessTokens.get(token);
     if (!entry || entry.expiresAt < Date.now()) return null;
-    return entry.userId;
+    return { userId: entry.userId, tokenVersion: entry.tokenVersion };
   }
 
   // --- id_token (RS256 JWT, signed manually via node:crypto) ---

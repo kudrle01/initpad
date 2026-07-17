@@ -1,7 +1,14 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { config } from '../config';
 import { ExternalIdentityService } from './external-identity.service';
 
 describe('ExternalIdentityService', () => {
+  const originalEdition = config.edition;
+
+  afterEach(() => {
+    config.edition = originalEdition;
+  });
+
   it('resolves a user only by the immutable provider id', async () => {
     const prisma = {
       externalIdentity: {
@@ -70,5 +77,49 @@ describe('ExternalIdentityService', () => {
     const service = new ExternalIdentityService(prisma as never);
     await expect(service.link('u1', 'github', '999', 'octocat')).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.externalIdentity.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses to unlink the only sign-in method of an OAuth-only account', async () => {
+    const prisma = {
+      externalIdentity: {
+        findUnique: jest.fn(async () => ({ id: 'e1', userId: 'u1' })),
+        count: jest.fn(async () => 1),
+        deleteMany: jest.fn(),
+      },
+      user: { findUnique: jest.fn(async () => ({ passwordHash: null })) },
+    };
+    const service = new ExternalIdentityService(prisma as never);
+    await expect(service.unlink('u1', 'github')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.externalIdentity.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('allows unlinking when a local password remains available', async () => {
+    config.edition = 'self-hosted';
+    const prisma = {
+      externalIdentity: {
+        findUnique: jest.fn(async () => ({ id: 'e1', userId: 'u1' })),
+        count: jest.fn(async () => 1),
+        deleteMany: jest.fn(async () => ({ count: 1 })),
+      },
+      user: { findUnique: jest.fn(async () => ({ passwordHash: 'hash' })) },
+    };
+    const service = new ExternalIdentityService(prisma as never);
+    await expect(service.unlink('u1', 'github')).resolves.toBeUndefined();
+    expect(prisma.externalIdentity.deleteMany).toHaveBeenCalled();
+  });
+
+  it('does not treat a stored password as a usable SaaS sign-in method', async () => {
+    config.edition = 'saas';
+    const prisma = {
+      externalIdentity: {
+        findUnique: jest.fn(async () => ({ id: 'e1', userId: 'u1' })),
+        count: jest.fn(async () => 1),
+        deleteMany: jest.fn(),
+      },
+      user: { findUnique: jest.fn(async () => ({ passwordHash: 'legacy-hash' })) },
+    };
+    const service = new ExternalIdentityService(prisma as never);
+    await expect(service.unlink('u1', 'github')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.externalIdentity.deleteMany).not.toHaveBeenCalled();
   });
 });

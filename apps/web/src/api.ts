@@ -157,7 +157,13 @@ export const api = {
     }),
   me: () => http<User>('/auth/me'),
   authConfig: () =>
-    http<{ registrationAvailable: boolean; registrationMode: string; githubEnabled: boolean }>('/auth/config'),
+    http<{
+      registrationAvailable: boolean;
+      registrationMode: string;
+      githubEnabled: boolean;
+      edition: 'self-hosted' | 'saas';
+      passwordAuthEnabled: boolean;
+    }>('/auth/config'),
   listIdentities: () => http<LinkedIdentity[]>('/me/identities'),
   unlinkIdentity: (provider: string) =>
     http<void>(`/me/identities/${provider}`, { method: 'DELETE' }),

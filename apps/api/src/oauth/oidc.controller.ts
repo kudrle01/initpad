@@ -31,7 +31,7 @@ export class OidcController {
   // Authorization endpoint: verifies the platform session (cookie) and
   // issues an authorization code.
   @Get('oauth/authorize')
-  authorize(@Query() q: Record<string, string>, @Req() req: Request, @Res() res: Response) {
+  async authorize(@Query() q: Record<string, string>, @Req() req: Request, @Res() res: Response) {
     try {
       const { response_type, client_id, redirect_uri, state, nonce } = q;
 
@@ -44,8 +44,8 @@ export class OidcController {
         return;
       }
 
-      const userId = this.sessionUserId(req);
-      if (!userId) {
+      const session = await this.sessionUser(req);
+      if (!session) {
         // Not signed in on the platform → redirect to login, then back here
         // (browser-facing URL).
         const self = `${config.oidc.publicUrl}/oauth/authorize?${new URLSearchParams(q).toString()}`;
@@ -53,7 +53,13 @@ export class OidcController {
         return;
       }
 
-      const code = this.oidc.issueCode({ userId, clientId: client_id, redirectUri: redirect_uri, nonce });
+      const code = this.oidc.issueCode({
+        userId: session.id,
+        tokenVersion: session.tokenVersion,
+        clientId: client_id,
+        redirectUri: redirect_uri,
+        nonce,
+      });
       const url = new URL(redirect_uri);
       url.searchParams.set('code', code);
       if (state) url.searchParams.set('state', state);
@@ -83,12 +89,17 @@ export class OidcController {
       return;
     }
     const user = await this.prisma.user.findUnique({ where: { id: code.userId } });
-    if (!user) {
+    if (
+      !user ||
+      !user.active ||
+      user.mustChangePassword ||
+      user.tokenVersion !== code.tokenVersion
+    ) {
       res.status(400).json({ error: 'invalid_grant' });
       return;
     }
 
-    const accessToken = this.oidc.issueAccessToken(user.id);
+    const accessToken = this.oidc.issueAccessToken(user.id, user.tokenVersion);
     const idToken = this.oidc.signIdToken({
       sub: user.id,
       aud: creds.id,
@@ -96,7 +107,7 @@ export class OidcController {
       name: user.name ?? user.username,
       preferred_username: user.username,
       email: user.email,
-      email_verified: true,
+      email_verified: user.emailVerifiedAt != null,
     });
     res.json({
       access_token: accessToken,
@@ -112,13 +123,18 @@ export class OidcController {
   async userinfo(@Req() req: Request, @Res() res: Response) {
     const auth = req.headers.authorization ?? '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-    const userId = this.oidc.userIdForToken(token);
-    if (!userId) {
+    const access = this.oidc.accessForToken(token);
+    if (!access) {
       res.status(401).json({ error: 'invalid_token' });
       return;
     }
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
+    const user = await this.prisma.user.findUnique({ where: { id: access.userId } });
+    if (
+      !user ||
+      !user.active ||
+      user.mustChangePassword ||
+      user.tokenVersion !== access.tokenVersion
+    ) {
       res.status(401).json({ error: 'invalid_token' });
       return;
     }
@@ -127,15 +143,30 @@ export class OidcController {
       name: user.name ?? user.username,
       preferred_username: user.username,
       email: user.email,
-      email_verified: true,
+      email_verified: user.emailVerifiedAt != null,
     });
   }
 
-  private sessionUserId(req: Request): string | null {
+  private async sessionUser(
+    req: Request,
+  ): Promise<{ id: string; tokenVersion: number } | null> {
     const token = req.cookies?.[TOKEN_COOKIE];
     if (!token) return null;
     try {
-      return this.jwt.verify<{ sub: string }>(token).sub;
+      const payload = this.jwt.verify<{ sub: string; ver?: number }>(token);
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, active: true, mustChangePassword: true, tokenVersion: true },
+      });
+      if (
+        !user ||
+        !user.active ||
+        user.mustChangePassword ||
+        (payload.ver ?? 0) !== user.tokenVersion
+      ) {
+        return null;
+      }
+      return { id: user.id, tokenVersion: user.tokenVersion };
     } catch {
       return null;
     }

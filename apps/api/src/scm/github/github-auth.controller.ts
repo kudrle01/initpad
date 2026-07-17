@@ -88,6 +88,7 @@ export class GitHubAuthController {
         providerUserId: ghUser.providerUserId,
         login: ghUser.login,
         email: ghUser.email,
+        emailVerified: ghUser.emailVerified,
         name: ghUser.name,
         avatarUrl: ghUser.avatarUrl,
       });

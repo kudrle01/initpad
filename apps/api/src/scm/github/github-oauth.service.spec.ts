@@ -53,6 +53,10 @@ describe('GitHubOAuthService', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ id: 987654, login: 'octocat', name: 'The Octocat', email: 'octo@example.test', avatar_url: 'https://x/y.png' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([{ email: 'octo@example.test', primary: true, verified: true }]),
       });
     global.fetch = fetchMock as never;
 
@@ -62,6 +66,7 @@ describe('GitHubOAuthService', () => {
       login: 'octocat',
       name: 'The Octocat',
       email: 'octo@example.test',
+      emailVerified: true,
       avatarUrl: 'https://x/y.png',
     });
     // Second call must carry the bearer token from the exchange.

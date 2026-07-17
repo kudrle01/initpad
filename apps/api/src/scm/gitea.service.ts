@@ -198,6 +198,32 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     return data.sha1;
   }
 
+  /**
+   * Replaces a managed account's local Gitea password with an unrecoverable
+   * random value. Users authenticate through InitPad OIDC and use PATs for
+   * Git, so retaining their platform password in Gitea would create a bypass
+   * after a password reset or forced account lifecycle change.
+   */
+  async randomizeUserPassword(username: string): Promise<void> {
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
+    if (!url || !adminToken) throw new Error('Gitea admin is not configured');
+    const password = `Ip1!${randomBytes(32).toString('base64url')}`;
+    const res = await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
+      body: JSON.stringify({
+        login_name: username,
+        source_id: 0,
+        password,
+        must_change_password: false,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`Could not randomize the local Gitea password (HTTP ${res.status})`);
+    }
+  }
+
   // Issues a personal access token (PAT) for git-over-HTTP cloning. Gitea
   // only creates tokens through Basic auth (username + password) — not via
   // the admin token or Sudo. SSO users don't know their Gitea password, so
@@ -231,7 +257,9 @@ export class GiteaService implements OnModuleInit, ScmProvider {
         `Could not provision a git token (set-password HTTP ${edit.status}) ${body.slice(0, 120)}`,
       );
     }
-    return this.createUserToken(username, tempPassword);
+    const token = await this.createUserToken(username, tempPassword);
+    await this.randomizeUserPassword(username);
+    return token;
   }
 
   // Deletes all versions of the project's container package (images in the
@@ -361,7 +389,9 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       { headers: { Authorization: `token ${token}` } },
     );
     if (res.status === 404) return null;
-    if (!res.ok) return null;
+    if (!res.ok) {
+      throw new Error(`Could not read '${path}' from ${actor.username}/${name} (HTTP ${res.status})`);
+    }
     const data = (await res.json()) as { content?: string; encoding?: string };
     if (!data.content) return null;
     return Buffer.from(data.content, data.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
