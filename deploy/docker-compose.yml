@@ -78,6 +78,14 @@ services:
       INITPAD_SCM_WEBHOOK_URL: http://api:3000
       INITPAD_REGISTRATION_MODE: ${INITPAD_REGISTRATION_MODE:-open}
       INITPAD_EDITION: ${INITPAD_EDITION:-self-hosted}
+      # GitHub App (hosted edition, optional; inert when unset).
+      INITPAD_GITHUB_APP_ID: ${INITPAD_GITHUB_APP_ID:-}
+      INITPAD_GITHUB_CLIENT_ID: ${INITPAD_GITHUB_CLIENT_ID:-}
+      INITPAD_GITHUB_CLIENT_SECRET: ${INITPAD_GITHUB_CLIENT_SECRET:-}
+      INITPAD_GITHUB_PRIVATE_KEY: ${INITPAD_GITHUB_PRIVATE_KEY:-}
+      INITPAD_GITHUB_WEBHOOK_SECRET: ${INITPAD_GITHUB_WEBHOOK_SECRET:-}
+      INITPAD_GITHUB_APP_SLUG: ${INITPAD_GITHUB_APP_SLUG:-}
+      INITPAD_GITHUB_CALLBACK_URL: ${INITPAD_GITHUB_CALLBACK_URL:-}
       # Addresses of deployed apps (browser) and health checks (from inside
       # this container → host-published ports via host.docker.internal).
       INITPAD_PUBLIC_HOST: ${INITPAD_PUBLIC_HOST:-localhost}
