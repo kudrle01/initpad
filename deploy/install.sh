@@ -237,13 +237,36 @@ fi
 # ---- 7. summary ---------------------------------------------------------------
 PUBLIC_URL=$(get_env INITPAD_PUBLIC_URL); PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
 GITEA_URL=$(get_env INITPAD_GITEA_PUBLIC_URL); GITEA_URL=${GITEA_URL:-http://gitea.localhost:3001}
-cat <<MSG
+EDITION=$(get_env INITPAD_EDITION); EDITION=${EDITION:-self-hosted}
+GH_CID=$(get_env INITPAD_GITHUB_CLIENT_ID)
+GH_SEC=$(get_env INITPAD_GITHUB_CLIENT_SECRET)
+GH_CB=$(get_env INITPAD_GITHUB_CALLBACK_URL)
+GITHUB_ON=no
+[ -n "$GH_CID" ] && [ -n "$GH_SEC" ] && [ -n "$GH_CB" ] && GITHUB_ON=yes
 
-  ✔ InitPad is running.
-
-    Platform   ${PUBLIC_URL}
-    Gitea      ${GITEA_URL}   (admin: ${BOT_USER} / password in deploy/.env)
-
-  Create an account in the web UI and start your first project.
-  Re-run ./install.sh anytime — it only fixes what is missing.
-MSG
+echo ""
+if [ "$EDITION" = "saas" ]; then
+  echo "  ✔ InitPad is running (SaaS edition)."
+  echo ""
+  echo "    Platform   ${PUBLIC_URL}"
+  echo ""
+  if [ "$GITHUB_ON" = "yes" ]; then
+    echo "  Sign in with GitHub on the platform to create your account."
+  else
+    echo "  ⚠ SaaS edition, but GitHub is not configured — set INITPAD_GITHUB_* in"
+    echo "    deploy/.env, otherwise there is no sign-in method available."
+  fi
+  echo "  Note: this stack still bundles Gitea internally (${GITEA_URL},"
+  echo "        admin: ${BOT_USER}); the GitHub deploy path is not complete yet —"
+  echo "        see CLAUDE_HANDOFF.md."
+else
+  echo "  ✔ InitPad is running."
+  echo ""
+  echo "    Platform   ${PUBLIC_URL}"
+  echo "    Gitea      ${GITEA_URL}   (admin: ${BOT_USER} / password in deploy/.env)"
+  echo ""
+  echo "  Create an account in the web UI and start your first project."
+  [ "$GITHUB_ON" = "yes" ] && echo "  GitHub sign-in and account linking are enabled."
+fi
+echo "  Re-run ./install.sh anytime — it only fixes what is missing."
+echo ""
