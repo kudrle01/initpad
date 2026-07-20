@@ -1,11 +1,10 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { TemplatesService } from '../templates/templates.service';
-import { ScmProvider, ScmActor, SCM_PROVIDER } from '../scm/scm-provider';
 import { templateRuntime } from '../domain/capability';
-import { decryptSecret } from '../common/secret';
 import { ImportPreflightDto } from './dto/import-project.dto';
+import { WorkspaceScmService } from '../scm/workspace-scm.service';
 
 const PROJECT_NAME = /^[a-z][a-z0-9-]{1,40}$/;
 
@@ -29,6 +28,7 @@ export interface ImportPreflight {
   branch: string;
   runtime: string;
   hasDockerfile: boolean;
+  hasCompatibleWorkflow: boolean;
   alreadyImported: boolean;
   canImport: boolean;
   warnings: string[];
@@ -46,19 +46,13 @@ export class ImportService {
     private readonly prisma: PrismaService,
     private readonly workspaces: WorkspacesService,
     private readonly templates: TemplatesService,
-    @Inject(SCM_PROVIDER) private readonly scm: ScmProvider,
+    private readonly workspaceScm: WorkspaceScmService,
   ) {}
-
-  private async actorFor(userId: string): Promise<ScmActor> {
-    const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    return { username: owner.username, token: decryptSecret(owner.accessToken) };
-  }
 
   async listImportable(userId: string, requestedWorkspaceId?: string): Promise<ImportableRepo[]> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspaceId, 'read');
-    const actor = await this.actorFor(userId);
-    const repos = await this.scm.listRepositories(actor);
+    const repos = await this.workspaceScm.listRepositories(userId, workspaceId);
     const existing = await this.prisma.project.findMany({
       where: { workspaceId },
       select: { scmProvider: true, scmRepositoryId: true, scmFullName: true },
@@ -85,12 +79,12 @@ export class ImportService {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspaceId, 'write');
     const template = this.templates.get(dto.templateId);
-    const actor = await this.actorFor(userId);
-
-    const repo = (await this.scm.listRepositories(actor)).find(
-      (candidate) => candidate.repositoryId === dto.repositoryId,
+    const { repo, actor } = await this.workspaceScm.repository(
+      userId,
+      workspaceId,
+      dto.repositoryId,
     );
-    if (!repo) throw new NotFoundException(`Repository '${dto.repositoryId}' not found`);
+    const scm = this.workspaceScm.provider(repo.provider);
 
     const runtime = templateRuntime(template);
     const warnings: string[] = [];
@@ -98,12 +92,27 @@ export class ImportService {
 
     const dockerfile = repo.empty
       ? null
-      : await this.scm.readFile(repo, 'Dockerfile', repo.defaultBranch, actor);
+      : await scm.readFile(repo, 'Dockerfile', repo.defaultBranch, actor);
     const hasDockerfile = dockerfile != null;
     // Runtime contract: everything but a static site builds from a Dockerfile.
     if (!hasDockerfile && runtime !== 'static') {
       warnings.push(
         `No Dockerfile on '${repo.defaultBranch}' — the '${template.name}' template builds the image from one.`,
+      );
+    }
+    const workflowPath = repo.provider === 'github'
+      ? '.github/workflows/ci.yml'
+      : '.gitea/workflows/ci.yml';
+    const workflow = repo.empty
+      ? null
+      : await scm.readFile(repo, workflowPath, repo.defaultBranch, actor);
+    const hasCompatibleWorkflow = Boolean(
+      workflow?.includes('INITPAD_PLATFORM_URL') &&
+      workflow.includes('INITPAD_DEPLOY_TOKEN'),
+    );
+    if (!hasCompatibleWorkflow) {
+      warnings.push(
+        `No InitPad-compatible workflow at '${workflowPath}' — add the CI callback before importing.`,
       );
     }
 
@@ -122,8 +131,14 @@ export class ImportService {
       branch: repo.defaultBranch,
       runtime,
       hasDockerfile,
+      hasCompatibleWorkflow,
       alreadyImported: nameTaken,
-      canImport: !repo.empty && !nameTaken && nameValid,
+      canImport:
+        !repo.empty &&
+        !nameTaken &&
+        nameValid &&
+        (runtime === 'static' || hasDockerfile) &&
+        hasCompatibleWorkflow,
       warnings,
     };
   }

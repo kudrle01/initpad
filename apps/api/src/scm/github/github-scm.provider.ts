@@ -36,6 +36,7 @@ import { GitHubUserCredentialService } from './github-user-credential.service';
 
 const READ_CONTENTS = { metadata: 'read', contents: 'read' };
 const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
+const READ_CHECKS = { metadata: 'read', contents: 'read', checks: 'read' };
 const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
 const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
 const WRITE_ADMINISTRATION = { metadata: 'read', administration: 'write' };
@@ -107,10 +108,14 @@ export class GitHubScmProvider implements ScmProvider {
   }
 
   async listRepositories(actor: ScmActor): Promise<ScmRepo[]> {
-    const installation = await this.installations.findByOwner(actor.username);
+    const installation = actor.installationId
+      ? await this.installations.findById(actor.installationId)
+      : await this.installations.findByOwner(actor.username);
     if (!installation) throw new Error(`No GitHub App installation found for '${actor.username}'`);
     const token = (
-      await this.installations.tokenForOwner(actor.username, { permissions: READ_CONTENTS })
+      actor.installationId
+        ? await this.installations.tokenForBinding(actor.installationId, { permissions: READ_CONTENTS })
+        : await this.installations.tokenForOwner(actor.username, { permissions: READ_CONTENTS })
     ).token;
     const repositories: Array<{
         id: number | string;
@@ -217,6 +222,43 @@ export class GitHubScmProvider implements ScmProvider {
     _actor: ScmActor,
   ): Promise<ScmCommitStatus[] | null> {
     this.assertProvider(repository);
+    try {
+      // GitHub Actions reports jobs as Check Runs, not classic commit
+      // statuses. Map that native model onto InitPad's provider-neutral shape.
+      const checksToken = await this.token(repository, READ_CHECKS);
+      const checksResponse = await this.gh(
+        `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`,
+        checksToken,
+      );
+      if (checksResponse.ok) {
+        const data = (await checksResponse.json()) as {
+          check_runs?: Array<{
+            name?: string;
+            status?: string;
+            conclusion?: string | null;
+            details_url?: string | null;
+          }>;
+        };
+        const checks = data.check_runs ?? [];
+        if (checks.length > 0) {
+          return checks.map((check) => ({
+            context: check.name ?? '',
+            status:
+              check.status !== 'completed'
+                ? 'pending'
+                : check.conclusion === 'success'
+                  ? 'success'
+                  : check.conclusion === 'skipped' || check.conclusion === 'neutral'
+                    ? 'pending'
+                    : 'failure',
+            targetUrl: check.details_url ?? null,
+          }));
+        }
+      }
+    } catch {
+      // Older App registrations may not yet grant Checks:read. Preserve the
+      // classic-status fallback while the administrator updates permissions.
+    }
     try {
       const token = await this.token(repository, READ_STATUSES);
       const res = await this.gh(
@@ -394,13 +436,17 @@ export class GitHubScmProvider implements ScmProvider {
       throw new Error('The selected GitHub App installation has an unsupported account type');
     }
 
-    const createToken = installation.accountType === 'Organization'
-      ? (
+    let createToken: string;
+    if (installation.accountType === 'Organization') {
+      createToken = (
           await this.installations.tokenForBinding(installation.id, {
             permissions: WRITE_ADMINISTRATION,
           })
-        ).token
-      : await this.userCredentials.accessTokenForUser(target.userId);
+        ).token;
+    } else {
+      await this.userCredentials.assertAccountForUser(target.userId, installation.accountId);
+      createToken = await this.userCredentials.accessTokenForUser(target.userId);
+    }
     const path = installation.accountType === 'Organization'
       ? `/orgs/${encodeURIComponent(installation.accountLogin)}/repos`
       : '/user/repos';
@@ -420,7 +466,7 @@ export class GitHubScmProvider implements ScmProvider {
       full_name?: string;
       html_url?: string;
       owner?: { id?: number | string; login?: string };
-    };
+    } = {};
     try {
       created = (await response.json()) as typeof created;
       if (
@@ -436,17 +482,19 @@ export class GitHubScmProvider implements ScmProvider {
       }
     } catch (error) {
       // HTTP 201 proves this request created the repo. Even if the response is
-      // malformed, clean up the deterministic destination to avoid an orphan.
-      await this.deleteRepo({
-        provider: 'github',
-        repositoryId: null,
-        owner: installation.accountLogin,
-        name,
-        fullName: `${installation.accountLogin}/${name}`,
-        defaultBranch: 'main',
-        repoUrl: null,
-        installationId: installation.id,
-      }, actor).catch((cleanupError) => {
+      // malformed, delete it with the same credential that created it. This is
+      // important for personal repos: an installation token for another
+      // account must never be used as a best-effort cleanup credential.
+      const cleanupOwner = created?.owner?.login || installation.accountLogin;
+      await this.gh(
+        `/repos/${encodeURIComponent(cleanupOwner)}/${encodeURIComponent(name)}`,
+        createToken,
+        { method: 'DELETE' },
+      ).then((cleanupResponse) => {
+        if (!cleanupResponse.ok && cleanupResponse.status !== 404) {
+          throw new Error(`GitHub repository cleanup failed (HTTP ${cleanupResponse.status})`);
+        }
+      }).catch((cleanupError) => {
         this.logger.error(
           `GitHub repository rollback failed after an invalid response: ${(cleanupError as Error).message}`,
         );

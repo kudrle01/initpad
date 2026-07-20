@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Check, Rocket, ArrowRight, Container, DownloadCloud } from 'lucide-react';
-import { api, type EnvConfig } from '@/api';
+import { Check, Rocket, ArrowRight, Container, DownloadCloud, Github } from 'lucide-react';
+import { api, type EnvConfig, type GitHubStatus } from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ function usable(target: Target, template: TemplateManifest): boolean {
 export default function NewProject() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { activeWorkspace } = useAuth();
+  const { activeWorkspace, user } = useAuth();
   const readOnly = activeWorkspace?.role === 'viewer';
   const [params] = useSearchParams();
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
@@ -38,9 +38,12 @@ export default function NewProject() {
   const [name, setName] = useState('my-project');
   const [templateId, setTemplateId] = useState<string>('');
   const [prodTargetId, setProdTargetId] = useState<string>('');
+  const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
+  const [scmInstallationId, setScmInstallationId] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const validName = /^[a-z][a-z0-9-]{1,40}$/.test(name);
+  const hosted = user?.edition === 'saas';
 
   const template = useMemo(
     () => templates.find((t) => t.id === templateId),
@@ -57,10 +60,31 @@ export default function NewProject() {
     [targets],
   );
 
+  const selectedInstallation = useMemo(
+    () => ghStatus?.installations.find((installation) => installation.id === scmInstallationId) ?? null,
+    [ghStatus, scmInstallationId],
+  );
+  const githubReady = !hosted || Boolean(
+    ghStatus?.linked &&
+    selectedInstallation &&
+    !selectedInstallation.suspended &&
+    selectedInstallation.canCreate &&
+    (selectedInstallation.accountType === 'Organization' || ghStatus.credentialReady),
+  );
+
   useEffect(() => {
-    Promise.all([api.listTemplates(), api.listTargets()]).then(([t, tg]) => {
+    Promise.all([
+      api.listTemplates(),
+      api.listTargets(),
+      hosted ? api.githubStatus() : Promise.resolve(null),
+    ]).then(([t, tg, github]) => {
       setTemplates(t);
       setTargets(tg);
+      setGhStatus(github);
+      const firstInstallation = github?.installations.find(
+        (installation) => !installation.suspended && installation.canCreate,
+      );
+      setScmInstallationId(firstInstallation?.id ?? '');
       // "Use template" on the Templates page preselects a template via ?template=id.
       const wanted = params.get('template');
       const preselected = wanted && t.find((x) => x.id === wanted);
@@ -68,7 +92,7 @@ export default function NewProject() {
       else if (t[0]) setTemplateId(t[0].id);
     }).catch((error) => setLoadError((error as Error).message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hosted, activeWorkspace?.id]);
 
   // Default prod to the template's natural target (static→SFTP, node→SSH,
   // otherwise Docker); the user can change it here or later.
@@ -85,7 +109,7 @@ export default function NewProject() {
   }, [template, targets]);
 
   async function submit() {
-    if (readOnly || !validName || !templateId) return;
+    if (readOnly || !validName || !templateId || !githubReady) return;
     setBusy(true);
     try {
       // dev/test use the built-in infra by default (server-side); prod uses the
@@ -95,7 +119,12 @@ export default function NewProject() {
         { name: 'test' },
         { name: 'prod', targetId: prodTargetId || undefined },
       ];
-      const project = await api.createProject(name, templateId, environments);
+      const project = await api.createProject(
+        name,
+        templateId,
+        environments,
+        hosted ? scmInstallationId : undefined,
+      );
       toast.success('Project created');
       navigate(`/projects/${project.id}`);
     } catch (e) {
@@ -130,6 +159,53 @@ export default function NewProject() {
           error={name && !validName ? 'Use 2–41 lowercase letters, digits or hyphens; start with a letter.' : null}
           aria-invalid={name && !validName ? true : undefined}
         />
+
+        {hosted && (
+          <div className="flex max-w-md flex-col gap-1.5">
+            <Label htmlFor="repository-owner">GitHub repository owner</Label>
+            {ghStatus?.linked && ghStatus.installations.length > 0 ? (
+              <>
+                <Select
+                  id="repository-owner"
+                  value={scmInstallationId}
+                  aria-label="GitHub repository owner"
+                  onChange={(event) => setScmInstallationId(event.target.value)}
+                >
+                  <option value="" disabled>Choose an account or organization…</option>
+                  {ghStatus.installations.map((installation) => (
+                    <option
+                      key={installation.id}
+                      value={installation.id}
+                      disabled={installation.suspended || !installation.canCreate}
+                    >
+                      {installation.accountLogin} · {installation.accountType.toLowerCase()}
+                      {installation.suspended ? ' · suspended' : ''}
+                      {!installation.canCreate ? ' · account owner only' : ''}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  InitPad creates a private repository in this GitHub account. Only installations
+                  authorized for {activeWorkspace?.name ?? 'this workspace'} are shown.
+                </p>
+              </>
+            ) : (
+              <div className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
+                <Github className="mr-2 inline h-4 w-4" />
+                {!ghStatus?.linked
+                  ? 'Link GitHub before creating a hosted project.'
+                  : 'Authorize a GitHub App installation for this workspace first.'}{' '}
+                <Link to="/settings" className="font-medium text-primary hover:underline">Open Settings</Link>
+              </div>
+            )}
+            {selectedInstallation?.accountType === 'User' && !ghStatus?.credentialReady && (
+              <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-muted-foreground">
+                Renew your GitHub authorization in <Link to="/settings" className="font-medium text-primary hover:underline">Settings</Link>{' '}
+                before InitPad can create a repository in your personal account.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <Label>Template</Label>
@@ -219,7 +295,7 @@ export default function NewProject() {
         </div>
 
         <div>
-          <Button disabled={readOnly || busy || !templateId || !validName || !!loadError} onClick={submit}>
+          <Button disabled={readOnly || busy || !templateId || !validName || !githubReady || !!loadError} onClick={submit}>
             {busy ? <Spinner className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}
             {busy ? 'Creating…' : 'Create project'}
           </Button>
@@ -232,7 +308,7 @@ export default function NewProject() {
             <Spinner className="h-7 w-7 text-primary" />
             <div className="text-sm font-semibold">Setting up “{name}”</div>
             <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
-              <li>Creating Git repository</li>
+              <li>Creating {hosted ? 'GitHub' : 'Gitea'} repository</li>
               <li>Generating project scaffold</li>
               <li>Configuring CI and deployment secrets</li>
             </ul>

@@ -32,6 +32,7 @@ function make(fetchImpl: jest.Mock) {
     tokenForBinding: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })),
   };
   const userCredentials = {
+    assertAccountForUser: jest.fn(async () => undefined),
     accessTokenForUser: jest.fn(async () => 'ghu_user'),
   };
   global.fetch = fetchImpl as never;
@@ -125,6 +126,25 @@ describe('GitHubScmProvider reads', () => {
 
     const statuses = make(jest.fn(async () => ({ ok: true, json: async () => ({ statuses: [{ context: 'ci', state: 'success', target_url: 'https://x' }] }) })));
     expect(await statuses.provider.listCommitStatuses(repository(), 'abc', actor)).toEqual([{ context: 'ci', status: 'success', targetUrl: 'https://x' }]);
+  });
+
+  it('maps GitHub Actions check runs before classic statuses', async () => {
+    const checks = make(jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        check_runs: [
+          { name: 'build', status: 'completed', conclusion: 'success', details_url: 'https://x/build' },
+          { name: 'test', status: 'in_progress', conclusion: null, details_url: 'https://x/test' },
+        ],
+      }),
+    })));
+    await expect(checks.provider.listCommitStatuses(repository(), 'abc', actor)).resolves.toEqual([
+      { context: 'build', status: 'success', targetUrl: 'https://x/build' },
+      { context: 'test', status: 'pending', targetUrl: 'https://x/test' },
+    ]);
+    expect(checks.installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: { metadata: 'read', contents: 'read', checks: 'read' },
+    });
   });
 
   it('requires an explicit workspace-authorized installation for provisioning', async () => {
@@ -270,6 +290,7 @@ describe('GitHubScmProvider writes', () => {
     expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers)
       .toMatchObject({ Authorization: 'Bearer ghu_user' });
     expect(userCredentials.accessTokenForUser).toHaveBeenCalledWith('user-1');
+    expect(userCredentials.assertAccountForUser).toHaveBeenCalledWith('user-1', '987654');
     expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
       permissions: {
         metadata: 'read', contents: 'write', workflows: 'write',

@@ -2,14 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.dto';
 import { AddWorkspaceMemberDto, AssignableRole, UpdateWorkspaceMemberDto } from './dto/member.dto';
-import { repositoryRef, ScmProvider, SCM_PROVIDER } from '../scm/scm-provider';
+import { repositoryRef } from '../scm/scm-provider';
+import { WorkspaceScmService } from '../scm/workspace-scm.service';
 
 const REPOSITORY_SELECT = {
   scmProvider: true,
@@ -36,7 +36,7 @@ const PERMISSIONS: Record<WorkspacePermission, ReadonlySet<WorkspaceRole>> = {
 export class WorkspacesService {
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(SCM_PROVIDER) private readonly scm: ScmProvider,
+    private readonly workspaceScm: WorkspaceScmService,
   ) {}
 
   async list(userId: string) {
@@ -177,7 +177,7 @@ export class WorkspacesService {
       where: { workspaceId_userId: { workspaceId, userId: member.id } },
     });
     if (existing) throw new ConflictException('User is already a workspace member');
-    await this.attachMember(workspaceId, member.id, member.username, dto.role);
+    await this.attachMember(workspaceId, member.id, dto.role);
     return this.members(userId, workspaceId);
   }
 
@@ -189,16 +189,15 @@ export class WorkspacesService {
   async attachMember(
     workspaceId: string,
     memberUserId: string,
-    username: string,
     role: AssignableRole,
   ): Promise<void> {
     await this.prisma.workspaceMember.create({
       data: { workspaceId, userId: memberUserId, role },
     });
     try {
-      await this.syncRepositoryAccess(workspaceId, username, role);
+      await this.syncRepositoryAccess(workspaceId, memberUserId, role);
     } catch (error) {
-      await this.revokeRepositoryAccess(workspaceId, username).catch(() => undefined);
+      await this.revokeRepositoryAccess(workspaceId, memberUserId).catch(() => undefined);
       await this.prisma.workspaceMember.delete({
         where: { workspaceId_userId: { workspaceId, userId: memberUserId } },
       });
@@ -215,11 +214,10 @@ export class WorkspacesService {
     await this.require(userId, workspaceId, 'admin');
     const member = await this.memberOrThrow(workspaceId, memberId);
     if (member.role === 'owner') throw new BadRequestException('Workspace owner role cannot be changed');
-    const username = (await this.prisma.user.findUniqueOrThrow({ where: { id: memberId } })).username;
     try {
-      await this.syncRepositoryAccess(workspaceId, username, dto.role);
+      await this.syncRepositoryAccess(workspaceId, memberId, dto.role);
     } catch (error) {
-      await this.syncRepositoryAccess(workspaceId, username, member.role).catch(() => undefined);
+      await this.syncRepositoryAccess(workspaceId, memberId, member.role).catch(() => undefined);
       throw error;
     }
     try {
@@ -228,7 +226,7 @@ export class WorkspacesService {
         data: { role: dto.role },
       });
     } catch (error) {
-      await this.syncRepositoryAccess(workspaceId, username, member.role).catch(() => undefined);
+      await this.syncRepositoryAccess(workspaceId, memberId, member.role).catch(() => undefined);
       throw error;
     }
     return this.members(userId, workspaceId);
@@ -238,14 +236,13 @@ export class WorkspacesService {
     await this.require(userId, workspaceId, 'admin');
     const member = await this.memberOrThrow(workspaceId, memberId);
     if (member.role === 'owner') throw new BadRequestException('Workspace owner cannot be removed');
-    const username = (await this.prisma.user.findUniqueOrThrow({ where: { id: memberId } })).username;
     try {
-      await this.revokeRepositoryAccess(workspaceId, username);
+      await this.revokeRepositoryAccess(workspaceId, memberId);
       await this.prisma.workspaceMember.delete({
         where: { workspaceId_userId: { workspaceId, userId: memberId } },
       });
     } catch (error) {
-      await this.syncRepositoryAccess(workspaceId, username, member.role).catch(() => undefined);
+      await this.syncRepositoryAccess(workspaceId, memberId, member.role).catch(() => undefined);
       throw error;
     }
   }
@@ -258,23 +255,33 @@ export class WorkspacesService {
     return member;
   }
 
-  private async syncRepositoryAccess(workspaceId: string, username: string, role: string): Promise<void> {
+  private async syncRepositoryAccess(workspaceId: string, memberUserId: string, role: string): Promise<void> {
     const projects = await this.prisma.project.findMany({
       where: { workspaceId },
       select: REPOSITORY_SELECT,
     });
     for (const project of projects) {
-      await this.scm.setCollaborator(repositoryRef(project), username, role);
+      const repository = repositoryRef(project);
+      const username = await this.workspaceScm.collaboratorUsername(
+        memberUserId,
+        repository.provider,
+      );
+      await this.workspaceScm.provider(repository.provider).setCollaborator(repository, username, role);
     }
   }
 
-  private async revokeRepositoryAccess(workspaceId: string, username: string): Promise<void> {
+  private async revokeRepositoryAccess(workspaceId: string, memberUserId: string): Promise<void> {
     const projects = await this.prisma.project.findMany({
       where: { workspaceId },
       select: REPOSITORY_SELECT,
     });
     for (const project of projects) {
-      await this.scm.removeCollaborator(repositoryRef(project), username);
+      const repository = repositoryRef(project);
+      const username = await this.workspaceScm.collaboratorUsername(
+        memberUserId,
+        repository.provider,
+      );
+      await this.workspaceScm.provider(repository.provider).removeCollaborator(repository, username);
     }
   }
 }

@@ -11,6 +11,9 @@
 export interface ScmActor {
   username: string;
   token: string;
+  // Internal installation binding used when a user/workspace can access more
+  // than one GitHub account. Gitea ignores it.
+  installationId?: string;
 }
 
 export type ScmKind = 'gitea' | 'github';

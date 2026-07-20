@@ -20,6 +20,7 @@ describe('GitHubStatusController', () => {
       installations as never,
       app as never,
       workspaces as never,
+      { isReadyForUser: jest.fn(async () => true) } as never,
     );
 
     const result = await controller.status('user-1', 'workspace-1');
@@ -34,6 +35,7 @@ describe('GitHubStatusController', () => {
       { listForWorkspace: jest.fn(async () => []) } as never,
       { isConfigured: jest.fn(() => true) } as never,
       { resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'member' })) } as never,
+      { isReadyForUser: jest.fn(async () => true) } as never,
     );
     await expect(controller.status('user-1', 'workspace-1')).resolves.toMatchObject({
       canInstall: false,

@@ -88,7 +88,11 @@ describe('WorkspacesService tenant isolation', () => {
       },
     };
     const gitea = { setCollaborator: jest.fn(async () => undefined) };
-    const service = new WorkspacesService(prisma as never, gitea as never);
+    const workspaceScm = {
+      collaboratorUsername: jest.fn(async () => 'bob'),
+      provider: jest.fn(() => gitea),
+    };
+    const service = new WorkspacesService(prisma as never, workspaceScm as never);
     jest.spyOn(service, 'require').mockResolvedValue('admin');
 
     await service.addMember('admin', 'team', { identity: 'bob', role: 'viewer' });

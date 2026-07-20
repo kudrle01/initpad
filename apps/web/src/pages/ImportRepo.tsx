@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Check, DownloadCloud } from 'lucide-react';
-import { api } from '@/api';
+import { AlertTriangle, ArrowLeft, Check, DownloadCloud, Github } from 'lucide-react';
+import { api, type GitHubStatus } from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
@@ -16,8 +16,9 @@ import type { ImportableRepo, ImportPreflight, TemplateManifest } from '@/types'
 export default function ImportRepo() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { activeWorkspace } = useAuth();
+  const { activeWorkspace, user } = useAuth();
   const readOnly = activeWorkspace?.role === 'viewer';
+  const hosted = user?.edition === 'saas';
 
   const [repos, setRepos] = useState<ImportableRepo[]>([]);
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
@@ -27,18 +28,24 @@ export default function ImportRepo() {
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
 
   useEffect(() => {
-    Promise.all([api.listImportableRepos(), api.listTemplates()])
-      .then(([r, t]) => {
+    Promise.all([
+      api.listImportableRepos(),
+      api.listTemplates(),
+      hosted ? api.githubStatus() : Promise.resolve(null),
+    ])
+      .then(([r, t, github]) => {
         setRepos(r);
         setTemplates(t);
+        setGhStatus(github);
         if (t[0]) setTemplateId(t[0].id);
         const firstImportable = r.find((x) => !x.alreadyImported && !x.empty);
         if (firstImportable) setRepositoryId(firstImportable.repositoryId);
       })
       .catch((e) => setLoadError((e as Error).message));
-  }, []);
+  }, [hosted, activeWorkspace?.id]);
 
   // A fresh choice invalidates the previous preflight.
   useEffect(() => setPreflight(null), [repositoryId, templateId]);
@@ -112,7 +119,15 @@ export default function ImportRepo() {
             ))}
           </Select>
           {repos.length === 0 && !loadError && (
-            <p className="text-xs text-muted-foreground">No repositories available to import.</p>
+            hosted && ghStatus?.installations.length === 0 ? (
+              <p className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
+                <Github className="mr-2 inline h-4 w-4" />
+                No GitHub installation is authorized for this workspace.{' '}
+                <Link to="/settings" className="font-medium text-primary hover:underline">Open Settings</Link>
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">No repositories available to import.</p>
+            )
           )}
         </div>
 
@@ -145,6 +160,8 @@ export default function ImportRepo() {
               <dd className="font-medium">{preflight.runtime}</dd>
               <dt className="text-muted-foreground">Dockerfile</dt>
               <dd className="font-medium">{preflight.hasDockerfile ? 'found' : 'not found'}</dd>
+              <dt className="text-muted-foreground">InitPad workflow</dt>
+              <dd className="font-medium">{preflight.hasCompatibleWorkflow ? 'compatible' : 'not found'}</dd>
             </dl>
             {preflight.warnings.length > 0 && (
               <ul className="mt-4 flex flex-col gap-1.5">

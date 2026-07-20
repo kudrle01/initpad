@@ -43,6 +43,25 @@ export interface DeleteProjectOptions {
   confirmCleanupDebt: boolean;
 }
 
+export interface GitHubStatus {
+  enabled: boolean;
+  appConfigured: boolean;
+  linked: boolean;
+  login: string | null;
+  credentialReady: boolean;
+  canInstall: boolean;
+  installation: { present: boolean; suspended: boolean };
+  installations: Array<{
+    id: string;
+    accountId: string | null;
+    accountLogin: string;
+    accountType: string;
+    repositorySelection: string;
+    suspended: boolean;
+    canCreate: boolean;
+  }>;
+}
+
 const BASE = '/api';
 
 // Error carrying the HTTP status, so callers can distinguish "gone" (404)
@@ -105,10 +124,15 @@ export const api = {
     http<ProvisioningStatus | null>(`/projects/${id}/provisioning`),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
   getActivity: () => http<ActivityEvent[]>('/activity'),
-  createProject: (name: string, templateId: string, environments: EnvConfig[]) =>
+  createProject: (
+    name: string,
+    templateId: string,
+    environments: EnvConfig[],
+    scmInstallationId?: string,
+  ) =>
     http<Project>('/projects', {
       method: 'POST',
-      body: JSON.stringify({ name, templateId, environments }),
+      body: JSON.stringify({ name, templateId, environments, scmInstallationId }),
     }),
   listImportableRepos: () => http<ImportableRepo[]>('/projects/import/repos'),
   importPreflight: (repositoryId: string, templateId: string) =>
@@ -168,22 +192,7 @@ export const api = {
   unlinkIdentity: (provider: string) =>
     http<void>(`/me/identities/${provider}`, { method: 'DELETE' }),
   githubStatus: () =>
-    http<{
-      enabled: boolean;
-      appConfigured: boolean;
-      linked: boolean;
-      login: string | null;
-      canInstall: boolean;
-      installation: { present: boolean; suspended: boolean };
-      installations: Array<{
-        id: string;
-        accountId: string | null;
-        accountLogin: string;
-        accountType: string;
-        repositorySelection: string;
-        suspended: boolean;
-      }>;
-    }>('/scm/github/status'),
+    http<GitHubStatus>('/scm/github/status'),
   startGithubSetup: () =>
     http<{ installUrl: string }>('/scm/github/setup', { method: 'POST' }),
   recoverGithubSetup: () =>

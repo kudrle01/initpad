@@ -135,6 +135,39 @@ export class GitHubUserCredentialService {
     throw new GitHubCredentialRefreshInProgressError();
   }
 
+  /** Read-only preflight for UI; never returns or refreshes credential data. */
+  async isReadyForUser(userId: string): Promise<boolean> {
+    const identity = await this.prisma.externalIdentity.findUnique({
+      where: { provider_userId: { provider: 'github', userId } },
+      select: {
+        accessTokenEncrypted: true,
+        accessTokenExpiresAt: true,
+        refreshTokenEncrypted: true,
+        refreshTokenExpiresAt: true,
+      },
+    });
+    if (!identity?.accessTokenEncrypted) return false;
+    if (!identity.accessTokenExpiresAt || identity.accessTokenExpiresAt.getTime() > Date.now()) {
+      return true;
+    }
+    return Boolean(
+      identity.refreshTokenEncrypted &&
+      identity.refreshTokenExpiresAt &&
+      identity.refreshTokenExpiresAt.getTime() > Date.now(),
+    );
+  }
+
+  /** Defense in depth for personal-repository creation. */
+  async assertAccountForUser(userId: string, providerUserId: string): Promise<void> {
+    const identity = await this.prisma.externalIdentity.findUnique({
+      where: { provider_userId: { provider: 'github', userId } },
+      select: { providerUserId: true },
+    });
+    if (!identity || identity.providerUserId !== providerUserId) {
+      throw new GitHubReauthorizationRequiredError();
+    }
+  }
+
   /** GitHub tells us immutable sender.id when App authorization is revoked. */
   async revokeByProviderUserId(providerUserId: string): Promise<void> {
     await this.prisma.externalIdentity.updateMany({

@@ -1,46 +1,25 @@
 import { Module } from '@nestjs/common';
-import { GitHubAppService } from './github-app.service';
-import { GitHubOAuthService } from './github-oauth.service';
-import { GitHubInstallationService } from './github-installation.service';
-import { GitHubScmProvider } from './github-scm.provider';
-import { ScmRegistry } from './scm-registry';
 import { GitHubAuthController } from './github-auth.controller';
 import { GitHubWebhookController } from './github-webhook.controller';
 import { GitHubStatusController } from './github-status.controller';
 import { AuthModule } from '../../auth/auth.module';
 import { IdentityModule } from '../../identity/identity.module';
-import { ScmModule } from '../scm.module';
 import { WorkspacesModule } from '../../workspaces/workspaces.module';
 import { GitHubSetupController } from './github-setup.controller';
-import { GitHubUserCredentialService } from './github-user-credential.service';
+import { GitHubCoreModule } from './github-core.module';
 
 // GitHub App integration for the hosted edition. Inert without credentials.
 // AuthModule provides AuthService + JwtService; IdentityModule provides
-// ExternalIdentityService; ScmModule provides the Gitea adapter the registry
-// selects alongside the GitHub one.
+// ExternalIdentityService. Provider services live in GitHubCoreModule so the
+// project/workspace domains can use the registry without importing controllers.
 @Module({
-  imports: [AuthModule, IdentityModule, ScmModule, WorkspacesModule],
+  imports: [AuthModule, IdentityModule, GitHubCoreModule, WorkspacesModule],
   controllers: [
     GitHubAuthController,
     GitHubWebhookController,
     GitHubStatusController,
     GitHubSetupController,
   ],
-  providers: [
-    GitHubAppService,
-    GitHubOAuthService,
-    GitHubInstallationService,
-    GitHubUserCredentialService,
-    GitHubScmProvider,
-    ScmRegistry,
-  ],
-  exports: [
-    GitHubAppService,
-    GitHubOAuthService,
-    GitHubInstallationService,
-    GitHubUserCredentialService,
-    GitHubScmProvider,
-    ScmRegistry,
-  ],
+  exports: [GitHubCoreModule],
 })
 export class GitHubModule {}

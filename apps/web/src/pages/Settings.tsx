@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { GitBranch, KeyRound, ExternalLink, ShieldAlert, Users, Plus, Trash2, Mail, Github, CircleCheck } from 'lucide-react';
-import { api } from '@/api';
+import { api, type GitHubStatus } from '@/api';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { CopyField } from '@/components/molecules/CopyField';
@@ -63,18 +63,7 @@ export default function Settings() {
   const [githubEnabled, setGithubEnabled] = useState(false);
   const [githubSetupBusy, setGithubSetupBusy] = useState(false);
   const [identities, setIdentities] = useState<LinkedIdentity[]>([]);
-  const [ghStatus, setGhStatus] = useState<{
-    appConfigured: boolean;
-    canInstall: boolean;
-    installation: { present: boolean; suspended: boolean };
-    installations: Array<{
-      id: string;
-      accountLogin: string;
-      accountType: string;
-      repositorySelection: string;
-      suspended: boolean;
-    }>;
-  } | null>(null);
+  const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
   const { user, activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
@@ -452,6 +441,12 @@ export default function Settings() {
                             ? 'Add installation'
                             : 'Install GitHub App'}
                         {!githubSetupBusy && <ExternalLink className="ml-1 h-3.5 w-3.5" />}
+                      </Button>
+                    )}
+                    {ghStatus && !ghStatus.credentialReady && (
+                      <Button variant="secondary" size="sm" onClick={linkGithub}>
+                        Renew authorization
+                        <ExternalLink className="ml-1 h-3.5 w-3.5" />
                       </Button>
                     )}
                     <Button

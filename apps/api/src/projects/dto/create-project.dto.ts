@@ -38,4 +38,10 @@ export class CreateProjectDto {
   @ValidateNested({ each: true })
   @Type(() => EnvironmentConfigDto)
   environments?: EnvironmentConfigDto[];
+
+  // Required by the SaaS edition. The API verifies that the installation is
+  // active and explicitly granted to the current workspace.
+  @IsOptional()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+  scmInstallationId?: string;
 }

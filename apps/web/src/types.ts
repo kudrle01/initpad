@@ -80,6 +80,7 @@ export interface ImportPreflight {
   branch: string;
   runtime: string;
   hasDockerfile: boolean;
+  hasCompatibleWorkflow: boolean;
   alreadyImported: boolean;
   canImport: boolean;
   warnings: string[];

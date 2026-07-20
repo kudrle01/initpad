@@ -77,6 +77,39 @@ describe('GitHubUserCredentialService', () => {
     expect(oauth.refreshUserToken).not.toHaveBeenCalled();
   });
 
+  it('reports credential readiness without decrypting or refreshing it', async () => {
+    const oauth = { refreshUserToken: jest.fn() };
+    const service = new GitHubUserCredentialService(
+      {
+        externalIdentity: {
+          findUnique: jest.fn(async () => identity({
+            accessTokenExpiresAt: new Date(Date.now() - 1_000),
+            refreshTokenEncrypted: encryptSecret('ghr_valid'),
+            refreshTokenExpiresAt: new Date(Date.now() + 60_000),
+          })),
+        },
+      } as never,
+      oauth as never,
+    );
+
+    await expect(service.isReadyForUser('user-1')).resolves.toBe(true);
+    expect(oauth.refreshUserToken).not.toHaveBeenCalled();
+  });
+
+  it('binds a personal create credential to the immutable GitHub account id', async () => {
+    const service = new GitHubUserCredentialService(
+      {
+        externalIdentity: {
+          findUnique: jest.fn(async () => ({ providerUserId: 'github-user-1' })),
+        },
+      } as never,
+      {} as never,
+    );
+    await expect(
+      service.assertAccountForUser('user-1', 'different-github-user'),
+    ).rejects.toBeInstanceOf(GitHubReauthorizationRequiredError);
+  });
+
   it('claims and atomically rotates an expired token pair', async () => {
     const calls: Array<Record<string, unknown>> = [];
     const updateMany = jest.fn(async (input: Record<string, unknown>) => {

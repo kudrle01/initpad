@@ -154,13 +154,16 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
   stavem a přesnou shodou immutable GitHub user ID; organizace tento fallback
   z bezpečnostních důvodů nepoužívá. Organizační callback místo toho provede
   user-bound OAuth kontrolu `/user/installations`; krátkodobý token se neukládá.
-- `GitHubScmProvider` má čtecí i repository provision operace, ale projektová
-  doména jej zatím nepoužívá. Adapter umí stránkování, přesný archiv,
+- `GitHubScmProvider` má čtecí i repository provision operace a projektová
+  doména je vybírá přes `ScmRegistry` podle edice/uloženého provideru. Adapter
+  umí stránkování, přesný archiv,
   personal/org create, bezpečný scaffold push, user/org GHCR cleanup a
   sealed-box Actions secrets přes `libsodium-wrappers`. Sdílený workflow se pro
   GitHub převede na `.github/workflows` a GHCR použije krátkodobý `GITHUB_TOKEN`.
-  Existence `ScmRegistry` sama o sobě stále neznamená podporu vytvoření nebo
-  importu GitHub projektu přes UI.
+  New project v SaaS nabízí pouze aktivní instalace autorizované pro workspace;
+  self-hosted tok žádný provider switch nemá a zůstává na Gitea.
+  Osobní destinaci může použít jen vlastník stejného immutable GitHub účtu;
+  organizační grant je sdílený členům workspace podle RBAC.
 - GitHub App user-token vault bezpečně ukládá odděleně šifrovaný access a
   refresh token, rotuje jednorázový refresh pair pod databázovým lease a maže jej
   při unlink/revocation. OAuth login/link credential obnoví; organization setup
@@ -179,10 +182,12 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 3. ✅ Dokončit GitHub `provision` a push scaffoldu. Osobní create používá
    rotovatelný user token, organizace operation-scoped installation token;
    secrets vzniknou před pushem a chyba provede kompenzační delete.
-4. Napojit create/import a všechny následné operace přes `ScmRegistry` podle
-   provideru projektu. Preflight musí proběhnout i serverově a rollback musí
-   evidovat nebo uklidit každý již provedený externí efekt.
-5. Teprve potom dokončit migrace v cílových prostředích, živý GitHub App E2E a browser
+4. ◐ Create/import, CI callback, reconcile, commity/statusy, retry tag, archiv,
+   členství a delete/detach jsou napojené přes `ScmRegistry`. Server znovu
+   ověřuje workspace grant instalace a import vyžaduje Dockerfile (mimo static)
+   i provider-specific InitPad workflow. Zbývá úplný effect journal/kompenzace
+   částečných změn při importu a produkční artifact transport pro privátní GHCR.
+5. Potom dokončit migrace v cílových prostředích, živý GitHub App E2E a browser
    acceptance: login, instalace pro vybrané repo, create/import, CI, odebrání
    instalace, rename ownera a dvě repa se stejným názvem.
 
@@ -284,7 +289,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
 | 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 403. |
 | 4 — identity/onboarding | ano | Self-hosted `open`: samoobslužná registrace. Self-hosted soukromě: admin vytvoří účet a předá aktivační odkaz nebo dočasné heslo s vynucenou změnou. SaaS: pouze GitHub login. Majitel přidá do týmu existující účet podle e-mailu; role platí i v SCM. |
-| 5 — import repa/SCM | částečně | Dnes: po migraci musí stávající Gitea projekty beze změny URL projít detail/import/deploy/delete a nový import vybírá repo podle ID. Se živou App lze uživatelsky ověřit osobní i organizační workspace instalaci, owner/admin omezení, rename a uninstall; GitHub create/import ještě není hotový a plný cloudový scénář čeká na další podkroky Fáze 3. |
+| 5 — import repa/SCM | částečně | Self-hosted: stávající Gitea projekty beze změny URL projdou detail/import/deploy/delete. SaaS se živou App: New project nabídne osobní/organizační instalace aktivního workspace, založí soukromé GitHub repo a import vypíše repa všech grantů; cizí workspace installation ID musí vrátit 400. Import bez Dockerfile/InitPad workflow je zablokovaný. Ověřit commity/check runs, retry a delete/detach. Plný cloudový deploy privátního image čeká na artifact registry/agent podkrok. |
 | 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
 | 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. |
@@ -387,9 +392,45 @@ proti běžící instalaci; testovatelné scénáře:
 - Ověřeno automatizovaně: personal/org credential selection, workflow
   transformace, rollback a stávající read/write operace; celkem 34 suites /
   207 testů a API production build.
-- Uživatelsky tento interní adapter ještě samostatně otestovat nejde. Tlačítko
-  New project jej začne používat až v podkroku 4 (`ScmRegistry` routing); do té
-  doby stávající create zůstává bezpečně na Gitea cestě.
+- V okamžiku tohoto adapterového commitu ještě neexistoval UI tok; následující
+  routing podkrok jej již zapojil do New project/import.
+
+### SCM routing a GitHub create/import podkrok Fáze 3 (2026-07-20)
+
+- Edice je produktové rozhodnutí, ne volba v projektu: self-hosted create/import
+  používá Gitea, SaaS GitHub. New project v SaaS zobrazuje osobní/organizační
+  instalace autorizované pro aktivní workspace a API jejich grant ověří znovu.
+- Projektové operace po vytvoření vybírají adapter z uloženého provideru:
+  reconcile, CI callback, commity a GitHub Check Runs, retry tag, archiv,
+  synchronizace rolí, package cleanup a repository delete/detach. CI callback
+  rozliší případně stejný full name per-project tajemstvím, ne vstupem od CI.
+- Import vylistuje repozitáře ze všech aktivních instalací workspace, deduplikuje
+  immutable ID a serverově opakuje preflight. Non-static runtime vyžaduje
+  Dockerfile; provider musí mít kompatibilní `.gitea/workflows/ci.yml` nebo
+  `.github/workflows/ci.yml` s InitPad callbackem. Import zdrojový kód nemění.
+- UI ukazuje chybějící GitHub link/instalaci, suspend a nutnost obnovit starší
+  OAuth credential; Settings nabízí bezpečný popup pro obnovení autorizace.
+- Ověřeno: 35 API suites / 215 testů, API i web production build, compose config,
+  rebuild běžících API/web kontejnerů, health a nepřihlášený SaaS browser smoke.
+  Test výslovně odmítá instalaci z cizího workspace. Živý autentizovaný create/
+  import a organizace se musí provést proti skutečné GitHub App.
+- Důležitý otevřený bod: workflow bezpečně pushuje privátní image do GHCR pomocí
+  repository-scoped `GITHUB_TOKEN`, ale control plane tento token nemá. GitHub
+  registry pro externí pull oficiálně očekává PAT classic nebo `GITHUB_TOKEN`;
+  dlouhodobý uživatelský PAT proto do platformy nepřidáváme. Následující návrh
+  musí zvolit managed OCI registry s projektově omezenými credentials, nebo
+  agent-mediated artifact transport. Do té doby není SaaS private-image deploy
+  produkčně uzavřený.
+
+**Uživatelský test tohoto podkroku.** V SaaS se přihlásit přes GitHub, v Settings
+autorizovat osobní App instalaci, otevřít New project, zkontrolovat vybraného
+ownera a vytvořit unikátně pojmenované repo. Na GitHubu ověřit private repo,
+`.github/workflows/ci.yml`, Actions secrets a první run; v InitPadu ověřit URL,
+commity/check runs a možnost Run again. V týmovém workspace zopakovat pro
+organizaci; member nesmí instalaci přidat, ale smí použít již udělený workspace
+grant podle role. Import testovat jedním kompatibilním repem a dvěma negativními
+variantami bez Dockerfile a bez InitPad workflow. Nakonec zvolit detach i úplné
+smazání a ověřit, že jiné workspace stejnou instalaci bez grantu nepoužije.
 
 ### Průběžné ověření delivery části milníku 8
 

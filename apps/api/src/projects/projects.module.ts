@@ -11,12 +11,12 @@ import { TemplatesModule } from '../templates/templates.module';
 import { GeneratorModule } from '../generator/generator.module';
 import { DeploymentModule } from '../deployment/deployment.module';
 import { TargetsModule } from '../targets/targets.module';
-import { ScmModule } from '../scm/scm.module';
+import { GitHubCoreModule } from '../scm/github/github-core.module';
 import { AuthModule } from '../auth/auth.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 
 @Module({
-  imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, ScmModule, AuthModule, WorkspacesModule],
+  imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, GitHubCoreModule, AuthModule, WorkspacesModule],
   providers: [ProjectsService, ImportService, ProvisioningService],
   controllers: [ProjectsController, ImportController, ActivityController, CiController, ScmWebhookController],
 })

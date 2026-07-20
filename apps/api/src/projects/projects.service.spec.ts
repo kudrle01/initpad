@@ -152,7 +152,7 @@ describe('ProjectsService project deletion', () => {
       {} as never,
       deployment as never,
       { connectionForTarget: jest.fn().mockReturnValue(undefined) } as never,
-      gitea as never,
+      { provider: jest.fn(() => gitea) } as never,
       {} as never,
       {} as never,
     );

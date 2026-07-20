@@ -1570,8 +1570,9 @@ před prvním pushem, potom se scaffold pošle installation tokenem s
 Při chybě secrets/push adapter nově vytvořené repo kompenzačně smaže.
 
 Sdílené šablony se před GitHub commitem převedou z `.gitea/workflows` do
-`.github/workflows`. Registry login nepoužívá uložené heslo, ale automatický
-krátkodobý `GITHUB_TOKEN` s workflow `contents: read` a `packages: write`.
+`.github/workflows`. Registry push uvnitř workflow nepoužívá uložené heslo, ale
+automatický krátkodobý `GITHUB_TOKEN` s workflow `contents: read` a
+`packages: write`.
 GitHub App proto potřebuje repository permissions Administration, Contents,
 Workflows, Secrets a Packages na write; Organization ani Account permissions
 aktuální tok nepotřebuje. Režim selected repositories zůstává podporovaný,
@@ -1591,3 +1592,63 @@ Reference: [Create a repository for the authenticated user](https://docs.github.
 [Refreshing user access tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens),
 [Choosing permissions for a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app),
 [Installing a GitHub App](https://docs.github.com/en/apps/using-github-apps/installing-a-github-app-from-a-third-party).
+
+## ADR-046 — Edice určuje SCM; workspace grant určuje GitHub destinaci
+
+**Kontext.** Po dokončení GitHub adapteru projektová doména stále injektovala
+globální `SCM_PROVIDER` svázaný s Gitea. Pouhé přepnutí globálního bindingu by
+nefungovalo pro existující projekty, migrace, rename ani souběh více GitHub
+instalací. Provider selector v UI by navíc porušil produktové rozdělení:
+self-hosted má být soběstačný s Gitea, veřejný SaaS používá GitHub.
+
+**Rozhodnutí.** Create/import provider není uživatelská preference. Určuje jej
+edice (`self-hosted → gitea`, `saas → github`). U SaaS create uživatel vybírá
+pouze cílový osobní/organizační GitHub účet z aktivních instalací explicitně
+autorizovaných pro aktuální workspace. Server vždy ověří složenou vazbu
+`installation + workspace`, suspend/deleted stav a nikdy nedůvěřuje ID z DTO.
+Osobní instalaci smí pro create použít jen InitPad user se shodným immutable
+GitHub user ID; organizační instalace je sdílená podle workspace role.
+Následné operace vybírají adapter podle `Project.scmProvider` a používají uložený
+immutable repository/installation binding.
+
+Společný `WorkspaceScmService` soustřeďuje edition routing, actor identity,
+workspace granty a mapování InitPad člena na provider username. Provider-only
+`GitHubCoreModule` neimportuje Projects ani Workspaces, takže registry může být
+sdílena bez Nest modulárního cyklu. CI callback nebere provider od nedůvěryhodného
+runneru: kandidáta podle full name vybere teprve shoda per-project deploy secretu.
+
+Import repozitář nemění, a proto nemůže sám doplnit chybějící pipeline. Preflight
+i samotný import serverově vyžadují non-empty repo, platný název, Dockerfile pro
+non-static runtime a provider-specific workflow s InitPad callback secrets.
+GitHub Actions stav se čte z Check Runs (`Checks: read`) s fallbackem na classic
+commit statuses. Starý link, chybějící instalace, suspend a osobní OAuth
+credential bez použitelné rotace blokují create ještě v UI i API.
+
+**Důsledky.** Gitea regrese zůstává beze změny a SaaS umí založit/importovat
+GitHub projekt. Workspace role se propisuje přes provider identitu; člen bez
+propojeného GitHub účtu nemůže dostat neúplný SCM grant. Create kompenzačně
+smaže nově vytvořené repo a vždy odstraní lokální scaffold. Import ještě
+potřebuje úplný effect journal pro přesnou kompenzaci případných částečných změn
+secrets/collaborators; do té doby se Fáze 3 bod 4 značí částečně.
+
+Samostatně byla odhalena artifact hranice: repository-scoped `GITHUB_TOKEN` je
+dostupný pouze uvnitř Actions workflow. InitPad control plane jej nemá a GitHub
+Container registry pro CLI pull dokumentuje PAT classic nebo `GITHUB_TOKEN`, ne
+GitHub App installation token. Ukládat dlouhodobý uživatelský PAT classic by
+zhoršilo bezpečnost i onboarding, proto se nepřidává. Produkční SaaS musí před
+živým deploy E2E rozhodnout mezi managed OCI registry s krátkodobými/project-
+scoped credentials a agent-mediated artifact transportem. GitHub SCM create,
+workflow a Check Runs lze testovat už nyní; privátní GHCR deploy zatím není
+prohlášen za produkčně hotový.
+
+**Uživatelské testování.** Self-hosted: zopakovat create/import/commits/retry/
+detach/delete na Gitea. SaaS: v New project vybrat osobní instalaci a organizaci,
+ověřit private repo, první Actions run a Check Runs; importovat pouze repo s
+Dockerfile a `.github/workflows/ci.yml`. Member nesmí instalaci autorizovat,
+ale podle workspace role smí použít existující grant. Pokus poslat ID instalace
+z jiného workspace musí skončit 400. Suspend/uninstall musí zabránit dalším
+operacím bez ztráty auditního project bindingu.
+
+Reference: [Working with the Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry),
+[About permissions for GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/about-permissions-for-github-packages),
+[Permissions for GitHub Apps](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app).
