@@ -87,7 +87,7 @@ export default function ImportRepo() {
         subtitle="Connect a repository you already have. Import never changes your code — it records the project, wires CI and prepares environments."
       />
 
-      <Link to="/new" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link to="/new" className="text-link mb-4 inline-flex items-center gap-1 text-sm font-medium">
         <ArrowLeft className="h-4 w-4" /> Start from a template instead
       </Link>
 
@@ -123,7 +123,7 @@ export default function ImportRepo() {
               <p className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
                 <Github className="mr-2 inline h-4 w-4" />
                 No GitHub installation is authorized for this workspace.{' '}
-                <Link to="/settings" className="font-medium text-primary hover:underline">Open Settings</Link>
+                <Link to="/settings" className="text-link font-medium">Open Settings</Link>
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">No repositories available to import.</p>

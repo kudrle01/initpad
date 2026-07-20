@@ -165,7 +165,7 @@ export default function Dashboard() {
         {projects.length > 0 && (
           <Link
             to="/projects"
-            className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="text-link inline-flex items-center gap-1 text-xs font-medium"
           >
             View all <ArrowRight className="h-3 w-3" />
           </Link>

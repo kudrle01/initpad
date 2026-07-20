@@ -66,7 +66,7 @@ export function EnvLogsDialog({
         <p className="mb-1.5 text-xs text-muted-foreground">
           Application output. For build &amp; deploy steps see{' '}
           {runnerUrl ? (
-            <a href={runnerUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+            <a href={runnerUrl} target="_blank" rel="noreferrer" className="text-link">
               the runner logs
             </a>
           ) : (

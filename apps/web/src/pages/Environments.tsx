@@ -139,7 +139,7 @@ export default function Environments() {
                     <Link
                       to={`/projects/${project.id}`}
                       title="Open project"
-                      className="shrink-0 rounded-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      className="text-link shrink-0 p-1"
                     >
                       <ArrowRight className="h-4 w-4" />
                     </Link>
@@ -179,7 +179,7 @@ export default function Environments() {
                                     href={env.url}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                                    className="text-link inline-flex items-center gap-1"
                                   >
                                     <ExternalLink className="h-3 w-3 shrink-0" />
                                     <span className="max-w-[200px] truncate">

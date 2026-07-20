@@ -67,7 +67,7 @@ export default function Activate() {
             {busy ? 'Please wait…' : 'Activate and sign in'}
           </Button>
         </form>
-        <Link to="/login" className="mt-4 inline-block text-xs text-muted-foreground hover:text-foreground">
+        <Link to="/login" className="text-link mt-4 inline-block text-xs font-medium">
           Back to sign in
         </Link>
       </div>

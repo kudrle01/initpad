@@ -225,7 +225,7 @@ export function EnvironmentPipeline({
                 target="_blank"
                 rel="noreferrer"
                 className={cn(
-                  'mt-2 flex min-w-0 items-center gap-1 text-xs text-primary hover:underline',
+                  'text-link mt-2 flex min-w-0 items-center gap-1 text-xs',
                   !env.url && 'invisible',
                 )}
               >

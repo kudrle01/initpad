@@ -63,7 +63,7 @@ export default function Templates() {
             </div>
             <Link
               to={`/new?template=${encodeURIComponent(t.id)}`}
-              className="mt-4 inline-flex items-center gap-1 self-start rounded-sm text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="text-link mt-4 inline-flex items-center gap-1 self-start text-sm font-medium"
             >
               Use template <ArrowRight className="h-3.5 w-3.5" />
             </Link>

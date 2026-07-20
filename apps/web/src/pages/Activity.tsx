@@ -64,7 +64,7 @@ export default function Activity() {
                 <div className="flex items-center gap-2">
                   <Link
                     to={`/projects/${e.projectId}`}
-                    className="text-sm font-medium text-primary hover:underline"
+                    className="text-link text-sm font-medium"
                   >
                     {e.projectName}
                   </Link>
@@ -91,7 +91,7 @@ export default function Activity() {
                         href={s.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:underline"
+                        className="text-link flex items-center gap-1 text-[11px]"
                       >
                         {inner}
                       </a>

@@ -56,7 +56,7 @@ export function CommitList({ commits, repoUrl, openSha, onToggle }: Props) {
                   rel="noreferrer"
                   onClick={(e) => e.stopPropagation()}
                   title="View commit in Gitea"
-                  className="shrink-0 font-mono text-xs text-primary hover:underline"
+                  className="text-link shrink-0 font-mono text-xs"
                 >
                   {c.sha.slice(0, 7)}
                 </a>
@@ -110,7 +110,7 @@ export function CommitList({ commits, repoUrl, openSha, onToggle }: Props) {
                       href={giteaLink(runUrl)}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-2.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      className="text-link mt-2.5 inline-flex items-center gap-1 text-xs font-medium"
                     >
                       View run &amp; logs in Gitea <ExternalLink className="h-3 w-3" />
                     </a>

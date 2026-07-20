@@ -81,7 +81,7 @@ export default function ChangePassword() {
         <button
           type="button"
           onClick={() => void logout()}
-          className="mt-4 w-full text-center text-xs text-muted-foreground hover:text-foreground"
+          className="text-link mt-4 w-full text-center text-xs font-medium"
         >
           Sign out
         </button>

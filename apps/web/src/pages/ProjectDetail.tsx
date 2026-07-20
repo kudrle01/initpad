@@ -326,7 +326,7 @@ export default function ProjectDetail() {
     <div>
       <Link
         to="/projects"
-        className="mb-4 inline-flex items-center gap-1.5 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="text-link mb-4 inline-flex items-center gap-1.5 text-sm font-medium"
       >
         <ArrowLeft className="h-4 w-4" /> Projects
       </Link>
@@ -399,7 +399,7 @@ export default function ProjectDetail() {
             href={giteaLink(project.repoUrl)}
             target="_blank"
             rel="noreferrer"
-            className="mb-2 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            className="text-link mb-2 inline-flex items-center gap-1.5 text-sm font-medium"
           >
             <GitBranch className="h-4 w-4" /> {project.repoUrl}
             <ExternalLink className="h-3 w-3" />
@@ -408,7 +408,7 @@ export default function ProjectDetail() {
         {cloneUrl && <CopyField command={`git clone ${cloneUrl}`} />}
         <p className="mt-2 text-xs text-muted-foreground">
           Private repository — first time?{' '}
-          <Link to="/settings" className="text-primary hover:underline">
+          <Link to="/settings" className="text-link">
             Connect Git
           </Link>{' '}
           once and cloning works without a password.

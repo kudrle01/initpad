@@ -30,14 +30,14 @@ export default function VerifyEmail() {
           <>
             <h1 className="text-[19px] font-semibold tracking-tight">E-mail verified</h1>
             <p className="mt-1 text-sm text-muted-foreground">Thanks — your e-mail address is confirmed.</p>
-            <Link to="/" className="mt-5 inline-block text-sm text-primary hover:underline">Go to InitPad</Link>
+            <Link to="/" className="text-link mt-5 inline-block text-sm font-medium">Go to InitPad</Link>
           </>
         )}
         {state === 'error' && (
           <>
             <h1 className="text-[19px] font-semibold tracking-tight">Verification failed</h1>
             <p className="mt-1 text-sm text-muted-foreground">{error ?? 'This link is invalid or has expired.'}</p>
-            <Link to="/" className="mt-5 inline-block text-sm text-primary hover:underline">Go to InitPad</Link>
+            <Link to="/" className="text-link mt-5 inline-block text-sm font-medium">Go to InitPad</Link>
           </>
         )}
       </div>

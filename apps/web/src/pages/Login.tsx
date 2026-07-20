@@ -171,7 +171,7 @@ export default function Login() {
         </form>
 
         {mode === 'signin' && (
-          <Link to="/forgot-password" className="mt-3 inline-block text-xs text-muted-foreground hover:text-foreground">
+          <Link to="/forgot-password" className="text-link mt-3 inline-block text-xs font-medium">
             Forgot your password?
           </Link>
         )}

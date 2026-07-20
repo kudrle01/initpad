@@ -32,7 +32,7 @@ export default function ForgotPassword() {
               If an account matches that username or e-mail, a reset link has been created. Check your
               inbox — or, on a self-hosted instance without e-mail, ask your administrator for the link.
             </p>
-            <Link to="/login" className="mt-5 inline-block text-sm text-primary hover:underline">Back to sign in</Link>
+            <Link to="/login" className="text-link mt-5 inline-block text-sm font-medium">Back to sign in</Link>
           </>
         ) : (
           <>
@@ -51,7 +51,7 @@ export default function ForgotPassword() {
                 {busy ? 'Please wait…' : 'Send reset link'}
               </Button>
             </form>
-            <Link to="/login" className="mt-4 inline-block text-xs text-muted-foreground hover:text-foreground">
+            <Link to="/login" className="text-link mt-4 inline-block text-xs font-medium">
               Back to sign in
             </Link>
           </>

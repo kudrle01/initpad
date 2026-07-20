@@ -352,7 +352,7 @@ export default function Settings() {
                     href={`${access.giteaUrl}/user/settings/applications`}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                    className="text-link inline-flex items-center gap-0.5"
                   >
                     Gitea → Settings → Applications <ExternalLink className="h-3 w-3" />
                   </a>
@@ -373,7 +373,7 @@ export default function Settings() {
                 href={`${access.giteaUrl}/user/settings/applications`}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-primary hover:underline"
+                className="text-link inline-flex items-center gap-1 font-medium"
               >
                 Open Gitea token settings <ExternalLink className="h-3.5 w-3.5" />
               </a>
