@@ -20,7 +20,7 @@ import { CommitList } from '@/components/organisms/CommitList';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { EnvLogsDialog } from '@/components/organisms/EnvLogsDialog';
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
-import { cn, giteaLink } from '@/lib/utils';
+import { cn, scmLink } from '@/lib/utils';
 import type { Commit, EnvName, Project, ProvisioningStatus, Target, TemplateManifest } from '@/types';
 
 // After creation the project finishes in the background (dev: deploying →
@@ -318,9 +318,10 @@ export default function ProjectDetail() {
     : undefined;
   const commitsBySha = Object.fromEntries(commits.map((c) => [c.sha, c] as const));
   // Latest CI run link (build/deploy pipeline) for the runner-logs shortcut.
-  const runnerUrl =
+  const rawRunnerUrl =
     commits[0]?.pipeline.find((s) => s.url)?.url ??
-    (project.repoUrl ? `${giteaLink(project.repoUrl)}/actions` : null);
+    (project.repoUrl ? `${project.repoUrl}/actions` : null);
+  const runnerUrl = scmLink(rawRunnerUrl, project.scm.provider);
 
   return (
     <div>
@@ -339,7 +340,7 @@ export default function ProjectDetail() {
         <div className="flex items-center gap-2">
           {project.repoUrl && (
             <Button asChild variant="secondary">
-              <a href={giteaLink(project.repoUrl)} target="_blank" rel="noreferrer">
+              <a href={scmLink(project.repoUrl, project.scm.provider)} target="_blank" rel="noreferrer">
                 <GitBranch className="h-4 w-4" /> Open repo
               </a>
             </Button>
@@ -396,7 +397,7 @@ export default function ProjectDetail() {
       <Section title="Repository">
         {project.repoUrl && (
           <a
-            href={giteaLink(project.repoUrl)}
+            href={scmLink(project.repoUrl, project.scm.provider)}
             target="_blank"
             rel="noreferrer"
             className="text-link mb-2 inline-flex items-center gap-1.5 text-sm font-medium"
@@ -406,13 +407,20 @@ export default function ProjectDetail() {
           </a>
         )}
         {cloneUrl && <CopyField command={`git clone ${cloneUrl}`} />}
-        <p className="mt-2 text-xs text-muted-foreground">
-          Private repository — first time?{' '}
-          <Link to="/settings" className="text-link">
-            Connect Git
-          </Link>{' '}
-          once and cloning works without a password.
-        </p>
+        {project.scm.provider === 'github' ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Private GitHub repository — open it in a browser signed into an authorized GitHub account.
+            For cloning, use your normal GitHub credential manager, SSH key or <code className="font-mono">gh auth login</code>.
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Private repository — first time?{' '}
+            <Link to="/settings" className="text-link">
+              Connect Git
+            </Link>{' '}
+            once and cloning works without a password.
+          </p>
+        )}
       </Section>
 
       <Section title="Environments">
@@ -436,6 +444,7 @@ export default function ProjectDetail() {
         <CommitList
           commits={commits}
           repoUrl={project.repoUrl}
+          scmProvider={project.scm.provider}
           openSha={openSha}
           onToggle={(sha) => setOpenSha((cur) => (cur === sha ? null : sha))}
         />

@@ -6,11 +6,15 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Routes Gitea links through /user/login?redirect_to=… — a signed-out user
-// gets the (SSO) login page instead of a 404 on a private repo; a signed-in
-// user clicks straight through to the target.
-export function giteaLink(targetUrl: string | null): string | undefined {
+// Routes only Gitea links through its SSO login page. GitHub private-repository
+// URLs must stay untouched: `/user/login` is a Gitea-only route and rewriting a
+// GitHub URL to it produces the misleading github.com/user/login/404 flow.
+export function scmLink(
+  targetUrl: string | null,
+  provider: 'gitea' | 'github',
+): string | undefined {
   if (!targetUrl) return undefined;
+  if (provider !== 'gitea') return targetUrl;
   try {
     const u = new URL(targetUrl);
     return `${u.origin}/user/login?redirect_to=${encodeURIComponent(u.pathname + u.search)}`;

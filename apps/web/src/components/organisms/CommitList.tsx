@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import { ChevronRight, ExternalLink } from 'lucide-react';
 import { StatusDot } from '@/components/atoms/StatusDot';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
-import { cn, giteaLink } from '@/lib/utils';
+import { cn, scmLink } from '@/lib/utils';
 import type { Commit } from '@/types';
 
 // Aggregated commit state derived from its pipeline stages.
@@ -17,11 +17,12 @@ function commitStatus(pipeline: { status: string }[]): { label: string; dot: str
 interface Props {
   commits: Commit[];
   repoUrl: string | null;
+  scmProvider: 'gitea' | 'github';
   openSha: string | null;
   onToggle: (sha: string) => void;
 }
 
-export function CommitList({ commits, repoUrl, openSha, onToggle }: Props) {
+export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle }: Props) {
   if (commits.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-card px-6 py-8 text-center text-sm text-muted-foreground">
@@ -51,11 +52,11 @@ export function CommitList({ commits, repoUrl, openSha, onToggle }: Props) {
               />
               {repoUrl && c.sha !== 'initial' ? (
                 <a
-                  href={giteaLink(`${repoUrl}/commit/${c.sha}`)}
+                  href={scmLink(`${repoUrl}/commit/${c.sha}`, scmProvider)}
                   target="_blank"
                   rel="noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  title="View commit in Gitea"
+                  title={`View commit in ${scmProvider === 'github' ? 'GitHub' : 'Gitea'}`}
                   className="text-link shrink-0 font-mono text-xs"
                 >
                   {c.sha.slice(0, 7)}
@@ -75,10 +76,10 @@ export function CommitList({ commits, repoUrl, openSha, onToggle }: Props) {
                     <Fragment key={s.name}>
                       {s.url ? (
                         <a
-                          href={giteaLink(s.url)}
+                          href={scmLink(s.url, scmProvider)}
                           target="_blank"
                           rel="noreferrer"
-                          title="View job log in Gitea"
+                          title={`View job log in ${scmProvider === 'github' ? 'GitHub' : 'Gitea'}`}
                           className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs hover:bg-secondary"
                         >
                           <StatusDot status={s.status} kind="ci" /> {s.name}
@@ -107,12 +108,13 @@ export function CommitList({ commits, repoUrl, openSha, onToggle }: Props) {
                   }
                   return runUrl ? (
                     <a
-                      href={giteaLink(runUrl)}
+                      href={scmLink(runUrl, scmProvider)}
                       target="_blank"
                       rel="noreferrer"
                       className="text-link mt-2.5 inline-flex items-center gap-1 text-xs font-medium"
                     >
-                      View run &amp; logs in Gitea <ExternalLink className="h-3 w-3" />
+                      View run &amp; logs in {scmProvider === 'github' ? 'GitHub' : 'Gitea'}{' '}
+                      <ExternalLink className="h-3 w-3" />
                     </a>
                   ) : null;
                 })()}
