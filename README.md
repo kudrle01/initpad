@@ -57,6 +57,9 @@ proto musí být veřejná HTTPS URL skutečné instalace nebo dočasného tunne
 Stejné origin používá GitHub App OAuth callback, Setup URL a Webhook URL.
 SaaS projekty vybírají ověřený workspace target zvlášť pro dev/test/prod;
 lokální/private Docker server bude připojen odchozím InitPad Agentem.
+GitHub stages se čtou z Actions workflow jobs (`Actions: read`) a odkazují
+přímo na job log. Změna targetu zachová ověřený build, ale vyžaduje explicitní
+`Deploy` na nový server.
 
 ## Lokální vývoj
 

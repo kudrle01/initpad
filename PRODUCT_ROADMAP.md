@@ -407,7 +407,7 @@ proti běžící instalaci; testovatelné scénáře:
   používá Gitea, SaaS GitHub. New project v SaaS zobrazuje osobní/organizační
   instalace autorizované pro aktivní workspace a API jejich grant ověří znovu.
 - Projektové operace po vytvoření vybírají adapter z uloženého provideru:
-  reconcile, CI callback, commity a GitHub Check Runs, retry tag, archiv,
+  reconcile, CI callback, commity a GitHub Actions jobs (Check Runs fallback), retry tag, archiv,
   synchronizace rolí, package cleanup a repository delete/detach. CI callback
   rozliší případně stejný full name per-project tajemstvím, ne vstupem od CI.
 - Import vylistuje repozitáře ze všech aktivních instalací workspace, deduplikuje
@@ -550,6 +550,17 @@ patří až do milníku 7.
 **Uživatelský test:** postupuje podle ADR-051. Bez veřejné URL je bezpečně
 testovatelná blokující větev a přímé GitHub odkazy; úspěšný Actions callback
 vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
+
+### GitHub stage observability a target deployment intent (2026-07-20)
+
+- Stages se synchronizují z nejnovějšího GitHub Actions run/jobs pro commit;
+  každý existující job má přímý klikací odkaz na log.
+- Změna targetu zachová ověřený artifact, odstraní starý workload a nastaví
+  explicitní deployment intent. UI nabídne `Deploy` a po úspěchu jej uzavře.
+- Projects používá loading skeleton a prázdný stav zobrazí pouze po dokončení
+  fetchů projektů a templates; workspace switch starý seznam neproblikne.
+- Automatizovaně ověřeno: 44 API suites / 267 testů a API i web production
+  build. Uživatelský test je v ADR-052.
 
 ### Průběžné ověření delivery části milníku 8
 

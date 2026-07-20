@@ -1902,3 +1902,44 @@ ověřený target pro každé prostředí, vytvořit projekt a ověřit úspěš
 callback. U dříve vytvořeného projektu po restartu kliknout Run again.
 
 Reference: [GitHub Docs — private networking with GitHub-hosted runners](https://docs.github.com/en/actions/concepts/runners/private-networking).
+
+## ADR-052 — GitHub Actions Jobs jsou autorita pro stages; změna targetu vytváří deployment intent
+
+**Kontext.** GitHub workflow reálně běžel, ale Commits skládal stages primárně
+z Check Runs. Instalace App bez `Checks: read` proto spadla na classic statuses,
+které pro Actions joby nemusejí existovat; stages zůstaly pending a bez URL.
+Po změně dev targetu se navíc zobrazovalo obecné `Run again`. To zaměňovalo
+GitHub build za deployment na původní server a po teardownu se ztratil odkaz na
+již ověřený artifact. Projects stránka mezitím renderovala prázdný stav dříve,
+než dokončila první fetch.
+
+**Rozhodnutí.** GitHub provider s již povinným `Actions: read` vybere nejnovější
+run workflow `ci.yml` pro konkrétní `head_sha` a načte jeho jobs. `status`,
+`conclusion` a `html_url` mapuje na provider-neutral stage; Check Runs a classic
+statuses zůstávají jen kompatibilní fallback. Každý dostupný stage odkaz je v UI
+zelený a vede přímo na konkrétní GitHub job.
+
+Environment persistuje `deploymentRequired`. Změna targetu nejprve bezpečně
+odstraní starý workload, ale zachová poslední version a BuildArtifact jako
+releasable build. UI potom nabídne `Deploy`, nikoli `Run again`; úspěšné
+publikování flag zruší. Když artifact ještě neexistuje, Deploy vyvolá CI a stav
+výslovně vypíše budoucí deployment target. Operace rozběhnuté během migrace
+se označí jako deployment intent, aby restart nevrátil matoucí legacy akci.
+Projects před dokončením projektů i templates zobrazuje skeleton a prázdný stav
+až po autoritativní prázdné odpovědi; změna workspace spustí nový loading stav.
+
+**Důsledky.** `Checks: read` už není podmínkou normálního SaaS status toku;
+`Actions: read` současně pokrývá artifact handoff i observability. Změna serveru
+nenutí rebuild již ověřeného artefaktu a UI rozlišuje build u GitHubu od deploye
+na ESO/SSH/SFTP/Docker target.
+
+**Uživatelské testování.** Otevřít commit během Actions runu: build/test/docker
+build/deploy se musí nejpozději po pollingu 2,5 s shodovat s GitHubem a každý již
+vytvořený job je klikací. U running dev změnit Docker na ESO: starý workload se
+odstraní, karta ukáže `Target changed`, menu `Deploy` a zachovaný build digest.
+Deploy musí použít ESO; po úspěchu varování zmizí. U projektu bez artefaktu
+musí stav říct `Waiting for CI build; deployment target: ESO school server`.
+Při prvním otevření Projects je vidět skeleton, nikdy krátké `No projects yet`.
+
+Reference: [GitHub REST API — workflow runs](https://docs.github.com/en/rest/actions/workflow-runs),
+[GitHub REST API — workflow jobs](https://docs.github.com/en/rest/actions/workflow-jobs).

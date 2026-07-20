@@ -46,7 +46,8 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   používá rotovatelný šifrovaný user credential, organization create a další
   operace krátkodobé installation tokeny. Adapter umí bezpečný scaffold push,
   rollback nového repa, sealed-box Actions secrets, archiv, collaborators,
-  retry tag, delete/detach/packages a GitHub Actions Check Runs.
+  retry tag, delete/detach/packages a GitHub Actions workflow runs/jobs;
+  Check Runs jsou pouze kompatibilní fallback.
 - GitHub build handoff persistuje `BuildArtifact`; App token s `Actions: read`
   ověřuje repository/run/commit/digest, stažení znovu hashujeme a Docker archive
   smí obsahovat jediný očekávaný tag. Lokální control plane image ingestuje a
@@ -90,7 +91,7 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 ## Nejbližší implementační pořadí
 
 1. Proveď živý GitHub E2E: po přidání App `Actions: read` personal/org create,
-   artifact upload/ingestion/dev deploy, kompatibilní import, Check Runs, retry,
+   artifact upload/ingestion/dev deploy, kompatibilní import, Actions jobs, retry,
    role, suspend/uninstall a delete/detach.
 2. Přesuň ověřené bajty z lokálního Docker daemonu do platformního object
    storage a doruč je job-scoped InitPad Agentovi; potom vytvoř skutečný
@@ -100,7 +101,7 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 43 API suites / 265 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 44 API suites / 267 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config prošel; API/web kontejnery byly přestavěné a API
   je healthy bez modulárního DI cyklu.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy
@@ -126,7 +127,7 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
   `/api/scm/github/setup/callback`.
 - GitHub project acceptance: New project musí ukázat pouze granty aktivního
   workspace; ověř personal i organization repo, `.github/workflows/ci.yml`,
-  Actions run a Check Runs. Import bez Dockerfile nebo InitPad workflow musí
+  Actions run a workflow jobs. Import bez Dockerfile nebo InitPad workflow musí
   zůstat zablokovaný. Nový projekt musí vytvořit `initpad-image.tar`, callback
   musí předat ID/digest a lokální dev nasadit stejné SHA. Staré workflow se
   automaticky nepřepisuje. Multi-instance/agent delivery zatím není produkční.
