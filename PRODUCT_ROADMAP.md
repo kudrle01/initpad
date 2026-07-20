@@ -159,6 +159,10 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
   archivu, lokální scaffold commit, user/org GHCR cleanup a sealed-box Actions
   secrets přes `libsodium-wrappers`. Existence `ScmRegistry` sama o sobě stále
   neznamená podporu vytvoření nebo importu GitHub projektu.
+- GitHub App user-token vault bezpečně ukládá odděleně šifrovaný access a
+  refresh token, rotuje jednorázový refresh pair pod databázovým lease a maže jej
+  při unlink/revocation. OAuth login/link credential obnoví; organization setup
+  jej záměrně nepersistuje.
 
 **Následující podkroky v závazném pořadí**
 
@@ -172,8 +176,9 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
    `/user/installations`.
 3. 🟡 Dokončit GitHub `provision` a push scaffoldu. `downloadArchive`,
    libsodium sealed-box Actions secrets, user/org GHCR cleanup, lokální git init
-   a stránkování repozitářů jsou hotové. Osobní create ještě potřebuje
-   šifrovaný rotovatelný user-token vault; organizace použije installation token.
+   a stránkování repozitářů jsou hotové. Šifrovaný rotovatelný user-token
+   vault je hotový; zbývá jej použít pro osobní `POST /user/repos`, organizace
+   použije installation token, a oba toky musí pushnout scaffold.
 4. Napojit create/import a všechny následné operace přes `ScmRegistry` podle
    provideru projektu. Preflight musí proběhnout i serverově a rollback musí
    evidovat nebo uklidit každý již provedený externí efekt.
@@ -353,6 +358,23 @@ proti běžící instalaci; testovatelné scénáře:
   lokální `deploy/.env` je v `saas` edici bez nakonfigurované GitHub App.
 - Neprovedeno: autentizovaný browser acceptance ani živý GitHub App E2E.
   Public SaaS proto zatím není produkčně dokončený profil.
+
+### GitHub user-token vault podkrok Fáze 3 (2026-07-20)
+
+- Aditivní migrace rozšířila externí identitu o šifrované provider credentials,
+  expirace, verzi a refresh lease; existující identity i Gitea tok nemění.
+- GitHub OAuth parsuje expirační metadata a rotuje celý access/refresh pair.
+  Login a link jej uloží až po shodě immutable GitHub ID; organization setup
+  použije user token jen v paměti.
+- Součběžné API instance koordinuje databázový lease, proto stejný single-use
+  refresh token nemohou spotřebovat dvakrát. Revokační webhook credential maže
+  podle immutable sender ID, propojení identity ale zachová.
+- Tento podkrok nemá novou obrazovku. Uživatelsky lze regresně zopakovat
+  GitHub login/link a organization install; plný test rotace/revokace bude
+  viditelný v následujícím osobním create toku.
+- Ověřeno: 34 API suites / 202 testů, API production build, Prisma validate,
+  aplikace migrace `20260720160000_github_user_credentials` na existující lokální
+  databázi a zdravý restart kontejneru.
 
 ### Průběžné ověření delivery části milníku 8
 

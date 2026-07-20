@@ -21,8 +21,15 @@ export interface GitHubUser {
 
 export interface GitHubOAuthExchange {
   user: GitHubUser;
-  /** Transient user access token. Callers must never persist or log it. */
+  token: GitHubUserTokenSet;
+}
+
+/** A GitHub App user authorization. Values must never be logged or exposed. */
+export interface GitHubUserTokenSet {
   accessToken: string;
+  accessTokenExpiresAt: Date | null;
+  refreshToken: string | null;
+  refreshTokenExpiresAt: Date | null;
 }
 
 // A signed OAuth `state` is valid for 10 minutes. It binds the flow's mode and a
@@ -129,25 +136,18 @@ export class GitHubOAuthService {
     return (await this.exchangeCode(code)).user;
   }
 
-  /** Exchanges once and exposes the token only to the immediate callback. */
+  /** Exchanges once; the callback either vaults the pair or uses it transiently. */
   async exchangeCode(code: string): Promise<GitHubOAuthExchange> {
-    const tokenRes = await fetch(`${config.github.oauthBaseUrl}/login/oauth/access_token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        client_id: config.github.clientId,
-        client_secret: config.github.clientSecret,
-        code,
-        redirect_uri: config.github.callbackUrl,
-      }),
+    const token = await this.requestToken({
+      client_id: config.github.clientId,
+      client_secret: config.github.clientSecret,
+      code,
+      redirect_uri: config.github.callbackUrl,
     });
-    if (!tokenRes.ok) throw new Error(`GitHub token exchange failed (HTTP ${tokenRes.status})`);
-    const token = (await tokenRes.json()) as { access_token?: string; error?: string };
-    if (!token.access_token) throw new Error('GitHub did not return an access token');
 
     const userRes = await fetch(`${config.github.apiBaseUrl}/user`, {
       headers: {
-        Authorization: `Bearer ${token.access_token}`,
+        Authorization: `Bearer ${token.accessToken}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
@@ -165,7 +165,7 @@ export class GitHubOAuthService {
     try {
       const emailsRes = await fetch(`${config.github.apiBaseUrl}/user/emails`, {
         headers: {
-          Authorization: `Bearer ${token.access_token}`,
+          Authorization: `Bearer ${token.accessToken}`,
           Accept: 'application/vnd.github+json',
           'X-GitHub-Api-Version': '2022-11-28',
         },
@@ -189,7 +189,7 @@ export class GitHubOAuthService {
       // unverified until a verified address can be read later.
     }
     return {
-      accessToken: token.access_token,
+      token,
       user: {
         providerUserId: String(u.id),
         login: u.login,
@@ -199,6 +199,58 @@ export class GitHubOAuthService {
         avatarUrl: u.avatar_url ?? null,
       },
     };
+  }
+
+  /**
+   * Atomically-used refresh tokens rotate into a complete new token pair.
+   * Coordination between API instances is handled by the credential vault.
+   */
+  async refreshUserToken(refreshToken: string): Promise<GitHubUserTokenSet> {
+    return this.requestToken({
+      client_id: config.github.clientId,
+      client_secret: config.github.clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    });
+  }
+
+  private async requestToken(parameters: Record<string, string>): Promise<GitHubUserTokenSet> {
+    const tokenRes = await fetch(`${config.github.oauthBaseUrl}/login/oauth/access_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: new URLSearchParams(parameters),
+    });
+    if (!tokenRes.ok) throw new Error(`GitHub token exchange failed (HTTP ${tokenRes.status})`);
+    const token = (await tokenRes.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      refresh_token?: string;
+      refresh_token_expires_in?: number;
+      error?: string;
+    };
+    if (!token.access_token) throw new Error('GitHub did not return an access token');
+
+    const accessTokenExpiresAt = this.expiresAt(token.expires_in);
+    const refreshTokenExpiresAt = this.expiresAt(token.refresh_token_expires_in);
+    // Expiring user tokens always rotate as a pair. Refusing an incomplete
+    // response is safer than replacing a usable refresh token with nothing.
+    if (accessTokenExpiresAt && (!token.refresh_token || !refreshTokenExpiresAt)) {
+      throw new Error('GitHub returned an incomplete expiring user token');
+    }
+    return {
+      accessToken: token.access_token,
+      accessTokenExpiresAt,
+      refreshToken: token.refresh_token ?? null,
+      refreshTokenExpiresAt,
+    };
+  }
+
+  private expiresAt(seconds: number | undefined): Date | null {
+    if (!Number.isFinite(seconds) || Number(seconds) <= 0) return null;
+    return new Date(Date.now() + Number(seconds) * 1000);
   }
 
   private signState(data: Record<string, unknown>): string {

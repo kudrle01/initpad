@@ -12,13 +12,22 @@ import type { Request } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../config';
 import { GitHubInstallationService, InstallationEvent } from './github-installation.service';
+import { GitHubUserCredentialService } from './github-user-credential.service';
 
-// Receives GitHub App webhooks (installation lifecycle). GitHub signs the exact
+interface GitHubAuthorizationRevokedEvent {
+  action: 'revoked';
+  sender: { id: number | string };
+}
+
+// Receives GitHub App webhooks (installation and user-authorization lifecycle). GitHub signs the exact
 // body with the App's webhook secret (X-Hub-Signature-256); we verify it before
 // touching any state, and refuse everything when no secret is configured.
 @Controller('scm/github')
 export class GitHubWebhookController {
-  constructor(private readonly installations: GitHubInstallationService) {}
+  constructor(
+    private readonly installations: GitHubInstallationService,
+    private readonly credentials: GitHubUserCredentialService,
+  ) {}
 
   @Post('webhook')
   @HttpCode(202)
@@ -26,7 +35,7 @@ export class GitHubWebhookController {
     @Headers('x-hub-signature-256') signature: string,
     @Headers('x-github-event') event: string,
     @Req() req: RawBodyRequest<Request>,
-    @Body() body: InstallationEvent,
+    @Body() body: InstallationEvent | GitHubAuthorizationRevokedEvent,
   ) {
     const secret = config.github.webhookSecret;
     const raw = req.rawBody;
@@ -37,7 +46,15 @@ export class GitHubWebhookController {
       // Let persistence failures return 5xx so GitHub retries the delivery.
       // A logged-and-accepted failure would permanently lose installation
       // state and make repository access disagree with GitHub.
-      await this.installations.handleEvent(body);
+      await this.installations.handleEvent(body as InstallationEvent);
+    }
+    if (event === 'github_app_authorization') {
+      const authorization = body as GitHubAuthorizationRevokedEvent;
+      if (authorization.action === 'revoked' && authorization.sender?.id != null) {
+        // Keep the immutable identity/sign-in binding, but immediately stop
+        // performing API calls on behalf of the user who revoked the App.
+        await this.credentials.revokeByProviderUserId(String(authorization.sender.id));
+      }
     }
     return { accepted: true };
   }

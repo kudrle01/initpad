@@ -7,6 +7,7 @@ import { TOKEN_COOKIE, JwtPayload } from '../../auth/jwt-auth.guard';
 import { AuthService } from '../../auth/auth.service';
 import { ExternalIdentityService } from '../../identity/external-identity.service';
 import { GitHubInstallationService } from './github-installation.service';
+import { GitHubUserCredentialService } from './github-user-credential.service';
 import {
   GITHUB_OAUTH_NONCE_COOKIE,
   GitHubOAuthService,
@@ -25,6 +26,7 @@ export class GitHubAuthController {
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
     private readonly installations: GitHubInstallationService,
+    private readonly credentials: GitHubUserCredentialService,
   ) {}
 
   @Get()
@@ -83,7 +85,7 @@ export class GitHubAuthController {
         const installation = await this.installations.completeSetup(
           verified.setupState,
           verified.installationId,
-          exchange.accessToken,
+          exchange.token.accessToken,
         );
         return res.redirect(
           this.frontend(
@@ -103,6 +105,7 @@ export class GitHubAuthController {
       if (!userId) return res.redirect(this.frontend('/login?next=/settings&error=login_required'));
       try {
         await this.identities.link(userId, 'github', ghUser.providerUserId, ghUser.login);
+        await this.credentials.storeExchange(userId, exchange);
         return res.redirect(this.frontend('/settings?github=linked'));
       } catch (e) {
         return res.redirect(this.frontend(`/settings?github=error&reason=${encodeURIComponent((e as Error).message)}`));
@@ -129,6 +132,11 @@ export class GitHubAuthController {
         name: ghUser.name,
         avatarUrl: ghUser.avatarUrl,
       });
+    }
+    try {
+      await this.credentials.storeExchange(user.id, exchange);
+    } catch {
+      return res.redirect(this.frontend('/login?error=github_exchange'));
     }
     const { token } = this.auth.createSession(user);
     res.cookie(TOKEN_COOKIE, token, {

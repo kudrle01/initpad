@@ -111,13 +111,24 @@ model GitHubInstallationSetup {
 // links to at most one InitPad user, and an InitPad user links at most one
 // account per provider.
 model ExternalIdentity {
-  id             String   @id @default(uuid())
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId         String
-  provider       String // github | gitlab
-  providerUserId String // immutable id from the provider
-  username       String? // provider login at link time (display only, mutable)
-  createdAt      DateTime @default(now())
+  id                       String    @id @default(uuid())
+  user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                   String
+  provider                 String // github | gitlab
+  providerUserId           String // immutable id from the provider
+  username                 String? // provider login at link time (display only, mutable)
+  // User credentials are distinct from the identity itself. They authorize
+  // provider operations on behalf of the user (personal GitHub repo creation),
+  // are encrypted independently at rest and never appear in identity DTOs.
+  accessTokenEncrypted     String?
+  accessTokenExpiresAt     DateTime?
+  refreshTokenEncrypted    String?
+  refreshTokenExpiresAt    DateTime?
+  credentialVersion        Int       @default(0)
+  // Short database lease for rotation. GitHub refresh tokens are single-use;
+  // this prevents two API instances from refreshing the same value at once.
+  credentialRefreshingAt   DateTime?
+  createdAt                DateTime  @default(now())
 
   @@unique([provider, providerUserId])
   @@unique([provider, userId])

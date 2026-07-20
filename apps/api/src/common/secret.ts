@@ -2,7 +2,8 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypt
 import { config } from '../config';
 
 /**
- * Encryption of sensitive values stored in the database (Gitea tokens),
+ * Encryption of sensitive values stored in the database (target credentials,
+ * Gitea tokens and provider user access/refresh tokens),
  * using AES-256-GCM.
  *
  * Stored format: "enc:v1:<base64(iv | authTag | ciphertext)>". Legacy plaintext

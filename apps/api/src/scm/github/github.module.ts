@@ -12,6 +12,7 @@ import { IdentityModule } from '../../identity/identity.module';
 import { ScmModule } from '../scm.module';
 import { WorkspacesModule } from '../../workspaces/workspaces.module';
 import { GitHubSetupController } from './github-setup.controller';
+import { GitHubUserCredentialService } from './github-user-credential.service';
 
 // GitHub App integration for the hosted edition. Inert without credentials.
 // AuthModule provides AuthService + JwtService; IdentityModule provides
@@ -29,9 +30,17 @@ import { GitHubSetupController } from './github-setup.controller';
     GitHubAppService,
     GitHubOAuthService,
     GitHubInstallationService,
+    GitHubUserCredentialService,
     GitHubScmProvider,
     ScmRegistry,
   ],
-  exports: [GitHubAppService, GitHubOAuthService, GitHubInstallationService, GitHubScmProvider, ScmRegistry],
+  exports: [
+    GitHubAppService,
+    GitHubOAuthService,
+    GitHubInstallationService,
+    GitHubUserCredentialService,
+    GitHubScmProvider,
+    ScmRegistry,
+  ],
 })
 export class GitHubModule {}

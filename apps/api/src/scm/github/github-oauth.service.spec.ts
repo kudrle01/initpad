@@ -98,9 +98,48 @@ describe('GitHubOAuthService', () => {
       .mockResolvedValueOnce({ ok: false, status: 403 });
 
     await expect(new GitHubOAuthService().exchangeCode('code')).resolves.toMatchObject({
-      accessToken: 'ghu_transient',
+      token: {
+        accessToken: 'ghu_transient',
+        accessTokenExpiresAt: null,
+        refreshToken: null,
+        refreshTokenExpiresAt: null,
+      },
       user: { providerUserId: '123', login: 'alice' },
     });
+  });
+
+  it('parses and rotates an expiring GitHub App user token pair', async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        access_token: 'ghu_new',
+        expires_in: 28800,
+        refresh_token: 'ghr_new',
+        refresh_token_expires_in: 15897600,
+      }),
+    }));
+    global.fetch = fetchMock as never;
+
+    const before = Date.now();
+    const token = await new GitHubOAuthService().refreshUserToken('ghr_old');
+    expect(token.accessToken).toBe('ghu_new');
+    expect(token.refreshToken).toBe('ghr_new');
+    expect(token.accessTokenExpiresAt?.getTime()).toBeGreaterThanOrEqual(before + 28_800_000);
+    expect(token.refreshTokenExpiresAt?.getTime()).toBeGreaterThanOrEqual(
+      before + 15_897_600_000,
+    );
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(init.body)).toContain('grant_type=refresh_token');
+    expect(String(init.body)).toContain('refresh_token=ghr_old');
+  });
+
+  it('rejects an incomplete expiring token pair', async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ access_token: 'ghu_new', expires_in: 28800 }),
+    })) as never;
+    await expect(new GitHubOAuthService().refreshUserToken('ghr_old'))
+      .rejects.toThrow('incomplete');
   });
 
   it('throws when GitHub returns no access token', async () => {

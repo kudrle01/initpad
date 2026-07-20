@@ -1548,11 +1548,26 @@ vycházet z explicitní workspace installation vazby, ne z InitPad username.
 Pokud refresh token expiruje nebo je odvolán, UI vyžádá novou autorizaci a
 nevytvoří částečný projekt.
 
+**Implementace token vaultu (2026-07-20).** `ExternalIdentity` obsahuje pouze
+šifrovaný access/refresh token, jejich expirace, monotonickou verzi a krátký
+database refresh lease. Access a refresh hodnota jsou šifrované samostatně pomocí
+existujícího AES-256-GCM secret storage; identity API je nikdy nevrací. Minutu
+před expirací server token pair obnoví a atomicky nahradí; lease zamezuje tomu,
+aby dvě API instance současně spotřebovaly stejný jednorázový refresh token.
+Expirace nebo nečitelný secret credential bezpečně vymaže a vyžádá novou
+autorizaci. `github_app_authorization: revoked` webhook maže credential podle
+immutable `sender.id`, ale zachová identitu jako přihlašovací vazbu; nový OAuth
+login/link vault znovu naplní. Organization setup OAuth zůstává striktně
+tranzientní a do vaultu se neukládá.
+
 **Uživatelské testování.** Aktuální adapterový mezikrok je testovatelný
 automatizovaně, ale ještě nepřidává nový UI tok. Po dokončení token vaultu a
 registry zapojení owner vybere osobní nebo organizační instalaci, vytvoří
 soukromé repo, uvidí první Actions run a import zobrazí všechny stránky rep.
 Odvolaný/expirující token musí skončit výzvou k reautorizaci bez osiřelého repa.
+Samotný vault se nyní uživatelsky ověří regresně: GitHub link/login i
+organization installation setup musí dál projít. Přímý pozitivní test rotace a
+revokace bude dostupný s osobním create tokem v následujícím podkroku.
 
 Reference: [Create a repository for the authenticated user](https://docs.github.com/en/rest/repos/repos#create-a-repository-for-the-authenticated-user),
 [Refreshing user access tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens).

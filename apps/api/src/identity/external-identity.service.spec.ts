@@ -29,6 +29,32 @@ describe('ExternalIdentityService', () => {
     expect(await service.findUser('github', 'nope')).toBeNull();
   });
 
+  it('never exposes encrypted provider credentials in the linked identity DTO', async () => {
+    const prisma = {
+      externalIdentity: {
+        findMany: jest.fn(async () => [{
+          provider: 'github', providerUserId: '123', username: 'alice',
+          createdAt: new Date('2026-07-20T12:00:00.000Z'),
+          accessTokenEncrypted: 'enc:v1:access-secret',
+          refreshTokenEncrypted: 'enc:v1:refresh-secret',
+        }]),
+      },
+      user: { findUnique: jest.fn(async () => ({ passwordHash: 'hash' })) },
+    };
+    const service = new ExternalIdentityService(prisma as never);
+
+    const result = await service.listForUser('u1');
+
+    expect(result).toEqual([{
+      provider: 'github',
+      providerUserId: '123',
+      username: 'alice',
+      linkedAt: '2026-07-20T12:00:00.000Z',
+      canUnlink: true,
+    }]);
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
+
   it('links a new account by immutable id', async () => {
     let createData: Record<string, unknown> | undefined;
     const prisma = {
