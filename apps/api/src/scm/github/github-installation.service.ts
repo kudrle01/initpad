@@ -114,24 +114,28 @@ export class GitHubInstallationService {
   }
 
   /**
+   * Validates the one-time state and resolves callback data through the App
+   * API without consuming the state. Organization callbacks use this before
+   * starting their additional user-authorization round trip.
+   */
+  async inspectSetup(
+    state: string,
+    installationId: string,
+  ): Promise<VerifiedGitHubInstallation> {
+    return (await this.loadSetupCandidate(state, installationId)).verified;
+  }
+
+  /**
    * Verifies an untrusted callback against GitHub, consumes its state exactly
    * once, re-checks current workspace authority and grants installation access.
    */
-  async completeSetup(state: string, installationId: string): Promise<VerifiedGitHubInstallation> {
-    if (!state || !installationId) throw new BadRequestException('Incomplete GitHub setup callback');
-    const setup = await this.prisma.gitHubInstallationSetup.findUnique({
-      where: { tokenHash: this.hashState(state) },
-    });
+  async completeSetup(
+    state: string,
+    installationId: string,
+    userAccessToken?: string,
+  ): Promise<VerifiedGitHubInstallation> {
+    const { setup, verified } = await this.loadSetupCandidate(state, installationId);
     const now = new Date();
-    if (!setup || setup.usedAt || setup.expiresAt <= now) {
-      throw new BadRequestException('GitHub setup state is invalid, expired, or already used');
-    }
-
-    // Never trust installation_id/account data from the browser redirect.
-    const verified = await this.app.getInstallation(installationId);
-    if (verified.installationId !== String(installationId)) {
-      throw new BadRequestException('GitHub returned a different installation identity');
-    }
 
     const [identity, membership] = await Promise.all([
       this.prisma.externalIdentity.findUnique({
@@ -152,6 +156,29 @@ export class GitHubInstallationService {
     // GitHub's own installation UI and the bound one-time workspace state.
     if (verified.accountType === 'User' && identity.providerUserId !== verified.accountId) {
       throw new ForbiddenException('The installed GitHub account does not match your linked identity');
+    }
+    if (verified.accountType === 'Organization') {
+      if (!userAccessToken) {
+        throw new ForbiddenException('GitHub user authorization is required for an organization installation');
+      }
+      try {
+        const accessible = await this.app.getUserAccessibleInstallation(
+          userAccessToken,
+          verified.installationId,
+          identity.providerUserId,
+        );
+        if (
+          accessible.installationId !== verified.installationId ||
+          accessible.accountId !== verified.accountId ||
+          accessible.accountType !== 'Organization'
+        ) {
+          throw new Error('GitHub returned a different user-accessible installation identity');
+        }
+      } catch {
+        throw new ForbiddenException(
+          'Your linked GitHub account cannot authorize this organization installation',
+        );
+      }
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -266,6 +293,24 @@ export class GitHubInstallationService {
 
   private hashState(state: string): string {
     return createHash('sha256').update(state).digest('hex');
+  }
+
+  private async loadSetupCandidate(state: string, installationId: string) {
+    if (!state || !installationId) {
+      throw new BadRequestException('Incomplete GitHub setup callback');
+    }
+    const setup = await this.prisma.gitHubInstallationSetup.findUnique({
+      where: { tokenHash: this.hashState(state) },
+    });
+    if (!setup || setup.usedAt || setup.expiresAt <= new Date()) {
+      throw new BadRequestException('GitHub setup state is invalid, expired, or already used');
+    }
+    // Never trust installation_id/account data from the browser redirect.
+    const verified = await this.app.getInstallation(installationId);
+    if (verified.installationId !== String(installationId)) {
+      throw new BadRequestException('GitHub returned a different installation identity');
+    }
+    return { setup, verified };
   }
 
   private async bindVerifiedInstallation(

@@ -127,6 +127,42 @@ describe('GitHubAppService', () => {
     }]);
   });
 
+  it('verifies an organization installation against the linked user access token', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 123 }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          installations: [{
+            id: 42,
+            account: { id: 987654, login: 'acme', type: 'Organization' },
+            repository_selection: 'selected',
+            suspended_at: null,
+          }],
+        }),
+      });
+    global.fetch = fetchMock as never;
+
+    await expect(
+      new GitHubAppService().getUserAccessibleInstallation('ghu_transient', '42', '123'),
+    ).resolves.toMatchObject({
+      installationId: '42',
+      accountId: '987654',
+      accountType: 'Organization',
+    });
+    for (const [, init] of fetchMock.mock.calls as unknown as Array<[string, RequestInit]>) {
+      expect((init.headers as Record<string, string>).Authorization).toBe('Bearer ghu_transient');
+    }
+  });
+
+  it('rejects a user token for another immutable GitHub identity', async () => {
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ id: 999 }) })) as never;
+    await expect(
+      new GitHubAppService().getUserAccessibleInstallation('ghu_wrong', '42', '123'),
+    ).rejects.toThrow('does not match');
+  });
+
   it('scopes the token to the requested repositories and permissions', async () => {
     config.github.appId = '123';
     config.github.privateKey = privateKeyPem;

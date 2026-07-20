@@ -6,11 +6,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TOKEN_COOKIE, JwtPayload } from '../../auth/jwt-auth.guard';
 import { AuthService } from '../../auth/auth.service';
 import { ExternalIdentityService } from '../../identity/external-identity.service';
-import { GitHubOAuthService, OAuthMode } from './github-oauth.service';
+import { GitHubInstallationService } from './github-installation.service';
+import {
+  GITHUB_OAUTH_NONCE_COOKIE,
+  GitHubOAuthService,
+  OAuthMode,
+} from './github-oauth.service';
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-const NONCE_COOKIE = 'initpad_gh_oauth';
-
 // "Sign in with GitHub" and account linking. Both are top-level browser
 // redirects, so the session cookie (SameSite=Lax) is available on the callback.
 @Controller('auth/github')
@@ -21,14 +24,15 @@ export class GitHubAuthController {
     private readonly auth: AuthService,
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
+    private readonly installations: GitHubInstallationService,
   ) {}
 
   @Get()
   authorize(@Query('mode') modeRaw: string, @Res() res: Response) {
     if (!this.oauth.isConfigured()) return res.redirect(this.frontend('/login?error=github_unavailable'));
-    const mode: OAuthMode = modeRaw === 'link' ? 'link' : 'login';
+    const mode: Exclude<OAuthMode, 'setup'> = modeRaw === 'link' ? 'link' : 'login';
     const { url, nonce } = this.oauth.authorizeUrl(mode);
-    res.cookie(NONCE_COOKIE, nonce, {
+    res.cookie(GITHUB_OAUTH_NONCE_COOKIE, nonce, {
       httpOnly: true,
       sameSite: 'lax',
       secure: config.auth.secureCookie,
@@ -48,17 +52,50 @@ export class GitHubAuthController {
     if (!this.oauth.isConfigured()) return res.redirect(this.frontend('/login?error=github_unavailable'));
 
     const verified = this.oauth.verifyState(state);
-    const nonce = (req.cookies as Record<string, string> | undefined)?.[NONCE_COOKIE];
-    res.clearCookie(NONCE_COOKIE, { path: '/' });
+    const nonce = (req.cookies as Record<string, string> | undefined)?.[GITHUB_OAUTH_NONCE_COOKIE];
+    res.clearCookie(GITHUB_OAUTH_NONCE_COOKIE, { path: '/' });
     if (!verified || !nonce || nonce !== verified.nonce || !code) {
-      return res.redirect(this.frontend('/login?error=github_state'));
+      return res.redirect(
+        this.frontend(
+          verified?.mode === 'setup'
+            ? '/settings?github=installation_error&reason=GitHub%20verification%20expired%20or%20was%20interrupted'
+            : '/login?error=github_state',
+        ),
+      );
     }
 
-    let ghUser;
+    let exchange;
     try {
-      ghUser = await this.oauth.exchangeCodeForUser(code);
+      exchange = await this.oauth.exchangeCode(code);
     } catch {
-      return res.redirect(this.frontend('/login?error=github_exchange'));
+      return res.redirect(
+        this.frontend(
+          verified.mode === 'setup'
+            ? '/settings?github=installation_error&reason=Could%20not%20verify%20GitHub%20user'
+            : '/login?error=github_exchange',
+        ),
+      );
+    }
+    const ghUser = exchange.user;
+
+    if (verified.mode === 'setup') {
+      try {
+        const installation = await this.installations.completeSetup(
+          verified.setupState,
+          verified.installationId,
+          exchange.accessToken,
+        );
+        return res.redirect(
+          this.frontend(
+            `/settings?github=installed&account=${encodeURIComponent(installation.accountLogin)}`,
+          ),
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'Could not authorize GitHub installation';
+        return res.redirect(
+          this.frontend(`/settings?github=installation_error&reason=${encodeURIComponent(reason)}`),
+        );
+      }
     }
 
     if (verified.mode === 'link') {

@@ -1473,10 +1473,13 @@ To je křehké pro rename, organizace, více workspace i audit incidentu.
    zkontroluje propojenou GitHub identitu a aktuální owner/admin roli a stav
    atomicky spotřebuje právě jednou.
 5. U osobní instalace se immutable GitHub account ID musí shodovat s propojenou
-   identitou uživatele. U organizace oprávnění instalovat schvaluje GitHub; InitPad
-   k tomu přidá jednorázový state a `GitHubInstallationAccess` pro konkrétní
-   workspace. Jedna organizace tak může být explicitně přidána do více workspace
-   a jeden workspace může mít více instalací bez lookupu podle loginu.
+   identitou uživatele. U organizace setup callback spustí ještě GitHub user OAuth;
+   server porovná vlastníka krátkodobého tokenu s immutable propojenou identitou
+   a přes `GET /user/installations` ověří, že právě tento user má k instalaci
+   přístup. Token se neukládá ani neloguje. Teprve potom vznikne
+   `GitHubInstallationAccess` pro konkrétní workspace. Jedna organizace tak může
+   být explicitně přidána do více workspace a jeden workspace může mít více
+   instalací bez lookupu podle loginu.
 
 **Důsledky.** Nastavení ukazuje instalace aktivního workspace a tlačítko setupu
 jen ownerovi/adminovi s propojeným GitHub účtem. Přímý statický install link byl
@@ -1512,7 +1515,8 @@ nesmí podařit použít podruhé ani po expiraci.
 **Bezpečnostní doplnění (2026-07-20).** GitHub dokumentace výslovně považuje
 `installation_id` v Setup URL za nedůvěryhodný. Současné ověření přes App JWT
 prokáže, že instalace patří této App, a u osobního účtu navíc porovnává
-immutable user ID. Pro produkční organizační grant je ještě nutné použít
-krátkodobý GitHub user access token a serverově ověřit, že instalace je
-přístupná konkrétnímu autorizujícímu uživateli. Do té doby je organization
-setup funkční prototyp, nikoli dokončená produkční bezpečnostní hranice.
+immutable user ID. Organizační grant proto nově používá krátkodobý GitHub
+App user access token a serverové ověření `/user` + `/user/installations`; token
+po callbacku zanikne v paměti procesu. Tím je tato bezpečnostní hranice
+implementačně dokončená; stále vyžaduje živý organization acceptance test.
+Viz [GitHub — About the setup URL](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url).

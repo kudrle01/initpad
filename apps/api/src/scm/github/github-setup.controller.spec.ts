@@ -23,6 +23,7 @@ describe('GitHubSetupController', () => {
       installations as never,
       app as never,
       workspaces as never,
+      {} as never,
     );
 
     await expect(controller.start('user-1', 'workspace-1')).resolves.toEqual({
@@ -34,10 +35,12 @@ describe('GitHubSetupController', () => {
 
   it('redirects a verified callback to the settings result', async () => {
     const installations = {
+      inspectSetup: jest.fn(async () => ({ accountType: 'User' })),
       completeSetup: jest.fn(async () => ({ accountLogin: 'acme' })),
     };
     const controller = new GitHubSetupController(
       installations as never,
+      {} as never,
       {} as never,
       {} as never,
     );
@@ -61,6 +64,7 @@ describe('GitHubSetupController', () => {
       installations as never,
       app as never,
       workspaces as never,
+      {} as never,
     );
 
     await expect(controller.recover('user-1', 'workspace-1')).resolves.toEqual({
@@ -77,10 +81,44 @@ describe('GitHubSetupController', () => {
       installations as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const response = { redirect: jest.fn((url: string) => url) };
     await controller.callback('state', '', 'request', response as never);
     expect(installations.completeSetup).not.toHaveBeenCalled();
     expect(response.redirect).toHaveBeenCalledWith(expect.stringContaining('github=installation_requested'));
+  });
+
+  it('continues an organization callback through user-bound OAuth verification', async () => {
+    const installations = {
+      inspectSetup: jest.fn(async () => ({ accountType: 'Organization' })),
+      completeSetup: jest.fn(),
+    };
+    const oauth = {
+      authorizeSetupUrl: jest.fn(() => ({
+        url: 'https://github.example/login/oauth/authorize?state=signed',
+        nonce: 'long-random-nonce',
+      })),
+    };
+    const controller = new GitHubSetupController(
+      installations as never,
+      {} as never,
+      {} as never,
+      oauth as never,
+    );
+    const response = {
+      cookie: jest.fn(),
+      redirect: jest.fn((url: string) => url),
+    };
+
+    await controller.callback('setup-state', '42', 'install', response as never);
+    expect(oauth.authorizeSetupUrl).toHaveBeenCalledWith('setup-state', '42');
+    expect(response.cookie).toHaveBeenCalledWith(
+      'initpad_gh_oauth',
+      'long-random-nonce',
+      expect.objectContaining({ httpOnly: true, sameSite: 'lax' }),
+    );
+    expect(response.redirect).toHaveBeenCalledWith(expect.stringContaining('github.example'));
+    expect(installations.completeSetup).not.toHaveBeenCalled();
   });
 });

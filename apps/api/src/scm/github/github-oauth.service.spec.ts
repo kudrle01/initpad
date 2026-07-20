@@ -34,6 +34,19 @@ describe('GitHubOAuthService', () => {
     expect(verified).toEqual({ mode: 'link', nonce });
   });
 
+  it('binds organization verification OAuth to the pending setup and installation', () => {
+    const service = new GitHubOAuthService();
+    const { url, state, nonce } = service.authorizeSetupUrl('pending-setup', '147774798');
+    expect(url).toContain('client_id=client-123');
+    expect(url).not.toContain('scope=');
+    expect(service.verifyState(state)).toEqual({
+      mode: 'setup',
+      nonce,
+      setupState: 'pending-setup',
+      installationId: '147774798',
+    });
+  });
+
   it('rejects a tampered or expired state', () => {
     const service = new GitHubOAuthService();
     expect(service.verifyState('garbage')).toBeNull();
@@ -72,6 +85,22 @@ describe('GitHubOAuthService', () => {
     // Second call must carry the bearer token from the exchange.
     const [, userInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
     expect((userInit.headers as Record<string, string>).Authorization).toBe('Bearer gho_tok');
+  });
+
+  it('returns a user token only to the immediate exchange caller', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ghu_transient' }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 123, login: 'alice', email: null }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 403 });
+
+    await expect(new GitHubOAuthService().exchangeCode('code')).resolves.toMatchObject({
+      accessToken: 'ghu_transient',
+      user: { providerUserId: '123', login: 'alice' },
+    });
   });
 
   it('throws when GitHub returns no access token', async () => {

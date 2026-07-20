@@ -140,6 +140,55 @@ export class GitHubAppService {
   }
 
   /**
+   * Verifies an organization installation against a transient GitHub App user
+   * access token. The token is used only for these requests and never stored.
+   */
+  async getUserAccessibleInstallation(
+    userAccessToken: string,
+    installationId: string,
+    expectedProviderUserId: string,
+  ): Promise<VerifiedGitHubInstallation> {
+    const headers = {
+      Authorization: `Bearer ${userAccessToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+    const userRes = await fetch(`${config.github.apiBaseUrl}/user`, { headers });
+    if (!userRes.ok) {
+      throw new Error(`Could not verify the GitHub user (HTTP ${userRes.status})`);
+    }
+    const user = (await userRes.json()) as { id?: number | string };
+    if (user.id == null || String(user.id) !== expectedProviderUserId) {
+      throw new Error('The authorizing GitHub user does not match the linked identity');
+    }
+
+    for (let page = 1; page <= 100; page += 1) {
+      const url = new URL(`${config.github.apiBaseUrl}/user/installations`);
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        throw new Error(`Could not verify user installation access (HTTP ${response.status})`);
+      }
+      const body = (await response.json()) as {
+        installations?: Array<{
+          id?: number | string;
+          account?: { id?: number | string; login?: string; type?: string };
+          repository_selection?: string;
+          suspended_at?: string | null;
+        }>;
+      };
+      if (!Array.isArray(body.installations)) {
+        throw new Error('GitHub returned an invalid user installation list');
+      }
+      const match = body.installations.find((candidate) => String(candidate.id) === installationId);
+      if (match) return parseInstallation(match);
+      if (body.installations.length < 100) break;
+    }
+    throw new Error('The authorizing GitHub user cannot access this installation');
+  }
+
+  /**
    * Exchanges the App JWT for an installation access token, optionally scoped to
    * specific repositories and a permission subset. The token is short-lived and
    * returned to the caller, never stored.

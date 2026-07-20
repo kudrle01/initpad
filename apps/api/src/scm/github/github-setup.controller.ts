@@ -15,6 +15,7 @@ import { config } from '../../config';
 import { WorkspacesService } from '../../workspaces/workspaces.service';
 import { GitHubAppService } from './github-app.service';
 import { GitHubInstallationService } from './github-installation.service';
+import { GITHUB_OAUTH_NONCE_COOKIE, GitHubOAuthService } from './github-oauth.service';
 
 /**
  * Starts and completes the GitHub App installation handshake (ADR-044). The
@@ -28,6 +29,7 @@ export class GitHubSetupController {
     private readonly installations: GitHubInstallationService,
     private readonly app: GitHubAppService,
     private readonly workspaces: WorkspacesService,
+    private readonly oauth: GitHubOAuthService,
   ) {}
 
   @Post()
@@ -77,6 +79,18 @@ export class GitHubSetupController {
       return res.redirect(this.frontend('/settings?github=installation_requested'));
     }
     try {
+      const candidate = await this.installations.inspectSetup(state, installationId);
+      if (candidate.accountType === 'Organization') {
+        const { url, nonce } = this.oauth.authorizeSetupUrl(state, installationId);
+        res.cookie(GITHUB_OAUTH_NONCE_COOKIE, nonce, {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: config.auth.secureCookie,
+          path: '/',
+          maxAge: 10 * 60 * 1000,
+        });
+        return res.redirect(url);
+      }
       const installation = await this.installations.completeSetup(state, installationId);
       return res.redirect(
         this.frontend(

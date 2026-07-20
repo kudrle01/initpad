@@ -152,7 +152,8 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
   Rename mění jen display login a uninstall záznam historizuje. Osobní
   instalaci lze po chybějícím Setup callbacku obnovit jen s platným pending
   stavem a přesnou shodou immutable GitHub user ID; organizace tento fallback
-  z bezpečnostních důvodů nepoužívá.
+  z bezpečnostních důvodů nepoužívá. Organizační callback místo toho provede
+  user-bound OAuth kontrolu `/user/installations`; krátkodobý token se neukládá.
 - `GitHubScmProvider` má čtecí operace a část HTTP mutací, ale projektová doména
   jej zatím nepoužívá. Existence `ScmRegistry` sama o sobě neznamená podporu
   vytvoření nebo importu GitHub projektu.
@@ -165,7 +166,8 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 2. ✅ U GitHub instalace uložit neměnné account ID, bezpečně obsloužit rename a
    rozlišit osobní účet/organizaci. Doplnit setup callback a vazbu instalace na
    přihlášeného uživatele/workspace; samotný globální webhook tuto autorizaci
-   nenahrazuje.
+   nenahrazuje. Organizace je navíc ověřena krátkodobým user access tokenem proti
+   `/user/installations`.
 3. Dokončit GitHub `provision`, push scaffoldu, `downloadArchive` a Actions
    secrets přes auditovanou libsodium sealed-box implementaci. Doplnit správné
    cesty pro osobní i organizační GHCR a stránkování repozitářů.

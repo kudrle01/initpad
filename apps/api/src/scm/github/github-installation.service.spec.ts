@@ -130,9 +130,14 @@ describe('GitHubInstallationService setup authorization', () => {
         installationId: '42', accountId: '987654', accountLogin: 'acme',
         accountType: 'Organization', repositorySelection: 'selected', suspendedAt: null,
       })),
+      getUserAccessibleInstallation: jest.fn(async () => ({
+        installationId: '42', accountId: '987654', accountLogin: 'acme',
+        accountType: 'Organization', repositorySelection: 'selected', suspendedAt: null,
+      })),
     };
     const service = new GitHubInstallationService(prisma as never, app as never);
-    await expect(service.completeSetup('opaque-state', '42')).resolves.toMatchObject({ accountId: '987654' });
+    await expect(service.completeSetup('opaque-state', '42', 'ghu_transient')).resolves.toMatchObject({ accountId: '987654' });
+    expect(app.getUserAccessibleInstallation).toHaveBeenCalledWith('ghu_transient', '42', '123');
     expect(tx.gitHubInstallationAccess.upsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({
         githubInstallationId: 'installation-row-1',
@@ -140,6 +145,32 @@ describe('GitHubInstallationService setup authorization', () => {
         authorizedById: 'user-1',
       }),
     }));
+  });
+
+  it('refuses to bind an organization without user-bound authorization', async () => {
+    const prisma = {
+      gitHubInstallationSetup: {
+        findUnique: jest.fn(async () => ({
+          id: 'setup-1', userId: 'user-1', workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() + 60_000), usedAt: null,
+        })),
+      },
+      externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '123' })) },
+      workspaceMember: { findUnique: jest.fn(async () => ({ role: 'owner' })) },
+      $transaction: jest.fn(),
+    };
+    const app = {
+      getInstallation: jest.fn(async () => ({
+        installationId: '42', accountId: '987654', accountLogin: 'acme',
+        accountType: 'Organization', repositorySelection: 'selected', suspendedAt: null,
+      })),
+    };
+    const service = new GitHubInstallationService(prisma as never, app as never);
+
+    await expect(service.completeSetup('opaque-state', '42')).rejects.toThrow(
+      'user authorization is required',
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('rejects a personal installation belonging to another GitHub identity', async () => {
