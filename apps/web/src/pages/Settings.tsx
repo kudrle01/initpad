@@ -26,6 +26,30 @@ function setupCommand(a: GitAccess): string {
   return `git config --global url."${creds}/".insteadOf "${base}/"`;
 }
 
+// OAuth linking and App installation are secondary tasks launched from an
+// already-authenticated Settings page. Keep InitPad in place and isolate the
+// external GitHub navigation in a popup. Opening about:blank synchronously
+// avoids popup blockers; clearing opener prevents the external page from
+// navigating the original InitPad window.
+function openGithubWindow(url?: string): Window | null {
+  const width = 760;
+  const height = 820;
+  const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
+  const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
+  const popup = window.open(
+    'about:blank',
+    '_blank',
+    `popup=yes,width=${width},height=${height},left=${Math.round(left)},top=${Math.round(top)}`,
+  );
+  if (!popup) return null;
+  popup.opener = null;
+  popup.document.title = 'Opening GitHub…';
+  popup.document.body.textContent = 'Opening GitHub…';
+  if (url) popup.location.replace(url);
+  popup.focus();
+  return popup;
+}
+
 export default function Settings() {
   const [access, setAccess] = useState<GitAccess | null>(null);
   const [loading, setLoading] = useState(false);
@@ -102,12 +126,46 @@ export default function Settings() {
     api.githubStatus().then(setGhStatus).catch(() => setGhStatus(null));
   }, [githubEnabled, activeWorkspace?.id]);
 
+  // Returning from/closing the GitHub popup focuses the original application.
+  // Refresh both halves of the connection so no manual reload is needed.
+  useEffect(() => {
+    if (!githubEnabled) return;
+    const refreshGithub = () => {
+      setGithubSetupBusy(false);
+      api.listIdentities().then(setIdentities).catch(() => undefined);
+      if (activeWorkspace) {
+        api.githubStatus().then(setGhStatus).catch(() => setGhStatus(null));
+      }
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshGithub();
+    };
+    window.addEventListener('focus', refreshGithub);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener('focus', refreshGithub);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [githubEnabled, activeWorkspace?.id]);
+
+  function linkGithub() {
+    if (!openGithubWindow('/api/auth/github?mode=link')) {
+      toast.error('Allow pop-ups for InitPad to connect GitHub');
+    }
+  }
+
   async function startGithubSetup() {
+    const popup = openGithubWindow();
+    if (!popup) {
+      toast.error('Allow pop-ups for InitPad to install the GitHub App');
+      return;
+    }
     setGithubSetupBusy(true);
     try {
       const { installUrl } = await api.startGithubSetup();
-      window.location.assign(installUrl);
+      popup.location.replace(installUrl);
     } catch (e) {
+      popup.close();
       toast.error((e as Error).message);
       setGithubSetupBusy(false);
     }
@@ -327,12 +385,12 @@ export default function Settings() {
           </div>
           <div className="mt-4">
             {identities.filter((i) => i.provider === 'github').length === 0 ? (
-              <a
-                href="/api/auth/github?mode=link"
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm font-medium hover:bg-secondary"
+              <Button
+                variant="secondary"
+                onClick={linkGithub}
               >
-                <Github className="h-4 w-4" /> Link GitHub account
-              </a>
+                <Github className="h-4 w-4" /> Link GitHub account <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
             ) : (
               <div className="divide-y divide-border rounded-md border border-border">
                 {identities.filter((i) => i.provider === 'github').map((identity) => (
@@ -364,6 +422,7 @@ export default function Settings() {
                           : ghStatus.installation.present
                             ? 'Add installation'
                             : 'Install GitHub App'}
+                        {!githubSetupBusy && <ExternalLink className="ml-1 h-3.5 w-3.5" />}
                       </Button>
                     )}
                     <Button
