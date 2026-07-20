@@ -323,6 +323,66 @@ describe('GitHubScmProvider reads', () => {
     })).rejects.toThrow('identity does not match');
   });
 
+  it('recovers the newest non-expired Actions artifact for an exact commit', async () => {
+    const digest = 'd'.repeat(64);
+    const sha = 'b'.repeat(40);
+    const { provider } = make(jest.fn(async (url: string) => {
+      if (url.includes('/actions/artifacts?name=')) {
+        return new Response(JSON.stringify({
+          artifacts: [
+            {
+              id: 900,
+              name: 'initpad-image.tar',
+              digest: `sha256:${digest}`,
+              expired: true,
+              created_at: '2026-07-20T19:00:00Z',
+              workflow_run: { repository_id: 101, head_sha: sha },
+            },
+            {
+              id: 901,
+              name: 'initpad-image.tar',
+              digest: `sha256:${digest}`,
+              expired: false,
+              created_at: '2026-07-20T20:00:00Z',
+              workflow_run: { repository_id: 101, head_sha: sha },
+            },
+          ],
+        }), { status: 200 });
+      }
+      if (url.endsWith('/actions/artifacts/901')) {
+        return new Response(JSON.stringify({
+          id: 901,
+          name: 'initpad-image.tar',
+          size_in_bytes: 123,
+          expired: false,
+          expires_at: '2026-07-21T00:00:00Z',
+          digest: `sha256:${digest}`,
+          workflow_run: { id: 456, repository_id: 101, head_sha: sha },
+        }), { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    }));
+
+    await expect(provider.findBuildArtifact(repository(), sha, 'initpad-image.tar'))
+      .resolves.toMatchObject({
+        providerArtifactId: '901',
+        providerRunId: '456',
+        commitSha: sha,
+        digest,
+      });
+  });
+
+  it('returns null when no Actions artifact belongs to the requested commit', async () => {
+    const { provider } = make(jest.fn(async () => new Response(JSON.stringify({
+      artifacts: [],
+    }), { status: 200 })));
+    await expect(provider.findBuildArtifact(
+      repository(),
+      'b'.repeat(40),
+      'initpad-image.tar',
+    )).resolves.toBeNull();
+  });
+
   it('streams a direct artifact to a private temp file and verifies its bytes', async () => {
     const bytes = Buffer.from('docker-save-tar');
     const digest = createHash('sha256').update(bytes).digest('hex');

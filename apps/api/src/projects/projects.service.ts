@@ -1642,6 +1642,34 @@ export class ProjectsService implements OnModuleInit {
       throw new BadRequestException('No repository commit is available to run');
     }
 
+    // A tested Actions artifact may already exist even when the final callback
+    // failed to reach a local/private control plane. Manual Deploy recovers
+    // that exact artifact first instead of rebuilding the same commit.
+    if (repository.provider === 'github' && scm.findBuildArtifact) {
+      const recovered = await scm.findBuildArtifact(
+        repository,
+        sha,
+        'initpad-image.tar',
+      );
+      if (recovered) {
+        const operationId = await this.beginOperation(
+          id,
+          'dev',
+          'artifact-recovery',
+          sha,
+        );
+        await this.prisma.environment.updateMany({
+          where: { id: env.id, activeOperationId: operationId },
+          data: {
+            statusReason: `Recovering tested GitHub build; deployment target: ${env.target?.name ?? env.provider}`,
+          },
+        });
+        await this.queueArtifactIngestion(id, repository, recovered, operationId);
+        return this.get(id);
+      }
+      this.assertGitHubCiCallback(repository);
+    }
+
     const operationId = await this.beginOperation(id, 'dev', 'ci-retry', sha);
     await this.prisma.environment.updateMany({
       where: { id: env.id, activeOperationId: operationId },
@@ -2354,6 +2382,16 @@ export class ProjectsService implements OnModuleInit {
     if (issue) {
       throw new BadRequestException(
         `${issue} Configure a public InitPad URL before creating or importing a GitHub project.`,
+      );
+    }
+  }
+
+  private assertGitHubCiCallback(repository: ScmRepositoryRef): void {
+    if (repository.provider !== 'github') return;
+    const issue = publicHttpsUrlIssue(config.ci.publicUrl);
+    if (issue) {
+      throw new BadRequestException(
+        `${issue} No reusable tested artifact was found, so InitPad did not start another GitHub workflow. Configure a public InitPad URL first.`,
       );
     }
   }

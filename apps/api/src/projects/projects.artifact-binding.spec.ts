@@ -1,4 +1,5 @@
 import { ProjectsService } from './projects.service';
+import { config } from '../config';
 
 const projectRow = {
   id: 'project-1',
@@ -12,20 +13,30 @@ const projectRow = {
   repoUrl: 'https://github.com/acme/api',
 };
 
-function make(prisma: Record<string, unknown>, deployment: Record<string, unknown> = {}) {
+function make(
+  prisma: Record<string, unknown>,
+  deployment: Record<string, unknown> = {},
+  workspaceScm: Record<string, unknown> = {},
+) {
   return new ProjectsService(
     prisma as never,
     {} as never,
     {} as never,
     deployment as never,
     {} as never,
-    {} as never,
+    workspaceScm as never,
     {} as never,
     {} as never,
   );
 }
 
 describe('ProjectsService immutable artifact binding', () => {
+  const savedPublicUrl = config.ci.publicUrl;
+
+  afterEach(() => {
+    config.ci.publicUrl = savedPublicUrl;
+  });
+
   it('promotes the exact artifact currently running in the source environment', async () => {
     const prisma = {
       environment: {
@@ -81,5 +92,81 @@ describe('ProjectsService immutable artifact binding', () => {
     expect(schedule).toHaveBeenCalledWith(
       'project-1', 'dev', 'a'.repeat(40), true, 'retry', 'artifact-1',
     );
+  });
+
+  it('recovers an existing tested GitHub artifact instead of starting CI again', async () => {
+    const sha = 'a'.repeat(40);
+    const artifact = {
+      provider: 'github-actions',
+      providerArtifactId: '901',
+      providerRunId: '456',
+      name: 'initpad-image.tar',
+      digest: 'd'.repeat(64),
+      commitSha: sha,
+      sizeBytes: 123,
+      expiresAt: new Date('2026-07-21T00:00:00Z'),
+    };
+    const prisma = {
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1', status: 'failed', activeOperationId: null,
+          provider: 'sftp', target: { name: 'ESO' },
+        })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      project: {
+        findUniqueOrThrow: jest.fn(async () => projectRow),
+        findUnique: jest.fn(async () => ({ ...projectRow, owner: null })),
+      },
+      deploymentOperation: { findFirst: jest.fn(async () => null) },
+    };
+    const scm = {
+      listCommits: jest.fn(async () => [{ sha }]),
+      findBuildArtifact: jest.fn(async () => artifact),
+      createRetryTag: jest.fn(),
+    };
+    const service = make(prisma, {}, { provider: jest.fn(() => scm) });
+    jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
+    jest.spyOn(service as any, 'beginOperation').mockResolvedValue('operation-1');
+    const queue = jest.spyOn(service as any, 'queueArtifactIngestion').mockResolvedValue(undefined);
+
+    await service.runAgain('project-1');
+
+    expect(scm.findBuildArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'github', fullName: 'acme/api' }),
+      sha,
+      'initpad-image.tar',
+    );
+    expect(queue).toHaveBeenCalledWith('project-1', expect.anything(), artifact, 'operation-1');
+    expect(scm.createRetryTag).not.toHaveBeenCalled();
+  });
+
+  it('does not start another GitHub workflow when callback is local and no artifact exists', async () => {
+    config.ci.publicUrl = 'http://localhost:8080';
+    const sha = 'a'.repeat(40);
+    const prisma = {
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1', status: 'failed', activeOperationId: null,
+          provider: 'sftp', target: { name: 'ESO' },
+        })),
+      },
+      project: {
+        findUniqueOrThrow: jest.fn(async () => projectRow),
+        findUnique: jest.fn(async () => ({ ...projectRow, owner: null })),
+      },
+      deploymentOperation: { findFirst: jest.fn(async () => null) },
+    };
+    const scm = {
+      listCommits: jest.fn(async () => [{ sha }]),
+      findBuildArtifact: jest.fn(async () => null),
+      createRetryTag: jest.fn(),
+    };
+    const service = make(prisma, {}, { provider: jest.fn(() => scm) });
+
+    await expect(service.runAgain('project-1')).rejects.toThrow(
+      'No reusable tested artifact was found',
+    );
+    expect(scm.createRetryTag).not.toHaveBeenCalled();
   });
 });

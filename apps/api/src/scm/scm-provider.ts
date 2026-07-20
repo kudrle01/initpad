@@ -153,6 +153,13 @@ export interface ScmProvider {
     repository: ScmRepositoryRef,
     locator: ScmBuildArtifactLocator,
   ): Promise<ScmBuildArtifact>;
+  // Recover the newest still-valid tested artifact for a commit when its CI
+  // callback could not reach the platform. Used by explicit manual Deploy.
+  findBuildArtifact?(
+    repository: ScmRepositoryRef,
+    commitSha: string,
+    expectedName: string,
+  ): Promise<ScmBuildArtifact | null>;
   downloadBuildArtifact?(
     repository: ScmRepositoryRef,
     artifact: ScmBuildArtifact,

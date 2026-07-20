@@ -801,6 +801,58 @@ export class GitHubScmProvider implements ScmProvider {
     };
   }
 
+  async findBuildArtifact(
+    repository: ScmRepositoryRef,
+    commitSha: string,
+    expectedName: string,
+  ): Promise<ScmBuildArtifact | null> {
+    this.assertProvider(repository);
+    if (!/^[0-9a-f]{40}$/i.test(commitSha)) {
+      throw new Error('GitHub artifact recovery requires a full commit SHA');
+    }
+    const token = await this.token(repository, READ_ACTIONS);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const response = await this.gh(
+      `/repos/${repo}/actions/artifacts?name=${encodeURIComponent(expectedName)}&per_page=100`,
+      token,
+    );
+    if (!response.ok) {
+      throw new Error(`Could not list GitHub Actions artifacts (HTTP ${response.status})`);
+    }
+    const data = (await response.json()) as {
+      artifacts?: Array<{
+        id?: number | string;
+        name?: string;
+        digest?: string;
+        expired?: boolean;
+        created_at?: string;
+        workflow_run?: {
+          repository_id?: number | string;
+          head_sha?: string;
+        };
+      }>;
+    };
+    const candidates = (data.artifacts ?? [])
+      .filter((artifact) =>
+        artifact.id != null &&
+        artifact.name === expectedName &&
+        artifact.digest &&
+        !artifact.expired &&
+        artifact.workflow_run?.head_sha?.toLowerCase() === commitSha.toLowerCase() &&
+        (repository.repositoryId == null ||
+          String(artifact.workflow_run?.repository_id ?? '') === repository.repositoryId),
+      )
+      .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')));
+    const candidate = candidates[0];
+    if (!candidate) return null;
+    return this.resolveBuildArtifact(repository, {
+      providerArtifactId: String(candidate.id),
+      digest: candidate.digest!,
+      commitSha,
+      expectedName,
+    });
+  }
+
   async downloadBuildArtifact(
     repository: ScmRepositoryRef,
     artifact: ScmBuildArtifact,
