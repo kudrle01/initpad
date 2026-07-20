@@ -37,10 +37,19 @@ export default function Settings() {
   const [renameWorkspace, setRenameWorkspace] = useState('');
   const [verifyLink, setVerifyLink] = useState<string | null>(null);
   const [githubEnabled, setGithubEnabled] = useState(false);
+  const [githubSetupBusy, setGithubSetupBusy] = useState(false);
   const [identities, setIdentities] = useState<LinkedIdentity[]>([]);
   const [ghStatus, setGhStatus] = useState<{
-    installUrl: string | null;
+    appConfigured: boolean;
+    canInstall: boolean;
     installation: { present: boolean; suspended: boolean };
+    installations: Array<{
+      id: string;
+      accountLogin: string;
+      accountType: string;
+      repositorySelection: string;
+      suspended: boolean;
+    }>;
   } | null>(null);
   const { user, activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
@@ -63,7 +72,6 @@ export default function Settings() {
         setGithubEnabled(c.githubEnabled);
         if (c.githubEnabled) {
           api.listIdentities().then(setIdentities).catch(() => undefined);
-          api.githubStatus().then(setGhStatus).catch(() => undefined);
         }
       })
       .catch(() => undefined);
@@ -73,11 +81,37 @@ export default function Settings() {
     if (gh === 'linked') {
       toast.success('GitHub account linked');
       api.listIdentities().then(setIdentities).catch(() => undefined);
+    } else if (gh === 'installed') {
+      const account = q.get('account');
+      toast.success(`GitHub App authorized${account ? ` for ${account}` : ''}`);
+    } else if (gh === 'installation_requested') {
+      toast.success('GitHub organization owner has been asked to approve the App');
+    } else if (gh === 'installation_error') {
+      toast.error(q.get('reason') || 'Could not authorize GitHub installation');
     } else if (gh === 'error') {
       toast.error(q.get('reason') || 'Could not link GitHub account');
     }
     if (gh) window.history.replaceState({}, '', '/settings');
   }, []);
+
+  useEffect(() => {
+    if (!githubEnabled || !activeWorkspace) {
+      setGhStatus(null);
+      return;
+    }
+    api.githubStatus().then(setGhStatus).catch(() => setGhStatus(null));
+  }, [githubEnabled, activeWorkspace?.id]);
+
+  async function startGithubSetup() {
+    setGithubSetupBusy(true);
+    try {
+      const { installUrl } = await api.startGithubSetup();
+      window.location.assign(installUrl);
+    } catch (e) {
+      toast.error((e as Error).message);
+      setGithubSetupBusy(false);
+    }
+  }
 
   async function unlinkGithub(provider: string) {
     if (!window.confirm('Unlink this GitHub account from InitPad?')) return;
@@ -318,15 +352,19 @@ export default function Settings() {
                         )}
                       </span>
                     </span>
-                    {ghStatus && !ghStatus.installation.present && ghStatus.installUrl && (
-                      <a
-                        href={ghStatus.installUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-card px-2.5 text-xs font-medium hover:bg-secondary"
+                    {ghStatus?.canInstall && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={githubSetupBusy}
+                        onClick={startGithubSetup}
                       >
-                        Install GitHub App
-                      </a>
+                        {githubSetupBusy
+                          ? 'Opening GitHub…'
+                          : ghStatus.installation.present
+                            ? 'Add installation'
+                            : 'Install GitHub App'}
+                      </Button>
                     )}
                     <Button
                       variant="ghost"
@@ -339,7 +377,21 @@ export default function Settings() {
                     </Button>
                   </div>
                 ))}
+                {ghStatus?.installations.map((installation) => (
+                  <div key={installation.id} className="flex flex-wrap items-center gap-2 bg-secondary/30 px-3 py-2 text-xs">
+                    <span className="font-medium">{installation.accountLogin}</span>
+                    <span className="text-muted-foreground">
+                      {installation.accountType.toLowerCase()} · {installation.repositorySelection} repositories
+                      {installation.suspended ? ' · suspended' : ` · authorized for ${activeWorkspace?.name ?? 'workspace'}`}
+                    </span>
+                  </div>
+                ))}
               </div>
+            )}
+            {ghStatus && !ghStatus.appConfigured && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                GitHub sign-in is available, but repository access has not been configured by the platform administrator.
+              </p>
             )}
           </div>
         </div>

@@ -10,14 +10,21 @@ import { GitHubStatusController } from './github-status.controller';
 import { AuthModule } from '../../auth/auth.module';
 import { IdentityModule } from '../../identity/identity.module';
 import { ScmModule } from '../scm.module';
+import { WorkspacesModule } from '../../workspaces/workspaces.module';
+import { GitHubSetupController } from './github-setup.controller';
 
 // GitHub App integration for the hosted edition. Inert without credentials.
 // AuthModule provides AuthService + JwtService; IdentityModule provides
 // ExternalIdentityService; ScmModule provides the Gitea adapter the registry
 // selects alongside the GitHub one.
 @Module({
-  imports: [AuthModule, IdentityModule, ScmModule],
-  controllers: [GitHubAuthController, GitHubWebhookController, GitHubStatusController],
+  imports: [AuthModule, IdentityModule, ScmModule, WorkspacesModule],
+  controllers: [
+    GitHubAuthController,
+    GitHubWebhookController,
+    GitHubStatusController,
+    GitHubSetupController,
+  ],
   providers: [
     GitHubAppService,
     GitHubOAuthService,

@@ -68,6 +68,42 @@ describe('GitHubAppService', () => {
     expect(body.permissions).toEqual(DEFAULT_INSTALLATION_PERMISSIONS);
   });
 
+  it('verifies immutable installation identity through the App API', async () => {
+    config.github.appId = '123';
+    config.github.privateKey = privateKeyPem;
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        id: 42,
+        account: { id: 987654, login: 'acme-renamed', type: 'Organization' },
+        repository_selection: 'selected',
+        suspended_at: null,
+      }),
+    }));
+    global.fetch = fetchMock as never;
+
+    await expect(new GitHubAppService().getInstallation('42')).resolves.toEqual({
+      installationId: '42',
+      accountId: '987654',
+      accountLogin: 'acme-renamed',
+      accountType: 'Organization',
+      repositorySelection: 'selected',
+      suspendedAt: null,
+    });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/app/installations/42');
+  });
+
+  it('rejects an incomplete installation identity from GitHub', async () => {
+    config.github.appId = '123';
+    config.github.privateKey = privateKeyPem;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ id: 42, account: { login: 'missing-id', type: 'User' } }),
+    })) as never;
+    await expect(new GitHubAppService().getInstallation('42')).rejects.toThrow('incomplete');
+  });
+
   it('scopes the token to the requested repositories and permissions', async () => {
     config.github.appId = '123';
     config.github.privateKey = privateKeyPem;

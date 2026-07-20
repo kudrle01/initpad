@@ -35,6 +35,15 @@ export interface InstallationToken {
   expiresAt: string;
 }
 
+export interface VerifiedGitHubInstallation {
+  installationId: string;
+  accountId: string;
+  accountLogin: string;
+  accountType: 'User' | 'Organization';
+  repositorySelection: string;
+  suspendedAt: Date | null;
+}
+
 /**
  * The GitHub App side of the hosted edition (ADR-030): it authenticates as the
  * App and exchanges that for short-lived, narrowly-scoped installation access
@@ -54,6 +63,49 @@ export class GitHubAppService {
       throw new Error('GitHub App is not configured (INITPAD_GITHUB_APP_ID / PRIVATE_KEY)');
     }
     return signAppJwt(config.github.appId, config.github.privateKey);
+  }
+
+  /**
+   * Resolves an installation as the App itself. Setup callbacks contain only
+   * untrusted query parameters; this lookup is the authoritative source of the
+   * immutable account id, current login/type and installation state.
+   */
+  async getInstallation(installationId: string | number): Promise<VerifiedGitHubInstallation> {
+    const res = await fetch(
+      `${config.github.apiBaseUrl}/app/installations/${encodeURIComponent(String(installationId))}`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.appJwt()}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      },
+    );
+    if (!res.ok) {
+      throw new Error(`Could not verify the GitHub App installation (HTTP ${res.status})`);
+    }
+    const data = (await res.json()) as {
+      id?: number | string;
+      account?: { id?: number | string; login?: string; type?: string };
+      repository_selection?: string;
+      suspended_at?: string | null;
+    };
+    if (
+      data.id == null ||
+      data.account?.id == null ||
+      !data.account.login ||
+      (data.account.type !== 'User' && data.account.type !== 'Organization')
+    ) {
+      throw new Error('GitHub returned an incomplete installation identity');
+    }
+    return {
+      installationId: String(data.id),
+      accountId: String(data.account.id),
+      accountLogin: data.account.login,
+      accountType: data.account.type,
+      repositorySelection: data.repository_selection ?? 'selected',
+      suspendedAt: data.suspended_at ? new Date(data.suspended_at) : null,
+    };
   }
 
   /**

@@ -11,54 +11,98 @@ datasource db {
 }
 
 model User {
-  id                String            @id @default(uuid())
+  id                         String                     @id @default(uuid())
   // Null for accounts that have no embedded-Gitea identity (GitHub-only SaaS
   // sign-in). Managed self-hosted accounts still carry their Gitea id.
-  giteaId           Int?              @unique
-  username          String            @unique
-  name              String?
-  email             String?           @unique
-  avatarUrl         String?
-  accessToken       String
+  giteaId                    Int?                       @unique
+  username                   String                     @unique
+  name                       String?
+  email                      String?                    @unique
+  avatarUrl                  String?
+  accessToken                String
   // Password hash (scrypt) for managed registration; null = OAuth-only (SSO) account.
-  passwordHash      String?
+  passwordHash               String?
   // Platform-wide authority is deliberately small. Workspace roles carry
   // project and team permissions; this role is for instance administration.
-  platformRole      String            @default("user") // admin | user
+  platformRole               String                     @default("user") // admin | user
   // Account lifecycle (ADR-040). Deactivated accounts cannot sign in and their
   // live sessions are rejected. `mustChangePassword` forces a password change
   // (admin-provisioned temporary credentials, post-reset) before any other API
   // call is allowed. `tokenVersion` is embedded in the session JWT; bumping it
   // invalidates every previously issued session (reset, deactivate, change).
-  active            Boolean           @default(true)
-  mustChangePassword Boolean          @default(false)
-  tokenVersion      Int               @default(0)
-  emailVerifiedAt   DateTime?
-  createdAt         DateTime          @default(now())
-  projects          Project[]
-  targets           Target[]
-  memberships       WorkspaceMember[]
-  authTokens        AuthToken[]
-  externalIdentities ExternalIdentity[]
+  active                     Boolean                    @default(true)
+  mustChangePassword         Boolean                    @default(false)
+  tokenVersion               Int                        @default(0)
+  emailVerifiedAt            DateTime?
+  createdAt                  DateTime                   @default(now())
+  projects                   Project[]
+  targets                    Target[]
+  memberships                WorkspaceMember[]
+  authTokens                 AuthToken[]
+  externalIdentities         ExternalIdentity[]
+  githubInstallationAccesses GitHubInstallationAccess[] @relation("GitHubInstallationAuthorizedBy")
+  githubInstallationSetups   GitHubInstallationSetup[]
 }
 
 // A GitHub App installation on a user or organization account (ADR-030). It is
 // the trust binding that lets automation reach selected repositories through
 // short-lived installation tokens; its lifecycle arrives via webhooks. The
-// numeric installation id is stored as text to avoid 32-bit overflow. No direct
-// User relation — the InitPad owner is resolved via a linked identity.
+// numeric installation id and immutable account id are stored as text to avoid
+// 32-bit overflow. Mutable accountLogin is display data only. Uninstalls are
+// retained as deletedAt audit records; authorization is explicit per workspace.
 model GitHubInstallation {
-  id                  String    @id @default(uuid())
-  installationId      String    @unique
+  id                  String                     @id @default(uuid())
+  installationId      String                     @unique
+  accountId           String?
   accountLogin        String
   accountType         String // User | Organization
-  repositorySelection String    @default("selected") // all | selected
+  repositorySelection String                     @default("selected") // all | selected
   suspendedAt         DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
   projects            Project[]
+  accesses            GitHubInstallationAccess[]
 
+  @@index([accountId])
   @@index([accountLogin])
+}
+
+// A GitHub installation is never globally available merely because a webhook
+// mentioned it. This explicit grant is created only after a one-time setup
+// callback initiated by an owner/admin of the target workspace (ADR-044).
+model GitHubInstallationAccess {
+  id                   String             @id @default(uuid())
+  githubInstallation   GitHubInstallation @relation(fields: [githubInstallationId], references: [id], onDelete: Cascade)
+  githubInstallationId String
+  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId          String
+  authorizedBy         User               @relation("GitHubInstallationAuthorizedBy", fields: [authorizedById], references: [id], onDelete: Restrict)
+  authorizedById       String
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@unique([githubInstallationId, workspaceId])
+  @@index([workspaceId])
+  @@index([authorizedById])
+}
+
+// Opaque, hashed, short-lived and single-use state for the GitHub App setup
+// redirect. It binds the callback to both the signed-in user and the selected
+// workspace, preventing login CSRF and cross-workspace installation capture.
+model GitHubInstallationSetup {
+  id          String    @id @default(uuid())
+  tokenHash   String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, workspaceId])
+  @@index([expiresAt])
 }
 
 // A linked external SCM identity (GitHub today, GitLab later) — ADR-030/039.
@@ -97,14 +141,16 @@ model AuthToken {
 }
 
 model Workspace {
-  id          String            @id @default(uuid())
-  slug        String            @unique
-  name        String
-  type        String // personal | team
-  createdAt   DateTime          @default(now())
-  members     WorkspaceMember[]
-  projects    Project[]
-  targets     Target[]
+  id                         String                     @id @default(uuid())
+  slug                       String                     @unique
+  name                       String
+  type                       String // personal | team
+  createdAt                  DateTime                   @default(now())
+  members                    WorkspaceMember[]
+  projects                   Project[]
+  targets                    Target[]
+  githubInstallationAccesses GitHubInstallationAccess[]
+  githubInstallationSetups   GitHubInstallationSetup[]
 }
 
 model WorkspaceMember {
@@ -164,7 +210,7 @@ model Target {
 }
 
 model Project {
-  id                String        @id @default(uuid())
+  id                String              @id @default(uuid())
   name              String
   templateId        String
   repoPath          String
@@ -174,24 +220,24 @@ model Project {
   // repositoryId is nullable only for legacy rows while startup reconciliation
   // resolves the real Gitea id. The explicit coordinates remove every implicit
   // owner/name parse from repoUrl and prepare organization-owned GitHub repos.
-  scmProvider       String  @default("gitea") // gitea | github
+  scmProvider       String              @default("gitea") // gitea | github
   scmRepositoryId   String?
   scmOwner          String
   scmRepositoryName String
   scmFullName       String
-  scmDefaultBranch  String  @default("main")
+  scmDefaultBranch  String              @default("main")
   scmInstallation   GitHubInstallation? @relation(fields: [scmInstallationId], references: [id], onDelete: SetNull)
   scmInstallationId String?
   lastCommit        String
   // SHA-256 hash of the repository-specific CI webhook token. The plaintext
   // exists only as a Gitea Actions secret and is never persisted by InitPad.
   ciDeployTokenHash String?
-  createdAt         DateTime      @default(now())
-  owner             User?         @relation(fields: [ownerId], references: [id])
+  createdAt         DateTime            @default(now())
+  owner             User?               @relation(fields: [ownerId], references: [id])
   ownerId           String?
   // Authorization and visibility are workspace-scoped. ownerId remains the
   // repository/SCM identity so existing repo URLs and image names do not move.
-  workspace         Workspace     @relation(fields: [workspaceId], references: [id])
+  workspace         Workspace           @relation(fields: [workspaceId], references: [id])
   workspaceId       String
   environments      Environment[]
 

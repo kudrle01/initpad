@@ -1,9 +1,11 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Headers, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
 import { config } from '../../config';
 import { ExternalIdentityService } from '../../identity/external-identity.service';
 import { GitHubInstallationService } from './github-installation.service';
+import { GitHubAppService } from './github-app.service';
+import { WorkspacesService } from '../../workspaces/workspaces.service';
 
 // Connection status for the signed-in user's create/import preflight (ADR-030):
 // is GitHub enabled, is an identity linked, and is the App installed on that
@@ -14,22 +16,40 @@ export class GitHubStatusController {
   constructor(
     private readonly identities: ExternalIdentityService,
     private readonly installations: GitHubInstallationService,
+    private readonly app: GitHubAppService,
+    private readonly workspaces: WorkspacesService,
   ) {}
 
   @Get('status')
-  async status(@CurrentUser() userId: string) {
+  async status(
+    @CurrentUser() userId: string,
+    @Headers('x-workspace-id') requestedWorkspaceId?: string,
+  ) {
     const enabled = Boolean(
       config.github.clientId && config.github.clientSecret && config.github.callbackUrl,
     );
-    const installUrl = config.github.appSlug
-      ? `${config.github.oauthBaseUrl}/apps/${config.github.appSlug}/installations/new`
-      : null;
+    const appConfigured = this.app.isConfigured() && Boolean(config.github.appSlug);
     const linked = (await this.identities.listForUser(userId)).find((i) => i.provider === 'github') ?? null;
-    let installation = { present: false, suspended: false };
-    if (linked?.username) {
-      const record = await this.installations.findByOwner(linked.username);
-      if (record) installation = { present: true, suspended: record.suspendedAt != null };
-    }
-    return { enabled, installUrl, linked: Boolean(linked), login: linked?.username ?? null, installation };
+    const workspace = await this.workspaces.resolve(userId, requestedWorkspaceId);
+    const accesses = await this.installations.listForWorkspace(workspace.id);
+    const rows = accesses.map(({ githubInstallation: record }) => ({
+      id: record.id,
+      accountId: record.accountId,
+      accountLogin: record.accountLogin,
+      accountType: record.accountType,
+      repositorySelection: record.repositorySelection,
+      suspended: record.suspendedAt != null,
+    }));
+    const present = rows.length > 0;
+    const suspended = present && rows.every((row) => row.suspended);
+    return {
+      enabled,
+      appConfigured,
+      linked: Boolean(linked),
+      login: linked?.username ?? null,
+      canInstall: Boolean(linked) && appConfigured && ['owner', 'admin'].includes(workspace.role),
+      installation: { present, suspended },
+      installations: rows,
+    };
   }
 }

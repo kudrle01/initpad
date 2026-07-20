@@ -170,11 +170,22 @@ export const api = {
   githubStatus: () =>
     http<{
       enabled: boolean;
-      installUrl: string | null;
+      appConfigured: boolean;
       linked: boolean;
       login: string | null;
+      canInstall: boolean;
       installation: { present: boolean; suspended: boolean };
+      installations: Array<{
+        id: string;
+        accountId: string | null;
+        accountLogin: string;
+        accountType: string;
+        repositorySelection: string;
+        suspended: boolean;
+      }>;
     }>('/scm/github/status'),
+  startGithubSetup: () =>
+    http<{ installUrl: string }>('/scm/github/setup', { method: 'POST' }),
   register: (username: string, email: string, password: string) =>
     http<User>('/auth/register', {
       method: 'POST',
