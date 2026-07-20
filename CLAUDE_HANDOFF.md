@@ -58,6 +58,9 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   Pipeline je vázaná na `providerRunId` skutečně nasazeného artifactu;
   deploy stage promítá stav InitPad publication a environment status vede
   přímo na konkrétní SCM job bez modalu aplikačních logů (ADR-054).
+  Aktuální CD průběh je samostatná inline Deployment activity s immutable
+  target snapshotem; deploy ověřeného artifactu záměrně nespouští nový runner
+  (ADR-055).
 - Create/import zapisuje před každým ne-transakčním zásahem durable
   `ProvisioningEffect`. Import při chybě odstraní platformní secrets, obnoví
   původní přímou Gitea/GitHub collaborator roli a smaže Project jen po úplné
@@ -106,7 +109,7 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 45 API suites / 274 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 45 API suites / 275 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config prošel; API/web kontejnery byly přestavěné a API
   je healthy bez modulárního DI cyklu.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy

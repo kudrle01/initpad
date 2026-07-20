@@ -2022,3 +2022,50 @@ publikaci na success bez nového Actions runu. Kliknutí na status `running`,
 nesmí se otevřít InitPad modal ani zobrazit stdout kontejneru.
 
 Reference: [GitHub REST API — workflow jobs](https://docs.github.com/en/rest/actions/workflow-jobs).
+
+## ADR-055 — CI runner log a deployment activity jsou dvě odlišné auditní stopy
+
+**Kontext.** Po úspěšném ručním redeployi ověřeného GitHub artifactu
+uživatel správně neviděl nový GitHub Actions run: žádný totiž nevznikl.
+InitPad dodržuje build once/deploy many a stejné bajty publikuje na nový target
+bez opakování buildu a testů. Odkaz na původní Actions job je audit CI
+artifactu, ale nemůže zobrazovat aktuální SFTP upload/extract/publish kroky
+probíhající v control plane. UI tyto dva zdroje dostatečně nerozlišovalo.
+
+SFTP teardown současně pravdivě hlásil runtime cache přesunutou do chráněné
+karantény. Text `Cleanup pending` ale nevysvětloval, že veřejná aplikace již
+neexistuje a canonical path/název jsou volné; zbývá pouze diskový dluh, který
+kvůli cizímu Unix vlastnictví odstraní správce targetu.
+
+**Rozhodnutí.** Detail projektu má samostatnou inline `Deployment activity`.
+Backend vrací poslední DeploymentOperation pro všechna prostředí, aktuální
+nebo poslední krok, stav, dobu, verzi, artifact run a immutable snapshot
+provideru/targetu pořízený při startu operace. Provider progress aktualizuje
+Environment i operation message, takže existující 2,5s polling ukazuje např.
+fetch/extract/upload/publish/verify bez modalu a bez aplikačního stdout.
+
+GitHub/Gitea odkaz je výslovně `CI build log`; menu používá `Deploy verified
+build`/`Redeploy verified build` a toast upozorňuje, že nový runner není
+potřeba. Nový runner vzniká jen tehdy, když neexistuje použitelný ověřený
+artifact a InitPad skutečně vyžádá nový CI build.
+
+Karanténa je v UI popsaná jako archivovaný administrátorský cleanup, který
+neblokuje reuse stejné URL cesty ani jména. Již přesunutá data InitPad
+nepředstírá, že smí smazat bez oprávnění. Pro budoucí PHP deploymenty
+chráněný wrapper nastavuje `umask(0000)`; společně s existujícím chmod/ACL
+tím omezuje vznik nových vnořených Nette/Laravel/Symfony cache adresářů,
+které deployment účet neumí odstranit.
+
+**Důsledky.** GitHub zůstává autoritou pro build/test log, InitPad pro CD
+průběh. Uživatel vidí aktuální deployment bez falešného runneru a historie
+nezmění target zpětně po jeho rebindingu. `umask(0000)` je omezený na
+izolované runtime adresáře chráněného shared-hosting layoutu, které už byly
+záměrně world-writable; nepovoluje HTTP přístup do `.initpad-data`.
+
+**Uživatelské testování.** Na běžícím dev zvolit `Redeploy verified
+build`. Na GitHubu nesmí vzniknout nový run. V Deployment activity se do
+2,5 s objeví running operace a postupně aktuální krok; po dokončení success,
+target ESO, commit a doba. `CI build log` vede na původní artifact run. Potom
+deployment odstranit: veřejná URL musí zmizet a hláška karantény musí říct,
+že cesta/jméno jsou volné. Nový deploy stejného projektu musí projít; starou
+karanténu lze fyzicky odstranit jen administrátorem ESO.

@@ -64,6 +64,9 @@ nejdřív obnoví jeho dosud platný Actions artifact; bez artifactu a veřejné
 HTTPS URL nevytvoří další nefunkční retry. Stages jsou vázané na run
 skutečně nasazeného artifactu a kliknutí na environment status otevře přímo
 konkrétní GitHub/Gitea Actions job, nikoli aplikační stdout.
+Aktuální upload/publish/verify kroky jsou v samostatné Deployment activity:
+redeploy ověřeného artifactu je CD operace InitPadu a nový CI runner
+záměrně nespouští.
 
 ## Lokální vývoj
 

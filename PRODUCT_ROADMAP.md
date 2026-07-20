@@ -586,6 +586,20 @@ vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
 - Automatizovaně ověřeno: 45 API suites / 274 testů a API i web production
   build. Uživatelský test je v ADR-054.
 
+### InitPad deployment activity a PHP cleanup prevence (2026-07-20)
+
+- CI audit a CD průběh jsou oddělené: provider link ukazuje původní build
+  run, inline Deployment activity živě ukazuje publikaci ověřeného artifactu.
+- Deploy/redeploy proto nespouští nový runner; UI to uvádí v menu, toastu i
+  vysvětlení. Nový CI run vzniká pouze bez použitelného artifactu.
+- DeploymentOperation ukládá snapshot targetu/provideru, poslední progress
+  krok a artifact run. Historie zůstává pravdivá po změně targetu.
+- Karanténa v UI potvrzuje uvolnění canonical jména; starý diskový dluh
+  zůstává správci serveru. Nový PHP wrapper používá nulový umask jako
+  prevenci další foreign-owned cache podstromů.
+- Automatizovaně ověřeno: 45 API suites / 275 testů a API i web production
+  build. Uživatelský test je v ADR-055.
+
 ### Průběžné ověření delivery části milníku 8
 
 - React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez
