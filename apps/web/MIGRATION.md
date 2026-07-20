@@ -87,7 +87,7 @@ Starý CSS třídy → Tailwind utility + shadcn primitivum. Příklad (viz `pag
 - [x] Dashboard, Projects (`molecules/ProjectRow`)
 - [x] Templates
 - [x] NewProject (template picker, env select)
-- [x] ProjectDetail (`EnvironmentPipeline`, `CommitList`, `EnvLogsDialog`, `DeleteProjectDialog`)
+- [x] ProjectDetail (`EnvironmentPipeline`, `CommitList`, `DeleteProjectDialog`)
 - [x] Environments / Activity / Infrastructure / Settings (`ComingSoon`)
 - [x] NotFound / RouteError
 - [x] Toasty (Tailwind, centrované)

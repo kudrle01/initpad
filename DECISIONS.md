@@ -1982,3 +1982,43 @@ zobrazit vysvětlující chybu a GitHub nesmí dostat retry tag. Po nastavení
 veřejné HTTPS URL může nový retry proběhnout a callback se vrátí do InitPadu.
 
 Reference: [GitHub REST API — Actions artifacts](https://docs.github.com/en/rest/actions/artifacts).
+
+## ADR-054 — Pipeline je vázaná na nasazený run; status vede přímo do SCM logu
+
+**Kontext.** Jeden commit může mít více GitHub Actions runs, například po
+retry tagu. Commit detail dosud automaticky vybral nejnovější run pro SHA,
+který ale nemusel být runem artefaktu skutečně nasazeného na ESO. Při obnově
+hotového artefaktu navíc poslední GitHub callback job zůstal historicky
+neúspěšný, i když navazující publication v InitPadu proběhla úspěšně.
+Kliknutí na environment status současně otevíralo modal se stdout běžící
+aplikace; uživatel ale hledal build/deploy log runneru.
+
+**Rozhodnutí.** `BuildArtifact.providerRunId` je autoritativní vazba mezi
+nasazenými bajty a GitHub Actions runem. Commit stages proto pro nasazený
+artifact čtou joby přímo z `/actions/runs/{run_id}/jobs`, nikoli z libovolného
+nejnovějšího runu stejného SHA. Build, test a docker build zůstávají stavy
+GitHubu. Finální deploy stage kombinuje job URL tohoto runu s autoritativním
+stavem dev prostředí/DeploymentOperation: po změně targetu je pending, při
+publication running a po úspěšné recovery success.
+
+Environment status a chybový důvod jsou odkazy otevírané v novém panelu
+přímo na konkrétní deploy job GitHub/Gitea Actions. Když job URL ještě
+neexistuje, status není falešně klikací. Modal aplikačních logů, jeho polling
+a endpoint `GET /projects/:id/logs/:env` se odstraňují. Budoucí aplikační
+observabilita bude samostatná doména, ne tlačítko označené deployment logs.
+
+**Důsledky.** UI ukazuje stages artefaktu, který opravdu běží, i když pro
+stejný commit existují pozdější retry runs. Uživatel jedním kliknutím otevře
+provider-native auditní log a InitPad nemusí proxyovat ani uchovávat logy
+runneru. Při recovery může odkazovaný callback job pravdivě obsahovat původní
+chybu, zatímco stage je success podle následného prokazatelně dokončeného
+deploymentu v InitPadu.
+
+**Uživatelské testování.** U projektu s více runs stejného commitu otevřít
+Commits: odkazy stages musí patřit runu uloženému u dev artifactu. Po změně
+targetu má deploy stage přejít na pending, během Deploy na running a po
+publikaci na success bez nového Actions runu. Kliknutí na status `running`,
+`failed` nebo `deploying` musí otevřít konkrétní Actions job v novém panelu;
+nesmí se otevřít InitPad modal ani zobrazit stdout kontejneru.
+
+Reference: [GitHub REST API — workflow jobs](https://docs.github.com/en/rest/actions/workflow-jobs).

@@ -575,6 +575,17 @@ vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
 - Automatizovaně ověřeno: 44 API suites / 271 testů a API i web production
   build. Uživatelský test je v ADR-053.
 
+### Run-bound stages a přímé deployment log odkazy (2026-07-20)
+
+- Stages nasazeného commitu se načítají z přesného Actions runu uloženého
+  v `BuildArtifact`, nikoli z pozdějšího runu stejného SHA.
+- Finální deploy stage sleduje skutečný stav publication v InitPadu, takže
+  recovery bez nového CI runu přejde z running na success.
+- Environment status i chybový důvod vedou přímo na konkrétní GitHub/Gitea
+  job. Modal stdout aplikace a jeho veřejný API endpoint byly odstraněny.
+- Automatizovaně ověřeno: 45 API suites / 274 testů a API i web production
+  build. Uživatelský test je v ADR-054.
+
 ### Průběžné ověření delivery části milníku 8
 
 - React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez

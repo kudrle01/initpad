@@ -61,7 +61,9 @@ GitHub stages se čtou z Actions workflow jobs (`Actions: read`) a odkazují
 přímo na job log. Změna targetu zachová ověřený build, ale vyžaduje explicitní
 `Deploy` na nový server. Pokud callback původního runu selhal, ruční Deploy
 nejdřív obnoví jeho dosud platný Actions artifact; bez artifactu a veřejné
-HTTPS URL nevytvoří další nefunkční retry.
+HTTPS URL nevytvoří další nefunkční retry. Stages jsou vázané na run
+skutečně nasazeného artifactu a kliknutí na environment status otevře přímo
+konkrétní GitHub/Gitea Actions job, nikoli aplikační stdout.
 
 ## Lokální vývoj
 
