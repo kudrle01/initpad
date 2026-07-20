@@ -126,6 +126,9 @@ export interface PipelineStage {
   status: StageStatus;
   // Link to the concrete SCM job/run, if the provider has created it already.
   url?: string | null;
+  // SCM jobs and InitPad publications are separate audit records. Missing
+  // source is kept compatible with older SCM-only clients.
+  source?: 'scm' | 'platform';
 }
 
 export interface Commit {

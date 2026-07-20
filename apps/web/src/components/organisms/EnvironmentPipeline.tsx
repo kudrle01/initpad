@@ -1,10 +1,12 @@
 import { Fragment } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   Check,
   Cloud,
   Container,
   ExternalLink,
+  History,
   MoreVertical,
   Play,
   RefreshCw,
@@ -24,7 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
-import { cn, scmLink } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { cleanupNotice } from '@/lib/deployment';
 import type { Commit, EnvName, Environment, Project, ProviderKind } from '@/types';
 
@@ -91,13 +93,7 @@ export function EnvironmentPipeline({
         const deploying = busy === next || target?.status === 'deploying';
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
         const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
-        const rawRunnerLogUrl =
-          deployedCommit?.pipeline.find((stage) => stage.name === 'deploy' && stage.url)?.url ??
-          deployedCommit?.pipeline.find((stage) => stage.url)?.url ??
-          (project.scm.provider === 'github' && project.repoUrl && env.artifact?.runId
-            ? `${project.repoUrl}/actions/runs/${env.artifact.runId}`
-            : null);
-        const runnerLogUrl = scmLink(rawRunnerLogUrl, project.scm.provider);
+        const deploymentHistoryUrl = `/projects/${project.id}/deployments`;
         // While deploying, statusReason carries the live step (e.g.
         // 'Uploading 340/1200 files'); derive a % for the bar when it has a ratio.
         const ratio =
@@ -132,16 +128,14 @@ export function EnvironmentPipeline({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">{env.name}</span>
                 <div className="flex items-center gap-1.5">
-                  {env.status !== 'empty' && runnerLogUrl ? (
-                    <a
-                      href={runnerLogUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={`View the original CI runner job in ${project.scm.provider === 'github' ? 'GitHub' : 'Gitea'}`}
+                  {env.status !== 'empty' ? (
+                    <Link
+                      to={deploymentHistoryUrl}
+                      title="View InitPad deployment history"
                       className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
                       <StatusBadge status={env.status} className="cursor-pointer hover:bg-secondary/70" />
-                    </a>
+                    </Link>
                   ) : (
                     <StatusBadge status={env.status} />
                   )}
@@ -284,21 +278,13 @@ export function EnvironmentPipeline({
               )}
 
               {env.status === 'failed' && env.statusReason && (
-                runnerLogUrl ? (
-                  <a
-                    href={runnerLogUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 flex items-center gap-1 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                  >
-                    <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
-                    <ExternalLink className="h-3 w-3 shrink-0" />
-                  </a>
-                ) : (
-                  <div className="mt-2 flex items-center gap-1 text-xs text-destructive">
-                    <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
-                  </div>
-                )
+                <Link
+                  to={deploymentHistoryUrl}
+                  className="mt-2 flex items-center gap-1 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
+                  <History className="h-3 w-3 shrink-0" />
+                </Link>
               )}
 
               {cleanupPending && (

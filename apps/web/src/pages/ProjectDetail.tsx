@@ -433,6 +433,7 @@ export default function ProjectDetail() {
           openSha={openSha}
           onToggle={(sha) => setOpenSha((cur) => (cur === sha ? null : sha))}
           limit={5}
+          deploymentHistoryUrl={`/projects/${project.id}/deployments`}
         />
         {commits.length > 5 && (
           <Link

@@ -78,6 +78,7 @@ export default function ProjectCommits() {
           scmProvider={project.scm.provider}
           openSha={openSha}
           onToggle={(sha) => setOpenSha((current) => (current === sha ? null : sha))}
+          deploymentHistoryUrl={`/projects/${project.id}/deployments`}
         />
       ) : null}
     </div>

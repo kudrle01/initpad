@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
-import { ChevronRight, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ChevronRight, ExternalLink, History } from 'lucide-react';
 import { StatusDot } from '@/components/atoms/StatusDot';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { cn, scmLink } from '@/lib/utils';
@@ -21,9 +22,18 @@ interface Props {
   openSha: string | null;
   onToggle: (sha: string) => void;
   limit?: number;
+  deploymentHistoryUrl?: string;
 }
 
-export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle, limit }: Props) {
+export function CommitList({
+  commits,
+  repoUrl,
+  scmProvider,
+  openSha,
+  onToggle,
+  limit,
+  deploymentHistoryUrl,
+}: Props) {
   if (commits.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-card px-6 py-8 text-center text-sm text-muted-foreground">
@@ -39,6 +49,11 @@ export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle, l
       {visibleCommits.map((c) => {
         const open = openSha === c.sha;
         const ci = commitStatus(c.pipeline);
+        const recoveredPublication =
+          c.pipeline.some((stage) => stage.name === 'deploy' && stage.status === 'failed') &&
+          c.pipeline.some(
+            (stage) => stage.source === 'platform' && stage.status === 'success',
+          );
         return (
           <div key={c.sha}>
             <div
@@ -77,7 +92,16 @@ export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle, l
                 <div className="flex flex-wrap items-center gap-2">
                   {c.pipeline.map((s, i) => (
                     <Fragment key={s.name}>
-                      {s.url ? (
+                      {s.source === 'platform' && deploymentHistoryUrl ? (
+                        <Link
+                          to={deploymentHistoryUrl}
+                          title="View this publication in InitPad deployment history"
+                          className="text-link inline-flex items-center gap-1.5 rounded-md border border-current/25 bg-card px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                        >
+                          <StatusDot status={s.status} kind="ci" /> {s.name}
+                          <History className="h-3 w-3" />
+                        </Link>
+                      ) : s.url ? (
                         <a
                           href={scmLink(s.url, scmProvider)}
                           target="_blank"
@@ -99,6 +123,12 @@ export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle, l
                     </Fragment>
                   ))}
                 </div>
+                {recoveredPublication && (
+                  <p className="mt-2.5 text-xs text-muted-foreground">
+                    The original SCM handoff job failed. InitPad later published the same
+                    verified build successfully, so another runner was not started.
+                  </p>
+                )}
                 {(() => {
                   const runUrl =
                     c.pipeline.find((s) => s.url)?.url ?? (repoUrl ? `${repoUrl}/actions` : null);

@@ -197,6 +197,7 @@ export interface PipelineStage {
   name: string;
   status: StageStatus;
   url?: string | null;
+  source?: 'scm' | 'platform';
 }
 
 export interface Commit {

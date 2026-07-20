@@ -63,7 +63,7 @@ function make(
 }
 
 describe('ProjectsService deployment pipeline projection', () => {
-  it('binds stages to the artifact run and marks a recovered deployment successful', async () => {
+  it('keeps a failed runner handoff and records recovered publication separately', async () => {
     const { service, scm } = make(
       {
         name: 'dev', status: 'running', version: sha, deploymentRequired: false,
@@ -84,11 +84,14 @@ describe('ProjectsService deployment pipeline projection', () => {
       expect.objectContaining({ provider: 'github' }), sha, expect.anything(), '77',
     );
     expect(commits[0]?.pipeline.find((stage) => stage.name === 'deploy')).toEqual({
-      name: 'deploy', status: 'success', url: 'https://x/run-77/deploy',
+      name: 'deploy', status: 'failed', url: 'https://x/run-77/deploy',
+    });
+    expect(commits[0]?.pipeline.find((stage) => stage.name === 'publish')).toEqual({
+      name: 'publish', status: 'success', url: null, source: 'platform',
     });
   });
 
-  it('shows deploy as pending after a target change and running during publication', async () => {
+  it('shows publication as pending after a target change and running during upload', async () => {
     const pending = make(
       {
         name: 'dev', status: 'empty', version: sha, deploymentRequired: true,
@@ -100,7 +103,7 @@ describe('ProjectsService deployment pipeline projection', () => {
       },
     );
     expect(
-      (await pending.service.getCommits(project.id))[0]?.pipeline.find((stage) => stage.name === 'deploy')?.status,
+      (await pending.service.getCommits(project.id))[0]?.pipeline.find((stage) => stage.name === 'publish')?.status,
     ).toBe('pending');
 
     const running = make(
@@ -114,7 +117,7 @@ describe('ProjectsService deployment pipeline projection', () => {
       },
     );
     expect(
-      (await running.service.getCommits(project.id))[0]?.pipeline.find((stage) => stage.name === 'deploy')?.status,
+      (await running.service.getCommits(project.id))[0]?.pipeline.find((stage) => stage.name === 'publish')?.status,
     ).toBe('running');
   });
 

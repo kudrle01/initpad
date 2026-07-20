@@ -85,7 +85,16 @@ export default function Activity() {
                         <StatusDot status={s.status} kind="ci" /> {s.name}
                       </>
                     );
-                    return s.url ? (
+                    return s.source === 'platform' ? (
+                      <Link
+                        key={s.name}
+                        to={`/projects/${e.projectId}/deployments`}
+                        title="View InitPad deployment history"
+                        className="text-link flex items-center gap-1 text-[11px]"
+                      >
+                        {inner}
+                      </Link>
+                    ) : s.url ? (
                       <a
                         key={s.name}
                         href={s.url}

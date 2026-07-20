@@ -2572,10 +2572,10 @@ export class ProjectsService implements OnModuleInit {
     return stages;
   }
 
-  // GitHub Actions describes the runner job, but artifact recovery and the
-  // actual target publication continue inside InitPad after that job returns.
-  // Keep build/test/docker statuses provider-authored and make only the final
-  // deploy stage reflect the authoritative dev environment/operation state.
+  // GitHub/Gitea describes the runner jobs, while artifact recovery and the
+  // actual target publication continue inside InitPad after the handoff job.
+  // Never overwrite one audit record with the other: a failed SCM callback can
+  // truthfully be followed by a successful publication of its verified build.
   private reflectDeploymentState(
     stages: PipelineStage[],
     environment: Environment | null | undefined,
@@ -2607,7 +2607,10 @@ export class ProjectsService implements OnModuleInit {
     if (status === 'running' && !stages.slice(0, deployIndex).every((stage) => stage.status === 'success')) {
       status = 'pending';
     }
-    return stages.map((stage, index) => index === deployIndex ? { ...stage, status } : stage);
+    return [
+      ...stages,
+      { name: 'publish', status, url: null, source: 'platform' as const },
+    ];
   }
 
   // Gitea commit status context has the form "<workflow> / <job> (<event>)".
