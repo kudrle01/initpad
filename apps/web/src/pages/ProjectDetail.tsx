@@ -18,7 +18,6 @@ import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline';
 import { CommitList } from '@/components/organisms/CommitList';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
-import { EnvLogsDialog } from '@/components/organisms/EnvLogsDialog';
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
 import { cn, scmLink } from '@/lib/utils';
 import type { Commit, EnvName, Project, ProvisioningStatus, Target, TemplateManifest } from '@/types';
@@ -80,49 +79,14 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [logsEnv, setLogsEnv] = useState<EnvName | null>(null);
   const [targetEnv, setTargetEnv] = useState<EnvName | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
-  const [logsText, setLogsText] = useState('');
-  const [logsLoading, setLogsLoading] = useState(false);
   const toast = useToast();
   const { workspaces } = useAuth();
   const projectRole = workspaces.find((workspace) => workspace.id === project?.workspaceId)?.role;
   const readOnly = projectRole === 'viewer';
   const canMaintain = projectRole === 'owner' || projectRole === 'admin' || projectRole === 'maintainer';
   const navigate = useNavigate();
-
-  const fetchLogs = useCallback(
-    (envName: EnvName, silent: boolean) => {
-      if (!id) return;
-      if (!silent) {
-        setLogsText('');
-        setLogsLoading(true);
-      }
-      api
-        .getLogs(id, envName)
-        .then((r) => setLogsText(r.logs || '(no output)'))
-        .catch((e) => setLogsText(`Error: ${(e as Error).message}`))
-        .finally(() => {
-          if (!silent) setLogsLoading(false);
-        });
-    },
-    [id],
-  );
-
-  const openLogs = useCallback(
-    (envName: EnvName) => {
-      setLogsEnv(envName);
-      fetchLogs(envName, false);
-    },
-    [fetchLogs],
-  );
-
-  useEffect(() => {
-    if (!logsEnv) return;
-    const t = setInterval(() => fetchLogs(logsEnv, true), 2500);
-    return () => clearInterval(t);
-  }, [logsEnv, fetchLogs]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -313,15 +277,7 @@ export default function ProjectDetail() {
 
   const created = new Date(project.createdAt).toLocaleDateString('en-GB');
   const cloneUrl = project.repoUrl ? `${project.repoUrl}.git` : null;
-  const logsStatus = logsEnv
-    ? project.environments.find((x) => x.name === logsEnv)?.status
-    : undefined;
   const commitsBySha = Object.fromEntries(commits.map((c) => [c.sha, c] as const));
-  // Latest CI run link (build/deploy pipeline) for the runner-logs shortcut.
-  const rawRunnerUrl =
-    commits[0]?.pipeline.find((s) => s.url)?.url ??
-    (project.repoUrl ? `${project.repoUrl}/actions` : null);
-  const runnerUrl = scmLink(rawRunnerUrl, project.scm.provider);
 
   return (
     <div>
@@ -435,7 +391,6 @@ export default function ProjectDetail() {
           onStart={startEnvironment}
           onRemoveEnv={removeEnvironment}
           onConfigureTarget={setTargetEnv}
-          onOpenLogs={openLogs}
           readOnly={readOnly}
         />
       </Section>
@@ -458,17 +413,6 @@ export default function ProjectDetail() {
         hasRepository={!!project.repoUrl}
         deleting={deleting}
         onConfirm={doDelete}
-      />
-
-      <EnvLogsDialog
-        env={logsEnv}
-        projectName={project.name}
-        status={logsStatus}
-        logsText={logsText}
-        logsLoading={logsLoading}
-        runnerUrl={runnerUrl}
-        onOpenChange={(o) => !o && setLogsEnv(null)}
-        onRefresh={() => logsEnv && openLogs(logsEnv)}
       />
 
       <TargetPickerDialog

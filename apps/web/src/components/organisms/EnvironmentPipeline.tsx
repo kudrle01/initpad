@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
-import { cn } from '@/lib/utils';
+import { cn, scmLink } from '@/lib/utils';
 import type { Commit, EnvName, Environment, Project, ProviderKind } from '@/types';
 
 const NEXT: Record<EnvName, EnvName | null> = { dev: 'test', test: 'prod', prod: null };
@@ -54,7 +54,6 @@ interface Props {
   onStart: (env: EnvName) => void;
   onRemoveEnv: (env: EnvName) => void;
   onConfigureTarget: (env: EnvName) => void;
-  onOpenLogs: (env: EnvName) => void;
   readOnly?: boolean;
 }
 
@@ -69,7 +68,6 @@ export function EnvironmentPipeline({
   onStart,
   onRemoveEnv,
   onConfigureTarget,
-  onOpenLogs,
   readOnly = false,
 }: Props) {
   const byEnv = Object.fromEntries(project.environments.map((e) => [e.name, e])) as Record<
@@ -92,6 +90,13 @@ export function EnvironmentPipeline({
         const deploying = busy === next || target?.status === 'deploying';
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
         const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
+        const rawRunnerLogUrl =
+          deployedCommit?.pipeline.find((stage) => stage.name === 'deploy' && stage.url)?.url ??
+          deployedCommit?.pipeline.find((stage) => stage.url)?.url ??
+          (project.scm.provider === 'github' && project.repoUrl && env.artifact?.runId
+            ? `${project.repoUrl}/actions/runs/${env.artifact.runId}`
+            : null);
+        const runnerLogUrl = scmLink(rawRunnerLogUrl, project.scm.provider);
         // While deploying, statusReason carries the live step (e.g.
         // 'Uploading 340/1200 files'); derive a % for the bar when it has a ratio.
         const ratio =
@@ -126,12 +131,16 @@ export function EnvironmentPipeline({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">{env.name}</span>
                 <div className="flex items-center gap-1.5">
-                  {env.status !== 'empty' ? (
-                    <StatusBadge
-                      status={env.status}
-                      onClick={() => onOpenLogs(env.name)}
-                      title="View deploy detail & logs"
-                    />
+                  {env.status !== 'empty' && runnerLogUrl ? (
+                    <a
+                      href={runnerLogUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`View build & deploy logs in ${project.scm.provider === 'github' ? 'GitHub' : 'Gitea'}`}
+                      className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      <StatusBadge status={env.status} className="cursor-pointer hover:bg-secondary/70" />
+                    </a>
                   ) : (
                     <StatusBadge status={env.status} />
                   )}
@@ -274,13 +283,21 @@ export function EnvironmentPipeline({
               )}
 
               {env.status === 'failed' && env.statusReason && (
-                <button
-                  type="button"
-                  onClick={() => onOpenLogs(env.name)}
-                  className="mt-2 flex items-center gap-1 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                >
-                  <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
-                </button>
+                runnerLogUrl ? (
+                  <a
+                    href={runnerLogUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 flex items-center gap-1 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
+                    <ExternalLink className="h-3 w-3 shrink-0" />
+                  </a>
+                ) : (
+                  <div className="mt-2 flex items-center gap-1 text-xs text-destructive">
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
+                  </div>
+                )
               )}
 
               {cleanupPending && (

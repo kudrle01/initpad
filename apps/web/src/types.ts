@@ -165,7 +165,7 @@ export interface Environment {
   url: string | null;
   statusReason: string | null;
   deploymentRequired: boolean;
-  artifact: { id: string; provider: string; digest: string } | null;
+  artifact: { id: string; provider: string; digest: string; runId: string } | null;
   target: EnvTarget | null;
 }
 

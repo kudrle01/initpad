@@ -180,8 +180,6 @@ export const api = {
   deleteTarget: (id: string) => http<void>(`/targets/${id}`, { method: 'DELETE' }),
   verifyTarget: (id: string) =>
     http<{ ok: boolean; message: string }>(`/targets/${id}/verify`, { method: 'POST' }),
-  getLogs: (id: string, env: EnvName) =>
-    http<{ logs: string }>(`/projects/${id}/logs/${env}`),
   deleteProject: (id: string, options: DeleteProjectOptions) =>
     http<void>(`/projects/${id}`, {
       method: 'DELETE',

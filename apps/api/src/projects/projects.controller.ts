@@ -129,16 +129,6 @@ export class ProjectsController {
     return this.projects.bindTarget(id, env, dto.targetId);
   }
 
-  @Get(':id/logs/:env')
-  async logs(
-    @Param('id') id: string,
-    @Param('env') env: EnvName,
-    @CurrentUser() userId: string,
-  ) {
-    await this.projects.assertAccess(id, userId, 'read');
-    return { logs: await this.projects.envLogs(id, env) };
-  }
-
   @Delete(':id')
   @HttpCode(204)
   async remove(

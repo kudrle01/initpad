@@ -131,7 +131,14 @@ export interface ScmProvider {
   listCommits(repository: ScmRepositoryRef, actor: ScmActor, limit?: number): Promise<ScmCommit[] | null>;
   createRetryTag(repository: ScmRepositoryRef, sha: string, actor: ScmActor): Promise<string>;
   deleteTag(repository: ScmRepositoryRef, tag: string, actor: ScmActor): Promise<void>;
-  listCommitStatuses(repository: ScmRepositoryRef, sha: string, actor: ScmActor): Promise<ScmCommitStatus[] | null>;
+  listCommitStatuses(
+    repository: ScmRepositoryRef,
+    sha: string,
+    actor: ScmActor,
+    // Hosted artifact deployments bind the UI to the exact workflow run that
+    // produced the deployed bytes. Omitted for providers without run identity.
+    preferredRunId?: string | null,
+  ): Promise<ScmCommitStatus[] | null>;
   configureRepoSecrets(repository: ScmRepositoryRef, ownerToken: string, ciDeployToken: string): Promise<void>;
   // Remove only the secret names owned by InitPad, without disabling CI.
   removeRepoSecrets(repository: ScmRepositoryRef): Promise<void>;

@@ -14,6 +14,7 @@ import {
   ActivityEvent,
   Commit,
   DeployStatus,
+  Environment,
   EnvName,
   PipelineStage,
   Project,
@@ -1539,21 +1540,6 @@ export class ProjectsService implements OnModuleInit {
     return this.get(id);
   }
 
-  // Last ~N log lines of the environment's running (or failed) deployment.
-  async envLogs(id: string, envName: EnvName): Promise<string> {
-    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
-    const env = await this.prisma.environment.findUnique({
-      where: { projectId_name: { projectId: id, name: envName } },
-      include: { target: true },
-    });
-    if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
-    return this.deployment.logs(env.provider as ProviderKind, {
-      projectName: this.deploySlug(repositoryRef(project)),
-      env: envName,
-      connection: this.targetConnection(env),
-    });
-  }
-
   // Live connection for an environment's target. Built-in targets return
   // undefined → the provider uses the config demo path (behaviour unchanged);
   // user targets return their decrypted connection.
@@ -2137,10 +2123,46 @@ export class ProjectsService implements OnModuleInit {
 
     const fromScm = await scm.listCommits(project.scm, actor);
     if (fromScm && fromScm.length > 0) {
+      const versions = fromScm
+        .map((commit) => commit.sha.toLowerCase())
+        .filter((sha) => /^[0-9a-f]{40}$/.test(sha));
+      const operations = versions.length > 0
+        ? await this.prisma.deploymentOperation.findMany({
+            where: {
+              environment: { projectId: id, name: 'dev' },
+              version: { in: versions },
+            },
+            orderBy: { createdAt: 'desc' },
+            include: { buildArtifact: { select: { providerRunId: true } } },
+          })
+        : [];
+      const operationByVersion = new Map<string, (typeof operations)[number]>();
+      for (const operation of operations) {
+        const version = operation.version?.toLowerCase();
+        if (version && !operationByVersion.has(version)) {
+          operationByVersion.set(version, operation);
+        }
+      }
+      const dev = project.environments.find((environment) => environment.name === 'dev');
       return Promise.all(
         fromScm.map(async (c) => {
-          const statuses = await scm.listCommitStatuses(project.scm, c.sha, actor);
-          return { ...c, pipeline: this.pipelineStages(template, statuses) };
+          const sha = c.sha.toLowerCase();
+          const operation = operationByVersion.get(sha);
+          const currentDev = dev?.version?.toLowerCase() === sha ? dev : null;
+          const preferredRunId =
+            operation?.buildArtifact?.providerRunId ?? currentDev?.artifact?.runId ?? null;
+          const statuses = await scm.listCommitStatuses(
+            project.scm,
+            c.sha,
+            actor,
+            preferredRunId,
+          );
+          const pipeline = this.reflectDeploymentState(
+            this.pipelineStages(template, statuses),
+            currentDev,
+            operation,
+          );
+          return { ...c, pipeline };
         }),
       );
     }
@@ -2516,6 +2538,44 @@ export class ProjectsService implements OnModuleInit {
     return stages;
   }
 
+  // GitHub Actions describes the runner job, but artifact recovery and the
+  // actual target publication continue inside InitPad after that job returns.
+  // Keep build/test/docker statuses provider-authored and make only the final
+  // deploy stage reflect the authoritative dev environment/operation state.
+  private reflectDeploymentState(
+    stages: PipelineStage[],
+    environment: Environment | null | undefined,
+    operation?: { status: string; buildArtifact?: { providerRunId: string } | null } | null,
+  ): PipelineStage[] {
+    const deployIndex = stages.findIndex((stage) => stage.name === 'deploy');
+    if (deployIndex < 0) return stages;
+
+    let status: StageStatus | null = null;
+    if (environment) {
+      if (environment.status === 'deploying') status = 'running';
+      else if (environment.deploymentRequired) {
+        status = environment.status === 'failed' ? 'failed' : 'pending';
+      } else if (environment.status === 'running' || environment.status === 'stopped') {
+        status = 'success';
+      } else if (environment.status === 'failed') {
+        status = 'failed';
+      }
+    } else if (operation?.buildArtifact) {
+      if (operation.status === 'running') status = 'running';
+      else if (operation.status === 'succeeded') status = 'success';
+      else if (operation.status === 'failed') status = 'failed';
+      else if (operation.status === 'cancelled') status = 'pending';
+    }
+    if (!status) return stages;
+
+    // A requested deployment is queued, not running, until all build stages
+    // of the exact artifact-producing run have succeeded.
+    if (status === 'running' && !stages.slice(0, deployIndex).every((stage) => stage.status === 'success')) {
+      status = 'pending';
+    }
+    return stages.map((stage, index) => index === deployIndex ? { ...stage, status } : stage);
+  }
+
   // Gitea commit status context has the form "<workflow> / <job> (<event>)".
   private jobFromContext(context: string): string | null {
     if (!context) return null;
@@ -2567,6 +2627,7 @@ export class ProjectsService implements OnModuleInit {
                 id: e.buildArtifact.id,
                 provider: e.buildArtifact.sourceProvider,
                 digest: e.buildArtifact.digest,
+                runId: e.buildArtifact.providerRunId,
               }
             : null,
           target: e.target

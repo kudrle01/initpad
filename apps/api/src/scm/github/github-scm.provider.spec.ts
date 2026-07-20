@@ -161,6 +161,31 @@ describe('GitHubScmProvider reads', () => {
     });
   });
 
+  it('loads jobs from the exact artifact-producing run when it is known', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      if (url.includes('/actions/runs/77/jobs?')) {
+        return {
+          ok: true,
+          json: async () => ({
+            jobs: [
+              { name: 'deploy', status: 'completed', conclusion: 'failure', html_url: 'https://x/run-77/deploy' },
+            ],
+          }),
+        };
+      }
+      return { ok: false, status: 404 };
+    });
+    const exact = make(fetchMock);
+
+    await expect(
+      exact.provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77'),
+    ).resolves.toEqual([
+      { context: 'deploy', status: 'failure', targetUrl: 'https://x/run-77/deploy' },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).not.toContain('/workflows/ci.yml/runs?');
+  });
+
   it('falls back to GitHub Check Runs when no Actions run is available', async () => {
     const checks = make(jest.fn(async (url: string) => {
       if (url.includes('/actions/workflows/ci.yml/runs?')) {

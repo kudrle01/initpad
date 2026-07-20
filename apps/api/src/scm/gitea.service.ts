@@ -641,6 +641,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     repository: ScmRepositoryRef,
     sha: string,
     actor: GiteaActor,
+    _preferredRunId?: string | null,
   ): Promise<{ context: string; status: string; targetUrl: string | null }[] | null> {
     this.assertProvider(repository);
     const url = config.gitea.internalUrl;

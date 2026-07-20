@@ -228,6 +228,7 @@ export class GitHubScmProvider implements ScmProvider {
     repository: ScmRepositoryRef,
     sha: string,
     _actor: ScmActor,
+    preferredRunId?: string | null,
   ): Promise<ScmCommitStatus[] | null> {
     this.assertProvider(repository);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
@@ -236,18 +237,25 @@ export class GitHubScmProvider implements ScmProvider {
       // Check Runs it is already required for artifact verification, and its
       // jobs endpoint returns the concrete html_url used by the stage links.
       const actionsToken = await this.token(repository, READ_ACTIONS);
-      const runsResponse = await this.gh(
-        `/repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${encodeURIComponent(sha)}&event=push&per_page=1`,
-        actionsToken,
-      );
-      if (runsResponse.ok) {
-        const runs = (await runsResponse.json()) as {
-          workflow_runs?: Array<{ id: number }>;
-        };
-        const run = runs.workflow_runs?.[0];
-        if (run) {
+      let runId = preferredRunId ?? null;
+      if (runId && !/^\d+$/.test(runId)) {
+        throw new Error('GitHub Actions run ID is invalid');
+      }
+      if (!runId) {
+        const runsResponse = await this.gh(
+          `/repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${encodeURIComponent(sha)}&event=push&per_page=1`,
+          actionsToken,
+        );
+        if (runsResponse.ok) {
+          const runs = (await runsResponse.json()) as {
+            workflow_runs?: Array<{ id: number }>;
+          };
+          runId = runs.workflow_runs?.[0]?.id?.toString() ?? null;
+        }
+      }
+      if (runId) {
           const jobsResponse = await this.gh(
-            `/repos/${repo}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
+            `/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
             actionsToken,
           );
           if (jobsResponse.ok) {
@@ -262,7 +270,6 @@ export class GitHubScmProvider implements ScmProvider {
             const jobs = data.jobs ?? [];
             if (jobs.length > 0) return jobs.map((job) => this.actionJobStatus(job));
           }
-        }
       }
     } catch {
       // Preserve compatibility with an older App installation while its
