@@ -49,6 +49,11 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   `downloadArchive` a `initLocal` jsou stuby. Actions secrets vyžadují knihovní
   libsodium sealed-box implementaci; nevymýšlet vlastní kryptografii.
 - GHCR cleanup nerozlišuje user/org cestu, seznam repozitářů nemá stránkování.
+- Organization setup zatím ověřuje installation jako App, ale ještě ne proti
+  krátkodobému user access tokenu autorizujícího uživatele. GitHub považuje
+  `installation_id` ze Setup URL za nedůvěryhodný; před produkčním SaaS E2E
+  doplň `/user/installations` (nebo ekvivalentní oficiální kontrolu) a token po
+  dokončení setupu zlikviduj.
 - `ProvisioningOperation` pro create nemá podrobné kroky; rollback importu
   nemusí vrátit všechny externí změny a neúspěšný create bez Project ID není v UI.
 - Neexistuje reálný public-SaaS deploy profil bez Gitey.
@@ -58,10 +63,11 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 ## Nejbližší implementační pořadí
 
-1. Dokonči GitHub create/import, libsodium Actions secrets, archive a push.
-2. Zapoj `ScmRegistry` podle provideru uloženého u projektu a proveď rollback/
+1. Dokonči user-bound ověření organizační GitHub installation ze Setup URL.
+2. Dokonči GitHub create/import, libsodium Actions secrets, archive a push.
+3. Zapoj `ScmRegistry` podle provideru uloženého u projektu a proveď rollback/
    reconciliation testy.
-3. Až poté spusť živý GitHub E2E a vytvoř skutečný SaaS deploy profil.
+4. Až poté spusť živý GitHub E2E a vytvoř skutečný SaaS deploy profil.
 
 GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 

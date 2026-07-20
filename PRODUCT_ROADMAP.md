@@ -329,6 +329,10 @@ proti běžící instalaci; testovatelné scénáře:
   user/workspace, serverově ověřené immutable account ID a owner/admin re-check.
   Osobní instalace musí odpovídat propojené identitě, organizace dostává
   explicitní workspace grant a uninstall se historizuje místo fyzického smazání.
+- GitHub linking/installation ze Settings se otevírá v samostatném bezpečném
+  okně a původní aplikace po návratu fokusu automaticky obnoví stav; login flow
+  zůstává top-level redirect. Produkční organization setup ještě vyžaduje
+  ověření installation proti krátkodobému GitHub user access tokenu.
 - Dokončen explicitní repository contract: aditivní migrace, immutable provider
   ID, mutable souřadnice, default branch, installation binding a jeden
   `ScmRepositoryRef` pro import/CI/reconcile/deploy/archive/delete. Test pokrývá

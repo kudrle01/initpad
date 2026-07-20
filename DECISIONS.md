@@ -1482,7 +1482,11 @@ To je křehké pro rename, organizace, více workspace i audit incidentu.
 jen ownerovi/adminovi s propojeným GitHub účtem. Přímý statický install link byl
 odstraněn, protože obcházel vazbu state/workspace. V GitHub App musí být Setup URL
 `https://<initpad>/api/scm/github/setup/callback`, OAuth callback
-`/api/auth/github/callback` a webhook `/api/scm/github/webhook`.
+`/api/auth/github/callback` a webhook `/api/scm/github/webhook`. Propojení identity
+a instalace spuštěné z již přihlášených Settings se otevírají v izolovaném
+popup okně; původní InitPad zůstává na místě a po návratu fokusu znovu načte
+identity i workspace instalace. Login `Continue with GitHub` zůstává ve stejném
+okně, protože teprve vytváří session.
 
 Tento krok dokončuje autorizaci instalace, nikoli GitHub create/import. Starý
 owner-login lookup zůstává dočasně jen pro dosud nezapojenou legacy cestu;
@@ -1496,3 +1500,11 @@ organizaci; member tlačítko nesmí vidět. Potom přejmenovat GitHub login,
 zkontrolovat aktualizovaný název bez ztráty vazby, suspend/uninstall a ověřit,
 že token/repository access selže, ale auditní řádek zůstane. Callback URL se
 nesmí podařit použít podruhé ani po expiraci.
+
+**Bezpečnostní doplnění (2026-07-20).** GitHub dokumentace výslovně považuje
+`installation_id` v Setup URL za nedůvěryhodný. Současné ověření přes App JWT
+prokáže, že instalace patří této App, a u osobního účtu navíc porovnává
+immutable user ID. Pro produkční organizační grant je ještě nutné použít
+krátkodobý GitHub user access token a serverově ověřit, že instalace je
+přístupná konkrétnímu autorizujícímu uživateli. Do té doby je organization
+setup funkční prototyp, nikoli dokončená produkční bezpečnostní hranice.
