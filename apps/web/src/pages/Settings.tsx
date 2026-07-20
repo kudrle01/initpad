@@ -476,6 +476,17 @@ export default function Settings() {
                 GitHub sign-in is available, but repository access has not been configured by the platform administrator.
               </p>
             )}
+            {ghStatus && !ghStatus.ciCallbackReady && (
+              <p role="alert" className="mt-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground">
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <span>
+                  GitHub delivery is paused: {ghStatus.ciCallbackIssue}{' '}
+                  The platform administrator must configure a public HTTPS{' '}
+                  <code className="font-mono">INITPAD_PUBLIC_URL</code>. Current value:{' '}
+                  <code className="font-mono">{ghStatus.ciCallbackUrl ?? 'not set'}</code>.
+                </span>
+              </p>
+            )}
           </div>
         </div>
       )}

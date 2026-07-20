@@ -49,6 +49,9 @@ export interface GitHubStatus {
   linked: boolean;
   login: string | null;
   credentialReady: boolean;
+  ciCallbackReady: boolean;
+  ciCallbackUrl: string | null;
+  ciCallbackIssue: string | null;
   canInstall: boolean;
   installation: { present: boolean; suspended: boolean };
   installations: Array<{
@@ -145,10 +148,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ repositoryId, templateId }),
     }),
-  importRepo: (repositoryId: string, templateId: string) =>
+  importRepo: (repositoryId: string, templateId: string, environments: EnvConfig[]) =>
     http<Project>('/projects/import', {
       method: 'POST',
-      body: JSON.stringify({ repositoryId, templateId }),
+      body: JSON.stringify({ repositoryId, templateId, environments }),
     }),
   promote: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/promote/${env}`, { method: 'POST' }),

@@ -155,7 +155,12 @@ export class TargetsService implements OnModuleInit {
   async listForUser(userId: string, requestedWorkspaceId?: string): Promise<Target[]> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const rows = (await this.prisma.target.findMany({
-      where: { OR: [{ scope: 'builtin' }, { workspaceId }] },
+      // Built-ins live inside one self-hosted installation. A public SaaS
+      // control plane cannot deploy into its own local Docker/SSH demo stack;
+      // only targets explicitly owned by the active workspace are real there.
+      where: config.edition === 'saas'
+        ? { workspaceId }
+        : { OR: [{ scope: 'builtin' }, { workspaceId }] },
       orderBy: [{ scope: 'asc' }, { createdAt: 'asc' }],
     })) as TargetRow[];
 
@@ -172,7 +177,9 @@ export class TargetsService implements OnModuleInit {
   // selection + capability checks at project creation).
   async listEntities(workspaceId: string): Promise<TargetRow[]> {
     return (await this.prisma.target.findMany({
-      where: { OR: [{ scope: 'builtin' }, { workspaceId }] },
+      where: config.edition === 'saas'
+        ? { workspaceId }
+        : { OR: [{ scope: 'builtin' }, { workspaceId }] },
     })) as TargetRow[];
   }
 

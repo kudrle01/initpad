@@ -1,6 +1,7 @@
 import { TargetsService, TargetRow } from './targets.service';
 import { encryptSecret } from '../common/secret';
 import { ForbiddenException } from '@nestjs/common';
+import { config } from '../config';
 
 // parseCaps and connectionForTarget are pure — no Prisma/Deployment needed.
 const svc = new TargetsService({} as never, {} as never, {} as never);
@@ -132,5 +133,26 @@ describe('target capability updates', () => {
     await expect(
       service.update('target-1', 'u1', { capabilities: ['php'] }),
     ).rejects.toThrow('cannot change kind or remove runtime capabilities');
+  });
+});
+
+describe('edition-aware target visibility', () => {
+  const savedEdition = config.edition;
+  afterEach(() => { config.edition = savedEdition; });
+
+  it('does not expose self-hosted built-ins from the public SaaS control plane', async () => {
+    config.edition = 'saas';
+    const prisma = {
+      target: { findMany: jest.fn(async () => []) },
+      environment: { groupBy: jest.fn(async () => []) },
+    };
+    const workspaces = { resolve: jest.fn(async () => ({ id: 'workspace-1' })) };
+    const service = new TargetsService(prisma as never, {} as never, workspaces as never);
+
+    await service.listForUser('user-1', 'workspace-1');
+
+    expect(prisma.target.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { workspaceId: 'workspace-1' },
+    }));
   });
 });

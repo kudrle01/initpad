@@ -50,6 +50,7 @@ import type { ProviderConnection } from '../deployment/deployment-provider.inter
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
 import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
+import { publicHttpsUrlIssue } from '../common/public-url';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -200,6 +201,15 @@ export class ProjectsService implements OnModuleInit {
       await Promise.all(
         projects.map(async (project) => {
           const repository = repositoryRef(project);
+          if (repository.provider === 'github') {
+            const callbackIssue = publicHttpsUrlIssue(config.ci.publicUrl);
+            if (callbackIssue) {
+              this.logger.warn(
+                `CI runtime-secret reconciliation skipped for github:${repository.fullName}: ${callbackIssue}`,
+              );
+              return;
+            }
+          }
           try {
             await this.workspaceScm.provider(repository.provider).configureRepoRuntimeSecrets(repository);
           } catch (error) {
@@ -499,6 +509,7 @@ export class ProjectsService implements OnModuleInit {
     operationId: string,
   ): Promise<Project> {
     await this.workspaces.require(ownerId, workspaceId, 'write');
+    this.assertSaasCiCallback();
     if (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.name } })) {
       throw new BadRequestException(`This workspace already has a project named '${dto.name}'`);
     }
@@ -728,6 +739,7 @@ export class ProjectsService implements OnModuleInit {
   ): Promise<Project> {
     const { id: workspaceId } = await this.workspaces.resolve(ownerId, requestedWorkspaceId);
     await this.workspaces.require(ownerId, workspaceId, 'write');
+    this.assertSaasCiCallback();
     const op = await this.provisioning.start(workspaceId, dto.repositoryId, 'import', {
       requestedById: ownerId,
       request: dto as unknown as Prisma.InputJsonValue,
@@ -2321,12 +2333,29 @@ export class ProjectsService implements OnModuleInit {
     return 'docker';
   }
 
+  private assertSaasCiCallback(): void {
+    if (config.edition !== 'saas') return;
+    const issue = publicHttpsUrlIssue(config.ci.publicUrl);
+    if (issue) {
+      throw new BadRequestException(
+        `${issue} Configure a public InitPad URL before creating or importing a GitHub project.`,
+      );
+    }
+  }
+
   // Validates that a target can host a template (kind accepted + runtime
   // supported), raising a specific error otherwise. The predicate itself lives
   // in domain/capability (pure, unit-tested).
   private assertUsable(target: TargetRow, template: TemplateManifest): void {
     const capabilities = this.targets.parseCaps(target.capabilities);
-    if (targetCanRun(template, { kind: target.kind as ProviderKind, capabilities })) return;
+    if (targetCanRun(template, { kind: target.kind as ProviderKind, capabilities })) {
+      if (target.scope === 'user' && !target.verifiedAt) {
+        throw new BadRequestException(
+          `Target '${target.name}' must pass Test connection before it can host an environment.`,
+        );
+      }
+      return;
+    }
     if (!template.compatibleProviders.includes(target.kind as ProviderKind)) {
       throw new BadRequestException(`Template '${template.id}' cannot deploy over ${target.kind}.`);
     }
@@ -2335,9 +2364,10 @@ export class ProjectsService implements OnModuleInit {
     );
   }
 
-  // Resolves the target for an environment at creation time: an explicit choice
-  // (validated), or a sensible default (dev/test → built-in Docker; prod → the
-  // built-in target for the template's natural kind, else Docker).
+  // Resolves the target for an environment at creation time. SaaS requires an
+  // explicit verified workspace target for dev/test/prod. Self-hosted keeps
+  // its convenient built-in defaults, while still accepting an explicit target
+  // for every environment.
   private resolveEnvTarget(
     name: EnvName,
     template: TemplateManifest,
@@ -2345,6 +2375,11 @@ export class ProjectsService implements OnModuleInit {
     entities: TargetRow[],
   ): TargetRow {
     const runtime = templateRuntime(template);
+    if (config.edition === 'saas' && !targetId) {
+      throw new BadRequestException(
+        `Choose a verified workspace target for the ${name} environment. Public SaaS has no local built-in deployment target.`,
+      );
+    }
     if (targetId) {
       const t = entities.find((e) => e.id === targetId);
       if (!t) throw new NotFoundException(`Target '${targetId}' not found`);
@@ -2361,11 +2396,11 @@ export class ProjectsService implements OnModuleInit {
       );
       // Keep the deterministic simulated target for static/Node templates.
       // When no built-in target has the required runtime (PHP on SFTP), prefer
-      // a verified workspace target and then any explicitly configured one.
+      // a verified workspace target. Unverified user targets are never an
+      // implicit default; the Docker fallback remains usable until verification.
       const natural =
         candidates.find((e) => e.scope === 'builtin') ??
-        candidates.find((e) => e.scope === 'user' && e.verifiedAt) ??
-        candidates.find((e) => e.scope === 'user');
+        candidates.find((e) => e.scope === 'user' && e.verifiedAt);
       if (natural) return natural;
     }
     const docker = entities.find((e) => e.id === BUILTIN_DOCKER);

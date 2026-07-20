@@ -533,6 +533,24 @@ patří až do milníku 7.
 - Automatizovaně ověřeno: 42 API suites / 249 testů, API i web production
   build. Browser acceptance je popsán v ADR-050.
 
+### Veřejný GitHub callback a per-environment targety (2026-07-20)
+
+- GitHub repository/commit/Actions odkazy se již nepřepisují Gitea login
+  routou. Privátní repo nadále vrátí GitHub 404 nepřihlášenému nebo
+  neoprávněnému účtu, což je očekávaná ochrana existence repa.
+- SaaS GitHub create/import vyžaduje veřejný HTTPS platform callback a
+  `localhost`/private URL odmítne před externí mutací. Stav je viditelný v UI.
+- SaaS skryje self-hosted built-ins a vyžaduje verified workspace target pro
+  dev, test i prod. Self-hosted formulář nově také dovolí změnit všechny tři.
+- Soukromé/lokální Docker targety zůstávají explicitním acceptance bodem
+  Agent milníku; UI tuto hranici neskrývá built-in Dockerem.
+- Automatizovaně ověřeno: 43 API suites / 265 testů a API i web
+  production build.
+
+**Uživatelský test:** postupuje podle ADR-051. Bez veřejné URL je bezpečně
+testovatelná blokující větev a přímé GitHub odkazy; úspěšný Actions callback
+vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
+
 ### Průběžné ověření delivery části milníku 8
 
 - React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez

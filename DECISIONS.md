@@ -1852,3 +1852,53 @@ Test connection a vrátit se do formuláře: ESO je automaticky vybrané pro pro
 Stejně ověřit Laravel a Symfony. Pokud target již hostí statickou aplikaci,
 přidání PHP projde; pokus odebrat `static` zůstane zablokovaný. Odkazy
 „Import an existing repository instead“ a opačný tok jsou zelené včetně ikon.
+
+## ADR-051 — GitHub callback je veřejné HTTPS API; SaaS nemá falešné lokální targety
+
+**Kontext.** První živý GitHub create odhalil dvě odlišné chyby. Web každé
+repository URL bez ohledu na provider přepisoval na Gitea-only cestu
+`/user/login?redirect_to=...`, takže odkaz na privátní GitHub repo skončil na
+neexistující GitHub route. Workflow současně dostal
+`INITPAD_PLATFORM_URL=http://localhost:8080`. `localhost` uvnitř GitHub-hosted
+runneru označuje runner, nikoli notebook s InitPadem, a callback proto nemohl
+navázat spojení. Stejný problém ukázal, že veřejný SaaS nesmí nabízet
+vestavěný Docker/SSH/SFTP z lokálního self-hosted Compose jako skutečnou
+infrastrukturu zákazníka.
+
+**Rozhodnutí.** Odkazy se skládají podle uloženého `scm.provider`. Pouze Gitea
+používá svůj login redirect; GitHub repository, commit, Actions run a job URL
+zůstávají beze změny. Text pod privátním repem rozlišuje Gitea SSO od
+GitHub credential manageru/SSH/`gh auth login`.
+
+Interní Gitea callback (`config.ci.platformUrl`) zůstává oddělený od
+`config.ci.publicUrl`. GitHub Actions secret dostane pouze explicitní
+`INITPAD_PLATFORM_PUBLIC_URL` (v Compose odvozený z `INITPAD_PUBLIC_URL`). SaaS
+create/import se ještě před vytvořením repozitáře odmítne, pokud URL není
+veřejné HTTPS nebo je localhost/private address. GitHub status tuto chybu
+zobrazí v Settings i create/import UI. Provider kontrolu opakuje před zápisem
+secretu. Startup opraví runtime secret existujících repozitářů, až když je
+URL platná; potom lze použít Run again.
+
+SaaS seznam targetů obsahuje pouze targety aktivního workspace. New project i
+Import vyžadují explicitní ověřený target zvlášť pro `dev`, `test` a `prod`;
+stejný server lze vybrat opakovaně, protože deployment cesty zahrnují environment.
+Self-hosted ponechá předvolené built-ins, ale i tam lze změnit každé prostředí.
+Soukromý/lokální Docker server se do veřejného SaaS připojí odchozím
+InitPad Agentem; do jeho implementace se Docker-only šablona bez kompatibilního
+workspace targetu pravdivě nedá založit.
+
+**Důsledky.** Lokální vývoj SaaS integrace potřebuje dočasný veřejný HTTPS
+tunnel nebo skutečné nasazení. GitHub App OAuth callback, Setup URL a Webhook
+URL musejí ukazovat na tutéž veřejnou instanci. Platforma už nevytvoří repo s
+předem nefunkční pipeline a neslibuje uživateli control-plane-local dev.
+
+**Uživatelské testování.** S `INITPAD_PUBLIC_URL=http://localhost:8080`
+otevřít Settings/New project: UI zobrazí blokující chybu a Create je disabled;
+přímé API volání nesmí vytvořit GitHub repo. Nastavit veřejnou HTTPS URL,
+upravit tři GitHub App callbacky a restartovat. Odkaz Open repo musí být přímo
+`https://github.com/<owner>/<repo>`; nepřihlášený/neoprávněný GitHub uživatel
+může u privátního repa nadále legitimně vidět 404. V New project zvolit
+ověřený target pro každé prostředí, vytvořit projekt a ověřit úspěšný
+callback. U dříve vytvořeného projektu po restartu kliknout Run again.
+
+Reference: [GitHub Docs — private networking with GitHub-hosted runners](https://docs.github.com/en/actions/concepts/runners/private-networking).

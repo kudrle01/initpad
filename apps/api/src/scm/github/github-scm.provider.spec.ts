@@ -46,9 +46,14 @@ function make(fetchImpl: jest.Mock) {
 
 const savedFetch = global.fetch;
 const savedFrontendUrl = config.auth.frontendUrl;
+const savedCiPublicUrl = config.ci.publicUrl;
+beforeEach(() => {
+  config.ci.publicUrl = 'https://initpad.example';
+});
 afterEach(() => {
   global.fetch = savedFetch;
   config.auth.frontendUrl = savedFrontendUrl;
+  config.ci.publicUrl = savedCiPublicUrl;
   jest.restoreAllMocks();
 });
 
@@ -519,7 +524,7 @@ describe('GitHubScmProvider writes', () => {
         json: async () => ({ key_id: 'key-1', key: publicKey }),
       })
       .mockResolvedValue({ ok: true, status: 201 });
-    config.auth.frontendUrl = 'https://initpad.example/';
+    config.ci.publicUrl = 'https://initpad.example/';
     const { provider, installations } = make(fetchMock);
 
     await provider.configureRepoSecrets(repository(), 'unused-installation-token', 'deploy-secret');
@@ -543,6 +548,16 @@ describe('GitHubScmProvider writes', () => {
     );
     expect(decrypted).toBe('deploy-secret');
     expect(body.key_id).toBe('key-1');
+    const platformCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/actions/secrets/INITPAD_PLATFORM_URL'),
+    ) as unknown as [string, RequestInit];
+    const platformBody = JSON.parse(platformCall[1].body as string) as { encrypted_value: string };
+    expect(sodium.crypto_box_seal_open(
+      sodium.from_base64(platformBody.encrypted_value, sodium.base64_variants.ORIGINAL),
+      keyPair.publicKey,
+      keyPair.privateKey,
+      'text',
+    )).toBe('https://initpad.example');
   });
 
   it('uses the organization GHCR endpoint for organization installations', async () => {

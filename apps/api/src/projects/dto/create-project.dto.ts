@@ -14,9 +14,9 @@ class EnvironmentConfigDto {
   @IsIn(['dev', 'test', 'prod'])
   name!: EnvName;
 
-  // The target this environment should deploy to. Optional — omitted
-  // environments fall back to a sensible default (dev/test: built-in Docker;
-  // prod: the built-in target for the template's natural kind).
+  // The target this environment should deploy to. Self-hosted may omit it and
+  // use built-in defaults; SaaS validates an explicit workspace target for all
+  // three environments because its control plane has no local deploy host.
   @IsOptional()
   @Matches(/^(?:builtin-(?:docker|ssh|sftp)|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)
   targetId?: string;

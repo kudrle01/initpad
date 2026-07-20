@@ -9,7 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { Spinner } from '@/components/atoms/Spinner';
-import type { ImportableRepo, ImportPreflight, TemplateManifest } from '@/types';
+import {
+  ENV_NAMES,
+  EnvironmentTargetFields,
+  suggestedEnvironmentTargets,
+  type EnvironmentTargets,
+} from '@/components/organisms/EnvironmentTargetFields';
+import type { EnvName, ImportableRepo, ImportPreflight, Target, TemplateManifest } from '@/types';
 
 // Import an existing repository: pick a repo + template, run a preflight against
 // the runtime contract, then record the project without touching the code.
@@ -22,6 +28,7 @@ export default function ImportRepo() {
 
   const [repos, setRepos] = useState<ImportableRepo[]>([]);
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
+  const [targets, setTargets] = useState<Target[]>([]);
   const [repositoryId, setRepositoryId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [preflight, setPreflight] = useState<ImportPreflight | null>(null);
@@ -29,16 +36,19 @@ export default function ImportRepo() {
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
+  const [environmentTargets, setEnvironmentTargets] = useState<EnvironmentTargets>({ dev: '', test: '', prod: '' });
 
   useEffect(() => {
     Promise.all([
       api.listImportableRepos(),
       api.listTemplates(),
+      api.listTargets(),
       hosted ? api.githubStatus() : Promise.resolve(null),
     ])
-      .then(([r, t, github]) => {
+      .then(([r, t, targetRows, github]) => {
         setRepos(r);
         setTemplates(t);
+        setTargets(targetRows);
         setGhStatus(github);
         if (t[0]) setTemplateId(t[0].id);
         const firstImportable = r.find((x) => !x.alreadyImported && !x.empty);
@@ -54,6 +64,18 @@ export default function ImportRepo() {
     () => repos.find((repo) => repo.repositoryId === repositoryId) ?? null,
     [repos, repositoryId],
   );
+  const template = useMemo(
+    () => templates.find((item) => item.id === templateId) ?? null,
+    [templates, templateId],
+  );
+
+  useEffect(() => {
+    setEnvironmentTargets(suggestedEnvironmentTargets(template, targets, hosted));
+  }, [template, targets, hosted]);
+
+  function chooseTarget(environment: EnvName, targetId: string) {
+    setEnvironmentTargets((current) => ({ ...current, [environment]: targetId }));
+  }
 
   async function runPreflight() {
     if (!repositoryId || !templateId) return;
@@ -68,10 +90,14 @@ export default function ImportRepo() {
   }
 
   async function doImport() {
-    if (readOnly || !preflight?.canImport) return;
+    if (readOnly || !preflight?.canImport || ENV_NAMES.some((name) => !environmentTargets[name])) return;
     setBusy(true);
     try {
-      const project = await api.importRepo(repositoryId, templateId);
+      const project = await api.importRepo(
+        repositoryId,
+        templateId,
+        ENV_NAMES.map((environment) => ({ name: environment, targetId: environmentTargets[environment] })),
+      );
       toast.success('Repository imported');
       navigate(`/projects/${project.id}`);
     } catch (e) {
@@ -95,6 +121,13 @@ export default function ImportRepo() {
       {readOnly && (
         <p role="alert" className="mb-4 rounded-md border border-border bg-secondary p-3 text-sm text-muted-foreground">
           Viewer access is read-only. Ask a workspace admin for a member or maintainer role to import projects.
+        </p>
+      )}
+      {hosted && ghStatus && !ghStatus.ciCallbackReady && (
+        <p role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground">
+          <AlertTriangle className="mr-2 inline h-4 w-4 text-destructive" />
+          {ghStatus.ciCallbackIssue ?? 'GitHub cannot reach the InitPad CI callback.'}{' '}
+          Configure a public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code> before importing.
         </p>
       )}
 
@@ -143,6 +176,14 @@ export default function ImportRepo() {
           </p>
         </div>
 
+        <EnvironmentTargetFields
+          template={template}
+          targets={targets}
+          values={environmentTargets}
+          hosted={hosted}
+          onChange={chooseTarget}
+        />
+
         <div>
           <Button variant="secondary" onClick={runPreflight} disabled={!repositoryId || !templateId || checking}>
             {checking ? <Spinner className="h-4 w-4" /> : <Check className="h-4 w-4" />}
@@ -173,7 +214,16 @@ export default function ImportRepo() {
               </ul>
             )}
             <div className="mt-5">
-              <Button disabled={readOnly || busy || !preflight.canImport} onClick={doImport}>
+              <Button
+                disabled={
+                  readOnly ||
+                  busy ||
+                  !preflight.canImport ||
+                  (hosted && !ghStatus?.ciCallbackReady) ||
+                  ENV_NAMES.some((environment) => !environmentTargets[environment])
+                }
+                onClick={doImport}
+              >
                 {busy ? <Spinner className="h-4 w-4" /> : <DownloadCloud className="h-4 w-4" />}
                 {busy ? 'Importing…' : `Import ${selectedRepo?.name ?? 'repository'}`}
               </Button>

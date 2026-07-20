@@ -89,6 +89,13 @@ export const config = {
     // the compose setup overrides it with the internal service name.
     platformUrl:
       process.env.INITPAD_PLATFORM_INTERNAL_URL || 'http://host.docker.internal:3000',
+    // Public browser/API origin reachable by GitHub-hosted Actions runners.
+    // Kept separate from the internal Gitea callback above: localhost and
+    // Docker service names are valid internally but never from github.com.
+    publicUrl:
+      process.env.INITPAD_PLATFORM_PUBLIC_URL ||
+      process.env.INITPAD_FRONTEND_URL ||
+      '',
   },
   scm: {
     webhookUrl:

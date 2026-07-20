@@ -120,7 +120,7 @@ export default function Infrastructure() {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const toast = useToast();
-  const { activeWorkspace } = useAuth();
+  const { activeWorkspace, user } = useAuth();
   const readOnly = !activeWorkspace || !['owner', 'admin', 'maintainer'].includes(activeWorkspace.role);
 
   const load = useCallback(() => {
@@ -182,7 +182,9 @@ export default function Infrastructure() {
     <div>
       <PageHeader
         title="Infrastructure"
-        subtitle="Where projects deploy. Built-in targets are the simulated company infra; add your own servers for production."
+        subtitle={user?.edition === 'saas'
+          ? 'Workspace servers for dev, test and production. Local/private Docker servers will connect through InitPad Agent.'
+          : 'Where projects deploy. Built-in targets are the simulated company infra; add your own servers for any environment.'}
         actions={!readOnly ? (
           <Button
             onClick={() => {
@@ -200,7 +202,7 @@ export default function Infrastructure() {
 
       {!loading && (
         <div className="flex flex-col gap-8">
-          <section>
+          {builtins.length > 0 && <section>
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Built-in (simulated infrastructure)
             </p>
@@ -209,7 +211,7 @@ export default function Infrastructure() {
                 <TargetCard key={t.id} target={t} busy={busyId === t.id} readOnly={readOnly} onVerify={() => verify(t)} onEdit={() => {}} onDelete={() => {}} />
               ))}
             </div>
-          </section>
+          </section>}
 
           <section>
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">

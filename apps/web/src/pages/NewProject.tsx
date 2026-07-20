@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { AlertTriangle, Check, Rocket, ArrowRight, Container, DownloadCloud, Github, Settings2 } from 'lucide-react';
+import { AlertTriangle, Check, Rocket, DownloadCloud, Github, Settings2 } from 'lucide-react';
 import { api, type EnvConfig, type GitHubStatus } from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
@@ -12,19 +12,16 @@ import { FormField } from '@/components/molecules/FormField';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { Spinner } from '@/components/atoms/Spinner';
 import { cn } from '@/lib/utils';
-import type { RuntimeKind, Target, TemplateManifest } from '@/types';
+import {
+  ENV_NAMES,
+  EnvironmentTargetFields,
+  suggestedEnvironmentTargets,
+  type EnvironmentTargets,
+} from '@/components/organisms/EnvironmentTargetFields';
+import type { EnvName, RuntimeKind, Target, TemplateManifest } from '@/types';
 
 function runtimeOf(t: TemplateManifest): RuntimeKind {
   return t.runtime ?? (t.artifact === 'static' ? 'static' : 'node');
-}
-
-// A target is usable for a template when the template accepts its kind and the
-// target can run the template's runtime.
-function usable(target: Target, template: TemplateManifest): boolean {
-  return (
-    template.compatibleProviders.includes(target.kind) &&
-    target.capabilities.includes(runtimeOf(template))
-  );
 }
 
 export default function NewProject() {
@@ -37,7 +34,7 @@ export default function NewProject() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [name, setName] = useState('my-project');
   const [templateId, setTemplateId] = useState<string>('');
-  const [prodTargetId, setProdTargetId] = useState<string>('');
+  const [environmentTargets, setEnvironmentTargets] = useState<EnvironmentTargets>({ dev: '', test: '', prod: '' });
   const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
   const [scmInstallationId, setScmInstallationId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,11 +45,6 @@ export default function NewProject() {
   const template = useMemo(
     () => templates.find((t) => t.id === templateId),
     [templates, templateId],
-  );
-
-  const prodOptions = useMemo(
-    () => (template ? targets.filter((t) => usable(t, template)) : []),
-    [targets, template],
   );
 
   const capabilityMismatches = useMemo(() => {
@@ -66,11 +58,6 @@ export default function NewProject() {
     );
   }, [targets, template]);
 
-  const dockerTarget = useMemo(
-    () => targets.find((t) => t.scope === 'builtin' && t.kind === 'docker') ?? null,
-    [targets],
-  );
-
   const selectedInstallation = useMemo(
     () => ghStatus?.installations.find((installation) => installation.id === scmInstallationId) ?? null,
     [ghStatus, scmInstallationId],
@@ -78,6 +65,7 @@ export default function NewProject() {
   const githubReady = !hosted || Boolean(
     ghStatus?.linked &&
     selectedInstallation &&
+    ghStatus?.ciCallbackReady &&
     !selectedInstallation.suspended &&
     selectedInstallation.canCreate &&
     (selectedInstallation.accountType === 'Organization' || ghStatus.credentialReady),
@@ -105,34 +93,25 @@ export default function NewProject() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hosted, activeWorkspace?.id]);
 
-  // Prefer the template's natural production host. PHP frameworks use a
-  // workspace SFTP/PHP host when one is configured; Docker remains the safe
-  // fallback for plain PHP and workspaces without such a target.
+  // Self-hosted gets sensible defaults; SaaS deliberately requires the user
+  // to choose each real workspace target because no control-plane-local Docker
+  // host exists from a public service.
   useEffect(() => {
-    if (!template) return;
-    const rt = runtimeOf(template);
-    const kind = rt === 'static' || rt === 'php' ? 'sftp' : rt === 'node' ? 'ssh' : 'docker';
-    const opts = targets.filter((t) => usable(t, template));
-    const natural =
-      opts.find((t) => t.scope === 'builtin' && t.kind === kind) ??
-      opts.find((t) => t.scope === 'user' && t.kind === kind && t.verifiedAt) ??
-      opts.find((t) => t.scope === 'user' && t.kind === kind) ??
-      opts.find((t) => t.scope === 'builtin' && t.kind === 'docker') ??
-      opts[0];
-    setProdTargetId(natural?.id ?? '');
-  }, [template, targets]);
+    setEnvironmentTargets(suggestedEnvironmentTargets(template ?? null, targets, hosted));
+  }, [template, targets, hosted]);
+
+  function chooseTarget(environment: EnvName, targetId: string) {
+    setEnvironmentTargets((current) => ({ ...current, [environment]: targetId }));
+  }
 
   async function submit() {
-    if (readOnly || !validName || !templateId || !githubReady) return;
+    if (readOnly || !validName || !templateId || !githubReady || ENV_NAMES.some((name) => !environmentTargets[name])) return;
     setBusy(true);
     try {
-      // dev/test use the built-in infra by default (server-side); prod uses the
-      // chosen target.
-      const environments: EnvConfig[] = [
-        { name: 'dev' },
-        { name: 'test' },
-        { name: 'prod', targetId: prodTargetId || undefined },
-      ];
+      const environments: EnvConfig[] = ENV_NAMES.map((environment) => ({
+        name: environment,
+        targetId: environmentTargets[environment],
+      }));
       const project = await api.createProject(
         name,
         templateId,
@@ -218,6 +197,13 @@ export default function NewProject() {
                 before InitPad can create a repository in your personal account.
               </p>
             )}
+            {ghStatus && !ghStatus.ciCallbackReady && (
+              <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground">
+                <AlertTriangle className="mr-2 inline h-4 w-4 text-destructive" />
+                {ghStatus.ciCallbackIssue ?? 'GitHub cannot reach the InitPad CI callback.'}{' '}
+                Configure a public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code> and restart InitPad.
+              </p>
+            )}
           </div>
         )}
 
@@ -255,45 +241,13 @@ export default function NewProject() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label>Environments &amp; targets</Label>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            {(['dev', 'test'] as const).map((envName) => (
-              <div key={envName} className="flex items-center gap-2">
-                <span className="w-10 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {envName}
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/40 px-3 py-1.5 text-sm text-muted-foreground">
-                  <Container className="h-3.5 w-3.5" /> {dockerTarget?.name ?? 'Built-in Docker'}
-                </span>
-                <ArrowRight className="hidden h-4 w-4 text-muted-foreground sm:block" />
-              </div>
-            ))}
-            <div className="flex items-center gap-2">
-              <span className="w-10 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                prod
-              </span>
-              <Select
-                value={prodTargetId}
-                aria-label="Production target"
-                onChange={(ev) => setProdTargetId(ev.target.value)}
-              >
-                {prodOptions.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                    {t.scope === 'user' ? ' (yours)' : ''}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            dev &amp; test run on the built-in infrastructure. Choose where prod deploys — or
-            register your own server in{' '}
-            <Link to="/infrastructure" className="text-link">
-              Infrastructure
-            </Link>
-            .
-          </p>
+          <EnvironmentTargetFields
+            template={template ?? null}
+            targets={targets}
+            values={environmentTargets}
+            hosted={hosted}
+            onChange={chooseTarget}
+          />
           {template && capabilityMismatches.length > 0 && (
             <div className="mt-2 flex max-w-2xl items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -323,7 +277,7 @@ export default function NewProject() {
         </div>
 
         <div>
-          <Button disabled={readOnly || busy || !templateId || !validName || !githubReady || !!loadError} onClick={submit}>
+          <Button disabled={readOnly || busy || !templateId || !validName || !githubReady || !!loadError || ENV_NAMES.some((environment) => !environmentTargets[environment])} onClick={submit}>
             {busy ? <Spinner className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}
             {busy ? 'Creating…' : 'Create project'}
           </Button>

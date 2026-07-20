@@ -51,6 +51,13 @@ upgrade se provádí `git pull && ./install.sh`.
 Serverovou instalaci, DNS/TLS, zálohu a restore drill popisuje
 [deploy/README.md](deploy/README.md).
 
+GitHub/SaaS varianta nemůže použít `localhost` jako Actions callback:
+GitHub-hosted runner běží mimo počítač s InitPadem. `INITPAD_PUBLIC_URL`
+proto musí být veřejná HTTPS URL skutečné instalace nebo dočasného tunnelu.
+Stejné origin používá GitHub App OAuth callback, Setup URL a Webhook URL.
+SaaS projekty vybírají ověřený workspace target zvlášť pro dev/test/prod;
+lokální/private Docker server bude připojen odchozím InitPad Agentem.
+
 ## Lokální vývoj
 
 Požadavek: Node.js 20+ a Docker.

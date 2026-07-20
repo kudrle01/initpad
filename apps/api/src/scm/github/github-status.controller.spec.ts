@@ -1,6 +1,15 @@
 import { GitHubStatusController } from './github-status.controller';
+import { config } from '../../config';
 
 describe('GitHubStatusController', () => {
+  const savedEdition = config.edition;
+  const savedCiPublicUrl = config.ci.publicUrl;
+
+  afterEach(() => {
+    config.edition = savedEdition;
+    config.ci.publicUrl = savedCiPublicUrl;
+  });
+
   it('reports only installations explicitly authorized for the active workspace', async () => {
     const identities = {
       listForUser: jest.fn(async () => [{ provider: 'github', username: 'alice' }]),
@@ -39,6 +48,24 @@ describe('GitHubStatusController', () => {
     );
     await expect(controller.status('user-1', 'workspace-1')).resolves.toMatchObject({
       canInstall: false,
+    });
+  });
+
+  it('reports a local callback as not ready in SaaS', async () => {
+    config.edition = 'saas';
+    config.ci.publicUrl = 'http://localhost:8080';
+    const controller = new GitHubStatusController(
+      { listForUser: jest.fn(async () => []) } as never,
+      { listForWorkspace: jest.fn(async () => []) } as never,
+      { isConfigured: jest.fn(() => true) } as never,
+      { resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })) } as never,
+      { isReadyForUser: jest.fn(async () => false) } as never,
+    );
+
+    await expect(controller.status('user-1', 'workspace-1')).resolves.toMatchObject({
+      ciCallbackReady: false,
+      ciCallbackUrl: 'http://localhost:8080',
+      ciCallbackIssue: expect.stringContaining('HTTPS'),
     });
   });
 });

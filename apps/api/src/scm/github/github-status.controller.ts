@@ -7,6 +7,7 @@ import { GitHubInstallationService } from './github-installation.service';
 import { GitHubAppService } from './github-app.service';
 import { WorkspacesService } from '../../workspaces/workspaces.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
+import { publicHttpsUrlIssue } from '../../common/public-url';
 
 // Connection status for the signed-in user's create/import preflight (ADR-030):
 // is GitHub enabled, is an identity linked, and is the App installed on that
@@ -50,12 +51,18 @@ export class GitHubStatusController {
     const credentialReady = linked
       ? await this.credentials.isReadyForUser(userId)
       : false;
+    const ciCallbackIssue = config.edition === 'saas'
+      ? publicHttpsUrlIssue(config.ci.publicUrl)
+      : null;
     return {
       enabled,
       appConfigured,
       linked: Boolean(linked),
       login: linked?.username ?? null,
       credentialReady,
+      ciCallbackReady: ciCallbackIssue == null,
+      ciCallbackUrl: config.ci.publicUrl || null,
+      ciCallbackIssue,
       canInstall: Boolean(linked) && appConfigured && ['owner', 'admin'].includes(workspace.role),
       installation: { present, suspended },
       installations: rows,

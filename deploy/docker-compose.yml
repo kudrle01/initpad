@@ -72,6 +72,7 @@ services:
       INITPAD_GITEA_USER: ${INITPAD_BOT_USER:-initpad-bot}
       INITPAD_GITEA_TOKEN: ${INITPAD_GITEA_TOKEN:-}
       INITPAD_FRONTEND_URL: ${INITPAD_PUBLIC_URL:-http://localhost:8080}
+      INITPAD_PLATFORM_PUBLIC_URL: ${INITPAD_PUBLIC_URL:-http://localhost:8080}
       INITPAD_JWT_SECRET: ${INITPAD_JWT_SECRET:?run install.sh to generate secrets}
       INITPAD_ENCRYPTION_KEY: ${INITPAD_ENCRYPTION_KEY:?run install.sh to generate secrets}
       INITPAD_SCM_WEBHOOK_TOKEN: ${INITPAD_SCM_WEBHOOK_TOKEN:?run install.sh to generate secrets}

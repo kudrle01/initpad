@@ -1,5 +1,6 @@
 import { ProjectsService } from './projects.service';
 import type { TargetRow } from '../targets/targets.service';
+import { config } from '../config';
 
 const repository = {
   provider: 'gitea' as const,
@@ -79,6 +80,18 @@ function build(
 }
 
 describe('ProjectsService create provisioning journal', () => {
+  const savedEdition = config.edition;
+  const savedCiPublicUrl = config.ci.publicUrl;
+
+  beforeEach(() => {
+    config.edition = 'self-hosted';
+  });
+
+  afterEach(() => {
+    config.edition = savedEdition;
+    config.ci.publicUrl = savedCiPublicUrl;
+  });
+
   it('records repository and project effects before reporting success', async () => {
     const { service, provisioning } = build();
     await expect(
@@ -138,5 +151,83 @@ describe('ProjectsService create provisioning journal', () => {
     const environments = createInput!.data.environments.create;
     expect(environments.find((environment: { name: string }) => environment.name === 'prod'))
       .toMatchObject({ provider: 'sftp', targetId: 'eso' });
+  });
+
+  it('does not implicitly bind PHP production to an unverified workspace host', async () => {
+    const phpTemplate = {
+      ...template,
+      id: 'nette',
+      runtime: 'php',
+      compatibleProviders: ['docker', 'sftp'],
+    };
+    const unverifiedSftpTarget: TargetRow = {
+      ...dockerTarget,
+      id: 'eso',
+      name: 'ESO',
+      kind: 'sftp',
+      scope: 'user',
+      capabilities: 'static,php',
+      workspaceId: 'ws1',
+    };
+    const { service, prisma } = build(jest.fn(async () => undefined), {
+      selectedTemplate: phpTemplate,
+      targets: [dockerTarget, unverifiedSftpTarget],
+    });
+
+    await service.create({ name: 'new-api', templateId: 'nette' }, 'u1');
+
+    const createInput = prisma.project.create.mock.calls[0]?.[0] as {
+      data: { environments: { create: Array<{ name: string; provider: string; targetId: string }> } };
+    };
+    expect(createInput.data.environments.create.find((environment) => environment.name === 'prod'))
+      .toMatchObject({ provider: 'docker', targetId: 'builtin-docker' });
+  });
+
+  it('rejects SaaS provisioning before repository creation when the callback is local', async () => {
+    config.edition = 'saas';
+    config.ci.publicUrl = 'http://localhost:8080';
+    const { service, scm } = build();
+
+    await expect(
+      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
+    ).rejects.toThrow('GitHub CI callback');
+    expect(scm.provision).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit target for every SaaS environment', async () => {
+    config.edition = 'saas';
+    config.ci.publicUrl = 'https://initpad.example';
+    const { service, scm } = build();
+
+    await expect(
+      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
+    ).rejects.toThrow('Choose a verified workspace target for the dev environment');
+    expect(scm.provision).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unverified SaaS target before repository creation', async () => {
+    config.edition = 'saas';
+    config.ci.publicUrl = 'https://initpad.example';
+    const unverifiedSshTarget: TargetRow = {
+      ...dockerTarget,
+      id: 'workspace-ssh',
+      name: 'Company server',
+      kind: 'ssh',
+      scope: 'user',
+      capabilities: 'node',
+      workspaceId: 'ws1',
+    };
+    const { service, scm } = build(jest.fn(async () => undefined), {
+      targets: [unverifiedSshTarget],
+    });
+    const environments = (['dev', 'test', 'prod'] as const).map((name) => ({
+      name,
+      targetId: unverifiedSshTarget.id,
+    }));
+
+    await expect(
+      service.create({ name: 'new-api', templateId: 'node-api', environments }, 'u1'),
+    ).rejects.toThrow("Target 'Company server' must pass Test connection");
+    expect(scm.provision).not.toHaveBeenCalled();
   });
 });

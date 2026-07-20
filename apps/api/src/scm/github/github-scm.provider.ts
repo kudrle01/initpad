@@ -21,6 +21,7 @@ import { createGunzip } from 'zlib';
 import sodium from 'libsodium-wrappers';
 import * as tar from 'tar-fs';
 import { config } from '../../config';
+import { publicHttpsUrlIssue } from '../../common/public-url';
 import {
   RepoArchive,
   ScmBuildArtifact,
@@ -609,18 +610,20 @@ export class GitHubScmProvider implements ScmProvider {
     ciDeployToken: string,
   ): Promise<void> {
     this.assertProvider(repository);
+    const platformUrl = this.publicCiUrl();
     await this.setRepoSecrets(repository, {
       INITPAD_DEPLOY_TOKEN: ciDeployToken,
       INITPAD_REGISTRY: 'ghcr.io',
-      INITPAD_PLATFORM_URL: config.auth.frontendUrl.replace(/\/+$/, ''),
+      INITPAD_PLATFORM_URL: platformUrl,
     });
   }
 
   async configureRepoRuntimeSecrets(repository: ScmRepositoryRef): Promise<void> {
     this.assertProvider(repository);
+    const platformUrl = this.publicCiUrl();
     await this.setRepoSecrets(repository, {
       INITPAD_REGISTRY: 'ghcr.io',
-      INITPAD_PLATFORM_URL: config.auth.frontendUrl.replace(/\/+$/, ''),
+      INITPAD_PLATFORM_URL: platformUrl,
     });
   }
 
@@ -895,6 +898,12 @@ export class GitHubScmProvider implements ScmProvider {
         throw new Error(`Could not configure GitHub Actions secret '${name}' (HTTP ${response.status})`);
       }
     }
+  }
+
+  private publicCiUrl(): string {
+    const issue = publicHttpsUrlIssue(config.ci.publicUrl);
+    if (issue) throw new Error(issue);
+    return config.ci.publicUrl.replace(/\/+$/, '');
   }
 }
 
