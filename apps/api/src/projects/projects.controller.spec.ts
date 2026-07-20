@@ -21,4 +21,18 @@ describe('ProjectsController project deletion', () => {
       confirmCleanupDebt: true,
     });
   });
+
+  it('requires write access before requesting a failed GitHub job re-run', async () => {
+    const projects = {
+      assertAccess: jest.fn().mockResolvedValue(undefined),
+      rerunFailedJobs: jest.fn().mockResolvedValue({ runId: '77' }),
+    };
+    const controller = new ProjectsController(projects as never);
+
+    await expect(controller.rerunFailedJobs('project-1', 'user-1')).resolves.toEqual({
+      runId: '77',
+    });
+    expect(projects.assertAccess).toHaveBeenCalledWith('project-1', 'user-1', 'write');
+    expect(projects.rerunFailedJobs).toHaveBeenCalledWith('project-1');
+  });
 });

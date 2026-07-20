@@ -169,4 +169,71 @@ describe('ProjectsService immutable artifact binding', () => {
     );
     expect(scm.createRetryTag).not.toHaveBeenCalled();
   });
+
+  it('refreshes the callback secret and re-runs failed jobs of the bound artifact run', async () => {
+    config.ci.publicUrl = 'https://initpad.example';
+    const sha = 'a'.repeat(40);
+    const prisma = {
+      project: {
+        findUniqueOrThrow: jest.fn(async () => projectRow),
+        findUnique: jest.fn(async () => ({ ...projectRow, owner: null })),
+      },
+      environment: {
+        findUnique: jest.fn(async () => ({
+          version: sha,
+          status: 'running',
+          deploymentRequired: false,
+          buildArtifact: { providerRunId: '29771743929' },
+        })),
+      },
+    };
+    const scm = {
+      listCommitStatuses: jest.fn(async () => [{
+        context: 'deploy', status: 'failure', targetUrl: 'https://github.example/job/1',
+      }]),
+      configureRepoRuntimeSecrets: jest.fn(async () => undefined),
+      rerunFailedJobs: jest.fn(async () => undefined),
+    };
+    const service = make(prisma, {}, { provider: jest.fn(() => scm) });
+
+    await expect(service.rerunFailedJobs('project-1')).resolves.toEqual({
+      runId: '29771743929',
+    });
+
+    expect(scm.listCommitStatuses).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'github', fullName: 'acme/api' }),
+      sha,
+      expect.anything(),
+      '29771743929',
+    );
+    expect(scm.configureRepoRuntimeSecrets).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'acme/api' }),
+    );
+    expect(scm.rerunFailedJobs).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'acme/api' }),
+      '29771743929',
+    );
+  });
+
+  it('does not re-run GitHub jobs while the verified build still needs publication', async () => {
+    config.ci.publicUrl = 'https://initpad.example';
+    const prisma = {
+      project: { findUniqueOrThrow: jest.fn(async () => projectRow) },
+      environment: {
+        findUnique: jest.fn(async () => ({
+          version: 'a'.repeat(40),
+          status: 'failed',
+          deploymentRequired: true,
+          buildArtifact: { providerRunId: '77' },
+        })),
+      },
+    };
+    const scm = { rerunFailedJobs: jest.fn() };
+    const service = make(prisma, {}, { provider: jest.fn(() => scm) });
+
+    await expect(service.rerunFailedJobs('project-1')).rejects.toThrow(
+      'Publish the verified build successfully',
+    );
+    expect(scm.rerunFailedJobs).not.toHaveBeenCalled();
+  });
 });

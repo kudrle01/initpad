@@ -108,6 +108,12 @@ export class ProjectsController {
     return this.projects.runAgain(id);
   }
 
+  @Post(':id/rerun-failed-jobs')
+  async rerunFailedJobs(@Param('id') id: string, @CurrentUser() userId: string) {
+    await this.projects.assertAccess(id, userId, 'write');
+    return this.projects.rerunFailedJobs(id);
+  }
+
   @Post(':id/stop/:env')
   async stopEnv(
     @Param('id') id: string,

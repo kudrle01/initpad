@@ -131,6 +131,9 @@ export interface ScmProvider {
   listCommits(repository: ScmRepositoryRef, actor: ScmActor, limit?: number): Promise<ScmCommit[] | null>;
   createRetryTag(repository: ScmRepositoryRef, sha: string, actor: ScmActor): Promise<string>;
   deleteTag(repository: ScmRepositoryRef, tag: string, actor: ScmActor): Promise<void>;
+  // Hosted providers may support retrying the failed jobs of the exact run
+  // without creating a fake commit/tag or conflating it with a redeploy.
+  rerunFailedJobs?(repository: ScmRepositoryRef, runId: string): Promise<void>;
   listCommitStatuses(
     repository: ScmRepositoryRef,
     sha: string,

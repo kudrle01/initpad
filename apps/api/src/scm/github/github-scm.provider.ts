@@ -44,6 +44,7 @@ const READ_CONTENTS = { metadata: 'read', contents: 'read' };
 const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
 const READ_CHECKS = { metadata: 'read', contents: 'read', checks: 'read' };
 const READ_ACTIONS = { metadata: 'read', actions: 'read' };
+const WRITE_ACTIONS = { metadata: 'read', actions: 'write' };
 const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
 const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
 const WRITE_ADMINISTRATION = { metadata: 'read', administration: 'write' };
@@ -509,6 +510,32 @@ export class GitHubScmProvider implements ScmProvider {
     });
     if (!created.ok) throw new Error(`Could not queue the CI retry on GitHub (HTTP ${created.status})`);
     return tag;
+  }
+
+  async rerunFailedJobs(repository: ScmRepositoryRef, runId: string): Promise<void> {
+    this.assertProvider(repository);
+    if (!/^\d+$/.test(runId)) throw new Error('GitHub Actions run ID is invalid');
+    let token: string;
+    try {
+      token = await this.token(repository, WRITE_ACTIONS);
+    } catch {
+      throw new Error(
+        'GitHub App cannot re-run jobs. Set repository permission Actions to Read and write, then approve the installation update.',
+      );
+    }
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const response = await this.gh(
+      `/repos/${repo}/actions/runs/${runId}/rerun-failed-jobs`,
+      token,
+      { method: 'POST' },
+    );
+    if (response.status === 201) return;
+    if (response.status === 403) {
+      throw new Error(
+        'GitHub App cannot re-run jobs. Set repository permission Actions to Read and write, then approve the installation update.',
+      );
+    }
+    throw new Error(`Could not re-run failed GitHub Actions jobs (HTTP ${response.status})`);
   }
 
   async deleteTag(repository: ScmRepositoryRef, tag: string, _actor: ScmActor): Promise<void> {

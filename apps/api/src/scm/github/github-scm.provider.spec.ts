@@ -609,6 +609,29 @@ describe('GitHubScmProvider writes', () => {
     expect(JSON.parse(createCall[1].body as string).sha).toBe('deadbeef');
   });
 
+  it('re-runs failed jobs of the exact Actions run with actions write permission', async () => {
+    const fetchMock = jest.fn(async () => ({ ok: true, status: 201 }));
+    const { provider, installations } = make(fetchMock);
+
+    await expect(provider.rerunFailedJobs(repository(), '29771743929')).resolves.toBeUndefined();
+
+    expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: { metadata: 'read', actions: 'write' },
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/actions/runs/29771743929/rerun-failed-jobs');
+    expect(init.method).toBe('POST');
+  });
+
+  it('explains the GitHub App permission required for a failed-job re-run', async () => {
+    const { provider, installations } = make(jest.fn());
+    installations.tokenForBinding.mockRejectedValueOnce(new Error('HTTP 422'));
+
+    await expect(provider.rerunFailedJobs(repository(), '77')).rejects.toThrow(
+      'Actions to Read and write',
+    );
+  });
+
   it('detaches by removing platform secrets and disabling Actions', async () => {
     const fetchMock = jest.fn(async () => ({ ok: true, status: 204 }));
     const { provider } = make(fetchMock);

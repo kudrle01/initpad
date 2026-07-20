@@ -469,6 +469,11 @@ export default function Settings() {
                     </span>
                   </div>
                 ))}
+                <div className="bg-secondary/20 px-3 py-2 text-xs text-muted-foreground">
+                  Failed-job retry requires the GitHub App repository permission{' '}
+                  <strong className="font-medium text-foreground">Actions: Read and write</strong>.
+                  No organization or account permission is required.
+                </div>
               </div>
             )}
             {ghStatus && !ghStatus.appConfigured && (

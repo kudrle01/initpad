@@ -1690,6 +1690,54 @@ export class ProjectsService implements OnModuleInit {
     return this.get(id);
   }
 
+  // Explicitly repairs the failed jobs of the Actions run that produced the
+  // build currently bound to dev. This is deliberately separate from
+  // runAgain/redeploy: those reuse verified bytes and do not spend CI minutes.
+  async rerunFailedJobs(id: string): Promise<{ runId: string }> {
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const repository = repositoryRef(project);
+    if (repository.provider !== 'github') {
+      throw new BadRequestException('Failed-job re-run is currently available only for GitHub projects');
+    }
+    const dev = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId: id, name: 'dev' } },
+      include: { buildArtifact: { select: { providerRunId: true } } },
+    });
+    const runId = dev?.buildArtifact?.providerRunId;
+    if (!dev?.version || !runId) {
+      throw new BadRequestException('Dev has no artifact-producing GitHub Actions run to retry');
+    }
+    if (dev.deploymentRequired || !['running', 'stopped'].includes(dev.status)) {
+      throw new BadRequestException(
+        'Publish the verified build successfully before repairing its failed GitHub handoff job',
+      );
+    }
+    const callbackIssue = publicHttpsUrlIssue(config.ci.publicUrl);
+    if (callbackIssue) {
+      throw new BadRequestException(
+        `${callbackIssue} Configure the public InitPad URL before re-running the GitHub callback job.`,
+      );
+    }
+    const scm = this.workspaceScm.provider('github');
+    if (!scm.rerunFailedJobs) {
+      throw new BadRequestException('The configured GitHub provider cannot re-run failed jobs');
+    }
+    const actor = await this.actorForProject(id);
+    const statuses = await scm.listCommitStatuses(repository, dev.version, actor, runId);
+    if (!statuses?.some((status) => ['failure', 'error'].includes(status.status))) {
+      throw new BadRequestException('The latest attempt of this GitHub Actions run has no failed jobs');
+    }
+    try {
+      // Refresh the callback URL before the retry. This repairs repositories
+      // created while the control plane still advertised localhost.
+      await scm.configureRepoRuntimeSecrets(repository);
+      await scm.rerunFailedJobs(repository, runId);
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+    return { runId };
+  }
+
   // Suspends a running environment (stops the container/process). The version
   // is kept so it remains visible what is deployed; Start resumes it.
   async stopEnv(id: string, envName: EnvName): Promise<Project> {

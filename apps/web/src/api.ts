@@ -163,6 +163,8 @@ export const api = {
     http<Project>(`/projects/${id}/redeploy/${env}`, { method: 'POST' }),
   runAgain: (id: string) =>
     http<Project>(`/projects/${id}/run-again`, { method: 'POST' }),
+  rerunFailedJobs: (id: string) =>
+    http<{ runId: string }>(`/projects/${id}/rerun-failed-jobs`, { method: 'POST' }),
   stopEnv: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/stop/${env}`, { method: 'POST' }),
   startEnv: (id: string, env: EnvName) =>

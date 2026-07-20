@@ -27,7 +27,7 @@ import type { Commit, DeploymentOperation, EnvName, Project, ProvisioningStatus,
 // After creation the project finishes in the background (dev: deploying →
 // running) and CI runs asynchronously — while anything is "working", the
 // detail refreshes itself periodically.
-function isLive(project: Project | null, commits: Commit[]): boolean {
+function isLive(project: Project | null, commits: Commit[], rerunRequested = false): boolean {
   const envBusy = project?.environments.some((e) => e.status === 'deploying') ?? false;
   const ciBusy = commits.some((c) => c.pipeline.some((s) => s.status === 'running'));
   // The head commit is waiting for the runner (pending, nothing failed) →
@@ -38,7 +38,7 @@ function isLive(project: Project | null, commits: Commit[]): boolean {
     head.sha !== 'initial' &&
     head.pipeline.some((s) => s.status === 'pending') &&
     !head.pipeline.some((s) => s.status === 'failed');
-  return envBusy || ciBusy || ciQueued;
+  return envBusy || ciBusy || ciQueued || rerunRequested;
 }
 
 function Skeleton() {
@@ -79,6 +79,7 @@ export default function ProjectDetail() {
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [ciRerunRequested, setCiRerunRequested] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -128,9 +129,25 @@ export default function ProjectDetail() {
     // Fast cadence while something is working; a slow heartbeat otherwise so
     // out-of-band changes (repo deleted in Gitea, new commits) surface
     // without a manual refresh. Server-side reconciliation runs on each read.
-    const t = setTimeout(load, isLive(project, commits) ? 2500 : 10_000);
+    const t = setTimeout(load, isLive(project, commits, ciRerunRequested) ? 2500 : 10_000);
     return () => clearTimeout(t);
-  }, [project, commits, load, notFound]);
+  }, [project, commits, load, notFound, ciRerunRequested]);
+
+  useEffect(() => {
+    if (!ciRerunRequested) return;
+    const devVersion = project?.environments.find((environment) => environment.name === 'dev')?.version;
+    const deployedCommit = commits.find((commit) => commit.sha === devVersion);
+    const latestAttemptVisible = deployedCommit?.pipeline.some(
+      (stage) => stage.name === 'deploy' && ['running', 'success'].includes(stage.status),
+    );
+    if (latestAttemptVisible) setCiRerunRequested(false);
+  }, [ciRerunRequested, commits, project]);
+
+  useEffect(() => {
+    if (!ciRerunRequested) return;
+    const timeout = setTimeout(() => setCiRerunRequested(false), 120_000);
+    return () => clearTimeout(timeout);
+  }, [ciRerunRequested]);
 
   useEffect(() => {
     if (!project) return;
@@ -184,6 +201,20 @@ export default function ProjectDetail() {
           ? 'Preparing dev deployment through InitPad. An existing verified build is reused when available.'
           : 'Preparing dev deployment…',
       );
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function rerunFailedJobs() {
+    if (!id) return;
+    setBusy('rerun-failed-jobs');
+    try {
+      const { runId } = await api.rerunFailedJobs(id);
+      setCiRerunRequested(true);
+      toast.success(`GitHub is re-running failed jobs from run ${runId}.`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -400,6 +431,7 @@ export default function ProjectDetail() {
           onPromote={promote}
           onRedeploy={redeploy}
           onRunAgain={runAgain}
+          onRerunFailedJobs={rerunFailedJobs}
           onStop={stopEnvironment}
           onStart={startEnvironment}
           onRemoveEnv={removeEnvironment}

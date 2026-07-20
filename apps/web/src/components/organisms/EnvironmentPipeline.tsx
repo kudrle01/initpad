@@ -53,6 +53,7 @@ interface Props {
   onPromote: (target: EnvName) => void;
   onRedeploy: (env: EnvName) => void;
   onRunAgain: () => void;
+  onRerunFailedJobs: () => void;
   onStop: (env: EnvName) => void;
   onStart: (env: EnvName) => void;
   onRemoveEnv: (env: EnvName) => void;
@@ -67,6 +68,7 @@ export function EnvironmentPipeline({
   onPromote,
   onRedeploy,
   onRunAgain,
+  onRerunFailedJobs,
   onStop,
   onStart,
   onRemoveEnv,
@@ -93,6 +95,16 @@ export function EnvironmentPipeline({
         const deploying = busy === next || target?.status === 'deploying';
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
         const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
+        const hasFailedGitHubJobs =
+          env.name === 'dev' &&
+          project.scm.provider === 'github' &&
+          !!env.artifact?.runId &&
+          !!deployedCommit?.pipeline.some(
+            (stage) => stage.source !== 'platform' && stage.status === 'failed',
+          ) &&
+          !!deployedCommit?.pipeline.some(
+            (stage) => stage.source === 'platform' && stage.status === 'success',
+          );
         const deploymentHistoryUrl = `/projects/${project.id}/deployments`;
         // While deploying, statusReason carries the live step (e.g.
         // 'Uploading 340/1200 files'); derive a % for the bar when it has a ratio.
@@ -152,6 +164,11 @@ export function EnvironmentPipeline({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
+                        {hasFailedGitHubJobs && (
+                          <DropdownMenuItem onSelect={onRerunFailedJobs}>
+                            <RefreshCw className="h-4 w-4" /> Re-run failed GitHub jobs
+                          </DropdownMenuItem>
+                        )}
                         {canDeployToTarget && (
                           <DropdownMenuItem
                             onSelect={() => env.version ? onRedeploy(env.name) : onRunAgain()}
