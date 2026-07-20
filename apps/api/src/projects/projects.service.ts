@@ -2125,13 +2125,13 @@ export class ProjectsService implements OnModuleInit {
     return this.actorForRepo(row);
   }
 
-  async getCommits(id: string): Promise<Commit[]> {
+  async getCommits(id: string, limit = 20): Promise<Commit[]> {
     const project = await this.get(id);
     const template = this.templates.get(project.templateId);
     const actor = await this.actorForProject(id);
     const scm = this.workspaceScm.provider(project.scm.provider);
 
-    const fromScm = await scm.listCommits(project.scm, actor);
+    const fromScm = await scm.listCommits(project.scm, actor, Math.min(Math.max(limit, 1), 100));
     if (fromScm && fromScm.length > 0) {
       const versions = fromScm
         .map((commit) => commit.sha.toLowerCase())
@@ -2187,11 +2187,11 @@ export class ProjectsService implements OnModuleInit {
     ];
   }
 
-  async deploymentHistory(id: string): Promise<DeploymentOperationSummary[]> {
+  async deploymentHistory(id: string, limit = 30): Promise<DeploymentOperationSummary[]> {
     const operations = await this.prisma.deploymentOperation.findMany({
       where: { environment: { projectId: id } },
       orderBy: { createdAt: 'desc' },
-      take: 30,
+      take: Math.min(Math.max(limit, 1), 100),
       include: {
         environment: { select: { name: true } },
         buildArtifact: { select: { providerRunId: true } },

@@ -20,9 +20,10 @@ interface Props {
   scmProvider: 'gitea' | 'github';
   openSha: string | null;
   onToggle: (sha: string) => void;
+  limit?: number;
 }
 
-export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle }: Props) {
+export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle, limit }: Props) {
   if (commits.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-card px-6 py-8 text-center text-sm text-muted-foreground">
@@ -31,9 +32,11 @@ export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle }:
     );
   }
 
+  const visibleCommits = limit === undefined ? commits : commits.slice(0, limit);
+
   return (
     <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-      {commits.map((c) => {
+      {visibleCommits.map((c) => {
         const open = openSha === c.sha;
         const ci = commitStatus(c.pipeline);
         return (

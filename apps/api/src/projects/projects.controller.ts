@@ -8,6 +8,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
@@ -17,6 +18,13 @@ import { DeleteProjectDto } from './dto/delete-project.dto';
 import { EnvName } from '../domain/types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+
+function historyLimit(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, 100);
+}
 
 // Project access is derived from workspace membership. Read operations allow
 // every member; mutations require a non-viewer role.
@@ -40,15 +48,23 @@ export class ProjectsController {
   }
 
   @Get(':id/commits')
-  async commits(@Param('id') id: string, @CurrentUser() userId: string) {
+  async commits(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Query('limit') rawLimit?: string,
+  ) {
     await this.projects.assertAccess(id, userId, 'read');
-    return this.projects.getCommits(id);
+    return this.projects.getCommits(id, historyLimit(rawLimit, 20));
   }
 
   @Get(':id/deployments')
-  async deployments(@Param('id') id: string, @CurrentUser() userId: string) {
+  async deployments(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Query('limit') rawLimit?: string,
+  ) {
     await this.projects.assertAccess(id, userId, 'read');
-    return this.projects.deploymentHistory(id);
+    return this.projects.deploymentHistory(id, historyLimit(rawLimit, 30));
   }
 
   @Get(':id/provisioning')

@@ -77,6 +77,9 @@ describe('ProjectsService deployment pipeline projection', () => {
 
     const commits = await service.getCommits(project.id);
 
+    expect(scm.listCommits).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'github' }), expect.anything(), 20,
+    );
     expect(scm.listCommitStatuses).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'github' }), sha, expect.anything(), '77',
     );
@@ -133,12 +136,37 @@ describe('ProjectsService deployment pipeline projection', () => {
       {} as never, {} as never, {} as never, {} as never,
     );
 
-    await expect(service.deploymentHistory(project.id)).resolves.toEqual([{
+    await expect(service.deploymentHistory(project.id, 7)).resolves.toEqual([{
       id: 'operation-1', environment: 'dev', target: 'ESO school server',
       kind: 'redeploy', status: 'succeeded', version: sha,
       message: 'Verifying deployment',
       startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(),
       artifactRunId: '77',
     }]);
+    expect(prisma.deploymentOperation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 7 }),
+    );
+  });
+
+  it('caps commit and deployment history requests at 100 rows', async () => {
+    const { service, scm } = make(
+      { name: 'dev', status: 'empty', version: null, deploymentRequired: false },
+      { version: sha, status: 'succeeded', createdAt: new Date(), buildArtifact: null },
+    );
+
+    await service.getCommits(project.id, 500);
+    expect(scm.listCommits).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'github' }), expect.anything(), 100,
+    );
+
+    const prisma = { deploymentOperation: { findMany: jest.fn(async () => []) } };
+    const historyService = new ProjectsService(
+      prisma as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never,
+    );
+    await historyService.deploymentHistory(project.id, 500);
+    expect(prisma.deploymentOperation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 100 }),
+    );
   });
 });

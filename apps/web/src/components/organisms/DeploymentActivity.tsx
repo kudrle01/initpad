@@ -14,15 +14,41 @@ interface Props {
   operations: DeploymentOperation[];
   repoUrl: string | null;
   scmProvider: 'gitea' | 'github';
+  limit?: number;
 }
 
-export function DeploymentActivity({ operations, repoUrl, scmProvider }: Props) {
+export function DeploymentActivity({ operations, repoUrl, scmProvider, limit }: Props) {
+  const visibleOperations = limit === undefined ? operations : operations.slice(0, limit);
+  const sourceBuilds = Array.from(
+    new Set(visibleOperations.map((operation) => operation.artifactRunId).filter(Boolean)),
+  ) as string[];
+  const visibleSourceBuilds = sourceBuilds.slice(0, 5);
+
   return (
     <div>
       <div className="mb-3 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
         CI builds and tests an immutable artifact once. Deploy and redeploy publish that verified
         artifact through InitPad, so they do not start another {scmProvider === 'github' ? 'GitHub' : 'Gitea'} runner.
-        Runner links below are the original build audit log; this list is the current deployment activity.
+        This list is the current deployment activity.
+        {scmProvider === 'github' && repoUrl && sourceBuilds.length > 0 && (
+          <span className="ml-1 inline-flex flex-wrap items-center gap-x-2">
+            <span>Source CI {sourceBuilds.length === 1 ? 'build:' : 'builds:'}</span>
+            {visibleSourceBuilds.map((runId) => (
+              <a
+                key={runId}
+                href={`${repoUrl}/actions/runs/${runId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-link inline-flex items-center gap-1 font-medium"
+              >
+                run {runId} <ExternalLink className="h-3 w-3" />
+              </a>
+            ))}
+            {sourceBuilds.length > visibleSourceBuilds.length && (
+              <span>+{sourceBuilds.length - visibleSourceBuilds.length} more</span>
+            )}
+          </span>
+        )}
       </div>
       {operations.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -30,17 +56,13 @@ export function DeploymentActivity({ operations, repoUrl, scmProvider }: Props) 
         </div>
       ) : (
         <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-          {operations.slice(0, 10).map((operation, index) => {
+          {visibleOperations.map((operation, index) => {
             const visualStatus =
               operation.status === 'succeeded'
                 ? 'success'
                 : operation.status === 'cancelled'
                   ? 'pending'
                   : operation.status;
-            const runUrl =
-              scmProvider === 'github' && repoUrl && operation.artifactRunId
-                ? `${repoUrl}/actions/runs/${operation.artifactRunId}`
-                : null;
             return (
               <div
                 key={operation.id}
@@ -63,16 +85,6 @@ export function DeploymentActivity({ operations, repoUrl, scmProvider }: Props) 
                 <div className="flex shrink-0 items-center gap-3 pl-4 text-xs text-muted-foreground sm:pl-0">
                   {operation.version && <span className="font-mono">{operation.version.slice(0, 7)}</span>}
                   <span>{elapsed(operation)}</span>
-                  {runUrl && (
-                    <a
-                      href={runUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-link inline-flex items-center gap-1 font-medium"
-                    >
-                      CI build log <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
                 </div>
               </div>
             );

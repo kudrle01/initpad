@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, GitBranch, Layers, MoreHorizontal, Trash2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ArrowRight, GitBranch, Layers, MoreHorizontal, Trash2, ExternalLink } from 'lucide-react';
 import { api, ApiError, type DeleteProjectOptions } from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
@@ -413,7 +413,16 @@ export default function ProjectDetail() {
           operations={deployments}
           repoUrl={project.repoUrl}
           scmProvider={project.scm.provider}
+          limit={4}
         />
+        {deployments.length > 4 && (
+          <Link
+            to={`/projects/${project.id}/deployments`}
+            className="text-link mt-3 inline-flex items-center gap-1 text-sm font-medium"
+          >
+            Show all deployments <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
       </Section>
 
       <Section title="Commits">
@@ -423,7 +432,16 @@ export default function ProjectDetail() {
           scmProvider={project.scm.provider}
           openSha={openSha}
           onToggle={(sha) => setOpenSha((cur) => (cur === sha ? null : sha))}
+          limit={5}
         />
+        {commits.length > 5 && (
+          <Link
+            to={`/projects/${project.id}/commits`}
+            className="text-link mt-3 inline-flex items-center gap-1 text-sm font-medium"
+          >
+            Show all commits <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
       </Section>
 
       <DeleteProjectDialog

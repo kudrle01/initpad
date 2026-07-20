@@ -20,6 +20,8 @@ import Admin from '@/pages/Admin';
 import NewProject from '@/pages/NewProject';
 import ImportRepo from '@/pages/ImportRepo';
 import ProjectDetail from '@/pages/ProjectDetail';
+import ProjectDeployments from '@/pages/ProjectDeployments';
+import ProjectCommits from '@/pages/ProjectCommits';
 import NotFound from '@/pages/NotFound';
 import RouteError from '@/pages/RouteError';
 import '@/index.css';
@@ -45,6 +47,8 @@ const router = createBrowserRouter([
       { path: 'admin', element: <Admin /> },
       { path: 'new', element: <NewProject /> },
       { path: 'import', element: <ImportRepo /> },
+      { path: 'projects/:id/deployments', element: <ProjectDeployments /> },
+      { path: 'projects/:id/commits', element: <ProjectCommits /> },
       { path: 'projects/:id', element: <ProjectDetail /> },
       { path: '*', element: <NotFound /> },
     ],

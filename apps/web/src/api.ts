@@ -123,9 +123,10 @@ export const api = {
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
   listProjects: () => http<Project[]>('/projects'),
   getProject: (id: string) => http<Project>(`/projects/${id}`),
-  getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),
-  getDeployments: (id: string) =>
-    http<DeploymentOperation[]>(`/projects/${id}/deployments`),
+  getCommits: (id: string, limit = 20) =>
+    http<Commit[]>(`/projects/${id}/commits?limit=${limit}`),
+  getDeployments: (id: string, limit = 30) =>
+    http<DeploymentOperation[]>(`/projects/${id}/deployments?limit=${limit}`),
   getProvisioning: (id: string) =>
     http<ProvisioningStatus | null>(`/projects/${id}/provisioning`),
   listProvisioning: () => http<ProvisioningStatus[]>('/provisioning'),
