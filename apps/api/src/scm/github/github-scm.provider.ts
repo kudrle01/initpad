@@ -40,6 +40,7 @@ const READ_CHECKS = { metadata: 'read', contents: 'read', checks: 'read' };
 const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
 const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
 const WRITE_ADMINISTRATION = { metadata: 'read', administration: 'write' };
+const READ_ADMINISTRATION = { metadata: 'read', administration: 'read' };
 const DETACH_REPOSITORY = {
   metadata: 'read',
   administration: 'write',
@@ -297,19 +298,26 @@ export class GitHubScmProvider implements ScmProvider {
   async detachRepo(repository: ScmRepositoryRef, _actor: ScmActor): Promise<void> {
     this.assertProvider(repository);
     const token = await this.token(repository, DETACH_REPOSITORY);
+    await this.removeRepoSecrets(repository);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
-    for (const secret of PLATFORM_SECRETS) {
-      const res = await this.gh(`/repos/${repo}/actions/secrets/${secret}`, token, { method: 'DELETE' });
-      if (!res.ok && res.status !== 404) {
-        throw new Error(`Could not remove Actions secret '${secret}' (HTTP ${res.status})`);
-      }
-    }
     const disabled = await this.gh(`/repos/${repo}/actions/permissions`, token, {
       method: 'PUT',
       body: { enabled: false },
     });
     if (!disabled.ok) {
       throw new Error(`Could not disable Actions on the detached repository (HTTP ${disabled.status})`);
+    }
+  }
+
+  async removeRepoSecrets(repository: ScmRepositoryRef): Promise<void> {
+    this.assertProvider(repository);
+    const token = await this.token(repository, WRITE_SECRETS);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    for (const secret of PLATFORM_SECRETS) {
+      const res = await this.gh(`/repos/${repo}/actions/secrets/${secret}`, token, { method: 'DELETE' });
+      if (!res.ok && res.status !== 404) {
+        throw new Error(`Could not remove Actions secret '${secret}' (HTTP ${res.status})`);
+      }
     }
   }
 
@@ -342,6 +350,62 @@ export class GitHubScmProvider implements ScmProvider {
     );
     if (!res.ok && res.status !== 204 && res.status !== 404) {
       throw new Error(`Could not revoke repository access from '${username}' (HTTP ${res.status})`);
+    }
+  }
+
+  async getCollaboratorAccess(
+    repository: ScmRepositoryRef,
+    username: string,
+  ): Promise<string | null> {
+    this.assertProvider(repository);
+    if (repository.owner === username) return 'admin';
+    const token = await this.token(repository, READ_ADMINISTRATION);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    // affiliation=direct excludes access inherited from organization teams.
+    // Restoring an inherited effective role as a direct grant would otherwise
+    // silently broaden access after a failed import.
+    for (let page = 1; page <= 100; page += 1) {
+      const res = await this.gh(
+        `/repos/${repo}/collaborators?affiliation=direct&per_page=100&page=${page}`,
+        token,
+      );
+      if (!res.ok) throw new Error(`Could not inspect repository collaborators (HTTP ${res.status})`);
+      const users = (await res.json()) as Array<{
+        login?: string;
+        role_name?: string;
+        permissions?: { admin?: boolean; maintain?: boolean; push?: boolean; triage?: boolean; pull?: boolean };
+      }>;
+      const direct = users.find((user) => user.login === username);
+      if (direct) {
+        if (direct.role_name) return direct.role_name;
+        if (direct.permissions?.admin) return 'admin';
+        if (direct.permissions?.maintain) return 'maintain';
+        if (direct.permissions?.push) return 'push';
+        if (direct.permissions?.triage) return 'triage';
+        if (direct.permissions?.pull) return 'pull';
+        throw new Error(`GitHub returned no direct permission for '${username}'`);
+      }
+      if (users.length < 100) break;
+    }
+    return null;
+  }
+
+  async restoreCollaboratorAccess(
+    repository: ScmRepositoryRef,
+    username: string,
+    access: string | null,
+  ): Promise<void> {
+    this.assertProvider(repository);
+    if (repository.owner === username) return;
+    if (access == null) return this.removeCollaborator(repository, username);
+    const token = await this.token(repository, WRITE_ADMINISTRATION);
+    const res = await this.gh(
+      `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/collaborators/${encodeURIComponent(username)}`,
+      token,
+      { method: 'PUT', body: { permission: access } },
+    );
+    if (!res.ok && res.status !== 201 && res.status !== 204) {
+      throw new Error(`Could not restore repository access for '${username}' (HTTP ${res.status})`);
     }
   }
 

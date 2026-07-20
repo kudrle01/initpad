@@ -185,8 +185,11 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 4. ◐ Create/import, CI callback, reconcile, commity/statusy, retry tag, archiv,
    členství a delete/detach jsou napojené přes `ScmRegistry`. Server znovu
    ověřuje workspace grant instalace a import vyžaduje Dockerfile (mimo static)
-   i provider-specific InitPad workflow. Zbývá úplný effect journal/kompenzace
-   částečných změn při importu a produkční artifact transport pro privátní GHCR.
+   i provider-specific InitPad workflow. Write-ahead effect journal nyní eviduje
+   repository/project/secrets/collaborator zásahy; import při chybě v opačném
+   pořadí odstraní InitPad secrets, obnoví původní přímé role a projekt smaže
+   jen po úplné kompenzaci. Zbývá crash reconciliation/idempotent retry a
+   produkční artifact transport pro privátní GHCR.
 5. Potom dokončit migrace v cílových prostředích, živý GitHub App E2E a browser
    acceptance: login, instalace pro vybrané repo, create/import, CI, odebrání
    instalace, rename ownera a dvě repa se stejným názvem.
@@ -431,6 +434,28 @@ organizaci; member nesmí instalaci přidat, ale smí použít již udělený wo
 grant podle role. Import testovat jedním kompatibilním repem a dvěma negativními
 variantami bez Dockerfile a bez InitPad workflow. Nakonec zvolit detach i úplné
 smazání a ověřit, že jiné workspace stejnou instalaci bez grantu nepoužije.
+
+### Provisioning effect journal podkrok Fáze 3 (2026-07-20)
+
+- Aditivní `ProvisioningEffect` zapisuje intent před create/import mutací a
+  rozlišuje `planned`, `applying`, `applied`, `failed`, `compensated` a
+  `compensation_failed`. Projektový detail u neúspěchu vypíše jednotlivé efekty.
+- Create journaluje repozitář, každého collaboratora a databázový projekt;
+  selhání journal transition po úspěšném provider API nově také spustí cleanup.
+- Import registruje kompenzaci ještě před zápisem secrets, ukládá původní
+  přímou provider roli a rollback provádí v opačném pořadí. GitHub teamovou
+  zděděnou roli nikdy neobnoví jako direct grant.
+- Projektový záznam se po chybě smaže jen při úplné externí kompenzaci.
+  Výpadek cleanupu jej zachová jako recovery handle s `cleanup required`.
+- Otevřeno zůstává startup reconciliation stavů `applying`, workspace přehled
+  operací a idempotentní retry; to je následující podkrok této fáze.
+
+**Uživatelský test tohoto podkroku.** Běžný create i import musí proběhnout
+beze změny. Pro viditelnou chybovou větev dočasně znepřístupnit provider během
+cleanup importu: projekt musí zůstat v dashboardu, detail ukázat `cleanup
+required` a Delete project se zachováním repozitáře musí po obnovení provideru
+umožnit recovery. Bezpečnější opakovatelná varianta je automatizovaný failure-
+injection test, který ověřuje úplný rollback i zachování cleanup dluhu.
 
 ### Průběžné ověření delivery části milníku 8
 

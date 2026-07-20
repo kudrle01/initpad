@@ -306,9 +306,32 @@ model ProvisioningOperation {
   message     String?
   createdAt   DateTime  @default(now())
   finishedAt  DateTime?
+  effects     ProvisioningEffect[]
 
   @@index([workspaceId, createdAt])
   @@index([projectId])
+}
+
+// Durable intent/effect journal for non-transactional provisioning. An entry
+// is written before InitPad mutates an SCM, then advanced through applying and
+// applied (or compensated). This makes partial external state observable and
+// gives rollback an explicit checklist instead of relying on catch blocks and
+// memory. Metadata must never contain credentials or secret values.
+model ProvisioningEffect {
+  id            String                @id @default(uuid())
+  operation     ProvisioningOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  operationId   String
+  key           String
+  kind          String // repository | collaborator | secrets | project
+  status        String                @default("planned") // planned | applying | applied | failed | compensated | compensation_failed
+  metadata      Json?
+  error         String?
+  createdAt     DateTime              @default(now())
+  appliedAt     DateTime?
+  compensatedAt DateTime?
+
+  @@unique([operationId, key])
+  @@index([operationId, createdAt])
 }
 
 model DeploymentOperation {

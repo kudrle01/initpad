@@ -39,4 +39,30 @@ describe('ProvisioningService', () => {
     await new ProvisioningService(prisma as never).fail('op1', 'x'.repeat(1000));
     expect((updateArgs?.data?.message ?? '').length).toBe(500);
   });
+
+  it('writes intent before allowing an effect to enter applying', async () => {
+    const prisma = {
+      provisioningEffect: {
+        create: jest.fn(async () => ({})),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+    };
+    const service = new ProvisioningService(prisma as never);
+    await service.planEffect('op1', 'secrets:initpad', 'secrets', { repository: 'acme/api' });
+    await service.beginEffect('op1', 'secrets:initpad');
+    expect(prisma.provisioningEffect.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ operationId: 'op1', key: 'secrets:initpad', status: 'planned' }),
+    });
+    expect(prisma.provisioningEffect.updateMany).toHaveBeenCalledWith({
+      where: { operationId: 'op1', key: 'secrets:initpad', status: { in: ['planned'] } },
+      data: { status: 'applying', error: null },
+    });
+  });
+
+  it('refuses an invalid effect transition', async () => {
+    const prisma = { provisioningEffect: { updateMany: jest.fn(async () => ({ count: 0 })) } };
+    await expect(
+      new ProvisioningService(prisma as never).completeEffect('op1', 'repository:create'),
+    ).rejects.toThrow('not in the expected state');
+  });
 });

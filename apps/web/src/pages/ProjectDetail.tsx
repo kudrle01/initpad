@@ -375,6 +375,19 @@ export default function ProjectDetail() {
           {provisioning.status === 'failed'
             ? `Setup (${provisioning.kind}) failed at the ${provisioning.step} step${provisioning.message ? `: ${provisioning.message}` : '.'}`
             : `Setting up (${provisioning.kind})… current step: ${provisioning.step}.`}
+          {provisioning.effects.length > 0 && (
+            <ul className="mt-2 space-y-1 border-t border-current/15 pt-2 text-xs">
+              {provisioning.effects.map((effect) => (
+                <li key={effect.key} className="flex items-start justify-between gap-3">
+                  <span>{effect.kind === 'collaborator' ? 'Repository access' : effect.kind}</span>
+                  <span className="font-mono text-right">
+                    {effect.status === 'compensation_failed' ? 'cleanup required' : effect.status.replace('_', ' ')}
+                    {effect.error ? ` — ${effect.error}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

@@ -20,6 +20,13 @@ import {
 } from './scm-provider';
 
 const exec = promisify(execFile);
+const PLATFORM_SECRETS = [
+  'INITPAD_DEPLOY_TOKEN',
+  'INITPAD_REGISTRY',
+  'INITPAD_PLATFORM_URL',
+  'INITPAD_REGISTRY_USER',
+  'INITPAD_REGISTRY_PASSWORD',
+];
 
 export type { RepoArchive } from './scm-provider';
 // Backwards-compatible alias: the Gitea actor is just an ScmActor.
@@ -331,24 +338,9 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     if (!url || !adminToken) throw new Error('Gitea is not configured');
+    await this.removeRepoSecrets(repository);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
     const headers = { Authorization: `token ${adminToken}` };
-    const secrets = [
-      'INITPAD_DEPLOY_TOKEN',
-      'INITPAD_REGISTRY',
-      'INITPAD_PLATFORM_URL',
-      'INITPAD_REGISTRY_USER',
-      'INITPAD_REGISTRY_PASSWORD',
-    ];
-    for (const secret of secrets) {
-      const removed = await fetch(
-        `${url}/api/v1/repos/${repo}/actions/secrets/${encodeURIComponent(secret)}`,
-        { method: 'DELETE', headers },
-      );
-      if (!removed.ok && removed.status !== 404) {
-        throw new Error(`Could not remove Actions secret '${secret}' (HTTP ${removed.status})`);
-      }
-    }
     const disabled = await fetch(`${url}/api/v1/repos/${repo}`, {
       method: 'PATCH',
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -358,6 +350,24 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       throw new Error(
         `Could not disable Actions on the detached repository (HTTP ${disabled.status})`,
       );
+    }
+  }
+
+  async removeRepoSecrets(repository: ScmRepositoryRef): Promise<void> {
+    this.assertProvider(repository);
+    const url = config.gitea.internalUrl;
+    const { adminToken } = config.gitea;
+    if (!url || !adminToken) throw new Error('Gitea is not configured');
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const headers = { Authorization: `token ${adminToken}` };
+    for (const secret of PLATFORM_SECRETS) {
+      const removed = await fetch(
+        `${url}/api/v1/repos/${repo}/actions/secrets/${encodeURIComponent(secret)}`,
+        { method: 'DELETE', headers },
+      );
+      if (!removed.ok && removed.status !== 404) {
+        throw new Error(`Could not remove Actions secret '${secret}' (HTTP ${removed.status})`);
+      }
     }
   }
 
@@ -438,6 +448,14 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     if (repository.owner === username) return;
     const permission =
       role === 'viewer' ? 'read' : role === 'admin' || role === 'owner' ? 'admin' : 'write';
+    await this.setCollaboratorPermission(repository, username, permission);
+  }
+
+  private async setCollaboratorPermission(
+    repository: ScmRepositoryRef,
+    username: string,
+    permission: string,
+  ): Promise<void> {
     const res = await fetch(
       `${config.gitea.internalUrl}/api/v1/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/collaborators/${encodeURIComponent(username)}`,
       {
@@ -461,6 +479,49 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     if (!res.ok && res.status !== 204 && res.status !== 404) {
       throw new Error(`Could not revoke repository access from '${username}' (HTTP ${res.status})`);
     }
+  }
+
+  async getCollaboratorAccess(
+    repository: ScmRepositoryRef,
+    username: string,
+  ): Promise<string | null> {
+    this.assertProvider(repository);
+    if (repository.owner === username) return 'owner';
+    const base = `${config.gitea.internalUrl}/api/v1/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const headers = { Authorization: `token ${config.gitea.adminToken}` };
+    // The list endpoint contains direct collaborators only. The permission
+    // endpoint alone would also return inherited organization/team access.
+    let direct = false;
+    for (let page = 1; page <= 100; page += 1) {
+      const listed = await fetch(`${base}/collaborators?limit=100&page=${page}`, { headers });
+      if (!listed.ok) {
+        throw new Error(`Could not inspect repository collaborators (HTTP ${listed.status})`);
+      }
+      const users = (await listed.json()) as Array<{ login?: string; username?: string }>;
+      direct = users.some((user) => (user.login || user.username) === username);
+      if (direct || users.length < 100) break;
+    }
+    if (!direct) return null;
+    const permission = await fetch(`${base}/collaborators/${encodeURIComponent(username)}/permission`, {
+      headers,
+    });
+    if (!permission.ok) {
+      throw new Error(`Could not inspect repository access for '${username}' (HTTP ${permission.status})`);
+    }
+    const data = (await permission.json()) as { permission?: string };
+    if (!data.permission) throw new Error(`Gitea returned no permission for '${username}'`);
+    return data.permission;
+  }
+
+  async restoreCollaboratorAccess(
+    repository: ScmRepositoryRef,
+    username: string,
+    access: string | null,
+  ): Promise<void> {
+    this.assertProvider(repository);
+    if (repository.owner === username) return;
+    if (access == null) return this.removeCollaborator(repository, username);
+    await this.setCollaboratorPermission(repository, username, access);
   }
 
   // True only when Gitea explicitly reports the repository as absent (404).

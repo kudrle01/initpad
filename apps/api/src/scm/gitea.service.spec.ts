@@ -165,6 +165,36 @@ describe('GiteaService import helpers', () => {
       new GiteaService().readFile(repository('api'), 'Dockerfile', 'main', { username: 'kudrla', token: 't' }),
     ).rejects.toThrow('HTTP 403');
   });
+
+  it('captures and restores a direct collaborator permission', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ login: 'alice' }]), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ permission: 'read' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const service = new GiteaService();
+    const access = await service.getCollaboratorAccess(repository('api'), 'alice');
+    expect(access).toBe('read');
+    await service.restoreCollaboratorAccess(repository('api'), 'alice', access);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'http://gitea:3000/api/v1/repos/kudrla/api/collaborators/alice',
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ permission: 'read' }) }),
+    );
+  });
+
+  it('returns null for inherited or absent access instead of inventing a direct grant', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify([{ login: 'someone-else' }]), { status: 200 }),
+    );
+    await expect(
+      new GiteaService().getCollaboratorAccess(repository('api'), 'alice'),
+    ).resolves.toBeNull();
+  });
 });
 
 describe('GiteaService managed account hardening', () => {

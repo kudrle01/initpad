@@ -408,11 +408,12 @@ export class ProjectsService implements OnModuleInit {
 
   async create(dto: CreateProjectDto, ownerId: string, requestedWorkspaceId?: string): Promise<Project> {
     const { id: workspaceId } = await this.workspaces.resolve(ownerId, requestedWorkspaceId);
-    // Record the provisioning around the (unchanged) create flow. Recording is
-    // best-effort and never alters the outcome.
+    // The summary operation is accompanied by a write-ahead effect journal in
+    // createInternal. External mutation is refused when its intent cannot be
+    // persisted; outcome text remains best-effort and never masks the cause.
     const op = await this.provisioning.start(workspaceId, dto.name, 'create');
     try {
-      const project = await this.createInternal(dto, ownerId, workspaceId);
+      const project = await this.createInternal(dto, ownerId, workspaceId, op);
       await this.provisioning.succeed(op, project.id);
       return project;
     } catch (e) {
@@ -425,6 +426,7 @@ export class ProjectsService implements OnModuleInit {
     dto: CreateProjectDto,
     ownerId: string,
     workspaceId: string,
+    operationId: string,
   ): Promise<Project> {
     await this.workspaces.require(ownerId, workspaceId, 'write');
     if (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.name } })) {
@@ -459,8 +461,14 @@ export class ProjectsService implements OnModuleInit {
       // (bot); the developer's own commits carry their identity.
       await scm.initLocal(repoPath);
 
-      let repo: ScmRepositoryIdentity;
+      let repo: ScmRepositoryIdentity | null = null;
       const ciDeployToken = generateToken();
+      const repositoryEffect = 'repository:create';
+      await this.provisioning.planEffect(operationId, repositoryEffect, 'repository', {
+        provider: scmContext.kind,
+        name: dto.name,
+      });
+      await this.provisioning.beginEffect(operationId, repositoryEffect);
       try {
         repo = await scm.provision(
           dto.name,
@@ -469,34 +477,82 @@ export class ProjectsService implements OnModuleInit {
           ciDeployToken,
           scmContext.target,
         );
+        await this.provisioning.completeEffect(operationId, repositoryEffect, {
+          provider: repo.provider,
+          repositoryId: repo.repositoryId,
+          repository: repo.fullName,
+        });
       } catch (e) {
+        await this.provisioning
+          .failEffect(operationId, repositoryEffect, (e as Error).message)
+          .catch(() => undefined);
+        // provision() itself is atomic by provider contract. This extra branch
+        // covers a successful provider call followed by a failed journal
+        // transition, where the caller already knows the repository identity.
+        if (repo) {
+          try {
+            await scm.deleteRepo(repo, scmContext.actor);
+            await this.provisioning.compensateEffect(operationId, repositoryEffect).catch(() => undefined);
+          } catch (cleanupError) {
+            await this.provisioning
+              .compensationFailed(operationId, repositoryEffect, (cleanupError as Error).message)
+              .catch(() => undefined);
+          }
+        }
         throw new BadRequestException(
           `Repository could not be created in ${scmContext.kind === 'github' ? 'GitHub' : 'Gitea'}: ${(e as Error).message}`,
         );
       }
 
+      const repositoryEffects = [repositoryEffect];
       try {
         const collaborators = await this.prisma.workspaceMember.findMany({
           where: { workspaceId, userId: { not: ownerId } },
         });
         for (const collaborator of collaborators) {
-          await scm.setCollaborator(
-            repo,
-            await this.workspaceScm.collaboratorUsername(collaborator.userId, repo.provider),
-            collaborator.role,
+          const username = await this.workspaceScm.collaboratorUsername(
+            collaborator.userId,
+            repo.provider,
           );
+          const effect = `collaborator:${collaborator.userId}`;
+          await this.provisioning.planEffect(operationId, effect, 'collaborator', { username });
+          await this.provisioning.beginEffect(operationId, effect);
+          repositoryEffects.push(effect);
+          try {
+            await scm.setCollaborator(repo, username, collaborator.role);
+            await this.provisioning.completeEffect(operationId, effect);
+          } catch (e) {
+            await this.provisioning
+              .failEffect(operationId, effect, (e as Error).message)
+              .catch(() => undefined);
+            throw e;
+          }
         }
       } catch (e) {
-        await scm.deleteRepo(repo, scmContext.actor).catch((cleanupError) =>
-          this.logger.warn(`Repository rollback failed: ${(cleanupError as Error).message}`),
-        );
+        try {
+          await scm.deleteRepo(repo, scmContext.actor);
+          for (const effect of repositoryEffects.reverse()) {
+            await this.provisioning.compensateEffect(operationId, effect).catch(() => undefined);
+          }
+        } catch (cleanupError) {
+          const message = (cleanupError as Error).message;
+          this.logger.warn(`Repository rollback failed: ${message}`);
+          for (const effect of repositoryEffects) {
+            await this.provisioning.compensationFailed(operationId, effect, message).catch(() => undefined);
+          }
+        }
         throw new BadRequestException(
           `Repository collaborators could not be configured: ${(e as Error).message}`,
         );
       }
 
-      let created: { id: string };
+      let created: { id: string } | null = null;
+      const projectEffect = 'project:record';
       try {
+        await this.provisioning.planEffect(operationId, projectEffect, 'project', {
+          repository: repo.fullName,
+        });
+        await this.provisioning.beginEffect(operationId, projectEffect);
         created = await this.prisma.project.create({
           data: {
             name: dto.name,
@@ -525,10 +581,41 @@ export class ProjectsService implements OnModuleInit {
             },
           },
         });
+        await this.provisioning.bindProject(operationId, created.id);
+        await this.provisioning.completeEffect(operationId, projectEffect, {
+          repository: repo.fullName,
+          projectId: created.id,
+        });
       } catch (e) {
-        await scm.deleteRepo(repo, scmContext.actor).catch((cleanupError) =>
-          this.logger.warn(`Repository rollback failed: ${(cleanupError as Error).message}`),
-        );
+        await this.provisioning.failEffect(operationId, projectEffect, (e as Error).message).catch(() => undefined);
+        let projectCleanupError: Error | null = null;
+        if (created) {
+          try {
+            await this.prisma.project.delete({ where: { id: created.id } });
+          } catch (cleanupError) {
+            projectCleanupError = cleanupError as Error;
+            this.logger.warn(`Project-record rollback failed: ${projectCleanupError.message}`);
+          }
+        }
+        try {
+          await scm.deleteRepo(repo, scmContext.actor);
+          for (const effect of [...repositoryEffects].reverse()) {
+            await this.provisioning.compensateEffect(operationId, effect).catch(() => undefined);
+          }
+        } catch (cleanupError) {
+          const message = (cleanupError as Error).message;
+          this.logger.warn(`Repository rollback failed: ${message}`);
+          for (const effect of repositoryEffects) {
+            await this.provisioning.compensationFailed(operationId, effect, message).catch(() => undefined);
+          }
+        }
+        if (projectCleanupError) {
+          await this.provisioning
+            .compensationFailed(operationId, projectEffect, projectCleanupError.message)
+            .catch(() => undefined);
+        } else {
+          await this.provisioning.compensateEffect(operationId, projectEffect).catch(() => undefined);
+        }
         throw e;
       }
 
@@ -549,8 +636,9 @@ export class ProjectsService implements OnModuleInit {
    * pointing at the existing repo, configures the per-repo CI secret and mirrors
    * workspace collaborators. Environments start empty; the user's next push to
    * the default branch triggers CI and the first deploy. The record is created
-   * first so a failure while configuring the repository rolls back cleanly with
-   * a DB delete and no dangling external state.
+   * first so the failure remains visible if external compensation is unable to
+   * finish. Every secret/collaborator mutation is journaled before execution;
+   * successful compensation removes the DB record, incomplete cleanup keeps it.
    */
   async importExisting(
     dto: ImportProjectDto,
@@ -619,36 +707,63 @@ export class ProjectsService implements OnModuleInit {
       });
 
       const ciDeployToken = generateToken();
-      const created = await this.prisma.project.create({
-        data: {
-          name: repo.name,
-          templateId: template.id,
-          repoPath: repo.fullName,
-          repoUrl: repo.repoUrl,
-          scmProvider: repo.provider,
-          scmRepositoryId: repo.repositoryId,
-          scmOwner: repo.owner,
-          scmRepositoryName: repo.name,
-          scmFullName: repo.fullName,
-          scmDefaultBranch: repo.defaultBranch,
-          scmInstallationId: repo.installationId,
-          lastCommit: 'import: existing repository',
-          ciDeployTokenHash: hashToken(ciDeployToken),
-          ownerId,
-          workspaceId,
-          environments: {
-            create: envTargets.map(({ name, target }, order) => ({
-              name,
-              order,
-              provider: target.kind,
-              targetId: target.id,
-              status: 'empty',
-            })),
-          },
-        },
+      const projectEffect = 'project:record';
+      await this.provisioning.planEffect(op, projectEffect, 'project', {
+        repository: repo.fullName,
       });
+      await this.provisioning.beginEffect(op, projectEffect);
+      let created: { id: string } | null = null;
+      try {
+        created = await this.prisma.project.create({
+          data: {
+            name: repo.name,
+            templateId: template.id,
+            repoPath: repo.fullName,
+            repoUrl: repo.repoUrl,
+            scmProvider: repo.provider,
+            scmRepositoryId: repo.repositoryId,
+            scmOwner: repo.owner,
+            scmRepositoryName: repo.name,
+            scmFullName: repo.fullName,
+            scmDefaultBranch: repo.defaultBranch,
+            scmInstallationId: repo.installationId,
+            lastCommit: 'import: existing repository',
+            ciDeployTokenHash: hashToken(ciDeployToken),
+            ownerId,
+            workspaceId,
+            environments: {
+              create: envTargets.map(({ name, target }, order) => ({
+                name,
+                order,
+                provider: target.kind,
+                targetId: target.id,
+                status: 'empty',
+              })),
+            },
+          },
+        });
+        await this.provisioning.bindProject(op, created.id);
+        await this.provisioning.completeEffect(op, projectEffect, {
+          repository: repo.fullName,
+          projectId: created.id,
+        });
+      } catch (e) {
+        await this.provisioning.failEffect(op, projectEffect, (e as Error).message).catch(() => undefined);
+        if (created) {
+          try {
+            await this.prisma.project.delete({ where: { id: created.id } });
+            await this.provisioning.compensateEffect(op, projectEffect).catch(() => undefined);
+          } catch (cleanupError) {
+            await this.provisioning
+              .compensationFailed(op, projectEffect, (cleanupError as Error).message)
+              .catch(() => undefined);
+          }
+        }
+        throw e;
+      }
 
       await this.provisioning.step(op, 'ci');
+      const compensations: Array<{ key: string; run: () => Promise<void> }> = [];
       try {
         let ownerToken = '';
         if (repo.provider === 'gitea') {
@@ -658,21 +773,84 @@ export class ProjectsService implements OnModuleInit {
             data: { accessToken: encryptSecret(ownerToken) },
           });
         }
-        await scm.configureRepoSecrets(repo, ownerToken, ciDeployToken);
+        const secretsEffect = 'secrets:initpad';
+        await this.provisioning.planEffect(op, secretsEffect, 'secrets', {
+          repository: repo.fullName,
+        });
+        await this.provisioning.beginEffect(op, secretsEffect);
+        // Register compensation before the call: a provider can fail after
+        // writing only some secret names and cannot return their old values.
+        compensations.push({
+          key: secretsEffect,
+          run: () => scm.removeRepoSecrets(repo),
+        });
+        try {
+          await scm.configureRepoSecrets(repo, ownerToken, ciDeployToken);
+          await this.provisioning.completeEffect(op, secretsEffect);
+        } catch (e) {
+          await this.provisioning.failEffect(op, secretsEffect, (e as Error).message).catch(() => undefined);
+          throw e;
+        }
         const collaborators = await this.prisma.workspaceMember.findMany({
           where: { workspaceId, userId: { not: ownerId } },
         });
         for (const collaborator of collaborators) {
-          await scm.setCollaborator(
-            repo,
-            await this.workspaceScm.collaboratorUsername(collaborator.userId, repo.provider),
-            collaborator.role,
+          const username = await this.workspaceScm.collaboratorUsername(
+            collaborator.userId,
+            repo.provider,
           );
+          const previousAccess = await scm.getCollaboratorAccess(repo, username);
+          const collaboratorEffect = `collaborator:${collaborator.userId}`;
+          await this.provisioning.planEffect(op, collaboratorEffect, 'collaborator', {
+            username,
+            previousAccess,
+          });
+          await this.provisioning.beginEffect(op, collaboratorEffect);
+          compensations.push({
+            key: collaboratorEffect,
+            run: () => scm.restoreCollaboratorAccess(repo, username, previousAccess),
+          });
+          try {
+            await scm.setCollaborator(repo, username, collaborator.role);
+            await this.provisioning.completeEffect(op, collaboratorEffect);
+          } catch (e) {
+            await this.provisioning
+              .failEffect(op, collaboratorEffect, (e as Error).message)
+              .catch(() => undefined);
+            throw e;
+          }
         }
       } catch (e) {
-        await this.prisma.project.delete({ where: { id: created.id } }).catch(() => undefined);
+        const cleanupErrors: string[] = [];
+        for (const compensation of compensations.reverse()) {
+          try {
+            await compensation.run();
+            await this.provisioning.compensateEffect(op, compensation.key);
+          } catch (cleanupError) {
+            const message = (cleanupError as Error).message;
+            cleanupErrors.push(`${compensation.key}: ${message}`);
+            await this.provisioning
+              .compensationFailed(op, compensation.key, message)
+              .catch(() => undefined);
+          }
+        }
+        if (cleanupErrors.length === 0) {
+          try {
+            await this.prisma.project.delete({ where: { id: created.id } });
+            await this.provisioning.compensateEffect(op, projectEffect);
+          } catch (cleanupError) {
+            const message = (cleanupError as Error).message;
+            cleanupErrors.push(`project: ${message}`);
+            await this.provisioning
+              .compensationFailed(op, projectEffect, message)
+              .catch(() => undefined);
+          }
+        }
+        const cleanupSuffix = cleanupErrors.length > 0
+          ? ` Automatic cleanup is incomplete; project '${repo.name}' was kept so an owner can inspect and repair it. ${cleanupErrors.join('; ')}`
+          : ' All InitPad changes were rolled back.';
         throw new BadRequestException(
-          `Import failed while configuring the repository: ${(e as Error).message}`,
+          `Import failed while configuring the repository: ${(e as Error).message}.${cleanupSuffix}`,
         );
       }
       await this.provisioning.succeed(op, created.id);

@@ -367,6 +367,34 @@ describe('GitHubScmProvider writes', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('captures direct GitHub access and restores the provider-native role', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([{ login: 'dev', role_name: 'maintain' }]),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 204 });
+    const { provider, installations } = make(fetchMock);
+    const access = await provider.getCollaboratorAccess(repository(), 'dev');
+    expect(access).toBe('maintain');
+    expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: { metadata: 'read', administration: 'read' },
+    });
+    await provider.restoreCollaboratorAccess(repository(), 'dev', access);
+    const restore = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(JSON.parse(restore[1].body as string)).toEqual({ permission: 'maintain' });
+  });
+
+  it('does not turn inherited organization access into a direct grant', async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      json: async () => ([{ login: 'other', role_name: 'push' }]),
+    }));
+    const { provider } = make(fetchMock);
+    await expect(provider.getCollaboratorAccess(repository(), 'dev')).resolves.toBeNull();
+  });
+
   it('replaces stale retry tags and creates a new one at the sha', async () => {
     const fetchMock = jest
       .fn()

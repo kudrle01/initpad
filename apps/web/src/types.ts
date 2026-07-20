@@ -71,8 +71,20 @@ export interface ProvisioningStatus {
   status: 'running' | 'succeeded' | 'failed';
   step: string;
   message: string | null;
+  projectId: string | null;
+  projectName: string;
   createdAt: string;
   finishedAt: string | null;
+  effects: Array<{
+    key: string;
+    kind: 'repository' | 'collaborator' | 'secrets' | 'project';
+    status: 'planned' | 'applying' | 'applied' | 'failed' | 'compensated' | 'compensation_failed';
+    metadata: unknown;
+    error: string | null;
+    createdAt: string;
+    appliedAt: string | null;
+    compensatedAt: string | null;
+  }>;
 }
 
 export interface ImportPreflight {

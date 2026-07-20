@@ -98,11 +98,17 @@ export interface ScmProvider {
   repoMissing(repository: ScmRepositoryRef, actor: ScmActor): Promise<boolean>;
   setCollaborator(repository: ScmRepositoryRef, username: string, role: string): Promise<void>;
   removeCollaborator(repository: ScmRepositoryRef, username: string): Promise<void>;
+  // Direct (not inherited/team) access, in provider-native notation. Import
+  // rollback uses this opaque value to restore rather than blindly revoke.
+  getCollaboratorAccess(repository: ScmRepositoryRef, username: string): Promise<string | null>;
+  restoreCollaboratorAccess(repository: ScmRepositoryRef, username: string, access: string | null): Promise<void>;
   listCommits(repository: ScmRepositoryRef, actor: ScmActor, limit?: number): Promise<ScmCommit[] | null>;
   createRetryTag(repository: ScmRepositoryRef, sha: string, actor: ScmActor): Promise<string>;
   deleteTag(repository: ScmRepositoryRef, tag: string, actor: ScmActor): Promise<void>;
   listCommitStatuses(repository: ScmRepositoryRef, sha: string, actor: ScmActor): Promise<ScmCommitStatus[] | null>;
   configureRepoSecrets(repository: ScmRepositoryRef, ownerToken: string, ciDeployToken: string): Promise<void>;
+  // Remove only the secret names owned by InitPad, without disabling CI.
+  removeRepoSecrets(repository: ScmRepositoryRef): Promise<void>;
   configureRepoRuntimeSecrets(repository: ScmRepositoryRef): Promise<void>;
   downloadArchive(repository: ScmRepositoryRef, ref: string, actor: ScmActor): Promise<RepoArchive | null>;
   // Initialise a local git repository in `dir` (first-commit scaffold).

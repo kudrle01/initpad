@@ -1652,3 +1652,45 @@ operacím bez ztráty auditního project bindingu.
 Reference: [Working with the Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry),
 [About permissions for GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/about-permissions-for-github-packages),
 [Permissions for GitHub Apps](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app).
+
+## ADR-047 — Provisioning používá write-ahead effect journal a kompenzační rollback
+
+**Kontext.** Databázovou transakci nelze atomicky spojit s Gitea/GitHub API.
+Dosavadní import nejprve vytvořil `Project`, potom postupně zapsal Actions
+secrets a collaborator role; při chybě smazal jen databázový záznam. V cizím
+repozitáři tak mohly zůstat částečné credentials nebo změněná oprávnění a
+platforma současně ztratila objekt, přes který by šel stav opravit.
+
+**Rozhodnutí.** Každý ne-transakční krok create/import má samostatný
+`ProvisioningEffect` s unikátním klíčem a stavem `planned → applying → applied`.
+Záměr i přechod do `applying` se musí trvale zapsat před voláním externího API;
+bez funkčního journalu mutace nezačne. Chyba vede k reverzní kompenzaci a
+stavům `compensated` nebo `compensation_failed`. Metadata obsahují pouze
+identifikátory a původní provider-native roli, nikdy token nebo secret hodnotu.
+
+Import rozlišuje přímé collaborator oprávnění od role zděděné přes GitHub
+team/organizaci. Rollback proto obnoví původní přímou roli, nebo odebere jen
+nově vzniklý přímý grant; zděděný přístup nepřevádí na širší direct grant.
+Hodnoty Actions secrets provider z bezpečnostních důvodů neumí přečíst, proto
+InitPad spravuje vyhrazené názvy a při částečném selhání je odstraní.
+
+Databázový `Project` se smaže pouze tehdy, když uspěly všechny externí
+kompenzace. Pokud cleanup selže, zůstane v dashboardu a detail zobrazí jednotlivé
+efekty včetně `cleanup required`; odstranění/detach projektu tak zůstává
+dostupnou recovery cestou. Toto je saga/compensation model, nikoli falešná
+distribuovaná transakce.
+
+**Důsledky.** In-process částečná chyba je nyní dohledatelná a kompenzovaná.
+Stav `applying` je záměrně důkaz nejasného výsledku po tvrdém pádu procesu;
+nesmí se automaticky prohlásit za úspěch ani slepě zopakovat. Následující
+podkrok doplní startup reconciliation, workspace seznam operací a idempotentní
+retry/cleanup. Neúspěšný create před vznikem `Project` zatím není v project UI.
+
+**Uživatelské testování.** Běžný create/import musí skončit beze změny UX.
+Failure test se provede dočasným odebráním `Secrets: write` GitHub App nebo
+simulovanou chybou provideru po prvním zápisu. Pokud cleanup uspěje, projekt ani
+InitPad secrets nezůstanou a původní direct role se obnoví. Pokud se během
+cleanupu provider odpojí, projekt zůstane v dashboardu a detail ukáže `cleanup
+required`; po obnovení provideru lze použít Delete project se zachováním repa
+a import zopakovat. Automatizované testy pokrývají obě větve bez manipulace se
+živou App.
