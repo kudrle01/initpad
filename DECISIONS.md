@@ -2107,3 +2107,42 @@ stránky a Back to project se vrátit na detail. Pro dva redeploye stejného
 artifactu smí být GitHub run uveden jednou jako source build, zatímco InitPad
 musí ukázat dvě samostatné operations se svým stavem a dobou. Při běžícím CI
 nebo deploymentu se historie aktualizuje bez ručního reloadu.
+
+## ADR-057 — SCM handoff a InitPad publication nesmějí sdílet jeden stav
+
+**Kontext.** ADR-054 promítal autoritativní stav InitPad publication do
+poslední SCM stage `deploy`, ale ponechával jí URL původního Actions jobu.
+Po obnově ověřeného artifactu tak zelená stage odkazovala na historicky
+neúspěšný GitHub job. Uživatel viděl pouze `success`, po kliknutí však správně
+otevřel failed job, a očekával nový runner. Jeden UI prvek tím nepravdivě
+spojoval dvě samostatné události. Tato část ADR-054 je tímto rozhodnutím
+nahrazena; vazba stages na přesný artifact run zůstává platná.
+
+**Rozhodnutí.** Pipeline commitu zachová providerem oznámené stage včetně
+jejich původního stavu a konkrétního job URL. InitPad přidá samostatnou stage
+`publish` se zdrojem `platform`, jejíž stav vzniká pouze z Environment a
+DeploymentOperation. Obnovený scénář proto pravdivě ukáže červený SCM
+`deploy` a zelený InitPad `publish` současně.
+
+Kliknutí na SCM stage otevírá její GitHub/Gitea job. Kliknutí na `publish`,
+stav environmentu nebo jeho chybový důvod otevírá InitPad deployment historii.
+UI u kombinace failed handoff + successful publication výslovně vysvětlí, že
+InitPad později publikoval tentýž ověřený build. `Deploy verified build`
+nespouští nový Actions job: build once/deploy many znovu používá stejné
+ověřené bajty a nový runner by bez změny zdrojů pouze opakoval CI.
+
+**Důsledky.** Žádný odkaz již nemá stav z jiného auditního systému. GitHub
+zůstává autoritou nad runner jobem a InitPad nad target publication. Celkový
+commit může zůstat failed kvůli původnímu handoffu, přestože je vedle něj
+viditelné úspěšné publikování; to je přesnější než přepsat historii. Kdyby
+uživatel chtěl znovu spustit celý CI run, musí jít o samostatnou explicitní
+akci, nikoli implicitní vedlejší efekt redeploye hotového artifactu.
+
+**Uživatelské testování.** Otevřít commit, jehož GitHub `deploy` job selhal,
+ale následný `Deploy verified build` na ESO uspěl. Commit musí ukázat failed
+`deploy` s odkazem na přesně tento failed job a vedle něj success `publish`.
+Pod stages musí být vysvětlení, že další runner nevznikl. `publish` a status
+environmentu musí vést na `/projects/:id/deployments`; GitHub stage musí vést
+na `/actions/runs/:run_id/job/:job_id`. V GitHub Actions se po redeployi nemá
+objevit nový run, zatímco InitPad deployment historie musí obsahovat novou
+samostatnou successful operation.

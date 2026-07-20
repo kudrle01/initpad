@@ -55,9 +55,11 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   ukazuje digest; duplicate/restart/retry větve jsou explicitní. Ruční Deploy
   nejprve obnoví hotový artifact pro přesný commit; bez něj a bez veřejné HTTPS
   callback URL nevytvoří další předem nefunkční Actions run (ADR-053).
-  Pipeline je vázaná na `providerRunId` skutečně nasazeného artifactu;
-  deploy stage promítá stav InitPad publication a environment status vede
-  přímo na konkrétní SCM job bez modalu aplikačních logů (ADR-054).
+  Pipeline je vázaná na `providerRunId` skutečně nasazeného artifactu.
+  Provider-native `deploy` job a InitPad `publish` jsou samostatné stage:
+  první zachová přesný SCM stav/URL, druhá vede do deployment historie stejně
+  jako environment status. Recovery proto může ukázat failed handoff i
+  successful publication bez nového runneru (ADR-054 a ADR-057).
   Aktuální CD průběh je samostatná inline Deployment activity s immutable
   target snapshotem; deploy ověřeného artifactu záměrně nespouští nový runner
   (ADR-055). Detail ukazuje bounded náhled a samostatné commit/deployment

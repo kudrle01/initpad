@@ -612,6 +612,18 @@ vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
 - Automatizovaně ověřeno: 45 API suites / 276 testů a API i web production
   build. Uživatelský test je v ADR-056.
 
+### Pravdivé oddělení SCM handoffu a InitPad publication (2026-07-20)
+
+- Stav GitHub/Gitea `deploy` jobu se již nepřepisuje výsledkem pozdějšího
+  InitPad deploymentu. Jeho přesný stav i URL zůstávají provider-native.
+- InitPad publication je samostatná stage `publish`, která vede na interní
+  deployment historii stejně jako status a chyba environmentu.
+- Recovery může pravdivě ukázat failed handoff i successful publish. UI
+  vysvětlí, že `Deploy verified build` záměrně nespustil nový runner a znovu
+  použil tytéž ověřené bajty.
+- Automatizovaně ověřeno: 45 API suites / 276 testů a API i web production
+  build. Uživatelský test je v ADR-057.
+
 ### Průběžné ověření delivery části milníku 8
 
 - React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez
