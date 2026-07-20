@@ -1560,14 +1560,34 @@ immutable `sender.id`, ale zachová identitu jako přihlašovací vazbu; nový O
 login/link vault znovu naplní. Organization setup OAuth zůstává striktně
 tranzientní a do vaultu se neukládá.
 
+**Implementace GitHub provision adapteru (2026-07-20).** Create vyžaduje
+explicitní interní ID instalace autorizované pro workspace; mutable login se
+nikdy nepoužije k výběru instalace. Organizace zakládá soukromé repo pomocí
+operation-scoped installation tokenu (`Administration: write`), osobní účet
+použije rotovatelný user token pouze pro `POST /user/repos`. Secrets se nastaví
+před prvním pushem, potom se scaffold pošle installation tokenem s
+`Contents + Workflows: write`; token není v argv, remote URL ani `.git/config`.
+Při chybě secrets/push adapter nově vytvořené repo kompenzačně smaže.
+
+Sdílené šablony se před GitHub commitem převedou z `.gitea/workflows` do
+`.github/workflows`. Registry login nepoužívá uložené heslo, ale automatický
+krátkodobý `GITHUB_TOKEN` s workflow `contents: read` a `packages: write`.
+GitHub App proto potřebuje repository permissions Administration, Contents,
+Workflows, Secrets a Packages na write; Organization ani Account permissions
+aktuální tok nepotřebuje. Režim selected repositories zůstává podporovaný,
+protože GitHub App automaticky zpřístupní repozitáře, které sama vytvoří.
+
 **Uživatelské testování.** Aktuální adapterový mezikrok je testovatelný
 automatizovaně, ale ještě nepřidává nový UI tok. Po dokončení token vaultu a
 registry zapojení owner vybere osobní nebo organizační instalaci, vytvoří
 soukromé repo, uvidí první Actions run a import zobrazí všechny stránky rep.
 Odvolaný/expirující token musí skončit výzvou k reautorizaci bez osiřelého repa.
-Samotný vault se nyní uživatelsky ověří regresně: GitHub link/login i
-organization installation setup musí dál projít. Přímý pozitivní test rotace a
-revokace bude dostupný s osobním create tokem v následujícím podkroku.
+Samotný vault a provision adapter se nyní ověřují automatizovaně; GitHub
+link/login i organization installation setup musí dál projít regresně. Přímý
+uživatelský create/rotace/revokace bude dostupný po zapojení `ScmRegistry` do
+projektové domény v následujícím podkroku.
 
 Reference: [Create a repository for the authenticated user](https://docs.github.com/en/rest/repos/repos#create-a-repository-for-the-authenticated-user),
-[Refreshing user access tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens).
+[Refreshing user access tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens),
+[Choosing permissions for a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app),
+[Installing a GitHub App](https://docs.github.com/en/apps/using-github-apps/installing-a-github-app-from-a-third-party).

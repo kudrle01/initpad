@@ -154,11 +154,13 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
   stavem a přesnou shodou immutable GitHub user ID; organizace tento fallback
   z bezpečnostních důvodů nepoužívá. Organizační callback místo toho provede
   user-bound OAuth kontrolu `/user/installations`; krátkodobý token se neukládá.
-- `GitHubScmProvider` má čtecí operace a část HTTP mutací, ale projektová doména
-  jej zatím nepoužívá. Adapter už umí stránkování, stažení přesného
-  archivu, lokální scaffold commit, user/org GHCR cleanup a sealed-box Actions
-  secrets přes `libsodium-wrappers`. Existence `ScmRegistry` sama o sobě stále
-  neznamená podporu vytvoření nebo importu GitHub projektu.
+- `GitHubScmProvider` má čtecí i repository provision operace, ale projektová
+  doména jej zatím nepoužívá. Adapter umí stránkování, přesný archiv,
+  personal/org create, bezpečný scaffold push, user/org GHCR cleanup a
+  sealed-box Actions secrets přes `libsodium-wrappers`. Sdílený workflow se pro
+  GitHub převede na `.github/workflows` a GHCR použije krátkodobý `GITHUB_TOKEN`.
+  Existence `ScmRegistry` sama o sobě stále neznamená podporu vytvoření nebo
+  importu GitHub projektu přes UI.
 - GitHub App user-token vault bezpečně ukládá odděleně šifrovaný access a
   refresh token, rotuje jednorázový refresh pair pod databázovým lease a maže jej
   při unlink/revocation. OAuth login/link credential obnoví; organization setup
@@ -174,11 +176,9 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
    přihlášeného uživatele/workspace; samotný globální webhook tuto autorizaci
    nenahrazuje. Organizace je navíc ověřena krátkodobým user access tokenem proti
    `/user/installations`.
-3. 🟡 Dokončit GitHub `provision` a push scaffoldu. `downloadArchive`,
-   libsodium sealed-box Actions secrets, user/org GHCR cleanup, lokální git init
-   a stránkování repozitářů jsou hotové. Šifrovaný rotovatelný user-token
-   vault je hotový; zbývá jej použít pro osobní `POST /user/repos`, organizace
-   použije installation token, a oba toky musí pushnout scaffold.
+3. ✅ Dokončit GitHub `provision` a push scaffoldu. Osobní create používá
+   rotovatelný user token, organizace operation-scoped installation token;
+   secrets vzniknou před pushem a chyba provede kompenzační delete.
 4. Napojit create/import a všechny následné operace přes `ScmRegistry` podle
    provideru projektu. Preflight musí proběhnout i serverově a rollback musí
    evidovat nebo uklidit každý již provedený externí efekt.
@@ -375,6 +375,21 @@ proti běžící instalaci; testovatelné scénáře:
 - Ověřeno: 34 API suites / 202 testů, API production build, Prisma validate,
   aplikace migrace `20260720160000_github_user_credentials` na existující lokální
   databázi a zdravý restart kontejneru.
+
+### GitHub repository provision podkrok Fáze 3 (2026-07-20)
+
+- Provider zakládá soukromé osobní i organizační repo přes credential
+  odpovídající konkrétní operaci a vrací immutable repository ID + installation
+  binding. Při chybě Actions secrets nebo push provede rollback repozitáře.
+- Scaffold push nepersistuje installation token do remote URL ani `.git/config`.
+  GitHub varianta workflow používá `.github/workflows` a automatický
+  `GITHUB_TOKEN` pro GHCR; Gitea šablona zůstává beze změny.
+- Ověřeno automatizovaně: personal/org credential selection, workflow
+  transformace, rollback a stávající read/write operace; celkem 34 suites /
+  207 testů a API production build.
+- Uživatelsky tento interní adapter ještě samostatně otestovat nejde. Tlačítko
+  New project jej začne používat až v podkroku 4 (`ScmRegistry` routing); do té
+  doby stávající create zůstává bezpečně na Gitea cestě.
 
 ### Průběžné ověření delivery části milníku 8
 

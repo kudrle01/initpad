@@ -41,6 +41,14 @@ export interface ScmRepositoryIdentity {
   installationId: string | null;
 }
 
+// Explicit destination for repository creation. Gitea derives the owner from
+// its managed actor and ignores this value; hosted providers use it to bind
+// creation to a workspace-authorized installation and the initiating user.
+export interface ScmProvisionTarget {
+  userId: string;
+  installationId: string;
+}
+
 // A commit's source tree materialised into a temporary directory. The caller
 // must invoke cleanup() once the contents are no longer needed.
 export interface RepoArchive {
@@ -74,7 +82,13 @@ export interface ScmRepo extends ScmRepositoryIdentity {
 // minimal permissions.
 export interface ScmProvider {
   // Create the repository and push the rendered scaffold, returning its URL.
-  provision(name: string, dir: string, actor: ScmActor, ciDeployToken: string): Promise<ScmRepositoryIdentity>;
+  provision(
+    name: string,
+    dir: string,
+    actor: ScmActor,
+    ciDeployToken: string,
+    target?: ScmProvisionTarget,
+  ): Promise<ScmRepositoryIdentity>;
   deleteRepo(repository: ScmRepositoryRef, actor: ScmActor): Promise<void>;
   // Sever a repository's trust with a deleted project without deleting its code.
   detachRepo(repository: ScmRepositoryRef, actor: ScmActor): Promise<void>;

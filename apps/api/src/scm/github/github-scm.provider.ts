@@ -1,7 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'child_process';
 import { randomBytes } from 'crypto';
-import { mkdtempSync, readdirSync, rmSync, statSync } from 'fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Readable } from 'stream';
@@ -17,15 +26,18 @@ import {
   ScmCommit,
   ScmCommitStatus,
   ScmProvider,
+  ScmProvisionTarget,
   ScmRepo,
   ScmRepositoryIdentity,
   ScmRepositoryRef,
 } from '../scm-provider';
 import { GitHubInstallationService } from './github-installation.service';
+import { GitHubUserCredentialService } from './github-user-credential.service';
 
 const READ_CONTENTS = { metadata: 'read', contents: 'read' };
 const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
 const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
+const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
 const WRITE_ADMINISTRATION = { metadata: 'read', administration: 'write' };
 const DETACH_REPOSITORY = {
   metadata: 'read',
@@ -36,24 +48,20 @@ const WRITE_PACKAGES = { metadata: 'read', packages: 'write' };
 const WRITE_SECRETS = { metadata: 'read', secrets: 'write' };
 const exec = promisify(execFile);
 
-// The write/deploy half of the GitHub adapter (repo creation, Actions secrets
-// via libsodium, GHCR, git push) is a separate, live-App piece; until then it
-// throws clearly rather than pretending. This keeps the read/import path usable
-// without blocking the Gitea E2E (ADR-030).
-function notImplemented(op: string): Promise<never> {
-  return Promise.reject(new Error(`GitHub adapter: '${op}' is not implemented yet`));
-}
-
 /**
  * The GitHub adapter of {@link ScmProvider}. Repository reads run on short-lived
- * installation tokens resolved per owner (ADR-030). It implements the operations
- * the import/read paths need; write and deployment operations are not wired yet.
+ * installation tokens resolved per explicit binding (ADR-030). Personal repo
+ * creation uses the user's rotatable App token; organization creation and every
+ * subsequent operation use short-lived installation tokens.
  */
 @Injectable()
 export class GitHubScmProvider implements ScmProvider {
   private readonly logger = new Logger('GitHubScmProvider');
 
-  constructor(private readonly installations: GitHubInstallationService) {}
+  constructor(
+    private readonly installations: GitHubInstallationService,
+    private readonly userCredentials: GitHubUserCredentialService,
+  ) {}
 
   private assertProvider(repository: ScmRepositoryRef): void {
     if (repository.provider !== 'github') {
@@ -362,11 +370,119 @@ export class GitHubScmProvider implements ScmProvider {
     return (await this.installations.tokenForOwner(username, { permissions: READ_CONTENTS })).token;
   }
 
-  // Repository creation remains split by account type: organizations accept an
-  // installation token, while personal `/user/repos` requires a rotatable user
-  // access token. The project flow will supply that credential in the next step.
-  provision(): Promise<ScmRepositoryIdentity> {
-    return notImplemented('provision');
+  async provision(
+    name: string,
+    dir: string,
+    actor: ScmActor,
+    ciDeployToken: string,
+    target?: ScmProvisionTarget,
+  ): Promise<ScmRepositoryIdentity> {
+    if (!target) {
+      throw new Error('A workspace-authorized GitHub installation is required');
+    }
+    const installation = await this.installations.findById(target.installationId);
+    if (!installation || installation.deletedAt) {
+      throw new Error('The selected GitHub App installation is no longer available');
+    }
+    if (installation.suspendedAt) {
+      throw new Error(`The GitHub App installation for '${installation.accountLogin}' is suspended`);
+    }
+    if (!installation.accountId) {
+      throw new Error('The selected GitHub App installation has no verified account identity');
+    }
+    if (installation.accountType !== 'User' && installation.accountType !== 'Organization') {
+      throw new Error('The selected GitHub App installation has an unsupported account type');
+    }
+
+    const createToken = installation.accountType === 'Organization'
+      ? (
+          await this.installations.tokenForBinding(installation.id, {
+            permissions: WRITE_ADMINISTRATION,
+          })
+        ).token
+      : await this.userCredentials.accessTokenForUser(target.userId);
+    const path = installation.accountType === 'Organization'
+      ? `/orgs/${encodeURIComponent(installation.accountLogin)}/repos`
+      : '/user/repos';
+    const response = await this.gh(path, createToken, {
+      method: 'POST',
+      body: { name, private: true, auto_init: false },
+    });
+    if (!response.ok) {
+      const reason = response.status === 422
+        ? `A repository named '${name}' already exists or GitHub rejected the name`
+        : `GitHub repository creation failed (HTTP ${response.status})`;
+      throw new Error(reason);
+    }
+    let created: {
+      id?: number | string;
+      name?: string;
+      full_name?: string;
+      html_url?: string;
+      owner?: { id?: number | string; login?: string };
+    };
+    try {
+      created = (await response.json()) as typeof created;
+      if (
+        created.id == null ||
+        created.name !== name ||
+        !created.full_name ||
+        !created.html_url ||
+        created.owner?.id == null ||
+        String(created.owner.id) !== installation.accountId ||
+        !created.owner.login
+      ) {
+        throw new Error('GitHub returned an invalid repository identity');
+      }
+    } catch (error) {
+      // HTTP 201 proves this request created the repo. Even if the response is
+      // malformed, clean up the deterministic destination to avoid an orphan.
+      await this.deleteRepo({
+        provider: 'github',
+        repositoryId: null,
+        owner: installation.accountLogin,
+        name,
+        fullName: `${installation.accountLogin}/${name}`,
+        defaultBranch: 'main',
+        repoUrl: null,
+        installationId: installation.id,
+      }, actor).catch((cleanupError) => {
+        this.logger.error(
+          `GitHub repository rollback failed after an invalid response: ${(cleanupError as Error).message}`,
+        );
+      });
+      throw error;
+    }
+    const repository: ScmRepositoryIdentity = {
+      provider: 'github',
+      repositoryId: String(created.id),
+      owner: created.owner.login,
+      name: created.name,
+      fullName: created.full_name,
+      defaultBranch: 'main',
+      repoUrl: created.html_url,
+      installationId: installation.id,
+    };
+
+    try {
+      // Secrets must exist before the first push triggers GitHub Actions.
+      await this.configureRepoSecrets(repository, '', ciDeployToken);
+      const pushToken = (
+        await this.installations.tokenForBinding(installation.id, {
+          permissions: WRITE_SCAFFOLD,
+        })
+      ).token;
+      await this.pushScaffold(repository, dir, pushToken);
+      this.logger.log(`Repository created and pushed: ${repository.repoUrl}`);
+      return repository;
+    } catch (error) {
+      await this.deleteRepo(repository, actor).catch((cleanupError) => {
+        this.logger.error(
+          `GitHub repository rollback failed for ${repository.fullName}: ${(cleanupError as Error).message}`,
+        );
+      });
+      throw error;
+    }
   }
 
   async configureRepoSecrets(
@@ -434,6 +550,7 @@ export class GitHubScmProvider implements ScmProvider {
   }
 
   async initLocal(dir: string, author?: { name: string; email: string }): Promise<void> {
+    this.prepareGitHubActions(dir);
     const name = author?.name || config.git.authorName;
     const email = author?.email || config.git.authorEmail;
     const git = (args: string[]) => exec('git', args, { cwd: dir });
@@ -447,6 +564,69 @@ export class GitHubScmProvider implements ScmProvider {
       ]);
     } catch (error) {
       this.logger.warn(`Local git init failed: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Templates are shared with Gitea Actions. GitHub uses the same workflow
+   * syntax but a different discovery directory and its ephemeral GITHUB_TOKEN
+   * for GHCR, so no long-lived registry password is needed in SaaS.
+   */
+  private prepareGitHubActions(dir: string): void {
+    const giteaDir = join(dir, '.gitea');
+    const githubDir = join(dir, '.github');
+    if (!existsSync(giteaDir)) return;
+    if (existsSync(githubDir)) {
+      throw new Error('The scaffold contains both .gitea and .github workflow directories');
+    }
+    renameSync(giteaDir, githubDir);
+    const workflowDir = join(githubDir, 'workflows');
+    if (!existsSync(workflowDir)) return;
+    for (const entry of readdirSync(workflowDir)) {
+      if (!/\.ya?ml$/i.test(entry)) continue;
+      const path = join(workflowDir, entry);
+      let workflow = readFileSync(path, 'utf8');
+      if (!/^permissions:/m.test(workflow)) {
+        workflow = workflow.replace(
+          /^on: \[push\]$/m,
+          'on: [push]\n\npermissions:\n  contents: read\n  packages: write',
+        );
+      }
+      workflow = workflow
+        .replace(/\$\{\{ secrets\.INITPAD_REGISTRY_PASSWORD \}\}/g, '${{ secrets.GITHUB_TOKEN }}')
+        .replace(/\$\{\{ secrets\.INITPAD_REGISTRY_USER \}\}/g, '${{ github.actor }}');
+      if (workflow.includes('INITPAD_REGISTRY_PASSWORD') || workflow.includes('INITPAD_REGISTRY_USER')) {
+        throw new Error(`Could not adapt GitHub Actions registry login in '${entry}'`);
+      }
+      if (!/^permissions:/m.test(workflow)) {
+        throw new Error(`Could not add least-privilege GitHub Actions permissions in '${entry}'`);
+      }
+      writeFileSync(path, workflow);
+    }
+  }
+
+  private async pushScaffold(
+    repository: ScmRepositoryIdentity,
+    dir: string,
+    token: string,
+  ): Promise<void> {
+    const git = (args: string[], env?: NodeJS.ProcessEnv) =>
+      exec('git', args, { cwd: dir, env: env ? { ...process.env, ...env } : process.env });
+    const remote = `https://github.com/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}.git`;
+    await git(['remote', 'remove', 'origin']).catch(() => undefined);
+    await git(['remote', 'add', 'origin', remote]);
+    try {
+      // Pass auth through Git's process environment. It never enters argv,
+      // the remote URL, .git/config, logs or the generated repository.
+      const authorization = Buffer.from(`x-access-token:${token}`).toString('base64');
+      await git(['push', '-u', 'origin', 'main'], {
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'http.extraHeader',
+        GIT_CONFIG_VALUE_0: `Authorization: Basic ${authorization}`,
+        GIT_TERMINAL_PROMPT: '0',
+      });
+    } finally {
+      await git(['remote', 'remove', 'origin']).catch(() => undefined);
     }
   }
 

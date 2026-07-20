@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createGzip } from 'zlib';
@@ -24,13 +24,22 @@ function make(fetchImpl: jest.Mock) {
   const installations = {
     findByOwner: jest.fn(async () => ({ id: 'installation-row-1', installationId: '42' })),
     findById: jest.fn(async () => ({
-      id: 'installation-row-1', installationId: '42', accountType: 'Organization',
+      id: 'installation-row-1', installationId: '42', accountId: '987654',
+      accountLogin: 'acme', accountType: 'Organization', repositorySelection: 'selected',
+      suspendedAt: null, deletedAt: null,
     })),
     tokenForOwner: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })),
     tokenForBinding: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })),
   };
+  const userCredentials = {
+    accessTokenForUser: jest.fn(async () => 'ghu_user'),
+  };
   global.fetch = fetchImpl as never;
-  return { provider: new GitHubScmProvider(installations as never), installations };
+  return {
+    provider: new GitHubScmProvider(installations as never, userCredentials as never),
+    installations,
+    userCredentials,
+  };
 }
 
 const savedFetch = global.fetch;
@@ -106,7 +115,7 @@ describe('GitHubScmProvider reads', () => {
     const { provider: p2 } = make(jest.fn(async () => ({ status: 200, ok: true })));
     expect(await p2.repoMissing(repository('there'), actor)).toBe(false);
     const installations = { tokenForBinding: jest.fn(async () => { throw new Error('no installation'); }) };
-    const p3 = new GitHubScmProvider(installations as never);
+    const p3 = new GitHubScmProvider(installations as never, {} as never);
     expect(await p3.repoMissing(repository('x'), actor)).toBe(false);
   });
 
@@ -118,9 +127,10 @@ describe('GitHubScmProvider reads', () => {
     expect(await statuses.provider.listCommitStatuses(repository(), 'abc', actor)).toEqual([{ context: 'ci', status: 'success', targetUrl: 'https://x' }]);
   });
 
-  it('throws clearly for personal/organization-aware provisioning not wired yet', async () => {
+  it('requires an explicit workspace-authorized installation for provisioning', async () => {
     const { provider } = make(jest.fn());
-    await expect(provider.provision()).rejects.toThrow('not implemented');
+    await expect(provider.provision('api', '/tmp', actor, 'deploy-secret'))
+      .rejects.toThrow('workspace-authorized');
   });
 
   it('downloads and unwraps an exact GitHub tarball', async () => {
@@ -159,9 +169,147 @@ describe('GitHubScmProvider reads', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('adapts shared Gitea workflow scaffolds for GitHub Actions and ephemeral GHCR auth', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'initpad-github-workflow-'));
+    const workflowDir = join(dir, '.gitea', 'workflows');
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(
+      join(workflowDir, 'ci.yml'),
+      [
+        'name: ci',
+        'on: [push]',
+        'jobs:',
+        '  docker:',
+        '    steps:',
+        '      - run: |',
+        '          echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \\',
+        '            docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin',
+        '',
+      ].join('\n'),
+    );
+    const { provider } = make(jest.fn());
+    try {
+      await provider.initLocal(dir, { name: 'InitPad Test', email: 'test@initpad.local' });
+      const githubWorkflow = join(dir, '.github', 'workflows', 'ci.yml');
+      expect(existsSync(githubWorkflow)).toBe(true);
+      expect(existsSync(join(dir, '.gitea'))).toBe(false);
+      const workflow = readFileSync(githubWorkflow, 'utf8');
+      expect(workflow).toContain('permissions:\n  contents: read\n  packages: write');
+      expect(workflow).toContain('${{ secrets.GITHUB_TOKEN }}');
+      expect(workflow).toContain('${{ github.actor }}');
+      expect(workflow).not.toContain('INITPAD_REGISTRY_PASSWORD');
+      expect(workflow).not.toContain('INITPAD_REGISTRY_USER');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('GitHubScmProvider writes', () => {
+  const target = { userId: 'user-1', installationId: 'installation-row-1' };
+
+  function createdRepository() {
+    return {
+      id: 101,
+      name: 'api',
+      full_name: 'acme/api',
+      html_url: 'https://github.com/acme/api',
+      owner: { id: 987654, login: 'acme' },
+    };
+  }
+
+  it('creates an organization repository, configures secrets, then pushes with an installation token', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => createdRepository() })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ key_id: 'key-1', key: 'ignored-by-spy' }),
+      })
+      .mockResolvedValue({ ok: true, status: 201 });
+    const { provider, installations, userCredentials } = make(fetchMock);
+    jest.spyOn(provider as any, 'setRepoSecrets').mockResolvedValue(undefined);
+    const push = jest.spyOn(provider as any, 'pushScaffold').mockResolvedValue(undefined);
+
+    await expect(
+      provider.provision('api', '/generated', actor, 'deploy-secret', target),
+    ).resolves.toMatchObject({
+      provider: 'github', repositoryId: '101', fullName: 'acme/api',
+      installationId: 'installation-row-1', defaultBranch: 'main',
+    });
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toContain('/orgs/acme/repos');
+    expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: { metadata: 'read', administration: 'write' },
+    });
+    expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: {
+        metadata: 'read', contents: 'write', workflows: 'write',
+      },
+    });
+    expect(userCredentials.accessTokenForUser).not.toHaveBeenCalled();
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'acme/api' }), '/generated', 'ghs_x');
+  });
+
+  it('creates a personal repository with the initiating user credential', async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: true, status: 201, json: async () => createdRepository(),
+    }));
+    const { provider, installations, userCredentials } = make(fetchMock);
+    installations.findById.mockResolvedValueOnce({
+      id: 'installation-row-1', installationId: '42', accountId: '987654',
+      accountLogin: 'acme', accountType: 'User', repositorySelection: 'selected',
+      suspendedAt: null, deletedAt: null,
+    });
+    jest.spyOn(provider as any, 'setRepoSecrets').mockResolvedValue(undefined);
+    jest.spyOn(provider as any, 'pushScaffold').mockResolvedValue(undefined);
+
+    await provider.provision('api', '/generated', actor, 'deploy-secret', target);
+
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toContain('/user/repos');
+    expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers)
+      .toMatchObject({ Authorization: 'Bearer ghu_user' });
+    expect(userCredentials.accessTokenForUser).toHaveBeenCalledWith('user-1');
+    expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: {
+        metadata: 'read', contents: 'write', workflows: 'write',
+      },
+    });
+  });
+
+  it('deletes the newly created repository when secret configuration fails', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => createdRepository() })
+      .mockResolvedValueOnce({ ok: false, status: 403 })
+      .mockResolvedValueOnce({ ok: true, status: 204 });
+    const { provider } = make(fetchMock);
+
+    await expect(
+      provider.provision('api', '/generated', actor, 'deploy-secret', target),
+    ).rejects.toThrow('public key');
+    const deleteCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE') as
+      | [string, RequestInit]
+      | undefined;
+    expect(deleteCall?.[0]).toContain('/repos/acme/api');
+  });
+
+  it('cleans up the deterministic destination when GitHub returns an invalid 201 body', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 101 }) })
+      .mockResolvedValueOnce({ ok: true, status: 204 });
+    const { provider } = make(fetchMock);
+
+    await expect(
+      provider.provision('api', '/generated', actor, 'deploy-secret', target),
+    ).rejects.toThrow('invalid repository identity');
+    const deleteCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE') as
+      | [string, RequestInit]
+      | undefined;
+    expect(deleteCall?.[0]).toContain('/repos/acme/api');
+  });
+
   it('refuses a locator owned by another provider before minting a token', async () => {
     const { provider, installations } = make(jest.fn());
     await expect(
