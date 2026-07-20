@@ -134,23 +134,53 @@ describe('GitHubScmProvider reads', () => {
     expect(await statuses.provider.listCommitStatuses(repository(), 'abc', actor)).toEqual([{ context: 'ci', status: 'success', targetUrl: 'https://x' }]);
   });
 
-  it('maps GitHub Actions check runs before classic statuses', async () => {
-    const checks = make(jest.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        check_runs: [
-          { name: 'build', status: 'completed', conclusion: 'success', details_url: 'https://x/build' },
-          { name: 'test', status: 'in_progress', conclusion: null, details_url: 'https://x/test' },
-        ],
-      }),
-    })));
-    await expect(checks.provider.listCommitStatuses(repository(), 'abc', actor)).resolves.toEqual([
+  it('maps the latest GitHub Actions run jobs with clickable URLs', async () => {
+    const actions = make(jest.fn(async (url: string) => {
+      if (url.includes('/actions/workflows/ci.yml/runs?')) {
+        return { ok: true, json: async () => ({ workflow_runs: [{ id: 42 }] }) };
+      }
+      if (url.includes('/actions/runs/42/jobs?')) {
+        return {
+          ok: true,
+          json: async () => ({
+            jobs: [
+              { name: 'build', status: 'completed', conclusion: 'success', html_url: 'https://x/build' },
+              { name: 'test', status: 'in_progress', conclusion: null, html_url: 'https://x/test' },
+            ],
+          }),
+        };
+      }
+      return { ok: false, status: 404 };
+    }));
+    await expect(actions.provider.listCommitStatuses(repository(), 'abc', actor)).resolves.toEqual([
       { context: 'build', status: 'success', targetUrl: 'https://x/build' },
       { context: 'test', status: 'pending', targetUrl: 'https://x/test' },
     ]);
-    expect(checks.installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
-      permissions: { metadata: 'read', contents: 'read', checks: 'read' },
+    expect(actions.installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: { metadata: 'read', actions: 'read' },
     });
+  });
+
+  it('falls back to GitHub Check Runs when no Actions run is available', async () => {
+    const checks = make(jest.fn(async (url: string) => {
+      if (url.includes('/actions/workflows/ci.yml/runs?')) {
+        return { ok: true, json: async () => ({ workflow_runs: [] }) };
+      }
+      if (url.includes('/check-runs?')) {
+        return {
+          ok: true,
+          json: async () => ({
+            check_runs: [
+              { name: 'build', status: 'completed', conclusion: 'success', details_url: 'https://x/check' },
+            ],
+          }),
+        };
+      }
+      return { ok: false, status: 404 };
+    }));
+    await expect(checks.provider.listCommitStatuses(repository(), 'abc', actor)).resolves.toEqual([
+      { context: 'build', status: 'success', targetUrl: 'https://x/check' },
+    ]);
   });
 
   it('requires an explicit workspace-authorized installation for provisioning', async () => {

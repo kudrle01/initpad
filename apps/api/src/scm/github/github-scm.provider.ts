@@ -230,12 +230,50 @@ export class GitHubScmProvider implements ScmProvider {
     _actor: ScmActor,
   ): Promise<ScmCommitStatus[] | null> {
     this.assertProvider(repository);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
     try {
-      // GitHub Actions reports jobs as Check Runs, not classic commit
-      // statuses. Map that native model onto InitPad's provider-neutral shape.
+      // Actions is the authoritative source for an Actions workflow. Unlike
+      // Check Runs it is already required for artifact verification, and its
+      // jobs endpoint returns the concrete html_url used by the stage links.
+      const actionsToken = await this.token(repository, READ_ACTIONS);
+      const runsResponse = await this.gh(
+        `/repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${encodeURIComponent(sha)}&event=push&per_page=1`,
+        actionsToken,
+      );
+      if (runsResponse.ok) {
+        const runs = (await runsResponse.json()) as {
+          workflow_runs?: Array<{ id: number }>;
+        };
+        const run = runs.workflow_runs?.[0];
+        if (run) {
+          const jobsResponse = await this.gh(
+            `/repos/${repo}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
+            actionsToken,
+          );
+          if (jobsResponse.ok) {
+            const data = (await jobsResponse.json()) as {
+              jobs?: Array<{
+                name?: string;
+                status?: string;
+                conclusion?: string | null;
+                html_url?: string | null;
+              }>;
+            };
+            const jobs = data.jobs ?? [];
+            if (jobs.length > 0) return jobs.map((job) => this.actionJobStatus(job));
+          }
+        }
+      }
+    } catch {
+      // Preserve compatibility with an older App installation while its
+      // requested Actions permission is being approved.
+    }
+    try {
+      // Optional compatibility fallback for App registrations that grant
+      // Checks:read. The normal hosted path above needs only Actions:read.
       const checksToken = await this.token(repository, READ_CHECKS);
       const checksResponse = await this.gh(
-        `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`,
+        `/repos/${repo}/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`,
         checksToken,
       );
       if (checksResponse.ok) {
@@ -270,7 +308,7 @@ export class GitHubScmProvider implements ScmProvider {
     try {
       const token = await this.token(repository, READ_STATUSES);
       const res = await this.gh(
-        `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/commits/${encodeURIComponent(sha)}/status`,
+        `/repos/${repo}/commits/${encodeURIComponent(sha)}/status`,
         token,
       );
       if (!res.ok) return null;
@@ -285,6 +323,27 @@ export class GitHubScmProvider implements ScmProvider {
     } catch {
       return null;
     }
+  }
+
+  private actionJobStatus(job: {
+    name?: string;
+    status?: string;
+    conclusion?: string | null;
+    html_url?: string | null;
+  }): ScmCommitStatus {
+    let status = 'pending';
+    if (job.status === 'completed') {
+      status = job.conclusion === 'success'
+        ? 'success'
+        : job.conclusion === 'skipped' || job.conclusion === 'neutral'
+          ? 'pending'
+          : 'failure';
+    }
+    return {
+      context: job.name ?? '',
+      status,
+      targetUrl: job.html_url ?? null,
+    };
   }
 
   async deleteRepo(repository: ScmRepositoryRef, _actor: ScmActor): Promise<void> {

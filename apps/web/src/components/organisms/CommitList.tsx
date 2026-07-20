@@ -80,7 +80,7 @@ export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle }:
                           target="_blank"
                           rel="noreferrer"
                           title={`View job log in ${scmProvider === 'github' ? 'GitHub' : 'Gitea'}`}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs hover:bg-secondary"
+                          className="text-link inline-flex items-center gap-1.5 rounded-md border border-current/25 bg-card px-2.5 py-1 text-xs font-medium hover:bg-secondary"
                         >
                           <StatusDot status={s.status} kind="ci" /> {s.name}
                           <ExternalLink className="h-3 w-3" />
@@ -102,7 +102,7 @@ export function CommitList({ commits, repoUrl, scmProvider, openSha, onToggle }:
                   if (ci.label === 'awaiting CI') {
                     return (
                       <p className="mt-2.5 text-xs text-muted-foreground">
-                        Waiting for the Gitea Actions runner to pick up this commit.
+                        Waiting for the {scmProvider === 'github' ? 'GitHub Actions' : 'Gitea Actions'} runner to pick up this commit.
                       </p>
                     );
                   }
