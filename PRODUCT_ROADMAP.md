@@ -624,6 +624,18 @@ vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
 - Automatizovaně ověřeno: 45 API suites / 276 testů a API i web production
   build. Uživatelský test je v ADR-057.
 
+### Explicitní GitHub failed-job rerun (2026-07-20)
+
+- Dev Tools nabídne `Re-run failed GitHub jobs` pouze pro kombinaci failed
+  SCM handoff + successful InitPad publish stejného ověřeného artifactu.
+- Backend používá immutable artifact run ID a skutečný GitHub failed-jobs
+  rerun. `filter=latest` synchronizuje nový attempt a konkrétní job URL.
+- Před rerunem se obnoví callback secret a vyžaduje veřejné HTTPS. GitHub App
+  nově potřebuje repository `Actions: Read and write`; Organization a Account
+  permission zůstávají prázdné.
+- Automatizovaně ověřeno: 45 API suites / 281 testů a API i web production
+  build. Uživatelský test je v ADR-058.
+
 ### Průběžné ověření delivery části milníku 8
 
 - React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez

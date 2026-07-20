@@ -2146,3 +2146,52 @@ environmentu musí vést na `/projects/:id/deployments`; GitHub stage musí vés
 na `/actions/runs/:run_id/job/:job_id`. V GitHub Actions se po redeployi nemá
 objevit nový run, zatímco InitPad deployment historie musí obsahovat novou
 samostatnou successful operation.
+
+## ADR-058 — Oprava failed handoffu je explicitní GitHub run attempt
+
+**Kontext.** `Deploy verified build` správně neopakuje build/test a publikuje
+již ověřené bajty. Po úspěšné recovery ale původní GitHub callback job zůstává
+failed. Samotný refresh jej nesmí přebarvit: GitHub je autoritou a bez nového
+attemptu se jeho historický výsledek nezmění. Uživatel současně potřebuje
+opravit workflow poté, co administrátor zpřístupní veřejný InitPad callback.
+
+**Rozhodnutí.** Tools menu dev prostředí nabídne `Re-run failed GitHub jobs`
+jen tehdy, když přesný artifact-producing run obsahuje failed SCM stage a
+InitPad `publish` stejného commitu již uspěl. Endpoint z DB přečte immutable
+`BuildArtifact.providerRunId`, přes `jobs?filter=latest` ověří failed stav a
+zavolá GitHub `POST /actions/runs/{run_id}/rerun-failed-jobs`. Klient po
+potvrzení polluje po 2,5 s, takže stage a odkaz přejdou na nejnovější job
+attempt bez ručního reloadu.
+
+Před externí mutací InitPad vyžaduje veřejnou HTTPS callback URL a znovu zapíše
+aktuální `INITPAD_PLATFORM_URL` do repository secrets. Tím se nereprodukuje
+původní `localhost:8080` chyba. GitHub App rozšiřuje repository permission
+`Actions` z read na read/write; operation-specific installation token žádá
+write pouze pro explicitní rerun. Organization ani Account permission není
+potřeba. Existující instalace musí změnu App permission schválit.
+
+Rerun je oddělený od deploy/redeploy. Pokud publication ještě selhává, uživatel
+nejprve použije `Deploy verified build`; GitHub rerun nesmí předstírat opravu
+targetu. Úspěšný callback stejného již přijatého artifactu je idempotentní a
+nový Actions attempt opraví SCM audit bez změny nasazených bajtů.
+
+**Důsledky.** GitHub stav se mění pouze skutečným GitHub pokusem a InitPad
+nadále dodržuje build once/deploy many. Rozšíření `Actions: write` umožňuje App
+spouštět Actions reruns, proto je akce autorizovaná workspace write rolí,
+explicitní a omezená na run uložený u projektu. GitHub dovoluje rerun jen v
+časovém/attempt limitu poskytovatele; jeho odmítnutí se zobrazí beze změny
+InitPad publication.
+
+**Uživatelské testování.** V GitHub App nastavit repository `Actions: Read and
+write`, Organization/Account ponechat prázdné a schválit update existující
+instalace. InitPad musí být na veřejném HTTPS originu a
+`INITPAD_PLATFORM_PUBLIC_URL` na něj musí ukazovat. U recovery projektu otevřít
+dev Tools → `Re-run failed GitHub jobs`. GitHub run zachová stejné run ID, ale
+vytvoří nový attempt; InitPad během několika sekund ukáže running a následně
+success `deploy` s novým job URL. `publish` zůstane samostatně success a
+Deployment activity nesmí vytvořit falešný nový deployment. Na localhostu se
+akce musí zastavit před GitHub API s konkrétní výzvou k veřejné HTTPS URL.
+
+Reference:
+[GitHub REST API — Re-run failed jobs](https://docs.github.com/en/rest/actions/workflow-runs#re-run-failed-jobs-from-a-workflow-run),
+[GitHub — Re-running workflows and jobs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).

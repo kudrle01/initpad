@@ -48,7 +48,7 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   rollback nového repa, sealed-box Actions secrets, archiv, collaborators,
   retry tag, delete/detach/packages a GitHub Actions workflow runs/jobs;
   Check Runs jsou pouze kompatibilní fallback.
-- GitHub build handoff persistuje `BuildArtifact`; App token s `Actions: read`
+- GitHub build handoff persistuje `BuildArtifact`; operation token s `Actions: read`
   ověřuje repository/run/commit/digest, stažení znovu hashujeme a Docker archive
   smí obsahovat jediný očekávaný tag. Lokální control plane image ingestuje a
   deployuje bez GHCR. Deployment i Environment váže přesné artifact ID a UI
@@ -60,6 +60,10 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   první zachová přesný SCM stav/URL, druhá vede do deployment historie stejně
   jako environment status. Recovery proto může ukázat failed handoff i
   successful publication bez nového runneru (ADR-054 a ADR-057).
+  Pokud chce uživatel opravit i failed GitHub audit, dev Tools má explicitní
+  `Re-run failed GitHub jobs`: používá přesný artifact run, latest attempt,
+  předem obnoví veřejný callback secret a vyžaduje App repository permission
+  `Actions: read/write` bez Organization/Account permission (ADR-058).
   Aktuální CD průběh je samostatná inline Deployment activity s immutable
   target snapshotem; deploy ověřeného artifactu záměrně nespouští nový runner
   (ADR-055). Detail ukazuje bounded náhled a samostatné commit/deployment
@@ -101,7 +105,7 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 ## Nejbližší implementační pořadí
 
-1. Proveď živý GitHub E2E: po přidání App `Actions: read` personal/org create,
+1. Proveď živý GitHub E2E: po nastavení App `Actions: read/write` personal/org create,
    artifact upload/ingestion/dev deploy, kompatibilní import, Actions jobs, retry,
    role, suspend/uninstall a delete/detach.
 2. Přesuň ověřené bajty z lokálního Docker daemonu do platformního object
@@ -112,7 +116,7 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 45 API suites / 276 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 45 API suites / 281 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config prošel; API/web kontejnery byly přestavěné a API
   je healthy bez modulárního DI cyklu.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy
