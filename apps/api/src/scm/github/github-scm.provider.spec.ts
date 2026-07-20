@@ -1,3 +1,11 @@
+import { execFileSync } from 'child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { createGzip } from 'zlib';
+import sodium from 'libsodium-wrappers';
+import * as tar from 'tar-fs';
+import { config } from '../../config';
 import { GitHubScmProvider } from './github-scm.provider';
 
 const actor = { username: 'acme', token: 'ignored' };
@@ -15,6 +23,9 @@ const repository = (name = 'api') => ({
 function make(fetchImpl: jest.Mock) {
   const installations = {
     findByOwner: jest.fn(async () => ({ id: 'installation-row-1', installationId: '42' })),
+    findById: jest.fn(async () => ({
+      id: 'installation-row-1', installationId: '42', accountType: 'Organization',
+    })),
     tokenForOwner: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })),
     tokenForBinding: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })),
   };
@@ -23,8 +34,10 @@ function make(fetchImpl: jest.Mock) {
 }
 
 const savedFetch = global.fetch;
+const savedFrontendUrl = config.auth.frontendUrl;
 afterEach(() => {
   global.fetch = savedFetch;
+  config.auth.frontendUrl = savedFrontendUrl;
   jest.restoreAllMocks();
 });
 
@@ -52,6 +65,24 @@ describe('GitHubScmProvider reads', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain('/installation/repositories');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer ghs_x');
+  });
+
+  it('paginates all installation repositories', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, id) => ({
+      id, name: `repo-${id}`, full_name: `acme/repo-${id}`, private: true,
+    }));
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ repositories: firstPage }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          repositories: [{ id: 100, name: 'last', full_name: 'acme/last', private: true }],
+        }),
+      });
+    const { provider } = make(fetchMock);
+    await expect(provider.listRepositories(actor)).resolves.toHaveLength(101);
+    expect((fetchMock.mock.calls[1] as unknown as [string])[0]).toContain('page=2');
   });
 
   it('reads and decodes a file, and returns null on 404', async () => {
@@ -87,10 +118,46 @@ describe('GitHubScmProvider reads', () => {
     expect(await statuses.provider.listCommitStatuses(repository(), 'abc', actor)).toEqual([{ context: 'ci', status: 'success', targetUrl: 'https://x' }]);
   });
 
-  it('throws clearly for operations that are not wired yet', async () => {
+  it('throws clearly for personal/organization-aware provisioning not wired yet', async () => {
     const { provider } = make(jest.fn());
     await expect(provider.provision()).rejects.toThrow('not implemented');
-    await expect(provider.configureRepoSecrets()).rejects.toThrow('not implemented');
+  });
+
+  it('downloads and unwraps an exact GitHub tarball', async () => {
+    const source = mkdtempSync(join(tmpdir(), 'initpad-github-source-'));
+    writeFileSync(join(source, 'README.md'), 'hello archive');
+    const compressed: Buffer[] = [];
+    const stream = tar.pack(source).pipe(createGzip());
+    for await (const chunk of stream) compressed.push(Buffer.from(chunk));
+    const { provider, installations } = make(
+      jest.fn(async () => new Response(Buffer.concat(compressed), { status: 200 })),
+    );
+    try {
+      const archive = await provider.downloadArchive(repository(), 'deadbeef', actor);
+      expect(archive).not.toBeNull();
+      expect(readFileSync(join(archive!.dir, 'README.md'), 'utf8')).toBe('hello archive');
+      archive!.cleanup();
+      expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+        permissions: { metadata: 'read', contents: 'read' },
+      });
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
+  });
+
+  it('initializes the generated scaffold as a main-branch git repository', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'initpad-github-git-'));
+    writeFileSync(join(dir, 'README.md'), 'hello');
+    const { provider } = make(jest.fn());
+    try {
+      await provider.initLocal(dir, { name: 'InitPad Test', email: 'test@initpad.local' });
+      expect(execFileSync('git', ['branch', '--show-current'], { cwd: dir, encoding: 'utf8' }).trim()).toBe('main');
+      expect(execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: dir, encoding: 'utf8' }).trim()).toBe(
+        'init: scaffold from template',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -162,5 +229,51 @@ describe('GitHubScmProvider writes', () => {
     expect(installations.tokenForOwner).toHaveBeenCalledWith('acme', {
       permissions: { metadata: 'read', contents: 'read' },
     });
+  });
+
+  it('sealed-box encrypts GitHub Actions secrets with the repository public key', async () => {
+    await sodium.ready;
+    const keyPair = sodium.crypto_box_keypair();
+    const publicKey = sodium.to_base64(keyPair.publicKey, sodium.base64_variants.ORIGINAL);
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ key_id: 'key-1', key: publicKey }),
+      })
+      .mockResolvedValue({ ok: true, status: 201 });
+    config.auth.frontendUrl = 'https://initpad.example/';
+    const { provider, installations } = make(fetchMock);
+
+    await provider.configureRepoSecrets(repository(), 'unused-installation-token', 'deploy-secret');
+
+    expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: { metadata: 'read', secrets: 'write' },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4); // public key + 3 encrypted secrets
+    const deployCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/actions/secrets/INITPAD_DEPLOY_TOKEN'),
+    ) as unknown as [string, RequestInit];
+    const body = JSON.parse(deployCall[1].body as string) as {
+      encrypted_value: string;
+      key_id: string;
+    };
+    const decrypted = sodium.crypto_box_seal_open(
+      sodium.from_base64(body.encrypted_value, sodium.base64_variants.ORIGINAL),
+      keyPair.publicKey,
+      keyPair.privateKey,
+      'text',
+    );
+    expect(decrypted).toBe('deploy-secret');
+    expect(body.key_id).toBe('key-1');
+  });
+
+  it('uses the organization GHCR endpoint for organization installations', async () => {
+    const fetchMock = jest.fn(async () => ({ ok: true, status: 204 }));
+    const { provider } = make(fetchMock);
+    await provider.deletePackages(repository());
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toContain(
+      '/orgs/acme/packages/container/api',
+    );
   });
 });

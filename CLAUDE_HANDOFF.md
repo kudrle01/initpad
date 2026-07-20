@@ -39,7 +39,9 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   organizace se tento fallback nepoužívá. Organizace prochází user-bound OAuth
   kontrolou `/user` + `/user/installations`; krátkodobý token se neukládá.
 - `GitHubScmProvider` obsahuje čtecí operace a část HTTP mutací. Jeho tokeny jsou
-  operation-specific; webhook při chybě persistence vrací 5xx.
+  operation-specific; webhook při chybě persistence vrací 5xx. Adapter má
+  stránkování, archiv refu, lokální git init, user/org GHCR cleanup a Actions
+  secrets šifrované `libsodium-wrappers` sealed boxem.
 - Audit 2026-07-17 opravil: native auth v SaaS, automatického prvního SaaS admina,
   odpojení poslední použitelné identity, ověření GitHub e-mailu, atomický claim
   jednorázových tokenů, oddělení platformního hesla od lokálního hesla Gitey a
@@ -49,10 +51,11 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 - `ScmRegistry` zatím nikdo z projektové domény nepoužívá; `SCM_PROVIDER` je stále
   Gitea. GitHub create/import proto nefunguje.
-- GitHub `provision`, push scaffoldu, `configureRepoSecrets`, runtime secrets,
-  `downloadArchive` a `initLocal` jsou stuby. Actions secrets vyžadují knihovní
-  libsodium sealed-box implementaci; nevymýšlet vlastní kryptografii.
-- GHCR cleanup nerozlišuje user/org cestu, seznam repozitářů nemá stránkování.
+- GitHub `provision` a push scaffoldu jsou stále stuby. Osobní `POST /user/repos`
+  vyžaduje rotovatelný GitHub App user token; doplň šifrovaný token vault a
+  refresh rotaci. Organizace může vytvořit repo installation tokenem.
+- GitHub Actions workflow varianta (`.github/workflows`, automatický
+  `GITHUB_TOKEN` pro GHCR) ještě není v šablonách/generátoru.
 - `ProvisioningOperation` pro create nemá podrobné kroky; rollback importu
   nemusí vrátit všechny externí změny a neúspěšný create bez Project ID není v UI.
 - Neexistuje reálný public-SaaS deploy profil bez Gitey.
@@ -62,8 +65,9 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 ## Nejbližší implementační pořadí
 
-1. Dokonči GitHub create/import, libsodium Actions secrets, archive a push.
-2. Zapoj `ScmRegistry` podle provideru uloženého u projektu a proveď rollback/
+1. Doplň šifrovaný rotovatelný GitHub user-token vault a GitHub Actions variantu
+   šablon; dokonči personal/org create a scaffold push.
+2. Zapoj `ScmRegistry` podle workspace instalace/provideru projektu a proveď rollback/
    reconciliation testy.
 3. Až poté spusť živý GitHub E2E a vytvoř skutečný SaaS deploy profil.
 
@@ -71,7 +75,7 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 33 API suites / 186 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 33 API suites / 191 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config a Prisma schema validate prošly.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy
   projekty zachovaly URL a dostaly reálná Gitea repository ID. Health a

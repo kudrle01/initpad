@@ -155,8 +155,10 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
   z bezpečnostních důvodů nepoužívá. Organizační callback místo toho provede
   user-bound OAuth kontrolu `/user/installations`; krátkodobý token se neukládá.
 - `GitHubScmProvider` má čtecí operace a část HTTP mutací, ale projektová doména
-  jej zatím nepoužívá. Existence `ScmRegistry` sama o sobě neznamená podporu
-  vytvoření nebo importu GitHub projektu.
+  jej zatím nepoužívá. Adapter už umí stránkování, stažení přesného
+  archivu, lokální scaffold commit, user/org GHCR cleanup a sealed-box Actions
+  secrets přes `libsodium-wrappers`. Existence `ScmRegistry` sama o sobě stále
+  neznamená podporu vytvoření nebo importu GitHub projektu.
 
 **Následující podkroky v závazném pořadí**
 
@@ -168,9 +170,10 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
    přihlášeného uživatele/workspace; samotný globální webhook tuto autorizaci
    nenahrazuje. Organizace je navíc ověřena krátkodobým user access tokenem proti
    `/user/installations`.
-3. Dokončit GitHub `provision`, push scaffoldu, `downloadArchive` a Actions
-   secrets přes auditovanou libsodium sealed-box implementaci. Doplnit správné
-   cesty pro osobní i organizační GHCR a stránkování repozitářů.
+3. 🟡 Dokončit GitHub `provision` a push scaffoldu. `downloadArchive`,
+   libsodium sealed-box Actions secrets, user/org GHCR cleanup, lokální git init
+   a stránkování repozitářů jsou hotové. Osobní create ještě potřebuje
+   šifrovaný rotovatelný user-token vault; organizace použije installation token.
 4. Napojit create/import a všechny následné operace přes `ScmRegistry` podle
    provideru projektu. Preflight musí proběhnout i serverově a rollback musí
    evidovat nebo uklidit každý již provedený externí efekt.
@@ -336,8 +339,8 @@ proti běžící instalaci; testovatelné scénáře:
   explicitní workspace grant a uninstall se historizuje místo fyzického smazání.
 - GitHub linking/installation ze Settings se otevírá v samostatném bezpečném
   okně a původní aplikace po návratu fokusu automaticky obnoví stav; login flow
-  zůstává top-level redirect. Produkční organization setup ještě vyžaduje
-  ověření installation proti krátkodobému GitHub user access tokenu.
+  zůstává top-level redirect. Organization setup ověřuje installation proti
+  krátkodobému GitHub user access tokenu a `/user/installations`.
 - Dokončen explicitní repository contract: aditivní migrace, immutable provider
   ID, mutable souřadnice, default branch, installation binding a jeden
   `ScmRepositoryRef` pro import/CI/reconcile/deploy/archive/delete. Test pokrývá

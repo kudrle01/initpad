@@ -1,5 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { execFile } from 'child_process';
 import { randomBytes } from 'crypto';
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
+import { promisify } from 'util';
+import { createGunzip } from 'zlib';
+import sodium from 'libsodium-wrappers';
+import * as tar from 'tar-fs';
 import { config } from '../../config';
 import {
   RepoArchive,
@@ -23,6 +33,8 @@ const DETACH_REPOSITORY = {
   secrets: 'write',
 };
 const WRITE_PACKAGES = { metadata: 'read', packages: 'write' };
+const WRITE_SECRETS = { metadata: 'read', secrets: 'write' };
+const exec = promisify(execFile);
 
 // The write/deploy half of the GitHub adapter (repo creation, Actions secrets
 // via libsodium, GHCR, git push) is a separate, live-App piece; until then it
@@ -39,6 +51,8 @@ function notImplemented(op: string): Promise<never> {
  */
 @Injectable()
 export class GitHubScmProvider implements ScmProvider {
+  private readonly logger = new Logger('GitHubScmProvider');
+
   constructor(private readonly installations: GitHubInstallationService) {}
 
   private assertProvider(repository: ScmRepositoryRef): void {
@@ -90,10 +104,7 @@ export class GitHubScmProvider implements ScmProvider {
     const token = (
       await this.installations.tokenForOwner(actor.username, { permissions: READ_CONTENTS })
     ).token;
-    const res = await this.gh('/installation/repositories?per_page=100', token);
-    if (!res.ok) throw new Error(`Could not list GitHub repositories (HTTP ${res.status})`);
-    const data = (await res.json()) as {
-      repositories?: Array<{
+    const repositories: Array<{
         id: number | string;
         name: string;
         full_name: string;
@@ -102,9 +113,18 @@ export class GitHubScmProvider implements ScmProvider {
         default_branch?: string;
         updated_at?: string;
         size?: number;
-      }>;
-    };
-    return (data.repositories ?? []).map((r) => ({
+      }> = [];
+    for (let page = 1; page <= 100; page += 1) {
+      const res = await this.gh(`/installation/repositories?per_page=100&page=${page}`, token);
+      if (!res.ok) throw new Error(`Could not list GitHub repositories (HTTP ${res.status})`);
+      const data = (await res.json()) as { repositories?: typeof repositories };
+      if (!Array.isArray(data.repositories)) {
+        throw new Error('GitHub returned an invalid repository list');
+      }
+      repositories.push(...data.repositories);
+      if (data.repositories.length < 100) break;
+    }
+    return repositories.map((r) => ({
       provider: 'github',
       repositoryId: String(r.id),
       owner: r.full_name.split('/')[0] || actor.username,
@@ -322,8 +342,12 @@ export class GitHubScmProvider implements ScmProvider {
     this.assertProvider(repository);
     try {
       const token = await this.token(repository, WRITE_PACKAGES);
+      const installation = repository.installationId
+        ? await this.installations.findById(repository.installationId)
+        : null;
+      const ownerPath = installation?.accountType === 'Organization' ? 'orgs' : 'users';
       await this.gh(
-        `/users/${encodeURIComponent(repository.owner)}/packages/container/${encodeURIComponent(repository.name.toLowerCase())}`,
+        `/${ownerPath}/${encodeURIComponent(repository.owner)}/packages/container/${encodeURIComponent(repository.name.toLowerCase())}`,
         token,
         { method: 'DELETE' },
       );
@@ -338,21 +362,120 @@ export class GitHubScmProvider implements ScmProvider {
     return (await this.installations.tokenForOwner(username, { permissions: READ_CONTENTS })).token;
   }
 
-  // --- Still stubbed: need libsodium (secrets) or git subprocess (scaffold) ---
+  // Repository creation remains split by account type: organizations accept an
+  // installation token, while personal `/user/repos` requires a rotatable user
+  // access token. The project flow will supply that credential in the next step.
   provision(): Promise<ScmRepositoryIdentity> {
     return notImplemented('provision');
   }
-  configureRepoSecrets(): Promise<void> {
-    return notImplemented('configureRepoSecrets (needs libsodium-encrypted Actions secrets)');
+
+  async configureRepoSecrets(
+    repository: ScmRepositoryRef,
+    _ownerToken: string,
+    ciDeployToken: string,
+  ): Promise<void> {
+    this.assertProvider(repository);
+    await this.setRepoSecrets(repository, {
+      INITPAD_DEPLOY_TOKEN: ciDeployToken,
+      INITPAD_REGISTRY: 'ghcr.io',
+      INITPAD_PLATFORM_URL: config.auth.frontendUrl.replace(/\/+$/, ''),
+    });
   }
-  configureRepoRuntimeSecrets(): Promise<void> {
-    return notImplemented('configureRepoRuntimeSecrets (needs libsodium-encrypted Actions secrets)');
+
+  async configureRepoRuntimeSecrets(repository: ScmRepositoryRef): Promise<void> {
+    this.assertProvider(repository);
+    await this.setRepoSecrets(repository, {
+      INITPAD_REGISTRY: 'ghcr.io',
+      INITPAD_PLATFORM_URL: config.auth.frontendUrl.replace(/\/+$/, ''),
+    });
   }
-  downloadArchive(): Promise<RepoArchive | null> {
-    return notImplemented('downloadArchive');
+
+  async downloadArchive(
+    repository: ScmRepositoryRef,
+    ref: string,
+    _actor: ScmActor,
+  ): Promise<RepoArchive | null> {
+    this.assertProvider(repository);
+    if (!ref) return null;
+    try {
+      const token = await this.token(repository, READ_CONTENTS);
+      const res = await this.gh(
+        `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/tarball/${encodeURIComponent(ref)}`,
+        token,
+      );
+      if (!res.ok || !res.body) {
+        this.logger.warn(`downloadArchive ${repository.fullName}@${ref} → HTTP ${res.status}`);
+        return null;
+      }
+      const base = mkdtempSync(join(tmpdir(), 'initpad-github-archive-'));
+      const cleanup = () => rmSync(base, { recursive: true, force: true });
+      try {
+        const extractDir = join(base, 'src');
+        await pipeline(
+          Readable.fromWeb(res.body as import('stream/web').ReadableStream),
+          createGunzip(),
+          tar.extract(extractDir),
+        );
+        const entries = readdirSync(extractDir);
+        const dir =
+          entries.length === 1 && statSync(join(extractDir, entries[0])).isDirectory()
+            ? join(extractDir, entries[0])
+            : extractDir;
+        return { dir, cleanup };
+      } catch (error) {
+        cleanup();
+        this.logger.warn(`downloadArchive extract failed: ${(error as Error).message}`);
+        return null;
+      }
+    } catch (error) {
+      this.logger.warn(`downloadArchive ${repository.fullName}@${ref}: ${(error as Error).message}`);
+      return null;
+    }
   }
-  initLocal(): Promise<void> {
-    return notImplemented('initLocal');
+
+  async initLocal(dir: string, author?: { name: string; email: string }): Promise<void> {
+    const name = author?.name || config.git.authorName;
+    const email = author?.email || config.git.authorEmail;
+    const git = (args: string[]) => exec('git', args, { cwd: dir });
+    try {
+      await git(['init', '-b', 'main']);
+      await git(['add', '-A']);
+      await git([
+        '-c', `user.name=${name}`,
+        '-c', `user.email=${email}`,
+        'commit', '-m', 'init: scaffold from template',
+      ]);
+    } catch (error) {
+      this.logger.warn(`Local git init failed: ${(error as Error).message}`);
+    }
+  }
+
+  private async setRepoSecrets(
+    repository: ScmRepositoryRef,
+    values: Record<string, string>,
+  ): Promise<void> {
+    const token = await this.token(repository, WRITE_SECRETS);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const keyResponse = await this.gh(`/repos/${repo}/actions/secrets/public-key`, token);
+    if (!keyResponse.ok) {
+      throw new Error(`Could not read the GitHub Actions public key (HTTP ${keyResponse.status})`);
+    }
+    const key = (await keyResponse.json()) as { key_id?: string; key?: string };
+    if (!key.key_id || !key.key) throw new Error('GitHub returned an incomplete Actions public key');
+
+    await sodium.ready;
+    const publicKey = sodium.from_base64(key.key, sodium.base64_variants.ORIGINAL);
+    for (const [name, value] of Object.entries(values)) {
+      const encrypted = sodium.crypto_box_seal(sodium.from_string(value), publicKey);
+      const encryptedValue = sodium.to_base64(encrypted, sodium.base64_variants.ORIGINAL);
+      const response = await this.gh(`/repos/${repo}/actions/secrets/${name}`, token, {
+        method: 'PUT',
+        body: { encrypted_value: encryptedValue, key_id: key.key_id },
+      });
+      if (!response.ok && response.status !== 201 && response.status !== 204) {
+        throw new Error(`Could not configure GitHub Actions secret '${name}' (HTTP ${response.status})`);
+      }
+    }
   }
 }
 

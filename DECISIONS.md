@@ -1520,3 +1520,39 @@ App user access token a serverové ověření `/user` + `/user/installations`; t
 po callbacku zanikne v paměti procesu. Tím je tato bezpečnostní hranice
 implementačně dokončená; stále vyžaduje živý organization acceptance test.
 Viz [GitHub — About the setup URL](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url).
+
+## ADR-045 — GitHub operace rozlišují installation a user token; osobní create vyžaduje rotovatelný credential
+
+**Kontext.** GitHub App installation token je ideální pro automatizaci nad již
+existujícími repozitáři a umí založit repozitář organizace. Oficiální endpoint
+`POST /user/repos` pro osobní účet ale installation token nepřijímá; vyžaduje
+GitHub App user access token. Původní roadmapa proto nesprávně slučovala
+osobní a organizační provision do jedného typu credentialu.
+
+**Rozhodnutí.** Běžné repository operace, Actions secrets, archiv a
+organizational create používají krátkodobý installation token svázaný s
+workspace grantem. Osobní create bude používat GitHub App user access token s
+expirací; jeho refresh token bude uložen šifrovaně, rotován atomicky a smazán
+při unlink/revocation. User token se nikdy neposílá do CI. GitHub Actions
+použijí vlastní krátkodobý `GITHUB_TOKEN` pro GHCR.
+
+Provider mezitím dokončuje operace, které user credential nepotřebují:
+stránkovaný seznam repozitářů, přesný tarball refu, lokální scaffold commit,
+user/org GHCR cleanup a Actions secrets pomocí auditovaného
+`libsodium-wrappers` sealed boxu. Vlastní kryptografický protokol se
+neimplementuje.
+
+**Důsledky.** Další migrace rozšíří externí GitHub identitu o šifrovaný,
+expirující credential a metadata expirace. Výběr vlastníka repozitáře musí
+vycházet z explicitní workspace installation vazby, ne z InitPad username.
+Pokud refresh token expiruje nebo je odvolán, UI vyžádá novou autorizaci a
+nevytvoří částečný projekt.
+
+**Uživatelské testování.** Aktuální adapterový mezikrok je testovatelný
+automatizovaně, ale ještě nepřidává nový UI tok. Po dokončení token vaultu a
+registry zapojení owner vybere osobní nebo organizační instalaci, vytvoří
+soukromé repo, uvidí první Actions run a import zobrazí všechny stránky rep.
+Odvolaný/expirující token musí skončit výzvou k reautorizaci bez osiřelého repa.
+
+Reference: [Create a repository for the authenticated user](https://docs.github.com/en/rest/repos/repos#create-a-repository-for-the-authenticated-user),
+[Refreshing user access tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens).
