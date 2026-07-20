@@ -30,6 +30,10 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   per-repo CI secret, prostředí `empty` a základní `ProvisioningOperation`.
 - GitHub OAuth sign-in/link podle immutable user ID, CSRF state+nonce,
   `ExternalIdentity`, podepsané installation webhooky a krátkodobé tokeny.
+- GitHub App setup podle ADR-044: immutable installation account ID, osobní/
+  organizační účet, hashovaný single-use state, serverové ověření callbacku,
+  owner/admin re-check a explicitní user/workspace grant. Rename zachová vazbu;
+  uninstall je auditní tombstone a zablokuje token.
 - `GitHubScmProvider` obsahuje čtecí operace a část HTTP mutací. Jeho tokeny jsou
   operation-specific; webhook při chybě persistence vrací 5xx.
 - Audit 2026-07-17 opravil: native auth v SaaS, automatického prvního SaaS admina,
@@ -41,8 +45,6 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 - `ScmRegistry` zatím nikdo z projektové domény nepoužívá; `SCM_PROVIDER` je stále
   Gitea. GitHub create/import proto nefunguje.
-- `GitHubInstallation` ukládá mutable login, ne immutable account ID; chybí setup
-  callback a autorizovaná vazba instalace na uživatele/workspace.
 - GitHub `provision`, push scaffoldu, `configureRepoSecrets`, runtime secrets,
   `downloadArchive` a `initLocal` jsou stuby. Actions secrets vyžadují knihovní
   libsodium sealed-box implementaci; nevymýšlet vlastní kryptografii.
@@ -56,18 +58,16 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 ## Nejbližší implementační pořadí
 
-1. Rozšiř GitHub installation model o immutable account ID, setup callback,
-   user/workspace binding a podporu organizací/rename.
-2. Dokonči GitHub create/import, libsodium Actions secrets, archive a push.
-3. Zapoj `ScmRegistry` podle provideru uloženého u projektu a proveď rollback/
+1. Dokonči GitHub create/import, libsodium Actions secrets, archive a push.
+2. Zapoj `ScmRegistry` podle provideru uloženého u projektu a proveď rollback/
    reconciliation testy.
-4. Až poté spusť živý GitHub E2E a vytvoř skutečný SaaS deploy profil.
+3. Až poté spusť živý GitHub E2E a vytvoř skutečný SaaS deploy profil.
 
 GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 30 API suites / 162 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 32 API suites / 174 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config a Prisma schema validate prošly.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy
   projekty zachovaly URL a dostaly reálná Gitea repository ID. Health a
@@ -80,6 +80,10 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
   privátním SCM i tenant isolation.
 - SaaS acceptance: GitHub-only login, žádný password formulář/API fallback,
   první účet zůstane běžný uživatel a poslední sign-in identitu nelze odpojit.
+- GitHub installation acceptance se živou App: owner/admin spustí setup v
+  osobním i týmovém workspace, member jej spustit nesmí; ověř user/org,
+  rename, suspend/uninstall a odmítnutý replay callbacku. Setup URL je
+  `/api/scm/github/setup/callback`.
 - Po browser testu odstraň dočasné účty, workspaces a repozitáře.
 - U každého milníku aktualizuj `DECISIONS.md`, `PRODUCT_ROADMAP.md` a uveď, zda a
   jak je uživatelsky testovatelný.

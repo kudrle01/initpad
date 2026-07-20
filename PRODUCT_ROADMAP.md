@@ -146,6 +146,10 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 - Podepsané installation webhooky ukládají stav instalace a při chybě persistence
   vracejí 5xx, aby mohl GitHub událost zopakovat. Installation tokeny jsou
   krátkodobé a každá operace žádá jen potřebnou podmnožinu oprávnění.
+- GitHub instalace ukládá immutable account ID a odděluje osobní/
+  organizační účet. Jednorázový setup callback ověřuje instalaci přes App API
+  a vytváří explicitní user/workspace grant; webhook sám oprávnění neuděluje.
+  Rename mění jen display login a uninstall záznam historizuje.
 - `GitHubScmProvider` má čtecí operace a část HTTP mutací, ale projektová doména
   jej zatím nepoužívá. Existence `ScmRegistry` sama o sobě neznamená podporu
   vytvoření nebo importu GitHub projektu.
@@ -155,7 +159,7 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 1. ✅ Rozšířit projekt o explicitní identitu SCM: provider, neměnné repository ID,
    owner/full name, default branch a vazbu na instalaci. Stejné souřadnice použít
    v importu, CI callbacku, reconcile, mazání, archive i registry názvech.
-2. U GitHub instalace uložit neměnné account ID, bezpečně obsloužit rename a
+2. ✅ U GitHub instalace uložit neměnné account ID, bezpečně obsloužit rename a
    rozlišit osobní účet/organizaci. Doplnit setup callback a vazbu instalace na
    přihlášeného uživatele/workspace; samotný globální webhook tuto autorizaci
    nenahrazuje.
@@ -267,7 +271,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
 | 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 403. |
 | 4 — identity/onboarding | ano | Self-hosted `open`: samoobslužná registrace. Self-hosted soukromě: admin vytvoří účet a předá aktivační odkaz nebo dočasné heslo s vynucenou změnou. SaaS: pouze GitHub login. Majitel přidá do týmu existující účet podle e-mailu; role platí i v SCM. |
-| 5 — import repa/SCM | částečně | Dnes: po migraci musí stávající Gitea projekty beze změny URL projít detail/import/deploy/delete a nový import vybírá repo podle ID. GitHub login/link lze ověřit se živou App, ale GitHub create/import ještě není hotový; plný cloudový scénář se testuje až po podkrocích Fáze 3. |
+| 5 — import repa/SCM | částečně | Dnes: po migraci musí stávající Gitea projekty beze změny URL projít detail/import/deploy/delete a nový import vybírá repo podle ID. Se živou App lze uživatelsky ověřit osobní i organizační workspace instalaci, owner/admin omezení, rename a uninstall; GitHub create/import ještě není hotový a plný cloudový scénář čeká na další podkroky Fáze 3. |
 | 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
 | 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. |
@@ -307,7 +311,7 @@ proti běžící instalaci; testovatelné scénáře:
 
 ### Revize a SCM identity podkrok Fáze 3 (2026-07-17)
 
-- Lokálně prošlo 30 API test suites / 162 testů, API production build a skutečný
+- Lokálně prošlo 32 API test suites / 174 testů, API production build a skutečný
   webový `tsc -b && vite build`. `docker compose config` a Prisma schema validate
   také prošly (schema validate s testovací `DATABASE_URL`).
 - Opravena hranice edic: SaaS neumožňuje native registraci/password login ani
@@ -321,12 +325,17 @@ proti běžící instalaci; testovatelné scénáře:
   profilový e-mail za ověřený; poslední použitelnou identitu nelze odpojit.
 - GitHub webhook při chybě DB neztratí událost tichým 202 a installation tokeny
   používají operation-specific podmnožiny oprávnění.
+- GitHub installation setup používá hashovaný jednorázový state navázaný na
+  user/workspace, serverově ověřené immutable account ID a owner/admin re-check.
+  Osobní instalace musí odpovídat propojené identitě, organizace dostává
+  explicitní workspace grant a uninstall se historizuje místo fyzického smazání.
 - Dokončen explicitní repository contract: aditivní migrace, immutable provider
   ID, mutable souřadnice, default branch, installation binding a jeden
   `ScmRepositoryRef` pro import/CI/reconcile/deploy/archive/delete. Test pokrývá
   rename dohledaný podle ID i delete webhook s legacy fallbackem.
 - Lokální existující Docker DB úspěšně aplikovala
-  `20260717232000_project_scm_identity`; tři původní projekty zachovaly URL a
+  `20260717232000_project_scm_identity` i
+  `20260718120000_github_installation_authorization`; tři původní projekty zachovaly URL a
   startup jim doplnil reálná Gitea ID 5/9/15. Health i nepřihlášený browser
   smoke jsou zelené. Autentizovaný browser acceptance nebyl možný, protože
   lokální `deploy/.env` je v `saas` edici bez nakonfigurované GitHub App.

@@ -1435,9 +1435,8 @@ preferuje ID a full-name fallback dovoluje jen legacy řádku bez ID. GitHub
 operace s již navázaným projektem mintují token přes uložený installation
 záznam, ne nový lookup mutable owner loginu.
 
-Tím je dokončen datový základ bodu 6, nikoli celý GitHub tok. Samotný
-`GitHubInstallation` stále potřebuje immutable account ID, setup callback a
-autorizovanou user/workspace vazbu; projektová doména také zatím nevybírá
+Tím je dokončen datový základ bodu 6, nikoli celý GitHub tok. Bezpečnou
+autorizaci instalace doplňuje ADR-044; projektová doména ale zatím nevybírá
 adapter přes `ScmRegistry`.
 
 **Uživatelské testování.** Self-hosted: registrace/admin activation, forced change,
@@ -1448,3 +1447,52 @@ Gitea create/import/deploy/delete tokem bez změny URL. Cloud create/import
 zůstává netestovatelný do dokončení bodu 7; potom se ověří
 osobní i organizační repo, rename ownera, dvě stejně pojmenovaná repa, odvolání
 instalace a retry webhooku.
+
+## ADR-044 — GitHub App instalace je explicitní workspace grant, ne globální webhook stav
+
+**Kontext.** GitHub installation webhook je autentická informace o tom, že App
+existuje, ale nedokazuje, který InitPad workspace ji smí použít. Původní model
+navíc dohledával instalaci podle měnitelného `account.login`, vedl uživatele
+přímo na GitHub bez callback state a při uninstallu záznam fyzicky odstranil.
+To je křehké pro rename, organizace, více workspace i audit incidentu.
+
+**Rozhodnutí.** GitHub installation authorization má tyto oddělené vrstvy:
+
+1. `GitHubInstallation.installationId` identifikuje instalaci a `accountId`
+   neměnný GitHub user/organization účet. `accountLogin` je pouze měnitelná
+   display hodnota. `accountId` je nullable jen pro staré řádky, dokud jej
+   nedoplní ověřený webhook nebo setup callback; nový kód jej neodhaduje.
+2. Podepsaný webhook instalaci synchronizuje, ale nevytváří oprávnění pro
+   workspace. Uninstall nastaví `deletedAt`; záznam, projektová vazba a auditní
+   stopa se nemažou a mint tokenu je odmítnut.
+3. Owner/admin aktivního workspace zahájí `POST /scm/github/setup`. Server
+   vytvoří 256bit náhodný stav, do DB uloží jen SHA-256 hash, naváže jej na
+   user + workspace a po deseti minutách jej považuje za neplatný.
+4. Veřejný setup callback nejprve najde platný stav, potom ověří
+   `installation_id` server-to-server dotazem autentizovaným App JWT. Znovu
+   zkontroluje propojenou GitHub identitu a aktuální owner/admin roli a stav
+   atomicky spotřebuje právě jednou.
+5. U osobní instalace se immutable GitHub account ID musí shodovat s propojenou
+   identitou uživatele. U organizace oprávnění instalovat schvaluje GitHub; InitPad
+   k tomu přidá jednorázový state a `GitHubInstallationAccess` pro konkrétní
+   workspace. Jedna organizace tak může být explicitně přidána do více workspace
+   a jeden workspace může mít více instalací bez lookupu podle loginu.
+
+**Důsledky.** Nastavení ukazuje instalace aktivního workspace a tlačítko setupu
+jen ownerovi/adminovi s propojeným GitHub účtem. Přímý statický install link byl
+odstraněn, protože obcházel vazbu state/workspace. V GitHub App musí být Setup URL
+`https://<initpad>/api/scm/github/setup/callback`, OAuth callback
+`/api/auth/github/callback` a webhook `/api/scm/github/webhook`.
+
+Tento krok dokončuje autorizaci instalace, nikoli GitHub create/import. Starý
+owner-login lookup zůstává dočasně jen pro dosud nezapojenou legacy cestu;
+nový cloudový tok musí vybírat instalace přes explicitní workspace grant a
+projekt ukládat s jejím interním ID.
+
+**Uživatelské testování.** Bez živé GitHub App lze ověřit migraci a regresi
+Gitea projektů. Se živou App: propojit GitHub, v osobním workspace nainstalovat
+App a ověřit zobrazení instalace; v týmovém workspace zopakovat jako owner pro
+organizaci; member tlačítko nesmí vidět. Potom přejmenovat GitHub login,
+zkontrolovat aktualizovaný název bez ztráty vazby, suspend/uninstall a ověřit,
+že token/repository access selže, ale auditní řádek zůstane. Callback URL se
+nesmí podařit použít podruhé ani po expiraci.
