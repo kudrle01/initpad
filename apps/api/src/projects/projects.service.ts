@@ -248,9 +248,15 @@ export class ProjectsService implements OnModuleInit {
             data: {
               activeOperationId: null,
               status: cancelled ? 'empty' : 'failed',
-              statusReason: cancelled ? null : 'Deployment was interrupted by an API restart. Redeploy to retry.',
+              statusReason: cancelled ? null : 'Deployment was interrupted by an API restart. Deploy to retry.',
               ...(cancelled
-                ? { version: null, buildArtifactId: null, url: null, allocatedPort: null }
+                ? {
+                    version: null,
+                    buildArtifactId: null,
+                    url: null,
+                    allocatedPort: null,
+                    deploymentRequired: false,
+                  }
                 : {}),
             },
           }),
@@ -287,6 +293,7 @@ export class ProjectsService implements OnModuleInit {
         activeOperationId: operation.id,
         status: 'deploying',
         statusReason: kind === 'start' ? 'Starting environment' : 'Preparing deployment',
+        ...(kind !== 'start' ? { deploymentRequired: true } : {}),
       },
     });
     if (claimed.count === 1) return operation.id;
@@ -1583,6 +1590,7 @@ export class ProjectsService implements OnModuleInit {
   async runAgain(id: string): Promise<Project> {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: 'dev' } },
+      include: { target: true },
     });
     if (!env) throw new NotFoundException("Environment 'dev' not found");
     if (env.activeOperationId || !['empty', 'failed'].includes(env.status)) {
@@ -1637,7 +1645,9 @@ export class ProjectsService implements OnModuleInit {
     const operationId = await this.beginOperation(id, 'dev', 'ci-retry', sha);
     await this.prisma.environment.updateMany({
       where: { id: env.id, activeOperationId: operationId },
-      data: { statusReason: 'Waiting for CI retry' },
+      data: {
+        statusReason: `Waiting for CI build; deployment target: ${env.target?.name ?? env.provider}`,
+      },
     });
     try {
       await scm.createRetryTag(repository, sha, actor);
@@ -1723,6 +1733,7 @@ export class ProjectsService implements OnModuleInit {
               statusReason: null,
               allocatedPort: null,
               activeOperationId: null,
+              deploymentRequired: false,
             },
           }),
         ]);
@@ -1760,6 +1771,7 @@ export class ProjectsService implements OnModuleInit {
         url: null,
         statusReason: cleanupWarning,
         allocatedPort: null,
+        deploymentRequired: false,
       },
     });
     return this.get(id);
@@ -1986,6 +1998,7 @@ export class ProjectsService implements OnModuleInit {
             statusReason: teardownWarning ? `Cleanup pending: ${teardownWarning}` : null,
             allocatedPort: null,
             activeOperationId: null,
+            deploymentRequired: false,
           },
         });
       } catch (error) {
@@ -2296,6 +2309,7 @@ export class ProjectsService implements OnModuleInit {
             statusReason: teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
             allocatedPort: null,
             activeOperationId: null,
+            deploymentRequired: false,
           },
         });
         await this.completeOperation(operationId, 'cancelled', 'Cancelled by user');
@@ -2312,6 +2326,7 @@ export class ProjectsService implements OnModuleInit {
           buildArtifactId: operation?.buildArtifactId ?? null,
           url: result.url,
           statusReason: null,
+          deploymentRequired: false,
         },
       });
       return published.count === 1;
@@ -2412,9 +2427,9 @@ export class ProjectsService implements OnModuleInit {
     return docker;
   }
 
-  // CI stages derived from the artifact kind. The state is assembled from
-  // Gitea commit statuses (one per ci.yml job); 'pending' = CI has not
-  // reported for this commit yet.
+  // CI stages derived from the artifact kind. Provider-neutral statuses come
+  // from Gitea commit statuses or GitHub Actions jobs; pending means the job
+  // has not been created or has not started yet.
   private pipelineStages(
     template: TemplateManifest,
     statuses: { context: string; status: string; targetUrl: string | null }[] | null,
@@ -2508,6 +2523,7 @@ export class ProjectsService implements OnModuleInit {
           version: e.version,
           url: e.url,
           statusReason: e.statusReason,
+          deploymentRequired: e.deploymentRequired,
           artifact: e.buildArtifact
             ? {
                 id: e.buildArtifact.id,
@@ -2552,7 +2568,13 @@ export class ProjectsService implements OnModuleInit {
     if (!target) throw new NotFoundException(`Target '${targetId}' not found`);
     this.assertUsable(target, template);
 
-    const movingAway = !!env.targetId && env.targetId !== target.id && env.status !== 'empty';
+    const targetChanged = env.targetId !== target.id;
+    if (targetChanged && env.status === 'empty' && env.statusReason) {
+      throw new BadRequestException(
+        `Environment '${envName}' still has pending cleanup. Finish it before changing target.`,
+      );
+    }
+    const movingAway = !!env.targetId && targetChanged && env.status !== 'empty';
     if (movingAway) {
       const slug = this.deploySlug(repositoryRef(project));
       // Do not bind the new target until teardown succeeds; otherwise a failed
@@ -2588,13 +2610,12 @@ export class ProjectsService implements OnModuleInit {
         ...(movingAway
           ? {
               status: 'empty',
-              version: null,
-              buildArtifactId: null,
               url: null,
               statusReason: null,
               allocatedPort: null,
             }
           : {}),
+        ...(targetChanged ? { deploymentRequired: true } : {}),
       },
     });
     return this.get(id);

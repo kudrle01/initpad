@@ -206,7 +206,7 @@ export default function ProjectDetail() {
     setBusy('run-again-dev');
     try {
       setProject(await api.runAgain(id));
-      toast.success('Running dev again…');
+      toast.success('Preparing dev deployment…');
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

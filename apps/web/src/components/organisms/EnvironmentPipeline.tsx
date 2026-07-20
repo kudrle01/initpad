@@ -105,10 +105,15 @@ export function EnvironmentPipeline({
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
         const cleanupPending = env.status === 'empty' && !!env.statusReason;
+        const targetNeedsDeploy =
+          env.deploymentRequired && ['empty', 'failed'].includes(env.status);
+        const canDeployToTarget =
+          targetNeedsDeploy && (!!env.version || env.name === 'dev');
         const canRunAgain =
           env.name === 'dev' &&
           !env.version &&
-          (env.status === 'empty' || env.status === 'failed');
+          (env.status === 'empty' || env.status === 'failed') &&
+          !targetNeedsDeploy;
         // Any environment can be pointed at a different target.
         const canTarget = true;
 
@@ -143,12 +148,19 @@ export function EnvironmentPipeline({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
+                        {canDeployToTarget && (
+                          <DropdownMenuItem
+                            onSelect={() => env.version ? onRedeploy(env.name) : onRunAgain()}
+                          >
+                            <Play className="h-4 w-4" /> Deploy
+                          </DropdownMenuItem>
+                        )}
                         {canRunAgain && (
                           <DropdownMenuItem onSelect={onRunAgain}>
                             <Play className="h-4 w-4" /> Run again
                           </DropdownMenuItem>
                         )}
-                        {hasDeployment && (
+                        {hasDeployment && !targetNeedsDeploy && (
                           <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
                             <RefreshCw className="h-4 w-4" /> Redeploy
                           </DropdownMenuItem>
@@ -219,6 +231,13 @@ export function EnvironmentPipeline({
                   </span>
                 )}
               </div>
+
+              {targetNeedsDeploy && (
+                <div className="mt-2 flex items-start gap-1 text-xs text-primary">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>Target changed — deploy to apply it.</span>
+                </div>
+              )}
 
               <a
                 href={env.url ?? undefined}

@@ -85,6 +85,7 @@ export interface Environment {
   version: string | null;
   url: string | null;
   statusReason: string | null;
+  deploymentRequired: boolean;
   artifact: {
     id: string;
     provider: string;
@@ -122,7 +123,7 @@ export type StageStatus = 'pending' | 'running' | 'success' | 'failed';
 export interface PipelineStage {
   name: string;
   status: StageStatus;
-  // Link to the concrete job/run in Gitea (from the commit status), if any.
+  // Link to the concrete SCM job/run, if the provider has created it already.
   url?: string | null;
 }
 

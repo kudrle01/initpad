@@ -300,6 +300,10 @@ model Environment {
   url           String?
   // Reason of the last failure (health check / missing image / …), otherwise null.
   statusReason  String?
+  // True while a requested deployment (including a target move) has not yet
+  // published successfully. Distinguishes the UI action Deploy from an idle,
+  // explicitly cancelled first run (Run again).
+  deploymentRequired Boolean @default(false)
   // Application port allocated on the shared SSH target (fake-vps). Assigned
   // from a configured range on the first SSH deploy, released on teardown.
   // The unique constraint makes port collisions impossible by construction

@@ -164,6 +164,7 @@ export interface Environment {
   version: string | null;
   url: string | null;
   statusReason: string | null;
+  deploymentRequired: boolean;
   artifact: { id: string; provider: string; digest: string } | null;
   target: EnvTarget | null;
 }
