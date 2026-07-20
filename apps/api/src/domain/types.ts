@@ -85,6 +85,11 @@ export interface Environment {
   version: string | null;
   url: string | null;
   statusReason: string | null;
+  artifact: {
+    id: string;
+    provider: string;
+    digest: string;
+  } | null;
   // The target this environment deploys to (built-in infra or the user's own
   // server). Null only for legacy rows created before a target was assigned.
   target: EnvTarget | null;

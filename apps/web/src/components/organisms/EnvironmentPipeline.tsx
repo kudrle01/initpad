@@ -83,7 +83,11 @@ export function EnvironmentPipeline({
         const next = NEXT[env.name];
         const target = next ? byEnv[next] : undefined;
         const synced =
-          !!target && !!env.version && target.status === 'running' && target.version === env.version;
+          !!target &&
+          !!env.version &&
+          target.status === 'running' &&
+          target.version === env.version &&
+          (env.artifact ? target.artifact?.id === env.artifact.id : !target.artifact);
         const canPromote = !readOnly && busy === null && env.status === 'running' && !synced;
         const deploying = busy === next || target?.status === 'deploying';
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
@@ -190,6 +194,14 @@ export function EnvironmentPipeline({
               <div className="mt-2 font-mono text-sm">
                 {env.version ? `v${env.version.slice(0, 7)}` : '—'}
               </div>
+              {env.artifact && (
+                <div
+                  className="truncate font-mono text-[10px] text-muted-foreground"
+                  title={`Verified build sha256:${env.artifact.digest}`}
+                >
+                  build {env.artifact.digest.slice(0, 12)}
+                </div>
+              )}
               {deployedCommit && (
                 <div className="truncate text-xs text-muted-foreground" title={deployedCommit.message}>
                   {deployedCommit.message}

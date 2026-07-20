@@ -12,6 +12,8 @@ interface CiDeployDto {
   repo?: string; // "owner/name"
   sha?: string;
   ref?: string;
+  artifactId?: string;
+  artifactDigest?: string;
 }
 
 // Webhook called from CI (Gitea Actions) after a successful build.
@@ -29,7 +31,10 @@ export class CiController {
     if (!body.repo) return { accepted: false };
     // Authentication finishes before returning 202; the deployment itself is
     // still scheduled in the background by ProjectsService.
-    await this.projects.deployFromCi(body.repo, body.sha ?? '', body.ref ?? '', token);
+    await this.projects.deployFromCi(body.repo, body.sha ?? '', body.ref ?? '', token, {
+      artifactId: body.artifactId,
+      artifactDigest: body.artifactDigest,
+    });
     return { accepted: true };
   }
 }

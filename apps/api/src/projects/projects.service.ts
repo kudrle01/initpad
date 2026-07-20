@@ -35,6 +35,7 @@ import {
   ScmProvider,
   ScmActor,
   RepoArchive,
+  ScmBuildArtifact,
   ScmRepositoryIdentity,
   ScmRepositoryRef,
   ScmKind,
@@ -53,9 +54,10 @@ import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/provid
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
+type CiArtifactInput = { artifactId?: string; artifactDigest?: string };
 
 type ProjectRow = Prisma.ProjectGetPayload<{
-  include: { environments: { include: { target: true } } };
+  include: { environments: { include: { target: true; buildArtifact: true } } };
 }>;
 
 /**
@@ -83,6 +85,46 @@ export class ProjectsService implements OnModuleInit {
     await this.migrateLegacyCiTokens();
     await this.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedOperations();
+    await this.recoverInterruptedArtifactIngestions();
+  }
+
+  private async recoverInterruptedArtifactIngestions(): Promise<void> {
+    try {
+      const interrupted = await this.prisma.buildArtifact.findMany({
+        where: { status: { in: ['accepted', 'ingesting'] } },
+        select: { id: true, projectId: true, commitSha: true },
+      });
+      for (const artifact of interrupted) {
+        const reason = 'Artifact ingestion was interrupted by a control-plane restart; run CI again';
+        await this.prisma.$transaction([
+          this.prisma.buildArtifact.update({
+            where: { id: artifact.id },
+            data: { status: 'failed', error: reason, storageKind: null, storageRef: null },
+          }),
+          this.prisma.deploymentOperation.updateMany({
+            where: {
+              environment: { projectId: artifact.projectId, name: 'dev' },
+              version: artifact.commitSha,
+              status: 'running',
+            },
+            data: { status: 'failed', message: reason, finishedAt: new Date() },
+          }),
+          this.prisma.environment.updateMany({
+            where: {
+              projectId: artifact.projectId,
+              name: 'dev',
+              activeOperationId: { not: null },
+            },
+            data: { status: 'failed', statusReason: reason, activeOperationId: null },
+          }),
+        ]);
+      }
+      if (interrupted.length > 0) {
+        this.logger.warn(`Recovered ${interrupted.length} interrupted build artifact ingestion(s)`);
+      }
+    } catch (error) {
+      this.logger.warn(`Build artifact recovery skipped: ${(error as Error).message}`);
+    }
   }
 
   // The SQL migration can safely backfill provider + owner/name without
@@ -197,7 +239,9 @@ export class ProjectsService implements OnModuleInit {
               activeOperationId: null,
               status: cancelled ? 'empty' : 'failed',
               statusReason: cancelled ? null : 'Deployment was interrupted by an API restart. Redeploy to retry.',
-              ...(cancelled ? { version: null, url: null, allocatedPort: null } : {}),
+              ...(cancelled
+                ? { version: null, buildArtifactId: null, url: null, allocatedPort: null }
+                : {}),
             },
           }),
         ]);
@@ -212,13 +256,20 @@ export class ProjectsService implements OnModuleInit {
     envName: EnvName,
     kind: string,
     version: string | null,
+    buildArtifactId?: string | null,
   ): Promise<string> {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId, name: envName } },
     });
     if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
     const operation = await this.prisma.deploymentOperation.create({
-      data: { environmentId: env.id, kind, status: 'running', version },
+      data: {
+        environmentId: env.id,
+        kind,
+        status: 'running',
+        version,
+        buildArtifactId: buildArtifactId ?? null,
+      },
     });
     const claimed = await this.prisma.environment.updateMany({
       where: { id: env.id, activeOperationId: null },
@@ -267,8 +318,15 @@ export class ProjectsService implements OnModuleInit {
     version: string,
     useRegistry: boolean,
     kind: string,
+    buildArtifactId?: string | null,
   ): Promise<void> {
-    const operationId = await this.beginOperation(projectId, envName, kind, version);
+    const operationId = await this.beginOperation(
+      projectId,
+      envName,
+      kind,
+      version,
+      buildArtifactId,
+    );
     void this.deployEnvInBackground(projectId, envName, version, useRegistry, operationId);
   }
 
@@ -326,7 +384,7 @@ export class ProjectsService implements OnModuleInit {
     await this.pruneMissingRepos(workspaceId);
     const rows = await this.prisma.project.findMany({
       where: { workspaceId },
-      include: { environments: { include: { target: true } } },
+      include: { environments: { include: { target: true, buildArtifact: true } } },
       orderBy: { createdAt: 'desc' },
     });
     return rows.map((r) => this.toDomain(r));
@@ -391,7 +449,7 @@ export class ProjectsService implements OnModuleInit {
   async get(id: string): Promise<Project> {
     const row = await this.prisma.project.findUnique({
       where: { id },
-      include: { environments: { include: { target: true } } },
+      include: { environments: { include: { target: true, buildArtifact: true } } },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
     return this.toDomain(row);
@@ -721,7 +779,11 @@ export class ProjectsService implements OnModuleInit {
       const workflow = await scm.readFile(repo, workflowPath, repo.defaultBranch, actor);
       if (
         !workflow?.includes('INITPAD_PLATFORM_URL') ||
-        !workflow.includes('INITPAD_DEPLOY_TOKEN')
+        !workflow.includes('INITPAD_DEPLOY_TOKEN') ||
+        (repo.provider === 'github' &&
+          (!workflow.includes('artifact-id') ||
+            !workflow.includes('artifact-digest') ||
+            !workflow.includes('archive: false')))
       ) {
         throw new BadRequestException(
           `Cannot import '${repo.fullName}': add an InitPad-compatible workflow at '${workflowPath}' first.`,
@@ -1142,7 +1204,13 @@ export class ProjectsService implements OnModuleInit {
   // CI → deploy: after a successful CI build, sync the latest commit and
   // deploy it to dev. Closes the E2E loop: commit → CI build/test/docker →
   // a running dev environment with the real code.
-  async deployFromCi(repo: string, sha: string, ref: string, token: string): Promise<void> {
+  async deployFromCi(
+    repo: string,
+    sha: string,
+    ref: string,
+    token: string,
+    artifactInput: CiArtifactInput = {},
+  ): Promise<void> {
     const coordinates = repo.split('/');
     if (coordinates.length !== 2 || coordinates.some((part) => !part)) {
       throw new BadRequestException('Invalid repo');
@@ -1175,6 +1243,45 @@ export class ProjectsService implements OnModuleInit {
       throw new BadRequestException('CI deploy requires a full 40-character commit SHA');
     }
 
+    let buildArtifact: ScmBuildArtifact | null = null;
+    if (repository.provider === 'github') {
+      if (!artifactInput.artifactId || !artifactInput.artifactDigest) {
+        throw new BadRequestException(
+          'GitHub CI deploy requires an immutable artifact id and SHA-256 digest',
+        );
+      }
+      if (!scm.resolveBuildArtifact || !scm.downloadBuildArtifact) {
+        throw new BadRequestException('The GitHub artifact source is not configured');
+      }
+      try {
+        buildArtifact = await scm.resolveBuildArtifact(repository, {
+          providerArtifactId: artifactInput.artifactId,
+          digest: artifactInput.artifactDigest,
+          commitSha: sha,
+          expectedName: 'initpad-image.tar',
+        });
+      } catch (error) {
+        throw new BadRequestException(`Build artifact rejected: ${(error as Error).message}`);
+      }
+      const replay = await this.prisma.buildArtifact.findUnique({
+        where: {
+          sourceProvider_providerArtifactId: {
+            sourceProvider: buildArtifact.provider,
+            providerArtifactId: buildArtifact.providerArtifactId,
+          },
+        },
+      });
+      if (replay) {
+        if (replay.projectId !== project.id || replay.commitSha !== sha.toLowerCase()) {
+          throw new BadRequestException('Build artifact is already bound to another deployment');
+        }
+        if (replay.status !== 'failed') {
+          this.logger.log(`Ignoring duplicate CI artifact callback ${buildArtifact.providerArtifactId}`);
+          return;
+        }
+      }
+    }
+
     const dev = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: project.id, name: 'dev' } },
     });
@@ -1203,7 +1310,16 @@ export class ProjectsService implements OnModuleInit {
           where: { id: project.id },
           data: { lastCommit: `ci: retry ${sha.slice(0, 7)}` },
         });
-        void this.deployEnvInBackground(project.id, 'dev', sha, true, operation.id);
+        if (buildArtifact) {
+          await this.queueArtifactIngestion(
+            project.id,
+            repository,
+            buildArtifact,
+            operation.id,
+          );
+        } else {
+          void this.deployEnvInBackground(project.id, 'dev', sha, true, operation.id);
+        }
         this.logger.log(`CI retry deploy: ${repo} → dev (${sha})`);
         return;
       } finally {
@@ -1213,13 +1329,13 @@ export class ProjectsService implements OnModuleInit {
 
     // Removing/cancelling an empty dev environment opts out of a late CI
     // callback. A deliberate Run again creates the tracked operation above.
-    if (dev.status === 'empty') {
+    if (dev.status === 'empty' && project.lastCommit !== 'import: existing repository') {
       this.logger.log(`Ignoring CI deploy for disabled dev environment: ${repo}`);
       return;
     }
 
-    // Version = the full commit hash (unambiguous, matches the CI image tag).
-    // No local sync needed — sources are fetched from Gitea on demand.
+    // Version = source commit. Exact build identity is stored separately on
+    // BuildArtifact because the same commit can have multiple workflow runs.
     const version = sha || '0.1.0';
     await this.prisma.project.update({
       where: { id: project.id },
@@ -1228,8 +1344,148 @@ export class ProjectsService implements OnModuleInit {
     // Runs in the background — the CI webhook returns immediately, the deploy
     // (pull + run) finishes afterwards. useRegistry=true: run exactly the
     // image CI built and tested.
-    await this.scheduleDeployment(project.id, 'dev', version, true, 'ci-deploy');
+    if (buildArtifact) {
+      const operationId = await this.beginOperation(project.id, 'dev', 'ci-deploy', version);
+      await this.queueArtifactIngestion(project.id, repository, buildArtifact, operationId);
+    } else {
+      await this.scheduleDeployment(project.id, 'dev', version, true, 'ci-deploy');
+    }
     this.logger.log(`CI deploy: ${repo} → dev (${version})`);
+  }
+
+  private async acceptBuildArtifact(
+    projectId: string,
+    artifact: ScmBuildArtifact,
+  ): Promise<{ id: string }> {
+    return this.prisma.buildArtifact.upsert({
+      where: {
+        sourceProvider_providerArtifactId: {
+          sourceProvider: artifact.provider,
+          providerArtifactId: artifact.providerArtifactId,
+        },
+      },
+      create: {
+        projectId,
+        sourceProvider: artifact.provider,
+        providerArtifactId: artifact.providerArtifactId,
+        providerRunId: artifact.providerRunId,
+        commitSha: artifact.commitSha,
+        name: artifact.name,
+        digest: artifact.digest,
+        sizeBytes: BigInt(artifact.sizeBytes),
+        expiresAt: artifact.expiresAt,
+      },
+      update: {
+        status: 'accepted',
+        storageKind: null,
+        storageRef: null,
+        error: null,
+      },
+      select: { id: true },
+    });
+  }
+
+  private async queueArtifactIngestion(
+    projectId: string,
+    repository: ScmRepositoryRef,
+    artifact: ScmBuildArtifact,
+    operationId: string,
+  ): Promise<void> {
+    try {
+      const accepted = await this.acceptBuildArtifact(projectId, artifact);
+      await this.prisma.deploymentOperation.update({
+        where: { id: operationId },
+        data: { buildArtifactId: accepted.id },
+      });
+    } catch (error) {
+      const message = `Could not record build artifact: ${(error as Error).message}`;
+      await this.prisma.environment.updateMany({
+        where: { projectId, name: 'dev', activeOperationId: operationId },
+        data: { status: 'failed', statusReason: message, activeOperationId: null },
+      }).catch(() => undefined);
+      await this.completeOperation(operationId, 'failed', message);
+      throw error;
+    }
+    void this.ingestArtifactAndDeploy(projectId, repository, artifact, operationId);
+  }
+
+  private async ingestArtifactAndDeploy(
+    projectId: string,
+    repository: ScmRepositoryRef,
+    artifact: ScmBuildArtifact,
+    operationId: string,
+  ): Promise<void> {
+    const claimed = await this.prisma.buildArtifact.updateMany({
+      where: {
+        sourceProvider: artifact.provider,
+        providerArtifactId: artifact.providerArtifactId,
+        projectId,
+        status: { in: ['accepted', 'failed'] },
+      },
+      data: { status: 'ingesting', error: null },
+    });
+    if (claimed.count !== 1) return;
+    await this.prisma.environment.updateMany({
+      where: { projectId, name: 'dev', activeOperationId: operationId },
+      data: { statusReason: 'Downloading and verifying tested image' },
+    });
+    const scm = this.workspaceScm.provider(repository.provider);
+    let download: Awaited<
+      ReturnType<NonNullable<ScmProvider['downloadBuildArtifact']>>
+    > | null = null;
+    try {
+      if (!scm.downloadBuildArtifact) throw new Error('Artifact download is unavailable');
+      download = await scm.downloadBuildArtifact(repository, artifact);
+      const imageRef = this.artifactImageRef(repository, artifact);
+      await this.deployment.loadImageArchive(download.filePath, imageRef);
+      await this.prisma.buildArtifact.updateMany({
+        where: {
+          sourceProvider: artifact.provider,
+          providerArtifactId: artifact.providerArtifactId,
+          projectId,
+          status: 'ingesting',
+        },
+        data: {
+          status: 'available',
+          storageKind: 'docker-daemon',
+          storageRef: imageRef,
+          error: null,
+        },
+      });
+      if (await this.operationCancelled(operationId)) {
+        await this.prisma.environment.updateMany({
+          where: { projectId, name: 'dev', activeOperationId: operationId },
+          data: {
+            status: 'empty',
+            version: null,
+            buildArtifactId: null,
+            statusReason: null,
+            activeOperationId: null,
+          },
+        });
+        await this.completeOperation(operationId, 'cancelled', 'Cancelled during artifact ingestion');
+        return;
+      }
+      await this.deployEnvInBackground(projectId, 'dev', artifact.commitSha, true, operationId);
+    } catch (error) {
+      const message = (error as Error).message;
+      await this.prisma.buildArtifact.updateMany({
+        where: {
+          sourceProvider: artifact.provider,
+          providerArtifactId: artifact.providerArtifactId,
+          projectId,
+        },
+        data: { status: 'failed', error: message, storageKind: null, storageRef: null },
+      }).catch(() => undefined);
+      await this.prisma.environment.updateMany({
+        where: { projectId, name: 'dev', activeOperationId: operationId },
+        data: { status: 'failed', statusReason: message, activeOperationId: null },
+      }).catch(() => undefined);
+      await this.completeOperation(operationId, 'failed', message);
+      this.logger.error(`Artifact ingestion failed for ${repository.fullName}: ${message}`);
+    } finally {
+      download?.cleanup();
+    }
   }
 
   async promote(id: string, target: EnvName): Promise<Project> {
@@ -1249,7 +1505,18 @@ export class ProjectsService implements OnModuleInit {
     // real host can take minutes (uploading vendor/ file-by-file), which would
     // otherwise block the HTTP request past proxy timeouts (504). The env is
     // marked 'deploying' and the UI polls for the outcome.
-    await this.scheduleDeployment(id, target, source.version, true, 'promote');
+    const sourceEntity = await this.prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId: id, name: source.name } },
+      select: { buildArtifactId: true },
+    });
+    await this.scheduleDeployment(
+      id,
+      target,
+      source.version,
+      true,
+      'promote',
+      sourceEntity.buildArtifactId,
+    );
     return this.get(id);
   }
 
@@ -1286,7 +1553,14 @@ export class ProjectsService implements OnModuleInit {
       throw new BadRequestException(`Environment '${envName}' has nothing to redeploy`);
     }
     const useRegistry = /^[0-9a-f]{7,40}$/.test(env.version);
-    await this.scheduleDeployment(id, envName, env.version, useRegistry, 'redeploy');
+    await this.scheduleDeployment(
+      id,
+      envName,
+      env.version,
+      useRegistry,
+      'redeploy',
+      env.buildArtifactId,
+    );
     return this.get(id);
   }
 
@@ -1303,23 +1577,43 @@ export class ProjectsService implements OnModuleInit {
       throw new BadRequestException("Dev can only run again after it was cancelled or failed");
     }
 
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const repository = repositoryRef(project);
     const previousOperation = await this.prisma.deploymentOperation.findFirst({
       where: {
         environmentId: env.id,
         status: { in: ['cancelled', 'failed'] },
-        kind: { not: 'ci-retry' },
         version: { not: null },
       },
       orderBy: { createdAt: 'desc' },
     });
     if (previousOperation?.version) {
       const useRegistry = /^[0-9a-f]{40}$/i.test(previousOperation.version);
-      await this.scheduleDeployment(id, 'dev', previousOperation.version, useRegistry, 'retry');
-      return this.get(id);
+      const canReuseArtifact = repository.provider !== 'github' || !useRegistry
+        ? true
+        : previousOperation.buildArtifactId != null && await this.prisma.buildArtifact.findFirst({
+            where: {
+              id: previousOperation.buildArtifactId,
+              projectId: id,
+              status: 'available',
+              storageKind: 'docker-daemon',
+            },
+          }).then((artifact) =>
+            artifact?.storageRef ? this.deployment.hasImage(artifact.storageRef) : false,
+          );
+      if (canReuseArtifact) {
+        await this.scheduleDeployment(
+          id,
+          'dev',
+          previousOperation.version,
+          useRegistry,
+          'retry',
+          previousOperation.buildArtifactId,
+        );
+        return this.get(id);
+      }
     }
 
-    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
-    const repository = repositoryRef(project);
     const scm = this.workspaceScm.provider(repository.provider);
     const actor = await this.actorForProject(id);
     const commits = await scm.listCommits(repository, actor, 1);
@@ -1412,6 +1706,7 @@ export class ProjectsService implements OnModuleInit {
             data: {
               status: 'empty',
               version: null,
+              buildArtifactId: null,
               url: null,
               statusReason: null,
               allocatedPort: null,
@@ -1449,6 +1744,7 @@ export class ProjectsService implements OnModuleInit {
       data: {
         status: 'empty',
         version: null,
+        buildArtifactId: null,
         url: null,
         statusReason: cleanupWarning,
         allocatedPort: null,
@@ -1486,6 +1782,7 @@ export class ProjectsService implements OnModuleInit {
           data: {
             status: 'empty',
             version: null,
+            buildArtifactId: null,
             url: null,
             statusReason: teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
             activeOperationId: null,
@@ -1672,6 +1969,7 @@ export class ProjectsService implements OnModuleInit {
           data: {
             status: 'empty',
             version: null,
+            buildArtifactId: null,
             url: null,
             statusReason: teardownWarning ? `Cleanup pending: ${teardownWarning}` : null,
             allocatedPort: null,
@@ -1754,6 +2052,13 @@ export class ProjectsService implements OnModuleInit {
   // CI pushes (see ci.yml). Everything lowercase (registry requirement).
   private imageRef(repository: ScmRepositoryRef, version: string): string {
     return `${this.imageRepo(repository)}:${version}`;
+  }
+
+  private artifactImageRef(
+    repository: ScmRepositoryRef,
+    artifact: Pick<ScmBuildArtifact, 'commitSha' | 'providerRunId'>,
+  ): string {
+    return `${this.imageRepo(repository)}:${artifact.commitSha}-${artifact.providerRunId}`;
   }
 
   // Registry repository without a tag: <registry>/<owner>/<name> (lowercase).
@@ -1847,6 +2152,28 @@ export class ProjectsService implements OnModuleInit {
       where: { projectId_name: { projectId, name: envName } },
       include: { target: true },
     });
+    const operation = await this.prisma.deploymentOperation.findUnique({
+      where: { id: operationId },
+      include: { buildArtifact: true },
+    });
+    let testedImageRef: string | undefined;
+    if (useRegistry) {
+      if (repository.provider === 'github') {
+        const artifact = operation?.buildArtifact;
+        if (
+          !artifact ||
+          artifact.projectId !== projectId ||
+          artifact.commitSha !== version.toLowerCase() ||
+          artifact.status !== 'available' ||
+          !artifact.storageRef
+        ) {
+          throw new Error('GitHub deployment has no verified build artifact for this version');
+        }
+        testedImageRef = artifact.storageRef;
+      } else {
+        testedImageRef = this.imageRef(repository, version);
+      }
+    }
 
     await this.prisma.environment.updateMany({
       where: { projectId, name: envName, activeOperationId: operationId },
@@ -1893,9 +2220,12 @@ export class ProjectsService implements OnModuleInit {
 
     if (useBuildExtract) {
       setStage('Fetching & extracting tested artifact');
-      const imageRef = this.imageRef(repository, version);
       extractedDir = mkdtempSync(join(tmpdir(), 'initpad-artifact-'));
-      await this.deployment.extractArtifact(imageRef, template.buildArtifactPath!, extractedDir);
+      await this.deployment.extractArtifact(
+        testedImageRef ?? this.imageRef(repository, version),
+        template.buildArtifactPath!,
+        extractedDir,
+      );
       // getArchive packs the directory itself, so its tree is under the basename.
       deployRepoPath = join(extractedDir, basename(template.buildArtifactPath!));
       deployArtifactDir = undefined; // upload the whole extracted tree
@@ -1935,9 +2265,7 @@ export class ProjectsService implements OnModuleInit {
         appPort,
         onProgress: setStage,
         connection: this.targetConnection(env),
-        imageRef: useRegistry
-          ? this.imageRef(repository, version)
-          : undefined,
+        imageRef: testedImageRef,
         allowBuildFallback: !useRegistry,
       });
       if (await this.operationCancelled(operationId)) {
@@ -1951,6 +2279,7 @@ export class ProjectsService implements OnModuleInit {
           data: {
             status: 'empty',
             version: null,
+            buildArtifactId: null,
             url: null,
             statusReason: teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
             allocatedPort: null,
@@ -1968,6 +2297,7 @@ export class ProjectsService implements OnModuleInit {
         data: {
           status: result.status,
           version,
+          buildArtifactId: operation?.buildArtifactId ?? null,
           url: result.url,
           statusReason: null,
         },
@@ -2134,6 +2464,13 @@ export class ProjectsService implements OnModuleInit {
           version: e.version,
           url: e.url,
           statusReason: e.statusReason,
+          artifact: e.buildArtifact
+            ? {
+                id: e.buildArtifact.id,
+                provider: e.buildArtifact.sourceProvider,
+                digest: e.buildArtifact.digest,
+              }
+            : null,
           target: e.target
             ? {
                 id: e.target.id,
@@ -2187,6 +2524,7 @@ export class ProjectsService implements OnModuleInit {
           data: {
             status: 'empty',
             version: null,
+            buildArtifactId: null,
             url: null,
             statusReason: `Cleanup pending: ${teardown.warning}`,
             allocatedPort: null,
@@ -2204,7 +2542,14 @@ export class ProjectsService implements OnModuleInit {
         targetId: target.id,
         provider: target.kind,
         ...(movingAway
-          ? { status: 'empty', version: null, url: null, statusReason: null, allocatedPort: null }
+          ? {
+              status: 'empty',
+              version: null,
+              buildArtifactId: null,
+              url: null,
+              statusReason: null,
+              allocatedPort: null,
+            }
           : {}),
       },
     });

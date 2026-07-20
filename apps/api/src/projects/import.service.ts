@@ -106,13 +106,21 @@ export class ImportService {
     const workflow = repo.empty
       ? null
       : await scm.readFile(repo, workflowPath, repo.defaultBranch, actor);
-    const hasCompatibleWorkflow = Boolean(
+    const hasBaseWorkflow = Boolean(
       workflow?.includes('INITPAD_PLATFORM_URL') &&
       workflow.includes('INITPAD_DEPLOY_TOKEN'),
     );
+    const hasArtifactHandoff = repo.provider !== 'github' || Boolean(
+      workflow?.includes('artifact-id') &&
+      workflow.includes('artifact-digest') &&
+      workflow.includes('archive: false'),
+    );
+    const hasCompatibleWorkflow = hasBaseWorkflow && hasArtifactHandoff;
     if (!hasCompatibleWorkflow) {
       warnings.push(
-        `No InitPad-compatible workflow at '${workflowPath}' — add the CI callback before importing.`,
+        repo.provider === 'github' && hasBaseWorkflow
+          ? `The GitHub workflow at '${workflowPath}' uses the legacy callback — add the immutable artifact id/digest handoff before importing.`
+          : `No InitPad-compatible workflow at '${workflowPath}' — add the CI callback before importing.`,
       );
     }
 

@@ -59,6 +59,32 @@ export interface RepoArchive {
   cleanup: () => void;
 }
 
+// Immutable build output reported by a provider CI workflow. The callback only
+// supplies a locator; the provider resolves authoritative repository/run/SHA
+// metadata before InitPad accepts it (ADR-049).
+export interface ScmBuildArtifactLocator {
+  providerArtifactId: string;
+  digest: string;
+  commitSha: string;
+  expectedName: string;
+}
+
+export interface ScmBuildArtifact {
+  provider: string;
+  providerArtifactId: string;
+  providerRunId: string;
+  name: string;
+  digest: string;
+  commitSha: string;
+  sizeBytes: number;
+  expiresAt: Date;
+}
+
+export interface ScmBuildArtifactDownload extends ScmBuildArtifact {
+  filePath: string;
+  cleanup: () => void;
+}
+
 export interface ScmCommit {
   sha: string;
   message: string;
@@ -121,6 +147,16 @@ export interface ScmProvider {
   listRepositories(actor: ScmActor): Promise<ScmRepo[]>;
   // Read a file's text content at a ref, or null if it does not exist (preflight).
   readFile(repository: ScmRepositoryRef, path: string, ref: string, actor: ScmActor): Promise<string | null>;
+  // Optional because the bundled Gitea edition keeps using its private OCI
+  // registry; hosted providers can expose a verified artifact handoff.
+  resolveBuildArtifact?(
+    repository: ScmRepositoryRef,
+    locator: ScmBuildArtifactLocator,
+  ): Promise<ScmBuildArtifact>;
+  downloadBuildArtifact?(
+    repository: ScmRepositoryRef,
+    artifact: ScmBuildArtifact,
+  ): Promise<ScmBuildArtifactDownload>;
 }
 
 // Database-shaped input accepted by repositoryRef(). Kept independent from

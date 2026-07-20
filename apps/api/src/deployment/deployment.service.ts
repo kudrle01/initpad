@@ -90,4 +90,16 @@ export class DeploymentService {
     }
     await impl.extractArtifact(imageRef, srcPath, destDir);
   }
+
+  async loadImageArchive(filePath: string, expectedRef: string): Promise<void> {
+    const impl = this.registry.get('docker');
+    if (!impl?.loadImageArchive) {
+      throw new BadRequestException('Image archive ingestion requires the Docker provider');
+    }
+    await impl.loadImageArchive(filePath, expectedRef);
+  }
+
+  async hasImage(imageRef: string): Promise<boolean> {
+    return (await this.registry.get('docker')?.hasImage?.(imageRef)) ?? false;
+  }
 }

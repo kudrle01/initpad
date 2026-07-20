@@ -109,6 +109,16 @@ describe('ImportService.preflight', () => {
     expect(result.warnings.join(' ')).toContain('.gitea/workflows/ci.yml');
   });
 
+  it('blocks a legacy GitHub callback without an immutable artifact handoff', async () => {
+    const result = await build({
+      repos: [repo({ provider: 'github', installationId: 'installation-1' })],
+      workflow: 'INITPAD_PLATFORM_URL INITPAD_DEPLOY_TOKEN',
+    }).preflight('u1', undefined, { repositoryId: '101', templateId: 'node-api' });
+    expect(result.hasCompatibleWorkflow).toBe(false);
+    expect(result.canImport).toBe(false);
+    expect(result.warnings.join(' ')).toContain('legacy callback');
+  });
+
   it('blocks an empty repository', async () => {
     const result = await build({ repos: [repo({ empty: true })] }).preflight('u1', undefined, { repositoryId: '101', templateId: 'node-api' });
     expect(result.canImport).toBe(false);

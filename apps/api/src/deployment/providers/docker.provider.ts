@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Docker from 'dockerode';
+import { createReadStream } from 'fs';
 import * as tar from 'tar-fs';
+import * as tarStream from 'tar-stream';
 import { ProviderKind } from '../../domain/types';
 import { config } from '../../config';
 import {
@@ -52,8 +54,11 @@ export class DockerProvider implements DeploymentProvider {
     // pull and run exactly that image (no rebuild).
     let image: string;
     if (input.imageRef) {
-      input.onProgress?.('Pulling image');
-      if (await this.tryPull(input.imageRef)) {
+      input.onProgress?.('Resolving tested image');
+      if (await this.imageExists(input.imageRef)) {
+        image = input.imageRef;
+        this.logger.log(`Using ingested local image: ${image}`);
+      } else if (await this.tryPull(input.imageRef)) {
         image = input.imageRef;
         this.logger.log(`Using registry image: ${image}`);
       } else if (input.allowBuildFallback) {
@@ -256,6 +261,98 @@ export class DockerProvider implements DeploymentProvider {
       this.logger.log(`Extracted ${srcPath} from ${imageRef}`);
     } finally {
       await container.remove({ force: true }).catch(() => undefined);
+    }
+  }
+
+  async loadImageArchive(filePath: string, expectedRef: string): Promise<void> {
+    if (!(await this.isAvailable())) {
+      throw new Error('Docker daemon is not available — cannot ingest the tested image.');
+    }
+    await this.assertArchiveIdentity(filePath, expectedRef);
+    const stream = await this.docker.loadImage(createReadStream(filePath));
+    await new Promise<void>((resolve, reject) => {
+      this.docker.modem.followProgress(stream, (error) => (error ? reject(error) : resolve()));
+    });
+    if (!(await this.imageExists(expectedRef))) {
+      throw new Error(`The ingested image archive did not create expected tag '${expectedRef}'`);
+    }
+    this.logger.log(`Verified and ingested image archive: ${expectedRef}`);
+  }
+
+  async hasImage(imageRef: string): Promise<boolean> {
+    return (await this.isAvailable()) && this.imageExists(imageRef);
+  }
+
+  private async assertArchiveIdentity(filePath: string, expectedRef: string): Promise<void> {
+    const extract = tarStream.extract();
+    let manifest: Buffer | null = null;
+    let validationError: Error | null = null;
+    let manifestSeen = false;
+    let entries = 0;
+    extract.on('entry', (header, stream, next) => {
+      entries += 1;
+      if (entries > 100_000) {
+        validationError ??= new Error('Image archive contains too many entries');
+        stream.resume();
+        stream.on('end', next);
+        return;
+      }
+      if (header.name !== 'manifest.json') {
+        stream.resume();
+        stream.on('end', next);
+        return;
+      }
+      if (manifestSeen) {
+        validationError ??= new Error('Image archive contains duplicate Docker manifests');
+        stream.resume();
+        stream.on('end', next);
+        return;
+      }
+      manifestSeen = true;
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      stream.on('data', (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > 1024 * 1024) {
+          validationError ??= new Error('Image archive manifest is too large');
+          return;
+        }
+        if (!validationError) chunks.push(Buffer.from(chunk));
+      });
+      stream.on('end', () => {
+        manifest = Buffer.concat(chunks);
+        next();
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      extract.on('finish', resolve);
+      extract.on('error', reject);
+      const source = createReadStream(filePath);
+      source.on('error', reject);
+      source.pipe(extract);
+    });
+    const archiveError = validationError as Error | null;
+    if (archiveError) throw archiveError;
+    // The value is assigned by the asynchronous tar entry callback; keep an
+    // explicit local so TypeScript does not treat the pre-callback null as a
+    // control-flow invariant.
+    const manifestBytes = manifest as Buffer | null;
+    if (!manifestBytes) throw new Error('Image archive contains no Docker manifest');
+    let records: Array<{ RepoTags?: string[] }>;
+    try {
+      records = JSON.parse(manifestBytes.toString('utf8')) as Array<{ RepoTags?: string[] }>;
+    } catch {
+      throw new Error('Image archive contains an invalid Docker manifest');
+    }
+    if (!Array.isArray(records) || records.some((record) => !record || typeof record !== 'object')) {
+      throw new Error('Image archive contains an invalid Docker manifest');
+    }
+    const tags = records.flatMap((record) => record.RepoTags ?? []);
+    if (tags.some((tag) => typeof tag !== 'string')) {
+      throw new Error('Image archive contains an invalid Docker tag');
+    }
+    if (records.length !== 1 || tags.length !== 1 || tags[0] !== expectedRef) {
+      throw new Error(`Image archive must contain exactly the expected tag '${expectedRef}'`);
     }
   }
 

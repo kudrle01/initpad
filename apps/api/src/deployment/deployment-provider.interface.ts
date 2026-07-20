@@ -119,6 +119,10 @@ export interface DeploymentProvider {
   // Extracts a directory from a CI-tested image into a local dir, producing an
   // SFTP-uploadable artifact without executing project code in the API.
   extractArtifact?(imageRef: string, srcPath: string, destDir: string): Promise<void>;
+  // Imports a provider-verified `docker save` archive into the platform's
+  // image store and proves that it contains only the expected immutable tag.
+  loadImageArchive?(filePath: string, expectedRef: string): Promise<void>;
+  hasImage?(imageRef: string): Promise<boolean>;
   // Removes the deployment of the given environment; optional.
   teardown?(input: TeardownInput): Promise<TeardownResult | void>;
   // Returns the last ~N lines of the running deployment's log; optional.

@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -201,10 +202,21 @@ describe('GitHubScmProvider reads', () => {
         'on: [push]',
         'jobs:',
         '  docker:',
+        '    name: docker build',
         '    steps:',
         '      - run: |',
+        '          IMAGE=$(echo "${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}" | tr \'[:upper:]\' \'[:lower:]\')',
         '          echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \\',
         '            docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin',
+        '          docker build -t "$IMAGE" .',
+        '          docker push "$IMAGE"',
+        '',
+        '  deploy:',
+        '    needs: docker',
+        '    steps:',
+        '      - run: |',
+        '          curl -fsS -X POST "${{ secrets.INITPAD_PLATFORM_URL }}/api/ci/deploy" \\',
+        '            -d \'{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}\'',
         '',
       ].join('\n'),
     );
@@ -215,14 +227,82 @@ describe('GitHubScmProvider reads', () => {
       expect(existsSync(githubWorkflow)).toBe(true);
       expect(existsSync(join(dir, '.gitea'))).toBe(false);
       const workflow = readFileSync(githubWorkflow, 'utf8');
-      expect(workflow).toContain('permissions:\n  contents: read\n  packages: write');
-      expect(workflow).toContain('${{ secrets.GITHUB_TOKEN }}');
-      expect(workflow).toContain('${{ github.actor }}');
+      expect(workflow).toContain('permissions:\n  contents: read');
+      expect(workflow).toContain('docker save "$IMAGE" -o initpad-image.tar');
+      expect(workflow).toContain('${{ github.sha }}-${{ github.run_id }}');
+      expect(workflow).toContain('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+      expect(workflow).toContain('archive: false');
+      expect(workflow).toContain('"artifactId":"${{ needs.docker.outputs.artifact-id }}"');
       expect(workflow).not.toContain('INITPAD_REGISTRY_PASSWORD');
       expect(workflow).not.toContain('INITPAD_REGISTRY_USER');
+      expect(workflow).not.toContain('docker push');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('resolves an immutable Actions artifact against repository, run SHA and digest', async () => {
+    const digest = 'a'.repeat(64);
+    const sha = 'b'.repeat(40);
+    const { provider, installations } = make(jest.fn(async () => new Response(JSON.stringify({
+      id: 987,
+      name: 'initpad-image.tar',
+      size_in_bytes: 123,
+      expired: false,
+      expires_at: '2026-07-21T00:00:00Z',
+      digest: `sha256:${digest}`,
+      workflow_run: { id: 456, repository_id: 101, head_sha: sha },
+    }), { status: 200 })));
+
+    await expect(provider.resolveBuildArtifact(repository(), {
+      providerArtifactId: '987',
+      digest,
+      commitSha: sha,
+      expectedName: 'initpad-image.tar',
+    })).resolves.toMatchObject({
+      provider: 'github-actions',
+      providerArtifactId: '987',
+      providerRunId: '456',
+      digest,
+      commitSha: sha,
+      sizeBytes: 123,
+    });
+    expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+      permissions: { metadata: 'read', actions: 'read' },
+    });
+  });
+
+  it('rejects artifact metadata from another commit', async () => {
+    const digest = 'a'.repeat(64);
+    const { provider } = make(jest.fn(async () => new Response(JSON.stringify({
+      id: 987,
+      name: 'initpad-image.tar',
+      size_in_bytes: 123,
+      expired: false,
+      expires_at: '2026-07-21T00:00:00Z',
+      digest: `sha256:${digest}`,
+      workflow_run: { id: 456, repository_id: 101, head_sha: 'c'.repeat(40) },
+    }), { status: 200 })));
+    await expect(provider.resolveBuildArtifact(repository(), {
+      providerArtifactId: '987', digest, commitSha: 'b'.repeat(40), expectedName: 'initpad-image.tar',
+    })).rejects.toThrow('identity does not match');
+  });
+
+  it('streams a direct artifact to a private temp file and verifies its bytes', async () => {
+    const bytes = Buffer.from('docker-save-tar');
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    const { provider } = make(jest.fn(async () => new Response(bytes, { status: 200 })));
+    const download = await provider.downloadBuildArtifact(repository(), {
+      provider: 'github-actions', providerArtifactId: '987', providerRunId: '456',
+      name: 'initpad-image.tar', digest, commitSha: 'b'.repeat(40),
+      sizeBytes: bytes.length, expiresAt: new Date('2026-07-21T00:00:00Z'),
+    });
+    try {
+      expect(readFileSync(download.filePath)).toEqual(bytes);
+    } finally {
+      download.cleanup();
+    }
+    expect(existsSync(download.filePath)).toBe(false);
   });
 });
 

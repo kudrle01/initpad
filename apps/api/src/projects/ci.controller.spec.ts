@@ -1,0 +1,29 @@
+import { UnauthorizedException } from '@nestjs/common';
+import { CiController } from './ci.controller';
+
+describe('CiController artifact callback', () => {
+  it('passes the immutable artifact locator only after bearer authentication', async () => {
+    const projects = { deployFromCi: jest.fn(async () => undefined) };
+    const controller = new CiController(projects as never);
+    await expect(controller.deploy('Bearer repo-secret', {
+      repo: 'acme/api',
+      sha: 'a'.repeat(40),
+      ref: 'main',
+      artifactId: '987',
+      artifactDigest: 'b'.repeat(64),
+    })).resolves.toEqual({ accepted: true });
+    expect(projects.deployFromCi).toHaveBeenCalledWith(
+      'acme/api',
+      'a'.repeat(40),
+      'main',
+      'repo-secret',
+      { artifactId: '987', artifactDigest: 'b'.repeat(64) },
+    );
+  });
+
+  it('rejects a callback without its repository bearer token', async () => {
+    const controller = new CiController({ deployFromCi: jest.fn() } as never);
+    await expect(controller.deploy('', { repo: 'acme/api' }))
+      .rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});

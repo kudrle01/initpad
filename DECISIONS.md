@@ -1578,6 +1578,11 @@ Workflows, Secrets a Packages na write; Organization ani Account permissions
 aktuální tok nepotřebuje. Režim selected repositories zůstává podporovaný,
 protože GitHub App automaticky zpřístupní repozitáře, které sama vytvoří.
 
+**Nahrazeno pro nové workflow (2026-07-20).** GHCR publication a požadavek
+`Packages: write` nahrazuje artifact handoff v ADR-049. `Packages: write`
+zůstává pouze volitelnou cleanup kompatibilitou pro starší repozitáře; nová App
+potřebuje `Actions: read`, aby mohla ověřit a stáhnout immutable build.
+
 **Uživatelské testování.** Aktuální adapterový mezikrok je testovatelný
 automatizovaně, ale ještě nepřidává nový UI tok. Po dokončení token vaultu a
 registry zapojení owner vybere osobní nebo organizační instalaci, vytvoří
@@ -1742,3 +1747,69 @@ provideru cleanup změní efekty na `compensated` a odemkne retry pouze
 iniciátorovi. Viewer/member cleanup tlačítko nevidí a přímé API volání vrátí
 403. Failure-injection test navíc simuluje expirovaný lease a ověří
 `reconciliation_required`; souběžný druhý claim musí skončit 409.
+
+## ADR-049 — GitHub Actions artifact je ověřený handoff; platforma jej musí převzít
+
+**Kontext.** GitHub Actions umí privátní image publikovat do GHCR pomocí
+repository-scoped `GITHUB_TOKEN`, ale tento token správně neopouští workflow.
+GitHub dokumentace pro externí private-GHCR pull nenabízí ekvivalentní
+krátkodobý GitHub App installation credential. Ukládání uživatelského PAT
+classic by rozšířilo oprávnění, zhoršilo revokaci i onboarding. Současně nelze
+znovu buildit zdroj až při deployi, protože by se nasazoval jiný výsledek než
+ten, který prošel testy.
+
+**Rozhodnutí.** GitHub varianta sdíleného workflow po testech provede jeden
+`docker build`, uloží přesně tuto tagovanou image pomocí `docker save` a nahraje
+soubor `initpad-image.tar` jako immutable GitHub Actions artifact. Používá
+commitově pinovaný `actions/upload-artifact` v7, přímý single-file upload,
+jednodenní retention a callback obsahující `artifact-id` i `artifact-digest`.
+Gitea workflow se nemění a dál používá privátní registry self-hosted instalace.
+
+CI bearer token nejprve vybere konkrétní Project. GitHub App installation token
+s pouze `Actions: read` potom načte autoritativní artifact metadata. InitPad
+kontroluje artifact ID, immutable repository ID, workflow run ID, přesný commit
+SHA, jméno, expiraci, velikost a shodu callback digestu s GitHub digestem.
+Stažení je streamované do privátního dočasného souboru, omezené deklarovanou
+velikostí a znovu ověřené SHA-256 nad skutečnými bajty. `BuildArtifact` uchovává
+provider/run/commit/digest/lifecycle; opakovaný callback je idempotentní.
+
+Lokální prototyp po ověření zkontroluje Docker archive ještě před importem:
+manifest smí obsahovat právě jednu image a právě očekávaný immutable tag. Image
+se načte do lokálního Docker daemonu a dev/test/prod používají stejný tag bez
+nového buildu. Tag obsahuje commit i GitHub workflow run ID; Environment a
+DeploymentOperation mají explicitní vazbu na BuildArtifact, protože samotný
+commit SHA není jednoznačný build. UI zobrazuje zkrácený digest a za synchronní
+považuje dvě prostředí jen při shodě stejného artifact ID. Callback nečeká na velký download; ingestion a deploy běží jako
+sledovaná background deployment operation. Restart změní nedokončenou ingestion
+na `failed`; Run again použije lokální ověřenou image pouze pokud skutečně
+existuje, jinak spustí nový CI retry místo nekonečného neúspěšného GHCR pullu.
+
+**Důsledky.** Uživatelský PAT ani veřejný registry nejsou potřeba a GitHub App
+nemá package read/write kvůli novým buildům. Existující GitHub repozitář se
+starým callbackem se nepovažuje za importovatelný, dokud workflow nepřidá
+artifact ID/digest handoff. GitHub artifact je jen krátkodobý zdroj přenosu,
+nikoli produkční dlouhodobé úložiště: smazání runu/repa nebo expirace jej smaže.
+Pro multi-instance veřejný SaaS proto zůstává další krok — okamžité uložení
+ověřených bajtů do platformního object storage a výdej agentovi přes krátkodobý
+job-scoped download. `storageKind/storageRef` a provider-neutral kontrakt jsou
+pro tuto výměnu připravené; `docker-daemon` je pouze prototypová implementace.
+
+GitHub App nastavení pro nový tok: repository `Actions: read`; dále zůstávají
+`Administration: write`, `Contents: write`, `Workflows: write`, `Secrets: write`
+a `Checks: read` pro již implementované create/config/status operace.
+Organization ani Account permissions nejsou potřeba. Po změně oprávnění musí
+vlastník přijmout update instalace na GitHubu.
+
+**Uživatelské testování.** V nastavení GitHub App přidat `Actions: Read-only`,
+uložit změnu a u instalace přijmout nová oprávnění. Vytvořit nový SaaS projekt
+(staré již vytvořené workflow automaticky nepřepisujeme). V GitHub Actions musí
+docker job vytvořit `initpad-image.tar`, upload krok zobrazit artifact ID/digest
+a deploy callback skončit úspěšně. V InitPadu má dev postupně ukázat
+`Downloading and verifying tested image` a `running`; následná promotion do
+test musí ukázat stejné artifact ID/digest i 40znakový commit SHA. Negativně změnit artifact ID,
+digest nebo SHA v ručním callbacku — API musí vrátit 400 a nespustit deploy.
+Import starého GitHub workflow musí zobrazit varování `legacy callback`.
+
+Reference: [GitHub REST API — Actions artifacts](https://docs.github.com/en/rest/actions/artifacts),
+[actions/upload-artifact v7](https://github.com/actions/upload-artifact),
+[GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations).

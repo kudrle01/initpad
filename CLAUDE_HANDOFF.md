@@ -1,7 +1,7 @@
 # InitPad — aktuální handoff pro dalšího implementátora
 
 Nejdřív přečti `AGENTS.md`, `DECISIONS.md` (zejména ADR-027, ADR-030,
-ADR-039 a ADR-042–046) a `PRODUCT_ROADMAP.md`. Pokračuj po malých atomických
+ADR-039 a ADR-042–049) a `PRODUCT_ROADMAP.md`. Pokračuj po malých atomických
 commitech, neupravuj historii a zachovej existující data. Tvrzení „hotovo“ musí
 být podložené testem; existence rozhraní nebo nepoužívaného registru nestačí.
 
@@ -11,8 +11,8 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 - Autorizační hranice je `Workspace` + `WorkspaceMember`.
 - Self-hosted: vestavěná Gitea a `open` nebo `admin-provisioned` onboarding.
 - Public SaaS: GitHub login, GitHub App a GitHub Actions; bez SaaS Gitey a bez
-  vlastních hesel InitPadu. GHCR push funguje, produkční private-image pull z
-  control plane je otevřená artifact/agent hranice popsaná v ADR-046.
+  vlastních hesel InitPadu. Nový workflow používá ověřený Actions artifact
+  handoff (ADR-049), ne uživatelský PAT ani private-GHCR pull.
 - GitHub App instalace je podmínka create/import repozitáře, ne vytvoření účtu.
 - Do týmu se přidávají existující účty podle username/e-mailu; tokenové
   workspace pozvánky byly odstraněny v ADR-042.
@@ -47,6 +47,11 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   operace krátkodobé installation tokeny. Adapter umí bezpečný scaffold push,
   rollback nového repa, sealed-box Actions secrets, archiv, collaborators,
   retry tag, delete/detach/packages a GitHub Actions Check Runs.
+- GitHub build handoff persistuje `BuildArtifact`; App token s `Actions: read`
+  ověřuje repository/run/commit/digest, stažení znovu hashujeme a Docker archive
+  smí obsahovat jediný očekávaný tag. Lokální control plane image ingestuje a
+  deployuje bez GHCR. Deployment i Environment váže přesné artifact ID a UI
+  ukazuje digest; duplicate/restart/retry větve jsou explicitní.
 - Create/import zapisuje před každým ne-transakčním zásahem durable
   `ProvisioningEffect`. Import při chybě odstraní platformní secrets, obnoví
   původní přímou Gitea/GitHub collaborator roli a smaže Project jen po úplné
@@ -65,10 +70,10 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 ## Co dokončeno není
 
-- Privátní GHCR image umí workflow pushnout repository-scoped `GITHUB_TOKEN`,
-  ale control plane nemá podporovaný krátkodobý registry credential pro pull.
-  Nepřidávej uživatelský PAT classic; navrhni managed OCI registry s project-
-  scoped credentials, nebo agent-mediated artifact transport (ADR-046).
+- Ověřený artifact je zatím po stažení uložen pouze v Docker daemonu jednoho
+  control-plane hostu. Pro multi-instance SaaS doplň platformní object storage,
+  retention/GC a job-scoped presigned download pro agenta; GitHub artifact není
+  dlouhodobé úložiště. Nepřidávej uživatelský PAT classic (ADR-049).
 - Neexistuje reálný public-SaaS deploy profil bez Gitey.
 - Není připojený SMTP/e-mail provider. Self-hosted odkazy v UI/logu jsou demo
   mechanismus, ne produkční důkaz vlastnictví e-mailu; SaaS ukládá jen GitHubem
@@ -76,16 +81,18 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 ## Nejbližší implementační pořadí
 
-1. Proveď živý GitHub E2E nového routingu: personal/org create, kompatibilní
-   import, Actions/Check Runs, retry, role, suspend/uninstall a delete/detach.
-2. Rozhodni a implementuj SaaS artifact transport (managed OCI registry versus
-   agent), potom vytvoř skutečný SaaS deploy profil bez Gitey.
+1. Proveď živý GitHub E2E: po přidání App `Actions: read` personal/org create,
+   artifact upload/ingestion/dev deploy, kompatibilní import, Check Runs, retry,
+   role, suspend/uninstall a delete/detach.
+2. Přesuň ověřené bajty z lokálního Docker daemonu do platformního object
+   storage a doruč je job-scoped InitPad Agentovi; potom vytvoř skutečný
+   multi-instance SaaS profil bez Gitey a bez control-plane Docker socketu.
 
 GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 38 API suites / 234 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 42 API suites / 246 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config prošel; API/web kontejnery byly přestavěné a API
   je healthy bez modulárního DI cyklu.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy
@@ -93,7 +100,10 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
   nepřihlášený browser smoke prošly. Aditivní migrace
   `20260720200000_provisioning_effect_journal` i
   `20260720210000_provisioning_recovery` jsou na stejné DB aplikované;
-  přestavěné API je healthy.
+  přestavěné API je healthy. Na stejné DB je aplikovaná i migrace
+  `20260720220000_build_artifact_handoff` i
+  `20260720230000_deployment_artifact_binding`; API/web compose rebuild, ready
+  health a nepřihlášený browser login smoke následně prošly.
 - Stále je nutný úplný autentizovaný browser acceptance a živý GitHub App E2E.
   Lokální `deploy/.env` je `saas`; propojení identity a osobní instalace
   `kudrle01` byly uživatelsky ověřeny. Organizace zatím živě ověřena nebyla.
@@ -109,8 +119,9 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 - GitHub project acceptance: New project musí ukázat pouze granty aktivního
   workspace; ověř personal i organization repo, `.github/workflows/ci.yml`,
   Actions run a Check Runs. Import bez Dockerfile nebo InitPad workflow musí
-  zůstat zablokovaný. Privátní GHCR deploy se zatím neočekává jako produkčně
-  zelený, dokud nebude dokončen artifact transport.
+  zůstat zablokovaný. Nový projekt musí vytvořit `initpad-image.tar`, callback
+  musí předat ID/digest a lokální dev nasadit stejné SHA. Staré workflow se
+  automaticky nepřepisuje. Multi-instance/agent delivery zatím není produkční.
 - Po browser testu odstraň dočasné účty, workspaces a repozitáře.
 - U každého milníku aktualizuj `DECISIONS.md`, `PRODUCT_ROADMAP.md` a uveď, zda a
   jak je uživatelsky testovatelný.

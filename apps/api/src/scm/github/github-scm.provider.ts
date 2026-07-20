@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'child_process';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import {
   existsSync,
+  createWriteStream,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -13,7 +14,7 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { Readable } from 'stream';
+import { Readable, Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 import { promisify } from 'util';
 import { createGunzip } from 'zlib';
@@ -22,6 +23,9 @@ import * as tar from 'tar-fs';
 import { config } from '../../config';
 import {
   RepoArchive,
+  ScmBuildArtifact,
+  ScmBuildArtifactDownload,
+  ScmBuildArtifactLocator,
   ScmActor,
   ScmCommit,
   ScmCommitStatus,
@@ -31,12 +35,14 @@ import {
   ScmRepositoryIdentity,
   ScmRepositoryRef,
 } from '../scm-provider';
+import { adaptWorkflowForGitHub } from './github-workflow';
 import { GitHubInstallationService } from './github-installation.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
 
 const READ_CONTENTS = { metadata: 'read', contents: 'read' };
 const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
 const READ_CHECKS = { metadata: 'read', contents: 'read', checks: 'read' };
+const READ_ACTIONS = { metadata: 'read', actions: 'read' };
 const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
 const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
 const WRITE_ADMINISTRATION = { metadata: 'read', administration: 'write' };
@@ -661,6 +667,142 @@ export class GitHubScmProvider implements ScmProvider {
     }
   }
 
+  async resolveBuildArtifact(
+    repository: ScmRepositoryRef,
+    locator: ScmBuildArtifactLocator,
+  ): Promise<ScmBuildArtifact> {
+    this.assertProvider(repository);
+    if (!/^\d+$/.test(locator.providerArtifactId)) {
+      throw new Error('GitHub artifact id must be an integer');
+    }
+    if (!/^[0-9a-f]{40}$/i.test(locator.commitSha)) {
+      throw new Error('GitHub artifact requires a full commit SHA');
+    }
+    const callbackDigest = this.normalizeArtifactDigest(locator.digest);
+    const token = await this.token(repository, READ_ACTIONS);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const response = await this.gh(
+      `/repos/${repo}/actions/artifacts/${encodeURIComponent(locator.providerArtifactId)}`,
+      token,
+    );
+    if (!response.ok) {
+      throw new Error(`Could not resolve GitHub Actions artifact (HTTP ${response.status})`);
+    }
+    const artifact = (await response.json()) as {
+      id?: number | string;
+      name?: string;
+      size_in_bytes?: number;
+      expired?: boolean;
+      expires_at?: string;
+      digest?: string;
+      workflow_run?: {
+        id?: number | string;
+        repository_id?: number | string;
+        head_sha?: string;
+      };
+    };
+    const digest = this.normalizeArtifactDigest(artifact.digest ?? '');
+    if (
+      String(artifact.id ?? '') !== locator.providerArtifactId ||
+      artifact.name !== locator.expectedName ||
+      artifact.workflow_run?.id == null ||
+      (repository.repositoryId != null &&
+        String(artifact.workflow_run?.repository_id ?? '') !== repository.repositoryId) ||
+      artifact.workflow_run?.head_sha?.toLowerCase() !== locator.commitSha.toLowerCase()
+    ) {
+      throw new Error('GitHub artifact identity does not match this repository, commit and workflow');
+    }
+    if (artifact.expired) throw new Error('GitHub Actions artifact has expired');
+    if (digest !== callbackDigest) {
+      throw new Error('GitHub artifact digest does not match the signed CI callback payload');
+    }
+    if (
+      !Number.isSafeInteger(artifact.size_in_bytes) ||
+      (artifact.size_in_bytes ?? 0) <= 0 ||
+      (artifact.size_in_bytes ?? 0) > 4 * 1024 * 1024 * 1024
+    ) {
+      throw new Error('GitHub artifact size is invalid or exceeds the 4 GiB ingestion limit');
+    }
+    const expiresAt = artifact.expires_at ? new Date(artifact.expires_at) : null;
+    if (!expiresAt || Number.isNaN(expiresAt.getTime())) {
+      throw new Error('GitHub artifact has no valid expiry');
+    }
+    return {
+      provider: 'github-actions',
+      providerArtifactId: locator.providerArtifactId,
+      providerRunId: String(artifact.workflow_run?.id ?? ''),
+      name: artifact.name,
+      digest,
+      commitSha: locator.commitSha.toLowerCase(),
+      sizeBytes: artifact.size_in_bytes!,
+      expiresAt,
+    };
+  }
+
+  async downloadBuildArtifact(
+    repository: ScmRepositoryRef,
+    artifact: ScmBuildArtifact,
+  ): Promise<ScmBuildArtifactDownload> {
+    this.assertProvider(repository);
+    if (artifact.provider !== 'github-actions' || !/^\d+$/.test(artifact.providerArtifactId)) {
+      throw new Error('Unsupported GitHub build artifact identity');
+    }
+    const token = await this.token(repository, READ_ACTIONS);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const response = await this.gh(
+      `/repos/${repo}/actions/artifacts/${encodeURIComponent(artifact.providerArtifactId)}/zip`,
+      token,
+    );
+    if (!response.ok || !response.body) {
+      throw new Error(`Could not download GitHub Actions artifact (HTTP ${response.status})`);
+    }
+    const base = mkdtempSync(join(tmpdir(), 'initpad-github-artifact-'));
+    const path = join(base, artifact.name);
+    const hash = createHash('sha256');
+    let bytes = 0;
+    const meter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytes += chunk.length;
+        if (bytes > artifact.sizeBytes || bytes > 4 * 1024 * 1024 * 1024) {
+          callback(new Error('GitHub artifact download exceeded its declared size'));
+          return;
+        }
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as import('stream/web').ReadableStream),
+        meter,
+        createWriteStream(path, { flags: 'wx', mode: 0o600 }),
+      );
+      if (bytes !== artifact.sizeBytes) {
+        throw new Error('GitHub artifact download size differs from its metadata');
+      }
+      const digest = hash.digest('hex');
+      if (digest !== artifact.digest) {
+        throw new Error('GitHub artifact download failed SHA-256 verification');
+      }
+      return {
+        ...artifact,
+        filePath: path,
+        cleanup: () => rmSync(base, { recursive: true, force: true }),
+      };
+    } catch (error) {
+      rmSync(base, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  private normalizeArtifactDigest(value: string): string {
+    const normalized = value.toLowerCase().replace(/^sha256:/, '');
+    if (!/^[0-9a-f]{64}$/.test(normalized)) {
+      throw new Error('GitHub artifact digest must be a SHA-256 value');
+    }
+    return normalized;
+  }
+
   async initLocal(dir: string, author?: { name: string; email: string }): Promise<void> {
     this.prepareGitHubActions(dir);
     const name = author?.name || config.git.authorName;
@@ -697,22 +839,7 @@ export class GitHubScmProvider implements ScmProvider {
     for (const entry of readdirSync(workflowDir)) {
       if (!/\.ya?ml$/i.test(entry)) continue;
       const path = join(workflowDir, entry);
-      let workflow = readFileSync(path, 'utf8');
-      if (!/^permissions:/m.test(workflow)) {
-        workflow = workflow.replace(
-          /^on: \[push\]$/m,
-          'on: [push]\n\npermissions:\n  contents: read\n  packages: write',
-        );
-      }
-      workflow = workflow
-        .replace(/\$\{\{ secrets\.INITPAD_REGISTRY_PASSWORD \}\}/g, '${{ secrets.GITHUB_TOKEN }}')
-        .replace(/\$\{\{ secrets\.INITPAD_REGISTRY_USER \}\}/g, '${{ github.actor }}');
-      if (workflow.includes('INITPAD_REGISTRY_PASSWORD') || workflow.includes('INITPAD_REGISTRY_USER')) {
-        throw new Error(`Could not adapt GitHub Actions registry login in '${entry}'`);
-      }
-      if (!/^permissions:/m.test(workflow)) {
-        throw new Error(`Could not add least-privilege GitHub Actions permissions in '${entry}'`);
-      }
+      const workflow = adaptWorkflowForGitHub(readFileSync(path, 'utf8'), entry);
       writeFileSync(path, workflow);
     }
   }
