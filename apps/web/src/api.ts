@@ -186,6 +186,10 @@ export const api = {
     }>('/scm/github/status'),
   startGithubSetup: () =>
     http<{ installUrl: string }>('/scm/github/setup', { method: 'POST' }),
+  recoverGithubSetup: () =>
+    http<{ recovered: boolean; accountLogin: string | null }>('/scm/github/setup/recover', {
+      method: 'POST',
+    }),
   register: (username: string, email: string, password: string) =>
     http<User>('/auth/register', {
       method: 'POST',

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { GitBranch, KeyRound, ExternalLink, ShieldAlert, Users, Plus, Trash2, Mail, Github } from 'lucide-react';
+import { GitBranch, KeyRound, ExternalLink, ShieldAlert, Users, Plus, Trash2, Mail, Github, CircleCheck } from 'lucide-react';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/molecules/PageHeader';
@@ -118,35 +118,59 @@ export default function Settings() {
     if (gh) window.history.replaceState({}, '', '/settings');
   }, []);
 
+  // GitHub normally returns through the App Setup URL. If that URL is missing
+  // or GitHub leaves the user on its installation page, returning to InitPad
+  // also recovers a personal install from the immutable linked GitHub user id.
   useEffect(() => {
     if (!githubEnabled || !activeWorkspace) {
       setGhStatus(null);
       return;
     }
-    api.githubStatus().then(setGhStatus).catch(() => setGhStatus(null));
-  }, [githubEnabled, activeWorkspace?.id]);
-
-  // Returning from/closing the GitHub popup focuses the original application.
-  // Refresh both halves of the connection so no manual reload is needed.
-  useEffect(() => {
-    if (!githubEnabled) return;
-    const refreshGithub = () => {
-      setGithubSetupBusy(false);
-      api.listIdentities().then(setIdentities).catch(() => undefined);
-      if (activeWorkspace) {
-        api.githubStatus().then(setGhStatus).catch(() => setGhStatus(null));
+    let disposed = false;
+    let running = false;
+    const refreshGithub = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const recovery = canAdmin
+          ? await api.recoverGithubSetup().catch(() => ({ recovered: false, accountLogin: null }))
+          : { recovered: false, accountLogin: null };
+        const [nextIdentities, nextStatus] = await Promise.all([
+          api.listIdentities(),
+          api.githubStatus(),
+        ]);
+        if (!disposed) {
+          setIdentities(nextIdentities);
+          setGhStatus(nextStatus);
+          setGithubSetupBusy(false);
+          if (recovery.recovered) {
+            toast.success(
+              `GitHub App authorized${recovery.accountLogin ? ` for ${recovery.accountLogin}` : ''}`,
+            );
+          }
+        }
+      } catch {
+        if (!disposed) {
+          setGhStatus(null);
+          setGithubSetupBusy(false);
+        }
+      } finally {
+        running = false;
       }
     };
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') refreshGithub();
+      if (document.visibilityState === 'visible') void refreshGithub();
     };
-    window.addEventListener('focus', refreshGithub);
+    const refreshWhenFocused = () => void refreshGithub();
+    void refreshGithub();
+    window.addEventListener('focus', refreshWhenFocused);
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
-      window.removeEventListener('focus', refreshGithub);
+      disposed = true;
+      window.removeEventListener('focus', refreshWhenFocused);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
-  }, [githubEnabled, activeWorkspace?.id]);
+  }, [githubEnabled, activeWorkspace?.id, canAdmin]);
 
   function linkGithub() {
     if (!openGithubWindow('/api/auth/github?mode=link')) {
@@ -398,6 +422,11 @@ export default function Settings() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">
                         {identity.username ? `@${identity.username}` : 'GitHub'}
+                        {ghStatus?.installation.present && !ghStatus.installation.suspended && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-success">
+                            <CircleCheck className="h-3.5 w-3.5" /> App authorized
+                          </span>
+                        )}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
                         linked {new Date(identity.linkedAt).toLocaleDateString()}

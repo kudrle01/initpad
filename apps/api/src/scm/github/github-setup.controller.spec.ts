@@ -47,6 +47,30 @@ describe('GitHubSetupController', () => {
     expect(response.redirect).toHaveBeenCalledWith(expect.stringContaining('/settings?github=installed&account=acme'));
   });
 
+  it('recovers an already-installed personal App for the current workspace', async () => {
+    config.github.appSlug = 'initpad-cloud';
+    const installations = {
+      recoverPersonalSetup: jest.fn(async () => ({ accountLogin: 'kudrle01' })),
+    };
+    const app = { isConfigured: jest.fn(() => true) };
+    const workspaces = {
+      resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })),
+      require: jest.fn(async () => 'owner'),
+    };
+    const controller = new GitHubSetupController(
+      installations as never,
+      app as never,
+      workspaces as never,
+    );
+
+    await expect(controller.recover('user-1', 'workspace-1')).resolves.toEqual({
+      recovered: true,
+      accountLogin: 'kudrle01',
+    });
+    expect(workspaces.require).toHaveBeenCalledWith('user-1', 'workspace-1', 'admin');
+    expect(installations.recoverPersonalSetup).toHaveBeenCalledWith('user-1', 'workspace-1');
+  });
+
   it('does not bind a pending organization-owner request', async () => {
     const installations = { completeSetup: jest.fn() };
     const controller = new GitHubSetupController(

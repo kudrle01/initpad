@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -162,49 +163,59 @@ export class GitHubInstallationService {
         throw new BadRequestException('GitHub setup state was already used');
       }
 
-      const existing = await tx.gitHubInstallation.findUnique({
-        where: { installationId: verified.installationId },
-      });
-      if (existing?.accountId && existing.accountId !== verified.accountId) {
-        throw new ConflictException(
-          `GitHub installation '${verified.installationId}' changed immutable account identity`,
-        );
-      }
-      const installation = await tx.gitHubInstallation.upsert({
-        where: { installationId: verified.installationId },
-        create: {
-          installationId: verified.installationId,
-          accountId: verified.accountId,
-          accountLogin: verified.accountLogin,
-          accountType: verified.accountType,
-          repositorySelection: verified.repositorySelection,
-          suspendedAt: verified.suspendedAt,
-        },
-        update: {
-          accountId: verified.accountId,
-          accountLogin: verified.accountLogin,
-          accountType: verified.accountType,
-          repositorySelection: verified.repositorySelection,
-          suspendedAt: verified.suspendedAt,
-          deletedAt: null,
-        },
-      });
-      await tx.gitHubInstallationAccess.upsert({
-        where: {
-          githubInstallationId_workspaceId: {
-            githubInstallationId: installation.id,
-            workspaceId: setup.workspaceId,
-          },
-        },
-        create: {
-          githubInstallationId: installation.id,
-          workspaceId: setup.workspaceId,
-          authorizedById: setup.userId,
-        },
-        update: { authorizedById: setup.userId },
-      });
+      await this.bindVerifiedInstallation(tx, verified, setup.userId, setup.workspaceId);
     });
     return verified;
+  }
+
+  /**
+   * Recovers a personal-account install when GitHub completed the installation
+   * but did not return through the configured Setup URL. Recovery is deliberately
+   * restricted to `User` installations: the linked identity's immutable GitHub
+   * id proves ownership. Organization installations still require the verified
+   * callback because a member's identity alone does not prove org authority.
+   */
+  async recoverPersonalSetup(
+    userId: string,
+    workspaceId: string,
+  ): Promise<VerifiedGitHubInstallation | null> {
+    const now = new Date();
+    const [setup, identity, membership] = await Promise.all([
+      this.prisma.gitHubInstallationSetup.findFirst({
+        where: { userId, workspaceId, usedAt: null, expiresAt: { gt: now } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.externalIdentity.findUnique({
+        where: { provider_userId: { provider: 'github', userId } },
+        select: { providerUserId: true },
+      }),
+      this.prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId, userId } },
+        select: { role: true },
+      }),
+    ]);
+    if (!setup || !identity) return null;
+    if (!membership || !WORKSPACE_ADMINS.has(membership.role)) {
+      throw new ForbiddenException('Workspace admin access is required to finish GitHub setup');
+    }
+
+    const verified = (await this.app.listInstallations()).find(
+      (installation) =>
+        installation.accountType === 'User' &&
+        installation.accountId === identity.providerUserId &&
+        installation.suspendedAt === null,
+    );
+    if (!verified) return null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.gitHubInstallationSetup.updateMany({
+        where: { id: setup.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (claimed.count !== 1) return null;
+      await this.bindVerifiedInstallation(tx, verified, userId, workspaceId);
+      return verified;
+    });
   }
 
   listForWorkspace(workspaceId: string) {
@@ -255,5 +266,54 @@ export class GitHubInstallationService {
 
   private hashState(state: string): string {
     return createHash('sha256').update(state).digest('hex');
+  }
+
+  private async bindVerifiedInstallation(
+    tx: Prisma.TransactionClient,
+    verified: VerifiedGitHubInstallation,
+    authorizedById: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const existing = await tx.gitHubInstallation.findUnique({
+      where: { installationId: verified.installationId },
+    });
+    if (existing?.accountId && existing.accountId !== verified.accountId) {
+      throw new ConflictException(
+        `GitHub installation '${verified.installationId}' changed immutable account identity`,
+      );
+    }
+    const installation = await tx.gitHubInstallation.upsert({
+      where: { installationId: verified.installationId },
+      create: {
+        installationId: verified.installationId,
+        accountId: verified.accountId,
+        accountLogin: verified.accountLogin,
+        accountType: verified.accountType,
+        repositorySelection: verified.repositorySelection,
+        suspendedAt: verified.suspendedAt,
+      },
+      update: {
+        accountId: verified.accountId,
+        accountLogin: verified.accountLogin,
+        accountType: verified.accountType,
+        repositorySelection: verified.repositorySelection,
+        suspendedAt: verified.suspendedAt,
+        deletedAt: null,
+      },
+    });
+    await tx.gitHubInstallationAccess.upsert({
+      where: {
+        githubInstallationId_workspaceId: {
+          githubInstallationId: installation.id,
+          workspaceId,
+        },
+      },
+      create: {
+        githubInstallationId: installation.id,
+        workspaceId,
+        authorizedById,
+      },
+      update: { authorizedById },
+    });
   }
 }

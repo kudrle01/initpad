@@ -104,6 +104,29 @@ describe('GitHubAppService', () => {
     await expect(new GitHubAppService().getInstallation('42')).rejects.toThrow('incomplete');
   });
 
+  it('lists and parses active App installations for personal setup recovery', async () => {
+    config.github.appId = '123';
+    config.github.privateKey = privateKeyPem;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => [{
+        id: 42,
+        account: { id: 987654, login: 'alice', type: 'User' },
+        repository_selection: 'all',
+        suspended_at: null,
+      }],
+    })) as never;
+
+    await expect(new GitHubAppService().listInstallations()).resolves.toEqual([{
+      installationId: '42',
+      accountId: '987654',
+      accountLogin: 'alice',
+      accountType: 'User',
+      repositorySelection: 'all',
+      suspendedAt: null,
+    }]);
+  });
+
   it('scopes the token to the requested repositories and permissions', async () => {
     config.github.appId = '123';
     config.github.privateKey = privateKeyPem;

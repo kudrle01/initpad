@@ -149,7 +149,10 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 - GitHub instalace ukládá immutable account ID a odděluje osobní/
   organizační účet. Jednorázový setup callback ověřuje instalaci přes App API
   a vytváří explicitní user/workspace grant; webhook sám oprávnění neuděluje.
-  Rename mění jen display login a uninstall záznam historizuje.
+  Rename mění jen display login a uninstall záznam historizuje. Osobní
+  instalaci lze po chybějícím Setup callbacku obnovit jen s platným pending
+  stavem a přesnou shodou immutable GitHub user ID; organizace tento fallback
+  z bezpečnostních důvodů nepoužívá.
 - `GitHubScmProvider` má čtecí operace a část HTTP mutací, ale projektová doména
   jej zatím nepoužívá. Existence `ScmRegistry` sama o sobě neznamená podporu
   vytvoření nebo importu GitHub projektu.

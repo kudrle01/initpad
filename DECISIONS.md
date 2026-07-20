@@ -1488,6 +1488,14 @@ popup okně; původní InitPad zůstává na místě a po návratu fokusu znovu 
 identity i workspace instalace. Login `Continue with GitHub` zůstává ve stejném
 okně, protože teprve vytváří session.
 
+Pokud GitHub instalaci dokončí, ale kvůli chybějící nebo chybné Setup URL
+nevrátí callback, může InitPad obnovit pouze **osobní** instalaci: musí
+existovat dosud platný, nespotřebovaný setup state pro stejného usera a
+workspace, user musí být stále owner/admin a account ID aktivní instalace se
+musí přesně shodovat s immutable ID propojené GitHub identity. State se při
+obnově spotřebuje atomicky. Tento fallback se nikdy nepoužije pro organizaci,
+protože osobní GitHub identita sama nedokazuje oprávnění za organizaci.
+
 Tento krok dokončuje autorizaci instalace, nikoli GitHub create/import. Starý
 owner-login lookup zůstává dočasně jen pro dosud nezapojenou legacy cestu;
 nový cloudový tok musí vybírat instalace přes explicitní workspace grant a

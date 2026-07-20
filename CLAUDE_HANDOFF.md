@@ -33,7 +33,10 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 - GitHub App setup podle ADR-044: immutable installation account ID, osobní/
   organizační účet, hashovaný single-use state, serverové ověření callbacku,
   owner/admin re-check a explicitní user/workspace grant. Rename zachová vazbu;
-  uninstall je auditní tombstone a zablokuje token.
+  uninstall je auditní tombstone a zablokuje token. Osobní instalace má
+  bezpečný recovery tok pro případ, že GitHub nevyvolá Setup callback:
+  platný pending state + owner/admin + shoda immutable GitHub user ID; pro
+  organizace se tento fallback nepoužívá.
 - `GitHubScmProvider` obsahuje čtecí operace a část HTTP mutací. Jeho tokeny jsou
   operation-specific; webhook při chybě persistence vrací 5xx.
 - Audit 2026-07-17 opravil: native auth v SaaS, automatického prvního SaaS admina,
@@ -73,7 +76,7 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 32 API suites / 174 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 32 API suites / 178 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config a Prisma schema validate prošly.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy
   projekty zachovaly URL a dostaly reálná Gitea repository ID. Health a

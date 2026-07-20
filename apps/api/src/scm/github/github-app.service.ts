@@ -44,6 +44,30 @@ export interface VerifiedGitHubInstallation {
   suspendedAt: Date | null;
 }
 
+function parseInstallation(data: {
+  id?: number | string;
+  account?: { id?: number | string; login?: string; type?: string };
+  repository_selection?: string;
+  suspended_at?: string | null;
+}): VerifiedGitHubInstallation {
+  if (
+    data.id == null ||
+    data.account?.id == null ||
+    !data.account.login ||
+    (data.account.type !== 'User' && data.account.type !== 'Organization')
+  ) {
+    throw new Error('GitHub returned an incomplete installation identity');
+  }
+  return {
+    installationId: String(data.id),
+    accountId: String(data.account.id),
+    accountLogin: data.account.login,
+    accountType: data.account.type,
+    repositorySelection: data.repository_selection ?? 'selected',
+    suspendedAt: data.suspended_at ? new Date(data.suspended_at) : null,
+  };
+}
+
 /**
  * The GitHub App side of the hosted edition (ADR-030): it authenticates as the
  * App and exchanges that for short-lived, narrowly-scoped installation access
@@ -90,22 +114,29 @@ export class GitHubAppService {
       repository_selection?: string;
       suspended_at?: string | null;
     };
-    if (
-      data.id == null ||
-      data.account?.id == null ||
-      !data.account.login ||
-      (data.account.type !== 'User' && data.account.type !== 'Organization')
-    ) {
-      throw new Error('GitHub returned an incomplete installation identity');
+    return parseInstallation(data);
+  }
+
+  /** Lists active App installations for personal-account setup recovery. */
+  async listInstallations(): Promise<VerifiedGitHubInstallation[]> {
+    const res = await fetch(`${config.github.apiBaseUrl}/app/installations?per_page=100`, {
+      headers: {
+        Authorization: `Bearer ${this.appJwt()}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Could not list GitHub App installations (HTTP ${res.status})`);
     }
-    return {
-      installationId: String(data.id),
-      accountId: String(data.account.id),
-      accountLogin: data.account.login,
-      accountType: data.account.type,
-      repositorySelection: data.repository_selection ?? 'selected',
-      suspendedAt: data.suspended_at ? new Date(data.suspended_at) : null,
-    };
+    const data = (await res.json()) as Array<{
+      id?: number | string;
+      account?: { id?: number | string; login?: string; type?: string };
+      repository_selection?: string;
+      suspended_at?: string | null;
+    }>;
+    if (!Array.isArray(data)) throw new Error('GitHub returned an invalid installation list');
+    return data.map(parseInstallation);
   }
 
   /**

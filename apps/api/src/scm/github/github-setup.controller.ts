@@ -48,6 +48,24 @@ export class GitHubSetupController {
     };
   }
 
+  @Post('recover')
+  @UseGuards(JwtAuthGuard)
+  async recover(
+    @CurrentUser() userId: string,
+    @Headers('x-workspace-id') requestedWorkspaceId?: string,
+  ) {
+    if (!this.app.isConfigured() || !config.github.appSlug) {
+      throw new ServiceUnavailableException('GitHub App installation is not configured');
+    }
+    const workspace = await this.workspaces.resolve(userId, requestedWorkspaceId);
+    await this.workspaces.require(userId, workspace.id, 'admin');
+    const installation = await this.installations.recoverPersonalSetup(userId, workspace.id);
+    return {
+      recovered: installation !== null,
+      accountLogin: installation?.accountLogin ?? null,
+    };
+  }
+
   @Get('callback')
   async callback(
     @Query('state') state: string,
