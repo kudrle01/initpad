@@ -600,6 +600,18 @@ vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
 - Automatizovaně ověřeno: 45 API suites / 275 testů a API i web production
   build. Uživatelský test je v ADR-055.
 
+### Samostatná historie commitů a deploymentů (2026-07-20)
+
+- Detail projektu je pracovní náhled: čtyři deployment operations a pět
+  commitů; delší seznamy mají zelený odkaz na samostatnou route.
+- Deployment historie neopakuje stejnou GitHub URL v každém řádku. Sdílený
+  artifact run je jednou označen jako source CI build, jednotlivé řádky jsou
+  samostatné InitPad publication operations.
+- Commit i deployment historie se při aktivní práci samy obnovují. API
+  podporuje bounded `limit` a vynucuje maximum 100 záznamů na požadavek.
+- Automatizovaně ověřeno: 45 API suites / 276 testů a API i web production
+  build. Uživatelský test je v ADR-056.
+
 ### Průběžné ověření delivery části milníku 8
 
 - React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez

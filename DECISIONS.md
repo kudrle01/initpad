@@ -2069,3 +2069,41 @@ target ESO, commit a doba. `CI build log` vede na původní artifact run. Potom
 deployment odstranit: veřejná URL musí zmizet a hláška karantény musí říct,
 že cesta/jméno jsou volné. Nový deploy stejného projektu musí projít; starou
 karanténu lze fyzicky odstranit jen administrátorem ESO.
+
+## ADR-056 — Detail projektu je náhled; historie odděluje build od deploymentu
+
+**Kontext.** Detail projektu načítal a zobrazoval dlouhé seznamy commitů a
+deploymentů. Každý deployment řádek navíc opakoval stejné GitHub Actions URL,
+pokud více publikací záměrně použilo tentýž ověřený artifact. Data byla
+technicky správná, ale UI vytvářelo dojem, že každá publikace má vlastní runner
+log nebo že se seznam nesynchronizuje.
+
+**Rozhodnutí.** Detail projektu zobrazuje čtyři nejnovější deployment operations
+a pět commitů. Pokud existují další záznamy, zelené odkazy `Show all
+deployments` a `Show all commits` otevřou samostatné route projektu. Historické
+stránky načítají nejvýše 100 nejnovějších záznamů a během aktivní operace/CI se
+obnovují častěji; neaktivní historie používá desetisekundový heartbeat.
+
+Odkaz na GitHub Actions run se už neopakuje v každém deployment řádku. Je
+deduplikovaný nad zobrazenými operations a označený jako `Source CI build`.
+Samotný deployment řádek je autoritativní InitPad CD záznam: environment,
+operation kind, immutable target snapshot, stav, message, verze a trvání.
+Commit detail nadále vede na konkrétní joby přesného artifact runu.
+
+Query `limit` na commits/deployments má serverový strop 100, aby UI nemohlo
+jedním požadavkem bez omezení číst SCM a pro každý commit synchronizovat jobs.
+Plná stránkovaná historie může později přidat cursor bez změny tohoto datového
+významu.
+
+**Důsledky.** Detail projektu je rychleji čitelný a dvě odlišné auditní stopy
+se nezaměňují. Opakované deploymenty stejného artifactu pravdivě sdílejí jeden
+source build, ale každý má vlastní deployment operation. Dedikované stránky
+poskytují podstatně delší historii bez zahlcení hlavního pracovního toku.
+
+**Uživatelské testování.** U projektu s alespoň šesti commity a pěti
+deploymenty otevřít detail. Musí se zobrazit nejvýše pět commitů a čtyři
+deploymenty. `Show all commits` a `Show all deployments` musí otevřít vlastní
+stránky a Back to project se vrátit na detail. Pro dva redeploye stejného
+artifactu smí být GitHub run uveden jednou jako source build, zatímco InitPad
+musí ukázat dvě samostatné operations se svým stavem a dobou. Při běžícím CI
+nebo deploymentu se historie aktualizuje bez ručního reloadu.
