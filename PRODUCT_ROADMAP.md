@@ -562,6 +562,19 @@ vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
 - Automatizovaně ověřeno: 44 API suites / 267 testů a API i web production
   build. Uživatelský test je v ADR-052.
 
+### Obnova hotového Actions artefaktu při ručním Deploy (2026-07-20)
+
+- Deployment target a callback URL jsou explicitně oddělené: ESO je cíl
+  aplikace, `INITPAD_PUBLIC_URL` je adresa InitPad API dostupná z GitHub runneru.
+- Ruční Deploy nejdřív hledá hotový neexpirovaný Actions artifact pro
+  přesný commit a po plném ověření jej nasadí na aktuální target bez
+  opakování CI.
+- Když artifact není a callback je lokální/neveřejný, InitPad selže před
+  vytvořením retry tagu. Tím nevzniká smyčka workflow, které pokaždé volá
+  nedostupný `localhost`.
+- Automatizovaně ověřeno: 44 API suites / 271 testů a API i web production
+  build. Uživatelský test je v ADR-053.
+
 ### Průběžné ověření delivery části milníku 8
 
 - React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez

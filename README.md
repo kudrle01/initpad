@@ -59,7 +59,9 @@ SaaS projekty vybírají ověřený workspace target zvlášť pro dev/test/prod
 lokální/private Docker server bude připojen odchozím InitPad Agentem.
 GitHub stages se čtou z Actions workflow jobs (`Actions: read`) a odkazují
 přímo na job log. Změna targetu zachová ověřený build, ale vyžaduje explicitní
-`Deploy` na nový server.
+`Deploy` na nový server. Pokud callback původního runu selhal, ruční Deploy
+nejdřív obnoví jeho dosud platný Actions artifact; bez artifactu a veřejné
+HTTPS URL nevytvoří další nefunkční retry.
 
 ## Lokální vývoj
 

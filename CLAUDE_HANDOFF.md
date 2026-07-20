@@ -52,7 +52,9 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   ověřuje repository/run/commit/digest, stažení znovu hashujeme a Docker archive
   smí obsahovat jediný očekávaný tag. Lokální control plane image ingestuje a
   deployuje bez GHCR. Deployment i Environment váže přesné artifact ID a UI
-  ukazuje digest; duplicate/restart/retry větve jsou explicitní.
+  ukazuje digest; duplicate/restart/retry větve jsou explicitní. Ruční Deploy
+  nejprve obnoví hotový artifact pro přesný commit; bez něj a bez veřejné HTTPS
+  callback URL nevytvoří další předem nefunkční Actions run (ADR-053).
 - Create/import zapisuje před každým ne-transakčním zásahem durable
   `ProvisioningEffect`. Import při chybě odstraní platformní secrets, obnoví
   původní přímou Gitea/GitHub collaborator roli a smaže Project jen po úplné
@@ -101,7 +103,7 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 44 API suites / 267 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 44 API suites / 271 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config prošel; API/web kontejnery byly přestavěné a API
   je healthy bez modulárního DI cyklu.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy

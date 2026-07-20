@@ -1943,3 +1943,42 @@ Při prvním otevření Projects je vidět skeleton, nikdy krátké `No projects
 
 Reference: [GitHub REST API — workflow runs](https://docs.github.com/en/rest/actions/workflow-runs),
 [GitHub REST API — workflow jobs](https://docs.github.com/en/rest/actions/workflow-jobs).
+
+## ADR-053 — Ruční Deploy nejdřív obnoví hotový GitHub Actions artifact
+
+**Kontext.** Změna deployment targetu na ESO byla v databázi správně, ale
+projekt vznikl s `INITPAD_PLATFORM_URL=http://localhost:8080`. Tato hodnota
+neurčuje cílový server; je to zpětný callback GitHub-hosted runneru do
+control plane. Runner proto mohl dokončit testy a upload artefaktu, ale poslední
+`curl` se na notebook uživatele nedostal. Protože InitPad artefakt callbackem
+nezaregistroval, dosavadní ruční Deploy vytvořil retry tag a znovu spustil
+stejný workflow se stejným nefunkčným callbackem.
+
+**Rozhodnutí.** Ruční Deploy GitHub projektu bez lokálně dostupného buildu
+nejprve přes App token s `Actions: read` vyhledá nejnovější neexpirovaný
+`initpad-image.tar` pro přesný HEAD commit. Kandidáta znovu ověří stejným
+provider-neutral kontraktem jako callback: artifact ID, immutable repository ID,
+workflow run, commit SHA, název, digest, expirace a velikost. Následné stažení
+znovu ověří digest skutečných bajtů. Teprve potom jej InitPad ingestuje a
+nasadí na aktuálně uložený target, například ESO; nový CI run nevznikne.
+
+Pokud vhodný artifact neexistuje, před vytvořením retry tagu se znovu ověří
+veřejná HTTPS callback URL. `localhost`, privátní adresa nebo HTTP vyvolá
+konkrétní 400 odpověď a nevytvoří další předem nefunkční workflow. Změna
+targetu nikdy nepřepisuje callback na target URL, protože ESO hostuje aplikaci,
+zatímco callback musí směřovat na InitPad API.
+
+**Důsledky.** Již zaplacený a otestovaný GitHub build lze zachránit po chybě
+callbacku a nasadit na nově zvolený server. Recovery je omezená retenční dobou
+GitHub artifactu; po expiraci je pro nový build stále nutná veřejná HTTPS URL.
+Toto nenahrazuje production SaaS doménu ani Agent delivery.
+
+**Uživatelské testování.** U projektu, jehož Actions run skončil chybou pouze
+v posledním callback kroku, nastavit dev target na ESO a kliknout `Deploy`.
+GitHub nesmí vytvořit nový run; InitPad zobrazí `Recovering tested GitHub
+build`, potom stažení/ověření a nasazení na ESO. Po smazání nebo expiraci
+artifactu zopakovat Deploy s `INITPAD_PUBLIC_URL=http://localhost:8080`: UI má
+zobrazit vysvětlující chybu a GitHub nesmí dostat retry tag. Po nastavení
+veřejné HTTPS URL může nový retry proběhnout a callback se vrátí do InitPadu.
+
+Reference: [GitHub REST API — Actions artifacts](https://docs.github.com/en/rest/actions/artifacts).
