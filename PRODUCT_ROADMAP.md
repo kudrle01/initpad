@@ -188,8 +188,9 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
    i provider-specific InitPad workflow. Write-ahead effect journal nyní eviduje
    repository/project/secrets/collaborator zásahy; import při chybě v opačném
    pořadí odstraní InitPad secrets, obnoví původní přímé role a projekt smaže
-   jen po úplné kompenzaci. Zbývá crash reconciliation/idempotent retry a
-   produkční artifact transport pro privátní GHCR.
+   jen po úplné kompenzaci. Lease recovery, workspace přehled, CAS cleanup a
+   omezený idempotentní retry jsou dokončeny. Zbývá produkční artifact
+   transport pro privátní GHCR.
 5. Potom dokončit migrace v cílových prostředích, živý GitHub App E2E a browser
    acceptance: login, instalace pro vybrané repo, create/import, CI, odebrání
    instalace, rename ownera a dvě repa se stejným názvem.
@@ -447,8 +448,8 @@ smazání a ověřit, že jiné workspace stejnou instalaci bez grantu nepoužij
   zděděnou roli nikdy neobnoví jako direct grant.
 - Projektový záznam se po chybě smaže jen při úplné externí kompenzaci.
   Výpadek cleanupu jej zachová jako recovery handle s `cleanup required`.
-- Otevřeno zůstává startup reconciliation stavů `applying`, workspace přehled
-  operací a idempotentní retry; to je následující podkrok této fáze.
+- Startup reconciliation stavů `applying`, workspace přehled operací a
+  idempotentní retry/cleanup dokončuje následující podkrok níže.
 
 **Uživatelský test tohoto podkroku.** Běžný create i import musí proběhnout
 beze změny. Pro viditelnou chybovou větev dočasně znepřístupnit provider během
@@ -456,6 +457,31 @@ cleanup importu: projekt musí zůstat v dashboardu, detail ukázat `cleanup
 required` a Delete project se zachováním repozitáře musí po obnovení provideru
 umožnit recovery. Bezpečnější opakovatelná varianta je automatizovaný failure-
 injection test, který ověřuje úplný rollback i zachování cleanup dluhu.
+
+### Provisioning recovery a idempotent retry podkrok Fáze 3 (2026-07-20)
+
+- Persistuje se validovaný request bez credentials, iniciátor, attempt a
+  `retryOfId`; staré auditní operace bez requestu zůstávají pouze ke čtení.
+- Process lease odliší živou operaci od pádu. Expirované `running`, `cleaning`
+  nebo `retrying` přejde na `interrupted`; nejasný efekt na
+  `reconciliation_required`, nikdy rovnou do retry.
+- Workspace endpoint a Dashboard zobrazí poslední operace včetně create bez
+  Project ID. Stav se obnovuje po 15 sekundách.
+- `Retry cleanup` je CAS + lease operace pro maintainer/owner. Import obnoví
+  původní direct role a odstraní platformní secrets; create smaže repo podle
+  journal identity. Všechny kroky jsou opakovatelné a Project se smaže poslední.
+- `Retry setup` je dostupný jen původnímu iniciátorovi, po prokázané kompenzaci
+  a maximálně pětkrát. Nový attempt + retired predecessor vzniknou atomicky.
+- Otevřený bod Fáze 3 již není provisioning recovery, ale artifact transport
+  privátního GitHub image a následný živý GitHub E2E.
+
+**Uživatelský test tohoto podkroku.** Na importu vyvolat chybu Secrets API.
+Po úplném rollbacku musí Dashboard ukázat `Retry setup`; po neúspěšném
+rollbacku `Retry cleanup` a zachovaný projekt. Po obnovení provideru kliknout
+cleanup, ověřit odstranění projektu a odemčení setup retry. Tentýž účet
+smí založit attempt 2, jiný member ne; maintainer smí cleanup, viewer/member
+nikoli. Pád procesu a dvojitý claim se testují automatizovaně, aby acceptance
+nemusel destruktivně ukončovat lokální API.
 
 ### Průběžné ověření delivery části milníku 8
 

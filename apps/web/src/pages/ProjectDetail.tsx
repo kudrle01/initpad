@@ -367,12 +367,12 @@ export default function ProjectDetail() {
         <div
           className={cn(
             'mt-4 rounded-md border p-3 text-sm',
-            provisioning.status === 'failed'
+            ['failed', 'interrupted'].includes(provisioning.status)
               ? 'border-destructive/40 bg-destructive/5 text-destructive'
               : 'border-border bg-secondary/50 text-muted-foreground',
           )}
         >
-          {provisioning.status === 'failed'
+          {['failed', 'interrupted'].includes(provisioning.status)
             ? `Setup (${provisioning.kind}) failed at the ${provisioning.step} step${provisioning.message ? `: ${provisioning.message}` : '.'}`
             : `Setting up (${provisioning.kind})… current step: ${provisioning.step}.`}
           {provisioning.effects.length > 0 && (
@@ -381,7 +381,9 @@ export default function ProjectDetail() {
                 <li key={effect.key} className="flex items-start justify-between gap-3">
                   <span>{effect.kind === 'collaborator' ? 'Repository access' : effect.kind}</span>
                   <span className="font-mono text-right">
-                    {effect.status === 'compensation_failed' ? 'cleanup required' : effect.status.replace('_', ' ')}
+                    {['compensation_failed', 'reconciliation_required'].includes(effect.status)
+                      ? 'cleanup required'
+                      : effect.status.replaceAll('_', ' ')}
                     {effect.error ? ` — ${effect.error}` : ''}
                   </span>
                 </li>

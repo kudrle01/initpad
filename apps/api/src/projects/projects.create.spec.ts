@@ -47,6 +47,7 @@ function build(completeEffect: jest.Mock = jest.fn(async () => undefined)) {
     compensateEffect: jest.fn(async () => undefined),
     compensationFailed: jest.fn(async () => undefined),
     bindProject: jest.fn(async () => undefined),
+    unbindProject: jest.fn(async () => undefined),
     succeed: jest.fn(async () => undefined),
     fail: jest.fn(async () => undefined),
   };

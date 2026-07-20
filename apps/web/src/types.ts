@@ -68,17 +68,21 @@ export interface ImportableRepo {
 export interface ProvisioningStatus {
   id: string;
   kind: string;
-  status: 'running' | 'succeeded' | 'failed';
+  status: 'running' | 'succeeded' | 'failed' | 'interrupted' | 'retrying' | 'retried' | 'cleaning';
   step: string;
   message: string | null;
   projectId: string | null;
   projectName: string;
+  attempt: number;
+  retryOfId: string | null;
+  canRetry: boolean;
+  needsCleanup: boolean;
   createdAt: string;
   finishedAt: string | null;
   effects: Array<{
     key: string;
     kind: 'repository' | 'collaborator' | 'secrets' | 'project';
-    status: 'planned' | 'applying' | 'applied' | 'failed' | 'compensated' | 'compensation_failed';
+    status: 'planned' | 'applying' | 'applied' | 'failed' | 'compensated' | 'compensation_failed' | 'reconciliation_required';
     metadata: unknown;
     error: string | null;
     createdAt: string;

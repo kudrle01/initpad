@@ -296,20 +296,29 @@ model Environment {
 // exist before its step succeeded. Kept as a plain audit row (no FK) so it
 // survives project deletion.
 model ProvisioningOperation {
-  id          String    @id @default(uuid())
-  workspaceId String
-  projectId   String?
-  projectName String
-  kind        String // create | import
-  status      String    @default("running") // running | succeeded | failed
-  step        String    @default("validate") // validate | repository | ci | done
-  message     String?
-  createdAt   DateTime  @default(now())
-  finishedAt  DateTime?
-  effects     ProvisioningEffect[]
+  id             String    @id @default(uuid())
+  workspaceId    String
+  projectId      String?
+  projectName    String
+  kind           String // create | import
+  status         String    @default("running") // running | succeeded | failed | interrupted | retrying | retried | cleaning
+  step           String    @default("validate") // validate | repository | ci | done
+  message        String?
+  requestedById  String?
+  request        Json? // validated create/import DTO; never credentials
+  retryOfId      String?
+  attempt        Int       @default(1)
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  finishedAt     DateTime?
+  effects        ProvisioningEffect[]
 
   @@index([workspaceId, createdAt])
+  @@index([workspaceId, status, createdAt])
   @@index([projectId])
+  @@index([retryOfId])
 }
 
 // Durable intent/effect journal for non-transactional provisioning. An entry

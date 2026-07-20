@@ -122,6 +122,11 @@ export const api = {
   getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),
   getProvisioning: (id: string) =>
     http<ProvisioningStatus | null>(`/projects/${id}/provisioning`),
+  listProvisioning: () => http<ProvisioningStatus[]>('/provisioning'),
+  retryProvisioning: (id: string) =>
+    http<Project>(`/provisioning/${id}/retry`, { method: 'POST' }),
+  cleanupProvisioning: (id: string) =>
+    http<void>(`/provisioning/${id}/cleanup`, { method: 'POST' }),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
   getActivity: () => http<ActivityEvent[]>('/activity'),
   createProject: (

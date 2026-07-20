@@ -42,6 +42,7 @@ describe('ProvisioningService', () => {
 
   it('writes intent before allowing an effect to enter applying', async () => {
     const prisma = {
+      provisioningOperation: { updateMany: jest.fn(async () => ({ count: 1 })) },
       provisioningEffect: {
         create: jest.fn(async () => ({})),
         updateMany: jest.fn(async () => ({ count: 1 })),
@@ -64,5 +65,67 @@ describe('ProvisioningService', () => {
     await expect(
       new ProvisioningService(prisma as never).completeEffect('op1', 'repository:create'),
     ).rejects.toThrow('not in the expected state');
+  });
+
+  it('marks an expired operation interrupted and makes applying effects explicit', async () => {
+    const prisma = {
+      provisioningOperation: {
+        findMany: jest.fn(async () => [{ id: 'op1' }]),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      provisioningEffect: { updateMany: jest.fn(async () => ({ count: 2 })) },
+    };
+    const recovered = await new ProvisioningService(prisma as never).reconcileStale();
+    expect(recovered).toBe(1);
+    expect(prisma.provisioningOperation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'op1', status: { in: ['running', 'cleaning', 'retrying'] } }),
+        data: expect.objectContaining({ status: 'interrupted', leaseOwner: null }),
+      }),
+    );
+    expect(prisma.provisioningEffect.updateMany).toHaveBeenCalledWith({
+      where: { operationId: 'op1', status: 'applying' },
+      data: expect.objectContaining({ status: 'reconciliation_required' }),
+    });
+  });
+
+  it('allows retry only for the original user after every effect is safe', () => {
+    const service = new ProvisioningService({} as never);
+    const operation = {
+      id: 'op1', workspaceId: 'ws1', projectId: null, projectName: 'api',
+      kind: 'create', status: 'failed', requestedById: 'u1', request: { name: 'api' },
+      retryOfId: null, attempt: 1,
+      effects: [{
+        key: 'repository:create', kind: 'repository', status: 'compensated',
+        metadata: null, error: null, createdAt: new Date(), appliedAt: null,
+        compensatedAt: new Date(),
+      }],
+    };
+    expect(service.isRetryable(operation, 'u1')).toBe(true);
+    expect(service.isRetryable(operation, 'u2')).toBe(false);
+    operation.effects[0].status = 'reconciliation_required';
+    expect(service.isRetryable(operation, 'u1')).toBe(false);
+    expect(service.needsCleanup(operation)).toBe(true);
+  });
+
+  it('creates a retry attempt and retires its predecessor in one transaction', async () => {
+    const tx = {
+      provisioningOperation: {
+        create: jest.fn(async () => ({ id: 'op2' })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+    };
+    const prisma = { $transaction: jest.fn(async (run: (client: typeof tx) => Promise<string>) => run(tx)) };
+    const service = new ProvisioningService(prisma as never);
+    await expect(service.start('ws1', 'api', 'create', {
+      requestedById: 'u1',
+      request: { name: 'api', templateId: 'node-api' },
+      retryOfId: 'op1',
+      attempt: 2,
+    })).resolves.toBe('op2');
+    expect(tx.provisioningOperation.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: 'op1', status: 'retrying' }),
+      data: expect.objectContaining({ status: 'retried', leaseOwner: null }),
+    });
   });
 });

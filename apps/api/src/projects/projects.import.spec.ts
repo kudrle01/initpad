@@ -7,6 +7,7 @@ const provisioning = {
   start: jest.fn(async () => 'op1'),
   step: jest.fn(async () => undefined),
   bindProject: jest.fn(async () => undefined),
+  unbindProject: jest.fn(async () => undefined),
   planEffect: jest.fn(async () => undefined),
   beginEffect: jest.fn(async () => undefined),
   completeEffect: jest.fn(async () => undefined),

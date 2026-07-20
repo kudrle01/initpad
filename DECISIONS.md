@@ -1627,9 +1627,8 @@ credential bez použitelné rotace blokují create ještě v UI i API.
 **Důsledky.** Gitea regrese zůstává beze změny a SaaS umí založit/importovat
 GitHub projekt. Workspace role se propisuje přes provider identitu; člen bez
 propojeného GitHub účtu nemůže dostat neúplný SCM grant. Create kompenzačně
-smaže nově vytvořené repo a vždy odstraní lokální scaffold. Import ještě
-potřebuje úplný effect journal pro přesnou kompenzaci případných částečných změn
-secrets/collaborators; do té doby se Fáze 3 bod 4 značí částečně.
+smaže nově vytvořené repo a vždy odstraní lokální scaffold. Původně chybějící
+effect journal a recovery importu byly následně doplněny v ADR-047/048.
 
 Samostatně byla odhalena artifact hranice: repository-scoped `GITHUB_TOKEN` je
 dostupný pouze uvnitř Actions workflow. InitPad control plane jej nemá a GitHub
@@ -1684,7 +1683,11 @@ distribuovaná transakce.
 Stav `applying` je záměrně důkaz nejasného výsledku po tvrdém pádu procesu;
 nesmí se automaticky prohlásit za úspěch ani slepě zopakovat. Následující
 podkrok doplní startup reconciliation, workspace seznam operací a idempotentní
-retry/cleanup. Neúspěšný create před vznikem `Project` zatím není v project UI.
+retry/cleanup. V okamžiku tohoto rozhodnutí nebyl neúspěšný create před vznikem
+`Project` v project UI dostupný.
+
+**Navazující implementace.** Recovery, workspace seznam a omezený retry jsou
+dokončeny v ADR-048; otevřené body tohoto odstavce tím byly uzavřeny.
 
 **Uživatelské testování.** Běžný create/import musí skončit beze změny UX.
 Failure test se provede dočasným odebráním `Secrets: write` GitHub App nebo
@@ -1694,3 +1697,48 @@ cleanupu provider odpojí, projekt zůstane v dashboardu a detail ukáže `clean
 required`; po obnovení provideru lze použít Delete project se zachováním repa
 a import zopakovat. Automatizované testy pokrývají obě větve bez manipulace se
 živou App.
+
+## ADR-048 — Retry je povolen až po prokázané kompenzaci; recovery používá lease
+
+**Kontext.** Samotný effect journal zachytí částečnou chybu v běžícím
+procesu, ale po `kill -9`, restartu nebo ztracené odpovědi mohl zůstat stav
+`running/applying`. Slepé opakování by mohlo založit druhé repo, přepsat secret
+nebo změnit již existující collaborator roli. Operace bez `Project` navíc nebyla
+z projektového detailu dohledatelná.
+
+**Rozhodnutí.** `ProvisioningOperation` ukládá validovaný request bez
+credentials, iniciátora, číslo pokusu a odkaz na předchozí pokus. Běžící
+create/import i cleanup vlastní process-scoped lease. Po jeho expiraci se
+operace atomicky změní na `interrupted` a každý `applying` efekt na
+`reconciliation_required`; jiná API instance proto živou operaci nepřeruší.
+Dashboard seznam bere z workspace audit logu, takže zobrazí i create, který
+selhal před vznikem databázového projektu.
+
+`Retry setup` dostane pouze původní iniciátor s aktuálním workspace write
+oprávněním, nejvýše do pěti pokusů. Server jej povolí jen tehdy, když jsou
+všechny efekty `planned` nebo `compensated`. Claim původní operace, vznik
+dalšího pokusu a označení předchůdce `retried` používají compare-and-set a
+jednu databázovou transakci, takže dvojklik ani dva API procesy nevytvoří dvě
+legitimní retry větve.
+
+`Retry cleanup` vyžaduje workspace `maintain`. Cleanup sám má CAS stav
+`cleaning` a lease. U importu idempotentně odstraní InitPad secret names,
+obnoví uložené direct role a až potom smaže Project. U create odstraní
+repozitář podle immutable identity z Projectu nebo journal metadata; provider
+DELETE toleruje `404`. Smazaný Project se z operace odpojí, takže UI nenabízí
+mrtvý odkaz. Selhání libovolné kompenzace projekt zachová a retry neodemkne.
+
+**Důsledky.** Retry je bezpečná explicitní nová operace, ne změna historie.
+Staré auditní řádky bez uloženého requestu zůstávají čitelné, ale nelze je
+automaticky opakovat. Tvrdý pád se projeví nejpozději po pětiminutové expiraci
+lease; Dashboard stav obnovuje po 15 sekundách. Automatický cleanup bez znalosti
+provider identity se odmítne a vyžaduje ruční odstranění v SCM.
+
+**Uživatelské testování.** Vyvolat chybu importu po vytvoření Projectu a
+ověřit dvě větve. Po úplné automatické kompenzaci Dashboard ukáže neúspěšnou
+operaci bez mrtvého project odkazu a s `Retry setup`. Při odpojeném provideru
+ukáže `Retry cleanup`, projekt zůstane a setup retry je skrytý; po obnovení
+provideru cleanup změní efekty na `compensated` a odemkne retry pouze
+iniciátorovi. Viewer/member cleanup tlačítko nevidí a přímé API volání vrátí
+403. Failure-injection test navíc simuluje expirovaný lease a ověří
+`reconciliation_required`; souběžný druhý claim musí skončit 409.

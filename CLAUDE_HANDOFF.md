@@ -51,6 +51,10 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
   `ProvisioningEffect`. Import při chybě odstraní platformní secrets, obnoví
   původní přímou Gitea/GitHub collaborator roli a smaže Project jen po úplné
   kompenzaci; jinak jej ponechá viditelný s `cleanup required` efektem.
+- Provisioning recovery má process lease, `interrupted/reconciliation_required`
+  stavy, workspace-wide Dashboard seznam, maintainer CAS cleanup a nejvýše pět
+  idempotentních setup pokusů. Retry vidí pouze původní iniciátor a až po
+  prokázané kompenzaci; vznik attemptu a retirement předchůdce je transakční.
 - New project v SaaS nabízí aktivní osobní/organizační instalace aktuálního
   workspace; API cizí installation ID znovu odmítne. Chybějící/legacy OAuth
   credential má v Settings „Renew authorization“. Self-hosted UI zůstává Gitea.
@@ -61,9 +65,6 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 ## Co dokončeno není
 
-- Effect journal zatím nemá startup crash reconciliation ani idempotentní retry.
-  Neúspěšný create bez Project ID proto stále není dostupný z project detailu;
-  `applying` efekt po tvrdém pádu musí další podkrok serverově reconciliovat.
 - Privátní GHCR image umí workflow pushnout repository-scoped `GITHUB_TOKEN`,
   ale control plane nemá podporovaný krátkodobý registry credential pro pull.
   Nepřidávej uživatelský PAT classic; navrhni managed OCI registry s project-
@@ -77,22 +78,21 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 
 1. Proveď živý GitHub E2E nového routingu: personal/org create, kompatibilní
    import, Actions/Check Runs, retry, role, suspend/uninstall a delete/detach.
-2. Nad hotový effect journal doplň startup crash reconciliation, workspace
-   seznam provisioning operací a idempotentní retry/cleanup.
-3. Rozhodni a implementuj SaaS artifact transport (managed OCI registry versus
+2. Rozhodni a implementuj SaaS artifact transport (managed OCI registry versus
    agent), potom vytvoř skutečný SaaS deploy profil bez Gitey.
 
 GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 36 API suites / 225 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 38 API suites / 234 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config prošel; API/web kontejnery byly přestavěné a API
   je healthy bez modulárního DI cyklu.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy
   projekty zachovaly URL a dostaly reálná Gitea repository ID. Health a
   nepřihlášený browser smoke prošly. Aditivní migrace
-  `20260720200000_provisioning_effect_journal` je na stejné DB aplikovaná a
+  `20260720200000_provisioning_effect_journal` i
+  `20260720210000_provisioning_recovery` jsou na stejné DB aplikované;
   přestavěné API je healthy.
 - Stále je nutný úplný autentizovaný browser acceptance a živý GitHub App E2E.
   Lokální `deploy/.env` je `saas`; propojení identity a osobní instalace

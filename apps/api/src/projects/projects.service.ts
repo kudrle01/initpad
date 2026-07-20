@@ -52,6 +52,8 @@ import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/provid
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
+type ProvisioningRetry = { retryOfId: string; attempt: number };
+
 type ProjectRow = Prisma.ProjectGetPayload<{
   include: { environments: { include: { target: true } } };
 }>;
@@ -406,12 +408,22 @@ export class ProjectsService implements OnModuleInit {
     return this.provisioning.latestForProject(id);
   }
 
-  async create(dto: CreateProjectDto, ownerId: string, requestedWorkspaceId?: string): Promise<Project> {
+  async create(
+    dto: CreateProjectDto,
+    ownerId: string,
+    requestedWorkspaceId?: string,
+    retry?: ProvisioningRetry,
+  ): Promise<Project> {
     const { id: workspaceId } = await this.workspaces.resolve(ownerId, requestedWorkspaceId);
     // The summary operation is accompanied by a write-ahead effect journal in
     // createInternal. External mutation is refused when its intent cannot be
     // persisted; outcome text remains best-effort and never masks the cause.
-    const op = await this.provisioning.start(workspaceId, dto.name, 'create');
+    const op = await this.provisioning.start(workspaceId, dto.name, 'create', {
+      requestedById: ownerId,
+      request: dto as unknown as Prisma.InputJsonValue,
+      retryOfId: retry?.retryOfId,
+      attempt: retry?.attempt,
+    });
     try {
       const project = await this.createInternal(dto, ownerId, workspaceId, op);
       await this.provisioning.succeed(op, project.id);
@@ -466,7 +478,11 @@ export class ProjectsService implements OnModuleInit {
       const repositoryEffect = 'repository:create';
       await this.provisioning.planEffect(operationId, repositoryEffect, 'repository', {
         provider: scmContext.kind,
+        owner: scmContext.actor.username,
         name: dto.name,
+        fullName: `${scmContext.actor.username}/${dto.name}`,
+        defaultBranch: 'main',
+        installationId: scmContext.actor.installationId ?? null,
       });
       await this.provisioning.beginEffect(operationId, repositoryEffect);
       try {
@@ -480,7 +496,12 @@ export class ProjectsService implements OnModuleInit {
         await this.provisioning.completeEffect(operationId, repositoryEffect, {
           provider: repo.provider,
           repositoryId: repo.repositoryId,
-          repository: repo.fullName,
+          owner: repo.owner,
+          name: repo.name,
+          fullName: repo.fullName,
+          defaultBranch: repo.defaultBranch,
+          repoUrl: repo.repoUrl,
+          installationId: repo.installationId,
         });
       } catch (e) {
         await this.provisioning
@@ -592,6 +613,7 @@ export class ProjectsService implements OnModuleInit {
         if (created) {
           try {
             await this.prisma.project.delete({ where: { id: created.id } });
+            await this.provisioning.unbindProject(operationId);
           } catch (cleanupError) {
             projectCleanupError = cleanupError as Error;
             this.logger.warn(`Project-record rollback failed: ${projectCleanupError.message}`);
@@ -644,10 +666,16 @@ export class ProjectsService implements OnModuleInit {
     dto: ImportProjectDto,
     ownerId: string,
     requestedWorkspaceId?: string,
+    retry?: ProvisioningRetry,
   ): Promise<Project> {
     const { id: workspaceId } = await this.workspaces.resolve(ownerId, requestedWorkspaceId);
     await this.workspaces.require(ownerId, workspaceId, 'write');
-    const op = await this.provisioning.start(workspaceId, dto.repositoryId, 'import');
+    const op = await this.provisioning.start(workspaceId, dto.repositoryId, 'import', {
+      requestedById: ownerId,
+      request: dto as unknown as Prisma.InputJsonValue,
+      retryOfId: retry?.retryOfId,
+      attempt: retry?.attempt,
+    });
     try {
       const template = this.templates.get(dto.templateId);
       const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
@@ -752,6 +780,7 @@ export class ProjectsService implements OnModuleInit {
         if (created) {
           try {
             await this.prisma.project.delete({ where: { id: created.id } });
+            await this.provisioning.unbindProject(op);
             await this.provisioning.compensateEffect(op, projectEffect).catch(() => undefined);
           } catch (cleanupError) {
             await this.provisioning
@@ -837,6 +866,7 @@ export class ProjectsService implements OnModuleInit {
         if (cleanupErrors.length === 0) {
           try {
             await this.prisma.project.delete({ where: { id: created.id } });
+            await this.provisioning.unbindProject(op);
             await this.provisioning.compensateEffect(op, projectEffect);
           } catch (cleanupError) {
             const message = (cleanupError as Error).message;
@@ -859,6 +889,230 @@ export class ProjectsService implements OnModuleInit {
       await this.provisioning.fail(op, (e as Error).message);
       throw e;
     }
+  }
+
+  async retryProvisioning(operationId: string, userId: string): Promise<Project> {
+    const operation = await this.provisioning.record(operationId);
+    await this.workspaces.require(userId, operation.workspaceId, 'write');
+    if (!this.provisioning.isRetryable(operation, userId)) {
+      throw new BadRequestException(
+        operation.attempt >= 5
+          ? 'This provisioning operation reached the maximum of five attempts'
+          : 'Finish the required cleanup before retrying this provisioning operation',
+      );
+    }
+    if (!operation.request || typeof operation.request !== 'object' || Array.isArray(operation.request)) {
+      throw new BadRequestException('This legacy provisioning operation has no retryable request');
+    }
+    await this.provisioning.claimRetry(operation.id);
+    const retry = { retryOfId: operation.id, attempt: operation.attempt + 1 };
+    try {
+      if (operation.kind === 'create') {
+        return await this.create(
+          operation.request as unknown as CreateProjectDto,
+          userId,
+          operation.workspaceId,
+          retry,
+        );
+      }
+      if (operation.kind === 'import') {
+        return await this.importExisting(
+          operation.request as unknown as ImportProjectDto,
+          userId,
+          operation.workspaceId,
+          retry,
+        );
+      }
+      throw new BadRequestException(`Unsupported provisioning kind '${operation.kind}'`);
+    } catch (error) {
+      // start() creates the new attempt and retires the old one atomically.
+      // If that transaction never committed, release the compare-and-set so a
+      // transient DB error does not permanently lock the retry button.
+      await this.provisioning.releaseRetry(operation.id).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async cleanupProvisioning(operationId: string, userId: string): Promise<void> {
+    const operation = await this.provisioning.record(operationId);
+    await this.workspaces.require(userId, operation.workspaceId, 'maintain');
+    if (!this.provisioning.needsCleanup(operation)) {
+      throw new BadRequestException('This provisioning operation has no pending cleanup');
+    }
+    await this.provisioning.claimCleanup(operation.id);
+    try {
+      await this.cleanupProvisioningEffects(operation, userId);
+    } catch (error) {
+      await this.provisioning
+        .releaseCleanup(operation.id, (error as Error).message)
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async cleanupProvisioningEffects(
+    operation: Awaited<ReturnType<ProvisioningService['record']>>,
+    userId: string,
+  ): Promise<void> {
+    const project = operation.projectId
+      ? await this.prisma.project.findUnique({ where: { id: operation.projectId } })
+      : null;
+    const cleanupErrors: string[] = [];
+    const compensate = async (key: string, action: () => Promise<void>) => {
+      try {
+        await action();
+        await this.provisioning.compensateEffect(operation.id, key);
+      } catch (error) {
+        const message = (error as Error).message;
+        cleanupErrors.push(`${key}: ${message}`);
+        await this.provisioning.compensationFailed(operation.id, key, message).catch(() => undefined);
+      }
+    };
+
+    if (operation.kind === 'import') {
+      const externalEffects = operation.effects.filter(
+        (effect) =>
+          (effect.kind === 'collaborator' || effect.kind === 'secrets') &&
+          this.effectNeedsCleanup(effect.status),
+      );
+      if (!project && externalEffects.length > 0) {
+        throw new BadRequestException(
+          'The imported project record is missing; external cleanup cannot be proven safe automatically',
+        );
+      }
+      if (project) {
+        const repo = repositoryRef(project);
+        const scm = this.workspaceScm.provider(repo.provider);
+        for (const effect of [...externalEffects].reverse()) {
+          if (effect.kind === 'collaborator') {
+            const metadata = this.effectMetadata(effect.metadata);
+            const username = metadata.username;
+            if (!username) {
+              cleanupErrors.push(`${effect.key}: collaborator identity is missing`);
+              continue;
+            }
+            await compensate(effect.key, () =>
+              scm.restoreCollaboratorAccess(repo, username, metadata.previousAccess ?? null),
+            );
+          } else if (effect.kind === 'secrets') {
+            await compensate(effect.key, () => scm.removeRepoSecrets(repo));
+          }
+        }
+      }
+    } else if (operation.kind === 'create') {
+      const repositoryEffect = operation.effects.find((effect) => effect.kind === 'repository');
+      const repo = project
+        ? repositoryRef(project)
+        : repositoryEffect
+          ? this.repositoryFromEffect(repositoryEffect.metadata)
+          : null;
+      const repositoryEffects = operation.effects.filter(
+        (effect) =>
+          (effect.kind === 'repository' || effect.kind === 'collaborator') &&
+          this.effectNeedsCleanup(effect.status),
+      );
+      if (repositoryEffects.length > 0) {
+        if (!repo) {
+          throw new BadRequestException(
+            'The created repository identity is incomplete; remove it in the SCM before retrying',
+          );
+        }
+        const scm = this.workspaceScm.provider(repo.provider);
+        const actor = await this.workspaceScm.actorForRepository(userId, repo);
+        try {
+          await scm.deleteRepo(repo, actor);
+          for (const effect of repositoryEffects.reverse()) {
+            try {
+              await this.provisioning.compensateEffect(operation.id, effect.key);
+            } catch (error) {
+              const message = (error as Error).message;
+              cleanupErrors.push(`${effect.key}: ${message}`);
+              await this.provisioning
+                .compensationFailed(operation.id, effect.key, message)
+                .catch(() => undefined);
+            }
+          }
+        } catch (error) {
+          const message = (error as Error).message;
+          for (const effect of repositoryEffects) {
+            cleanupErrors.push(`${effect.key}: ${message}`);
+            await this.provisioning
+              .compensationFailed(operation.id, effect.key, message)
+              .catch(() => undefined);
+          }
+        }
+      }
+    } else {
+      throw new BadRequestException(`Unsupported provisioning kind '${operation.kind}'`);
+    }
+
+    if (cleanupErrors.length === 0) {
+      const projectEffect = operation.effects.find((effect) => effect.kind === 'project');
+      if (project) {
+        if (projectEffect) {
+          await compensate(projectEffect.key, () =>
+            this.prisma.project.delete({ where: { id: project.id } }).then(async () => {
+              await this.provisioning.unbindProject(operation.id);
+            }),
+          );
+        } else {
+          try {
+            await this.prisma.project.delete({ where: { id: project.id } });
+            await this.provisioning.unbindProject(operation.id);
+          } catch (error) {
+            cleanupErrors.push(`project: ${(error as Error).message}`);
+          }
+        }
+      } else if (projectEffect && this.effectNeedsCleanup(projectEffect.status)) {
+        await this.provisioning.compensateEffect(operation.id, projectEffect.key).catch((error) => {
+          cleanupErrors.push(`${projectEffect.key}: ${(error as Error).message}`);
+        });
+        if (cleanupErrors.length === 0) {
+          await this.provisioning.unbindProject(operation.id).catch((error) => {
+            cleanupErrors.push(`project: ${(error as Error).message}`);
+          });
+        }
+      }
+    }
+
+    if (cleanupErrors.length > 0) {
+      throw new BadRequestException(`Provisioning cleanup is still incomplete: ${cleanupErrors.join('; ')}`);
+    }
+    await this.provisioning.cleanupFinished(operation.id);
+  }
+
+  private effectNeedsCleanup(status: string): boolean {
+    return !['planned', 'compensated'].includes(status);
+  }
+
+  private effectMetadata(value: unknown): Record<string, string | null> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const result: Record<string, string | null> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (typeof entry === 'string' || entry === null) result[key] = entry;
+    }
+    return result;
+  }
+
+  private repositoryFromEffect(value: unknown): ScmRepositoryRef | null {
+    const metadata = this.effectMetadata(value);
+    if (
+      (metadata.provider !== 'gitea' && metadata.provider !== 'github') ||
+      !metadata.owner ||
+      !metadata.name
+    ) {
+      return null;
+    }
+    return {
+      provider: metadata.provider,
+      repositoryId: metadata.repositoryId ?? null,
+      owner: metadata.owner,
+      name: metadata.name,
+      fullName: metadata.fullName || `${metadata.owner}/${metadata.name}`,
+      defaultBranch: metadata.defaultBranch || 'main',
+      repoUrl: metadata.repoUrl ?? null,
+      installationId: metadata.installationId ?? null,
+    };
   }
 
   // Wraps deployEnv so a failure never escapes as an unhandled rejection —
