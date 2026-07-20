@@ -2309,13 +2309,15 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
-  // The "natural" prod target kind for a template. php/python have no built-in
-  // ssh/sftp host that runs them, so they default to Docker (the user can
-  // switch prod to their own PHP/SSH server afterwards).
+  // The "natural" prod target kind for a template. PHP framework templates
+  // prefer a PHP-capable shared host when the workspace registered one; plain
+  // PHP and Python still fall back to Docker when their manifest does not
+  // accept that provider kind.
   private defaultKind(template: TemplateManifest): ProviderKind {
     const rt = templateRuntime(template);
     if (rt === 'static') return 'sftp';
     if (rt === 'node') return 'ssh';
+    if (rt === 'php') return 'sftp';
     return 'docker';
   }
 
@@ -2351,12 +2353,19 @@ export class ProjectsService implements OnModuleInit {
     }
     if (name === 'prod') {
       const kind = this.defaultKind(template);
-      const natural = entities.find(
+      const candidates = entities.filter(
         (e) =>
-          e.scope === 'builtin' &&
           e.kind === kind &&
+          template.compatibleProviders.includes(e.kind as ProviderKind) &&
           this.targets.parseCaps(e.capabilities).includes(runtime),
       );
+      // Keep the deterministic simulated target for static/Node templates.
+      // When no built-in target has the required runtime (PHP on SFTP), prefer
+      // a verified workspace target and then any explicitly configured one.
+      const natural =
+        candidates.find((e) => e.scope === 'builtin') ??
+        candidates.find((e) => e.scope === 'user' && e.verifiedAt) ??
+        candidates.find((e) => e.scope === 'user');
       if (natural) return natural;
     }
     const docker = entities.find((e) => e.id === BUILTIN_DOCKER);

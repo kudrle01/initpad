@@ -80,3 +80,57 @@ describe('target authorization', () => {
     expect(deployment.verify).not.toHaveBeenCalled();
   });
 });
+
+describe('target capability updates', () => {
+  const row: TargetRow = {
+    id: 'target-1',
+    name: 'ESO',
+    kind: 'sftp',
+    scope: 'user',
+    capabilities: 'static',
+    host: 'eso.example.edu',
+    port: 22,
+    username: 'student',
+    auth: 'password',
+    secret: encryptSecret('pw'),
+    remotePath: '/www',
+    publicUrl: 'https://eso.example.edu/~student',
+    verifiedAt: new Date(),
+    ownerId: 'u1',
+    workspaceId: 'w1',
+    createdAt: new Date(),
+  };
+
+  function serviceWithTarget(capabilities = row.capabilities) {
+    const current = { ...row, capabilities };
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => current),
+        update: jest.fn(async ({ data }: { data: Partial<TargetRow> }) => ({ ...current, ...data })),
+      },
+      environment: { count: jest.fn(async () => 2), updateMany: jest.fn() },
+    };
+    const workspaces = { require: jest.fn(async () => 'maintainer') };
+    return {
+      service: new TargetsService(prisma as never, {} as never, workspaces as never),
+      prisma,
+    };
+  }
+
+  it('allows adding PHP to a static target that already hosts environments', async () => {
+    const { service, prisma } = serviceWithTarget();
+
+    await expect(
+      service.update('target-1', 'u1', { capabilities: ['static', 'php'] }),
+    ).resolves.toMatchObject({ capabilities: ['php', 'static'], verifiedAt: null });
+    expect(prisma.environment.count).not.toHaveBeenCalled();
+  });
+
+  it('blocks removing a capability from a target that is in use', async () => {
+    const { service } = serviceWithTarget('static,php');
+
+    await expect(
+      service.update('target-1', 'u1', { capabilities: ['php'] }),
+    ).rejects.toThrow('cannot change kind or remove runtime capabilities');
+  });
+});

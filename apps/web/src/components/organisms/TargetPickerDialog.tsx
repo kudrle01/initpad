@@ -54,6 +54,14 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
   }, [env, current]);
 
   const options = template ? targets.filter((t) => usable(t, template)) : [];
+  const missingCapability = template
+    ? targets.filter(
+        (target) =>
+          target.scope === 'user' &&
+          template.compatibleProviders.includes(target.kind) &&
+          !target.capabilities.includes(runtimeOf(template)),
+      )
+    : [];
 
   return (
     <Dialog open={!!env} onOpenChange={(o) => !busy && onOpenChange(o)}>
@@ -72,7 +80,7 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
           {options.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No compatible target yet. Add a server in{' '}
-              <Link to="/infrastructure" className="text-primary hover:underline">
+              <Link to="/infrastructure" className="text-link">
                 Infrastructure
               </Link>
               .
@@ -115,12 +123,21 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
               </button>
             );
           })}
+          {missingCapability.length > 0 && template && (
+            <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground">
+              {missingCapability.map((target) => target.name).join(', ')}{' '}
+              {missingCapability.length === 1 ? 'is' : 'are'} hidden because the target capability list does not include{' '}
+              <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
+              <Link to="/infrastructure" className="text-link font-medium">Update capabilities</Link>
+              .
+            </p>
+          )}
         </div>
 
         <DialogFooter className="items-center">
           <Link
             to="/infrastructure"
-            className="mr-auto text-xs text-muted-foreground hover:text-foreground hover:underline"
+            className="text-link mr-auto text-xs font-medium"
           >
             Manage targets
           </Link>

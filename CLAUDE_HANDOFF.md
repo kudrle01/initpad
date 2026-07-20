@@ -63,6 +63,10 @@ být podložené testem; existence rozhraní nebo nepoužívaného registru nest
 - New project v SaaS nabízí aktivní osobní/organizační instalace aktuálního
   workspace; API cizí installation ID znovu odmítne. Chybějící/legacy OAuth
   credential má v Settings „Renew authorization“. Self-hosted UI zůstává Gitea.
+- PHP frameworky preferují ověřený workspace SFTP/PHP target pro prod.
+  Skrytý static-only target je v New project/target pickeru vysvětlen jménem;
+  capability lze bezpečně přidat i za provozu, ne odebírat. Inline odkazy
+  mají jednotný zelený affordance včetně ikon (ADR-050).
 - Audit 2026-07-17 opravil: native auth v SaaS, automatického prvního SaaS admina,
   odpojení poslední použitelné identity, ověření GitHub e-mailu, atomický claim
   jednorázových tokenů, oddělení platformního hesla od lokálního hesla Gitey a
@@ -92,7 +96,7 @@ GitLab je až následující adapter a nesmí blokovat Gitea školní E2E.
 
 ## Ověření před dalším handoffem
 
-- Aktuálně: 42 API suites / 246 testů, API build a web `tsc -b && vite build`
+- Aktuálně: 42 API suites / 249 testů, API build a web `tsc -b && vite build`
   jsou zelené. Compose config prošel; API/web kontejnery byly přestavěné a API
   je healthy bez modulárního DI cyklu.
 - Lokální existující Docker DB migraci aplikovala úspěšně; tři legacy

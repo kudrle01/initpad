@@ -1,4 +1,5 @@
 import { ProjectsService } from './projects.service';
+import type { TargetRow } from '../targets/targets.service';
 
 const repository = {
   provider: 'gitea' as const,
@@ -16,18 +17,21 @@ const template = {
   artifact: 'runtime', compatibleProviders: ['docker', 'ssh'], description: 'test',
 };
 
-const dockerTarget = {
+const dockerTarget: TargetRow = {
   id: 'builtin-docker', name: 'Docker', kind: 'docker', scope: 'builtin',
   capabilities: 'static,node,php,python', host: null, port: null, username: null,
   auth: null, secret: null, remotePath: null, publicUrl: null, verifiedAt: null,
   ownerId: null, workspaceId: null, createdAt: new Date(),
 };
 
-function build(completeEffect: jest.Mock = jest.fn(async () => undefined)) {
+function build(
+  completeEffect: jest.Mock = jest.fn(async () => undefined),
+  options?: { selectedTemplate?: typeof template; targets?: TargetRow[] },
+) {
   const prisma = {
     project: {
       findFirst: jest.fn(async () => null),
-      create: jest.fn(async () => ({ id: 'p1' })),
+      create: jest.fn(async (_input: unknown) => ({ id: 'p1' })),
       delete: jest.fn(async () => undefined),
     },
     user: { findUniqueOrThrow: jest.fn(async () => ({ id: 'u1', username: 'alice' })) },
@@ -53,10 +57,10 @@ function build(completeEffect: jest.Mock = jest.fn(async () => undefined)) {
   };
   const service = new ProjectsService(
     prisma as never,
-    { get: jest.fn(() => template) } as never,
+    { get: jest.fn(() => options?.selectedTemplate ?? template) } as never,
     { generate: jest.fn(() => ({ repoPath: '/tmp/initpad-create-journal-test' })) } as never,
     {} as never,
-    { listEntities: jest.fn(async () => [dockerTarget]), parseCaps: (v: string) => v.split(',') } as never,
+    { listEntities: jest.fn(async () => options?.targets ?? [dockerTarget]), parseCaps: (v: string) => v.split(',') } as never,
     {
       createContext: jest.fn(async () => ({
         kind: 'gitea', actor: { username: 'alice', token: 'token' },
@@ -101,5 +105,38 @@ describe('ProjectsService create provisioning journal', () => {
     );
     expect(provisioning.compensateEffect).toHaveBeenCalledWith('op1', 'repository:create');
     expect(provisioning.fail).toHaveBeenCalledWith('op1', expect.stringContaining('journal unavailable'));
+  });
+
+  it('binds PHP production to a verified workspace SFTP host by default', async () => {
+    const phpTemplate = {
+      ...template,
+      id: 'nette',
+      runtime: 'php',
+      compatibleProviders: ['docker', 'sftp'],
+    };
+    const phpSftpTarget = {
+      ...dockerTarget,
+      id: 'eso',
+      name: 'ESO',
+      kind: 'sftp',
+      scope: 'user',
+      capabilities: 'static,php',
+      verifiedAt: new Date(),
+      workspaceId: 'ws1',
+    };
+    const { service, prisma } = build(jest.fn(async () => undefined), {
+      selectedTemplate: phpTemplate,
+      targets: [dockerTarget, phpSftpTarget],
+    });
+
+    await service.create({ name: 'new-api', templateId: 'nette' }, 'u1');
+
+    const createInput = prisma.project.create.mock.calls[0]?.[0] as {
+      data: { environments: { create: Array<{ name: string; provider: string; targetId: string }> } };
+    } | undefined;
+    expect(createInput).toBeDefined();
+    const environments = createInput!.data.environments.create;
+    expect(environments.find((environment: { name: string }) => environment.name === 'prod'))
+      .toMatchObject({ provider: 'sftp', targetId: 'eso' });
   });
 });

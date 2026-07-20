@@ -46,3 +46,13 @@
     background: hsl(var(--primary) / 0.22);
   }
 }
+
+@layer components {
+  /* Standalone and inline navigation should be recognizable before hover.
+     Lucide icons inherit currentColor, so an icon inside the link uses the
+     same green affordance automatically. Buttons, cards and sidebar items keep
+     their own interaction styling and do not use this class. */
+  .text-link {
+    @apply text-primary underline-offset-4 transition-colors hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40;
+  }
+}

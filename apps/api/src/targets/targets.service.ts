@@ -213,14 +213,21 @@ export class TargetsService implements OnModuleInit {
       if (duplicate) throw new BadRequestException(`You already have a target named '${dto.name}'`);
     }
     const kindChanged = dto.kind !== undefined && dto.kind !== row.kind;
+    const currentCapabilities = this.parseCaps(row.capabilities);
     const capabilitiesChanged =
       dto.capabilities !== undefined &&
-      this.toCsv(dto.capabilities) !== this.toCsv(this.parseCaps(row.capabilities));
-    if (kindChanged || capabilitiesChanged) {
+      this.toCsv(dto.capabilities) !== this.toCsv(currentCapabilities);
+    const capabilitiesRemoved = dto.capabilities !== undefined &&
+      currentCapabilities.some((capability) => !dto.capabilities!.includes(capability));
+    // Adding a capability cannot invalidate an existing environment. Removing
+    // one can, so only destructive capability changes are blocked while the
+    // target is in use. This lets a shared host evolve from static-only to
+    // static+PHP without first moving every existing static deployment away.
+    if (kindChanged || capabilitiesRemoved) {
       const inUse = await this.prisma.environment.count({ where: { targetId: row.id } });
       if (inUse > 0) {
         throw new BadRequestException(
-          'A target in use cannot change kind or runtime capabilities. Move its environments first.',
+          'A target in use cannot change kind or remove runtime capabilities. Move its environments first.',
         );
       }
     }

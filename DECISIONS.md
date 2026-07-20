@@ -1813,3 +1813,42 @@ Import starého GitHub workflow musí zobrazit varování `legacy callback`.
 Reference: [GitHub REST API — Actions artifacts](https://docs.github.com/en/rest/actions/artifacts),
 [actions/upload-artifact v7](https://github.com/actions/upload-artifact),
 [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations).
+
+## ADR-050 — PHP produkce preferuje deklarovaný SFTP/PHP target; capability změny jsou směrové
+
+**Kontext.** Nette, Laravel a Symfony již byly technicky SFTP-kompatibilní,
+ale nový SFTP target se ve formuláři nenápadně uložil pouze s capability
+`static`. V jiném workspace mohl existovat starší PHP-capable target, ale
+tenant isolation jej správně skryla. Uživatel pak v produkčním selectu viděl jen
+Docker bez vysvětlení. Navíc backend blokoval jakoukoli změnu capabilities u
+používaného targetu, přestože přidání `php` nemůže zneplatnit existující
+statické deploymenty.
+
+**Rozhodnutí.** Capability je nadále pravdivé tvrzení o serveru, nikoli
+vlastnost odvozená ze jména „ESO“. Nový SFTP formulář ale jako nejčastější
+shared-hosting profil předvolí `static + php`, výslovně vysvětlí požadavek
+shell přístupu a dovolí zvolit jen `static`. Přidání capability je povolené i
+u targetu v provozu; odebrání capability nebo změna provider kind zůstává
+blokovaná, dokud se prostředí nepřesunou. Každá změna capabilities zruší
+starý verification timestamp a vyžaduje nový connection test.
+
+Pro PHP framework se při založení projektu preferuje kompatibilní vestavěný
+target, potom ověřený workspace SFTP/PHP target a teprve při jejich absenci
+Docker. Plain PHP zůstává na Dockeru, protože jeho manifest SFTP nepovoluje.
+UI skrytý kompatibilní provider vypíše jménem a uvede chybějící runtime s
+odkazem na Infrastructure. Inline textové odkazy používají jednotný zelený
+`text-link` affordance; ikony dědí tutéž barvu.
+
+**Důsledky.** Tenant isolation se neobchází a platforma PHP podporu serveru
+potichu nevymýšlí. Zároveň uživatel rozliší „chybí PHP capability“ od
+„šablona SFTP neumí“ a sdílený target lze bezpečně rozšířit bez odstávky
+existující statické aplikace.
+
+**Uživatelské testování.** V týmovém workspace ponechat ESO target jen jako
+`static`, otevřít New project a vybrat Nette: ESO se v produkčním selectu
+nenabídne, ale žluté vysvětlení uvede jeho jméno a chybějící `php`. Zelený
+odkaz otevře Infrastructure. V Edit target zapnout PHP, uložit, znovu provést
+Test connection a vrátit se do formuláře: ESO je automaticky vybrané pro prod.
+Stejně ověřit Laravel a Symfony. Pokud target již hostí statickou aplikaci,
+přidání PHP projde; pokus odebrat `static` zůstane zablokovaný. Odkazy
+„Import an existing repository instead“ a opačný tok jsou zelené včetně ikon.

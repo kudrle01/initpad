@@ -519,6 +519,20 @@ jiným artifact ID/digest/SHA musí vrátit 400. Staré repo
 bez artifact handoff se nesmí dát importovat. Produkční object-store/agent test
 patří až do milníku 7.
 
+### PHP/SFTP target selection a odkazový affordance (2026-07-20)
+
+- Nette, Laravel a Symfony preferují pro prod ověřený workspace SFTP target
+  s `php`; bez něj bezpečně zůstává Docker fallback.
+- SFTP formulář pro nový shared-hosting target předvolí `static + php` a
+  výslovně upozorní, že PHP varianta potřebuje shell operace. Existující
+  target lze o capability rozšířit i za provozu; capability nelze za provozu
+  odebírat.
+- New project i změna targetu vypíší skryté SFTP targety a konkrétní
+  chybějící runtime. Textové odkazy jsou zelené už v klidovém stavu a ikony
+  dědí jejich barvu.
+- Automatizovaně ověřeno: 42 API suites / 249 testů, API i web production
+  build. Browser acceptance je popsán v ADR-050.
+
 ### Průběžné ověření delivery části milníku 8
 
 - React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez

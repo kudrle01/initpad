@@ -35,13 +35,19 @@ interface Props {
 const selectCls =
   'h-9 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
 
+function defaultCapabilities(kind: 'ssh' | 'sftp'): RuntimeKind[] {
+  // The primary SFTP use case is shared PHP hosting (ESO included). Keeping
+  // both choices visible below still lets the user opt into static-only.
+  return kind === 'sftp' ? ['static', 'php'] : ['node'];
+}
+
 // Register or edit one of the user's own deployment targets (a server the
 // platform can deploy to). Built-in targets are read-only and never edited here.
 export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }: Props) {
   const editing = !!target;
   const [name, setName] = useState('');
   const [kind, setKind] = useState<'ssh' | 'sftp'>('sftp');
-  const [caps, setCaps] = useState<RuntimeKind[]>(['static']);
+  const [caps, setCaps] = useState<RuntimeKind[]>(defaultCapabilities('sftp'));
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
   const [username, setUsername] = useState('');
@@ -54,7 +60,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
     if (!open) return;
     setName(target?.name ?? '');
     setKind((target?.kind as 'ssh' | 'sftp') ?? 'sftp');
-    setCaps(target?.capabilities ?? ['static']);
+    setCaps(target?.capabilities ?? defaultCapabilities('sftp'));
     setHost(target?.host ?? '');
     setPort(String(target?.port ?? 22));
     setUsername(target?.username ?? '');
@@ -66,6 +72,11 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
 
   function toggleCap(c: RuntimeKind) {
     setCaps((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]));
+  }
+
+  function changeKind(next: 'ssh' | 'sftp') {
+    setKind(next);
+    if (!editing) setCaps(defaultCapabilities(next));
   }
 
   const valid =
@@ -112,8 +123,8 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Type</Label>
-            <select className={selectCls} value={kind} onChange={(e) => setKind(e.target.value as 'ssh' | 'sftp')}>
-              <option value="sftp">SFTP (static / PHP hosting)</option>
+            <select className={selectCls} value={kind} onChange={(e) => changeKind(e.target.value as 'ssh' | 'sftp')}>
+              <option value="sftp">SFTP (web / PHP hosting)</option>
               <option value="ssh">SSH (runtime app)</option>
             </select>
           </div>
@@ -146,6 +157,11 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                 );
               })}
             </div>
+            <p className="text-xs text-muted-foreground">
+              {kind === 'sftp'
+                ? 'Enable PHP for Nette, Laravel and Symfony. PHP deployment also requires shell commands over the same SSH account; static-only SFTP does not.'
+                : 'Select only runtimes installed on this server. Test connection reports detected command-line runtimes.'}
+            </p>
           </div>
 
           <div className="col-span-2 flex flex-col gap-1.5">

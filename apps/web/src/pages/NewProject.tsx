@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Check, Rocket, ArrowRight, Container, DownloadCloud, Github } from 'lucide-react';
+import { AlertTriangle, Check, Rocket, ArrowRight, Container, DownloadCloud, Github, Settings2 } from 'lucide-react';
 import { api, type EnvConfig, type GitHubStatus } from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
@@ -55,6 +55,17 @@ export default function NewProject() {
     [targets, template],
   );
 
+  const capabilityMismatches = useMemo(() => {
+    if (!template) return [];
+    const runtime = runtimeOf(template);
+    return targets.filter(
+      (target) =>
+        target.scope === 'user' &&
+        template.compatibleProviders.includes(target.kind) &&
+        !target.capabilities.includes(runtime),
+    );
+  }, [targets, template]);
+
   const dockerTarget = useMemo(
     () => targets.find((t) => t.scope === 'builtin' && t.kind === 'docker') ?? null,
     [targets],
@@ -94,15 +105,18 @@ export default function NewProject() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hosted, activeWorkspace?.id]);
 
-  // Default prod to the template's natural target (static→SFTP, node→SSH,
-  // otherwise Docker); the user can change it here or later.
+  // Prefer the template's natural production host. PHP frameworks use a
+  // workspace SFTP/PHP host when one is configured; Docker remains the safe
+  // fallback for plain PHP and workspaces without such a target.
   useEffect(() => {
     if (!template) return;
     const rt = runtimeOf(template);
-    const kind = rt === 'static' ? 'sftp' : rt === 'node' ? 'ssh' : 'docker';
+    const kind = rt === 'static' || rt === 'php' ? 'sftp' : rt === 'node' ? 'ssh' : 'docker';
     const opts = targets.filter((t) => usable(t, template));
     const natural =
       opts.find((t) => t.scope === 'builtin' && t.kind === kind) ??
+      opts.find((t) => t.scope === 'user' && t.kind === kind && t.verifiedAt) ??
+      opts.find((t) => t.scope === 'user' && t.kind === kind) ??
       opts.find((t) => t.scope === 'builtin' && t.kind === 'docker') ??
       opts[0];
     setProdTargetId(natural?.id ?? '');
@@ -140,7 +154,7 @@ export default function NewProject() {
         subtitle="Pick a golden path and the platform prepares source code, a Git repository and a deployment pipeline."
       />
 
-      <Link to="/import" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link to="/import" className="text-link mb-4 inline-flex items-center gap-1 text-sm font-medium">
         <DownloadCloud className="h-4 w-4" /> Import an existing repository instead
       </Link>
 
@@ -195,12 +209,12 @@ export default function NewProject() {
                 {!ghStatus?.linked
                   ? 'Link GitHub before creating a hosted project.'
                   : 'Authorize a GitHub App installation for this workspace first.'}{' '}
-                <Link to="/settings" className="font-medium text-primary hover:underline">Open Settings</Link>
+                <Link to="/settings" className="text-link font-medium">Open Settings</Link>
               </div>
             )}
             {selectedInstallation?.accountType === 'User' && !ghStatus?.credentialReady && (
               <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-muted-foreground">
-                Renew your GitHub authorization in <Link to="/settings" className="font-medium text-primary hover:underline">Settings</Link>{' '}
+                Renew your GitHub authorization in <Link to="/settings" className="text-link font-medium">Settings</Link>{' '}
                 before InitPad can create a repository in your personal account.
               </p>
             )}
@@ -275,11 +289,25 @@ export default function NewProject() {
           <p className="mt-1 text-xs text-muted-foreground">
             dev &amp; test run on the built-in infrastructure. Choose where prod deploys — or
             register your own server in{' '}
-            <Link to="/infrastructure" className="text-primary hover:underline">
+            <Link to="/infrastructure" className="text-link">
               Infrastructure
             </Link>
             .
           </p>
+          {template && capabilityMismatches.length > 0 && (
+            <div className="mt-2 flex max-w-2xl items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <span>
+                {capabilityMismatches.map((target) => target.name).join(', ')}{' '}
+                {capabilityMismatches.length === 1 ? 'is' : 'are'} not offered because{' '}
+                {capabilityMismatches.length === 1 ? 'it is' : 'they are'} marked as unable to run{' '}
+                <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
+                <Link to="/infrastructure" className="text-link inline-flex items-center gap-1 font-medium">
+                  Update target capabilities <Settings2 className="h-3.5 w-3.5" />
+                </Link>
+              </span>
+            </div>
+          )}
           {template && (
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{template.description}</p>
           )}
