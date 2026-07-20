@@ -25,6 +25,7 @@ import {
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
 import { cn, scmLink } from '@/lib/utils';
+import { cleanupNotice } from '@/lib/deployment';
 import type { Commit, EnvName, Environment, Project, ProviderKind } from '@/types';
 
 const NEXT: Record<EnvName, EnvName | null> = { dev: 'test', test: 'prod', prod: null };
@@ -136,7 +137,7 @@ export function EnvironmentPipeline({
                       href={runnerLogUrl}
                       target="_blank"
                       rel="noreferrer"
-                      title={`View build & deploy logs in ${project.scm.provider === 'github' ? 'GitHub' : 'Gitea'}`}
+                      title={`View the original CI runner job in ${project.scm.provider === 'github' ? 'GitHub' : 'Gitea'}`}
                       className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
                       <StatusBadge status={env.status} className="cursor-pointer hover:bg-secondary/70" />
@@ -161,7 +162,7 @@ export function EnvironmentPipeline({
                           <DropdownMenuItem
                             onSelect={() => env.version ? onRedeploy(env.name) : onRunAgain()}
                           >
-                            <Play className="h-4 w-4" /> Deploy
+                            <Play className="h-4 w-4" /> {env.version ? 'Deploy verified build' : 'Deploy'}
                           </DropdownMenuItem>
                         )}
                         {canRunAgain && (
@@ -171,7 +172,7 @@ export function EnvironmentPipeline({
                         )}
                         {hasDeployment && !targetNeedsDeploy && (
                           <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
-                            <RefreshCw className="h-4 w-4" /> Redeploy
+                            <RefreshCw className="h-4 w-4" /> Redeploy verified build
                           </DropdownMenuItem>
                         )}
                         {hasDeployment &&
@@ -303,7 +304,7 @@ export function EnvironmentPipeline({
               {cleanupPending && (
                 <div className="mt-2 flex items-start gap-1 text-xs text-warning">
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>{env.statusReason}</span>
+                  <span>{cleanupNotice(env.statusReason!)}</span>
                 </div>
               )}
             </div>

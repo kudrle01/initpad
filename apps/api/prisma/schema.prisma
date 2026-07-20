@@ -392,6 +392,11 @@ model DeploymentOperation {
   status        String // running | succeeded | failed | cancelled
   version       String?
   message       String?
+  // Immutable deployment destination snapshot. Environment.target may change
+  // later; historical activity must keep the target that actually received it.
+  targetIdSnapshot String?
+  targetName       String
+  providerSnapshot String
   createdAt     DateTime    @default(now())
   startedAt     DateTime    @default(now())
   finishedAt    DateTime?

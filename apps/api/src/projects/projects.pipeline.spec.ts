@@ -114,4 +114,31 @@ describe('ProjectsService deployment pipeline projection', () => {
       (await running.service.getCommits(project.id))[0]?.pipeline.find((stage) => stage.name === 'deploy')?.status,
     ).toBe('running');
   });
+
+  it('returns provider-neutral deployment activity with its artifact run binding', async () => {
+    const startedAt = new Date('2026-07-20T20:11:33.000Z');
+    const finishedAt = new Date('2026-07-20T20:11:37.000Z');
+    const prisma = {
+      deploymentOperation: {
+        findMany: jest.fn(async () => [{
+          id: 'operation-1', kind: 'redeploy', status: 'succeeded', version: sha,
+          message: 'Verifying deployment', startedAt, finishedAt,
+          targetName: 'ESO school server', environment: { name: 'dev' },
+          buildArtifact: { providerRunId: '77' },
+        }]),
+      },
+    };
+    const service = new ProjectsService(
+      prisma as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never,
+    );
+
+    await expect(service.deploymentHistory(project.id)).resolves.toEqual([{
+      id: 'operation-1', environment: 'dev', target: 'ESO school server',
+      kind: 'redeploy', status: 'succeeded', version: sha,
+      message: 'Verifying deployment',
+      startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(),
+      artifactRunId: '77',
+    }]);
+  });
 });

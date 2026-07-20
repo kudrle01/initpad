@@ -15,6 +15,7 @@ import type {
   ImportableRepo,
   ImportPreflight,
   ProvisioningStatus,
+  DeploymentOperation,
 } from '@/types';
 
 export interface EnvConfig {
@@ -123,6 +124,8 @@ export const api = {
   listProjects: () => http<Project[]>('/projects'),
   getProject: (id: string) => http<Project>(`/projects/${id}`),
   getCommits: (id: string) => http<Commit[]>(`/projects/${id}/commits`),
+  getDeployments: (id: string) =>
+    http<DeploymentOperation[]>(`/projects/${id}/deployments`),
   getProvisioning: (id: string) =>
     http<ProvisioningStatus | null>(`/projects/${id}/provisioning`),
   listProvisioning: () => http<ProvisioningStatus[]>('/provisioning'),

@@ -535,7 +535,7 @@ export class SftpProvider implements DeploymentProvider {
       .filter(Boolean);
     if (paths.length) {
       return {
-        warning: `Public deployment removed. Target administrator cleanup is still required for: ${paths.join(', ')}`,
+        warning: `Public deployment removed. Its canonical path is free for reuse. Target administrator cleanup is still required for archived runtime data: ${paths.join(', ')}`,
       };
     }
   }

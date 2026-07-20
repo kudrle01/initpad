@@ -16,11 +16,13 @@ import { EmptyState } from '@/components/molecules/EmptyState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline';
+import { DeploymentActivity } from '@/components/organisms/DeploymentActivity';
 import { CommitList } from '@/components/organisms/CommitList';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
 import { cn, scmLink } from '@/lib/utils';
-import type { Commit, EnvName, Project, ProvisioningStatus, Target, TemplateManifest } from '@/types';
+import { cleanupNotice } from '@/lib/deployment';
+import type { Commit, DeploymentOperation, EnvName, Project, ProvisioningStatus, Target, TemplateManifest } from '@/types';
 
 // After creation the project finishes in the background (dev: deploying →
 // running) and CI runs asynchronously — while anything is "working", the
@@ -71,6 +73,7 @@ export default function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null);
   const [template, setTemplate] = useState<TemplateManifest | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
+  const [deployments, setDeployments] = useState<DeploymentOperation[]>([]);
   const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null);
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -91,14 +94,16 @@ export default function ProjectDetail() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [p, c, prov] = await Promise.all([
+      const [p, c, prov, deploymentRows] = await Promise.all([
         api.getProject(id),
         api.getCommits(id).catch(() => [] as Commit[]),
         api.getProvisioning(id).catch(() => null),
+        api.getDeployments(id).catch(() => [] as DeploymentOperation[]),
       ]);
       setProject(p);
       setCommits(c);
       setProvisioning(prov ?? null);
+      setDeployments(deploymentRows);
       setOpenSha((cur) => cur ?? c[0]?.sha ?? null);
     } catch (e) {
       // 404 = the project is gone (deleted here, or its repository was
@@ -157,7 +162,11 @@ export default function ProjectDetail() {
     setBusy(`redeploy-${envName}`);
     try {
       setProject(await api.redeploy(id, envName));
-      toast.success(`Redeploying ${envName}`);
+      toast.success(
+        project?.scm.provider === 'github'
+          ? `Deploying the verified build to ${envName} through InitPad — no new GitHub runner is required.`
+          : `Redeploying ${envName}`,
+      );
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -170,7 +179,11 @@ export default function ProjectDetail() {
     setBusy('run-again-dev');
     try {
       setProject(await api.runAgain(id));
-      toast.success('Preparing dev deployment…');
+      toast.success(
+        project?.scm.provider === 'github'
+          ? 'Preparing dev deployment through InitPad. An existing verified build is reused when available.'
+          : 'Preparing dev deployment…',
+      );
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -205,7 +218,7 @@ export default function ProjectDetail() {
       const updated = await api.removeEnv(id, env);
       setProject(updated);
       const warning = updated.environments.find((item) => item.name === env)?.statusReason;
-      if (warning) toast.warning(warning);
+      if (warning) toast.warning(cleanupNotice(warning));
       else toast.success(`Removed ${env} deployment`);
     } catch (e) {
       toast.error((e as Error).message);
@@ -392,6 +405,14 @@ export default function ProjectDetail() {
           onRemoveEnv={removeEnvironment}
           onConfigureTarget={setTargetEnv}
           readOnly={readOnly}
+        />
+      </Section>
+
+      <Section title="Deployment activity">
+        <DeploymentActivity
+          operations={deployments}
+          repoUrl={project.repoUrl}
+          scmProvider={project.scm.provider}
         />
       </Section>
 

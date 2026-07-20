@@ -216,3 +216,16 @@ export interface ActivityEvent {
   date: string;
   pipeline: PipelineStage[];
 }
+
+export interface DeploymentOperation {
+  id: string;
+  environment: EnvName;
+  target: string;
+  kind: string;
+  status: string;
+  version: string | null;
+  message: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  artifactRunId: string | null;
+}

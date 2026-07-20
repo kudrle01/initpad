@@ -70,7 +70,7 @@ export function prepareProtectedWebLayout(
   // against <private app>/<www|public>, preserving all relative paths.
   writeFileSync(
     join(published, 'index.php'),
-    `<?php\n\nreturn require __DIR__ . '/${PRIVATE_APP_DIR}/${normalized}/index.php';\n`,
+    `<?php\n\n// Shared-hosting PHP may run as a different Unix identity than SFTP.\n// Keep framework-created cache descendants removable by the deploy account.\numask(0000);\n\nreturn require __DIR__ . '/${PRIVATE_APP_DIR}/${normalized}/index.php';\n`,
     'utf8',
   );
   writeFileSync(join(published, '.htaccess'), PUBLIC_HTACCESS, 'utf8');

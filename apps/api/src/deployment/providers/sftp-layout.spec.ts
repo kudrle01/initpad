@@ -27,6 +27,7 @@ describe('prepareProtectedWebLayout', () => {
     expect(readFileSync(join(published, 'index.php'), 'utf8')).toContain(
       "require __DIR__ . '/.initpad-app/www/index.php'",
     );
+    expect(readFileSync(join(published, 'index.php'), 'utf8')).toContain('umask(0000);');
     expect(readFileSync(join(published, 'assets', 'app.css'), 'utf8')).toBe('body{}');
     expect(existsSync(join(published, 'config'))).toBe(false);
     expect(readFileSync(join(published, PRIVATE_APP_DIR, 'www', 'index.php'), 'utf8')).toBe(

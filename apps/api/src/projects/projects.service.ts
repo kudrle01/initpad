@@ -14,6 +14,7 @@ import {
   ActivityEvent,
   Commit,
   DeployStatus,
+  DeploymentOperationSummary,
   Environment,
   EnvName,
   PipelineStage,
@@ -277,6 +278,7 @@ export class ProjectsService implements OnModuleInit {
   ): Promise<string> {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId, name: envName } },
+      include: { target: { select: { name: true } } },
     });
     if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
     const operation = await this.prisma.deploymentOperation.create({
@@ -286,6 +288,10 @@ export class ProjectsService implements OnModuleInit {
         status: 'running',
         version,
         buildArtifactId: buildArtifactId ?? null,
+        message: kind === 'ci-retry' ? 'Waiting for GitHub Actions build' : 'Preparing deployment',
+        targetIdSnapshot: env.targetId,
+        targetName: env.target?.name ?? env.provider,
+        providerSnapshot: env.provider,
       },
     });
     const claimed = await this.prisma.environment.updateMany({
@@ -1449,6 +1455,10 @@ export class ProjectsService implements OnModuleInit {
       where: { projectId, name: 'dev', activeOperationId: operationId },
       data: { statusReason: 'Downloading and verifying tested image' },
     });
+    await this.prisma.deploymentOperation.updateMany({
+      where: { id: operationId, status: 'running' },
+      data: { message: 'Downloading and verifying tested image' },
+    });
     const scm = this.workspaceScm.provider(repository.provider);
     let download: Awaited<
       ReturnType<NonNullable<ScmProvider['downloadBuildArtifact']>>
@@ -2177,6 +2187,30 @@ export class ProjectsService implements OnModuleInit {
     ];
   }
 
+  async deploymentHistory(id: string): Promise<DeploymentOperationSummary[]> {
+    const operations = await this.prisma.deploymentOperation.findMany({
+      where: { environment: { projectId: id } },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      include: {
+        environment: { select: { name: true } },
+        buildArtifact: { select: { providerRunId: true } },
+      },
+    });
+    return operations.map((operation) => ({
+      id: operation.id,
+      environment: operation.environment.name as EnvName,
+      target: operation.targetName,
+      kind: operation.kind,
+      status: operation.status,
+      version: operation.version,
+      message: operation.message,
+      startedAt: operation.startedAt.toISOString(),
+      finishedAt: operation.finishedAt?.toISOString() ?? null,
+      artifactRunId: operation.buildArtifact?.providerRunId ?? null,
+    }));
+  }
+
   // Cross-project activity feed: the recent commits of every owned project with
   // their CI/deploy pipeline state, merged newest-first. A failing project
   // (e.g. its Gitea repo is unreachable) is skipped, not fatal.
@@ -2262,16 +2296,16 @@ export class ProjectsService implements OnModuleInit {
     // persisted into statusReason so the UI can show it under the deploying env.
     // It is cleared (success) or replaced by the failure reason at the end.
     const setStage = (message: string) => {
-      void this.prisma.deploymentOperation
-        .findUnique({ where: { id: operationId }, select: { status: true } })
-        .then((op) => {
-          if (op?.status !== 'running') return;
-          return this.prisma.environment.updateMany({
-            where: { projectId, name: envName, activeOperationId: operationId },
-            data: { statusReason: message },
-          });
-        })
-        .catch(() => undefined);
+      void Promise.all([
+        this.prisma.deploymentOperation.updateMany({
+          where: { id: operationId, status: 'running' },
+          data: { message },
+        }),
+        this.prisma.environment.updateMany({
+          where: { projectId, name: envName, activeOperationId: operationId },
+          data: { statusReason: message },
+        }),
+      ]).catch(() => undefined);
     };
 
     // SFTP deploy of a template with a packaged artifact: extract the exact

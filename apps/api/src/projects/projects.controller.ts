@@ -45,6 +45,12 @@ export class ProjectsController {
     return this.projects.getCommits(id);
   }
 
+  @Get(':id/deployments')
+  async deployments(@Param('id') id: string, @CurrentUser() userId: string) {
+    await this.projects.assertAccess(id, userId, 'read');
+    return this.projects.deploymentHistory(id);
+  }
+
   @Get(':id/provisioning')
   async provisioning(@Param('id') id: string, @CurrentUser() userId: string) {
     await this.projects.assertAccess(id, userId, 'read');
