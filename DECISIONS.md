@@ -2281,3 +2281,80 @@ Reference:
 [AWS SDK for JavaScript v3 — S3 client](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/),
 [AWS SDK — S3 request presigner](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-s3-request-presigner/),
 [MinIO — S3-compatible object storage](https://min.io/docs/minio/container/index.html).
+
+## ADR-060 — Environment běží přes workspace-scoped TargetAllocation, ne přímo přes fyzický Target
+
+**Kontext.** Dnes se `Environment` váže přímo na `Target` (`targetId`).
+`Target` míchá dvě různé věci: fyzickou infrastrukturu s **credentials**
+(host/port/user/secret/remotePath) a její **použití** konkrétním workspace
+(namespace, public URL, kvóty, stav). Built-in targety jsou sdílené
+(`workspaceId=null`), uživatelské patří workspace. Pro reálný multi-tenant model
+(a pro budoucího Agenta, který musí být allocation-scoped) potřebujeme oddělit
+„co to je" od „kdo a jak to smí používat", aniž bychom rozbili existující
+projekty, jejich URL a ESO SFTP cesty. Credentials nikdy nesmí být viditelné
+napříč workspace.
+
+**Rozhodnutí.**
+
+1. **Aditivní `TargetAllocation`.** Nová entita váže fyzický `Target` na
+   `Workspace` a nese *použití*: `namespace`/`rootPath` (prefix jmen kontejnerů
+   nebo SFTP releases root), `publicUrl`, `capabilities` (podmnožina schopností
+   Targetu, kterou workspace smí využít), `status` (`active`/`disabled`) a
+   základní kvóty (`maxEnvironments`, volitelně CPU/memory strop). **Credentials
+   zůstávají výhradně na fyzickém `Target`** — allocation je nikdy nekopíruje ani
+   nevystavuje.
+2. **Environment používá allocation.** Přidá se `Environment.allocationId`
+   (nullable během migrace). Deploy/teardown řeší cíl přes allocation → target;
+   `provider`/`targetId` zůstávají denormalizované jen pro čtecí cesty a zpětnou
+   kompatibilitu, dokud nebude backfill kompletní.
+3. **Migrace bez ztráty.** Aditivní migrace založí pro každý existující
+   `(workspace, target)` pár, který nějaký Environment používá, jednu allocation
+   s dosavadní `publicUrl` a odvozeným namespace/rootPath tak, aby **stávající
+   URL a ESO SFTP cesty zůstaly beze změny**. Backfill je idempotentní a
+   spustitelný za běhu (startup reconcile), legacy řádky bez allocationId se
+   dorovnají.
+4. **Autorizace podle role.** Owner/admin workspace allocation vytváří, upravuje
+   a mažou; member ji smí *použít* (vytvořit v ní environment/deploy); viewer ji
+   jen čte. Přístup k allocation cizího workspace vrací 404 (nikdy 403 s
+   detailem), aby se neprozradila existence cizích zdrojů; uvnitř workspace je
+   nedostatečná role 403.
+5. **Sdílené built-in targety.** Built-in simulovaná infrastruktura
+   (docker/ssh/sftp) je nadále sdílená, ale každý workspace k ní má **vlastní
+   allocation** s vlastním namespace → dva workspace nikdy nesdílí jména
+   kontejnerů ani SFTP release cesty. Namespace se odvozuje z workspace ID, ne z
+   uživatelské cesty.
+6. **Kvóty se vynucují při create/deploy.** Vytvoření environmentu nad rámec
+   `maxEnvironments` allocation je odmítnuto s jasnou chybou; `disabled`
+   allocation nedovolí nový deploy, ale nezničí běžící (ty spravuje teardown).
+7. **Žádný Agent před zeleným tenant isolation.** Fáze 3 (Agent) se nezačne,
+   dokud neprojde uživatelský test dvou workspaceů: cizí allocation je
+   neviditelná, namespace se neprolíná a role owner/member/viewer se chovají
+   podle bodu 4.
+
+**Alternativy.** (a) Rozšířit `Target` o workspace-usage pole — míchá
+credentials s použitím, znemožňuje sdílený built-in target s per-workspace
+namespace a komplikuje tenant izolaci. (b) Odvozovat namespace ad hoc při deploy
+bez perzistentní entity — není kam uložit kvóty, stav ani auditovatelné
+přiřazení a rozbíjí to stabilitu URL/cest. Perzistentní allocation je nejblíž
+reálnému multi-tenant modelu a je aditivní.
+
+**Bezpečnost.** Credentials zůstávají jen na fyzickém targetu a nikdy neopouští
+server; allocation nese jen neprivilegovaná usage data. Namespace odvozený z
+interního workspace ID vylučuje kolizi i únik mezi tenanty. Cizí allocation je
+404. Kvóty limitují spotřebu jednoho workspace.
+
+**Důsledky.** Vzniká čistý tenant-scoped cíl nasazení, na který se v Fázi 3
+naváže Agent (job je allocation-scoped). Existující projekty, URL a ESO cesty
+zůstávají beze změny. Fyzický target a jeho credentials se dají spravovat
+nezávisle na tom, které workspace ho využívají.
+
+**Uživatelské testování.** Dva workspace nasadí na stejný built-in target →
+každý má vlastní namespace, běží současně bez kolize, navzájem na sebe nevidí.
+Owner vytvoří/zakáže allocation; member v ní nasadí; viewer jen čte; cizí
+workspace dostane 404. Migrace zachová URL a ESO cesty tří legacy projektů.
+Automatické testy: backfill idempotence, kvóta při create/deploy, role matrix,
+cross-workspace 404, namespace izolace.
+
+Reference:
+[Kubernetes — Namespaces (koncept izolace)](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/),
+[The Twelve-Factor App — III. Config](https://12factor.net/config).
