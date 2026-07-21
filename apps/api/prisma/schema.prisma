@@ -160,6 +160,7 @@ model Workspace {
   members                    WorkspaceMember[]
   projects                   Project[]
   targets                    Target[]
+  targetAllocations          TargetAllocation[]
   githubInstallationAccesses GitHubInstallationAccess[]
   githubInstallationSetups   GitHubInstallationSetup[]
 }
@@ -214,10 +215,43 @@ model Target {
   workspaceId  String?
   createdAt    DateTime      @default(now())
   environments Environment[]
+  allocations  TargetAllocation[]
 
   // A workspace cannot have two user targets with the same name. Built-ins
   // have null workspaceId and stable ids (Postgres permits multiple NULLs).
   @@unique([workspaceId, name])
+}
+
+// Workspace-scoped *usage* of a physical Target (ADR-060). Separates "what the
+// infrastructure is" (Target, which holds all credentials) from "how a given
+// workspace may use it": an isolating namespace/rootPath, the public URL, the
+// subset of capabilities allowed, status, and basic quotas. A shared built-in
+// target therefore gets one allocation per workspace, so two workspaces never
+// collide on container names or SFTP release paths. Credentials are NEVER
+// duplicated here.
+model TargetAllocation {
+  id              String        @id @default(uuid())
+  target          Target        @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  targetId        String
+  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId     String
+  // Isolating prefix for this workspace on the (possibly shared) target:
+  // a container-name prefix for docker/ssh, the releases root for sftp.
+  namespace       String
+  rootPath        String?
+  // Public address apps deployed through this allocation are reached at.
+  publicUrl       String?
+  // Subset of the target's capabilities this workspace may use.
+  capabilities    String
+  status          String        @default("active") // active | disabled
+  // Basic quota: how many environments may bind to this allocation.
+  maxEnvironments Int           @default(50)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  environments    Environment[]
+
+  @@unique([workspaceId, targetId])
+  @@index([targetId])
 }
 
 model Project {
@@ -316,6 +350,10 @@ model Environment {
   // the many read paths that switch on the provider kind).
   target            Target?               @relation(fields: [targetId], references: [id])
   targetId          String?
+  // Workspace-scoped usage of the target (ADR-060). Nullable during the
+  // additive migration/backfill; deploy resolves the target through this.
+  allocation        TargetAllocation?     @relation(fields: [allocationId], references: [id], onDelete: SetNull)
+  allocationId      String?
   // Generation/lock for the currently running operation. A stale asynchronous
   // deploy may only publish its result when this id still matches.
   activeOperationId String?
@@ -327,6 +365,7 @@ model Environment {
 
   @@unique([projectId, name])
   @@index([buildArtifactId])
+  @@index([allocationId])
 }
 
 // Persistent audit of provisioning a project (create or import) — ADR-025/Phase
