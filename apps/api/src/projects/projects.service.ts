@@ -2316,6 +2316,31 @@ export class ProjectsService implements OnModuleInit {
     return { removed, kept };
   }
 
+  // Job-scoped presigned GET for a verified artifact (ADR-059 §8). Returns a
+  // short-lived download URL for a deployment job / the future Agent to fetch the
+  // exact tested bytes directly from object storage — no platform credentials, no
+  // general browser download endpoint, and the URL is never persisted. TTL is
+  // bounded by config.
+  async presignArtifactDownload(
+    buildArtifactId: string,
+  ): Promise<{ url: string; expiresInSeconds: number }> {
+    const artifact = await this.prisma.buildArtifact.findFirst({
+      where: {
+        id: buildArtifactId,
+        status: 'available',
+        storageKind: 'object-store',
+        storageRef: { not: null },
+      },
+      select: { storageRef: true },
+    });
+    if (!artifact?.storageRef) {
+      throw new NotFoundException('No downloadable build artifact exists for this id');
+    }
+    const expiresInSeconds = config.artifactStore.presignTtlSeconds;
+    const url = await this.artifactStore.presignGet(artifact.storageRef, expiresInSeconds);
+    return { url, expiresInSeconds };
+  }
+
   // An artifact is protected from GC while any environment points at it or an
   // in-flight deployment operation still needs it.
   private async artifactIsReferenced(buildArtifactId: string): Promise<boolean> {
