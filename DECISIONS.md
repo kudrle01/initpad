@@ -2195,3 +2195,89 @@ akce musí zastavit před GitHub API s konkrétní výzvou k veřejné HTTPS URL
 Reference:
 [GitHub REST API — Re-run failed jobs](https://docs.github.com/en/rest/actions/workflow-runs#re-run-failed-jobs-from-a-workflow-run),
 [GitHub — Re-running workflows and jobs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
+
+---
+
+## ADR-059 — Ověřený build artifact patří do durable object storage, ne jen do lokálního Docker daemonu
+
+**Kontext.** GitHub build handoff (ADR-049/053) dnes po ověření stáhne
+`initpad-image.tar`, zkontroluje provider metadata, SHA-256 skutečných bajtů a
+jediný očekávaný image tag a načte image do **lokálního Docker daemonu**
+control-plane hostu (`storageKind=docker-daemon`, `storageRef=imageRef`).
+Ověřené bajty tím nikde durably nežijí: po restartu hostu image zmizí a artifact
+se zotaví jako `failed` s výzvou spustit CI znovu. To nejde pro multi-instance
+SaaS (každá API instance má vlastní daemon) a je křehké i lokálně. GitHub
+artifact má krátkou retenci a není dlouhodobé úložiště; uživatelský PAT classic
+ani private-GHCR pull jsou zakázané (ADR-049).
+
+**Rozhodnutí.**
+
+1. **Provider-neutral `ArtifactStore`.** Projektová doména ukládá ověřené bajty
+   přes rozhraní `ArtifactStore` (put/head/get/delete + presign). Produkční
+   kontrakt je privátní S3-compatible object storage; lokální compose použije
+   MinIO, cloud může použít S3 beze změny projektové domény. Doporučené balíčky
+   `@aws-sdk/client-s3` a `@aws-sdk/s3-request-presigner`.
+2. **Edition-aware config, žádný tichý fallback.** Config: endpoint, region,
+   bucket, access/secret key, path-style, presign TTL, retention. V edici `saas`
+   musí být storage nakonfigurovaná — jinak API selže hlasitě, nikdy nespadne na
+   lokální filesystem ani na veřejný bucket. Secrety nikdy do Git historie ani logů.
+3. **Tenant-scoped opaque klíč.** Object key je odvozený z immutable interních ID
+   (tenant/project/artifact) a digestu, nikdy z uživatelské cesty. `storageRef`
+   zůstává opaque key, ne veřejná URL. Cross-tenant izolace klíčů je vynucená a
+   testovaná.
+4. **Oddělená validace identity archivu.** Kontrola identity/integrity Docker
+   archivu se vyčlení z `DockerProvider`, aby běžela i v control plane bez Docker
+   socketu. Do object store se jako `available` smí označit jen artifact, který
+   prošel provider metadata + SHA-256 skutečných bajtů + kontrolou jediného
+   očekávaného image tagu.
+5. **Atomický ingest.** Upload se streamuje ze soukromého temp souboru. Stav je
+   atomický `accepted → ingesting → available`; `storageKind=object-store` a
+   `storageRef` se nastaví až po úspěšném put + head ověření. Chyba odstraní
+   částečný objekt a skončí `failed` s bezpečnou zprávou. Žádné celé image v RAM.
+6. **Lokální Docker acceptance + rehydratace.** Po uložení do object store se ze
+   stejného ověřeného souboru image dál načte do lokálního daemonu pro okamžitý
+   deploy. Když daemon po restartu image nemá, Run again/redeploy ji
+   **rehydratuje z object store**, znovu ověří digest/manifest a teprve pak
+   nasadí. `storageRef` (opaque key) se nikdy nezaměňuje s Docker image ref;
+   image ref se odvozuje samostatně.
+7. **Retention/GC a idempotentní delete.** Mazání/retention/GC nesmí odstranit
+   artifact stále referencovaný Environmentem nebo aktivní DeploymentOperation.
+   Project delete má idempotentní externí cleanup; selhání storage se nesmí
+   vydávat za úspěšné smazání.
+8. **Job-scoped presigned GET pro budoucího Agenta.** Krátkodobý job-scoped
+   presigned GET kontrakt. Žádný obecný browser download endpoint; presigned URL
+   se neukládají do DB.
+
+**Alternativy.** (a) Ponechat jen lokální Docker daemon — nefunguje pro
+multi-instance a je křehké po restartu. (b) Push image do privátního GHCR a pull
+— ADR-049 zakazuje private-GHCR pull i uživatelský PAT a váže dodání na GitHub
+dostupnost. (c) Sdílený síťový filesystem — horší tenant izolace, provozní model
+i chybějící presigned GET pro Agenta. Object storage je nejblíž produkčnímu SaaS
+a je zároveň lokálně spustitelné (MinIO).
+
+**Bezpečnost.** Bucket je privátní; přístup jen přes krátkodobé presigned URL
+nebo serverové API s konfigurovaným klíčem. Klíč odvozený z interních ID
+znemožňuje uhodnout či přejít cizí tenant. Ověření identity archivu (metadata +
+SHA-256 + jediný tag) běží před označením `available`, i bez Docker socketu.
+Rehydratace znovu ověří digest/manifest, takže poškozený/zaměněný objekt nikdy
+nenasadíme.
+
+**Důsledky.** Ověřený artifact přežije restart i více API instancí; lokální
+deploy zůstává rychlý (image je i v daemonu), ale zdrojem pravdy je durable
+object. Vzniká čistý kontrakt pro budoucího Agenta (presigned GET). GHCR/PAT se
+nepřidává. Multi-instance object storage je předpoklad reálného SaaS profilu
+(Fáze 4) i Agenta (Fáze 3).
+
+**Uživatelské testování.** Nový GitHub build se uloží jako `object-store`, dev
+běží; lokální Docker image se odstraní bez smazání objektu a `Redeploy verified
+build` ji obnoví. Dev → test zachová stejné BuildArtifact ID/digest. Po restartu
+API je artifact stále dostupný a nasaditelný. Neověřovat jen existencí DB řádku
+— prokázat stažení a reálný deploy. Automatické testy: fake store, upload
+failure + partial cleanup, checksum/manifest mismatch, rehydratace po chybějícím
+lokálním image, idempotent duplicate callback, GC reference protection, krátké
+presign TTL a cross-tenant izolace.
+
+Reference:
+[AWS SDK for JavaScript v3 — S3 client](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/),
+[AWS SDK — S3 request presigner](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-s3-request-presigner/),
+[MinIO — S3-compatible object storage](https://min.io/docs/minio/container/index.html).
