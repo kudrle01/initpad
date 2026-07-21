@@ -188,6 +188,25 @@ export const config = {
     oauthBaseUrl: process.env.INITPAD_GITHUB_OAUTH_URL || 'https://github.com',
     callbackUrl: process.env.INITPAD_GITHUB_CALLBACK_URL || '',
   },
+  // Durable object storage for verified build artifacts (ADR-059). An S3-compatible
+  // private bucket: MinIO locally, S3 (or compatible) in the cloud. This is the
+  // source of truth for a built image; the local Docker daemon is only a warm cache
+  // rehydrated from here. Never a public bucket; credentials never logged. When the
+  // bucket/credentials are unset the store is "unconfigured": self-hosted may fall
+  // back to the Docker-daemon-only path, but the SaaS edition refuses to start.
+  artifactStore: {
+    endpoint: process.env.INITPAD_ARTIFACT_S3_ENDPOINT || '',
+    region: process.env.INITPAD_ARTIFACT_S3_REGION || 'us-east-1',
+    bucket: process.env.INITPAD_ARTIFACT_S3_BUCKET || '',
+    accessKeyId: process.env.INITPAD_ARTIFACT_S3_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY || '',
+    // MinIO and other non-AWS S3 servers need path-style addressing.
+    forcePathStyle: (process.env.INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE || 'true') !== 'false',
+    // Lifetime of a job-scoped presigned download link handed to the Agent (seconds).
+    presignTtlSeconds: Number(process.env.INITPAD_ARTIFACT_PRESIGN_TTL_SECONDS || 300),
+    // Verified artifacts older than this are eligible for GC unless still referenced.
+    retentionDays: Number(process.env.INITPAD_ARTIFACT_RETENTION_DAYS || 30),
+  },
   // The platform as an OIDC provider (SSO into Gitea); Gitea registers as a
   // client. issuer = address the Gitea SERVER calls (from its container via
   // host.docker.internal). publicUrl = address for the BROWSER (authorize
@@ -204,6 +223,13 @@ export const config = {
   },
 };
 
+// True when the object store has enough configuration to be used. Requires a
+// bucket plus credentials; endpoint may be empty for real AWS S3 (SDK default).
+export function artifactStoreConfigured(): boolean {
+  const s = config.artifactStore;
+  return Boolean(s.bucket && s.accessKeyId && s.secretAccessKey);
+}
+
 export function validateConfig(): void {
   if (!EDITIONS.includes(config.edition)) {
     throw new Error(
@@ -214,6 +240,22 @@ export function validateConfig(): void {
   if (!acceptedModes.includes(rawRegistrationMode)) {
     throw new Error(
       `INITPAD_REGISTRATION_MODE must be one of ${acceptedModes.join(', ')} (received '${rawRegistrationMode}')`,
+    );
+  }
+  const { presignTtlSeconds, retentionDays } = config.artifactStore;
+  if (!Number.isFinite(presignTtlSeconds) || presignTtlSeconds < 30 || presignTtlSeconds > 3600) {
+    throw new Error('INITPAD_ARTIFACT_PRESIGN_TTL_SECONDS must be between 30 and 3600');
+  }
+  if (!Number.isFinite(retentionDays) || retentionDays < 1) {
+    throw new Error('INITPAD_ARTIFACT_RETENTION_DAYS must be a positive number of days');
+  }
+  // The SaaS control plane has no single-host Docker daemon to fall back on, so a
+  // durable artifact store is mandatory there — fail loudly rather than silently
+  // losing builds on restart.
+  if (config.edition === 'saas' && !artifactStoreConfigured()) {
+    throw new Error(
+      'SaaS edition requires a durable artifact store: set INITPAD_ARTIFACT_S3_BUCKET, ' +
+        'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID and INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY',
     );
   }
   if (!['127.0.0.1', '0.0.0.0', '::1', '::'].includes(config.deployment.bindAddress)) {
