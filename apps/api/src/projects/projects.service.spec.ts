@@ -137,6 +137,7 @@ describe('ProjectsService project deletion', () => {
       },
       deploymentOperation: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       environment: { update: jest.fn().mockResolvedValue(environment) },
+      buildArtifact: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const deployment = {
       teardown: jest.fn().mockResolvedValue({
