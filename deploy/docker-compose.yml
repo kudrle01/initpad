@@ -28,6 +28,45 @@ services:
     pids_limit: 200
     restart: unless-stopped
 
+  # Durable object storage for verified build artifacts (ADR-059). The local
+  # demo runs MinIO (S3-compatible); a cloud install points the API's
+  # INITPAD_ARTIFACT_S3_* variables at real S3 and can drop this service.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${INITPAD_ARTIFACT_S3_ACCESS_KEY_ID:-initpad}
+      MINIO_ROOT_PASSWORD: ${INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY:-initpad-artifacts}
+    volumes:
+      - minio-data:/data
+    networks: [platform]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 200
+    restart: unless-stopped
+
+  # One-shot: wait for MinIO, create the PRIVATE artifact bucket, then exit.
+  minio-init:
+    image: minio/mc:latest
+    depends_on: [minio]
+    environment:
+      ARTIFACT_BUCKET: ${INITPAD_ARTIFACT_S3_BUCKET:-initpad-artifacts}
+      MC_USER: ${INITPAD_ARTIFACT_S3_ACCESS_KEY_ID:-initpad}
+      MC_PASS: ${INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY:-initpad-artifacts}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until mc alias set local http://minio:9000 "$$MC_USER" "$$MC_PASS"; do
+          echo "waiting for minio..."; sleep 2;
+        done
+        mc mb --ignore-existing "local/$$ARTIFACT_BUCKET"
+        # Ensure the bucket is never publicly readable.
+        mc anonymous set none "local/$$ARTIFACT_BUCKET"
+        echo "artifact bucket ready: $$ARTIFACT_BUCKET"
+    networks: [platform]
+    restart: "no"
+
   gitea:
     image: gitea/gitea:1.22
     environment:
@@ -121,6 +160,15 @@ services:
       INITPAD_OIDC_KEY_FILE: /data/oidc-key.pem
       INITPAD_TEMPLATES_DIR: /templates
       INITPAD_WORKSPACE_DIR: /data/workspace
+      # Durable object storage for verified build artifacts (ADR-059). Local demo
+      # points at the bundled MinIO; a cloud install sets these to a real S3
+      # endpoint/bucket/credentials. The SaaS edition refuses to start unset.
+      INITPAD_ARTIFACT_S3_ENDPOINT: ${INITPAD_ARTIFACT_S3_ENDPOINT:-http://minio:9000}
+      INITPAD_ARTIFACT_S3_REGION: ${INITPAD_ARTIFACT_S3_REGION:-us-east-1}
+      INITPAD_ARTIFACT_S3_BUCKET: ${INITPAD_ARTIFACT_S3_BUCKET:-initpad-artifacts}
+      INITPAD_ARTIFACT_S3_ACCESS_KEY_ID: ${INITPAD_ARTIFACT_S3_ACCESS_KEY_ID:-initpad}
+      INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY: ${INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY:-initpad-artifacts}
+      INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE: "true"
     volumes:
       # The API drives deployments through the host Docker daemon.
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -140,6 +188,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       gitea: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
     networks: [platform, net-prod]
     read_only: true
     tmpfs:
@@ -308,6 +357,7 @@ services:
 
 volumes:
   pgdata: {}
+  minio-data: {}
   gitea-data: {}
   runner-data: {}
   runner-docker-data: {}

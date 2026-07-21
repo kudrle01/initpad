@@ -170,7 +170,40 @@ zpřístupnil veřejný HTTPS InitPad a schválil GitHub App permissions:
 Pokud předpoklady chybí nebo uživatel není přítomen, nic externě neměň, zapiš
 blokátor a pokračuj bodem 1.
 
-### 1. Hlavní úkol: durable artifact object storage
+### 1. Hlavní úkol: durable artifact object storage — HOTOVO ✅
+
+Implementováno podle ADR-059 (commity `d6ea2d8`…P1.9). Shrnutí co je hotové:
+
+- `apps/api/src/artifacts/`: `ArtifactStore` rozhraní (put/head/getToFile/delete/
+  presignGet), `S3ArtifactStore` (AWS S3 i MinIO), `InMemoryArtifactStore`
+  fallback, `artifactObjectKey` (tenant-scoped opaque klíč), daemon-free
+  `assertImageArchiveIdentity`, `ArtifactsModule` (S3 když nakonfigurováno, jinak
+  in-memory; SaaS selže hlasitě přes `validateConfig`).
+- `config.artifactStore` + `artifactStoreConfigured()`; validace presign TTL a
+  retention; SaaS bez bucketu se odmítne spustit.
+- Ingest (`ProjectsService.ingestArtifactAndDeploy`): stáhne → ověří identitu →
+  streamovaný `put` do object store → `head` potvrzení → lokální Docker load →
+  `available` s `storageKind=object-store`, `storageRef=<opaque key>`. Chyba
+  smaže částečný objekt a končí `failed`. Docker image ref se odvozuje zvlášť
+  (`artifactImageRef`), nikdy se nezaměňuje se `storageRef`.
+- Rehydratace: `ensureArtifactImageAvailable` / `rehydrateArtifactImage` stáhnou
+  objekt zpět, znovu ověří SHA-256 + manifest a načtou do daemonu, když lokální
+  cache po restartu chybí (Run again i dev→test deploy).
+- Retention/GC (`runArtifactRetention`, best-effort sweep při startu) chrání
+  artifacty referencované Environmentem nebo aktivní DeploymentOperation; project
+  delete idempotentně maže objekty a neselže tiše.
+- Job-scoped `presignArtifactDownload` (bounded TTL, neukládá se do DB) pro
+  budoucího Agenta.
+- Compose: `minio` + `minio-init` (private bucket bootstrap) + `minio-data`
+  volume; API má `INITPAD_ARTIFACT_S3_*` env; `.env.example` doplněn
+  (`__GENERATE__` secret). Testy: key isolation/sanitisace, in-memory round-trip,
+  archive identity boundary, ingest upload + partial cleanup, rehydratace,
+  retention reference protection + delete-failure, presign scoping.
+
+Zbývá jen živé uživatelské ověření (viz krok 0 / uživatelský test níže) a případné
+připnutí konkrétních MinIO/mc image tagů místo `:latest`.
+
+<details><summary>Původní zadání (pro referenci)</summary>
 
 Nejdřív vytvoř ADR-059 a až potom implementuj tento kompletní vertikální řez:
 
@@ -215,6 +248,8 @@ lokální Docker image se odstraní bez smazání objectu a `Redeploy verified b
 ji znovu obnoví. Dev → test musí zachovat stejné BuildArtifact ID/digest. Po
 restartu API musí být artifact stále dostupný. Neověřuj to jen existencí DB
 řádku; prokaž stažení a reálný deploy.
+
+</details>
 
 ### 2. Až po zeleném object storage: TargetAllocation základ
 
