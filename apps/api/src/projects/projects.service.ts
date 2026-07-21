@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnModuleInit,
@@ -6,7 +7,8 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { mkdtempSync, rmSync } from 'fs';
+import { createHash } from 'crypto';
+import { createReadStream, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, basename } from 'path';
 import { Prisma } from '@prisma/client';
@@ -32,6 +34,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
 import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
+import { ARTIFACT_STORE, ArtifactStore, artifactObjectKey } from '../artifacts/artifact-store';
+import { assertImageArchiveIdentity } from '../artifacts/image-archive';
 import { TargetsService, TargetRow, BUILTIN_DOCKER } from '../targets/targets.service';
 import {
   ScmProvider,
@@ -81,6 +85,7 @@ export class ProjectsService implements OnModuleInit {
     private readonly workspaceScm: WorkspaceScmService,
     private readonly workspaces: WorkspacesService,
     private readonly provisioning: ProvisioningService,
+    @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -1463,10 +1468,26 @@ export class ProjectsService implements OnModuleInit {
     let download: Awaited<
       ReturnType<NonNullable<ScmProvider['downloadBuildArtifact']>>
     > | null = null;
+    // Set once the durable object exists, so a failure can remove the partial
+    // upload before marking the artifact 'failed' (ADR-059 §5).
+    let objectKey: string | null = null;
     try {
       if (!scm.downloadBuildArtifact) throw new Error('Artifact download is unavailable');
       download = await scm.downloadBuildArtifact(repository, artifact);
       const imageRef = this.artifactImageRef(repository, artifact);
+      // Daemon-free identity check before anything durable is written.
+      await assertImageArchiveIdentity(download.filePath, imageRef);
+      // Durable object storage is the source of truth: stream the verified bytes
+      // up and confirm with a head() before accepting into the local daemon.
+      const keyInfo = await this.artifactObjectKeyFor(projectId, artifact);
+      objectKey = keyInfo.key;
+      await this.artifactStore.put(objectKey, download.filePath, {
+        sizeBytes: Number(artifact.sizeBytes),
+        contentType: 'application/x-tar',
+      });
+      const head = await this.artifactStore.head(objectKey);
+      if (!head) throw new Error('Artifact upload could not be confirmed in object storage');
+      // Local Docker acceptance from the same verified file for an immediate deploy.
       await this.deployment.loadImageArchive(download.filePath, imageRef);
       await this.prisma.buildArtifact.updateMany({
         where: {
@@ -1477,8 +1498,8 @@ export class ProjectsService implements OnModuleInit {
         },
         data: {
           status: 'available',
-          storageKind: 'docker-daemon',
-          storageRef: imageRef,
+          storageKind: 'object-store',
+          storageRef: objectKey,
           error: null,
         },
       });
@@ -1499,6 +1520,13 @@ export class ProjectsService implements OnModuleInit {
       await this.deployEnvInBackground(projectId, 'dev', artifact.commitSha, true, operationId);
     } catch (error) {
       const message = (error as Error).message;
+      // Remove any partially-uploaded object so a failed ingest leaves nothing
+      // durable behind (ADR-059 §5). Store delete is idempotent.
+      if (objectKey) {
+        await this.artifactStore.delete(objectKey).catch((e) =>
+          this.logger.warn(`Could not clean up partial artifact object: ${(e as Error).message}`),
+        );
+      }
       await this.prisma.buildArtifact.updateMany({
         where: {
           sourceProvider: artifact.provider,
@@ -1516,6 +1544,94 @@ export class ProjectsService implements OnModuleInit {
     } finally {
       download?.cleanup();
     }
+  }
+
+  // Resolves the tenant-scoped opaque object key for a build artifact (ADR-059
+  // §3). The key derives only from the workspace/project/artifact IDs and the
+  // content digest — never from a user path — so tenants can never collide.
+  private async artifactObjectKeyFor(
+    projectId: string,
+    artifact: Pick<ScmBuildArtifact, 'provider' | 'providerArtifactId' | 'digest'>,
+  ): Promise<{ key: string; buildArtifactId: string }> {
+    const row = await this.prisma.buildArtifact.findUnique({
+      where: {
+        sourceProvider_providerArtifactId: {
+          sourceProvider: artifact.provider,
+          providerArtifactId: artifact.providerArtifactId,
+        },
+      },
+      select: { id: true, project: { select: { workspaceId: true } } },
+    });
+    if (!row) throw new Error('Build artifact record vanished during ingestion');
+    return {
+      buildArtifactId: row.id,
+      key: artifactObjectKey({
+        workspaceId: row.project.workspaceId,
+        projectId,
+        artifactId: row.id,
+        digest: artifact.digest,
+      }),
+    };
+  }
+
+  // Ensures the verified image for a stored artifact is present in the local
+  // Docker daemon, rehydrating it from durable object storage when the daemon
+  // cache was lost (e.g. after an API restart). Returns false when the image is
+  // neither cached nor recoverable, so callers can fall back to a fresh build.
+  private async ensureArtifactImageAvailable(
+    repository: ScmRepositoryRef,
+    projectId: string,
+    buildArtifactId: string,
+  ): Promise<boolean> {
+    const artifact = await this.prisma.buildArtifact.findFirst({
+      where: { id: buildArtifactId, projectId, status: 'available', storageKind: 'object-store' },
+    });
+    if (!artifact?.storageRef) return false;
+    const imageRef = this.artifactImageRef(repository, {
+      commitSha: artifact.commitSha,
+      providerRunId: artifact.providerRunId,
+    });
+    if (await this.deployment.hasImage(imageRef)) return true;
+    return this.rehydrateArtifactImage(artifact.storageRef, imageRef, artifact.digest);
+  }
+
+  // Downloads a verified artifact back from object storage into a private temp
+  // file, re-checks its SHA-256 digest and Docker manifest identity, and loads it
+  // into the daemon. A corrupt or swapped object therefore can never be deployed.
+  private async rehydrateArtifactImage(
+    objectKey: string,
+    imageRef: string,
+    expectedDigest: string,
+  ): Promise<boolean> {
+    const dir = mkdtempSync(join(tmpdir(), 'initpad-rehydrate-'));
+    const filePath = join(dir, 'image.tar');
+    try {
+      await this.artifactStore.getToFile(objectKey, filePath);
+      const digest = await this.fileSha256(filePath);
+      if (digest !== expectedDigest.toLowerCase().replace(/^sha256:/, '')) {
+        throw new Error('Rehydrated artifact digest does not match the recorded value');
+      }
+      await this.deployment.loadImageArchive(filePath, imageRef);
+      this.logger.log(`Rehydrated verified image ${imageRef} from object storage`);
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Could not rehydrate ${imageRef} from object storage: ${(error as Error).message}`,
+      );
+      return false;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  private fileSha256(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = createHash('sha256');
+      const stream = createReadStream(filePath);
+      stream.on('error', reject);
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+    });
   }
 
   async promote(id: string, target: EnvName): Promise<Project> {
@@ -1605,18 +1721,18 @@ export class ProjectsService implements OnModuleInit {
     });
     if (previousOperation?.version) {
       const useRegistry = /^[0-9a-f]{40}$/i.test(previousOperation.version);
-      const canReuseArtifact = repository.provider !== 'github' || !useRegistry
-        ? true
-        : previousOperation.buildArtifactId != null && await this.prisma.buildArtifact.findFirst({
-            where: {
-              id: previousOperation.buildArtifactId,
-              projectId: id,
-              status: 'available',
-              storageKind: 'docker-daemon',
-            },
-          }).then((artifact) =>
-            artifact?.storageRef ? this.deployment.hasImage(artifact.storageRef) : false,
-          );
+      // For a GitHub registry image, reuse is possible only when the verified
+      // artifact is present in the local daemon — or can be rehydrated from
+      // durable object storage (ADR-059 §6). Non-GitHub paths reuse directly.
+      const canReuseArtifact =
+        repository.provider !== 'github' || !useRegistry
+          ? true
+          : previousOperation.buildArtifactId != null &&
+            (await this.ensureArtifactImageAvailable(
+              repository,
+              id,
+              previousOperation.buildArtifactId,
+            ));
       if (canReuseArtifact) {
         await this.scheduleDeployment(
           id,
@@ -2322,11 +2438,21 @@ export class ProjectsService implements OnModuleInit {
           artifact.projectId !== projectId ||
           artifact.commitSha !== version.toLowerCase() ||
           artifact.status !== 'available' ||
+          artifact.storageKind !== 'object-store' ||
           !artifact.storageRef
         ) {
           throw new Error('GitHub deployment has no verified build artifact for this version');
         }
-        testedImageRef = artifact.storageRef;
+        // storageRef is the opaque object key, never the Docker ref (ADR-059 §6):
+        // derive the image ref and make sure it is in the daemon, rehydrating
+        // from durable storage if the local cache was lost.
+        testedImageRef = this.artifactImageRef(repository, {
+          commitSha: artifact.commitSha,
+          providerRunId: artifact.providerRunId,
+        });
+        if (!(await this.ensureArtifactImageAvailable(repository, projectId, artifact.id))) {
+          throw new Error('Verified build artifact could not be rehydrated from object storage');
+        }
       } else {
         testedImageRef = this.imageRef(repository, version);
       }

@@ -39,6 +39,7 @@ function build(parts: { prisma?: unknown; templates?: unknown; targets?: unknown
     workspaceScm as never,
     parts.workspaces as never,
     provisioning as never,
+    {} as never,
   );
 }
 

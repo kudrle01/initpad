@@ -17,6 +17,7 @@ function make(
   prisma: Record<string, unknown>,
   deployment: Record<string, unknown> = {},
   workspaceScm: Record<string, unknown> = {},
+  artifactStore: Record<string, unknown> = {},
 ) {
   return new ProjectsService(
     prisma as never,
@@ -27,6 +28,7 @@ function make(
     workspaceScm as never,
     {} as never,
     {} as never,
+    artifactStore as never,
   );
 }
 
@@ -64,7 +66,8 @@ describe('ProjectsService immutable artifact binding', () => {
     );
   });
 
-  it('reuses a failed GitHub deployment only when its exact local artifact exists', async () => {
+  it('reuses a failed GitHub deployment when the cached image is present (no rehydration)', async () => {
+    const sha = 'a'.repeat(40);
     const prisma = {
       environment: {
         findUnique: jest.fn(async () => ({
@@ -74,11 +77,20 @@ describe('ProjectsService immutable artifact binding', () => {
       project: { findUniqueOrThrow: jest.fn(async () => projectRow) },
       deploymentOperation: {
         findFirst: jest.fn(async () => ({
-          version: 'a'.repeat(40), buildArtifactId: 'artifact-1',
+          version: sha, buildArtifactId: 'artifact-1',
         })),
       },
       buildArtifact: {
-        findFirst: jest.fn(async () => ({ storageRef: 'ghcr.io/acme/api:immutable-run' })),
+        // storageRef is now the opaque object key; the Docker ref is derived
+        // from commitSha + providerRunId (ADR-059 §6).
+        findFirst: jest.fn(async () => ({
+          storageRef: 'artifacts/ws/pr/artifact-1/dig.tar',
+          storageKind: 'object-store',
+          status: 'available',
+          commitSha: sha,
+          providerRunId: 'run-1',
+          digest: 'd'.repeat(64),
+        })),
       },
     };
     const deployment = { hasImage: jest.fn(async () => true) };
@@ -88,10 +100,55 @@ describe('ProjectsService immutable artifact binding', () => {
 
     await service.runAgain('project-1');
 
-    expect(deployment.hasImage).toHaveBeenCalledWith('ghcr.io/acme/api:immutable-run');
+    // Reuses the derived Docker ref directly; the store is never touched.
+    expect(deployment.hasImage).toHaveBeenCalledWith(`ghcr.io/acme/api:${sha}-run-1`);
     expect(schedule).toHaveBeenCalledWith(
-      'project-1', 'dev', 'a'.repeat(40), true, 'retry', 'artifact-1',
+      'project-1', 'dev', sha, true, 'retry', 'artifact-1',
     );
+  });
+
+  it('rehydrates the verified image from object storage when the daemon cache is gone', async () => {
+    const sha = 'a'.repeat(40);
+    const prisma = {
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1', status: 'failed', activeOperationId: null,
+        })),
+      },
+      project: { findUniqueOrThrow: jest.fn(async () => projectRow) },
+      deploymentOperation: {
+        findFirst: jest.fn(async () => ({ version: sha, buildArtifactId: 'artifact-1' })),
+      },
+      buildArtifact: {
+        findFirst: jest.fn(async () => ({
+          storageRef: 'artifacts/ws/pr/artifact-1/dig.tar',
+          storageKind: 'object-store',
+          status: 'available',
+          commitSha: sha,
+          providerRunId: 'run-1',
+          digest: 'd'.repeat(64),
+        })),
+      },
+    };
+    // Cache miss on first check; loadImageArchive succeeds after rehydration.
+    const deployment = {
+      hasImage: jest.fn(async () => false),
+      loadImageArchive: jest.fn(async () => undefined),
+    };
+    const service = make(prisma, deployment);
+    // Force the digest check to pass without a real download.
+    jest.spyOn(service as any, 'rehydrateArtifactImage').mockResolvedValue(true);
+    jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
+    const schedule = jest.spyOn(service as any, 'scheduleDeployment').mockResolvedValue(undefined);
+
+    await service.runAgain('project-1');
+
+    expect((service as any).rehydrateArtifactImage).toHaveBeenCalledWith(
+      'artifacts/ws/pr/artifact-1/dig.tar',
+      `ghcr.io/acme/api:${sha}-run-1`,
+      'd'.repeat(64),
+    );
+    expect(schedule).toHaveBeenCalledWith('project-1', 'dev', sha, true, 'retry', 'artifact-1');
   });
 
   it('recovers an existing tested GitHub artifact instead of starting CI again', async () => {

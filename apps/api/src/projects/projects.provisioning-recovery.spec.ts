@@ -57,6 +57,7 @@ function build(operation: Record<string, unknown>, scmOverrides: Record<string, 
     workspaceScm as never,
     workspaces as never,
     provisioning as never,
+    {} as never,
   );
   return { service, prisma, scm, provisioning, workspaceScm, workspaces };
 }

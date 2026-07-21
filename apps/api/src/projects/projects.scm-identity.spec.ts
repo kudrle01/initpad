@@ -10,6 +10,7 @@ function serviceWith(prisma: unknown, scm: unknown) {
     { provider: jest.fn(() => scm) } as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 

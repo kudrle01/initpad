@@ -83,6 +83,7 @@ describe('ProjectsService target binding', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
 

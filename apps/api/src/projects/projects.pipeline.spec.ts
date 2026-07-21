@@ -54,6 +54,7 @@ function make(
     { provider: jest.fn(() => scm) } as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   jest.spyOn(service, 'get').mockResolvedValue({
     ...project,
@@ -137,6 +138,7 @@ describe('ProjectsService deployment pipeline projection', () => {
     const service = new ProjectsService(
       prisma as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
+      {} as never,
     );
 
     await expect(service.deploymentHistory(project.id, 7)).resolves.toEqual([{
@@ -166,6 +168,7 @@ describe('ProjectsService deployment pipeline projection', () => {
     const historyService = new ProjectsService(
       prisma as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
+      {} as never,
     );
     await historyService.deploymentHistory(project.id, 500);
     expect(prisma.deploymentOperation.findMany).toHaveBeenCalledWith(

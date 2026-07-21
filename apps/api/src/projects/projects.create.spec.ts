@@ -74,6 +74,7 @@ function build(
       require: jest.fn(async () => 'owner'),
     } as never,
     provisioning as never,
+    {} as never,
   );
   jest.spyOn(service, 'get').mockResolvedValue({ id: 'p1' } as never);
   return { service, prisma, scm, provisioning };

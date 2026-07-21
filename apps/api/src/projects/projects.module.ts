@@ -15,9 +15,10 @@ import { TargetsModule } from '../targets/targets.module';
 import { GitHubCoreModule } from '../scm/github/github-core.module';
 import { AuthModule } from '../auth/auth.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { ArtifactsModule } from '../artifacts/artifacts.module';
 
 @Module({
-  imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, GitHubCoreModule, AuthModule, WorkspacesModule],
+  imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, GitHubCoreModule, AuthModule, WorkspacesModule, ArtifactsModule],
   providers: [ProjectsService, ImportService, ProvisioningService],
   controllers: [ProjectsController, ImportController, ProvisioningController, ActivityController, CiController, ScmWebhookController],
 })
