@@ -13,6 +13,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
 import { AdminModule } from './admin/admin.module';
 import { IdentityModule } from './identity/identity.module';
 import { GitHubModule } from './scm/github/github.module';
+import { ArtifactsModule } from './artifacts/artifacts.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { GitHubModule } from './scm/github/github.module';
     AdminModule,
     IdentityModule,
     GitHubModule,
+    ArtifactsModule,
   ],
   controllers: [HealthController],
 })
