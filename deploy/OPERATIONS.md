@@ -5,6 +5,11 @@ aby InitPad byl bezpečně provozovatelný ve škole nebo malé firmě: data se
 neztratí, běží spolehlivě a jde snadno spravovat. Všechny příkazy spouštěj z
 adresáře `deploy/`.
 
+Kompletní instalační a uživatelský test na Ubuntu VM je v
+[`SELF_HOSTED_ACCEPTANCE.md`](./SELF_HOSTED_ACCEPTANCE.md). Je to závazný živý
+gate před implementací Agenta; samotné unit testy tenant izolaci na skutečném
+Docker hostu neprokazují.
+
 ## Start / stop / stav
 
 ```bash
