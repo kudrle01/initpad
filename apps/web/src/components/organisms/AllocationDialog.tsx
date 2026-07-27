@@ -63,14 +63,14 @@ export function AllocationDialog({
     setTargetId(initialTarget?.id ?? '');
     setCapabilities(allocation?.capabilities ?? initialTarget?.capabilities ?? []);
     setMaxEnvironments(String(allocation?.maxEnvironments ?? 50));
-    setPublicUrl(allocation?.publicUrl ?? initialTarget?.publicUrl ?? '');
+    setPublicUrl(allocation?.publicUrl ?? '');
   }, [allocation, open, targets]);
 
   function selectTarget(nextId: string) {
     const next = targets.find((target) => target.id === nextId);
     setTargetId(nextId);
     setCapabilities(next?.capabilities ?? []);
-    setPublicUrl(next?.publicUrl ?? '');
+    setPublicUrl('');
   }
 
   function toggleCapability(capability: RuntimeKind) {
@@ -88,7 +88,7 @@ export function AllocationDialog({
     Number.isInteger(quota) &&
     quota >= 1 &&
     quota <= 1000 &&
-    /^https?:\/\//i.test(publicUrl.trim());
+    (!publicUrl.trim() || /^https?:\/\//i.test(publicUrl.trim()));
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
@@ -167,13 +167,16 @@ export function AllocationDialog({
               />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <Label htmlFor="allocation-url">Public application URL</Label>
+              <Label htmlFor="allocation-url">Public URL override (optional)</Label>
               <Input
                 id="allocation-url"
                 value={publicUrl}
-                placeholder="https://apps.example.org/team"
+                placeholder={selectedTarget?.publicUrl ?? 'Derived from the target'}
                 onChange={(event) => setPublicUrl(event.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Shared built-in targets automatically receive the workspace namespace in their URL.
+              </p>
             </div>
           </div>
         </div>
@@ -189,7 +192,7 @@ export function AllocationDialog({
                 targetId,
                 capabilities,
                 maxEnvironments: quota,
-                publicUrl: publicUrl.trim(),
+                ...(publicUrl.trim() ? { publicUrl: publicUrl.trim() } : {}),
               })
             }
           >

@@ -55,7 +55,7 @@ export interface TargetAllocation {
 export interface TargetAllocationInput {
   targetId: string;
   capabilities: RuntimeKind[];
-  publicUrl: string;
+  publicUrl?: string;
   maxEnvironments: number;
 }
 

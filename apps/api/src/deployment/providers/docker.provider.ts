@@ -8,11 +8,35 @@ import { assertImageArchiveIdentity } from '../../artifacts/image-archive';
 import {
   DeployInput,
   DeployResult,
+  DeploymentAllocation,
   DeploymentProvider,
   StartInput,
   TeardownInput,
   VerifyResult,
 } from '../deployment-provider.interface';
+
+function safeAllocationNamespace(namespace: string): string {
+  return namespace
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'workspace';
+}
+
+export function dockerNetworkName(env: string, namespace?: string): string {
+  return namespace
+    ? `net-${safeAllocationNamespace(namespace)}-${env}`
+    : `net-${env}`;
+}
+
+export function dockerContainerName(
+  projectName: string,
+  env: string,
+  namespace?: string,
+): string {
+  return namespace
+    ? `initpad-${safeAllocationNamespace(namespace)}-${projectName}-${env}`
+    : `initpad-${projectName}-${env}`;
+}
 
 /**
  * Container deployment target. Builds an image from the generated Dockerfile
@@ -46,8 +70,13 @@ export class DockerProvider implements DeploymentProvider {
       };
     }
 
-    const network = `net-${input.env}`;
-    const containerName = `initpad-${input.projectName}-${input.env}`;
+    const network = dockerNetworkName(input.env, input.allocation?.namespace);
+    const containerName = dockerContainerName(
+      input.projectName,
+      input.env,
+      input.allocation?.namespace,
+    );
+    const legacyContainerName = dockerContainerName(input.projectName, input.env);
 
     await this.ensureNetwork(network);
     // Build once, deploy many: when CI has pushed the image to the registry,
@@ -81,8 +110,20 @@ export class DockerProvider implements DeploymentProvider {
       await this.buildImage(input.repoPath, image);
     }
     await this.removeContainer(containerName);
+    if (legacyContainerName !== containerName) {
+      // Transition path for environments that were running before ADR-060:
+      // their container had no allocation namespace.
+      await this.removeContainer(legacyContainerName);
+    }
     input.onProgress?.('Starting container');
-    const hostPort = await this.runContainer(image, containerName, network, port, input.envVars);
+    const hostPort = await this.runContainer(
+      image,
+      containerName,
+      network,
+      port,
+      input.envVars,
+      input.allocation,
+    );
 
     // Post-deploy verification: the same artifact may come up in one
     // environment and fail in another (config, network, dependencies), so the
@@ -123,9 +164,15 @@ export class DockerProvider implements DeploymentProvider {
   // (no-op without a daemon).
   async teardown(input: TeardownInput): Promise<void> {
     if (!(await this.isAvailable())) return;
-    const containerName = `initpad-${input.projectName}-${input.env}`;
+    const containerName = dockerContainerName(
+      input.projectName,
+      input.env,
+      input.allocation?.namespace,
+    );
+    const legacyContainerName = dockerContainerName(input.projectName, input.env);
     const image = `initpad/${input.projectName}:${input.env}`;
     await this.removeContainer(containerName);
+    if (legacyContainerName !== containerName) await this.removeContainer(legacyContainerName);
     await this.removeImage(image);
     this.logger.log(`Removed container ${containerName} and image ${image}`);
   }
@@ -133,12 +180,24 @@ export class DockerProvider implements DeploymentProvider {
   // Suspends a running container (keeps the image and configuration).
   async stop(input: TeardownInput): Promise<void> {
     if (!(await this.isAvailable())) return;
-    const name = `initpad-${input.projectName}-${input.env}`;
-    try {
-      await this.docker.getContainer(name).stop();
+    const names = [
+      dockerContainerName(input.projectName, input.env, input.allocation?.namespace),
+      dockerContainerName(input.projectName, input.env),
+    ].filter((name, index, all) => all.indexOf(name) === index);
+    for (const name of names) {
+      const container = this.docker.getContainer(name);
+      try {
+        await container.inspect();
+      } catch {
+        continue;
+      }
+      try {
+        await container.stop();
+      } catch {
+        // Already stopped is still a successful outcome.
+      }
       this.logger.log(`Stopped container ${name}`);
-    } catch {
-      // Not running / does not exist — nothing to stop.
+      return;
     }
   }
 
@@ -147,9 +206,29 @@ export class DockerProvider implements DeploymentProvider {
     if (!(await this.isAvailable())) {
       return { status: 'failed', url: '', reason: 'Docker daemon is not available.' };
     }
-    const name = `initpad-${input.projectName}-${input.env}`;
+    const names = [
+      dockerContainerName(input.projectName, input.env, input.allocation?.namespace),
+      dockerContainerName(input.projectName, input.env),
+    ].filter((name, index, all) => all.indexOf(name) === index);
     const port = input.port ?? 8080;
-    const container = this.docker.getContainer(name);
+    let name = names[0];
+    let container = this.docker.getContainer(name);
+    let found = false;
+    for (const candidate of names) {
+      const current = this.docker.getContainer(candidate);
+      try {
+        await current.inspect();
+        name = candidate;
+        container = current;
+        found = true;
+        break;
+      } catch {
+        // Try the pre-allocation legacy name next.
+      }
+    }
+    if (!found) {
+      return { status: 'failed', url: '', reason: 'Container does not exist.' };
+    }
     try {
       await container.start();
     } catch {
@@ -182,21 +261,25 @@ export class DockerProvider implements DeploymentProvider {
   // Last ~200 log lines of the environment's container.
   async logs(input: TeardownInput): Promise<string> {
     if (!(await this.isAvailable())) return '';
-    const name = `initpad-${input.projectName}-${input.env}`;
-    try {
-      const buf = (await this.docker.getContainer(name).logs({
-        stdout: true,
-        stderr: true,
-        tail: 200,
-      })) as unknown as Buffer;
-      return this.demuxLogs(buf).trim();
-    } catch (e) {
-      const msg = (e as Error).message;
-      if (/no such container/i.test(msg)) {
-        return 'No container running yet — the deployment is in progress or waiting for CI to build the image.';
+    const names = [
+      dockerContainerName(input.projectName, input.env, input.allocation?.namespace),
+      dockerContainerName(input.projectName, input.env),
+    ].filter((name, index, all) => all.indexOf(name) === index);
+    for (const name of names) {
+      try {
+        const buf = (await this.docker.getContainer(name).logs({
+          stdout: true,
+          stderr: true,
+          tail: 200,
+        })) as unknown as Buffer;
+        return this.demuxLogs(buf).trim();
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (/no such container/i.test(msg)) continue;
+        return `Logs unavailable: ${msg}`;
       }
-      return `Logs unavailable: ${msg}`;
     }
+    return 'No container running yet — the deployment is in progress or waiting for CI to build the image.';
   }
 
   // Containers without a TTY return a multiplexed stream (8-byte frame
@@ -356,6 +439,7 @@ export class DockerProvider implements DeploymentProvider {
     network: string,
     port: number,
     envVars?: Record<string, string>,
+    allocation?: DeploymentAllocation,
   ): Promise<string> {
     const portKey = `${port}/tcp`;
     // Application config & secrets (ADR-061), injected into the container's
@@ -366,7 +450,13 @@ export class DockerProvider implements DeploymentProvider {
       name,
       Labels: {
         'com.initpad.managed': 'true',
-        'com.initpad.environment': network.replace(/^net-/, ''),
+        'com.initpad.environment': network.split('-').pop() ?? network,
+        ...(allocation
+          ? {
+              'com.initpad.allocation.id': allocation.id,
+              'com.initpad.allocation.namespace': allocation.namespace,
+            }
+          : {}),
       },
       ...(env.length ? { Env: env } : {}),
       ExposedPorts: { [portKey]: {} },

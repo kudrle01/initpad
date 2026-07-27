@@ -14,7 +14,12 @@ import {
   Wifi,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { api, type TargetAllocation, type TargetInput } from '@/api';
+import {
+  api,
+  type TargetAllocation,
+  type TargetAllocationInput,
+  type TargetInput,
+} from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
@@ -281,18 +286,13 @@ export default function Infrastructure() {
     }
   }
 
-  async function saveAllocation(values: {
-    targetId: string;
-    capabilities: TargetAllocation['capabilities'];
-    publicUrl: string;
-    maxEnvironments: number;
-  }) {
+  async function saveAllocation(values: TargetAllocationInput) {
     setAllocationSaving(true);
     try {
       if (editingAllocation) {
         await api.updateAllocation(editingAllocation.id, {
           capabilities: values.capabilities,
-          publicUrl: values.publicUrl,
+          ...(values.publicUrl ? { publicUrl: values.publicUrl } : {}),
           maxEnvironments: values.maxEnvironments,
         });
         toast.success('Allocation saved');

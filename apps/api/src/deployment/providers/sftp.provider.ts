@@ -70,24 +70,42 @@ export class SftpProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'sftp';
   private readonly logger = new Logger('SftpProvider');
 
-  private eff(input: { connection?: ProviderConnection }): EffCfg {
+  private eff(input: {
+    connection?: ProviderConnection;
+    allocation?: { rootPath: string | null; publicUrl: string | null };
+  }): EffCfg {
     if (input.connection) {
       const c = input.connection;
-      const base = c.publicUrl.replace(/\/+$/, '');
+      const base = (input.allocation?.publicUrl ?? c.publicUrl).replace(/\/+$/, '');
       return {
         host: c.host,
         port: c.port,
         username: c.username,
         password: c.password,
         privateKey: c.privateKey,
-        remoteRoot: c.remoteRoot.replace(/\/+$/, ''),
+        remoteRoot: (input.allocation?.rootPath ?? c.remoteRoot).replace(/\/+$/, ''),
         publicUrl: base,
         internalUrl: base, // the user's server is reachable directly
         artifactSubdir: '',
         custom: true,
       };
     }
-    return { ...config.providers.sftp, custom: false };
+    const base = config.providers.sftp;
+    const remoteRoot = (input.allocation?.rootPath ?? base.remoteRoot).replace(/\/+$/, '');
+    const baseRoot = base.remoteRoot.replace(/\/+$/, '') || '/';
+    const rootPrefix = baseRoot === '/' ? '/' : `${baseRoot}/`;
+    const relativeRoot = remoteRoot.startsWith(rootPrefix)
+      ? remoteRoot.slice(rootPrefix.length)
+      : '';
+    return {
+      ...base,
+      remoteRoot,
+      publicUrl: (input.allocation?.publicUrl ?? base.publicUrl).replace(/\/+$/, ''),
+      internalUrl: relativeRoot
+        ? `${base.internalUrl.replace(/\/+$/, '')}/${relativeRoot}`
+        : base.internalUrl,
+      custom: false,
+    };
   }
 
   // Test connection: open SFTP and confirm the web root is writable.

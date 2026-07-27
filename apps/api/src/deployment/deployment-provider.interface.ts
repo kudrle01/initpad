@@ -16,9 +16,21 @@ export interface ProviderConnection {
   publicUrl: string;
 }
 
+// Non-secret, workspace-scoped usage of a physical target (ADR-060). Providers
+// use it for deterministic isolation and path/URL overlays; credentials remain
+// exclusively in ProviderConnection / the physical Target.
+export interface DeploymentAllocation {
+  id: string;
+  targetId: string;
+  namespace: string;
+  rootPath: string | null;
+  publicUrl: string | null;
+}
+
 export interface DeployInput {
   // User target for this deployment (prod); absent → platform demo target.
   connection?: ProviderConnection;
+  allocation?: DeploymentAllocation;
   projectName: string;
   version: string;
   env: string;
@@ -84,6 +96,7 @@ export interface TeardownInput {
   projectName: string;
   env: string;
   connection?: ProviderConnection;
+  allocation?: DeploymentAllocation;
 }
 
 export interface TeardownResult {
@@ -107,6 +120,7 @@ export interface StartInput {
   appPort?: number;
   // User target for this environment (prod); absent → platform demo target.
   connection?: ProviderConnection;
+  allocation?: DeploymentAllocation;
 }
 
 /**

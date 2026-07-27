@@ -52,7 +52,14 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
 
     expect(res.namespace).toBe('acme');
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ capabilities: 'static', namespace: 'acme' }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          capabilities: 'static',
+          namespace: 'acme',
+          rootPath: null,
+          publicUrl: 'http://host:8085/acme',
+        }),
+      }),
     );
   });
 

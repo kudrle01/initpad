@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateTargetAllocationDto } from './dto/create-target-allocation.dto';
 import { UpdateTargetAllocationDto } from './dto/update-target-allocation.dto';
+import { allocationUsageDefaults } from './target-allocation-defaults';
 
 export interface TargetAllocationSummary {
   id: string;
@@ -79,13 +80,14 @@ export class TargetAllocationsService {
       where: { id: workspaceId },
       select: { slug: true },
     });
+    const usage = allocationUsageDefaults(target, workspace.slug);
     const row = await this.prisma.targetAllocation.create({
       data: {
         workspaceId,
         targetId: dto.targetId,
         namespace: workspace.slug,
-        rootPath: target.remotePath ?? null,
-        publicUrl: dto.publicUrl ?? target.publicUrl ?? null,
+        rootPath: usage.rootPath,
+        publicUrl: dto.publicUrl ?? usage.publicUrl,
         capabilities,
         maxEnvironments: dto.maxEnvironments ?? 50,
       },

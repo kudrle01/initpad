@@ -41,6 +41,7 @@ describe('ProjectsService target binding', () => {
       buildArtifactId: 'artifact-1',
       activeOperationId: null,
       target: baseTarget,
+      allocation: null,
     };
     const prisma = {
       project: {
@@ -60,7 +61,21 @@ describe('ProjectsService target binding', () => {
       },
       environment: {
         findUnique: jest.fn(async () => environment),
+        count: jest.fn(async () => 0),
         update: jest.fn(async (_input: unknown) => environment),
+      },
+      targetAllocation: {
+        findUnique: jest.fn(async () => ({
+          id: 'allocation-eso',
+          targetId: newTarget.id,
+          namespace: 'workspace-1',
+          rootPath: '/www',
+          publicUrl: 'https://eso.example.test',
+          capabilities: 'static,php',
+          status: 'active',
+          maxEnvironments: 50,
+          _count: { environments: 0 },
+        })),
       },
     };
     const deployment = { teardown: jest.fn(async () => undefined) };
@@ -94,6 +109,7 @@ describe('ProjectsService target binding', () => {
       where: { projectId_name: { projectId: 'project-1', name: 'dev' } },
       data: {
         targetId: newTarget.id,
+        allocationId: 'allocation-eso',
         provider: 'sftp',
         status: 'empty',
         url: null,

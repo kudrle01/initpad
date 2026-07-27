@@ -21,6 +21,23 @@ const provisioning = {
 // Constructor order: prisma, templates, generator, deployment, targets, scm, workspaces, provisioning.
 function build(parts: { prisma?: unknown; templates?: unknown; targets?: unknown; scm?: unknown; workspaces?: unknown }) {
   const scm = parts.scm as { listRepositories?: () => Promise<ReturnType<typeof repository>[]> };
+  const prisma = {
+    targetAllocation: {
+      findUnique: jest.fn(async () => ({
+        id: 'allocation-builtin-docker',
+        targetId: 'builtin-docker',
+        namespace: 'workspace',
+        rootPath: null,
+        publicUrl: null,
+        capabilities: 'static,node,php,python',
+        status: 'active',
+        maxEnvironments: 50,
+      })),
+      create: jest.fn(),
+    },
+    environment: { count: jest.fn(async () => 0) },
+    ...(parts.prisma as object),
+  };
   const workspaceScm = {
     repository: jest.fn(async (_userId: string, _workspaceId: string, repositoryId: string) => {
       const repo = (await scm.listRepositories?.())?.find((candidate) => candidate.repositoryId === repositoryId);
@@ -31,7 +48,7 @@ function build(parts: { prisma?: unknown; templates?: unknown; targets?: unknown
     collaboratorUsername: jest.fn(async () => owner.username),
   };
   return new ProjectsService(
-    parts.prisma as never,
+    prisma as never,
     parts.templates as never,
     {} as never,
     {} as never,

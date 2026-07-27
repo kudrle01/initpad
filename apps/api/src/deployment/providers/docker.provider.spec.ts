@@ -7,7 +7,11 @@ import * as tarStream from 'tar-stream';
 // (ADR-059 P1.4); DockerProvider.loadImageArchive delegates to it. Tests stay here
 // to preserve the Docker-ingest boundary contract they were written for.
 import { assertImageArchiveIdentity } from '../../artifacts/image-archive';
-import { DockerProvider } from './docker.provider';
+import {
+  DockerProvider,
+  dockerContainerName,
+  dockerNetworkName,
+} from './docker.provider';
 
 type Manifest = { Config?: string; RepoTags?: string[]; Layers?: string[] };
 
@@ -139,5 +143,15 @@ describe('DockerProvider config-var injection (ADR-061)', () => {
       runContainer: (i: string, n: string, net: string, p: number, e?: Record<string, string>) => Promise<string>;
     }).runContainer('img', 'name', 'net-dev', 3000);
     expect(created[0].Env).toBeUndefined();
+  });
+});
+
+describe('DockerProvider allocation isolation (ADR-060)', () => {
+  it('uses workspace-scoped network and container names with a legacy fallback', () => {
+    expect(dockerNetworkName('dev', 'Team Alpha')).toBe('net-team-alpha-dev');
+    expect(dockerNetworkName('dev')).toBe('net-dev');
+    expect(dockerContainerName('alice-api', 'dev', 'Team Alpha'))
+      .toBe('initpad-team-alpha-alice-api-dev');
+    expect(dockerContainerName('alice-api', 'dev')).toBe('initpad-alice-api-dev');
   });
 });

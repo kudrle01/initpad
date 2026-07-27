@@ -55,7 +55,10 @@ export class SshProvider implements DeploymentProvider {
   private readonly cfg = config.providers.ssh;
   private readonly PATH = 'PATH=/usr/local/bin:/usr/bin:/bin:$PATH';
 
-  private eff(input: { connection?: ProviderConnection }): EffConn {
+  private eff(input: {
+    connection?: ProviderConnection;
+    allocation?: { rootPath: string | null; publicUrl: string | null };
+  }): EffConn {
     if (input.connection) {
       const c = input.connection;
       return {
@@ -64,9 +67,9 @@ export class SshProvider implements DeploymentProvider {
         username: c.username,
         password: c.password,
         privateKey: c.privateKey,
-        remoteRoot: c.remoteRoot.replace(/\/+$/, ''),
+        remoteRoot: (input.allocation?.rootPath ?? c.remoteRoot).replace(/\/+$/, ''),
         custom: true,
-        publicUrl: c.publicUrl.replace(/\/+$/, ''),
+        publicUrl: (input.allocation?.publicUrl ?? c.publicUrl).replace(/\/+$/, ''),
       };
     }
     return {
@@ -74,7 +77,7 @@ export class SshProvider implements DeploymentProvider {
       port: this.cfg.port,
       username: this.cfg.username,
       password: this.cfg.password,
-      remoteRoot: this.cfg.remoteRoot,
+      remoteRoot: (input.allocation?.rootPath ?? this.cfg.remoteRoot).replace(/\/+$/, ''),
       custom: false,
     };
   }

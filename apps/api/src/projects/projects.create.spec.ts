@@ -27,13 +27,48 @@ const dockerTarget: TargetRow = {
 
 function build(
   completeEffect: jest.Mock = jest.fn(async () => undefined),
-  options?: { selectedTemplate?: typeof template; targets?: TargetRow[] },
+  options?: {
+    selectedTemplate?: typeof template;
+    targets?: TargetRow[];
+    allocation?: {
+      id: string;
+      targetId: string;
+      namespace: string;
+      rootPath: string | null;
+      publicUrl: string | null;
+      capabilities: string;
+      status: string;
+      maxEnvironments: number;
+    };
+    allocatedEnvironments?: number;
+  },
 ) {
   const prisma = {
     project: {
       findFirst: jest.fn(async () => null),
       create: jest.fn(async (_input: unknown) => ({ id: 'p1' })),
       delete: jest.fn(async () => undefined),
+    },
+    targetAllocation: {
+      findUnique: jest.fn(async (input: {
+        where: { workspaceId_targetId?: { targetId: string } };
+      }) => {
+        const targetId = input.where.workspaceId_targetId?.targetId ?? 'builtin-docker';
+        return options?.allocation ?? {
+          id: `allocation-${targetId}`,
+          targetId,
+          namespace: 'workspace',
+          rootPath: null,
+          publicUrl: null,
+          capabilities: 'static,node,php,python',
+          status: 'active',
+          maxEnvironments: 50,
+        };
+      }),
+      create: jest.fn(),
+    },
+    environment: {
+      count: jest.fn(async () => options?.allocatedEnvironments ?? 0),
     },
     user: { findUniqueOrThrow: jest.fn(async () => ({ id: 'u1', username: 'alice' })) },
     workspaceMember: { findMany: jest.fn(async () => []) },
@@ -151,7 +186,11 @@ describe('ProjectsService create provisioning journal', () => {
     expect(createInput).toBeDefined();
     const environments = createInput!.data.environments.create;
     expect(environments.find((environment: { name: string }) => environment.name === 'prod'))
-      .toMatchObject({ provider: 'sftp', targetId: 'eso' });
+      .toMatchObject({
+        provider: 'sftp',
+        targetId: 'eso',
+        allocationId: 'allocation-eso',
+      });
   });
 
   it('does not implicitly bind PHP production to an unverified workspace host', async () => {
@@ -229,6 +268,47 @@ describe('ProjectsService create provisioning journal', () => {
     await expect(
       service.create({ name: 'new-api', templateId: 'node-api', environments }, 'u1'),
     ).rejects.toThrow("Target 'Company server' must pass Test connection");
+    expect(scm.provision).not.toHaveBeenCalled();
+  });
+
+  it('rejects a narrowed allocation before creating a repository', async () => {
+    const { service, scm } = build(jest.fn(async () => undefined), {
+      allocation: {
+        id: 'allocation-builtin-docker',
+        targetId: 'builtin-docker',
+        namespace: 'workspace',
+        rootPath: null,
+        publicUrl: null,
+        capabilities: 'static,php',
+        status: 'active',
+        maxEnvironments: 50,
+      },
+    });
+
+    await expect(
+      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
+    ).rejects.toThrow('does not allow node');
+    expect(scm.provision).not.toHaveBeenCalled();
+  });
+
+  it('rejects insufficient allocation quota before creating a repository', async () => {
+    const { service, scm } = build(jest.fn(async () => undefined), {
+      allocation: {
+        id: 'allocation-builtin-docker',
+        targetId: 'builtin-docker',
+        namespace: 'workspace',
+        rootPath: null,
+        publicUrl: null,
+        capabilities: 'static,node,php,python',
+        status: 'active',
+        maxEnvironments: 4,
+      },
+      allocatedEnvironments: 2,
+    });
+
+    await expect(
+      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
+    ).rejects.toThrow('project needs 3');
     expect(scm.provision).not.toHaveBeenCalled();
   });
 });
