@@ -94,6 +94,7 @@ export class ProjectsService implements OnModuleInit {
     await this.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedOperations();
     await this.recoverInterruptedArtifactIngestions();
+    await this.reconcileTargetAllocations();
     // Best-effort retention sweep; never blocks startup on storage issues.
     await this.runArtifactRetention().catch((error) =>
       this.logger.warn(`Artifact retention sweep skipped: ${(error as Error).message}`),
@@ -2350,6 +2351,72 @@ export class ProjectsService implements OnModuleInit {
       where: { buildArtifactId, finishedAt: null },
     });
     return liveOps > 0;
+  }
+
+  // Backfill for ADR-060: every environment that already runs on a target must
+  // point at a workspace-scoped TargetAllocation. Idempotent and safe to run on
+  // each boot — it only fills gaps (allocationId still null) and reuses the one
+  // allocation per (workspace, target) pair. Deploy routing is unchanged here
+  // (that lands in P2.3); this only records the binding so nothing regresses.
+  private async reconcileTargetAllocations(): Promise<void> {
+    const pending = await this.prisma.environment.findMany({
+      where: { allocationId: null, targetId: { not: null } },
+      select: { id: true, targetId: true, project: { select: { workspaceId: true } } },
+    });
+    if (!pending.length) return;
+    let linked = 0;
+    for (const env of pending) {
+      if (!env.targetId) continue;
+      const allocation = await this.ensureTargetAllocation(env.project.workspaceId, env.targetId);
+      const res = await this.prisma.environment.updateMany({
+        where: { id: env.id, allocationId: null },
+        data: { allocationId: allocation.id },
+      });
+      linked += res.count;
+    }
+    if (linked) this.logger.log(`Backfilled ${linked} environment(s) onto a target allocation`);
+  }
+
+  // Ensures exactly one allocation exists for a (workspace, target) pair. The
+  // backfilled allocation mirrors the target's current public URL, remote root
+  // and capabilities so existing URLs and ESO SFTP paths stay byte-for-byte the
+  // same; the namespace is the stable workspace slug. Credentials are never
+  // copied — they remain on the physical Target.
+  private async ensureTargetAllocation(
+    workspaceId: string,
+    targetId: string,
+  ): Promise<{ id: string }> {
+    const existing = await this.prisma.targetAllocation.findUnique({
+      where: { workspaceId_targetId: { workspaceId, targetId } },
+      select: { id: true },
+    });
+    if (existing) return existing;
+    const target = await this.prisma.target.findUniqueOrThrow({ where: { id: targetId } });
+    const workspace = await this.prisma.workspace.findUniqueOrThrow({
+      where: { id: workspaceId },
+      select: { slug: true },
+    });
+    try {
+      return await this.prisma.targetAllocation.create({
+        data: {
+          workspaceId,
+          targetId,
+          namespace: workspace.slug,
+          rootPath: target.remotePath ?? null,
+          publicUrl: target.publicUrl ?? null,
+          capabilities: target.capabilities,
+        },
+        select: { id: true },
+      });
+    } catch (error) {
+      // Lost a race on the unique (workspaceId, targetId): reuse the winner.
+      const winner = await this.prisma.targetAllocation.findUnique({
+        where: { workspaceId_targetId: { workspaceId, targetId } },
+        select: { id: true },
+      });
+      if (winner) return winner;
+      throw error;
+    }
   }
 
   // Identity for repository operations. Coordinates come from the explicit
