@@ -127,6 +127,13 @@ existence rozhraní, nepoužívaného registru nebo samotného modelu nestačí.
   jednorázových tokenů, oddělení platformního hesla od lokálního hesla Gitey a
   OIDC kontrolu deaktivace/session generation/forced-change před Gitea SSO.
 
+- Per-environment konfigurace a secrety nasazovaných aplikací (ADR-061):
+  `AppConfigVar` na (projekt, prostředí), secrety šifrované at-rest a v API
+  maskované, injektáž do Docker `Env` při deploy (build-once zachován), CRUD API
+  `/projects/:id/environments/:env/config` s project-write rolí a UI sekce
+  „Configuration". SSH/SFTP injektáž a sdílené workspace/allocation vary zůstávají
+  jako rozšíření.
+
 ## Co dokončeno není
 
 - Není dokončen živý GitHub E2E po ADR-058. Dokud compose používá localhost,

@@ -666,6 +666,21 @@ vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
   konkrétní cleanup cesty, `Retry cleanup` a explicitní volbu pro odstranění
   project record se zachováním administrátorského dluhu.
 
+### Per-environment konfigurace a secrety (ADR-061)
+
+- Nasazovaná aplikace má teď per-(projekt, prostředí) konfiguraci `KLÍČ=HODNOTA`.
+  Ne-secret hodnoty se ukládají a vrací v čitelné podobě; secrety jsou šifrované
+  at-rest (`INITPAD_ENCRYPTION_KEY`) a v API vždy maskované.
+- Vary se injektují až při deploy (Docker container `Env`), takže stejný ověřený
+  build-once image běží v dev/test/prod s odlišnou konfigurací; secrety nejdou do
+  image ani do registru. Změna se projeví redeployem.
+- Správu má člen s project-write rolí, viewer jen čte; klíč musí být
+  `UPPER_SNAKE_CASE` a rezervované platformní klíče (`PORT`) nejdou přepsat.
+- UI: sekce „Configuration" v detailu projektu, dialog proměnných na prostředí.
+- Pokryto automatickými testy (šifrování/maskování, validace, role, injektáž do
+  Docker `Env`). Otevřené rozšíření: SSH/SFTP injektáž a sdílené vary na úrovni
+  workspace/allocation + auto-provisioning backing služeb.
+
 ## Vyhodnocení pro diplomovou práci
 
 Porovnat ruční postup a InitPad ve čtyřech scénářích:
