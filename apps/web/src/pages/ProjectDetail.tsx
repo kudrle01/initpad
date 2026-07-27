@@ -20,6 +20,7 @@ import { DeploymentActivity } from '@/components/organisms/DeploymentActivity';
 import { CommitList } from '@/components/organisms/CommitList';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
+import { EnvVarsDialog } from '@/components/organisms/EnvVarsDialog';
 import { cn, scmLink } from '@/lib/utils';
 import { cleanupNotice } from '@/lib/deployment';
 import type { Commit, DeploymentOperation, EnvName, Project, ProvisioningStatus, Target, TemplateManifest } from '@/types';
@@ -84,6 +85,7 @@ export default function ProjectDetail() {
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [targetEnv, setTargetEnv] = useState<EnvName | null>(null);
+  const [configEnv, setConfigEnv] = useState<EnvName | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const toast = useToast();
   const { workspaces } = useAuth();
@@ -440,6 +442,25 @@ export default function ProjectDetail() {
         />
       </Section>
 
+      <Section title="Configuration">
+        <p className="mb-3 text-sm text-muted-foreground">
+          Environment variables and secrets injected into each environment at deploy. Redeploy to
+          apply changes.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {project.environments.map((env) => (
+            <Button
+              key={env.name}
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfigEnv(env.name)}
+            >
+              <Layers className="h-4 w-4" /> {env.name} variables
+            </Button>
+          ))}
+        </div>
+      </Section>
+
       <Section title="Deployment activity">
         <DeploymentActivity
           operations={deployments}
@@ -495,6 +516,13 @@ export default function ProjectDetail() {
         busy={busy === `target-${targetEnv}`}
         onOpenChange={(o) => !o && setTargetEnv(null)}
         onPick={bindTarget}
+      />
+
+      <EnvVarsDialog
+        projectId={project.id}
+        env={configEnv}
+        canManage={canMaintain}
+        onOpenChange={(o) => !o && setConfigEnv(null)}
       />
     </div>
   );

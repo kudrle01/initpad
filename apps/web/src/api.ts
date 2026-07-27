@@ -52,6 +52,17 @@ export interface TargetAllocation {
   inUse: number;
 }
 
+// One application config variable for an environment (ADR-061). Secret values
+// are never returned in the clear — `value` is null and `hasValue` tells whether
+// a secret is set.
+export interface ConfigVar {
+  key: string;
+  isSecret: boolean;
+  value: string | null;
+  hasValue: boolean;
+  updatedAt: string;
+}
+
 export interface DeleteProjectOptions {
   deleteRepository: boolean;
   confirmProduction: boolean;
@@ -207,6 +218,18 @@ export const api = {
     body: Partial<{ status: 'active' | 'disabled'; maxEnvironments: number; capabilities: RuntimeKind[]; publicUrl: string }>,
   ) => http<TargetAllocation>(`/allocations/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteAllocation: (id: string) => http<void>(`/allocations/${id}`, { method: 'DELETE' }),
+  // Per-environment application config & secrets (ADR-061). Secret values are
+  // always masked (value === null); managed by a project-write member.
+  listConfigVars: (projectId: string, env: EnvName) =>
+    http<ConfigVar[]>(`/projects/${projectId}/environments/${env}/config`),
+  upsertConfigVar: (projectId: string, env: EnvName, key: string, body: { value: string; isSecret?: boolean }) =>
+    http<ConfigVar>(`/projects/${projectId}/environments/${env}/config/${encodeURIComponent(key)}`, {
+      method: 'PUT', body: JSON.stringify(body),
+    }),
+  deleteConfigVar: (projectId: string, env: EnvName, key: string) =>
+    http<void>(`/projects/${projectId}/environments/${env}/config/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    }),
   deleteProject: (id: string, options: DeleteProjectOptions) =>
     http<void>(`/projects/${id}`, {
       method: 'DELETE',
