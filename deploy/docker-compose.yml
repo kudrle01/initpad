@@ -348,6 +348,9 @@ services:
     environment:
       INITPAD_DOMAIN: ${INITPAD_DOMAIN:-}
       INITPAD_GIT_DOMAIN: ${INITPAD_GIT_DOMAIN:-}
+      # Empty = public automatic HTTPS (Let's Encrypt). "tls internal" = Caddy's
+      # local CA for LAN/school networks without public reachability (ADR-062).
+      INITPAD_TLS_DIRECTIVE: ${INITPAD_TLS_DIRECTIVE:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

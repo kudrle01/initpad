@@ -1,10 +1,16 @@
-# Reverse proxy for server installs (profile "server"). Caddy obtains and
-# renews TLS certificates automatically for both domains.
+# Reverse proxy for server installs (profile "server"). By default Caddy obtains
+# and renews public TLS certificates automatically (Let's Encrypt) for both
+# domains. For a LAN / school network without public reachability, set
+# INITPAD_TLS_DIRECTIVE="tls internal" in deploy/.env — Caddy then issues
+# certificates from its own local CA (clients must trust that root, see
+# OPERATIONS.md). Empty value = public automatic HTTPS.
 
 {$INITPAD_DOMAIN} {
+	{$INITPAD_TLS_DIRECTIVE}
 	reverse_proxy web:80
 }
 
 {$INITPAD_GIT_DOMAIN} {
+	{$INITPAD_TLS_DIRECTIVE}
 	reverse_proxy gitea:3000
 }
