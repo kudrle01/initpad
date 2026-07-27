@@ -207,7 +207,8 @@ Na výzvu napiš `restore`. Po obnově ověř:
 
 - účty, workspace, původní projekty a Gitea repozitáře existují;
 - `after-backup` neexistuje;
-- MinIO artifact umožní redeploy ověřeného buildu;
+- existující Gitea OCI image umožní redeploy stejného buildu;
+- `docker compose run --rm minio-init` potvrdí dostupný privátní artifact bucket;
 - CI runner je online;
 - `docker compose --profile runner ps` nehlásí unhealthy službu.
 

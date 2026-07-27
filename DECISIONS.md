@@ -817,7 +817,8 @@ kvótu a oprávnění. Stejně tak jeden školní Docker host obslouží více t
 aniž by studenti získali credentials k hostiteli.
 
 **Tok ve škole.** Správce založí týmový workspace a target pool → studenti
-se zaregistrují jako běžní uživatelé a přijmou workspace pozvánku → založí
+se zaregistrují jako běžní uživatelé a owner je přidá jako existující účty do
+workspace → založí
 projekt ze šablony nebo importují repo → CI
 postaví a otestuje artefakt → dev se nasadí automaticky na školní Docker pool →
 tentýž artefakt jde po promotion do testu a po schválení učitelem do produkce na
@@ -830,13 +831,13 @@ capabilities, nikoli názvem prostředí.
 
 **Bezpečnostní důsledky.** Veřejný režim je multi-tenant a nesmí zdědit trust
 assumptions single-node profilu. Před jeho vystavením jsou povinné workspaces a
-RBAC, tenant-scoped dotazy, invitation/e-mail onboarding, audit log, kvóty,
+RBAC, tenant-scoped dotazy, bezpečný identity onboarding, audit log, kvóty,
 ochrana proti zneužití, externalizované secrety a odstranění host Docker socketu
 z control plane. Agent dostává pouze krátkodobé job credentials a omezení svého
 target allocation; nemá globální přístup k ostatním týmům.
 
 **Rozsah diplomky.** Implementační MVP zahrnuje jeden veřejný control plane,
-workspaces/role a pozvánky, import existujícího repozitáře,
+workspaces/role a přidávání existujících účtů, import existujícího repozitáře,
 target pool, jednoho Docker agenta a ověřený dev → test → prod scénář s ESO.
 Billing, plná HA, Kubernetes, marketplace, mobilní agent, globální build cloud a
 enterprise federation zůstávají návrhem po obhajobě.
@@ -2266,7 +2267,7 @@ nenasadíme.
 deploy zůstává rychlý (image je i v daemonu), ale zdrojem pravdy je durable
 object. Vzniká čistý kontrakt pro budoucího Agenta (presigned GET). GHCR/PAT se
 nepřidává. Multi-instance object storage je předpoklad reálného SaaS profilu
-(Fáze 4) i Agenta (Fáze 3).
+i Agenta (Fáze 5).
 
 **Uživatelské testování.** Nový GitHub build se uloží jako `object-store`, dev
 běží; lokální Docker image se odstraní bez smazání objektu a `Redeploy verified
@@ -2306,13 +2307,17 @@ napříč workspace.
 2. **Environment používá allocation.** Přidá se `Environment.allocationId`
    (nullable během migrace). Deploy/teardown řeší cíl přes allocation → target;
    `provider`/`targetId` zůstávají denormalizované jen pro čtecí cesty a zpětnou
-   kompatibilitu, dokud nebude backfill kompletní.
+   kompatibilitu, dokud nebude backfill kompletní. Provider dostává
+   neprivilegovaný allocation overlay: Docker používá namespace v síti i jménu
+   kontejneru, SSH/SFTP používají allocation root a public URL, ale credentials
+   vždy bere z fyzického targetu.
 3. **Migrace bez ztráty.** Aditivní migrace založí pro každý existující
    `(workspace, target)` pár, který nějaký Environment používá, jednu allocation
    s dosavadní `publicUrl` a odvozeným namespace/rootPath tak, aby **stávající
    URL a ESO SFTP cesty zůstaly beze změny**. Backfill je idempotentní a
    spustitelný za běhu (startup reconcile), legacy řádky bez allocationId se
-   dorovnají.
+   dorovnají. Docker stop/start/teardown během přechodu rozpozná i původní
+   nenamespacované jméno a první redeploy starý kontejner odstraní.
 4. **Autorizace podle role.** Owner/admin workspace allocation vytváří, upravuje
    a mažou; member ji smí *použít* (vytvořit v ní environment/deploy); viewer ji
    jen čte. Přístup k allocation cizího workspace vrací 404 (nikdy 403 s
@@ -2321,12 +2326,16 @@ napříč workspace.
 5. **Sdílené built-in targety.** Built-in simulovaná infrastruktura
    (docker/ssh/sftp) je nadále sdílená, ale každý workspace k ní má **vlastní
    allocation** s vlastním namespace → dva workspace nikdy nesdílí jména
-   kontejnerů ani SFTP release cesty. Namespace se odvozuje z workspace ID, ne z
-   uživatelské cesty.
+   kontejnerů, Docker sítě ani SFTP release cesty. Namespace je neměnný, globálně
+   unikátní workspace slug; u nové built-in allocation se přidá také do rootPath
+   a public URL. Workspace-owned target se znovu neprefixuje.
 6. **Kvóty se vynucují při create/deploy.** Vytvoření environmentu nad rámec
    `maxEnvironments` allocation je odmítnuto s jasnou chybou; `disabled`
    allocation nedovolí nový deploy, ale nezničí běžící (ty spravuje teardown).
-7. **Žádný Agent před zeleným tenant isolation.** Fáze 3 (Agent) se nezačne,
+   Create i import vyřeší všechny tři allocations a jejich policy ještě před
+   vytvořením externího repozitáře/project recordu; změna targetu a každý deploy
+   kontrolu opakují.
+7. **Žádný Agent před zeleným tenant isolation.** Fáze 5 (Agent) se nezačne,
    dokud neprojde uživatelský test dvou workspaceů: cizí allocation je
    neviditelná, namespace se neprolíná a role owner/member/viewer se chovají
    podle bodu 4.
@@ -2339,11 +2348,11 @@ přiřazení a rozbíjí to stabilitu URL/cest. Perzistentní allocation je nejb
 reálnému multi-tenant modelu a je aditivní.
 
 **Bezpečnost.** Credentials zůstávají jen na fyzickém targetu a nikdy neopouští
-server; allocation nese jen neprivilegovaná usage data. Namespace odvozený z
-interního workspace ID vylučuje kolizi i únik mezi tenanty. Cizí allocation je
-404. Kvóty limitují spotřebu jednoho workspace.
+server; allocation nese jen neprivilegovaná usage data. Neměnný globálně
+unikátní workspace slug a providerová sanitizace vylučují kolizi mezi tenanty.
+Cizí allocation je 404. Kvóty limitují spotřebu jednoho workspace.
 
-**Důsledky.** Vzniká čistý tenant-scoped cíl nasazení, na který se v Fázi 3
+**Důsledky.** Vzniká čistý tenant-scoped cíl nasazení, na který se v Fázi 5
 naváže Agent (job je allocation-scoped). Existující projekty, URL a ESO cesty
 zůstávají beze změny. Fyzický target a jeho credentials se dají spravovat
 nezávisle na tom, které workspace ho využívají.

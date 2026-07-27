@@ -191,8 +191,8 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
    pořadí odstraní InitPad secrets, obnoví původní přímé role a projekt smaže
    jen po úplné kompenzaci. Lease recovery, workspace přehled, CAS cleanup a
    omezený idempotentní retry jsou dokončeny. Ověřený GitHub Actions artifact
-   handoff a lokální Docker ingestion jsou také hotové; zbývá durable object
-   storage + agent transport pro multi-instance veřejný SaaS.
+  handoff, durable S3-compatible object storage, rehydratace a retention jsou
+  také hotové; zbývá agent transport a reálný deploy profil pro veřejný SaaS.
 5. Potom dokončit migrace v cílových prostředích, živý GitHub App E2E a browser
    acceptance: login, instalace pro vybrané repo, create/import, CI, odebrání
    instalace, rename ownera a dvě repa se stejným názvem.
@@ -200,7 +200,7 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 GitLab je vědomě až další adapter. Template manifest jako verzovaný blueprint
 contract a firemní blueprint repozitáře zůstávají následným rozšířením.
 
-### Fáze 4 — target pool a allocations — rozpracováno (ADR-060)
+### Fáze 4 — target pool a allocations — kód dokončen, čeká živý gate (ADR-060)
 
 - Fyzický `Target` spravuje škola, firma nebo uživatel.
 - `TargetAllocation` přiděluje omezený výsek targetu workspace/týmu a prostředí.
@@ -208,12 +208,14 @@ contract a firemní blueprint repozitáře zůstávají následným rozšířen�
 - Učitel může pool publikovat, přidělovat a odebírat bez odhalení credentials.
 - ESO test/prod používají oddělené cesty a konfigurace na stejném fyzickém hostu.
 
-**Stav (ADR-060):** model + aditivní migrace, idempotentní backfill (zachová URL
-a ESO cesty), deploy routovaný přes allocation, CRUD API `/allocations` s rolemi
-(owner/admin spravují, member čte, cizí workspace 404), kvóty + disabled při
-deploy a UI sekce Allocations — vše hotové a pokryté automatickými testy.
-Otevřený bod: **živý uživatelský test dvou workspaceů** (níže) a durable object
-storage pro ověřené buildy je hotové (ADR-059), takže Agent má z čeho stahovat.
+**Stav (ADR-060):** model + aditivní migrace, idempotentní legacy backfill,
+providerové routování root/URL, workspace-scoped Docker síť i jméno kontejneru,
+CRUD API a create/edit UI `/allocations`, role/cross-tenant 404 a policy při
+create/import, změně targetu i deploy — implementováno a automaticky testováno.
+Nové built-in allocations dostávají workspace prefix; legacy URL a ESO cesty
+zůstanou beze změny. Otevřený je pouze **živý uživatelský test dvou workspaceů**
+na skutečné VM. Durable object storage je hotové (ADR-059), takže po zeleném
+gate může začít Agent.
 
 **Uživatelské ověření Fáze 4 (TargetAllocation):** dva workspace nasadí na stejný
 built-in target — každý má vlastní namespace, běží současně bez kolize a na cizí
@@ -221,7 +223,8 @@ allocation nevidí (404). Owner vytvoří/zakáže allocation, member v ní nasa
 viewer jen čte; zakázaná allocation odmítne nový deploy, ale běžící nezruší;
 překročení kvóty je odmítnuto s jasnou zprávou. Migrace zachová URL a ESO cesty
 existujících projektů. Neověřovat jen existencí DB řádku — prokázat reálný deploy
-a izolaci mezi workspace.
+a izolaci mezi workspace. Reprodukovatelný postup je v
+[`deploy/SELF_HOSTED_ACCEPTANCE.md`](deploy/SELF_HOSTED_ACCEPTANCE.md).
 
 ### Fáze 5 — InitPad Agent
 
@@ -310,8 +313,8 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
 | 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 403. |
 | 4 — identity/onboarding | ano | Self-hosted `open`: samoobslužná registrace. Self-hosted soukromě: admin vytvoří účet a předá aktivační odkaz nebo dočasné heslo s vynucenou změnou. SaaS: pouze GitHub login. Majitel přidá do týmu existující účet podle e-mailu; role platí i v SCM. |
-| 5 — import repa/SCM | částečně | Self-hosted: stávající Gitea projekty beze změny URL projdou detail/import/deploy/delete. SaaS se živou App: New project nabídne osobní/organizační instalace aktivního workspace, založí soukromé GitHub repo a import vypíše repa všech grantů; cizí workspace installation ID musí vrátit 400. Import bez Dockerfile nebo nového artifact callbacku je zablokovaný. Ověřit commity/check runs, artifact ID/digest, dev deploy stejného SHA, retry a delete/detach. Lokální control-plane ingestion je hotová; plný multi-instance cloudový provoz čeká na object storage/agent. |
-| 6 — target allocations | ano | Učitel přidělí jednomu týmu dev/test/prod; druhý tým target ani credentials nevidí, ESO cesty se nepřekrývají. |
+| 5 — import repa/SCM | částečně | Self-hosted: stávající Gitea projekty beze změny URL projdou detail/import/deploy/delete. SaaS se živou App: New project nabídne osobní/organizační instalace aktivního workspace, založí soukromé GitHub repo a import vypíše repa všech grantů; cizí workspace installation ID musí vrátit 400. Import bez Dockerfile nebo nového artifact callbacku je zablokovaný. Ověřit commity/check runs, artifact ID/digest, dev deploy stejného SHA, retry a delete/detach. Durable object-store ingestion je hotová; plný cloudový workload provoz čeká na Agenta. |
+| 6 — target allocations | ano | Podle `deploy/SELF_HOSTED_ACCEPTANCE.md` dva workspace nasadí na jeden Docker target; sítě/jména se nepřekrývají, role/cizí data jsou izolované a disabled/quota policy je vynucená. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
 | 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. |
 | 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
@@ -650,6 +653,15 @@ vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
   permission zůstávají prázdné.
 - Automatizovaně ověřeno: 45 API suites / 281 testů a API i web production
   build. Uživatelský test je v ADR-058.
+
+### Aktuální výsledek milníku 6 (target allocations)
+
+- Implementace a automatické testy jsou zelené: nový create/import zapisuje
+  allocation hned, provider skutečně používá namespace/root/URL a policy se
+  kontroluje před externím repozitářem i při deployi.
+- Živý test na fyzickém Docker hostu zatím **neproběhl**. Agent se proto nezačne
+  implementovat, dokud neprojde celý
+  [`deploy/SELF_HOSTED_ACCEPTANCE.md`](deploy/SELF_HOSTED_ACCEPTANCE.md).
 
 ### Průběžné ověření delivery části milníku 8
 

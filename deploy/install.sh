@@ -258,7 +258,7 @@ if [ "$EDITION" = "saas" ]; then
   fi
   echo "  Note: this stack still bundles Gitea internally (${GITEA_URL},"
   echo "        admin: ${BOT_USER}); the GitHub deploy path is not complete yet —"
-  echo "        see CLAUDE_HANDOFF.md."
+  echo "        see ../PRODUCT_ROADMAP.md (public SaaS still requires InitPad Agent)."
 else
   echo "  ✔ InitPad is running."
   echo ""

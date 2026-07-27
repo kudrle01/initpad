@@ -93,14 +93,18 @@ Developer → InitPad web/API → Gitea repository
                               ↓ push
                      isolated Actions runner
                               ↓ test/build/push
-                         Gitea OCI registry
-                              ↓ signed per-repo callback
-                      deploy dev → test → prod
+               Gitea OCI registry (self-hosted)
+               GitHub artifact → object store (SaaS)
+                              ↓ verified callback
+             TargetAllocation → deploy dev → test → prod
 ```
 
-Zdroj pravdy pro kód je Gitea, pro metadata PostgreSQL a pro artefakty OCI
-registry. Asynchronní deployment má per-environment operation lock; po restartu
-se přerušená operace označí jako failed a nemůže přepsat novější stav.
+Zdroj pravdy pro kód je SCM provider dané edice (self-hosted Gitea / SaaS
+GitHub), pro metadata PostgreSQL. Self-hosted Gitea buildy používají privátní
+OCI registry; ověřené GitHub Actions archivy se ukládají do durable
+S3-compatible object storage. Asynchronní deployment má per-environment
+operation lock; po restartu se přerušená operace označí jako failed a nemůže
+přepsat novější stav.
 
 ## Ověření kvality
 
@@ -120,8 +124,8 @@ lockfile install, test a build. PHP frameworky mají navíc `composer audit
 Nejsilnější tržní pozice není „menší Backstage pro enterprise“, ale rychle
 nasaditelný paved road pro školy, bootcampy, interní sandboxy a malé týmy:
 jednotný onboarding, auditovatelný promotion flow a možnost připojit vlastní
-VPS/SFTP bez znalosti CI syntaxe. Další nejhodnotnější investice jsou školní
-předměty a pozvánky, import existujících repozitářů, target allocations,
-approval flow, template versioning, observability a oddělený deployment agent.
+VPS/SFTP bez znalosti CI syntaxe. Další nejhodnotnější investice jsou hromadná
+správa účtů a týmů pro školy, import existujících repozitářů, approval flow,
+template versioning, observability a oddělený deployment agent.
 
 Návrhová rozhodnutí jsou v [DECISIONS.md](DECISIONS.md).
