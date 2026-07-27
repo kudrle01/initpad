@@ -71,6 +71,21 @@ export class WorkspacesService {
     return { id: fallback.workspaceId, role: fallback.role as WorkspaceRole };
   }
 
+  // The user's role in a workspace, or null when they are not a member. Lets a
+  // caller distinguish "not a member" (hide the resource with 404) from "member
+  // but insufficient role" (403).
+  async roleFor(userId: string, workspaceId: string): Promise<WorkspaceRole | null> {
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+    });
+    return (membership?.role as WorkspaceRole | undefined) ?? null;
+  }
+
+  // Whether a role satisfies a permission tier.
+  can(role: WorkspaceRole, permission: WorkspacePermission): boolean {
+    return PERMISSIONS[permission].has(role);
+  }
+
   async require(
     userId: string,
     workspaceId: string,
