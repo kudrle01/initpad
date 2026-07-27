@@ -22,6 +22,7 @@ import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { EmptyState } from '@/components/molecules/EmptyState';
 import { Spinner } from '@/components/atoms/Spinner';
+import { AllocationDialog } from '@/components/organisms/AllocationDialog';
 import { TargetFormDialog } from '@/components/organisms/TargetDialog';
 import type { ProviderKind, Target } from '@/types';
 
@@ -118,12 +119,14 @@ function AllocationCard({
   allocation,
   busy,
   canManage,
+  onEdit,
   onToggle,
   onDelete,
 }: {
   allocation: TargetAllocation;
   busy: boolean;
   canManage: boolean;
+  onEdit: () => void;
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -162,6 +165,15 @@ function AllocationCard({
 
       {canManage && (
         <div className="mt-auto flex items-center gap-2 pt-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Edit allocation"
+            disabled={busy}
+            onClick={onEdit}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
           <Button variant="secondary" size="sm" disabled={busy} onClick={onToggle}>
             {disabled ? <Power className="h-4 w-4" /> : <PowerOff className="h-4 w-4" />}
             {disabled ? 'Enable' : 'Disable'}
@@ -189,7 +201,10 @@ export default function Infrastructure() {
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Target | null>(null);
+  const [allocationOpen, setAllocationOpen] = useState(false);
+  const [editingAllocation, setEditingAllocation] = useState<TargetAllocation | null>(null);
   const [saving, setSaving] = useState(false);
+  const [allocationSaving, setAllocationSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const toast = useToast();
   const { activeWorkspace, user } = useAuth();
@@ -198,14 +213,16 @@ export default function Infrastructure() {
   const canManageAllocations = !!activeWorkspace && ['owner', 'admin'].includes(activeWorkspace.role);
 
   const load = useCallback(() => {
-    Promise.all([api.listTargets(), api.listAllocations().catch(() => [] as TargetAllocation[])])
+    setLoading(true);
+    setError(null);
+    Promise.all([api.listTargets(), api.listAllocations()])
       .then(([t, a]) => {
         setTargets(t);
         setAllocations(a);
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [activeWorkspace?.id]);
 
   useEffect(() => load(), [load]);
 
@@ -264,6 +281,35 @@ export default function Infrastructure() {
     }
   }
 
+  async function saveAllocation(values: {
+    targetId: string;
+    capabilities: TargetAllocation['capabilities'];
+    publicUrl: string;
+    maxEnvironments: number;
+  }) {
+    setAllocationSaving(true);
+    try {
+      if (editingAllocation) {
+        await api.updateAllocation(editingAllocation.id, {
+          capabilities: values.capabilities,
+          publicUrl: values.publicUrl,
+          maxEnvironments: values.maxEnvironments,
+        });
+        toast.success('Allocation saved');
+      } else {
+        await api.createAllocation(values);
+        toast.success('Target allocated to this workspace');
+      }
+      setAllocationOpen(false);
+      setEditingAllocation(null);
+      load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setAllocationSaving(false);
+    }
+  }
+
   async function removeAllocation(a: TargetAllocation) {
     setBusyId(a.id);
     try {
@@ -279,6 +325,8 @@ export default function Infrastructure() {
 
   const builtins = targets.filter((t) => t.scope === 'builtin');
   const mine = targets.filter((t) => t.scope === 'user');
+  const allocatedTargetIds = new Set(allocations.map((allocation) => allocation.targetId));
+  const availableAllocationTargets = targets.filter((target) => !allocatedTargetIds.has(target.id));
 
   return (
     <div>
@@ -355,15 +403,49 @@ export default function Infrastructure() {
             )}
           </section>
 
-          {allocations.length > 0 && (
-            <section>
-              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <section>
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Allocations (this workspace)
               </p>
-              <p className="mb-3 text-xs text-muted-foreground">
+              {canManageAllocations && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={availableAllocationTargets.length === 0}
+                  title={availableAllocationTargets.length === 0
+                    ? 'Every available target is already allocated to this workspace'
+                    : 'Allocate a target'}
+                  onClick={() => {
+                    setEditingAllocation(null);
+                    setAllocationOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" /> Allocate target
+                </Button>
+              )}
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
                 How this workspace uses each target: its own namespace, capabilities and quota. Two
                 workspaces on the same shared target never collide.
-              </p>
+            </p>
+            {allocations.length === 0 ? (
+              <EmptyState
+                icon={Layers}
+                title="No target allocated"
+                description="Allocate shared capacity to this workspace before deploying its environments."
+                action={canManageAllocations && availableAllocationTargets.length > 0 ? (
+                  <Button
+                    onClick={() => {
+                      setEditingAllocation(null);
+                      setAllocationOpen(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" /> Allocate target
+                  </Button>
+                ) : undefined}
+              />
+            ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {allocations.map((a) => (
                   <AllocationCard
@@ -371,13 +453,17 @@ export default function Infrastructure() {
                     allocation={a}
                     busy={busyId === a.id}
                     canManage={canManageAllocations}
+                    onEdit={() => {
+                      setEditingAllocation(a);
+                      setAllocationOpen(true);
+                    }}
                     onToggle={() => toggleAllocation(a)}
                     onDelete={() => removeAllocation(a)}
                   />
                 ))}
               </div>
-            </section>
-          )}
+            )}
+          </section>
         </div>
       )}
 
@@ -387,6 +473,19 @@ export default function Infrastructure() {
         busy={saving}
         onOpenChange={setFormOpen}
         onSubmit={submit}
+      />
+      <AllocationDialog
+        open={allocationOpen}
+        allocation={editingAllocation}
+        targets={editingAllocation
+          ? targets.filter((target) => target.id === editingAllocation.targetId)
+          : availableAllocationTargets}
+        busy={allocationSaving}
+        onOpenChange={(open) => {
+          setAllocationOpen(open);
+          if (!open) setEditingAllocation(null);
+        }}
+        onSubmit={saveAllocation}
       />
     </div>
   );

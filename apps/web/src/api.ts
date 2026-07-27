@@ -52,6 +52,13 @@ export interface TargetAllocation {
   inUse: number;
 }
 
+export interface TargetAllocationInput {
+  targetId: string;
+  capabilities: RuntimeKind[];
+  publicUrl: string;
+  maxEnvironments: number;
+}
+
 // One application config variable for an environment (ADR-061). Secret values
 // are never returned in the clear — `value` is null and `hasValue` tells whether
 // a secret is set.
@@ -213,6 +220,8 @@ export const api = {
     http<{ ok: boolean; message: string }>(`/targets/${id}/verify`, { method: 'POST' }),
   // Workspace-scoped target allocations (ADR-060). Owner/admin manage; members read.
   listAllocations: () => http<TargetAllocation[]>('/allocations'),
+  createAllocation: (body: TargetAllocationInput) =>
+    http<TargetAllocation>('/allocations', { method: 'POST', body: JSON.stringify(body) }),
   updateAllocation: (
     id: string,
     body: Partial<{ status: 'active' | 'disabled'; maxEnvironments: number; capabilities: RuntimeKind[]; publicUrl: string }>,
