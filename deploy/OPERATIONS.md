@@ -32,6 +32,11 @@ MinIO artefakty, workspace) do `./backups/<časové-razítko>/`:
 ./backup.sh
 ```
 
+Skript vytvoří společný konzistentní checkpoint: na dobu snapshotu krátce
+zastaví platformní zapisovatele a potom obnoví přesně ty služby, které před
+zálohou běžely. Počítej proto s krátkým servisním oknem; při chybě se skript
+pokusí původní stav služeb obnovit také.
+
 Naplánuj přes cron (např. denně ve 2:00, ponech 7 posledních):
 
 ```cron
@@ -51,8 +56,12 @@ Obnovení z konkrétní zálohy (DESTRUKTIVNÍ — přepíše aktuální data):
 ```
 
 Skript ověří kontrolní součty, zastaví zapisovatele, obnoví DB a volumes a stack
-znovu nastartuje. **Pravidelně obnovu testuj** (na testovacím hostu) — nevyzkoušená
-záloha není záloha. Po obnově případně spusť `./install.sh` (dorovná CI runner).
+znovu nastartuje včetně CI runneru a nakonfigurovaného HTTPS profilu. Součástí
+obnovy je zálohovaný `.env`, protože obsahuje šifrovací klíč a identity služeb;
+předchozí konfigurace zůstane jako chráněný
+`.env.before-restore-<časové-razítko>`. **Pravidelně obnovu testuj na
+jednorázovém hostu/VM** — nevyzkoušená záloha není záloha. Po obnově spusť
+`./install.sh`, pokud je potřeba dorovnat registraci CI runneru.
 
 ## Úklid disku
 

@@ -43,13 +43,16 @@ database migrations and container builds.
 ## Operations
 
 - **Backup**: run `./backup.sh /secure/path/initpad-backup`. It creates a
-  PostgreSQL dump, archives Gitea/registry, API keys/workspaces, published
-  static files, Caddy data and runner registration, and copies `.env`.
-  The backup contains credentials; encrypt it and keep an off-host copy.
-- **Restore drill**: on an empty installation, restore `.env`, start
-  PostgreSQL, import `postgres.dump` with `pg_restore`, unpack each archive
-  into its matching `initpad_*` volume, then run `./install.sh`. Always test
-  this on a disposable host before relying on a backup.
+  consistent checkpoint by briefly stopping writers, dumping PostgreSQL,
+  archiving Gitea, MinIO artifacts, API data, published static files, optional
+  Caddy data and runner registration, and copying `.env`. Services that were
+  running are restarted even when the backup fails. The backup contains
+  credentials; encrypt it and keep an off-host copy.
+- **Restore drill**: run `./restore.sh <backup-directory>` on a disposable
+  installation. It verifies checksums, stops every profile, restores the
+  backed-up `.env`, database and inactive volumes, and then starts the base
+  stack, runner and configured HTTPS profile. Always test this on a disposable
+  host before relying on a backup.
 - **Upgrade**: `git pull && ./install.sh`. The installer applies reviewed
   Prisma migrations and reconciles the stack.
 - **Logs**: `docker compose logs -f api` (or any other service).

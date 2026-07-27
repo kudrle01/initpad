@@ -6,5 +6,7 @@ dist/
 *.timestamp-*.mjs
 .DS_Store
 .env
+deploy/.env.before-restore-*
+deploy/backups/
 vendor/
 .phpunit.cache/
