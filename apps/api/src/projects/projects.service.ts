@@ -2419,6 +2419,34 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
+  // Enforces allocation policy at deploy time (ADR-060 §6): a disabled allocation
+  // pauses NEW deploys (running environments are untouched), and binding a new
+  // environment may not exceed the allocation's maxEnvironments quota. Re-deploying
+  // an environment already bound to the allocation is always allowed.
+  private async assertAllocationAcceptsDeploy(
+    allocationId: string,
+    environmentId: string,
+  ): Promise<void> {
+    const allocation = await this.prisma.targetAllocation.findUnique({
+      where: { id: allocationId },
+      include: { _count: { select: { environments: true } } },
+    });
+    if (!allocation) return;
+    if (allocation.status !== 'active') {
+      throw new BadRequestException(
+        'This target allocation is disabled; new deployments are paused.',
+      );
+    }
+    const alreadyBound = await this.prisma.environment.count({
+      where: { id: environmentId, allocationId },
+    });
+    if (!alreadyBound && allocation._count.environments >= allocation.maxEnvironments) {
+      throw new BadRequestException(
+        `Target allocation quota reached (max ${allocation.maxEnvironments} environments).`,
+      );
+    }
+  }
+
   // Identity for repository operations. Coordinates come from the explicit
   // SCM locator; the legacy owner relation still supplies the stored user PAT.
   private actorForRepo(row: {
@@ -2652,9 +2680,12 @@ export class ProjectsService implements OnModuleInit {
     // authorization (P2.4) have a stable tenant-scoped anchor. The physical
     // target and connection are unchanged (allocation.targetId == env.targetId),
     // so existing container names, ports, URLs and ESO paths stay identical.
-    const allocationId = env.targetId
-      ? (await this.ensureTargetAllocation(project.workspaceId, env.targetId)).id
-      : undefined;
+    let allocationId: string | undefined;
+    if (env.targetId) {
+      const allocation = await this.ensureTargetAllocation(project.workspaceId, env.targetId);
+      await this.assertAllocationAcceptsDeploy(allocation.id, env.id);
+      allocationId = allocation.id;
+    }
     await this.prisma.environment.updateMany({
       where: { projectId, name: envName, activeOperationId: operationId },
       data: { status: 'deploying', statusReason: null, ...(allocationId ? { allocationId } : {}) },
