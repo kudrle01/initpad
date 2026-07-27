@@ -363,9 +363,31 @@ model Environment {
   buildArtifact      BuildArtifact? @relation(fields: [buildArtifactId], references: [id], onDelete: SetNull)
   buildArtifactId    String?
 
+  configVars         AppConfigVar[]
+
   @@unique([projectId, name])
   @@index([buildArtifactId])
   @@index([allocationId])
+}
+
+// Runtime configuration and secrets for a deployed application (ADR-061),
+// scoped to a single Environment. Non-secret values are stored in clear for
+// editing; secret values are encrypted at rest (INITPAD_ENCRYPTION_KEY) and are
+// never returned in plaintext by the API. Applied to the app at deploy time
+// (Docker Env / SSH runtime), never baked into the build-once image.
+model AppConfigVar {
+  id            String      @id @default(uuid())
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  environmentId String
+  key           String
+  // Plaintext for isSecret=false; ciphertext (encryptSecret) for isSecret=true.
+  value         String
+  isSecret      Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([environmentId, key])
+  @@index([environmentId])
 }
 
 // Persistent audit of provisioning a project (create or import) — ADR-025/Phase
