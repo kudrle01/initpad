@@ -251,7 +251,33 @@ restartu API musí být artifact stále dostupný. Neověřuj to jen existencí 
 
 </details>
 
-### 2. Až po zeleném object storage: TargetAllocation základ
+### 2. TargetAllocation základ — HOTOVO ✅ (kód a testy; chybí jen živý dvou-workspace acceptance)
+
+Implementováno podle ADR-060 (commity `b8c3d7c` → P2.6):
+
+- `TargetAllocation` model + aditivní migrace `20260721000000_target_allocation`;
+  `Environment.allocationId` (nullable, onDelete SetNull). Credentials zůstávají
+  na fyzickém `Target`u.
+- Backfill/reconcile na startu (`reconcileTargetAllocations`): každý existující
+  Environment s targetem dostane workspace-scoped allocation zrcadlící
+  publicUrl/remotePath/capabilities, takže URL a ESO cesty zůstávají identické;
+  namespace = workspace slug. Idempotentní, race-safe.
+- Deploy jde přes allocation (`deployEnv` lazily zajistí a naváže allocationId);
+  fyzický target/connection beze změny → žádná regrese jmen/portů/cest.
+- CRUD API `/allocations` + role: owner/admin spravují, member čte; cizí
+  workspace = 404 (existence skrytá), slabá role uvnitř workspace = 403;
+  capabilities allocation musí být podmnožina targetu.
+- Kvóty/stav při deploy (`assertAllocationAcceptsDeploy`): `disabled` pozastaví
+  nové deploye (běžící se neruší), `maxEnvironments` limituje nové navázání.
+- UI: sekce „Allocations" na Infrastructure (namespace, capabilities, využití/
+  kvóta, enable/disable + delete pro owner/admin).
+- Testy: backfill (create/dedupe/no-op/skip), role matrix + cross-workspace 404,
+  capability subset, kvóta (disabled/over-quota/rebind/under), routing.
+
+Zbývá jen **živý uživatelský test dvou workspaceů** (viz níže). Automatická
+tenant izolace (404 + namespace + role) je pokrytá testy.
+
+<details><summary>Původní zadání (pro referenci)</summary>
 
 Vytvoř ADR-060. Přidej aditivní `TargetAllocation`, který váže fyzický Target
 na workspace a nese namespace/root path, public URL, capabilities, stav a
@@ -260,6 +286,8 @@ má používat allocation; migrace/backfill musí zachovat existující projekty
 URL a ESO cesty. Owner/admin allocation spravuje, member ji může použít,
 viewer pouze čte; cizí workspace dostane 403/404. Nezačínej Agent, dokud není
 tenant isolation a uživatelský test dvou workspaceů zelený.
+
+</details>
 
 ### 3. Potom InitPad Agent — jen jeden bezpečný Docker vertikální řez
 

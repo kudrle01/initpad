@@ -38,6 +38,20 @@ export interface TargetInput {
   publicUrl: string;
 }
 
+// Workspace-scoped usage of a physical target (ADR-060).
+export interface TargetAllocation {
+  id: string;
+  targetId: string;
+  targetName: string;
+  namespace: string;
+  rootPath: string | null;
+  publicUrl: string | null;
+  capabilities: RuntimeKind[];
+  status: 'active' | 'disabled';
+  maxEnvironments: number;
+  inUse: number;
+}
+
 export interface DeleteProjectOptions {
   deleteRepository: boolean;
   confirmProduction: boolean;
@@ -186,6 +200,13 @@ export const api = {
   deleteTarget: (id: string) => http<void>(`/targets/${id}`, { method: 'DELETE' }),
   verifyTarget: (id: string) =>
     http<{ ok: boolean; message: string }>(`/targets/${id}/verify`, { method: 'POST' }),
+  // Workspace-scoped target allocations (ADR-060). Owner/admin manage; members read.
+  listAllocations: () => http<TargetAllocation[]>('/allocations'),
+  updateAllocation: (
+    id: string,
+    body: Partial<{ status: 'active' | 'disabled'; maxEnvironments: number; capabilities: RuntimeKind[]; publicUrl: string }>,
+  ) => http<TargetAllocation>(`/allocations/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteAllocation: (id: string) => http<void>(`/allocations/${id}`, { method: 'DELETE' }),
   deleteProject: (id: string, options: DeleteProjectOptions) =>
     http<void>(`/projects/${id}`, {
       method: 'DELETE',

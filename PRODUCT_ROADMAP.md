@@ -200,13 +200,28 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 GitLab je vědomě až další adapter. Template manifest jako verzovaný blueprint
 contract a firemní blueprint repozitáře zůstávají následným rozšířením.
 
-### Fáze 4 — target pool a allocations
+### Fáze 4 — target pool a allocations — rozpracováno (ADR-060)
 
 - Fyzický `Target` spravuje škola, firma nebo uživatel.
 - `TargetAllocation` přiděluje omezený výsek targetu workspace/týmu a prostředí.
 - Allocation nese capabilities, root path/namespace, public URL, kvótu a policy.
 - Učitel může pool publikovat, přidělovat a odebírat bez odhalení credentials.
 - ESO test/prod používají oddělené cesty a konfigurace na stejném fyzickém hostu.
+
+**Stav (ADR-060):** model + aditivní migrace, idempotentní backfill (zachová URL
+a ESO cesty), deploy routovaný přes allocation, CRUD API `/allocations` s rolemi
+(owner/admin spravují, member čte, cizí workspace 404), kvóty + disabled při
+deploy a UI sekce Allocations — vše hotové a pokryté automatickými testy.
+Otevřený bod: **živý uživatelský test dvou workspaceů** (níže) a durable object
+storage pro ověřené buildy je hotové (ADR-059), takže Agent má z čeho stahovat.
+
+**Uživatelské ověření Fáze 4 (TargetAllocation):** dva workspace nasadí na stejný
+built-in target — každý má vlastní namespace, běží současně bez kolize a na cizí
+allocation nevidí (404). Owner vytvoří/zakáže allocation, member v ní nasadí,
+viewer jen čte; zakázaná allocation odmítne nový deploy, ale běžící nezruší;
+překročení kvóty je odmítnuto s jasnou zprávou. Migrace zachová URL a ESO cesty
+existujících projektů. Neověřovat jen existencí DB řádku — prokázat reálný deploy
+a izolaci mezi workspace.
 
 ### Fáze 5 — InitPad Agent
 
