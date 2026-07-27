@@ -6,6 +6,8 @@ import { ImportService } from './import.service';
 import { ProvisioningService } from './provisioning.service';
 import { ProvisioningController } from './provisioning.controller';
 import { ActivityController } from './activity.controller';
+import { AppConfigService } from './app-config.service';
+import { AppConfigController } from './app-config.controller';
 import { CiController } from './ci.controller';
 import { ScmWebhookController } from './scm-webhook.controller';
 import { TemplatesModule } from '../templates/templates.module';
@@ -19,7 +21,8 @@ import { ArtifactsModule } from '../artifacts/artifacts.module';
 
 @Module({
   imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, GitHubCoreModule, AuthModule, WorkspacesModule, ArtifactsModule],
-  providers: [ProjectsService, ImportService, ProvisioningService],
-  controllers: [ProjectsController, ImportController, ProvisioningController, ActivityController, CiController, ScmWebhookController],
+  providers: [ProjectsService, ImportService, ProvisioningService, AppConfigService],
+  controllers: [ProjectsController, ImportController, ProvisioningController, ActivityController, AppConfigController, CiController, ScmWebhookController],
+  exports: [AppConfigService],
 })
 export class ProjectsModule {}
