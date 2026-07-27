@@ -2358,3 +2358,60 @@ cross-workspace 404, namespace izolace.
 Reference:
 [Kubernetes — Namespaces (koncept izolace)](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/),
 [The Twelve-Factor App — III. Config](https://12factor.net/config).
+
+## ADR-061 — Per-environment konfigurace a secrety nasazovaných aplikací
+
+**Kontext.** Nasazená aplikace obvykle potřebuje běhovou konfiguraci a secrety
+(`DATABASE_URL`, API klíče, feature flags). Dnes InitPad nemá kam je zadat —
+appka běží jen s tím, co je zapečené v image/šabloně. To láme příslib „vývojář
+řeší jen kód": jakmile appka potřebuje secret, nejde ji reálně provozovat. Sklad
+buildů (ADR-059) drží model „build once, deploy many", takže konfigurace musí být
+**vstup při deploy**, ne součást image (jinak by stejný ověřený artifact nešlo
+pustit v dev i prod s jinou konfigurací a secrety by skončily v image).
+
+**Rozhodnutí.**
+
+1. **Per-(projekt, prostředí) config vary.** Dvojice `KLÍČ=HODNOTA` navázané na
+   konkrétní `Environment` (dev/test/prod nezávisle). Klíč odpovídá konvenci
+   `^[A-Z_][A-Z0-9_]*$` a má omezenou délku.
+2. **Secret flag.** `isSecret=true` → hodnota je **šifrovaná at-rest** stejným
+   mechanismem jako credentials targetů (`INITPAD_ENCRYPTION_KEY`,
+   `encryptSecret`). API **nikdy nevrací plaintext secretu** (maskuje, vrací jen
+   `hasValue`); ne-secret hodnoty vrací pro editaci. Secrety se nikdy nelogují.
+3. **Injektáž při deploy, build-once zachován.** Platforma vary vloží do běžící
+   aplikace až při deploy (Docker container `Env`; SSH do běhového prostředí
+   start příkazu; SFTP statické cíle je nemají). Stejný ověřený image tak běží ve
+   všech prostředích s jinou konfigurací; secrety nejsou v image ani v registru.
+4. **Změna se projeví až redeployem.** Vary se aplikují při deploy; úprava
+   nezmění běžící kontejner, dokud se prostředí znovu nenasadí. UI to signalizuje.
+5. **Autorizace.** Správu (zápis/mazání) smí člen s project-write rolí; viewer
+   jen čte (se zamaskovanými secrety). Přístup mimo workspace se řídí existujícím
+   projektovým pravidlem.
+6. **Rezervované klíče.** Platformou řízené proměnné (např. `PORT`, pokud se
+   používá) nejdou přepsat, aby uživatel nerozbil běhový kontrakt.
+
+**Alternativy.** (a) Zapéct konfiguraci do image — rozbíjí build-once a dostává
+secrety do image/registru. (b) Nechat jen na šabloně — neflexibilní, žádné
+secrety. (c) Externí secret manager (Vault apod.) — těžší, lze integrovat později
+za stejným rozhraním; pro školní/self-hosted MVP je vestavěné šifrované úložiště
+dostatečné a bez závislostí.
+
+**Bezpečnost.** Secrety šifrované at-rest, v API maskované, nikdy nelogované;
+dešifrují se jen v paměti při deploy a injektují pouze do cílového prostředí.
+Ne-secret a secret vary jsou oddělené, takže se secret omylem nevypíše.
+
+**Důsledky.** Reálné aplikace (s DB, API klíči) jsou nasaditelné → dokončuje se
+příběh „vývojář jen píše kód". Stejný ověřený artifact běží v dev/test/prod s
+odlišnou konfigurací. Vzniká základ pro budoucí sdílené vary na úrovni
+workspace/allocation a pro auto-provisioning backing služeb, které connection
+string vloží jako var automaticky (mimo rozsah tohoto řezu).
+
+**Uživatelské testování.** Nastav `GREETING`/`DATABASE_URL` pro dev, nasaď, appka
+je vidí; secret je v UI zamaskovaný; změna hodnoty + redeploy se projeví; test má
+nezávislou sadu od dev. Automatické testy: CRUD + role, šifrování a maskování
+secretů, validace klíče, sestavení injektážní mapy s dešifrovanými secrety a
+přítomnost varů v Docker `Env`.
+
+Reference:
+[The Twelve-Factor App — III. Config](https://12factor.net/config),
+[OWASP — Secrets Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html).
