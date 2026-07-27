@@ -2415,3 +2415,57 @@ přítomnost varů v Docker `Env`.
 Reference:
 [The Twelve-Factor App — III. Config](https://12factor.net/config),
 [OWASP — Secrets Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html).
+
+## ADR-062 — Provozní zajištění self-hosted nasazení (zálohy, obnova, interní HTTPS, úklid)
+
+**Kontext.** Self-hosted edice běží jako jeden Docker Compose stack na jednom
+hostu. Pro reálné použití ve škole nebo malé firmě chybí provozní zajištění:
+automatické zálohy a ověřená obnova, HTTPS i na vnitřní síti bez veřejného
+Let's Encrypt, hygiena disku a provozní runbook. Bez toho hrozí ztráta dat
+(repozitáře, DB), plný disk a neudržovatelný provoz. HA/škálování je mimo rozsah
+jednoho hostu (řeší roadmapa: Agent, managed DB/S3).
+
+**Rozhodnutí.**
+
+1. **Automatické zálohy.** Platformní DB se zálohuje logicky přes `pg_dump`
+   (konzistentní), datové volumes `gitea-data` (repozitáře + SQLite),
+   `minio-data` (artefakty) a `api-data` (workspace + OIDC klíč) jako tar
+   snapshoty. Zálohy jsou časově razítkované, rotované (ponech N) a řízené
+   **host cronem** volajícím `deploy/backup.sh` — transparentní, bez dalšího
+   privilegovaného sidecaru. Cílový adresář je konfigurovatelný; doporučen
+   offsite kopie a šifrování (záloha obsahuje `.env` se secrety).
+2. **Ověřená obnova.** `deploy/restore.sh` je explicitní, destruktivní a
+   potvrzovaný: zastaví zapisovatele, obnoví DB (drop+create+load) a volumes,
+   pak stack nastartuje. „Zdokumentovaná obnova = otestovaná obnova."
+3. **Interní-CA HTTPS (volitelně).** Caddy umí `tls internal` (vlastní lokální
+   CA) přes proměnnou `INITPAD_TLS_DIRECTIVE`, pro LAN/školu bez veřejné
+   dostupnosti pro Let's Encrypt. Klienti musí důvěřovat Caddy root CA (nebo
+   přijmout výzvu). Veřejné nasazení dál používá automatický Let's Encrypt.
+4. **Hygiena disku.** `deploy/cleanup.sh` bezpečně uklidí **dangling images a
+   build cache**; nikdy nesahá na pojmenované datové volumes ani běžící
+   deploye. Retention ověřených buildů v object store řeší ADR-059.
+5. **Provozní runbook** `deploy/OPERATIONS.md` — start/stop, health, zálohy/
+   obnova, úklid, aktualizace, ochrana secretů, kapacita a troubleshooting.
+
+**Alternativy.** (a) Raw tar Postgres volume — nekonzistentní při běhu; proto
+DB přes `pg_dump`, tar jen pro repozitáře/artefakty, kde je to přijatelné.
+(b) Backup sidecar kontejner — víc pohyblivých částí a oprávnění než host cron.
+(c) Managed DB/S3/HA — mimo rozsah jednoho hostu, patří do scale fáze.
+
+**Bezpečnost.** Zálohy obsahují data i secrety → ukládat s omezenými právy a
+offsite šifrovat; `.env` chránit. Interní CA root se musí distribuovat obezřetně.
+Úklid je záměrně konzervativní, aby nikdy nesmazal potřebná data ani image.
+
+**Důsledky.** Jednohostový self-hosted se stává provozovatelným pro školu i malou
+firmu: data přežijí a jsou obnovitelná, HTTPS funguje i na LAN a disk zůstává
+zdravý. Skutečná HA a víc‑hostové škálování zůstávají na roadmapě.
+
+**Uživatelské testování.** `backup.sh` vytvoří kompletní zálohu; simulovaná
+ztráta a `restore.sh` obnoví projekty i repozitáře; interní HTTPS podává platný
+(lokálně důvěryhodný) certifikát; `cleanup.sh` uvolní místo bez rozbití běžících
+prostředí.
+
+Reference:
+[PostgreSQL — pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html),
+[Caddy — automatic HTTPS / internal issuer](https://caddyserver.com/docs/automatic-https),
+[Docker — system prune](https://docs.docker.com/engine/manage-resources/pruning/).
