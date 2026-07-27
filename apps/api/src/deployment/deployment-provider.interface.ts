@@ -59,6 +59,10 @@ export interface DeployInput {
   // human-readable stage/step (e.g. 'Uploading 340/1200 files') so the platform
   // can surface live deploy progress in the UI.
   onProgress?: (message: string) => void;
+  // Application runtime config & secrets to inject at deploy (ADR-061). Already
+  // decrypted; providers must never log these values. Applied to the running app
+  // (Docker container Env), not baked into the build-once image.
+  envVars?: Record<string, string>;
 }
 
 export interface DeployResult {

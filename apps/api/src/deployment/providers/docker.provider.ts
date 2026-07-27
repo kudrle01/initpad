@@ -82,7 +82,7 @@ export class DockerProvider implements DeploymentProvider {
     }
     await this.removeContainer(containerName);
     input.onProgress?.('Starting container');
-    const hostPort = await this.runContainer(image, containerName, network, port);
+    const hostPort = await this.runContainer(image, containerName, network, port, input.envVars);
 
     // Post-deploy verification: the same artifact may come up in one
     // environment and fail in another (config, network, dependencies), so the
@@ -355,8 +355,12 @@ export class DockerProvider implements DeploymentProvider {
     name: string,
     network: string,
     port: number,
+    envVars?: Record<string, string>,
   ): Promise<string> {
     const portKey = `${port}/tcp`;
+    // Application config & secrets (ADR-061), injected into the container's
+    // environment. Never logged. Reserved keys are filtered upstream.
+    const env = Object.entries(envVars ?? {}).map(([key, value]) => `${key}=${value}`);
     const container = await this.docker.createContainer({
       Image: image,
       name,
@@ -364,6 +368,7 @@ export class DockerProvider implements DeploymentProvider {
         'com.initpad.managed': 'true',
         'com.initpad.environment': network.replace(/^net-/, ''),
       },
+      ...(env.length ? { Env: env } : {}),
       ExposedPorts: { [portKey]: {} },
       HostConfig: {
         NetworkMode: network,

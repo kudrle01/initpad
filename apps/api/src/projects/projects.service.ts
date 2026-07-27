@@ -2342,6 +2342,18 @@ export class ProjectsService implements OnModuleInit {
     return { url, expiresInSeconds };
   }
 
+  // Decrypted application config & secrets for an environment (ADR-061), as a
+  // KEY=VALUE map for the deployment provider. Secrets are decrypted only here,
+  // in memory, at deploy time; the values are never logged.
+  private async appConfigForEnvironment(environmentId: string): Promise<Record<string, string>> {
+    const rows = await this.prisma.appConfigVar.findMany({ where: { environmentId } });
+    const map: Record<string, string> = {};
+    for (const row of rows) {
+      map[row.key] = row.isSecret ? decryptSecret(row.value) : row.value;
+    }
+    return map;
+  }
+
   // An artifact is protected from GC while any environment points at it or an
   // in-flight deployment operation still needs it.
   private async artifactIsReferenced(buildArtifactId: string): Promise<boolean> {
@@ -2760,6 +2772,11 @@ export class ProjectsService implements OnModuleInit {
       deployRepoPath = source?.dir ?? project.repoPath;
     }
 
+    // Application config & secrets for this environment (ADR-061), decrypted in
+    // memory and injected at deploy so the same build-once image runs with
+    // per-environment configuration.
+    const envVars = await this.appConfigForEnvironment(env.id);
+
     try {
       const result = await this.deployment.deploy(env.provider as ProviderKind, {
         projectName: this.deploySlug(repository),
@@ -2778,6 +2795,7 @@ export class ProjectsService implements OnModuleInit {
         connection: this.targetConnection(env),
         imageRef: testedImageRef,
         allowBuildFallback: !useRegistry,
+        envVars,
       });
       if (await this.operationCancelled(operationId)) {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {

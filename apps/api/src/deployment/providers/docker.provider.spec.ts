@@ -7,6 +7,7 @@ import * as tarStream from 'tar-stream';
 // (ADR-059 P1.4); DockerProvider.loadImageArchive delegates to it. Tests stay here
 // to preserve the Docker-ingest boundary contract they were written for.
 import { assertImageArchiveIdentity } from '../../artifacts/image-archive';
+import { DockerProvider } from './docker.provider';
 
 type Manifest = { Config?: string; RepoTags?: string[]; Layers?: string[] };
 
@@ -101,5 +102,42 @@ describe('assertImageArchiveIdentity (Docker ingest boundary)', () => {
     } finally {
       archive.cleanup();
     }
+  });
+});
+
+describe('DockerProvider config-var injection (ADR-061)', () => {
+  function providerWithMockDaemon() {
+    const created: Array<Record<string, unknown>> = [];
+    const provider = new DockerProvider();
+    (provider as unknown as { docker: unknown }).docker = {
+      createContainer: jest.fn(async (opts: Record<string, unknown>) => {
+        created.push(opts);
+        return {
+          start: jest.fn(async () => undefined),
+          inspect: jest.fn(async () => ({
+            NetworkSettings: { Ports: { '3000/tcp': [{ HostPort: '12345' }] } },
+          })),
+          remove: jest.fn(async () => undefined),
+        };
+      }),
+    };
+    return { provider, created };
+  }
+
+  it('injects config vars into the container Env', async () => {
+    const { provider, created } = providerWithMockDaemon();
+    const port = await (provider as unknown as {
+      runContainer: (i: string, n: string, net: string, p: number, e?: Record<string, string>) => Promise<string>;
+    }).runContainer('img', 'name', 'net-dev', 3000, { GREETING: 'ahoj', TOKEN: 's3cr3t' });
+    expect(port).toBe('12345');
+    expect(created[0].Env).toEqual(['GREETING=ahoj', 'TOKEN=s3cr3t']);
+  });
+
+  it('omits Env when there are no config vars', async () => {
+    const { provider, created } = providerWithMockDaemon();
+    await (provider as unknown as {
+      runContainer: (i: string, n: string, net: string, p: number, e?: Record<string, string>) => Promise<string>;
+    }).runContainer('img', 'name', 'net-dev', 3000);
+    expect(created[0].Env).toBeUndefined();
   });
 });
