@@ -2427,16 +2427,25 @@ jednoho hostu (řeší roadmapa: Agent, managed DB/S3).
 
 **Rozhodnutí.**
 
-1. **Automatické zálohy.** Platformní DB se zálohuje logicky přes `pg_dump`
-   (konzistentní), datové volumes `gitea-data` (repozitáře + SQLite),
-   `minio-data` (artefakty) a `api-data` (workspace + OIDC klíč) jako tar
-   snapshoty. Zálohy jsou časově razítkované, rotované (ponech N) a řízené
-   **host cronem** volajícím `deploy/backup.sh` — transparentní, bez dalšího
-   privilegovaného sidecaru. Cílový adresář je konfigurovatelný; doporučen
-   offsite kopie a šifrování (záloha obsahuje `.env` se secrety).
+1. **Automatické zálohy jako společný checkpoint.** Platformní zapisovatelé
+   (API, Gitea, MinIO, runner, SFTP/static target a Caddy) se po dobu snapshotu
+   krátce zastaví. Platformní DB se potom zálohuje logicky přes `pg_dump`,
+   datové volumes `gitea-data` (repozitáře + SQLite), `minio-data` (artefakty)
+   a `api-data` (workspace + OIDC klíč) jako tar snapshoty. Tím DB, repozitáře
+   a artifact metadata pocházejí ze stejného klidového bodu; po dokončení i po
+   chybě se znovu spustí pouze služby, které běžely před zálohou. Zálohy jsou
+   časově razítkované, rotované (ponech N) a řízené **host cronem** volajícím
+   `deploy/backup.sh` — transparentní, bez dalšího privilegovaného sidecaru.
+   Cílový adresář je konfigurovatelný; doporučena je offsite kopie a šifrování
+   (záloha obsahuje `.env` se secrety).
 2. **Ověřená obnova.** `deploy/restore.sh` je explicitní, destruktivní a
-   potvrzovaný: zastaví zapisovatele, obnoví DB (drop+create+load) a volumes,
-   pak stack nastartuje. „Zdokumentovaná obnova = otestovaná obnova."
+   potvrzovaný: zastaví celý stack včetně volitelných profilů, obnoví
+   zálohovaný `.env` (a vedle ponechá chráněnou kopii předchozího), dorovná
+   heslo databázové role, obnoví DB (drop+create+load) a neaktivní volumes a
+   teprve potom nastartuje základní stack, runner a případně HTTPS profil.
+   Bez původního šifrovacího klíče a dalších secretů by obnovená data nebyla
+   použitelná, proto je konfigurace součástí atomu obnovy.
+   „Zdokumentovaná obnova = otestovaná obnova."
 3. **Interní-CA HTTPS (volitelně).** Caddy umí `tls internal` (vlastní lokální
    CA) přes proměnnou `INITPAD_TLS_DIRECTIVE`, pro LAN/školu bez veřejné
    dostupnosti pro Let's Encrypt. Klienti musí důvěřovat Caddy root CA (nebo
@@ -2448,7 +2457,7 @@ jednoho hostu (řeší roadmapa: Agent, managed DB/S3).
    obnova, úklid, aktualizace, ochrana secretů, kapacita a troubleshooting.
 
 **Alternativy.** (a) Raw tar Postgres volume — nekonzistentní při běhu; proto
-DB přes `pg_dump`, tar jen pro repozitáře/artefakty, kde je to přijatelné.
+DB přes `pg_dump` a ostatní volumes přes tar až po zastavení zapisovatelů.
 (b) Backup sidecar kontejner — víc pohyblivých částí a oprávnění než host cron.
 (c) Managed DB/S3/HA — mimo rozsah jednoho hostu, patří do scale fáze.
 
@@ -2458,7 +2467,9 @@ offsite šifrovat; `.env` chránit. Interní CA root se musí distribuovat obez�
 
 **Důsledky.** Jednohostový self-hosted se stává provozovatelným pro školu i malou
 firmu: data přežijí a jsou obnovitelná, HTTPS funguje i na LAN a disk zůstává
-zdravý. Skutečná HA a víc‑hostové škálování zůstávají na roadmapě.
+zdravý. Záloha má krátké servisní okno úměrné velikosti volumes; je to vědomý
+kompromis za konzistenci bez filesystem snapshotů a distribuované koordinace.
+Skutečná HA a víc‑hostové škálování zůstávají na roadmapě.
 
 **Uživatelské testování.** `backup.sh` vytvoří kompletní zálohu; simulovaná
 ztráta a `restore.sh` obnoví projekty i repozitáře; interní HTTPS podává platný
