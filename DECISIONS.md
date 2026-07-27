@@ -964,8 +964,10 @@ označuje jako insecure **jen** přesný interní alias
 `host.docker.internal:<gitea-port>`; veřejná registry doména na serveru na
 allow-listu není a nadále vyžaduje ověřené TLS.
 Gitea registry vrací token realm ze svého kanonického `ROOT_URL`, proto má
-daemon host-gateway mapování i pro lokální `gitea.localhost`; job samotný ho
-pro checkout ani callback nepoužívá.
+daemon mapování i pro lokální `gitea.localhost`; job samotný ho pro checkout
+ani callback nepoužívá. Protože obecné Docker `host-gateway` může ukazovat na
+nesouvisející výchozí bridge (`172.17.0.1`), oba aliasy v izolovaném daemonu
+explicitně používají gateway jeho fixní `ci-control` sítě (`172.31.250.1`).
 
 ---
 

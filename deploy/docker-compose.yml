@@ -241,10 +241,12 @@ services:
       retries: 40
       start_period: 10s
     extra_hosts:
-      # Registry access is performed by the nested daemon itself. Gitea's
-      # auth challenge uses its canonical ROOT_URL as the token realm.
-      - "host.docker.internal:host-gateway"
-      - "gitea.localhost:host-gateway"
+      # Docker's generic host-gateway may resolve to the unrelated default
+      # bridge (usually 172.17.0.1). This service only joins ci-control, whose
+      # fixed gateway is the reachable outer host address used by CI jobs.
+      # Gitea's auth challenge may use its canonical gitea.localhost realm.
+      - "host.docker.internal:172.31.250.1"
+      - "gitea.localhost:172.31.250.1"
     networks: [ci-control]
     restart: unless-stopped
 

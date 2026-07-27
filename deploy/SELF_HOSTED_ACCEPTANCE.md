@@ -80,6 +80,20 @@ INITPAD_CI_REGISTRY_HOST=host.docker.internal:3001
 Tyto tři adresy jsou určeny pro runner a Docker démon uvnitř VM, nikoli pro
 prohlížeč ve Windows.
 
+Po startu ověř, že izolovaný Docker daemon překládá interní registry alias na
+gateway vyhrazené `ci-control` sítě, nikoli na výchozí Docker bridge:
+
+```bash
+docker compose --profile runner exec -T runner-docker \
+  grep 'host.docker.internal' /etc/hosts
+docker compose --profile runner exec -T runner-docker \
+  wget -qO- http://host.docker.internal:3001/api/healthz
+```
+
+První příkaz musí vypsat `172.31.250.1`; druhý musí vrátit zdravý stav Gitey.
+Adresa `172.17.0.1` zde značí chybnou/starou konfiguraci kontejneru — spusť
+znovu `./install.sh`, aby se `runner-docker` vytvořil s aktuální sítí.
+
 Pokud je aktivní UFW, povol testovací porty:
 
 ```bash

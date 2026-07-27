@@ -70,8 +70,10 @@ services:
       retries: 40
       start_period: 10s
     extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "gitea.localhost:host-gateway"
+      # Keep the nested daemon on the dedicated ci-control gateway. Docker's
+      # generic host-gateway can point at an unrelated 172.17.0.1 bridge.
+      - "host.docker.internal:172.31.250.1"
+      - "gitea.localhost:172.31.250.1"
     networks: [ci-control]
     restart: unless-stopped
 
