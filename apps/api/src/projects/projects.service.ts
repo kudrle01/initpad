@@ -2647,9 +2647,17 @@ export class ProjectsService implements OnModuleInit {
       }
     }
 
+    // Route the deploy through the workspace-scoped allocation (ADR-060 §2):
+    // ensure one exists and link the environment to it, so quotas (P2.5) and
+    // authorization (P2.4) have a stable tenant-scoped anchor. The physical
+    // target and connection are unchanged (allocation.targetId == env.targetId),
+    // so existing container names, ports, URLs and ESO paths stay identical.
+    const allocationId = env.targetId
+      ? (await this.ensureTargetAllocation(project.workspaceId, env.targetId)).id
+      : undefined;
     await this.prisma.environment.updateMany({
       where: { projectId, name: envName, activeOperationId: operationId },
-      data: { status: 'deploying', statusReason: null },
+      data: { status: 'deploying', statusReason: null, ...(allocationId ? { allocationId } : {}) },
     });
     // The built-in SSH VPS is shared — allocate a unique app port from the
     // database. A user's own SSH server uses the template port directly.
