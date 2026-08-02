@@ -9,6 +9,7 @@ describe('CiController artifact callback', () => {
       repo: 'acme/api',
       sha: 'a'.repeat(40),
       ref: 'main',
+      ciStatus: 'success',
       artifactId: '987',
       artifactDigest: 'b'.repeat(64),
     })).resolves.toEqual({ accepted: true });
@@ -17,7 +18,7 @@ describe('CiController artifact callback', () => {
       'a'.repeat(40),
       'main',
       'repo-secret',
-      { artifactId: '987', artifactDigest: 'b'.repeat(64) },
+      { ciStatus: 'success', artifactId: '987', artifactDigest: 'b'.repeat(64) },
     );
   });
 

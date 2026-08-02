@@ -62,9 +62,15 @@ fi
 if [ "$(get_env INITPAD_GITEA_PUBLIC_URL)" = "http://localhost:3001" ]; then
   set_env INITPAD_GITEA_PUBLIC_URL http://gitea.localhost:3001
 fi
-if [ "$(get_env INITPAD_REGISTRY_HOST)" = "localhost:3001" ]; then
-  set_env INITPAD_REGISTRY_HOST gitea.localhost:3001
-fi
+# The host daemon pulls from the host-published registry. A literal IPv4
+# loopback is portable across Docker Desktop and plain Linux; *.localhost can
+# resolve to ::1 on Fedora even when the published port only accepts IPv4.
+registry_host=$(get_env INITPAD_REGISTRY_HOST)
+case "$registry_host" in
+  localhost:*|gitea.localhost:*)
+    set_env INITPAD_REGISTRY_HOST "127.0.0.1:${registry_host##*:}"
+    ;;
+esac
 # CI jobs cannot use *.localhost: glibc gives the reserved suffix an IPv6
 # loopback result before Docker's host mapping. Local jobs use the explicit
 # host gateway; a server install uses its real public Git hostname.
@@ -82,7 +88,7 @@ if [ -z "$(get_env INITPAD_CI_REGISTRY_HOST)" ]; then
   registry_host=$(get_env INITPAD_REGISTRY_HOST)
   gitea_port=$(get_env INITPAD_GITEA_HTTP_PORT); gitea_port=${gitea_port:-3001}
   case "$registry_host" in
-    gitea.localhost:*|localhost:*)
+    127.0.0.1:*|gitea.localhost:*|localhost:*)
       set_env INITPAD_CI_REGISTRY_HOST "host.docker.internal:$gitea_port"
       ;;
     *) set_env INITPAD_CI_REGISTRY_HOST "$registry_host" ;;

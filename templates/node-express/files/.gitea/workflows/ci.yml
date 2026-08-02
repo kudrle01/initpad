@@ -47,6 +47,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: docker
+    # Always notify InitPad so an upstream failure cannot leave dev stuck
+    # in "deploying" while no callback will ever arrive.
+    if: always()
     steps:
       # After a successful build, tell the platform to deploy this commit to
       # dev. The platform URL and the token come from Actions secrets set by
@@ -56,4 +59,5 @@ jobs:
           curl -fsS -X POST "${{ secrets.INITPAD_PLATFORM_URL }}/api/ci/deploy" \
             -H "Authorization: Bearer ${{ secrets.INITPAD_DEPLOY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}'
+            -d '{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}","ciStatus":"${{ needs.docker.result }}"}'
+          test "${{ needs.docker.result }}" = "success"

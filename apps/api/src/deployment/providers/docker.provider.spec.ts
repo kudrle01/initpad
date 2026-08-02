@@ -155,3 +155,35 @@ describe('DockerProvider allocation isolation (ADR-060)', () => {
     expect(dockerContainerName('alice-api', 'dev')).toBe('initpad-alice-api-dev');
   });
 });
+
+describe('DockerProvider registry diagnostics', () => {
+  it('surfaces the daemon pull failure instead of claiming the image is absent', async () => {
+    const provider = new DockerProvider();
+    const internals = provider as unknown as {
+      isAvailable: () => Promise<boolean>;
+      ensureNetwork: () => Promise<void>;
+      imageExists: () => Promise<boolean>;
+      tryPull: () => Promise<{ ok: false; error: string }>;
+    };
+    internals.isAvailable = jest.fn(async () => true);
+    internals.ensureNetwork = jest.fn(async () => undefined);
+    internals.imageExists = jest.fn(async () => false);
+    internals.tryPull = jest.fn(async () => ({
+      ok: false as const,
+      error: 'dial tcp [::1]:3001: connect: connection refused',
+    }));
+
+    await expect(provider.deploy({
+      projectName: 'acme-api',
+      version: 'a'.repeat(40),
+      env: 'dev',
+      repoPath: '/unused',
+      imageRef: `127.0.0.1:3001/acme/api:${'a'.repeat(40)}`,
+      allowBuildFallback: false,
+    })).resolves.toEqual({
+      status: 'failed',
+      url: '',
+      reason: expect.stringContaining('dial tcp [::1]:3001: connect: connection refused'),
+    });
+  });
+});

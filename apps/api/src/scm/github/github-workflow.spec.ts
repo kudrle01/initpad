@@ -22,6 +22,8 @@ describe('GitHub artifact workflow adaptation', () => {
       expect(github).toContain('retention-days: 1');
       expect(github).toContain('artifactId');
       expect(github).toContain('artifactDigest');
+      expect(github).toContain('if: always()');
+      expect(github).toContain('"ciStatus":"${{ needs.docker.result }}"');
       expect(github).not.toContain('docker push "$IMAGE"');
       expect(github).not.toContain('INITPAD_REGISTRY_PASSWORD');
       expect(source).toContain('docker push "$IMAGE"');

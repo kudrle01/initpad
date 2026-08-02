@@ -111,7 +111,7 @@ export const config = {
   // host machine's Docker daemon (it performs both push and pull).
   // Credentials = the service (bot) account.
   registry: {
-    host: process.env.INITPAD_REGISTRY_HOST || 'gitea.localhost:3001',
+    host: process.env.INITPAD_REGISTRY_HOST || '127.0.0.1:3001',
     // Same registry, but addressed from glibc-based CI job containers and
     // their nested daemon (where *.localhost resolves to loopback).
     ciHost: process.env.INITPAD_CI_REGISTRY_HOST || 'host.docker.internal:3001',

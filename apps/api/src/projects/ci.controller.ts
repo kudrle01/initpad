@@ -12,6 +12,7 @@ interface CiDeployDto {
   repo?: string; // "owner/name"
   sha?: string;
   ref?: string;
+  ciStatus?: string;
   artifactId?: string;
   artifactDigest?: string;
 }
@@ -32,6 +33,7 @@ export class CiController {
     // Authentication finishes before returning 202; the deployment itself is
     // still scheduled in the background by ProjectsService.
     await this.projects.deployFromCi(body.repo, body.sha ?? '', body.ref ?? '', token, {
+      ciStatus: body.ciStatus,
       artifactId: body.artifactId,
       artifactDigest: body.artifactDigest,
     });

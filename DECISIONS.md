@@ -195,7 +195,7 @@ musí předat přes registry stejně jako v distribuovaném provozu. Šli jsme d
 - **Split-horizon adresy.** Tag v sobě nese hostname registru a ten musí sedět
   z místa, kde se pushuje, i odkud se pulluje. V našem setupu obojí dělá
   hostitelský Docker daemon, takže používáme adresu dosažitelnou z hostu
-  (`gitea.localhost:3001`, v CI mapovanou na izolovanou gateway). Lokální registry je HTTP
+  (`127.0.0.1:3001`, v CI mapovanou na izolovanou gateway). Lokální registry je HTTP
   automaticky, takže netřeba TLS.
 - **Přísné build-once (žádný tichý fallback u reálných deployů).** Když
   otestovaný image v registru chybí, **CI → deploy i promote úmyslně SELŽOU** –
@@ -968,6 +968,15 @@ daemon mapování i pro lokální `gitea.localhost`; job samotný ho pro checkou
 ani callback nepoužívá. Protože obecné Docker `host-gateway` může ukazovat na
 nesouvisející výchozí bridge (`172.17.0.1`), oba aliasy v izolovaném daemonu
 explicitně používají gateway jeho fixní `ci-control` sítě (`172.31.250.1`).
+Hostitelský daemon naopak používá explicitní IPv4 loopback
+`127.0.0.1:<gitea-port>`; tím se vyhne platformně závislé preferenci `::1` pro
+`*.localhost` a zůstává v automaticky lokálním HTTP registry rozsahu Dockeru.
+
+CI notifikační job se spouští přes `if: always()` a předává výsledek
+image-producing jobu. Neúspěšný build/test/docker tak uzavře deployment jako
+`failed` namísto nekonečného `deploying`. Detail projektu navíc reconciliuje
+terminální neúspěch ze SCM statusů jako kompatibilní pojistku pro repozitáře
+vytvořené ještě se starým workflow.
 
 ---
 

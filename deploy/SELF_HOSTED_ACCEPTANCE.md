@@ -73,7 +73,7 @@ Interní split-horizon hodnoty ponech beze změny:
 
 ```ini
 INITPAD_GITEA_RUNNER_URL=http://host.docker.internal:3001
-INITPAD_REGISTRY_HOST=gitea.localhost:3001
+INITPAD_REGISTRY_HOST=127.0.0.1:3001
 INITPAD_CI_REGISTRY_HOST=host.docker.internal:3001
 ```
 

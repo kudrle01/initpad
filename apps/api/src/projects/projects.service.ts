@@ -45,6 +45,7 @@ import {
   ScmBuildArtifact,
   ScmRepositoryIdentity,
   ScmRepositoryRef,
+  ProjectScmFields,
   ScmKind,
   repositoryRef,
 } from '../scm/scm-provider';
@@ -65,7 +66,11 @@ import { publicHttpsUrlIssue } from '../common/public-url';
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
-type CiArtifactInput = { artifactId?: string; artifactDigest?: string };
+type CiArtifactInput = {
+  ciStatus?: string;
+  artifactId?: string;
+  artifactDigest?: string;
+};
 type ResolvedEnvironmentTarget = {
   name: EnvName;
   target: TargetRow;
@@ -487,6 +492,69 @@ export class ProjectsService implements OnModuleInit {
       ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
       throw new NotFoundException(`Project '${id}' not found`);
     }
+    await this.reconcileWaitingCiFailure(row, repository, actor).catch((error) =>
+      this.logger.warn(
+        `CI state reconciliation skipped for ${repository.fullName}: ${(error as Error).message}`,
+      ),
+    );
+  }
+
+  // Legacy/generated workflows used to notify InitPad only after every
+  // upstream job succeeded. A failed build therefore had no callback and dev
+  // remained "deploying" indefinitely. Project refreshes now close that wait
+  // from provider status as a compatibility safety net; current workflows also
+  // send an explicit terminal callback via `if: always()`.
+  private async reconcileWaitingCiFailure(
+    project: ProjectScmFields & { id: string; templateId: string },
+    repository: ScmRepositoryRef,
+    actor: ScmActor,
+  ): Promise<void> {
+    const dev = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId: project.id, name: 'dev' } },
+    });
+    if (!dev || dev.status !== 'deploying') return;
+
+    const operation = dev.activeOperationId
+      ? await this.prisma.deploymentOperation.findUnique({
+          where: { id: dev.activeOperationId },
+        })
+      : null;
+    // Only a CI wait is reconciled here. A real deployment/ingestion owns its
+    // own background failure handling and must never be overridden by SCM UI.
+    if (operation && operation.kind !== 'ci-retry') return;
+
+    let sha = operation?.version ?? null;
+    const scm = this.workspaceScm.provider(repository.provider);
+    if (!sha) {
+      const commits = await scm.listCommits(repository, actor, 1);
+      sha = commits?.[0]?.sha ?? null;
+    }
+    if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) return;
+
+    const statuses = await scm.listCommitStatuses(repository, sha, actor);
+    const stages = this.pipelineStages(this.templates.get(project.templateId), statuses);
+    const failed = stages.filter((stage) => stage.status === 'failed').map((stage) => stage.name);
+    if (failed.length === 0) return;
+
+    const reason =
+      `CI failed before it could publish a deployable image (${failed.join(', ')}). ` +
+      'Open the SCM run logs, fix the job and run again.';
+    const closed = await this.prisma.environment.updateMany({
+      where: {
+        id: dev.id,
+        status: 'deploying',
+        activeOperationId: dev.activeOperationId,
+      },
+      data: {
+        status: 'failed',
+        statusReason: reason,
+        deploymentRequired: true,
+        activeOperationId: null,
+      },
+    });
+    if (closed.count !== 1) return;
+    if (operation) await this.completeOperation(operation.id, 'failed', reason);
+    this.logger.warn(`Reconciled failed CI wait: ${repository.fullName} (${sha.slice(0, 7)})`);
   }
 
   async get(id: string): Promise<Project> {
@@ -1300,6 +1368,91 @@ export class ProjectsService implements OnModuleInit {
       throw new BadRequestException('CI deploy requires a full 40-character commit SHA');
     }
 
+    const dev = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId: project.id, name: 'dev' } },
+    });
+    if (!dev) throw new BadRequestException("Project has no 'dev' environment");
+
+    // The notification job runs even after an upstream CI failure. This closes
+    // the state machine instead of leaving dev on "deploying" forever when the
+    // image-producing job failed or was skipped before the normal callback.
+    const ciStatus = (artifactInput.ciStatus || 'success').trim().toLowerCase();
+    if (!['success', 'failure', 'cancelled', 'skipped'].includes(ciStatus)) {
+      throw new BadRequestException(`Unsupported CI result '${ciStatus}'`);
+    }
+    if (ciStatus !== 'success') {
+      const reason =
+        `CI did not produce a deployable image (docker job: ${ciStatus}). ` +
+        'Open the SCM run logs, fix the failed job and run again.';
+
+      if (isRetry) {
+        const actor = await this.actorForProject(project.id);
+        try {
+          const operation = dev.activeOperationId
+            ? await this.prisma.deploymentOperation.findUnique({
+                where: { id: dev.activeOperationId },
+              })
+            : null;
+          if (
+            !operation ||
+            operation.kind !== 'ci-retry' ||
+            operation.status !== 'running' ||
+            operation.version !== sha
+          ) {
+            this.logger.log(`Ignoring stale failed CI retry for ${repo} (${retryTag})`);
+            return;
+          }
+          await this.prisma.environment.updateMany({
+            where: { id: dev.id, activeOperationId: operation.id },
+            data: {
+              status: 'failed',
+              statusReason: reason,
+              deploymentRequired: true,
+              activeOperationId: null,
+            },
+          });
+          await this.completeOperation(operation.id, 'failed', reason);
+        } finally {
+          await scm.deleteTag(repository, retryTag, actor);
+        }
+      } else {
+        // Removing/cancelling the first dev deployment opts out of late CI.
+        if (dev.status === 'empty' && project.lastCommit !== 'import: existing repository') {
+          this.logger.log(`Ignoring failed CI callback for disabled dev environment: ${repo}`);
+          return;
+        }
+        const operationId = await this.beginOperation(
+          project.id,
+          'dev',
+          'ci-deploy',
+          sha.toLowerCase(),
+        );
+        // A failed new build must not claim that the previously published
+        // workload stopped. Initial/import waits become failed; an existing
+        // running/stopped version remains truthful while the failed attempt is
+        // recorded in DeploymentOperation and marked as still requiring deploy.
+        const finalStatus = ['running', 'stopped'].includes(dev.status)
+          ? dev.status
+          : 'failed';
+        await this.prisma.environment.updateMany({
+          where: { id: dev.id, activeOperationId: operationId },
+          data: {
+            status: finalStatus,
+            statusReason: reason,
+            deploymentRequired: true,
+            activeOperationId: null,
+          },
+        });
+        await this.completeOperation(operationId, 'failed', reason);
+      }
+      await this.prisma.project.update({
+        where: { id: project.id },
+        data: { lastCommit: `ci: failed ${sha.slice(0, 7)}` },
+      });
+      this.logger.warn(`CI failed before publication: ${repo} (${ciStatus})`);
+      return;
+    }
+
     let buildArtifact: ScmBuildArtifact | null = null;
     if (repository.provider === 'github') {
       if (!artifactInput.artifactId || !artifactInput.artifactDigest) {
@@ -1338,11 +1491,6 @@ export class ProjectsService implements OnModuleInit {
         }
       }
     }
-
-    const dev = await this.prisma.environment.findUnique({
-      where: { projectId_name: { projectId: project.id, name: 'dev' } },
-    });
-    if (!dev) throw new BadRequestException("Project has no 'dev' environment");
 
     if (isRetry) {
       const actor = await this.actorForProject(project.id);

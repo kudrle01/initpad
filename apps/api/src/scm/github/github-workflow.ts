@@ -60,14 +60,26 @@ export function adaptWorkflowForGitHub(source: string, filename: string): string
       ].join('\n'),
     );
 
-  const callback =
+  // Accept the immediately previous scaffold shape as well. GitHub project
+  // creation can adapt a checked-out template from an older InitPad version,
+  // but always emits the current terminal-result callback.
+  if (!workflow.includes('    if: always()')) {
+    workflow = workflow.replace(
+      /(^  deploy:\n(?:    [^\n]*\n)*?^    needs: docker\n)/m,
+      '$1    if: always()\n',
+    );
+  }
+  const currentCallback =
+    `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}","ciStatus":"\${{ needs.docker.result }}"}'`;
+  const legacyCallback =
     `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}"}'`;
+  const callback = workflow.includes(currentCallback) ? currentCallback : legacyCallback;
   if (!workflow.includes(callback)) {
     throw new Error(`Could not locate the InitPad callback in '${filename}'`);
   }
   workflow = workflow.replace(
     callback,
-    `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}","artifactId":"\${{ needs.docker.outputs.artifact-id }}","artifactDigest":"\${{ needs.docker.outputs.artifact-digest }}"}'`,
+    `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}","ciStatus":"\${{ needs.docker.result }}","artifactId":"\${{ needs.docker.outputs.artifact-id }}","artifactDigest":"\${{ needs.docker.outputs.artifact-digest }}"}'`,
   );
 
   if (

@@ -87,23 +87,28 @@ export class DockerProvider implements DeploymentProvider {
       if (await this.imageExists(input.imageRef)) {
         image = input.imageRef;
         this.logger.log(`Using ingested local image: ${image}`);
-      } else if (await this.tryPull(input.imageRef)) {
-        image = input.imageRef;
-        this.logger.log(`Using registry image: ${image}`);
       } else if (input.allowBuildFallback) {
-        image = `initpad/${input.projectName}:${input.env}`;
-        await this.buildImage(input.repoPath, image);
+        const pull = await this.tryPull(input.imageRef);
+        if (pull.ok) {
+          image = input.imageRef;
+          this.logger.log(`Using registry image: ${image}`);
+        } else {
+          image = `initpad/${input.projectName}:${input.env}`;
+          await this.buildImage(input.repoPath, image);
+        }
       } else {
-        // Strict build-once: the tested image is missing from the registry —
-        // do not build a different (possibly diverging) artifact; fail instead.
-        this.logger.warn(
-          `Image ${input.imageRef} not found in the registry — deployment stopped (build-once).`,
-        );
-        return {
-          status: 'failed',
-          url: '',
-          reason: `Image ${input.imageRef} was not found in the registry — CI probably didn't build or push it.`,
-        };
+        const pull = await this.tryPull(input.imageRef);
+        if (pull.ok) {
+          image = input.imageRef;
+          this.logger.log(`Using registry image: ${image}`);
+        } else {
+          // Strict build-once: the tested image is unavailable — do not build
+          // a different artifact. Preserve the daemon's real error: "not
+          // found", refused HTTP, DNS and authentication require different fixes.
+          const reason = `Could not pull tested image ${input.imageRef}: ${pull.error}`;
+          this.logger.warn(`${reason} Deployment stopped (build-once).`);
+          return { status: 'failed', url: '', reason };
+        }
       }
     } else {
       image = `initpad/${input.projectName}:${input.env}`;
@@ -328,8 +333,11 @@ export class DockerProvider implements DeploymentProvider {
     if (!(await this.isAvailable())) {
       throw new Error('Docker daemon is not available — cannot build the SFTP artifact.');
     }
-    if (!(await this.imageExists(imageRef)) && !(await this.tryPull(imageRef))) {
-      throw new Error(`Image ${imageRef} was not found in the registry — has CI built it yet?`);
+    if (!(await this.imageExists(imageRef))) {
+      const pull = await this.tryPull(imageRef);
+      if (!pull.ok) {
+        throw new Error(`Could not pull tested image ${imageRef}: ${pull.error}`);
+      }
     }
     const container = await this.docker.createContainer({ Image: imageRef, Cmd: ['true'] });
     try {
@@ -405,9 +413,9 @@ export class DockerProvider implements DeploymentProvider {
   }
 
   // Pulls an image from the registry authenticated as the service account.
-  // Returns false when the image is missing or the registry is unreachable —
-  // the caller decides whether a local build fallback is allowed.
-  private async tryPull(ref: string): Promise<boolean> {
+  // Returns the daemon's concrete failure instead of collapsing a missing tag,
+  // an unreachable registry and rejected HTTP/TLS into the same UI message.
+  private async tryPull(ref: string): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
       const auth = {
         username: config.registry.user,
@@ -418,10 +426,11 @@ export class DockerProvider implements DeploymentProvider {
       await new Promise<void>((resolve, reject) => {
         this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
       });
-      return true;
+      return { ok: true };
     } catch (e) {
-      this.logger.warn(`pull ${ref} failed: ${(e as Error).message}`);
-      return false;
+      const error = (e as Error).message || 'Unknown Docker registry error';
+      this.logger.warn(`pull ${ref} failed: ${error}`);
+      return { ok: false, error };
     }
   }
 
