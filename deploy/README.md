@@ -26,13 +26,16 @@ database migrations and container builds.
 2. In `deploy/.env` set:
 
    ```ini
-   INITPAD_PUBLIC_HOST=platform.example.org
    INITPAD_PUBLIC_URL=https://platform.example.org
    INITPAD_GITEA_PUBLIC_URL=https://git.example.org
    INITPAD_REGISTRY_HOST=git.example.org
    INITPAD_DOMAIN=platform.example.org
    INITPAD_GIT_DOMAIN=git.example.org
    ```
+
+   Built-in application links automatically use the hostname from
+   `INITPAD_PUBLIC_URL`. Only a split topology where apps intentionally use a
+   different hostname sets `INITPAD_DEPLOY_PUBLIC_HOST`.
 
 3. Run `./install.sh`. Setting `INITPAD_DOMAIN` enables the `server`
    profile — Caddy terminates HTTPS for both domains with automatic

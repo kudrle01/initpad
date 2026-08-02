@@ -128,7 +128,12 @@ services:
       INITPAD_GITHUB_CALLBACK_URL: ${INITPAD_GITHUB_CALLBACK_URL:-}
       # Addresses of deployed apps (browser) and health checks (from inside
       # this container → host-published ports via host.docker.internal).
-      INITPAD_PUBLIC_HOST: ${INITPAD_PUBLIC_HOST:-localhost}
+      # Built-in app links normally derive their host from INITPAD_PUBLIC_URL.
+      # Only set the override when apps intentionally use a different hostname.
+      INITPAD_DEPLOY_PUBLIC_HOST: ${INITPAD_DEPLOY_PUBLIC_HOST:-}
+      # Backward-compatible fallback for development environments without a
+      # configured public URL; ignored by this Compose profile in normal use.
+      INITPAD_PUBLIC_HOST: ${INITPAD_PUBLIC_HOST:-}
       INITPAD_DEPLOY_HEALTH_HOST: host.docker.internal
       INITPAD_DEPLOY_BIND_ADDRESS: ${INITPAD_DEPLOY_BIND_ADDRESS:-0.0.0.0}
       INITPAD_DEPLOY_MEMORY_MB: ${INITPAD_DEPLOY_MEMORY_MB:-512}
@@ -150,7 +155,6 @@ services:
       INITPAD_SFTP_PORT: "22"
       INITPAD_SFTP_USER: deploy
       INITPAD_SFTP_PASSWORD: ${INITPAD_SFTP_PASSWORD:-deploy}
-      INITPAD_SFTP_PUBLIC_URL: http://${INITPAD_PUBLIC_HOST:-localhost}:8085
       INITPAD_SFTP_INTERNAL_URL: http://static-web
       # SSO: Gitea (server) calls the API by service name; the browser goes
       # through the web origin (nginx proxies /api → api:3000).

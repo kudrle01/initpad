@@ -2512,9 +2512,13 @@ starým jménem. Dlouhodobě se tak plnil disk self-hosted stroje.
 **Rozhodnutí.**
 
 1. U built-in targetu je hostname prezentační údaj platformy. API při čtení
-   nahradí host uložené deployment URL aktuální hodnotou
-   `INITPAD_PUBLIC_HOST`, ale zachová protokol, přidělený port, cestu, query i
-   fragment. URL workspace-owned SFTP/SSH/Docker targetu se nikdy nepřepisuje.
+   nahradí host uložené deployment URL hostnamem aktuálního
+   `INITPAD_PUBLIC_URL`, ale zachová protokol, přidělený port, cestu, query i
+   fragment. Tím pro běžnou LAN instalaci existuje jediný zdroj pravdy.
+   Neobvyklá topologie, kde built-in aplikace záměrně používají jiný host,
+   nastaví explicitní `INITPAD_DEPLOY_PUBLIC_HOST`. Původní
+   `INITPAD_PUBLIC_HOST` je pouze kompatibilní fallback bez nakonfigurované
+   public URL. URL workspace-owned SFTP/SSH/Docker targetu se nikdy nepřepisuje.
 2. Každý nový kontejner nese stabilní label projektu a prostředí. Před
    redeployem se odstraní původní i legacy kontejner a všechny označené
    instance stejného projektu/prostředí, takže po úspěchu zůstane jedna.
@@ -2528,12 +2532,13 @@ starým jménem. Dlouhodobě se tak plnil disk self-hosted stroje.
    promotion, rollback a audit. Automatický redeploy čistí jen lokální runtime
    cache; úplné smazání projektu má samostatný package cleanup.
 
-**Důsledky.** Změna IP VM vyžaduje pouze aktualizaci `.env` a restart stacku,
+**Důsledky.** Změna IP VM vyžaduje pouze aktualizaci `INITPAD_PUBLIC_URL` v
+`.env` a restart stacku,
 nikoli redeploy aplikací. Běžný deploy/remove udržuje jeden kontejner na
 projekt/prostředí a omezenou lokální image cache, aniž rozbije sdílení
 stejného artifactu mezi prostředími nebo dohledatelnost buildů.
 
-**Uživatelské testování.** Změň `INITPAD_PUBLIC_HOST`, spusť `install.sh` a
+**Uživatelské testování.** Změň `INITPAD_PUBLIC_URL`, spusť `install.sh` a
 ověř nový host na staré built-in kartě se zachovaným portem. Dvakrát redeployuj
 stejné prostředí: `docker ps -a` ukáže jediný označený kontejner a nepoužívaný
 starší lokální tag zmizí. Po Remove deployment nezůstane jeho kontejner ani

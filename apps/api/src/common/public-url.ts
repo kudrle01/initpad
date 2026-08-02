@@ -31,6 +31,26 @@ export function publicHttpsUrlIssue(raw: string): string | null {
   }
 }
 
+export function publicHostname(raw: string | undefined): string | null {
+  if (!raw?.trim()) return null;
+  try {
+    const url = new URL(raw);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname
+      ? url.hostname
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function builtInPublicHost(
+  publicUrl: string | undefined,
+  deploymentOverride: string | undefined,
+  legacyHost: string | undefined,
+): string {
+  return deploymentOverride?.trim() || publicHostname(publicUrl) || legacyHost?.trim() || 'localhost';
+}
+
 // Built-in targets publish through the InitPad host. Their persisted URL keeps
 // the allocated port/path, but a VM can receive a different LAN address after
 // reboot or switching from host-only to bridged networking. Render those URLs

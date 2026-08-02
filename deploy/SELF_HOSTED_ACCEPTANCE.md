@@ -62,7 +62,6 @@ cp .env.example .env
 V `deploy/.env` změň pouze následující veřejné adresy (nahraď `<VM_IP>`):
 
 ```ini
-INITPAD_PUBLIC_HOST=<VM_IP>
 INITPAD_PUBLIC_URL=http://<VM_IP>:8080
 INITPAD_GITEA_PUBLIC_URL=http://<VM_IP>:3001
 INITPAD_EDITION=self-hosted
@@ -164,13 +163,13 @@ současně otevřít z Windows.
 
 Otevři detail projektu a ověř, že karta built-in deploymentu ukazuje
 aktuální `<VM_IP>` a přidělený port. Když VM po restartu dostane jinou IP,
-změň `INITPAD_PUBLIC_HOST` v `.env`, spusť `./install.sh` a obnov stránku.
+změň `INITPAD_PUBLIC_URL` v `.env`, spusť `./install.sh` a obnov stránku.
 Existující karta musí ukázat novou IP bez nového deploymentu; uživatelské
 SFTP/SSH URL se změnit nesmí. Běžící konfiguraci ověř:
 
 ```bash
-grep '^INITPAD_PUBLIC_HOST=' .env
-docker compose exec -T api printenv INITPAD_PUBLIC_HOST
+grep '^INITPAD_PUBLIC_URL=' .env
+docker compose exec -T api printenv INITPAD_FRONTEND_URL
 ```
 
 Stejné dev prostředí dvakrát redeployuj. Po každém dokončení smí pro

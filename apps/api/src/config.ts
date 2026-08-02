@@ -1,9 +1,20 @@
 import { resolve } from 'path';
+import { builtInPublicHost } from './common/public-url';
 
-// Host name the platform (and the apps it deploys) is reachable on from a
-// browser. 'localhost' for local installs; the server hostname/domain when
-// deployed. Deployed-app URLs are composed from it.
-const publicHost = process.env.INITPAD_PUBLIC_HOST || 'localhost';
+const configuredPublicUrl =
+  process.env.INITPAD_FRONTEND_URL || process.env.INITPAD_PLATFORM_PUBLIC_URL;
+
+// Built-in targets run on the InitPad host, so their browser-facing hostname
+// follows the platform's public URL. This avoids two independent LAN addresses
+// becoming inconsistent after changing a VM adapter/IP. A deliberately split
+// topology can opt out through the explicitly named deployment-host override.
+// INITPAD_PUBLIC_HOST remains only as a legacy fallback for npm-run-dev setups
+// that do not configure a public platform URL.
+const publicHost = builtInPublicHost(
+  configuredPublicUrl,
+  process.env.INITPAD_DEPLOY_PUBLIC_HOST,
+  process.env.INITPAD_PUBLIC_HOST,
+);
 
 // Product edition (ADR-039). The self-hosted edition ships the embedded Gitea
 // and the instance administrator chooses the registration policy below. The

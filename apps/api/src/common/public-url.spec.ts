@@ -1,4 +1,9 @@
-import { publicHttpsUrlIssue, withCurrentPublicHost } from './public-url';
+import {
+  builtInPublicHost,
+  publicHostname,
+  publicHttpsUrlIssue,
+  withCurrentPublicHost,
+} from './public-url';
 
 describe('publicHttpsUrlIssue', () => {
   it.each([
@@ -17,6 +22,38 @@ describe('publicHttpsUrlIssue', () => {
 
   it('accepts a public HTTPS endpoint', () => {
     expect(publicHttpsUrlIssue('https://initpad.example')).toBeNull();
+  });
+});
+
+describe('publicHostname', () => {
+  it.each([
+    ['http://203.0.113.10:8080', '203.0.113.10'],
+    ['https://initpad.example/base', 'initpad.example'],
+    ['http://[2001:db8::10]:8080', '[2001:db8::10]'],
+  ])('extracts the browser-facing hostname from %s', (url, expected) => {
+    expect(publicHostname(url)).toBe(expected);
+  });
+
+  it.each([undefined, '', 'not a URL', 'ftp://files.example'])('rejects %s', (url) => {
+    expect(publicHostname(url)).toBeNull();
+  });
+});
+
+describe('builtInPublicHost', () => {
+  it('uses the platform URL instead of a stale legacy VM address', () => {
+    expect(builtInPublicHost(
+      'http://203.0.113.10:8080',
+      undefined,
+      '198.51.100.20',
+    )).toBe('203.0.113.10');
+  });
+
+  it('allows an explicitly split deployment hostname', () => {
+    expect(builtInPublicHost(
+      'https://initpad.example',
+      'apps.initpad.example',
+      'old.example',
+    )).toBe('apps.initpad.example');
   });
 });
 
