@@ -24,6 +24,8 @@ describe('GitHub artifact workflow adaptation', () => {
       expect(github).toContain('artifactDigest');
       expect(github).toContain('if: always()');
       expect(github).toContain('"ciStatus":"${{ needs.docker.result }}"');
+      expect(github).toContain('/api/ci/start');
+      expect(github).toContain('mark CI as started');
       expect(github).not.toContain('docker push "$IMAGE"');
       expect(github).not.toContain('INITPAD_REGISTRY_PASSWORD');
       expect(source).toContain('docker push "$IMAGE"');

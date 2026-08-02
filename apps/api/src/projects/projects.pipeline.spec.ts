@@ -25,6 +25,14 @@ const project = {
 function make(
   environment: Record<string, unknown>,
   operation: Record<string, unknown>,
+  statuses = [
+    { context: 'build', status: 'success', targetUrl: 'https://x/build' },
+    { context: 'test', status: 'success', targetUrl: 'https://x/test' },
+    { context: 'docker build', status: 'success', targetUrl: 'https://x/docker' },
+    // The runner callback failed, but the subsequent platform recovery may
+    // still publish the already verified artifact successfully.
+    { context: 'deploy', status: 'failure', targetUrl: 'https://x/run-77/deploy' },
+  ],
 ) {
   const prisma = {
     project: {
@@ -36,14 +44,7 @@ function make(
   };
   const scm = {
     listCommits: jest.fn(async () => [{ sha, message: 'init', author: 'Dev', date: 'now' }]),
-    listCommitStatuses: jest.fn(async () => [
-      { context: 'build', status: 'success', targetUrl: 'https://x/build' },
-      { context: 'test', status: 'success', targetUrl: 'https://x/test' },
-      { context: 'docker build', status: 'success', targetUrl: 'https://x/docker' },
-      // The runner callback failed, but the subsequent platform recovery may
-      // still publish the already verified artifact successfully.
-      { context: 'deploy', status: 'failure', targetUrl: 'https://x/run-77/deploy' },
-    ]),
+    listCommitStatuses: jest.fn(async () => statuses),
   };
   const service = new ProjectsService(
     prisma as never,
@@ -64,6 +65,47 @@ function make(
 }
 
 describe('ProjectsService deployment pipeline projection', () => {
+  it('distinguishes a queued workflow from a runner that actually started it', async () => {
+    const pendingStatuses = [
+      { context: 'build', status: 'pending', targetUrl: 'https://x/build' },
+      { context: 'test', status: 'pending', targetUrl: 'https://x/test' },
+      { context: 'docker build', status: 'pending', targetUrl: 'https://x/docker' },
+      { context: 'deploy', status: 'pending', targetUrl: 'https://x/deploy' },
+    ];
+    const operation = {
+      version: sha, status: 'running', createdAt: new Date(), buildArtifact: null,
+    };
+    const queued = make(
+      {
+        name: 'dev', status: 'deploying', version: null, deploymentRequired: false,
+        statusReason: 'Waiting for an available CI runner', artifact: null,
+      },
+      operation,
+      pendingStatuses,
+    );
+    expect((await queued.service.getCommits(project.id))[0]?.pipeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'build', status: 'pending' }),
+        expect.objectContaining({ name: 'publish', status: 'pending' }),
+      ]),
+    );
+
+    const started = make(
+      {
+        name: 'dev', status: 'deploying', version: null, deploymentRequired: false,
+        statusReason: 'CI runner started the build', artifact: null,
+      },
+      operation,
+      pendingStatuses,
+    );
+    expect((await started.service.getCommits(project.id))[0]?.pipeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'build', status: 'running' }),
+        expect.objectContaining({ name: 'publish', status: 'pending' }),
+      ]),
+    );
+  });
+
   it('keeps a failed runner handoff and records recovered publication separately', async () => {
     const { service, scm } = make(
       {

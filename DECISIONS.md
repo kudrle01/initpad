@@ -2544,3 +2544,47 @@ stejné prostředí: `docker ps -a` ukáže jediný označený kontejner a nepou
 starší lokální tag zmizí. Po Remove deployment nezůstane jeho kontejner ani
 nepoužívaný přesný lokální image; stejný artifact použitý v test/prod a
 vzdálený registry zůstanou.
+
+## ADR-064 — Fronta CI je explicitní a kapacita runneru je omezená
+
+**Kontext.** Bundled `act_runner` měl kapacitu jednoho jobu. Při založení dvou
+projektů rychle po sobě proto druhé workflow správně čekalo, ale Gitea 1.22
+publikuje pro čekající i vykonávaný job stejný commit stav `pending`. InitPad
+jej mapoval na `running`, takže oba projekty vypadaly rozběhnutě a systém působil
+zaseknutě. Pouhé zvýšení kapacity by tuto nepravdu neodstranilo a na malé VM by
+mohlo neřízeně spustit několik paměťově náročných Docker buildů.
+
+**Rozhodnutí.**
+
+1. Nový projekt ukládá dev prostředí jako `deploying` s explicitním důvodem
+   `Waiting for an available CI runner`. Dokud se tento důvod nezmění, UI
+   interpretuje SCM `pending` jako frontu (`awaiting CI`), nikoli jako běh.
+2. První krok každé dodávané workflow po skutečném přidělení runneru volá
+   autentizované `POST /api/ci/start`. Per-project secret vybere projekt i tam,
+   kde dva SCM provideři použijí stejné `owner/name`; update se týká pouze
+   prvního dev deploymentu bez verze a aktivní publikační operace. Opožděný
+   callback proto nepřepíše novější stav. Progress callback je best-effort a
+   jeho nedostupnost sama nerozbije build; koncový callback zůstá autoritativní.
+   Protože první push může o okamžik předběhnout commit projektového záznamu,
+   neznámý projekt vrací ne-2xx a workflow progress callback omezeně opakuje.
+3. `INITPAD_RUNNER_CAPACITY` povoluje 1–8 slotů. Výchozí hodnota 1 chrání malý
+   self-hosted stroj. Instalátor a restore z kontrolovaného baseline vygenerují
+   necommitovaný runtime YAML, proto se konfigurace neduplikuje a ruční
+   nevalidní hodnota runner nespustí.
+4. Projektové záznamy, SCM secrets, allocation a Docker namespace zůstávají
+   oddělené; vyšší runner capacity mění pouze propustnost, nikoli tenant model.
+
+**Důsledky.** Fronta je viditelná a konečná: s jedním slotem druhý projekt
+čeká, po uvolnění runner jobu se automaticky rozběhne (jednotlivé joby více
+workflow se mohou prokládat). Výkonnější instalace může zvolit dva
+nebo více slotů bez změny image. Workflow vytvořená před ADR-064 nemají start
+callback a jejich první běh proto může mít starší neurčité zobrazení; nové
+projekty a nově vygenerované workflow jsou jednoznačné.
+
+**Uživatelské testování.** Při kapacitě 1 založ bez čekání dva projekty:
+první ukáže `running`, druhý `awaiting CI`; po uvolnění slotu druhý
+automaticky přejde na `running` a oba nasadí vlastní SHA i kontejner. Potom lze
+na dostatečně silném hostu nastavit kapacitu 2 a ověřit dva souběžné buildy.
+
+Reference: [Gitea Actions runner configuration](https://docs.gitea.com/usage/actions/act-runner),
+[Gitea Actions design](https://docs.gitea.com/usage/actions/design).

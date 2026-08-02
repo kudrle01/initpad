@@ -8,5 +8,6 @@ dist/
 .env
 deploy/.env.before-restore-*
 deploy/backups/
+deploy/.runtime/
 vendor/
 .phpunit.cache/

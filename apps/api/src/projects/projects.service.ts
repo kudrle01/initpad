@@ -64,6 +64,8 @@ import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/provid
 import { publicHttpsUrlIssue, withCurrentPublicHost } from '../common/public-url';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
+const CI_WAITING_REASON = 'Waiting for an available CI runner';
+const CI_RUNNING_REASON = 'CI runner started the build';
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
 type CiArtifactInput = {
@@ -774,6 +776,7 @@ export class ProjectsService implements OnModuleInit {
                 targetId: target.id,
                 allocationId,
                 status: name === 'dev' ? 'deploying' : 'empty',
+                statusReason: name === 'dev' ? CI_WAITING_REASON : null,
               })),
             },
           },
@@ -1329,6 +1332,52 @@ export class ProjectsService implements OnModuleInit {
   // CI → deploy: after a successful CI build, sync the latest commit and
   // deploy it to dev. Closes the E2E loop: commit → CI build/test/docker →
   // a running dev environment with the real code.
+  async ciStarted(repo: string, sha: string, ref: string, token: string): Promise<void> {
+    const coordinates = repo.split('/');
+    if (coordinates.length !== 2 || coordinates.some((part) => !part)) {
+      throw new BadRequestException('Invalid repo');
+    }
+    if (!/^[0-9a-f]{40}$/i.test(sha)) {
+      throw new BadRequestException('CI start requires a full 40-character commit SHA');
+    }
+
+    // Full names can overlap across providers. The repository-specific secret
+    // is the authority that selects the correct project row.
+    const candidates = await this.prisma.project.findMany({
+      where: { scmFullName: repo },
+    });
+    const project = candidates.find((candidate) =>
+      tokenMatches(token, candidate.ciDeployTokenHash),
+    );
+    if (!project) {
+      if (candidates.length > 0) {
+        throw new UnauthorizedException('Invalid CI token for this repository');
+      }
+      // Repository creation and its push happen just before the project row is
+      // committed. A fast runner must receive a retryable non-2xx response,
+      // otherwise this one-shot progress edge would be lost in that race.
+      throw new NotFoundException('CI project is not ready yet');
+    }
+
+    const branch = project.scmDefaultBranch || 'main';
+    if (ref && ref !== branch && ref !== `refs/heads/${branch}`) return;
+
+    // Only the first deployment has no published version. The operation guard
+    // prevents a delayed progress callback from overwriting a publication that
+    // has already started. Later source pushes remain represented by SCM job
+    // statuses and their immutable deployment operation.
+    await this.prisma.environment.updateMany({
+      where: {
+        projectId: project.id,
+        name: 'dev',
+        status: 'deploying',
+        version: null,
+        activeOperationId: null,
+      },
+      data: { statusReason: CI_RUNNING_REASON },
+    });
+  }
+
   async deployFromCi(
     repo: string,
     sha: string,
@@ -2842,10 +2891,14 @@ export class ProjectsService implements OnModuleInit {
       }
       const dev = project.environments.find((environment) => environment.name === 'dev');
       return Promise.all(
-        fromScm.map(async (c) => {
+        fromScm.map(async (c, index) => {
           const sha = c.sha.toLowerCase();
           const operation = operationByVersion.get(sha);
-          const currentDev = dev?.version?.toLowerCase() === sha ? dev : null;
+          const currentDev =
+            dev?.version?.toLowerCase() === sha ||
+            (index === 0 && dev?.status === 'deploying' && !dev.version)
+              ? dev
+              : null;
           const preferredRunId =
             operation?.buildArtifact?.providerRunId ?? currentDev?.artifact?.runId ?? null;
           const statuses = await scm.listCommitStatuses(
@@ -3304,8 +3357,18 @@ export class ProjectsService implements OnModuleInit {
     environment: Environment | null | undefined,
     operation?: { status: string; buildArtifact?: { providerRunId: string } | null } | null,
   ): PipelineStage[] {
-    const deployIndex = stages.findIndex((stage) => stage.name === 'deploy');
-    if (deployIndex < 0) return stages;
+    // Gitea 1.22 exposes queued and executing jobs as the same `pending`
+    // commit status. The start callback is therefore the authoritative edge:
+    // before it arrives, no SCM stage may be presented as running.
+    const visibleStages =
+      environment?.status === 'deploying' &&
+      environment.statusReason === CI_WAITING_REASON
+        ? stages.map((stage) =>
+            stage.status === 'running' ? { ...stage, status: 'pending' as StageStatus } : stage,
+          )
+        : stages;
+    const deployIndex = visibleStages.findIndex((stage) => stage.name === 'deploy');
+    if (deployIndex < 0) return visibleStages;
 
     let status: StageStatus | null = null;
     if (environment) {
@@ -3323,15 +3386,18 @@ export class ProjectsService implements OnModuleInit {
       else if (operation.status === 'failed') status = 'failed';
       else if (operation.status === 'cancelled') status = 'pending';
     }
-    if (!status) return stages;
+    if (!status) return visibleStages;
 
     // A requested deployment is queued, not running, until all build stages
     // of the exact artifact-producing run have succeeded.
-    if (status === 'running' && !stages.slice(0, deployIndex).every((stage) => stage.status === 'success')) {
+    if (
+      status === 'running' &&
+      !visibleStages.slice(0, deployIndex).every((stage) => stage.status === 'success')
+    ) {
       status = 'pending';
     }
     return [
-      ...stages,
+      ...visibleStages,
       { name: 'publish', status, url: null, source: 'platform' as const },
     ];
   }

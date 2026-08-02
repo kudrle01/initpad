@@ -59,6 +59,7 @@ get_env() {
 }
 restore_db_password=$(get_env INITPAD_DB_PASSWORD)
 [ -n "$restore_db_password" ] || fail "Backup configuration has no INITPAD_DB_PASSWORD."
+./render-runner-config.sh
 
 say "Ensuring database is up"
 "${COMPOSE[@]}" up -d postgres >/dev/null
@@ -111,6 +112,7 @@ say "Starting the base stack"
 
 say "Starting the CI runner"
 "${COMPOSE[@]}" --profile runner up -d runner-docker act_runner >/dev/null
+rm -f .runtime/runner-config.changed
 
 if [ -n "$(get_env INITPAD_DOMAIN)" ]; then
   say "Starting the HTTPS reverse proxy"

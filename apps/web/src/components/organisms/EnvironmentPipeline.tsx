@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Check,
   Cloud,
+  Clock3,
   Container,
   ExternalLink,
   History,
@@ -106,6 +107,9 @@ export function EnvironmentPipeline({
             (stage) => stage.source === 'platform' && stage.status === 'success',
           );
         const deploymentHistoryUrl = `/projects/${project.id}/deployments`;
+        const waitingForRunner =
+          env.status === 'deploying' &&
+          env.statusReason === 'Waiting for an available CI runner';
         // While deploying, statusReason carries the live step (e.g.
         // 'Uploading 340/1200 files'); derive a % for the bar when it has a ratio.
         const ratio =
@@ -135,7 +139,12 @@ export function EnvironmentPipeline({
           <Fragment key={env.name}>
             <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card p-4">
               <span
-                className={cn('absolute inset-x-0 top-0 h-1', STRIPE[env.status] ?? 'bg-muted-foreground/25')}
+                className={cn(
+                  'absolute inset-x-0 top-0 h-1',
+                  waitingForRunner
+                    ? 'bg-muted-foreground/25'
+                    : STRIPE[env.status] ?? 'bg-muted-foreground/25',
+                )}
               />
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">{env.name}</span>
@@ -146,10 +155,19 @@ export function EnvironmentPipeline({
                       title="View InitPad deployment history"
                       className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
-                      <StatusBadge status={env.status} className="cursor-pointer hover:bg-secondary/70" />
+                      <StatusBadge
+                        status={waitingForRunner ? 'pending' : env.status}
+                        label={waitingForRunner ? 'queued' : undefined}
+                        kind={waitingForRunner ? 'ci' : 'deploy'}
+                        className="cursor-pointer hover:bg-secondary/70"
+                      />
                     </Link>
                   ) : (
-                    <StatusBadge status={env.status} />
+                    <StatusBadge
+                      status={waitingForRunner ? 'pending' : env.status}
+                      label={waitingForRunner ? 'queued' : undefined}
+                      kind={waitingForRunner ? 'ci' : 'deploy'}
+                    />
                   )}
                   {!readOnly && (hasDeployment || canTarget) && (
                     <DropdownMenu>
@@ -276,21 +294,27 @@ export function EnvironmentPipeline({
               {env.status === 'deploying' && (
                 <div className="mt-2">
                   <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Spinner className="h-3 w-3 shrink-0" />
+                    {waitingForRunner ? (
+                      <Clock3 className="h-3 w-3 shrink-0" />
+                    ) : (
+                      <Spinner className="h-3 w-3 shrink-0" />
+                    )}
                     <span className="truncate">
                       {env.statusReason ?? 'Deploying…'}
                       {pct !== null ? ` · ${pct}%` : ''}
                     </span>
                   </div>
-                  <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className={cn(
-                        'h-full rounded-full bg-warning transition-all duration-500',
-                        pct === null && 'w-1/3 animate-pulse',
-                      )}
-                      style={pct !== null ? { width: `${pct}%` } : undefined}
-                    />
-                  </div>
+                  {!waitingForRunner && (
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
+                      <div
+                        className={cn(
+                          'h-full rounded-full bg-warning transition-all duration-500',
+                          pct === null && 'w-1/3 animate-pulse',
+                        )}
+                        style={pct !== null ? { width: `${pct}%` } : undefined}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -113,6 +113,11 @@ selhal, obnov poslední zálohu (`./restore.sh …`).
 
 - Orientačně: každý projekt = 3 prostředí; N týmů × 3 běžící kontejnery + CI
   buildy. Hlídej RAM, CPU a **volné místo** (buildy a image rostou).
+- `INITPAD_RUNNER_CAPACITY=1` znamená jeden současný CI job a ostatní
+  commity pravdivě zobrazí jako `awaiting CI`. Na hostu s dostatkem RAM a CPU
+  nastav `2` a znovu spusť `./install.sh`; instalátor vygeneruje runner config a
+  runner bezpečně znovu vytvoří. Nezvyšuj hodnotu jen kvůli kratší frontě —
+  každý slot může současně provádět náročný Docker build.
 - Kvóty na tým nastav přes **Allocations** (max prostředí, ADR-060).
 - Když jeden host nestačí, přesuň nasazovací cíle na další stroje přes **Agenta**
   (roadmapa), případně managed DB/S3.
@@ -122,5 +127,9 @@ selhal, obnov poslední zálohu (`./restore.sh …`).
 - **Něco není `healthy`:** `docker compose logs <služba>`.
 - **Plný disk:** `docker system df` → `./cleanup.sh`; zkontroluj `./backups`.
 - **CI se nestaví/nenasazuje:** běží profil runneru? `docker compose ps act_runner runner-docker`.
+- **Druhý projekt čeká:** při kapacitě 1 je to backpressure, ne konflikt.
+  První commit má `running`, druhý `awaiting CI`; jakmile aktivní job uvolní
+  slot, runner si sám převezme další. Pokud oba zůstanou čekat, zkontroluj
+  log `act_runner`.
 - **Špatné heslo DB po přenosu volume:** `.env` musí odpovídat volume, se kterým
   byla DB inicializovaná (viz hláška install.sh), nebo obnov ze zálohy.

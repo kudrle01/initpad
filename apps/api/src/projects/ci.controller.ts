@@ -17,12 +17,32 @@ interface CiDeployDto {
   artifactDigest?: string;
 }
 
-// Webhook called from CI (Gitea Actions) after a successful build.
-// Authenticated with a repository-specific token, not a user
-// session.
+interface CiStartDto {
+  repo?: string; // "owner/name"
+  sha?: string;
+  ref?: string;
+}
+
+// Progress and terminal callbacks called by Gitea/GitHub Actions. They are
+// authenticated with a repository-specific token, not a user session.
 @Controller('ci')
 export class CiController {
   constructor(private readonly projects: ProjectsService) {}
+
+  @Post('start')
+  @HttpCode(202)
+  async start(@Headers('authorization') auth: string, @Body() body: CiStartDto) {
+    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!token) throw new UnauthorizedException('Missing CI token');
+    if (!body.repo) return { accepted: false };
+    await this.projects.ciStarted(
+      body.repo,
+      body.sha ?? '',
+      body.ref ?? '',
+      token,
+    );
+    return { accepted: true };
+  }
 
   @Post('deploy')
   @HttpCode(202)

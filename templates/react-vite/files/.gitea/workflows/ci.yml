@@ -6,6 +6,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: mark CI as started
+        run: |
+          # The push may win a short race with InitPad's project transaction.
+          # Retry only this progress signal; a failure must not block the build.
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 3 -X POST "${{ secrets.INITPAD_PLATFORM_URL }}/api/ci/start" \
+              -H "Authorization: Bearer ${{ secrets.INITPAD_DEPLOY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d '{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}'; then
+              exit 0
+            fi
+            [ "$attempt" -eq 6 ] || sleep 2
+          done
+          echo "::warning::InitPad progress callback failed"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: npm ci
       - run: npm run build

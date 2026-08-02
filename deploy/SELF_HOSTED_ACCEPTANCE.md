@@ -227,7 +227,32 @@ docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}'
 
 Oba příkazy musí skončit kódem 0; secret neukládej do screenshotu ani logu.
 
-## 8. Ověř zálohu a obnovu
+## 8. Ověř frontu a izolaci dvou souběžných projektů
+
+V `deploy/.env` ponech nejprve:
+
+```dotenv
+INITPAD_RUNNER_CAPACITY=1
+```
+
+Spusť `./install.sh`. Potom rychle po sobě, bez čekání na první CI, založ
+ve dvou workspacech projekty `queue-one` a `queue-two`. Očekávaný výsledek:
+
+- oba projekty i oba oddělené repozitáře vzniknou bez konfliktu;
+- runner zpracovává první workflow a jeho commit ukazuje `running`;
+- druhý commit ukazuje `awaiting CI` a karta dev vysvětluje, že čeká na
+  dostupný runner — nesmí se nepravdivě tvářit jako rozběhnutý build;
+- po uvolnění runner slotu druhé automaticky přejde na `running` (Gitea může
+  joby obou workflow spravedlivě prokládat) a oba dev deploymenty nakonec
+  skončí samostatně jako `running`;
+- logy, odkazy, SHA, URL, kontejnery a deployment history se mezi projekty
+  nikdy nezamění.
+
+Volitelně na stroji s dostatkem prostředků nastav kapacitu `2`, spusť znovu
+`./install.sh` a test zopakuj s novými názvy. Oba první joby mohou běžet
+současně. Na malé VM je správná a bezpečná hodnota `1`.
+
+## 9. Ověř zálohu a obnovu
 
 Tento krok dělej pouze na této jednorázové VM:
 
@@ -251,7 +276,7 @@ Na výzvu napiš `restore`. Po obnově ověř:
 - CI runner je online;
 - `docker compose --profile runner ps` nehlásí unhealthy službu.
 
-## 9. Ověř smazání a opětovné použití názvu
+## 10. Ověř smazání a opětovné použití názvu
 
 Smaž testovací projekt včetně jeho deploymentů a repozitáře. Ověř, že:
 
@@ -262,7 +287,7 @@ docker ps -a --format '{{.Names}}' | grep isolation-demo
 nevrátí jeho kontejner a Gitea repozitář zmizel. Potom založ projekt se stejným
 názvem. Scaffold, CI i deploy musí projít bez konfliktu se starým workloadem.
 
-## 10. Výsledek milníku
+## 11. Výsledek milníku
 
 Fáze TargetAllocation je živě **PASS**, jen pokud současně platí:
 
@@ -270,7 +295,9 @@ Fáze TargetAllocation je živě **PASS**, jen pokud současně platí:
 - role a cross-workspace viditelnost odpovídají RBAC;
 - disabled stav a kvóta jsou skutečně vynucené;
 - alespoň Nette, Laravel, Symfony a React projdou přes reálný self-hosted runner;
-- restart, backup/restore a delete/recreate neztratí ani nezamění data.
+- restart, backup/restore a delete/recreate neztratí ani nezamění data;
+- dva rychle založené projekty se nezamění; při obsazeném runneru UI
+  rozliší frontu od běhu a čekající workflow se samo rozběhne;
 - built-in karty používají aktuální LAN host a redeploy/remove nehromadí
   kontejnery ani nepoužívané lokální image.
 

@@ -267,7 +267,7 @@ services:
       GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
       CONFIG_FILE: /config.yaml
     volumes:
-      - ../infra/act_runner/config.yaml:/config.yaml:ro
+      - ./.runtime/act-runner-config.yaml:/config.yaml:ro
       - runner-data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"

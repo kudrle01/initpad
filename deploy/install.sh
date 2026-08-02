@@ -94,6 +94,12 @@ if [ -z "$(get_env INITPAD_CI_REGISTRY_HOST)" ]; then
     *) set_env INITPAD_CI_REGISTRY_HOST "$registry_host" ;;
   esac
 fi
+# act_runner reads capacity only from YAML and does not interpolate environment
+# variables there. Render the validated runtime config before any runner
+# migration or startup command asks Compose to mount it.
+./render-runner-config.sh
+runner_config_changed=no
+[ -f .runtime/runner-config.changed ] && runner_config_changed=yes
 wait_healthy() { # <service> [attempts]
   local svc=$1 tries=${2:-60} cid state
   for i in $(seq 1 "$tries"); do
@@ -234,7 +240,15 @@ fi
 # ---- 6. runner (+ optional HTTPS proxy) --------------------------------------
 rotate_runner_if_address_changed
 say "Starting the CI runner"
-$COMPOSE --profile runner up -d act_runner
+if [ "$runner_config_changed" = yes ]; then
+  # Bind-mounted config content is not part of Compose's service hash. Recreate
+  # only when the rendered file changed so the runner actually reads the new
+  # capacity without interrupting jobs on every idempotent installer run.
+  $COMPOSE --profile runner up -d --force-recreate act_runner
+  rm -f .runtime/runner-config.changed
+else
+  $COMPOSE --profile runner up -d act_runner
+fi
 if [ -n "${DOMAIN:-}" ]; then
   say "Starting Caddy reverse proxy for https://$DOMAIN"
   $COMPOSE --profile server up -d caddy
