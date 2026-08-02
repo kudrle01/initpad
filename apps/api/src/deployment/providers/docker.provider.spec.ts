@@ -131,17 +131,21 @@ describe('DockerProvider config-var injection (ADR-061)', () => {
   it('injects config vars into the container Env', async () => {
     const { provider, created } = providerWithMockDaemon();
     const port = await (provider as unknown as {
-      runContainer: (i: string, n: string, net: string, p: number, e?: Record<string, string>) => Promise<string>;
-    }).runContainer('img', 'name', 'net-dev', 3000, { GREETING: 'ahoj', TOKEN: 's3cr3t' });
+      runContainer: (i: string, n: string, net: string, p: number, project: string, env: string, vars?: Record<string, string>) => Promise<string>;
+    }).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev', { GREETING: 'ahoj', TOKEN: 's3cr3t' });
     expect(port).toBe('12345');
     expect(created[0].Env).toEqual(['GREETING=ahoj', 'TOKEN=s3cr3t']);
+    expect(created[0].Labels).toEqual(expect.objectContaining({
+      'com.initpad.project': 'acme-api',
+      'com.initpad.environment': 'dev',
+    }));
   });
 
   it('omits Env when there are no config vars', async () => {
     const { provider, created } = providerWithMockDaemon();
     await (provider as unknown as {
-      runContainer: (i: string, n: string, net: string, p: number, e?: Record<string, string>) => Promise<string>;
-    }).runContainer('img', 'name', 'net-dev', 3000);
+      runContainer: (i: string, n: string, net: string, p: number, project: string, env: string) => Promise<string>;
+    }).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev');
     expect(created[0].Env).toBeUndefined();
   });
 });
@@ -185,5 +189,43 @@ describe('DockerProvider registry diagnostics', () => {
       url: '',
       reason: expect.stringContaining('dial tcp [::1]:3001: connect: connection refused'),
     });
+  });
+
+  it('prunes only unused older tags from the same repository', async () => {
+    const removed: string[] = [];
+    const provider = new DockerProvider();
+    (provider as unknown as { docker: unknown }).docker = {
+      listContainers: jest.fn(async () => [{ ImageID: 'sha256:used' }]),
+      listImages: jest.fn(async () => [
+        {
+          Id: 'sha256:current',
+          RepoTags: ['127.0.0.1:3001/acme/api:new'],
+        },
+        {
+          Id: 'sha256:stale',
+          RepoTags: ['127.0.0.1:3001/acme/api:old'],
+        },
+        {
+          Id: 'sha256:used',
+          RepoTags: ['127.0.0.1:3001/acme/api:promoted'],
+        },
+        {
+          Id: 'sha256:other',
+          RepoTags: ['127.0.0.1:3001/other/app:old'],
+        },
+      ]),
+      getImage: jest.fn((tag: string) => ({
+        remove: jest.fn(async () => {
+          removed.push(tag);
+          return [{ Untagged: tag }];
+        }),
+      })),
+    };
+
+    await (provider as unknown as {
+      pruneUnusedRepositoryImages: (ref: string) => Promise<void>;
+    }).pruneUnusedRepositoryImages('127.0.0.1:3001/acme/api:new');
+
+    expect(removed).toEqual(['127.0.0.1:3001/acme/api:old']);
   });
 });

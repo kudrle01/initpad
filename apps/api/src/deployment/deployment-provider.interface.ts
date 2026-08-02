@@ -95,6 +95,9 @@ export interface VerifyResult {
 export interface TeardownInput {
   projectName: string;
   env: string;
+  // Exact registry image currently bound to this environment. Docker teardown
+  // removes the local cache entry when it is no longer used elsewhere.
+  imageRef?: string;
   connection?: ProviderConnection;
   allocation?: DeploymentAllocation;
 }
@@ -147,6 +150,10 @@ export interface DeploymentProvider {
   logs?(input: TeardownInput): Promise<string>;
   // Removes all local images of the given repository (<registry>/<owner>/<name>:*).
   removeImages?(repo: string): Promise<void>;
+  // Removes one exact image from the local runtime cache when it is no longer
+  // referenced by a container, then prunes older unused tags of that repo.
+  // The durable image in the remote registry is intentionally unaffected.
+  cleanupImage?(imageRef: string): Promise<void>;
   // Suspends a running environment (stops the container/process); the
   // deployed version is kept.
   stop?(input: TeardownInput): Promise<void>;

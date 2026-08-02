@@ -30,3 +30,23 @@ export function publicHttpsUrlIssue(raw: string): string | null {
     return 'INITPAD_PLATFORM_PUBLIC_URL must be a valid HTTPS URL.';
   }
 }
+
+// Built-in targets publish through the InitPad host. Their persisted URL keeps
+// the allocated port/path, but a VM can receive a different LAN address after
+// reboot or switching from host-only to bridged networking. Render those URLs
+// with the currently configured public host; user-owned target URLs remain
+// untouched because they may intentionally live on another server.
+export function withCurrentPublicHost(raw: string | null, publicHost: string): string | null {
+  if (!raw || !publicHost.trim()) return raw;
+  try {
+    const url = new URL(raw);
+    const hostname = publicHost.trim().replace(/^\[|\]$/g, '');
+    url.hostname = hostname.includes(':') ? `[${hostname}]` : hostname;
+    const rewritten = url.toString();
+    return !raw.endsWith('/') && url.pathname === '/' && !url.search && !url.hash
+      ? rewritten.replace(/\/$/, '')
+      : rewritten;
+  } catch {
+    return raw;
+  }
+}

@@ -21,8 +21,10 @@ import { SshProvider } from './providers/ssh.provider';
 @Injectable()
 export class DeploymentService {
   private readonly registry: Map<ProviderKind, DeploymentProvider>;
+  private readonly docker: DockerProvider;
 
   constructor(docker: DockerProvider, sftp: SftpProvider, ssh: SshProvider) {
+    this.docker = docker;
     this.registry = new Map<ProviderKind, DeploymentProvider>([
       [docker.kind, docker],
       [sftp.kind, sftp],
@@ -41,7 +43,14 @@ export class DeploymentService {
   }
 
   async teardown(provider: ProviderKind, input: TeardownInput): Promise<TeardownResult | void> {
-    return this.registry.get(provider)?.teardown?.(input);
+    try {
+      return await this.registry.get(provider)?.teardown?.(input);
+    } finally {
+      // SFTP and SSH deployments can also pull/extract the CI image locally.
+      // Releasing an environment therefore always releases its exact local
+      // image cache entry, independently of where the workload was deployed.
+      if (input.imageRef) await this.docker.cleanupImage(input.imageRef);
+    }
   }
 
   async stop(provider: ProviderKind, input: TeardownInput): Promise<void> {

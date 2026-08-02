@@ -2500,3 +2500,42 @@ Reference:
 [PostgreSQL — pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html),
 [Caddy — automatic HTTPS / internal issuer](https://caddyserver.com/docs/automatic-https),
 [Docker — system prune](https://docs.docker.com/engine/manage-resources/pruning/).
+
+## ADR-063 — Aktuální built-in URL a životní cyklus lokálních Docker zdrojů
+
+**Kontext.** URL built-in Docker deploymentu se dosud ukládala včetně LAN IP
+hostitele. Po restartu VM nebo změně síťového adaptéru zůstal na kartě starý
+host, i když dynamicky přidělený port byl správný. Opakovaný deploy navíc
+stahuje image každého CI buildu a změna allocation mohla ponechat kontejner pod
+starým jménem. Dlouhodobě se tak plnil disk self-hosted stroje.
+
+**Rozhodnutí.**
+
+1. U built-in targetu je hostname prezentační údaj platformy. API při čtení
+   nahradí host uložené deployment URL aktuální hodnotou
+   `INITPAD_PUBLIC_HOST`, ale zachová protokol, přidělený port, cestu, query i
+   fragment. URL workspace-owned SFTP/SSH/Docker targetu se nikdy nepřepisuje.
+2. Každý nový kontejner nese stabilní label projektu a prostředí. Před
+   redeployem se odstraní původní i legacy kontejner a všechny označené
+   instance stejného projektu/prostředí, takže po úspěchu zůstane jedna.
+3. Když nový kontejner neprojde health checkem, platforma jej ihned odstraní.
+   Neúspěšný deploy proto nezanechá skrytý workload.
+4. Po zdravém redeployi se z lokálního Docker daemonu odstraní starší
+   nepoužívané tagy stejného repozitáře. Při teardownu se odstraní přesný
+   image artifactu i po SFTP/SSH deploymentu. Mazání není `force`: image,
+   který používá běžící nebo zastavené dev/test/prod prostředí, zůstane.
+5. Vzdálený registry/object store je trvalý zdroj ověřených buildů pro
+   promotion, rollback a audit. Automatický redeploy čistí jen lokální runtime
+   cache; úplné smazání projektu má samostatný package cleanup.
+
+**Důsledky.** Změna IP VM vyžaduje pouze aktualizaci `.env` a restart stacku,
+nikoli redeploy aplikací. Běžný deploy/remove udržuje jeden kontejner na
+projekt/prostředí a omezenou lokální image cache, aniž rozbije sdílení
+stejného artifactu mezi prostředími nebo dohledatelnost buildů.
+
+**Uživatelské testování.** Změň `INITPAD_PUBLIC_HOST`, spusť `install.sh` a
+ověř nový host na staré built-in kartě se zachovaným portem. Dvakrát redeployuj
+stejné prostředí: `docker ps -a` ukáže jediný označený kontejner a nepoužívaný
+starší lokální tag zmizí. Po Remove deployment nezůstane jeho kontejner ani
+nepoužívaný přesný lokální image; stejný artifact použitý v test/prod a
+vzdálený registry zůstanou.

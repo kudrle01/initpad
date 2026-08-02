@@ -61,7 +61,7 @@ import type {
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
 import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
-import { publicHttpsUrlIssue } from '../common/public-url';
+import { publicHttpsUrlIssue, withCurrentPublicHost } from '../common/public-url';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -2077,7 +2077,8 @@ export class ProjectsService implements OnModuleInit {
   // environment becomes "empty" and can be deployed again (redeploy/promote).
   // The repository and the project itself are untouched.
   async removeEnv(id: string, envName: EnvName): Promise<Project> {
-    const { env, slug } = await this.envContext(id, envName);
+    const { project, env, slug } = await this.envContext(id, envName);
+    const repository = repositoryRef(project);
     if (env.activeOperationId) {
       const operation = await this.prisma.deploymentOperation.findUnique({
         where: { id: env.activeOperationId },
@@ -2127,6 +2128,7 @@ export class ProjectsService implements OnModuleInit {
     const teardown = await this.deployment.teardown(provider, {
       projectName: slug,
       env: envName,
+      imageRef: this.deployedImageRef(repository, env),
       connection,
       allocation: this.deploymentAllocation(env),
     });
@@ -2155,7 +2157,8 @@ export class ProjectsService implements OnModuleInit {
     operationId: string,
   ): Promise<void> {
     try {
-      const { template, env, slug } = await this.envContext(id, envName);
+      const { project, template, env, slug } = await this.envContext(id, envName);
+      const repository = repositoryRef(project);
       const appPort = this.isDemoSsh(env) ? await this.allocateSshPort(id, envName) : undefined;
       const result = await this.deployment.start(env.provider as ProviderKind, {
         projectName: slug,
@@ -2172,6 +2175,7 @@ export class ProjectsService implements OnModuleInit {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: slug,
           env: envName,
+          imageRef: this.deployedImageRef(repository, env),
           connection: this.targetConnection(env),
           allocation: this.deploymentAllocation(env),
         });
@@ -2255,7 +2259,7 @@ export class ProjectsService implements OnModuleInit {
     const template = this.templates.get(project.templateId);
     const env = await this.prisma.environment.findUniqueOrThrow({
       where: { projectId_name: { projectId: id, name: envName } },
-      include: { target: true, allocation: true },
+      include: { target: true, allocation: true, buildArtifact: true },
     });
     const slug = this.deploySlug(repositoryRef(project));
     return { project, template, env, slug };
@@ -2280,7 +2284,10 @@ export class ProjectsService implements OnModuleInit {
   ): Promise<void> {
     const row = await this.prisma.project.findUnique({
       where: { id },
-      include: { environments: { include: { target: true, allocation: true } }, owner: true },
+      include: {
+        environments: { include: { target: true, allocation: true, buildArtifact: true } },
+        owner: true,
+      },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
     const production = row.environments.find(
@@ -2325,7 +2332,10 @@ export class ProjectsService implements OnModuleInit {
             }
           : { scmFullName: fullName }),
       },
-      include: { environments: { include: { target: true, allocation: true } }, owner: true },
+      include: {
+        environments: { include: { target: true, allocation: true, buildArtifact: true } },
+        owner: true,
+      },
     });
     if (!row) return;
     this.logger.log(
@@ -2338,7 +2348,10 @@ export class ProjectsService implements OnModuleInit {
   // Shared teardown used by user-initiated deletion and the SCM webhook.
   private async cleanupProject(
     row: Prisma.ProjectGetPayload<{
-      include: { environments: { include: { target: true; allocation: true } }; owner: true };
+      include: {
+        environments: { include: { target: true; allocation: true; buildArtifact: true } };
+        owner: true;
+      };
     }>,
     opts: {
       repoAction: 'delete' | 'detach' | 'gone';
@@ -2357,6 +2370,7 @@ export class ProjectsService implements OnModuleInit {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: slug,
           env: env.name,
+          imageRef: this.deployedImageRef(repository, env),
           connection: this.targetConnection(env),
           allocation: this.deploymentAllocation(env),
         });
@@ -2773,6 +2787,22 @@ export class ProjectsService implements OnModuleInit {
     return `${registry}/${repository.owner}/${repository.name}`.toLowerCase();
   }
 
+  private deployedImageRef(
+    repository: ScmRepositoryRef,
+    env: {
+      version: string | null;
+      buildArtifact?: { commitSha: string; providerRunId: string } | null;
+    },
+  ): string | undefined {
+    if (!env.version || !/^[0-9a-f]{40}$/i.test(env.version)) return undefined;
+    if (repository.provider === 'github') {
+      return env.buildArtifact
+        ? this.artifactImageRef(repository, env.buildArtifact)
+        : undefined;
+    }
+    return this.imageRef(repository, env.version);
+  }
+
   private async actorForProject(projectId: string): Promise<ScmActor> {
     const row = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -2916,7 +2946,7 @@ export class ProjectsService implements OnModuleInit {
     const template = this.templates.get(project.templateId);
     const env = await this.prisma.environment.findUniqueOrThrow({
       where: { projectId_name: { projectId, name: envName } },
-      include: { target: true, allocation: true },
+      include: { target: true, allocation: true, buildArtifact: true },
     });
     const operation = await this.prisma.deploymentOperation.findUnique({
       where: { id: operationId },
@@ -3072,6 +3102,7 @@ export class ProjectsService implements OnModuleInit {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: this.deploySlug(repository),
           env: envName,
+          imageRef: testedImageRef,
           connection: this.targetConnection(env),
           allocation,
         });
@@ -3348,7 +3379,11 @@ export class ProjectsService implements OnModuleInit {
           provider: e.provider as ProviderKind,
           status: e.status as DeployStatus,
           version: e.version,
-          url: e.url,
+          // A missing target is the pre-target-model representation of the
+          // built-in provider; keep legacy projects correct as well.
+          url: !e.target || e.target.scope === 'builtin'
+            ? withCurrentPublicHost(e.url, config.publicHost)
+            : e.url,
           statusReason: e.statusReason,
           deploymentRequired: e.deploymentRequired,
           artifact: e.buildArtifact
@@ -3382,7 +3417,7 @@ export class ProjectsService implements OnModuleInit {
     const template = this.templates.get(project.templateId);
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
-      include: { target: true, allocation: true },
+      include: { target: true, allocation: true, buildArtifact: true },
     });
     if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
     if (env.activeOperationId) {
@@ -3410,12 +3445,14 @@ export class ProjectsService implements OnModuleInit {
     }
     const movingAway = !!env.targetId && targetChanged && env.status !== 'empty';
     if (movingAway) {
-      const slug = this.deploySlug(repositoryRef(project));
+      const repository = repositoryRef(project);
+      const slug = this.deploySlug(repository);
       // Do not bind the new target until teardown succeeds; otherwise a failed
       // cleanup would leave an unreachable orphan on the old infrastructure.
       const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
         projectName: slug,
         env: envName,
+        imageRef: this.deployedImageRef(repository, env),
         connection: this.targetConnection(env),
         allocation: this.deploymentAllocation(env),
       });

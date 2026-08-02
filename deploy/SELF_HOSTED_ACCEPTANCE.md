@@ -162,6 +162,32 @@ Musí existovat dva různé kontejnery, allocation labely a sítě
 `net-team-alpha-dev` a `net-team-beta-dev`. Obě URL z karet dev se musejí
 současně otevřít z Windows.
 
+Otevři detail projektu a ověř, že karta built-in deploymentu ukazuje
+aktuální `<VM_IP>` a přidělený port. Když VM po restartu dostane jinou IP,
+změň `INITPAD_PUBLIC_HOST` v `.env`, spusť `./install.sh` a obnov stránku.
+Existující karta musí ukázat novou IP bez nového deploymentu; uživatelské
+SFTP/SSH URL se změnit nesmí. Běžící konfiguraci ověř:
+
+```bash
+grep '^INITPAD_PUBLIC_HOST=' .env
+docker compose exec -T api printenv INITPAD_PUBLIC_HOST
+```
+
+Stejné dev prostředí dvakrát redeployuj. Po každém dokončení smí pro
+daný projekt a prostředí existovat právě jeden spravovaný kontejner:
+
+```bash
+docker ps -a \
+  --filter label=com.initpad.project=alice-isolation-demo \
+  --filter label=com.initpad.environment=dev \
+  --format '{{.Names}}'
+```
+
+Starší lokální image téhož repozitáře, které nepoužívá dev/test/prod
+kontejner, se po zdravém redeployi odstraní. Otestované artifacty ve vzdáleném
+Gitea registry zůstávají kvůli promotion a auditu. Po **Remove deployment**
+nesmí zůstat kontejner daného prostředí ani jeho nepoužívaná lokální image.
+
 Role a policy:
 
 1. Bob jako member Team Alpha smí projekt nasadit, ale nesmí allocation měnit.
@@ -246,6 +272,8 @@ Fáze TargetAllocation je živě **PASS**, jen pokud současně platí:
 - disabled stav a kvóta jsou skutečně vynucené;
 - alespoň Nette, Laravel, Symfony a React projdou přes reálný self-hosted runner;
 - restart, backup/restore a delete/recreate neztratí ani nezamění data.
+- built-in karty používají aktuální LAN host a redeploy/remove nehromadí
+  kontejnery ani nepoužívané lokální image.
 
 Po testu můžeš bezpečně uvolnit build cache:
 

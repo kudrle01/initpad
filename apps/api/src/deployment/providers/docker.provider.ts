@@ -120,12 +120,18 @@ export class DockerProvider implements DeploymentProvider {
       // their container had no allocation namespace.
       await this.removeContainer(legacyContainerName);
     }
+    // Also remove a container left under an older allocation namespace. New
+    // containers carry stable project/environment labels, so target changes
+    // cannot accumulate hidden instances with obsolete names.
+    await this.removeManagedContainers(input.projectName, input.env);
     input.onProgress?.('Starting container');
     const hostPort = await this.runContainer(
       image,
       containerName,
       network,
       port,
+      input.projectName,
+      input.env,
       input.envVars,
       input.allocation,
     );
@@ -139,12 +145,18 @@ export class DockerProvider implements DeploymentProvider {
     const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
     if (!healthy) {
       this.logger.warn(`${containerName} failed its health check`);
+      await this.removeContainer(containerName);
+      if (input.imageRef) {
+        await this.removeImage(input.imageRef);
+        await this.pruneUnusedRepositoryImages(input.imageRef);
+      }
       return {
         status: 'failed',
         url,
         reason: `Health check at ${input.healthPath ?? '/health'} did not return 2xx within ~10s.`,
       };
     }
+    if (input.imageRef) await this.pruneUnusedRepositoryImages(input.imageRef);
     this.logger.log(`Deployed and healthy: ${containerName} → ${url}`);
     return { status: 'running', url };
   }
@@ -178,8 +190,9 @@ export class DockerProvider implements DeploymentProvider {
     const image = `initpad/${input.projectName}:${input.env}`;
     await this.removeContainer(containerName);
     if (legacyContainerName !== containerName) await this.removeContainer(legacyContainerName);
+    await this.removeManagedContainers(input.projectName, input.env);
     await this.removeImage(image);
-    this.logger.log(`Removed container ${containerName} and image ${image}`);
+    this.logger.log(`Removed container ${containerName} and its unused local images`);
   }
 
   // Suspends a running container (keeps the image and configuration).
@@ -302,10 +315,18 @@ export class DockerProvider implements DeploymentProvider {
 
   private async removeImage(tag: string): Promise<void> {
     try {
-      await this.docker.getImage(tag).remove({ force: true });
+      // Never force image removal: another environment may run the same tested
+      // build. Docker then returns a conflict and the shared image is retained.
+      await this.docker.getImage(tag).remove({ force: false });
     } catch {
       // Image already gone or still used by another container.
     }
+  }
+
+  async cleanupImage(imageRef: string): Promise<void> {
+    if (!(await this.isAvailable())) return;
+    await this.removeImage(imageRef);
+    await this.pruneUnusedRepositoryImages(imageRef);
   }
 
   // Removes all locally pulled images of the given registry repository.
@@ -352,6 +373,10 @@ export class DockerProvider implements DeploymentProvider {
       this.logger.log(`Extracted ${srcPath} from ${imageRef}`);
     } finally {
       await container.remove({ force: true }).catch(() => undefined);
+      // Static/SFTP deploys need the tested image only while extracting the
+      // artifact. Keep the current tag cached, but discard older unused tags
+      // from the same project so repeated deployments do not fill the host.
+      await this.pruneUnusedRepositoryImages(imageRef);
     }
   }
 
@@ -442,11 +467,67 @@ export class DockerProvider implements DeploymentProvider {
     }
   }
 
+  private async removeManagedContainers(projectName: string, env: string): Promise<void> {
+    try {
+      const containers = await this.docker.listContainers({
+        all: true,
+        filters: {
+          label: [
+            'com.initpad.managed=true',
+            `com.initpad.project=${projectName}`,
+            `com.initpad.environment=${env}`,
+          ],
+        },
+      });
+      for (const container of containers) {
+        await this.docker.getContainer(container.Id).remove({ force: true }).catch(() => undefined);
+      }
+    } catch (error) {
+      this.logger.warn(`Could not remove superseded containers for ${projectName}/${env}: ${(error as Error).message}`);
+    }
+  }
+
+  // Deletes only local cache tags belonging to the same registry repository
+  // and only when no running OR stopped container references their image id.
+  // The remote registry/durable artifact history is deliberately preserved for
+  // promotion and audit; project deletion has its own full package cleanup.
+  private async pruneUnusedRepositoryImages(imageRef: string): Promise<void> {
+    const tagSeparator = imageRef.lastIndexOf(':');
+    const lastSlash = imageRef.lastIndexOf('/');
+    if (tagSeparator <= lastSlash) return;
+    const repo = imageRef.slice(0, tagSeparator);
+    try {
+      const [containers, images] = await Promise.all([
+        this.docker.listContainers({ all: true }),
+        this.docker.listImages(),
+      ]);
+      const usedImageIds = new Set(containers.map((container) => container.ImageID));
+      let removed = 0;
+      for (const image of images) {
+        if (usedImageIds.has(image.Id)) continue;
+        const staleTags = (image.RepoTags ?? []).filter(
+          (tag) => tag.startsWith(`${repo}:`) && tag !== imageRef,
+        );
+        for (const tag of staleTags) {
+          const result = await this.docker.getImage(tag).remove({ force: false }).catch(() => null);
+          if (result) removed += 1;
+        }
+      }
+      if (removed > 0) this.logger.log(`Removed ${removed} unused local image tag(s) from ${repo}`);
+    } catch (error) {
+      // Cleanup is best-effort and must never turn a healthy deployment into a
+      // failed one. Disk pressure remains visible through operations/monitoring.
+      this.logger.warn(`Could not prune unused images for ${repo}: ${(error as Error).message}`);
+    }
+  }
+
   private async runContainer(
     image: string,
     name: string,
     network: string,
     port: number,
+    projectName: string,
+    environment: string,
     envVars?: Record<string, string>,
     allocation?: DeploymentAllocation,
   ): Promise<string> {
@@ -459,7 +540,8 @@ export class DockerProvider implements DeploymentProvider {
       name,
       Labels: {
         'com.initpad.managed': 'true',
-        'com.initpad.environment': network.split('-').pop() ?? network,
+        'com.initpad.project': projectName,
+        'com.initpad.environment': environment,
         ...(allocation
           ? {
               'com.initpad.allocation.id': allocation.id,
