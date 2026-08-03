@@ -125,6 +125,7 @@ export class SshProvider implements DeploymentProvider {
     const healthPath = input.healthPath ?? '/health';
 
     let conn: Client;
+    input.onProgress?.('Connecting to target');
     try {
       conn = await sshConnect(cfg);
     } catch (e) {
@@ -143,32 +144,39 @@ export class SshProvider implements DeploymentProvider {
         };
       }
 
+      input.onProgress?.('Preparing release');
       await this.execOrFail(conn, `mkdir -p ${release}`, 'prepare release dir');
 
       const sftp = await getSftp(conn);
+      input.onProgress?.('Uploading archive');
       await uploadTar(sftp, input.repoPath, `${base}/app.tar`);
+      input.onProgress?.('Extracting source');
       await this.execOrFail(
         conn,
         `tar xf ${base}/app.tar -C ${release} && rm -f ${base}/app.tar`,
         'extract source',
       );
+      input.onProgress?.('Installing production dependencies');
       await this.execOrFail(
         conn,
         `cd ${release} && ${this.PATH} npm install --omit=dev --no-audit --no-fund`,
         'npm install',
       );
+      input.onProgress?.('Publishing release');
       await sshExec(
         conn,
         `[ -f ${base}/app.pid ] && kill "$(cat ${base}/app.pid)" 2>/dev/null; ln -sfn ${release} ${base}/current; true`,
       );
 
       const startCmd = input.startCommand ?? DEFAULT_START;
+      input.onProgress?.('Starting application');
       await this.execOrFail(
         conn,
         `cd ${base}/current && ( ${this.PATH} PORT=${appPort} nohup ${startCmd} > ${base}/app.log 2>&1 & echo $! > ${base}/app.pid )`,
         'start app',
       );
 
+      input.onProgress?.('Verifying deployment');
       const healthy = cfg.custom
         ? await this.waitHealthyUrl(`${url}${healthPath.startsWith('/') ? '' : '/'}${healthPath}`)
         : await this.waitHealthy(appPort, healthPath);

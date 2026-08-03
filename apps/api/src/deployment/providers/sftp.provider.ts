@@ -145,6 +145,7 @@ export class SftpProvider implements DeploymentProvider {
     }
 
     let conn: Client;
+    input.onProgress?.('Connecting to target');
     try {
       conn = await sshConnect(cfg);
     } catch (e) {
@@ -159,8 +160,10 @@ export class SftpProvider implements DeploymentProvider {
         await this.uploadCustom(conn, sftp, cfg, slug, localDir, input);
       } else {
         // Built-in fake-sftp + nginx: atomic release switch via a symlink.
+        input.onProgress?.('Uploading files');
         await mkdirp(sftp, release);
         await uploadDir(sftp, localDir, release);
+        input.onProgress?.('Publishing release');
         await this.swapLink(sftp, cfg.remoteRoot, slug, `${slug}-releases/${version}`);
       }
 

@@ -29,6 +29,7 @@ import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
 import { cn } from '@/lib/utils';
 import { cleanupNotice } from '@/lib/deployment';
+import { deploymentProgress } from '@/lib/deployment-progress';
 import type { Commit, EnvName, Environment, Project, ProviderKind } from '@/types';
 
 const NEXT: Record<EnvName, EnvName | null> = { dev: 'test', test: 'prod', prod: null };
@@ -110,15 +111,11 @@ export function EnvironmentPipeline({
         const waitingForRunner =
           env.status === 'deploying' &&
           env.statusReason === 'Waiting for an available CI runner';
-        // While deploying, statusReason carries the live step (e.g.
-        // 'Uploading 340/1200 files'); derive a % for the bar when it has a ratio.
-        const ratio =
-          env.status === 'deploying' && env.statusReason
-            ? env.statusReason.match(/(\d+)\s*\/\s*(\d+)/)
-            : null;
-        const pct = ratio
-          ? Math.min(100, Math.round((Number(ratio[1]) / Math.max(1, Number(ratio[2]))) * 100))
-          : null;
+        // Providers publish named deployment stages. Known stages advance the
+        // end-to-end bar; a moving highlight communicates activity inside a
+        // stage without pretending that elapsed time equals real completion.
+        const pct =
+          env.status === 'deploying' ? deploymentProgress(env.statusReason) : null;
         // Stop/Start only makes sense for process targets (Docker/SSH), not static hosting (SFTP).
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
@@ -317,7 +314,7 @@ export function EnvironmentPipeline({
                       {pct === null ? (
                         <div
                           aria-hidden="true"
-                          className="deployment-progress-indeterminate absolute inset-y-0 w-2/5 rounded-full bg-gradient-to-r from-warning/20 via-warning to-warning/20"
+                          className="deployment-progress-traveller absolute inset-y-0 w-2/5 rounded-full bg-gradient-to-r from-warning/10 via-warning to-warning/10 shadow-[0_0_6px_hsl(var(--warning)/0.45)]"
                         />
                       ) : (
                         <div
@@ -326,7 +323,7 @@ export function EnvironmentPipeline({
                         >
                           <span
                             aria-hidden="true"
-                            className="deployment-progress-shimmer absolute inset-0 bg-gradient-to-r from-transparent via-white/35 to-transparent"
+                            className="deployment-progress-sweep absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
                           />
                         </div>
                       )}

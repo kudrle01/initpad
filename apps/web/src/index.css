@@ -58,43 +58,47 @@
 }
 
 @layer utilities {
-  @keyframes deployment-progress-indeterminate {
+  @keyframes deployment-progress-travel {
     0% {
-      transform: translateX(-100%);
+      left: -40%;
     }
     100% {
-      transform: translateX(250%);
+      left: 100%;
     }
   }
 
-  @keyframes deployment-progress-shimmer {
+  @keyframes deployment-progress-sweep {
     0% {
-      transform: translateX(-100%);
+      left: -50%;
     }
     100% {
-      transform: translateX(100%);
+      left: 100%;
     }
   }
 
-  .deployment-progress-indeterminate {
-    animation: deployment-progress-indeterminate 1.6s ease-in-out infinite;
-    will-change: transform;
+  .deployment-progress-traveller {
+    animation: deployment-progress-travel 1.5s ease-in-out infinite;
+    will-change: left;
   }
 
-  .deployment-progress-shimmer {
-    animation: deployment-progress-shimmer 1.8s ease-in-out infinite;
-    will-change: transform;
+  .deployment-progress-sweep {
+    animation: deployment-progress-sweep 1.35s linear infinite;
+    will-change: left;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .deployment-progress-indeterminate,
-    .deployment-progress-shimmer {
+    .deployment-progress-traveller,
+    .deployment-progress-sweep {
       animation: none;
       will-change: auto;
     }
 
-    .deployment-progress-indeterminate {
+    .deployment-progress-traveller {
       left: 30%;
+    }
+
+    .deployment-progress-sweep {
+      left: 25%;
     }
   }
 }

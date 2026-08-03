@@ -58,6 +58,7 @@ export class DockerProvider implements DeploymentProvider {
 
   async deploy(input: DeployInput): Promise<DeployResult> {
     const port = input.port ?? 8080;
+    input.onProgress?.('Preparing container runtime');
 
     // No fake "running": without a daemon the deployment honestly fails with
     // a reason (consistent with the SSH/SFTP providers).
@@ -114,6 +115,7 @@ export class DockerProvider implements DeploymentProvider {
       image = `initpad/${input.projectName}:${input.env}`;
       await this.buildImage(input.repoPath, image);
     }
+    input.onProgress?.('Replacing previous container');
     await this.removeContainer(containerName);
     if (legacyContainerName !== containerName) {
       // Transition path for environments that were running before ADR-060:
@@ -142,6 +144,7 @@ export class DockerProvider implements DeploymentProvider {
     // gets a URL on the public host; the health check may use a different
     // host (deployHealthHost) when the API itself runs in a container.
     const url = `http://${config.publicHost}:${hostPort}`;
+    input.onProgress?.('Verifying deployment');
     const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
     if (!healthy) {
       this.logger.warn(`${containerName} failed its health check`);
