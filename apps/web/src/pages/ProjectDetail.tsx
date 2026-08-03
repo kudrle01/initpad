@@ -1,46 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, GitBranch, Layers, MoreHorizontal, Trash2, ExternalLink } from 'lucide-react';
-import { api, ApiError, type DeleteProjectOptions } from '@/api';
-import { useToast } from '@/toast';
-import { useAuth } from '@/auth';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
-import { CopyField } from '@/components/molecules/CopyField';
 import { EmptyState } from '@/components/molecules/EmptyState';
 import { PageHeader } from '@/components/molecules/PageHeader';
-import { TemplateIcon } from '@/components/atoms/TemplateIcon';
+import { DetailSection } from '@/components/molecules/DetailSection';
 import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline';
-import { DeploymentActivity } from '@/components/organisms/DeploymentActivity';
-import { CommitList } from '@/components/organisms/CommitList';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
 import { EnvVarsDialog } from '@/components/organisms/EnvVarsDialog';
-import { cn, scmLink } from '@/lib/utils';
-import { cleanupNotice } from '@/lib/deployment';
-import type { Commit, DeploymentOperation, EnvName, Project, ProvisioningStatus, Target, TemplateManifest } from '@/types';
-
-// After creation the project finishes in the background (dev: deploying →
-// running) and CI runs asynchronously — while anything is "working", the
-// detail refreshes itself periodically.
-function isLive(project: Project | null, commits: Commit[], rerunRequested = false): boolean {
-  const envBusy = project?.environments.some((e) => e.status === 'deploying') ?? false;
-  const ciBusy = commits.some((c) => c.pipeline.some((s) => s.status === 'running'));
-  // The head commit is waiting for the runner (pending, nothing failed) →
-  // keep refreshing so the stages start moving without a manual reload.
-  const head = commits[0];
-  const ciQueued =
-    !!head &&
-    head.sha !== 'initial' &&
-    head.pipeline.some((s) => s.status === 'pending') &&
-    !head.pipeline.some((s) => s.status === 'failed');
-  return envBusy || ciBusy || ciQueued || rerunRequested;
-}
+import { ProjectHistory } from '@/components/organisms/ProjectHistory';
+import { ProjectRepository } from '@/components/organisms/ProjectRepository';
+import { ProjectSummary } from '@/components/organisms/ProjectSummary';
+import { useProjectDetail } from '@/hooks/useProjectDetail';
 
 function Skeleton() {
   return (
@@ -58,245 +29,39 @@ function Skeleton() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mt-8">
-      <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {title}
-      </p>
-      {children}
-    </div>
-  );
-}
-
 export default function ProjectDetail() {
-  const { id } = useParams();
-  const [project, setProject] = useState<Project | null>(null);
-  const [template, setTemplate] = useState<TemplateManifest | null>(null);
-  const [commits, setCommits] = useState<Commit[]>([]);
-  const [deployments, setDeployments] = useState<DeploymentOperation[]>([]);
-  const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null);
-  const [openSha, setOpenSha] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [ciRerunRequested, setCiRerunRequested] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [targetEnv, setTargetEnv] = useState<EnvName | null>(null);
-  const [configEnv, setConfigEnv] = useState<EnvName | null>(null);
-  const [targets, setTargets] = useState<Target[]>([]);
-  const toast = useToast();
-  const { workspaces } = useAuth();
-  const projectRole = workspaces.find((workspace) => workspace.id === project?.workspaceId)?.role;
-  const readOnly = projectRole === 'viewer';
-  const canMaintain = projectRole === 'owner' || projectRole === 'admin' || projectRole === 'maintainer';
-  const navigate = useNavigate();
-
-  const load = useCallback(async () => {
-    if (!id) return;
-    try {
-      const [p, c, prov, deploymentRows] = await Promise.all([
-        api.getProject(id),
-        api.getCommits(id).catch(() => [] as Commit[]),
-        api.getProvisioning(id).catch(() => null),
-        api.getDeployments(id).catch(() => [] as DeploymentOperation[]),
-      ]);
-      setProject(p);
-      setCommits(c);
-      setProvisioning(prov ?? null);
-      setDeployments(deploymentRows);
-      setOpenSha((cur) => cur ?? c[0]?.sha ?? null);
-    } catch (e) {
-      // 404 = the project is gone (deleted here, or its repository was
-      // removed in Gitea and reconciliation cleaned it up) → dedicated page.
-      if (e instanceof ApiError && e.status === 404) {
-        setNotFound(true);
-      } else {
-        setError((e as Error).message);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    setLoading(true);
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (notFound) return;
-    // Fast cadence while something is working; a slow heartbeat otherwise so
-    // out-of-band changes (repo deleted in Gitea, new commits) surface
-    // without a manual refresh. Server-side reconciliation runs on each read.
-    const t = setTimeout(load, isLive(project, commits, ciRerunRequested) ? 2500 : 10_000);
-    return () => clearTimeout(t);
-  }, [project, commits, load, notFound, ciRerunRequested]);
-
-  useEffect(() => {
-    if (!ciRerunRequested) return;
-    const devVersion = project?.environments.find((environment) => environment.name === 'dev')?.version;
-    const deployedCommit = commits.find((commit) => commit.sha === devVersion);
-    const latestAttemptVisible = deployedCommit?.pipeline.some(
-      (stage) => stage.name === 'deploy' && ['running', 'success'].includes(stage.status),
-    );
-    if (latestAttemptVisible) setCiRerunRequested(false);
-  }, [ciRerunRequested, commits, project]);
-
-  useEffect(() => {
-    if (!ciRerunRequested) return;
-    const timeout = setTimeout(() => setCiRerunRequested(false), 120_000);
-    return () => clearTimeout(timeout);
-  }, [ciRerunRequested]);
-
-  useEffect(() => {
-    if (!project) return;
-    api
-      .listTemplates()
-      .then((all) => setTemplate(all.find((t) => t.id === project.templateId) ?? null))
-      .catch(() => {});
-  }, [project]);
-
-  useEffect(() => {
-    api.listTargets().then(setTargets).catch(() => {});
-  }, []);
-
-  async function promote(target: EnvName) {
-    if (!id) return;
-    setBusy(target);
-    try {
-      setProject(await api.promote(id, target));
-      toast.success(`Deploying to ${target}…`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function redeploy(envName: EnvName) {
-    if (!id) return;
-    setBusy(`redeploy-${envName}`);
-    try {
-      setProject(await api.redeploy(id, envName));
-      toast.success(
-        project?.scm.provider === 'github'
-          ? `Deploying the verified build to ${envName} through InitPad — no new GitHub runner is required.`
-          : `Redeploying ${envName}`,
-      );
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function runAgain() {
-    if (!id) return;
-    setBusy('run-again-dev');
-    try {
-      setProject(await api.runAgain(id));
-      toast.success(
-        project?.scm.provider === 'github'
-          ? 'Preparing dev deployment through InitPad. An existing verified build is reused when available.'
-          : 'Preparing dev deployment…',
-      );
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function rerunFailedJobs() {
-    if (!id) return;
-    setBusy('rerun-failed-jobs');
-    try {
-      const { runId } = await api.rerunFailedJobs(id);
-      setCiRerunRequested(true);
-      toast.success(`GitHub is re-running failed jobs from run ${runId}.`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function envAction(
-    key: string,
-    envName: EnvName,
-    fn: (id: string, env: EnvName) => Promise<Project>,
-    okMsg: string,
-  ) {
-    if (!id) return;
-    setBusy(`${key}-${envName}`);
-    try {
-      setProject(await fn(id, envName));
-      toast.success(okMsg);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const stopEnvironment = (env: EnvName) => envAction('stop', env, api.stopEnv, `Stopped ${env}`);
-  const startEnvironment = (env: EnvName) => envAction('start', env, api.startEnv, `Starting ${env}`);
-  async function removeEnvironment(env: EnvName) {
-    if (!id) return;
-    setBusy(`remove-${env}`);
-    try {
-      const updated = await api.removeEnv(id, env);
-      setProject(updated);
-      const warning = updated.environments.find((item) => item.name === env)?.statusReason;
-      if (warning) toast.warning(cleanupNotice(warning));
-      else toast.success(`Removed ${env} deployment`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function bindTarget(env: EnvName, targetId: string) {
-    if (!id) return;
-    setBusy(`target-${env}`);
-    try {
-      setProject(await api.bindEnvTarget(id, env, targetId));
-      toast.success(`Updated ${env} target`);
-      setTargetEnv(null);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function doDelete(options: DeleteProjectOptions) {
-    if (!id || !project) return;
-    setDeleting(true);
-    try {
-      await api.deleteProject(id, options);
-      toast.success(`Deleted ${project.name}`);
-      navigate('/');
-    } catch (e) {
-      // Teardown may have removed the public workload and converted a
-      // foreign-owned remainder into explicit cleanup debt. Refresh while the
-      // dialog stays open so the user immediately sees the quarantined paths
-      // and can make the separate, informed detach decision without a manual
-      // page reload.
-      try {
-        setProject(await api.getProject(id));
-      } catch {
-        // If the delete actually completed but its response was interrupted,
-        // the next normal navigation/reconciliation will reflect that state.
-      }
-      toast.error((e as Error).message);
-      setDeleting(false);
-    }
-  }
+  const {
+    project,
+    template,
+    commits,
+    deployments,
+    provisioning,
+    openSha,
+    error,
+    notFound,
+    busy,
+    loading,
+    deleting,
+    confirmOpen,
+    targetEnv,
+    configEnv,
+    targets,
+    readOnly,
+    canMaintain,
+    setConfirmOpen,
+    setTargetEnv,
+    setConfigEnv,
+    toggleCommit,
+    promote,
+    redeploy,
+    runAgain,
+    rerunFailedJobs,
+    stopEnvironment,
+    startEnvironment,
+    removeEnvironment,
+    bindTarget,
+    deleteProject,
+  } = useProjectDetail();
 
   if (notFound) {
     return (
@@ -321,111 +86,21 @@ export default function ProjectDetail() {
   if (loading && !project) return <Skeleton />;
   if (!project) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
-  const created = new Date(project.createdAt).toLocaleDateString('en-GB');
-  const cloneUrl = project.repoUrl ? `${project.repoUrl}.git` : null;
   const commitsBySha = Object.fromEntries(commits.map((c) => [c.sha, c] as const));
 
   return (
     <div>
-      <Link
-        to="/projects"
-        className="text-link mb-4 inline-flex items-center gap-1.5 text-sm font-medium"
-      >
-        <ArrowLeft className="h-4 w-4" /> Projects
-      </Link>
+      <ProjectSummary
+        project={project}
+        template={template}
+        provisioning={provisioning}
+        canMaintain={canMaintain}
+        onDelete={() => setConfirmOpen(true)}
+      />
 
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <TemplateIcon templateId={project.templateId} language={template?.language} />
-          <h1 className="truncate text-xl font-semibold tracking-tight">{project.name}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          {project.repoUrl && (
-            <Button asChild variant="secondary">
-              <a href={scmLink(project.repoUrl, project.scm.provider)} target="_blank" rel="noreferrer">
-                <GitBranch className="h-4 w-4" /> Open repo
-              </a>
-            </Button>
-          )}
-          {canMaintain && <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="secondary" size="icon" aria-label="More actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem destructive onSelect={() => setConfirmOpen(true)}>
-                <Trash2 className="h-4 w-4" /> Delete project
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>}
-        </div>
-      </div>
+      <ProjectRepository project={project} />
 
-      <p className="mt-2 text-sm text-muted-foreground">
-        {template?.name ?? project.templateId} · created {created}
-      </p>
-
-      {provisioning && provisioning.status !== 'succeeded' && (
-        <div
-          className={cn(
-            'mt-4 rounded-md border p-3 text-sm',
-            ['failed', 'interrupted'].includes(provisioning.status)
-              ? 'border-destructive/40 bg-destructive/5 text-destructive'
-              : 'border-border bg-secondary/50 text-muted-foreground',
-          )}
-        >
-          {['failed', 'interrupted'].includes(provisioning.status)
-            ? `Setup (${provisioning.kind}) failed at the ${provisioning.step} step${provisioning.message ? `: ${provisioning.message}` : '.'}`
-            : `Setting up (${provisioning.kind})… current step: ${provisioning.step}.`}
-          {provisioning.effects.length > 0 && (
-            <ul className="mt-2 space-y-1 border-t border-current/15 pt-2 text-xs">
-              {provisioning.effects.map((effect) => (
-                <li key={effect.key} className="flex items-start justify-between gap-3">
-                  <span>{effect.kind === 'collaborator' ? 'Repository access' : effect.kind}</span>
-                  <span className="font-mono text-right">
-                    {['compensation_failed', 'reconciliation_required'].includes(effect.status)
-                      ? 'cleanup required'
-                      : effect.status.replaceAll('_', ' ')}
-                    {effect.error ? ` — ${effect.error}` : ''}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      <Section title="Repository">
-        {project.repoUrl && (
-          <a
-            href={scmLink(project.repoUrl, project.scm.provider)}
-            target="_blank"
-            rel="noreferrer"
-            className="text-link mb-2 inline-flex items-center gap-1.5 text-sm font-medium"
-          >
-            <GitBranch className="h-4 w-4" /> {project.repoUrl}
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        )}
-        {cloneUrl && <CopyField command={`git clone ${cloneUrl}`} />}
-        {project.scm.provider === 'github' ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Private GitHub repository — open it in a browser signed into an authorized GitHub account.
-            For cloning, use your normal GitHub credential manager, SSH key or <code className="font-mono">gh auth login</code>.
-          </p>
-        ) : (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Private repository — first time?{' '}
-            <Link to="/settings" className="text-link">
-              Connect Git
-            </Link>{' '}
-            once and cloning works without a password.
-          </p>
-        )}
-      </Section>
-
-      <Section title="Environments">
+      <DetailSection title="Environments">
         <EnvironmentPipeline
           project={project}
           busy={busy}
@@ -440,9 +115,9 @@ export default function ProjectDetail() {
           onConfigureTarget={setTargetEnv}
           readOnly={readOnly}
         />
-      </Section>
+      </DetailSection>
 
-      <Section title="Configuration">
+      <DetailSection title="Configuration">
         <p className="mb-3 text-sm text-muted-foreground">
           Environment variables and secrets injected into each environment at deploy. Redeploy to
           apply changes.
@@ -459,44 +134,15 @@ export default function ProjectDetail() {
             </Button>
           ))}
         </div>
-      </Section>
+      </DetailSection>
 
-      <Section title="Deployment activity">
-        <DeploymentActivity
-          operations={deployments}
-          repoUrl={project.repoUrl}
-          scmProvider={project.scm.provider}
-          limit={4}
-        />
-        {deployments.length > 4 && (
-          <Link
-            to={`/projects/${project.id}/deployments`}
-            className="text-link mt-3 inline-flex items-center gap-1 text-sm font-medium"
-          >
-            Show all deployments <ArrowRight className="h-4 w-4" />
-          </Link>
-        )}
-      </Section>
-
-      <Section title="Commits">
-        <CommitList
-          commits={commits}
-          repoUrl={project.repoUrl}
-          scmProvider={project.scm.provider}
-          openSha={openSha}
-          onToggle={(sha) => setOpenSha((cur) => (cur === sha ? null : sha))}
-          limit={5}
-          deploymentHistoryUrl={`/projects/${project.id}/deployments`}
-        />
-        {commits.length > 5 && (
-          <Link
-            to={`/projects/${project.id}/commits`}
-            className="text-link mt-3 inline-flex items-center gap-1 text-sm font-medium"
-          >
-            Show all commits <ArrowRight className="h-4 w-4" />
-          </Link>
-        )}
-      </Section>
+      <ProjectHistory
+        project={project}
+        commits={commits}
+        deployments={deployments}
+        openSha={openSha}
+        onToggleCommit={toggleCommit}
+      />
 
       <DeleteProjectDialog
         open={confirmOpen}
@@ -505,7 +151,7 @@ export default function ProjectDetail() {
         environments={project.environments}
         hasRepository={!!project.repoUrl}
         deleting={deleting}
-        onConfirm={doDelete}
+        onConfirm={deleteProject}
       />
 
       <TargetPickerDialog
