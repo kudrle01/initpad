@@ -115,7 +115,8 @@ zneplatní staré session); platform-admin API a UI pro seznam/vytvoření/
 deaktivaci/reset uživatelů s jednorázovým dočasným heslem NEBO aktivačním
 odkazem (uživatel si nastaví vlastní heslo a je přihlášen); přidávání do týmu
 jen pro existující účty podle username/e-mailu; ověření e-mailu a neenumerující
-reset hesla. GitHub login/link je součást rozpracované Fáze 3.
+reset hesla. GitHub login/link a bezpečná vazba GitHub App jsou implementované
+ve Fázi 3; produkční SaaS profil stále čeká na Agenta a živý E2E test.
 
 Produkční odesílání e-mailů zatím není implementované: aktivační/verifikační
 odkazy se v self-hosted prototypu zobrazují nebo logují. To je vhodné pro demo a
@@ -228,31 +229,31 @@ existujících projektů. Neověřovat jen existencí DB řádku — prokázat r
 a izolaci mezi workspace. Reprodukovatelný postup je v
 [`deploy/SELF_HOSTED_ACCEPTANCE.md`](deploy/SELF_HOSTED_ACCEPTANCE.md).
 
-### Fáze 4.5 — quality checkpoint před Agentem — probíhá
+### Fáze 4.5 — quality checkpoint před Agentem — kód dokončen, čeká živý gate
 
 Agent přidá novou bezpečnostní hranici, durable job protokol a další obrazovky.
 Před jeho implementací proto proběhne omezený stabilizační milník; nejde o
 přepis fungujícího produktu.
 
-1. **Dokumentace a repository hygiene.** README je uživatelský vstupní bod;
+1. ✅ **Dokumentace a repository hygiene.** README je uživatelský vstupní bod;
    roadmapa popisuje budoucí práci, ADR rozhodnutí, runbook provoz a acceptance
    ověření. Osobní vysvětlení a handoffy zůstávají lokální. Dokončené
    migrační deníky, mrtvé soubory a zastaralé duplicity se odstraní.
-2. **Charakterizační testy a modulární backend.** Nejdřív se uzamkne chování
+2. ✅ **Charakterizační testy a modulární backend.** Nejdřív se uzamkne chování
    kritických toků. Potom se `ProjectsService` rozdělí podle odpovědností na
    provisioning, CI/artifact orchestration, environment lifecycle a read model.
    GitHub/Gitea adaptery oddělí HTTP klienta od doménových operací. Veřejné API
    a databázové chování se v tomto kroku nemění.
-3. **Frontendová struktura.** Velké stránky (`Settings`, `ProjectDetail`,
+3. ✅ **Frontendová struktura.** Velké stránky (`Settings`, `ProjectDetail`,
    `Infrastructure`) se rozdělí na pojmenované sekce a hooks; formulářové,
    loading/error a permission stavy dostanou jednotné komponenty. Odstraní se
    duplicity bez zavádění abstrakcí použitých jen jednou.
-4. **UX/UI pass A.** Nad stabilní strukturou se otestují hlavní úkoly na
+4. ✅ **UX/UI pass A.** Nad stabilní strukturou se otestují hlavní úkoly na
    telefonu, tabletu a desktopu: navigace, založení/import projektu, detail,
    target a workspace správa. Opraví se informační hierarchie, touch targets,
    formuláře, focus/keyboard chování, loading/empty/error stavy a kontrast.
    Vizuální identita zůstane střídmá a produktová, ne dekorativní redesign.
-5. **Gate.** Produkční build, API a template testy, dependency audit,
+5. **Živý gate.** Produkční build, API a template testy, dependency audit,
    self-hosted smoke test, kontrola mrtvého kódu a browser acceptance musí být
    zelené. Teprve potom začne Agent.
 
@@ -360,379 +361,25 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. |
 | 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
 
-### Aktuální výsledek milníku 3
+## Aktuální stav ověření
 
-- Migrace reálné databáze: úspěšná, žádný projekt bez workspace.
-- Osobní workspace a týmový workspace: přepínání ověřeno v browseru.
-- Viewer viděl týmový projekt, ale create/deploy/delete UI bylo read-only.
-- API: osobní seznam 0 projektů, týmový seznam 1; viewer write 403, cizí
-  workspace ID 403.
-- Reálná Gitea integrace: viewer měl `pull=true, push=false`, po změně na member
-  `pull=true, push=true` a po odebrání už privátní repo vracelo 404.
-- Auditní projekt, Gitea repo, účty a workspaces byly po testu odstraněny.
+Automatizovanou regresi tvoří produkční build obou aplikací a kompletní API
+sada spouštěná příkazem `npm run check`. TypeScript má zapnuté
+`noUnusedLocals` i `noUnusedParameters`; audit importního grafu nesmí najít
+osiřelý produkční modul. Historické Prisma migrace se nemažou ani po odstranění
+původní funkce, protože jsou součástí reprodukovatelné instalace databáze od nuly.
 
-### Aktuální výsledek milníku 4 (identity/onboarding)
+Dosavadní živé ověření prokázalo workspace RBAC a synchronizaci rolí do Gitey,
+React i Nette deployment na ESO, chráněný PHP layout, opakovaný deploy po vzniku
+runtime cache a bezpečné uvolnění kanonické cesty při částečném teardownu.
+Tyto dílčí výsledky nenahrazují celý self-hosted acceptance gate.
 
-Implementováno podle ADR-040/042 a ověřeno API unit testy (registrační politika,
-stavový guard, platform-admin, členství, reset/verifikace) i typecheckem obou
-aplikací a produkčním emitem API. Migrace jsou aditivní a ověřené `prisma
-migrate diff` proti předchozímu schématu. Browser acceptance test se spouští
-proti běžící instalaci; testovatelné scénáře:
-
-- Normální registrace v `open`; v `admin-provisioned` je self-service zavřená
-  (kromě prvního bootstrap účtu) a login screen to vysvětlí.
-- Správce vytvoří účet → dostane aktivační odkaz i jednorázové dočasné heslo.
-  Aktivační odkaz: uživatel si nastaví vlastní heslo a je přihlášen. Dočasné
-  heslo: uživatel je při přihlášení nucen ho změnit, než smí cokoli dalšího.
-- Majitel týmu přidá do workspace existující účet podle username/e-mailu → je
-  členem a role platí i v privátním Gitea repu; přidání neexistujícího účtu selže.
-- Reset hesla přes `/forgot-password` → odkaz (log/e-mail) → nastavení nového
-  hesla zneplatní původní session.
-- Deaktivace účtu odepře přihlášení i běžící session; poslední aktivní
-  administrátor a sebe-deaktivace jsou chráněny.
-- Po testu se smažou všechny dočasné účty, workspaces a repozitáře.
-
-### Revize a SCM identity podkrok Fáze 3 (2026-07-17)
-
-- Lokálně prošlo 32 API test suites / 174 testů, API production build a skutečný
-  webový `tsc -b && vite build`. `docker compose config` a Prisma schema validate
-  také prošly (schema validate s testovací `DATABASE_URL`).
-- Opravena hranice edic: SaaS neumožňuje native registraci/password login ani
-  self-hosted správu uživatelů; první OAuth účet není automaticky správce.
-- Managed Gitea účet dostává po vydání PAT náhodné neznámé lokální heslo a legacy
-  účty se best-effort zpevní při startu, aby reset/deaktivaci nešlo obejít přímým
-  Gitea loginem.
-- OIDC pro Giteu před vydáním code/token/userinfo znovu ověřuje aktivní účet,
-  session generation a forced-change stav; `email_verified` odpovídá databázi.
-- Jednorázové auth tokeny se claimují atomicky; GitHub OAuth nepovažuje neověřený
-  profilový e-mail za ověřený; poslední použitelnou identitu nelze odpojit.
-- GitHub webhook při chybě DB neztratí událost tichým 202 a installation tokeny
-  používají operation-specific podmnožiny oprávnění.
-- GitHub installation setup používá hashovaný jednorázový state navázaný na
-  user/workspace, serverově ověřené immutable account ID a owner/admin re-check.
-  Osobní instalace musí odpovídat propojené identitě, organizace dostává
-  explicitní workspace grant a uninstall se historizuje místo fyzického smazání.
-- GitHub linking/installation ze Settings se otevírá v samostatném bezpečném
-  okně a původní aplikace po návratu fokusu automaticky obnoví stav; login flow
-  zůstává top-level redirect. Organization setup ověřuje installation proti
-  krátkodobému GitHub user access tokenu a `/user/installations`.
-- Dokončen explicitní repository contract: aditivní migrace, immutable provider
-  ID, mutable souřadnice, default branch, installation binding a jeden
-  `ScmRepositoryRef` pro import/CI/reconcile/deploy/archive/delete. Test pokrývá
-  rename dohledaný podle ID i delete webhook s legacy fallbackem.
-- Lokální existující Docker DB úspěšně aplikovala
-  `20260717232000_project_scm_identity` i
-  `20260718120000_github_installation_authorization`; tři původní projekty zachovaly URL a
-  startup jim doplnil reálná Gitea ID 5/9/15. Health i nepřihlášený browser
-  smoke jsou zelené. Autentizovaný browser acceptance nebyl možný, protože
-  lokální `deploy/.env` je v `saas` edici bez nakonfigurované GitHub App.
-- Neprovedeno: autentizovaný browser acceptance ani živý GitHub App E2E.
-  Public SaaS proto zatím není produkčně dokončený profil.
-
-### GitHub user-token vault podkrok Fáze 3 (2026-07-20)
-
-- Aditivní migrace rozšířila externí identitu o šifrované provider credentials,
-  expirace, verzi a refresh lease; existující identity i Gitea tok nemění.
-- GitHub OAuth parsuje expirační metadata a rotuje celý access/refresh pair.
-  Login a link jej uloží až po shodě immutable GitHub ID; organization setup
-  použije user token jen v paměti.
-- Součběžné API instance koordinuje databázový lease, proto stejný single-use
-  refresh token nemohou spotřebovat dvakrát. Revokační webhook credential maže
-  podle immutable sender ID, propojení identity ale zachová.
-- Tento podkrok nemá novou obrazovku. Uživatelsky lze regresně zopakovat
-  GitHub login/link a organization install; plný test rotace/revokace bude
-  viditelný v následujícím osobním create toku.
-- Ověřeno: 34 API suites / 202 testů, API production build, Prisma validate,
-  aplikace migrace `20260720160000_github_user_credentials` na existující lokální
-  databázi a zdravý restart kontejneru.
-
-### GitHub repository provision podkrok Fáze 3 (2026-07-20)
-
-- Provider zakládá soukromé osobní i organizační repo přes credential
-  odpovídající konkrétní operaci a vrací immutable repository ID + installation
-  binding. Při chybě Actions secrets nebo push provede rollback repozitáře.
-- Scaffold push nepersistuje installation token do remote URL ani `.git/config`.
-  GitHub varianta workflow používá `.github/workflows` a automatický
-  `GITHUB_TOKEN` pro GHCR; Gitea šablona zůstává beze změny.
-- Ověřeno automatizovaně: personal/org credential selection, workflow
-  transformace, rollback a stávající read/write operace; celkem 34 suites /
-  207 testů a API production build.
-- V okamžiku tohoto adapterového commitu ještě neexistoval UI tok; následující
-  routing podkrok jej již zapojil do New project/import.
-
-### SCM routing a GitHub create/import podkrok Fáze 3 (2026-07-20)
-
-- Edice je produktové rozhodnutí, ne volba v projektu: self-hosted create/import
-  používá Gitea, SaaS GitHub. New project v SaaS zobrazuje osobní/organizační
-  instalace autorizované pro aktivní workspace a API jejich grant ověří znovu.
-- Projektové operace po vytvoření vybírají adapter z uloženého provideru:
-  reconcile, CI callback, commity a GitHub Actions jobs (Check Runs fallback), retry tag, archiv,
-  synchronizace rolí, package cleanup a repository delete/detach. CI callback
-  rozliší případně stejný full name per-project tajemstvím, ne vstupem od CI.
-- Import vylistuje repozitáře ze všech aktivních instalací workspace, deduplikuje
-  immutable ID a serverově opakuje preflight. Non-static runtime vyžaduje
-  Dockerfile; provider musí mít kompatibilní `.gitea/workflows/ci.yml` nebo
-  `.github/workflows/ci.yml` s InitPad callbackem. Import zdrojový kód nemění.
-- UI ukazuje chybějící GitHub link/instalaci, suspend a nutnost obnovit starší
-  OAuth credential; Settings nabízí bezpečný popup pro obnovení autorizace.
-- Ověřeno: 35 API suites / 215 testů, API i web production build, compose config,
-  rebuild běžících API/web kontejnerů, health a nepřihlášený SaaS browser smoke.
-  Test výslovně odmítá instalaci z cizího workspace. Živý autentizovaný create/
-  import a organizace se musí provést proti skutečné GitHub App.
-- Historický otevřený bod tohoto commitu: workflow pushovalo privátní image do GHCR pomocí
-  repository-scoped `GITHUB_TOKEN`, ale control plane tento token nemá. GitHub
-  registry pro externí pull oficiálně očekává PAT classic nebo `GITHUB_TOKEN`;
-  dlouhodobý uživatelský PAT proto do platformy nepřidáváme. Následující návrh
-  musí zvolit managed OCI registry s projektově omezenými credentials, nebo
-  agent-mediated artifact transport. Lokální větev byla následně vyřešena
-  GitHub artifact handoffem níže; durable multi-instance storage/agent zůstává.
-
-**Uživatelský test tohoto podkroku.** V SaaS se přihlásit přes GitHub, v Settings
-autorizovat osobní App instalaci, otevřít New project, zkontrolovat vybraného
-ownera a vytvořit unikátně pojmenované repo. Na GitHubu ověřit private repo,
-`.github/workflows/ci.yml`, Actions secrets a první run; v InitPadu ověřit URL,
-commity/check runs a možnost Run again. V týmovém workspace zopakovat pro
-organizaci; member nesmí instalaci přidat, ale smí použít již udělený workspace
-grant podle role. Import testovat jedním kompatibilním repem a dvěma negativními
-variantami bez Dockerfile a bez InitPad workflow. Nakonec zvolit detach i úplné
-smazání a ověřit, že jiné workspace stejnou instalaci bez grantu nepoužije.
-
-### Provisioning effect journal podkrok Fáze 3 (2026-07-20)
-
-- Aditivní `ProvisioningEffect` zapisuje intent před create/import mutací a
-  rozlišuje `planned`, `applying`, `applied`, `failed`, `compensated` a
-  `compensation_failed`. Projektový detail u neúspěchu vypíše jednotlivé efekty.
-- Create journaluje repozitář, každého collaboratora a databázový projekt;
-  selhání journal transition po úspěšném provider API nově také spustí cleanup.
-- Import registruje kompenzaci ještě před zápisem secrets, ukládá původní
-  přímou provider roli a rollback provádí v opačném pořadí. GitHub teamovou
-  zděděnou roli nikdy neobnoví jako direct grant.
-- Projektový záznam se po chybě smaže jen při úplné externí kompenzaci.
-  Výpadek cleanupu jej zachová jako recovery handle s `cleanup required`.
-- Startup reconciliation stavů `applying`, workspace přehled operací a
-  idempotentní retry/cleanup dokončuje následující podkrok níže.
-
-**Uživatelský test tohoto podkroku.** Běžný create i import musí proběhnout
-beze změny. Pro viditelnou chybovou větev dočasně znepřístupnit provider během
-cleanup importu: projekt musí zůstat v dashboardu, detail ukázat `cleanup
-required` a Delete project se zachováním repozitáře musí po obnovení provideru
-umožnit recovery. Bezpečnější opakovatelná varianta je automatizovaný failure-
-injection test, který ověřuje úplný rollback i zachování cleanup dluhu.
-
-### Provisioning recovery a idempotent retry podkrok Fáze 3 (2026-07-20)
-
-- Persistuje se validovaný request bez credentials, iniciátor, attempt a
-  `retryOfId`; staré auditní operace bez requestu zůstávají pouze ke čtení.
-- Process lease odliší živou operaci od pádu. Expirované `running`, `cleaning`
-  nebo `retrying` přejde na `interrupted`; nejasný efekt na
-  `reconciliation_required`, nikdy rovnou do retry.
-- Workspace endpoint a Dashboard zobrazí poslední operace včetně create bez
-  Project ID. Stav se obnovuje po 15 sekundách.
-- `Retry cleanup` je CAS + lease operace pro maintainer/owner. Import obnoví
-  původní direct role a odstraní platformní secrets; create smaže repo podle
-  journal identity. Všechny kroky jsou opakovatelné a Project se smaže poslední.
-- `Retry setup` je dostupný jen původnímu iniciátorovi, po prokázané kompenzaci
-  a maximálně pětkrát. Nový attempt + retired predecessor vzniknou atomicky.
-- Otevřený bod Fáze 3 již není provisioning recovery ani private-GHCR pull.
-  Ověřený lokální artifact handoff je hotový; zbývá durable storage/agent
-  delivery pro veřejný SaaS a následný živý GitHub E2E.
-
-**Uživatelský test tohoto podkroku.** Na importu vyvolat chybu Secrets API.
-Po úplném rollbacku musí Dashboard ukázat `Retry setup`; po neúspěšném
-rollbacku `Retry cleanup` a zachovaný projekt. Po obnovení provideru kliknout
-cleanup, ověřit odstranění projektu a odemčení setup retry. Tentýž účet
-smí založit attempt 2, jiný member ne; maintainer smí cleanup, viewer/member
-nikoli. Pád procesu a dvojitý claim se testují automatizovaně, aby acceptance
-nemusel destruktivně ukončovat lokální API.
-
-### GitHub artifact handoff podkrok Fáze 3 (2026-07-20)
-
-- GitHub workflow již nepushuje nový build do private GHCR. Jednou vytvořenou
-  a otestovanou image uloží jako přímý immutable `initpad-image.tar` artifact;
-  upload action je pinovaný plným commitem a retention je jeden den.
-- Callback předává ID a digest. GitHub provider přes workspace installation s
-  `Actions: read` ověří repository ID, run, commit SHA, název, expiraci,
-  velikost i metadata digest; stažené bajty znovu SHA-256 ověří.
-- `BuildArtifact` persistuje identitu a lifecycle. Lokální prototyp zkontroluje,
-  že Docker archive obsahuje jen očekávaný tag, načte jej do daemonu a deployuje
-  bez GHCR pullu nebo rebuildu. Ingestion je background operace, callback tedy
-  nečeká na přenos velké image.
-- Tag obsahuje commit + workflow run ID a deployment/environment ukládají přesné
-  BuildArtifact ID. UI ukazuje zkrácený SHA-256 digest; promotion proto dokáže
-  prokázat stejný build i při dvou CI runs stejného commitu.
-- Duplicate callback je no-op, přerušená ingestion se po restartu označí failed
-  a Run again bez skutečně dostupné lokální image spustí nový CI run.
-- Import GitHub repa se starým callbackem je zablokovaný s konkrétním varováním.
-  Gitea registry flow se nezměnil.
-- Ověřeno lokálně: 42 API suites / 246 testů, API i web production build,
-  compose rebuild, aplikované migrace `20260720220000_build_artifact_handoff`
-  a `20260720230000_deployment_artifact_binding`, healthy API a login UI smoke.
-  Zbývá živý test proti skutečné App.
-
-**Uživatelský test tohoto podkroku.** GitHub App nastavit `Actions: Read-only`
-a přijmout změnu instalace. Založit nový projekt; v Actions zkontrolovat upload
-`initpad-image.tar` a callback, v InitPadu přechod přes `Downloading and
-verifying tested image` do zeleného dev. Karta prostředí ukáže `build <digest>`;
-promote do test musí zachovat stejné artifact ID/digest i SHA. Ruční callback s
-jiným artifact ID/digest/SHA musí vrátit 400. Staré repo
-bez artifact handoff se nesmí dát importovat. Produkční object-store/agent test
-patří až do milníku 7.
-
-### PHP/SFTP target selection a odkazový affordance (2026-07-20)
-
-- Nette, Laravel a Symfony preferují pro prod ověřený workspace SFTP target
-  s `php`; bez něj bezpečně zůstává Docker fallback.
-- SFTP formulář pro nový shared-hosting target předvolí `static + php` a
-  výslovně upozorní, že PHP varianta potřebuje shell operace. Existující
-  target lze o capability rozšířit i za provozu; capability nelze za provozu
-  odebírat.
-- New project i změna targetu vypíší skryté SFTP targety a konkrétní
-  chybějící runtime. Textové odkazy jsou zelené už v klidovém stavu a ikony
-  dědí jejich barvu.
-- Automatizovaně ověřeno: 42 API suites / 249 testů, API i web production
-  build. Browser acceptance je popsán v ADR-050.
-
-### Veřejný GitHub callback a per-environment targety (2026-07-20)
-
-- GitHub repository/commit/Actions odkazy se již nepřepisují Gitea login
-  routou. Privátní repo nadále vrátí GitHub 404 nepřihlášenému nebo
-  neoprávněnému účtu, což je očekávaná ochrana existence repa.
-- SaaS GitHub create/import vyžaduje veřejný HTTPS platform callback a
-  `localhost`/private URL odmítne před externí mutací. Stav je viditelný v UI.
-- SaaS skryje self-hosted built-ins a vyžaduje verified workspace target pro
-  dev, test i prod. Self-hosted formulář nově také dovolí změnit všechny tři.
-- Soukromé/lokální Docker targety zůstávají explicitním acceptance bodem
-  Agent milníku; UI tuto hranici neskrývá built-in Dockerem.
-- Automatizovaně ověřeno: 43 API suites / 265 testů a API i web
-  production build.
-
-**Uživatelský test:** postupuje podle ADR-051. Bez veřejné URL je bezpečně
-testovatelná blokující větev a přímé GitHub odkazy; úspěšný Actions callback
-vyžaduje veřejné nasazení nebo dočasný HTTPS tunnel.
-
-### GitHub stage observability a target deployment intent (2026-07-20)
-
-- Stages se synchronizují z nejnovějšího GitHub Actions run/jobs pro commit;
-  každý existující job má přímý klikací odkaz na log.
-- Změna targetu zachová ověřený artifact, odstraní starý workload a nastaví
-  explicitní deployment intent. UI nabídne `Deploy` a po úspěchu jej uzavře.
-- Projects používá loading skeleton a prázdný stav zobrazí pouze po dokončení
-  fetchů projektů a templates; workspace switch starý seznam neproblikne.
-- Automatizovaně ověřeno: 44 API suites / 267 testů a API i web production
-  build. Uživatelský test je v ADR-052.
-
-### Obnova hotového Actions artefaktu při ručním Deploy (2026-07-20)
-
-- Deployment target a callback URL jsou explicitně oddělené: ESO je cíl
-  aplikace, `INITPAD_PUBLIC_URL` je adresa InitPad API dostupná z GitHub runneru.
-- Ruční Deploy nejdřív hledá hotový neexpirovaný Actions artifact pro
-  přesný commit a po plném ověření jej nasadí na aktuální target bez
-  opakování CI.
-- Když artifact není a callback je lokální/neveřejný, InitPad selže před
-  vytvořením retry tagu. Tím nevzniká smyčka workflow, které pokaždé volá
-  nedostupný `localhost`.
-- Automatizovaně ověřeno: 44 API suites / 271 testů a API i web production
-  build. Uživatelský test je v ADR-053.
-
-### Run-bound stages a přímé deployment log odkazy (2026-07-20)
-
-- Stages nasazeného commitu se načítají z přesného Actions runu uloženého
-  v `BuildArtifact`, nikoli z pozdějšího runu stejného SHA.
-- Finální deploy stage sleduje skutečný stav publication v InitPadu, takže
-  recovery bez nového CI runu přejde z running na success.
-- Environment status i chybový důvod vedou přímo na konkrétní GitHub/Gitea
-  job. Modal stdout aplikace a jeho veřejný API endpoint byly odstraněny.
-- Automatizovaně ověřeno: 45 API suites / 274 testů a API i web production
-  build. Uživatelský test je v ADR-054.
-
-### InitPad deployment activity a PHP cleanup prevence (2026-07-20)
-
-- CI audit a CD průběh jsou oddělené: provider link ukazuje původní build
-  run, inline Deployment activity živě ukazuje publikaci ověřeného artifactu.
-- Deploy/redeploy proto nespouští nový runner; UI to uvádí v menu, toastu i
-  vysvětlení. Nový CI run vzniká pouze bez použitelného artifactu.
-- DeploymentOperation ukládá snapshot targetu/provideru, poslední progress
-  krok a artifact run. Historie zůstává pravdivá po změně targetu.
-- Karanténa v UI potvrzuje uvolnění canonical jména; starý diskový dluh
-  zůstává správci serveru. Nový PHP wrapper používá nulový umask jako
-  prevenci další foreign-owned cache podstromů.
-- Automatizovaně ověřeno: 45 API suites / 275 testů a API i web production
-  build. Uživatelský test je v ADR-055.
-
-### Samostatná historie commitů a deploymentů (2026-07-20)
-
-- Detail projektu je pracovní náhled: čtyři deployment operations a pět
-  commitů; delší seznamy mají zelený odkaz na samostatnou route.
-- Deployment historie neopakuje stejnou GitHub URL v každém řádku. Sdílený
-  artifact run je jednou označen jako source CI build, jednotlivé řádky jsou
-  samostatné InitPad publication operations.
-- Commit i deployment historie se při aktivní práci samy obnovují. API
-  podporuje bounded `limit` a vynucuje maximum 100 záznamů na požadavek.
-- Automatizovaně ověřeno: 45 API suites / 276 testů a API i web production
-  build. Uživatelský test je v ADR-056.
-
-### Pravdivé oddělení SCM handoffu a InitPad publication (2026-07-20)
-
-- Stav GitHub/Gitea `deploy` jobu se již nepřepisuje výsledkem pozdějšího
-  InitPad deploymentu. Jeho přesný stav i URL zůstávají provider-native.
-- InitPad publication je samostatná stage `publish`, která vede na interní
-  deployment historii stejně jako status a chyba environmentu.
-- Recovery může pravdivě ukázat failed handoff i successful publish. UI
-  vysvětlí, že `Deploy verified build` záměrně nespustil nový runner a znovu
-  použil tytéž ověřené bajty.
-- Automatizovaně ověřeno: 45 API suites / 276 testů a API i web production
-  build. Uživatelský test je v ADR-057.
-
-### Explicitní GitHub failed-job rerun (2026-07-20)
-
-- Dev Tools nabídne `Re-run failed GitHub jobs` pouze pro kombinaci failed
-  SCM handoff + successful InitPad publish stejného ověřeného artifactu.
-- Backend používá immutable artifact run ID a skutečný GitHub failed-jobs
-  rerun. `filter=latest` synchronizuje nový attempt a konkrétní job URL.
-- Před rerunem se obnoví callback secret a vyžaduje veřejné HTTPS. GitHub App
-  nově potřebuje repository `Actions: Read and write`; Organization a Account
-  permission zůstávají prázdné.
-- Automatizovaně ověřeno: 45 API suites / 281 testů a API i web production
-  build. Uživatelský test je v ADR-058.
-
-### Aktuální výsledek milníku 6 (target allocations)
-
-- Implementace a automatické testy jsou zelené: nový create/import zapisuje
-  allocation hned, provider skutečně používá namespace/root/URL a policy se
-  kontroluje před externím repozitářem i při deployi.
-- Živý test na fyzickém Docker hostu zatím **neproběhl**. Agent se proto nezačne
-  implementovat, dokud neprojde celý
-  [`deploy/SELF_HOSTED_ACCEPTANCE.md`](deploy/SELF_HOSTED_ACCEPTANCE.md).
-
-### Průběžné ověření delivery části milníku 8
-
-- React/Vite produkce byla na ESO nasazena z CI-tested nginx artefaktu bez
-  spuštění `npm ci` v API; veřejná aplikace odpovídala.
-- Nette produkce odpověděla na čisté URL HTTP 200; soukromý `composer.json` a
-  runtime security probe vracely HTTP 403.
-- Po HTTP požadavku, který vytvořil frameworkovou cache, druhý redeploy znovu
-  skončil `running` bez permission chyby.
-- Jeden legacy release s již cizím vlastnictvím byl přesunut do chráněné
-  karantény; jeho fyzické odstranění zůstává jednorázovým úkolem správce ESO.
-- Reálný částečný teardown odstranil veřejnou Nette aplikaci, přesunul
-  cizí runtime cache do chráněné karantény a v UI správně zobrazil `empty`,
-  konkrétní cleanup cesty, `Retry cleanup` a explicitní volbu pro odstranění
-  project record se zachováním administrátorského dluhu.
-
-### Per-environment konfigurace a secrety (ADR-061)
-
-- Nasazovaná aplikace má teď per-(projekt, prostředí) konfiguraci `KLÍČ=HODNOTA`.
-  Ne-secret hodnoty se ukládají a vrací v čitelné podobě; secrety jsou šifrované
-  at-rest (`INITPAD_ENCRYPTION_KEY`) a v API vždy maskované.
-- Vary se injektují až při deploy (Docker container `Env`), takže stejný ověřený
-  build-once image běží v dev/test/prod s odlišnou konfigurací; secrety nejdou do
-  image ani do registru. Změna se projeví redeployem.
-- Správu má člen s project-write rolí, viewer jen čte; klíč musí být
-  `UPPER_SNAKE_CASE` a rezervované platformní klíče (`PORT`) nejdou přepsat.
-- UI: sekce „Configuration" v detailu projektu, dialog proměnných na prostředí.
-- Pokryto automatickými testy (šifrování/maskování, validace, role, injektáž do
-  Docker `Env`). Otevřené rozšíření: SSH/SFTP injektáž a sdílené vary na úrovni
-  workspace/allocation + auto-provisioning backing služeb.
+Před zahájením Agenta zbývá na čisté VM dokončit
+[SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md): dva workspaces musí
+současně nasadit na sdílený Docker target bez kolize jmen, sítí, portů nebo dat;
+cizí projekt, allocation a operace musí zůstat nedostupné. Výsledek se uloží jako
+samostatný testovací protokol pro diplomovou práci, ne jako průběžný deník v
+roadmapě.
 
 ## Vyhodnocení pro diplomovou práci
 

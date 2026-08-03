@@ -88,8 +88,7 @@ Web běží na <http://localhost:5173>, API na
 ## Kontrola změn
 
 ```bash
-npm run build
-npm test --workspace @initpad/api -- --runInBand
+npm run check
 npm audit --audit-level=low
 docker compose -f deploy/docker-compose.yml --profile runner config --quiet
 ```

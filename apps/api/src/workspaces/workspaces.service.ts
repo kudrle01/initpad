@@ -199,7 +199,8 @@ export class WorkspacesService {
   /**
    * Creates a workspace membership and mirrors the role into the private Gitea
    * repositories, rolling the membership back if the SCM sync fails so the two
-   * never diverge. Shared by direct add-member and invitation acceptance.
+   * never diverge. Kept public within the service for bootstrap and migration
+   * paths that need the same cross-system invariant as direct member creation.
    */
   async attachMember(
     workspaceId: string,

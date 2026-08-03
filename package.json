@@ -9,12 +9,11 @@
   "scripts": {
     "dev:api": "npm run start:dev --workspace @initpad/api",
     "dev:web": "npm run dev --workspace @initpad/web",
-    "build": "npm run build --workspace @initpad/api && npm run build --workspace @initpad/web"
+    "build": "npm run build --workspace @initpad/api && npm run build --workspace @initpad/web",
+    "test": "npm run test --workspace @initpad/api -- --runInBand",
+    "check": "npm run build && npm run test"
   },
   "engines": {
     "node": ">=20"
-  },
-  "devDependencies": {
-    "@nestjs/common": "11.1.28"
   }
 }

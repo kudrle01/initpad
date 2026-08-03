@@ -199,10 +199,6 @@ export function sftpReaddir(sftp: SFTPWrapper, path: string): Promise<RemoteEntr
   );
 }
 
-export function sftpRmdir(sftp: SFTPWrapper, path: string): Promise<void> {
-  return new Promise((resolve) => sftp.rmdir(path, () => resolve()));
-}
-
 type SftpError = Error & { code?: number | string };
 
 function missingRemotePath(error: SftpError): boolean {

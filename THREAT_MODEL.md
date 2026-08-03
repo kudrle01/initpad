@@ -77,6 +77,20 @@ boundary.
 - Backups contain credentials. They must be encrypted, stored off-host and
   tested with periodic restore drills.
 
+### Tracked dependency exception
+
+As of 2026-08-03, `npm audit` reports GHSA-qwww-vcr4-c8h2 for the current
+React Router release. The upstream advisory states that the issue only affects
+applications using the unstable React Server Components APIs. InitPad ships a
+static Vite single-page application and defines no RSC server, server actions or
+unstable RSC routes, so the vulnerable execution path is absent. The dependency
+remains on the latest compatible release instead of being downgraded to a
+version with broader navigation and hydration advisories. This exception must
+be removed as soon as a patched stable package compatible with the frontend is
+published, and the audit must be reviewed again before a public SaaS release.
+
+Reference: https://github.com/advisories/GHSA-qwww-vcr4-c8h2
+
 ## Production gates
 
 Before calling InitPad hosted multi-tenant or enterprise-ready: remove the host
