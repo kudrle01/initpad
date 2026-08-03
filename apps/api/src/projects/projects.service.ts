@@ -17,13 +17,10 @@ import {
   Commit,
   DeployStatus,
   DeploymentOperationSummary,
-  Environment,
   EnvName,
-  PipelineStage,
   Project,
   ProviderKind,
   RuntimeKind,
-  StageStatus,
   TargetScope,
   TemplateManifest,
 } from '../domain/types';
@@ -62,10 +59,10 @@ import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces
 import { ProvisioningService } from './provisioning.service';
 import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
 import { publicHttpsUrlIssue, withCurrentPublicHost } from '../common/public-url';
+import { CI_RUNNING_REASON, CI_WAITING_REASON } from './ci-state';
+import { pipelineStages, withDeploymentState } from './project-pipeline';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
-const CI_WAITING_REASON = 'Waiting for an available CI runner';
-const CI_RUNNING_REASON = 'CI runner started the build';
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
 type CiArtifactInput = {
@@ -534,7 +531,7 @@ export class ProjectsService implements OnModuleInit {
     if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) return;
 
     const statuses = await scm.listCommitStatuses(repository, sha, actor);
-    const stages = this.pipelineStages(this.templates.get(project.templateId), statuses);
+    const stages = pipelineStages(this.templates.get(project.templateId), statuses);
     const failed = stages.filter((stage) => stage.status === 'failed').map((stage) => stage.name);
     if (failed.length === 0) return;
 
@@ -2907,8 +2904,8 @@ export class ProjectsService implements OnModuleInit {
             actor,
             preferredRunId,
           );
-          const pipeline = this.reflectDeploymentState(
-            this.pipelineStages(template, statuses),
+          const pipeline = withDeploymentState(
+            pipelineStages(template, statuses),
             currentDev,
             operation,
           );
@@ -2922,7 +2919,7 @@ export class ProjectsService implements OnModuleInit {
         message: project.lastCommit,
         author: 'DevPlatform',
         date: project.createdAt,
-        pipeline: this.pipelineStages(template, null),
+        pipeline: pipelineStages(template, null),
       },
     ];
   }
@@ -3295,127 +3292,6 @@ export class ProjectsService implements OnModuleInit {
       );
     }
     return docker;
-  }
-
-  // CI stages derived from the artifact kind. Provider-neutral statuses come
-  // from Gitea commit statuses or GitHub Actions jobs; pending means the job
-  // has not been created or has not started yet.
-  private pipelineStages(
-    template: TemplateManifest,
-    statuses: { context: string; status: string; targetUrl: string | null }[] | null,
-  ): PipelineStage[] {
-    // label = display name; tokens = possible job names in the commit status.
-    const defs: { label: string; tokens: string[] }[] =
-      template.artifact === 'static'
-        ? [
-            { label: 'build', tokens: ['build'] },
-            { label: 'test', tokens: ['test'] },
-            { label: 'deploy', tokens: ['deploy'] },
-          ]
-        : [
-            { label: 'build', tokens: ['build'] },
-            { label: 'test', tokens: ['test'] },
-            { label: 'docker build', tokens: ['docker', 'docker build'] },
-            { label: 'deploy', tokens: ['deploy'] },
-          ];
-
-    // Latest state + job link per job (statuses arrive newest-first).
-    const latest = new Map<string, { status: string; url: string | null }>();
-    for (const s of statuses ?? []) {
-      const job = this.jobFromContext(s.context);
-      if (job && !latest.has(job)) latest.set(job, { status: s.status, url: s.targetUrl });
-    }
-
-    const stages = defs.map((d) => {
-      const hit = d.tokens.map((t) => latest.get(t)).find((v) => v !== undefined);
-      return {
-        name: d.label,
-        status: hit ? this.mapCiStatus(hit.status) : ('pending' as StageStatus),
-        url: hit?.url ?? null,
-      };
-    });
-
-    // Jobs are chained via `needs`, so only the first unfinished stage can
-    // actually be executing. Gitea, however, creates a "pending" status for
-    // ALL jobs when the run starts — everything would light up as running.
-    // Demote stages behind the first active/unsuccessful one to 'pending'
-    // (queued) so the UI shows real progression.
-    let blocked = false;
-    for (const s of stages) {
-      if (blocked && s.status === 'running') s.status = 'pending';
-      if (s.status !== 'success') blocked = true;
-    }
-    return stages;
-  }
-
-  // GitHub/Gitea describes the runner jobs, while artifact recovery and the
-  // actual target publication continue inside InitPad after the handoff job.
-  // Never overwrite one audit record with the other: a failed SCM callback can
-  // truthfully be followed by a successful publication of its verified build.
-  private reflectDeploymentState(
-    stages: PipelineStage[],
-    environment: Environment | null | undefined,
-    operation?: { status: string; buildArtifact?: { providerRunId: string } | null } | null,
-  ): PipelineStage[] {
-    // Gitea 1.22 exposes queued and executing jobs as the same `pending`
-    // commit status. The start callback is therefore the authoritative edge:
-    // before it arrives, no SCM stage may be presented as running.
-    const visibleStages =
-      environment?.status === 'deploying' &&
-      environment.statusReason === CI_WAITING_REASON
-        ? stages.map((stage) =>
-            stage.status === 'running' ? { ...stage, status: 'pending' as StageStatus } : stage,
-          )
-        : stages;
-    const deployIndex = visibleStages.findIndex((stage) => stage.name === 'deploy');
-    if (deployIndex < 0) return visibleStages;
-
-    let status: StageStatus | null = null;
-    if (environment) {
-      if (environment.status === 'deploying') status = 'running';
-      else if (environment.deploymentRequired) {
-        status = environment.status === 'failed' ? 'failed' : 'pending';
-      } else if (environment.status === 'running' || environment.status === 'stopped') {
-        status = 'success';
-      } else if (environment.status === 'failed') {
-        status = 'failed';
-      }
-    } else if (operation?.buildArtifact) {
-      if (operation.status === 'running') status = 'running';
-      else if (operation.status === 'succeeded') status = 'success';
-      else if (operation.status === 'failed') status = 'failed';
-      else if (operation.status === 'cancelled') status = 'pending';
-    }
-    if (!status) return visibleStages;
-
-    // A requested deployment is queued, not running, until all build stages
-    // of the exact artifact-producing run have succeeded.
-    if (
-      status === 'running' &&
-      !visibleStages.slice(0, deployIndex).every((stage) => stage.status === 'success')
-    ) {
-      status = 'pending';
-    }
-    return [
-      ...visibleStages,
-      { name: 'publish', status, url: null, source: 'platform' as const },
-    ];
-  }
-
-  // Gitea commit status context has the form "<workflow> / <job> (<event>)".
-  private jobFromContext(context: string): string | null {
-    if (!context) return null;
-    const noEvent = context.replace(/\s*\([^)]*\)\s*$/, '');
-    const job = noEvent.includes('/')
-      ? noEvent.slice(noEvent.lastIndexOf('/') + 1)
-      : noEvent;
-    return job.trim().toLowerCase();
-  }
-
-  private mapCiStatus(state: string): StageStatus {
-    if (state === 'success') return 'success';
-    if (state === 'failure' || state === 'error') return 'failed';
-    return 'running'; // Gitea 'pending' = job is executing or queued
   }
 
   private toDomain(row: ProjectRow): Project {
