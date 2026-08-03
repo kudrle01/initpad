@@ -15,10 +15,15 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
 
 FROM base AS runtime
+ENV APP_ENV=production \
+    APP_DEBUG=false \
+    CACHE_STORE=file \
+    QUEUE_CONNECTION=sync \
+    SESSION_DRIVER=file
 COPY . .
 COPY --from=production-deps /app/vendor ./vendor
 RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache \
  && chown -R www-data:www-data /app
 USER www-data
 EXPOSE 8080
-CMD ["php", "-S", "0.0.0.0:8080", "-t", "public", "public/index.php"]
+CMD ["sh", "/app/docker-entrypoint.sh"]

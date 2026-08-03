@@ -6,3 +6,7 @@ Route::get('/', fn () => response()->json([
     'service' => '{{projectName}}',
     'status' => 'ok',
 ]));
+
+Route::get('/health', fn () => response()->json([
+    'status' => 'ok',
+]));

@@ -1,0 +1,14 @@
+/.env
+/.env.*
+/.phpunit.cache
+/vendor/
+/storage/*.key
+/storage/logs/
+/storage/framework/cache/*
+!/storage/framework/cache/.gitkeep
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitkeep
+/storage/framework/views/*
+!/storage/framework/views/.gitkeep
+/bootstrap/cache/*
+!/bootstrap/cache/.gitkeep

@@ -13,10 +13,12 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
 
 FROM base AS runtime
-ENV APP_ENV=prod APP_DEBUG=0 APP_SECRET=change-me
+ENV APP_ENV=prod APP_DEBUG=0
 COPY . .
 COPY --from=production-deps /app/vendor ./vendor
-RUN mkdir -p var/cache var/log && chown -R www-data:www-data /app
+RUN composer dump-autoload --no-dev --classmap-authoritative --no-interaction \
+ && mkdir -p var/cache var/log \
+ && chown -R www-data:www-data /app
 USER www-data
 EXPOSE 8080
-CMD ["php", "-S", "0.0.0.0:8080", "-t", "public", "public/index.php"]
+CMD ["sh", "/app/docker-entrypoint.sh"]

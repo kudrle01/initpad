@@ -581,8 +581,23 @@ nadále jedou přes build + upload `dist/` bez extrakce.
 **Kompromisy / na co pozor.** URL končí na `/www/` či `/public/`, protože na
 sdíleném hostingu obvykle nelze změnit docroot. `vendor/` znamená tisíce souborů,
 takže upload po souborech přes SFTP je pomalejší. Registry image musí existovat
-před promote na prod. Laravel potřebuje per-environment `APP_KEY`; produkční
-správa runtime konfigurace patří do budoucího secret-management rozšíření.
+před promote na prod. Stabilní Laravel `APP_KEY` a Symfony `APP_SECRET` se
+nastavují jako per-environment secrety podle ADR-061.
+
+**Upřesnění runtime kontraktu (2026-08-03).** Golden-path image musí být po
+vygenerování ihned spustitelný, ale nesmí sdílet klíč zapečený do všech
+projektů. Laravel a Symfony proto při chybějícím frameworkovém klíči vytvoří
+jen pro aktuální kontejner náhodný fallback, který se nezapíše do image ani
+logu; trvalé sessions a podepsaná data vyžadují explicitní secret z ADR-061.
+Laravel bez backing služeb používá file-backed cache/sessions a jeho `/health`
+prochází stejným HTTP middlewarem jako aplikace. Symfony verzovaně obsahuje
+nesenzitivní `.env.dist`, produkce nemá zapnutý test mode a optimalizovaný
+autoload se generuje až nad kompletním zdrojovým stromem.
+
+Samotný `docker build` není důkaz funkčního runtime. CI Laravel/Symfony po
+sestavení image nastartuje kontejner a ověří strukturovanou odpověď skutečné
+aplikace. Frameworkové testy navíc vyžadují 404 pro projektové soubory jako
+`composer.json` a `.env`; server vždy publikuje jen deklarovaný `webRoot`.
 
 ---
 

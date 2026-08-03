@@ -6,7 +6,7 @@
   "runtime": "php",
   "compatibleProviders": ["docker", "sftp"],
   "port": 8080,
-  "healthPath": "/up",
+  "healthPath": "/health",
   "description": "Laravel application with committed source, locked Composer dependencies and an HTTP test suite.",
   "buildArtifactPath": "/app",
   "webRoot": "public",
