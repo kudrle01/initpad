@@ -1,20 +1,10 @@
-import { ProjectsService } from './projects.service';
+import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 
 function make(prisma: Record<string, unknown>, artifactStore: Record<string, unknown>) {
-  return new ProjectsService(
-    prisma as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    artifactStore as never,
-  );
+  return new ProjectArtifactLifecycle(prisma as never, artifactStore as never);
 }
 
-describe('ProjectsService.runArtifactRetention', () => {
+describe('ProjectArtifactLifecycle.runRetention', () => {
   it('deletes the object and demotes the row for an unreferenced expired artifact', async () => {
     const updateMany = jest.fn(async () => ({ count: 1 }));
     const prisma = {
@@ -28,7 +18,7 @@ describe('ProjectsService.runArtifactRetention', () => {
     const del = jest.fn(async () => undefined);
     const service = make(prisma, { delete: del });
 
-    await expect(service.runArtifactRetention()).resolves.toEqual({ removed: 1, kept: 0 });
+    await expect(service.runRetention()).resolves.toEqual({ removed: 1, kept: 0 });
     expect(del).toHaveBeenCalledWith('artifacts/ws/pr/a1/d.tar');
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -50,7 +40,7 @@ describe('ProjectsService.runArtifactRetention', () => {
     const del = jest.fn();
     const service = make(prisma, { delete: del });
 
-    await expect(service.runArtifactRetention()).resolves.toEqual({ removed: 0, kept: 1 });
+    await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
     expect(del).not.toHaveBeenCalled();
     expect(prisma.buildArtifact.updateMany).not.toHaveBeenCalled();
   });
@@ -67,7 +57,7 @@ describe('ProjectsService.runArtifactRetention', () => {
     const del = jest.fn();
     const service = make(prisma, { delete: del });
 
-    await expect(service.runArtifactRetention()).resolves.toEqual({ removed: 0, kept: 1 });
+    await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
     expect(del).not.toHaveBeenCalled();
   });
 
@@ -85,7 +75,7 @@ describe('ProjectsService.runArtifactRetention', () => {
     });
     const service = make(prisma, { delete: del });
 
-    await expect(service.runArtifactRetention()).resolves.toEqual({ removed: 0, kept: 1 });
+    await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
     expect(prisma.buildArtifact.updateMany).not.toHaveBeenCalled();
   });
 
@@ -99,10 +89,49 @@ describe('ProjectsService.runArtifactRetention', () => {
     const service = make(prisma, { delete: jest.fn() });
     const now = new Date('2026-07-20T00:00:00Z');
 
-    await service.runArtifactRetention(now);
+    await service.runRetention(now);
 
     const arg = (findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }])[0];
     expect(arg.where).toMatchObject({ storageKind: 'object-store' });
     expect(arg.where).toHaveProperty('createdAt');
+  });
+
+  it('purges every durable object belonging to a deleted project', async () => {
+    const prisma = {
+      buildArtifact: {
+        findMany: jest.fn(async () => [
+          { storageRef: 'artifacts/ws/project/a1/d1.tar' },
+          { storageRef: 'artifacts/ws/project/a2/d2.tar' },
+        ]),
+      },
+    };
+    const del = jest.fn(async () => undefined);
+    const service = make(prisma, { delete: del });
+
+    await expect(service.purgeProjectObjects('project')).resolves.toEqual([]);
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(prisma.buildArtifact.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ projectId: 'project' }) }),
+    );
+  });
+
+  it('returns cleanup debt without hiding successful object deletions', async () => {
+    const prisma = {
+      buildArtifact: {
+        findMany: jest.fn(async () => [
+          { storageRef: 'artifacts/ws/project/ok.tar' },
+          { storageRef: 'artifacts/ws/project/blocked.tar' },
+        ]),
+      },
+    };
+    const del = jest.fn(async (key: string) => {
+      if (key.endsWith('blocked.tar')) throw new Error('access denied');
+    });
+    const service = make(prisma, { delete: del });
+
+    await expect(service.purgeProjectObjects('project')).resolves.toEqual([
+      'artifacts/ws/project/blocked.tar: access denied',
+    ]);
+    expect(del).toHaveBeenCalledTimes(2);
   });
 });

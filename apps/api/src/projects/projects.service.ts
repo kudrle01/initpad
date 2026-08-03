@@ -61,6 +61,7 @@ import { CI_RUNNING_REASON, CI_WAITING_REASON } from './ci-state';
 import { pipelineStages } from './project-pipeline';
 import { ProjectQueries } from './project-queries';
 import { projectView } from './project-view';
+import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -85,6 +86,7 @@ type ResolvedEnvironmentTarget = {
 export class ProjectsService implements OnModuleInit {
   private readonly logger = new Logger('ProjectsService');
   private readonly queries: ProjectQueries;
+  private readonly artifactLifecycle: ProjectArtifactLifecycle;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -98,6 +100,7 @@ export class ProjectsService implements OnModuleInit {
     @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
   ) {
     this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
+    this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore);
   }
 
   async onModuleInit(): Promise<void> {
@@ -2476,7 +2479,7 @@ export class ProjectsService implements OnModuleInit {
     // cascade-deleted (ADR-059 §7). Storage failures must not be reported as a
     // successful deletion: for user-initiated removal we surface them (unless the
     // caller explicitly accepts cleanup debt); a reactive webhook removal logs.
-    const artifactCleanupFailures = await this.purgeArtifactObjects(row.id);
+    const artifactCleanupFailures = await this.artifactLifecycle.purgeProjectObjects(row.id);
     if (
       artifactCleanupFailures.length &&
       opts.repoAction !== 'gone' &&
@@ -2495,67 +2498,13 @@ export class ProjectsService implements OnModuleInit {
     await this.prisma.project.delete({ where: { id: row.id } });
   }
 
-  // Deletes a project's durable artifact objects from the store. Returns the
-  // list of object keys that could not be removed so the caller can decide
-  // whether to surface or accept the cleanup debt. Store delete is idempotent.
-  private async purgeArtifactObjects(projectId: string): Promise<string[]> {
-    const artifacts = await this.prisma.buildArtifact.findMany({
-      where: { projectId, storageKind: 'object-store', storageRef: { not: null } },
-      select: { storageRef: true },
-    });
-    const failures: string[] = [];
-    for (const artifact of artifacts) {
-      if (!artifact.storageRef) continue;
-      try {
-        await this.artifactStore.delete(artifact.storageRef);
-      } catch (error) {
-        failures.push(`${artifact.storageRef}: ${(error as Error).message}`);
-      }
-    }
-    return failures;
-  }
-
   // Retention GC (ADR-059 §7): drops the durable objects of verified artifacts
   // older than the configured retention window, but never one still referenced
   // by a live Environment or an unfinished DeploymentOperation. The DB row is
   // kept (history stays intact for finished operations) but demoted so it is no
   // longer treated as deployable; a later deploy simply rebuilds.
   async runArtifactRetention(now: Date = new Date()): Promise<{ removed: number; kept: number }> {
-    const cutoff = new Date(now.getTime() - config.artifactStore.retentionDays * 86_400_000);
-    const stale = await this.prisma.buildArtifact.findMany({
-      where: { storageKind: 'object-store', storageRef: { not: null }, createdAt: { lt: cutoff } },
-      select: { id: true, storageRef: true },
-    });
-    let removed = 0;
-    let kept = 0;
-    for (const artifact of stale) {
-      if (!artifact.storageRef) continue;
-      if (await this.artifactIsReferenced(artifact.id)) {
-        kept += 1;
-        continue;
-      }
-      try {
-        await this.artifactStore.delete(artifact.storageRef);
-      } catch (error) {
-        this.logger.warn(
-          `Retention: could not delete object ${artifact.storageRef}: ${(error as Error).message}`,
-        );
-        kept += 1;
-        continue;
-      }
-      await this.prisma.buildArtifact.updateMany({
-        where: { id: artifact.id },
-        data: {
-          status: 'failed',
-          error: 'Expired by retention policy',
-          storageKind: null,
-          storageRef: null,
-        },
-      });
-      removed += 1;
-    }
-    if (removed) this.logger.log(`Retention GC removed ${removed} expired artifact object(s)`);
-    return { removed, kept };
+    return this.artifactLifecycle.runRetention(now);
   }
 
   // Job-scoped presigned GET for a verified artifact (ADR-059 §8). Returns a
@@ -2566,21 +2515,7 @@ export class ProjectsService implements OnModuleInit {
   async presignArtifactDownload(
     buildArtifactId: string,
   ): Promise<{ url: string; expiresInSeconds: number }> {
-    const artifact = await this.prisma.buildArtifact.findFirst({
-      where: {
-        id: buildArtifactId,
-        status: 'available',
-        storageKind: 'object-store',
-        storageRef: { not: null },
-      },
-      select: { storageRef: true },
-    });
-    if (!artifact?.storageRef) {
-      throw new NotFoundException('No downloadable build artifact exists for this id');
-    }
-    const expiresInSeconds = config.artifactStore.presignTtlSeconds;
-    const url = await this.artifactStore.presignGet(artifact.storageRef, expiresInSeconds);
-    return { url, expiresInSeconds };
+    return this.artifactLifecycle.presignDownload(buildArtifactId);
   }
 
   // Decrypted application config & secrets for an environment (ADR-061), as a
@@ -2593,17 +2528,6 @@ export class ProjectsService implements OnModuleInit {
       map[row.key] = row.isSecret ? decryptSecret(row.value) : row.value;
     }
     return map;
-  }
-
-  // An artifact is protected from GC while any environment points at it or an
-  // in-flight deployment operation still needs it.
-  private async artifactIsReferenced(buildArtifactId: string): Promise<boolean> {
-    const envRefs = await this.prisma.environment.count({ where: { buildArtifactId } });
-    if (envRefs > 0) return true;
-    const liveOps = await this.prisma.deploymentOperation.count({
-      where: { buildArtifactId, finishedAt: null },
-    });
-    return liveOps > 0;
   }
 
   // Backfill for ADR-060: every environment that already runs on a target must

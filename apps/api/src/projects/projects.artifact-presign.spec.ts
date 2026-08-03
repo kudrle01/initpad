@@ -1,21 +1,11 @@
-import { ProjectsService } from './projects.service';
+import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 import { config } from '../config';
 
 function make(prisma: Record<string, unknown>, artifactStore: Record<string, unknown>) {
-  return new ProjectsService(
-    prisma as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    artifactStore as never,
-  );
+  return new ProjectArtifactLifecycle(prisma as never, artifactStore as never);
 }
 
-describe('ProjectsService.presignArtifactDownload', () => {
+describe('ProjectArtifactLifecycle.presignDownload', () => {
   const savedTtl = config.artifactStore.presignTtlSeconds;
   afterEach(() => {
     config.artifactStore.presignTtlSeconds = savedTtl;
@@ -31,7 +21,7 @@ describe('ProjectsService.presignArtifactDownload', () => {
     };
     const service = make(prisma, { presignGet });
 
-    await expect(service.presignArtifactDownload('a1')).resolves.toEqual({
+    await expect(service.presignDownload('a1')).resolves.toEqual({
       url: 'https://bucket/obj?sig=abc',
       expiresInSeconds: 180,
     });
@@ -46,7 +36,7 @@ describe('ProjectsService.presignArtifactDownload', () => {
     const prisma = { buildArtifact: { findFirst: jest.fn(async () => null) } };
     const service = make(prisma, { presignGet });
 
-    await expect(service.presignArtifactDownload('missing')).rejects.toThrow(
+    await expect(service.presignDownload('missing')).rejects.toThrow(
       'No downloadable build artifact',
     );
     expect(presignGet).not.toHaveBeenCalled();
