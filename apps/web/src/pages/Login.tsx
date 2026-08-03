@@ -23,6 +23,7 @@ export default function Login() {
   const [githubEnabled, setGithubEnabled] = useState(false);
   const [passwordAuthEnabled, setPasswordAuthEnabled] = useState(false);
   const [edition, setEdition] = useState<'self-hosted' | 'saas'>('self-hosted');
+  const [configLoading, setConfigLoading] = useState(true);
   const [configError, setConfigError] = useState(false);
   const oauthError = oauthErrorMessage(params.get('error'));
 
@@ -34,7 +35,8 @@ export default function Login() {
         setPasswordAuthEnabled(x.passwordAuthEnabled);
         setEdition(x.edition);
       })
-      .catch(() => setConfigError(true));
+      .catch(() => setConfigError(true))
+      .finally(() => setConfigLoading(false));
   }, []);
 
   useEffect(() => {
@@ -76,7 +78,19 @@ export default function Login() {
           </p>
         )}
 
-        {githubEnabled && (
+        {configLoading && (
+          <p role="status" className="mt-6 text-sm text-muted-foreground">
+            Loading sign-in options…
+          </p>
+        )}
+
+        {configError && (
+          <p role="alert" className="mt-6 rounded-md bg-destructive/10 p-2.5 text-sm text-destructive">
+            Authentication service is unavailable. Refresh and try again.
+          </p>
+        )}
+
+        {!configLoading && githubEnabled && (
           <div className="mt-6">
             <a
               href="/api/auth/github?mode=login"
@@ -92,7 +106,7 @@ export default function Login() {
           </div>
         )}
 
-        {passwordAuthEnabled && <>
+        {!configLoading && passwordAuthEnabled && <>
         <div className={cn('mb-4 flex gap-1 rounded-md bg-secondary p-1', !githubEnabled && 'mt-6')}>
           {([
             'signin',
@@ -159,12 +173,6 @@ export default function Login() {
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {configError && (
-            <p role="alert" className="text-sm text-destructive">
-              Authentication service is unavailable. Refresh and try again.
-            </p>
-          )}
-
           <Button type="submit" disabled={busy} className="mt-1 w-full">
             {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
           </Button>
@@ -177,21 +185,21 @@ export default function Login() {
         )}
         </>}
 
-        {passwordAuthEnabled && !registrationAvailable && !configError && (
+        {!configLoading && passwordAuthEnabled && !registrationAvailable && !configError && (
           <p className="mt-4 text-xs text-muted-foreground">
             Accounts are created by the instance administrator. Ask your InitPad admin for a
             sign-in link.
           </p>
         )}
 
-        {!passwordAuthEnabled && edition === 'saas' && githubEnabled && !configError && (
+        {!configLoading && !passwordAuthEnabled && edition === 'saas' && githubEnabled && !configError && (
           <p className="mt-4 text-xs text-muted-foreground">
             Your GitHub account creates or opens your InitPad account. Repository access is granted
             separately through the GitHub App.
           </p>
         )}
 
-        {!passwordAuthEnabled && !githubEnabled && !configError && (
+        {!configLoading && !passwordAuthEnabled && !githubEnabled && !configError && (
           <p role="alert" className="mt-4 text-sm text-destructive">
             GitHub sign-in is not configured for this SaaS installation.
           </p>
