@@ -111,7 +111,13 @@ export class WorkspacesService {
       select: { workspaceId: true },
     });
     if (!project) throw new NotFoundException(`Project '${projectId}' not found`);
-    const role = await this.require(userId, project.workspaceId, permission);
+    const role = await this.roleFor(userId, project.workspaceId);
+    // A project outside the caller's workspaces must be indistinguishable from
+    // an unknown id. Members still receive 403 when their role is insufficient.
+    if (!role) throw new NotFoundException(`Project '${projectId}' not found`);
+    if (!this.can(role, permission)) {
+      throw new ForbiddenException(`Workspace ${permission} access required`);
+    }
     return { workspaceId: project.workspaceId, role };
   }
 

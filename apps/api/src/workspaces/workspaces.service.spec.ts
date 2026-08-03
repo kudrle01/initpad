@@ -64,6 +64,30 @@ describe('WorkspacesService tenant isolation', () => {
     await expect(service.requireProject('u1', 'missing', 'read')).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('hides a project in another workspace as 404', async () => {
+    const prisma = {
+      project: { findUnique: jest.fn(async () => ({ workspaceId: 'foreign-workspace' })) },
+      workspaceMember: { findUnique: jest.fn(async () => null) },
+    };
+    const service = new WorkspacesService(prisma as never, {} as never);
+
+    await expect(service.requireProject('stranger', 'foreign-project', 'read')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('returns 403 when a workspace member lacks the requested project permission', async () => {
+    const prisma = {
+      project: { findUnique: jest.fn(async () => ({ workspaceId: 'team' })) },
+      workspaceMember: { findUnique: jest.fn(async () => ({ role: 'viewer' })) },
+    };
+    const service = new WorkspacesService(prisma as never, {} as never);
+
+    await expect(service.requireProject('viewer', 'project-1', 'write')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
   it('grants repository access when an admin adds a member', async () => {
     const prisma = {
       user: { findFirst: jest.fn(async () => ({ id: 'u2', username: 'bob' })) },
