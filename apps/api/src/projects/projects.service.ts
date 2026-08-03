@@ -57,6 +57,7 @@ import { ProjectQueries } from './project-queries';
 import { projectView } from './project-view';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
+import { ProjectDeploymentOperations } from './project-deployment-operations';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -77,6 +78,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly queries: ProjectQueries;
   private readonly artifactLifecycle: ProjectArtifactLifecycle;
   private readonly environmentTargets: ProjectEnvironmentTargets;
+  private readonly operations: ProjectDeploymentOperations;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -92,13 +94,14 @@ export class ProjectsService implements OnModuleInit {
     this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
+    this.operations = new ProjectDeploymentOperations(prisma);
   }
 
   async onModuleInit(): Promise<void> {
     await this.reconcileRepositoryIdentities();
     await this.migrateLegacyCiTokens();
     await this.reconcileCiRuntimeSecrets();
-    await this.recoverInterruptedOperations();
+    await this.operations.recoverInterrupted();
     await this.recoverInterruptedArtifactIngestions();
     await this.environmentTargets.reconcileAllocations();
     // Best-effort retention sweep; never blocks startup on storage issues.
@@ -244,114 +247,6 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
-  private async recoverInterruptedOperations(): Promise<void> {
-    try {
-      const interrupted = await this.prisma.deploymentOperation.findMany({
-        where: { status: { in: ['running', 'cancelled'] }, finishedAt: null },
-        select: { id: true, status: true },
-      });
-      for (const operation of interrupted) {
-        const cancelled = operation.status === 'cancelled';
-        await this.prisma.$transaction([
-          this.prisma.deploymentOperation.update({
-            where: { id: operation.id },
-            data: {
-              status: cancelled ? 'cancelled' : 'failed',
-              message: cancelled ? 'Cancellation completed during API restart' : 'Interrupted by API restart',
-              finishedAt: new Date(),
-            },
-          }),
-          this.prisma.environment.updateMany({
-            where: { activeOperationId: operation.id },
-            data: {
-              activeOperationId: null,
-              status: cancelled ? 'empty' : 'failed',
-              statusReason: cancelled ? null : 'Deployment was interrupted by an API restart. Deploy to retry.',
-              ...(cancelled
-                ? {
-                    version: null,
-                    buildArtifactId: null,
-                    url: null,
-                    allocatedPort: null,
-                    deploymentRequired: false,
-                  }
-                : {}),
-            },
-          }),
-        ]);
-      }
-    } catch (e) {
-      this.logger.warn(`Deployment operation recovery skipped: ${(e as Error).message}`);
-    }
-  }
-
-  private async beginOperation(
-    projectId: string,
-    envName: EnvName,
-    kind: string,
-    version: string | null,
-    buildArtifactId?: string | null,
-  ): Promise<string> {
-    const env = await this.prisma.environment.findUnique({
-      where: { projectId_name: { projectId, name: envName } },
-      include: { target: { select: { name: true } } },
-    });
-    if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
-    const operation = await this.prisma.deploymentOperation.create({
-      data: {
-        environmentId: env.id,
-        kind,
-        status: 'running',
-        version,
-        buildArtifactId: buildArtifactId ?? null,
-        message: kind === 'ci-retry' ? 'Waiting for GitHub Actions build' : 'Preparing deployment',
-        targetIdSnapshot: env.targetId,
-        targetName: env.target?.name ?? env.provider,
-        providerSnapshot: env.provider,
-      },
-    });
-    const claimed = await this.prisma.environment.updateMany({
-      where: { id: env.id, activeOperationId: null },
-      data: {
-        activeOperationId: operation.id,
-        status: 'deploying',
-        statusReason: kind === 'start' ? 'Starting environment' : 'Preparing deployment',
-        ...(kind !== 'start' ? { deploymentRequired: true } : {}),
-      },
-    });
-    if (claimed.count === 1) return operation.id;
-    await this.prisma.deploymentOperation.update({
-      where: { id: operation.id },
-      data: { status: 'cancelled', message: 'Another operation is already active', finishedAt: new Date() },
-    });
-    throw new BadRequestException(`Environment '${envName}' already has an active operation`);
-  }
-
-  private async completeOperation(
-    operationId: string,
-    status: 'succeeded' | 'failed' | 'cancelled',
-    message?: string,
-  ): Promise<void> {
-    await this.prisma.deploymentOperation
-      .update({
-        where: { id: operationId },
-        data: { status, message, finishedAt: new Date() },
-      })
-      .catch(() => undefined);
-    await this.prisma.environment.updateMany({
-      where: { activeOperationId: operationId },
-      data: { activeOperationId: null },
-    });
-  }
-
-  private async operationCancelled(operationId: string): Promise<boolean> {
-    const op = await this.prisma.deploymentOperation.findUnique({
-      where: { id: operationId },
-      select: { status: true },
-    });
-    return !op || op.status === 'cancelled';
-  }
-
   private async scheduleDeployment(
     projectId: string,
     envName: EnvName,
@@ -360,7 +255,7 @@ export class ProjectsService implements OnModuleInit {
     kind: string,
     buildArtifactId?: string | null,
   ): Promise<void> {
-    const operationId = await this.beginOperation(
+    const operationId = await this.operations.begin(
       projectId,
       envName,
       kind,
@@ -545,7 +440,7 @@ export class ProjectsService implements OnModuleInit {
       },
     });
     if (closed.count !== 1) return;
-    if (operation) await this.completeOperation(operation.id, 'failed', reason);
+    if (operation) await this.operations.complete(operation.id, 'failed', reason);
     this.logger.warn(`Reconciled failed CI wait: ${repository.fullName} (${sha.slice(0, 7)})`);
   }
 
@@ -1312,7 +1207,7 @@ export class ProjectsService implements OnModuleInit {
   ): Promise<void> {
     try {
       const published = await this.deployEnv(projectId, envName, version, useRegistry, operationId);
-      if (published) await this.completeOperation(operationId, 'succeeded');
+      if (published) await this.operations.complete(operationId, 'succeeded');
     } catch (e) {
       this.logger.error(`Deploy to ${envName} failed: ${(e as Error).message}`);
       await this.prisma.environment
@@ -1321,7 +1216,7 @@ export class ProjectsService implements OnModuleInit {
           data: { status: 'failed', statusReason: (e as Error).message, activeOperationId: null },
         })
         .catch(() => undefined);
-      await this.completeOperation(operationId, 'failed', (e as Error).message);
+      await this.operations.complete(operationId, 'failed', (e as Error).message);
     }
   }
 
@@ -1456,7 +1351,7 @@ export class ProjectsService implements OnModuleInit {
               activeOperationId: null,
             },
           });
-          await this.completeOperation(operation.id, 'failed', reason);
+          await this.operations.complete(operation.id, 'failed', reason);
         } finally {
           await scm.deleteTag(repository, retryTag, actor);
         }
@@ -1466,7 +1361,7 @@ export class ProjectsService implements OnModuleInit {
           this.logger.log(`Ignoring failed CI callback for disabled dev environment: ${repo}`);
           return;
         }
-        const operationId = await this.beginOperation(
+        const operationId = await this.operations.begin(
           project.id,
           'dev',
           'ci-deploy',
@@ -1488,7 +1383,7 @@ export class ProjectsService implements OnModuleInit {
             activeOperationId: null,
           },
         });
-        await this.completeOperation(operationId, 'failed', reason);
+        await this.operations.complete(operationId, 'failed', reason);
       }
       await this.prisma.project.update({
         where: { id: project.id },
@@ -1595,7 +1490,7 @@ export class ProjectsService implements OnModuleInit {
     // (pull + run) finishes afterwards. useRegistry=true: run exactly the
     // image CI built and tested.
     if (buildArtifact) {
-      const operationId = await this.beginOperation(project.id, 'dev', 'ci-deploy', version);
+      const operationId = await this.operations.begin(project.id, 'dev', 'ci-deploy', version);
       await this.queueArtifactIngestion(project.id, repository, buildArtifact, operationId);
     } else {
       await this.scheduleDeployment(project.id, 'dev', version, true, 'ci-deploy');
@@ -1653,7 +1548,7 @@ export class ProjectsService implements OnModuleInit {
         where: { projectId, name: 'dev', activeOperationId: operationId },
         data: { status: 'failed', statusReason: message, activeOperationId: null },
       }).catch(() => undefined);
-      await this.completeOperation(operationId, 'failed', message);
+      await this.operations.complete(operationId, 'failed', message);
       throw error;
     }
     void this.ingestArtifactAndDeploy(projectId, repository, artifact, operationId);
@@ -1722,7 +1617,7 @@ export class ProjectsService implements OnModuleInit {
           error: null,
         },
       });
-      if (await this.operationCancelled(operationId)) {
+      if (await this.operations.cancelled(operationId)) {
         await this.prisma.environment.updateMany({
           where: { projectId, name: 'dev', activeOperationId: operationId },
           data: {
@@ -1733,7 +1628,11 @@ export class ProjectsService implements OnModuleInit {
             activeOperationId: null,
           },
         });
-        await this.completeOperation(operationId, 'cancelled', 'Cancelled during artifact ingestion');
+        await this.operations.complete(
+          operationId,
+          'cancelled',
+          'Cancelled during artifact ingestion',
+        );
         return;
       }
       await this.deployEnvInBackground(projectId, 'dev', artifact.commitSha, true, operationId);
@@ -1758,7 +1657,7 @@ export class ProjectsService implements OnModuleInit {
         where: { projectId, name: 'dev', activeOperationId: operationId },
         data: { status: 'failed', statusReason: message, activeOperationId: null },
       }).catch(() => undefined);
-      await this.completeOperation(operationId, 'failed', message);
+      await this.operations.complete(operationId, 'failed', message);
       this.logger.error(`Artifact ingestion failed for ${repository.fullName}: ${message}`);
     } finally {
       download?.cleanup();
@@ -1976,7 +1875,7 @@ export class ProjectsService implements OnModuleInit {
         'initpad-image.tar',
       );
       if (recovered) {
-        const operationId = await this.beginOperation(
+        const operationId = await this.operations.begin(
           id,
           'dev',
           'artifact-recovery',
@@ -1994,7 +1893,7 @@ export class ProjectsService implements OnModuleInit {
       this.assertGitHubCiCallback(repository);
     }
 
-    const operationId = await this.beginOperation(id, 'dev', 'ci-retry', sha);
+    const operationId = await this.operations.begin(id, 'dev', 'ci-retry', sha);
     await this.prisma.environment.updateMany({
       where: { id: env.id, activeOperationId: operationId },
       data: {
@@ -2012,7 +1911,7 @@ export class ProjectsService implements OnModuleInit {
           activeOperationId: null,
         },
       });
-      await this.completeOperation(operationId, 'failed', (e as Error).message);
+      await this.operations.complete(operationId, 'failed', (e as Error).message);
       throw new BadRequestException((e as Error).message);
     }
     return this.get(id);
@@ -2098,7 +1997,7 @@ export class ProjectsService implements OnModuleInit {
     if (!env.version) {
       throw new BadRequestException(`Environment '${envName}' has nothing to start`);
     }
-    const operationId = await this.beginOperation(id, envName, 'start', env.version);
+    const operationId = await this.operations.begin(id, envName, 'start', env.version);
     void this.startEnvInBackground(id, envName, operationId);
     return this.get(id);
   }
@@ -2201,7 +2100,7 @@ export class ProjectsService implements OnModuleInit {
         connection: this.environmentTargets.connection(env),
         allocation: this.environmentTargets.allocation(env),
       });
-      if (await this.operationCancelled(operationId)) {
+      if (await this.operations.cancelled(operationId)) {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: slug,
           env: envName,
@@ -2220,7 +2119,7 @@ export class ProjectsService implements OnModuleInit {
             activeOperationId: null,
           },
         });
-        await this.completeOperation(operationId, 'cancelled', 'Cancelled by user');
+        await this.operations.complete(operationId, 'cancelled', 'Cancelled by user');
         return;
       }
       await this.prisma.environment.updateMany({
@@ -2231,7 +2130,7 @@ export class ProjectsService implements OnModuleInit {
           statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
         },
       });
-      await this.completeOperation(
+      await this.operations.complete(
         operationId,
         result.status === 'failed' ? 'failed' : 'succeeded',
         result.reason,
@@ -2243,7 +2142,7 @@ export class ProjectsService implements OnModuleInit {
           data: { status: 'failed', statusReason: (e as Error).message, activeOperationId: null },
         })
         .catch(() => undefined);
-      await this.completeOperation(operationId, 'failed', (e as Error).message);
+      await this.operations.complete(operationId, 'failed', (e as Error).message);
     }
   }
 
@@ -2781,7 +2680,7 @@ export class ProjectsService implements OnModuleInit {
         allowBuildFallback: !useRegistry,
         envVars,
       });
-      if (await this.operationCancelled(operationId)) {
+      if (await this.operations.cancelled(operationId)) {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: this.deploySlug(repository),
           env: envName,
@@ -2802,7 +2701,7 @@ export class ProjectsService implements OnModuleInit {
             deploymentRequired: false,
           },
         });
-        await this.completeOperation(operationId, 'cancelled', 'Cancelled by user');
+        await this.operations.complete(operationId, 'cancelled', 'Cancelled by user');
         return false;
       }
       if (result.status === 'failed') {

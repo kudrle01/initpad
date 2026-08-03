@@ -184,7 +184,9 @@ describe('ProjectsService immutable artifact binding', () => {
     };
     const service = make(prisma, {}, { provider: jest.fn(() => scm) });
     jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
-    jest.spyOn(service as any, 'beginOperation').mockResolvedValue('operation-1');
+    jest
+      .spyOn((service as any).operations, 'begin')
+      .mockResolvedValue('operation-1');
     const queue = jest.spyOn(service as any, 'queueArtifactIngestion').mockResolvedValue(undefined);
 
     await service.runAgain('project-1');

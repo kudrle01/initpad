@@ -64,8 +64,12 @@ function makeService(
     store as never,
   );
   // Isolate the ingest unit from the deploy tail.
-  jest.spyOn(service as never as { operationCancelled: () => Promise<boolean> }, 'operationCancelled')
-    .mockResolvedValue(false as never);
+  const operations = (
+    service as never as {
+      operations: { cancelled: (operationId: string) => Promise<boolean> };
+    }
+  ).operations;
+  jest.spyOn(operations, 'cancelled').mockResolvedValue(false);
   jest
     .spyOn(service as never as { deployEnvInBackground: () => Promise<void> }, 'deployEnvInBackground')
     .mockResolvedValue(undefined as never);
