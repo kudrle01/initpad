@@ -72,7 +72,7 @@ export function DeleteProjectDialog({
         }
       }}
     >
-      <DialogContent hideClose className="max-h-[calc(100vh-2rem)] overflow-y-auto">
+      <DialogContent hideClose>
         <DialogHeader>
           <DialogTitle>
             <Trash2 className="h-[18px] w-[18px] text-destructive" /> Delete project
@@ -89,9 +89,9 @@ export function DeleteProjectDialog({
           <ul className="mt-2 space-y-1.5 text-muted-foreground">
             {deployed.length ? (
               deployed.map((env) => (
-                <li key={env.name} className="flex items-center justify-between gap-3">
+                <li key={env.name} className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                   <span className="capitalize">{env.name} deployment</span>
-                  <span className="text-xs">
+                  <span className="break-words text-xs sm:text-right">
                     {env.target?.name ?? env.provider} · {env.status}
                   </span>
                 </li>
@@ -105,11 +105,11 @@ export function DeleteProjectDialog({
                 <span className="mt-0.5 block break-all text-xs">{env.statusReason}</span>
               </li>
             ))}
-            <li className="flex items-center justify-between gap-3">
+            <li className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <span>Generated images and packages</span>
               <span className="text-xs">remove</span>
             </li>
-            <li className="flex items-center justify-between gap-3">
+            <li className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <span>InitPad project record</span>
               <span className="text-xs">remove · release workspace name</span>
             </li>

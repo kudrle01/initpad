@@ -13,8 +13,8 @@ export default function RouteError() {
       : 'Something went wrong';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-lg border border-border bg-card p-9 text-center shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
+      <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 text-center shadow-sm sm:p-9">
         <div className="text-4xl font-bold text-primary">{is404 ? '404' : 'Oops'}</div>
         <div className="text-base font-semibold">
           {is404 ? 'Page not found' : 'Something went wrong'}

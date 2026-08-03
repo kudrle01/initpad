@@ -21,7 +21,7 @@ import { StatusDot } from '@/components/atoms/StatusDot';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth';
 import { useLoadable } from '@/hooks/useLoadable';
-import type { EnvName, ProviderKind, Project } from '@/types';
+import type { EnvName, Environment, ProviderKind, Project } from '@/types';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
@@ -31,6 +31,45 @@ const KIND_ICON: Record<ProviderKind, LucideIcon> = {
 
 const ENV_ORDER: Record<EnvName, number> = { dev: 0, test: 1, prod: 2 };
 const FILTERS: (EnvName | 'all')[] = ['all', 'dev', 'test', 'prod'];
+
+function MobileEnvironmentCard({ environment }: { environment: Environment }) {
+  const Icon = KIND_ICON[environment.provider] ?? Server;
+  return (
+    <div className="border-t border-border p-3 md:hidden">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {environment.name}
+        </span>
+        <StatusBadge status={environment.status} />
+      </div>
+      <div className="mt-2 flex min-w-0 items-center gap-1.5 text-sm">
+        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate">{environment.target?.name ?? environment.provider}</span>
+        {environment.target?.scope === 'user' && (
+          <span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            yours
+          </span>
+        )}
+      </div>
+      <div className="mt-1 flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span className="shrink-0 font-mono">
+          {environment.version ? `v${environment.version.slice(0, 7)}` : 'No deployment'}
+        </span>
+        {environment.url && (
+          <a
+            href={environment.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-link flex min-w-0 items-center gap-1"
+          >
+            <ExternalLink className="h-3 w-3 shrink-0" />
+            <span className="truncate">{environment.url.replace(/^https?:\/\//, '')}</span>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function Environments() {
   const { activeWorkspace } = useAuth();
@@ -148,8 +187,12 @@ export default function Environments() {
                   </div>
 
                   {open && (
-                    <div className="overflow-x-auto" role="region" aria-label={`${project.name} environments`} tabIndex={0}>
-                    <table className="min-w-[680px] w-full text-sm">
+                    <div>
+                      {envs.map((environment) => (
+                        <MobileEnvironmentCard key={environment.name} environment={environment} />
+                      ))}
+                      <div className="hidden overflow-x-auto md:block" role="region" aria-label={`${project.name} environments`} tabIndex={0}>
+                      <table className="min-w-[680px] w-full text-sm">
                       <tbody>
                         {envs.map((env) => {
                           const Icon = KIND_ICON[env.provider] ?? Server;
@@ -196,7 +239,8 @@ export default function Environments() {
                           );
                         })}
                       </tbody>
-                    </table>
+                      </table>
+                      </div>
                     </div>
                   )}
                 </div>

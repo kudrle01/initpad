@@ -175,7 +175,7 @@ export default function Admin() {
             <Input type="email" placeholder="E-mail" aria-label="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <Input placeholder="Full name (optional)" aria-label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
             <select
-              className="h-9 rounded-md border border-input bg-card px-2 text-sm"
+              className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
               aria-label="Platform role"
               value={role}
               onChange={(e) => setRole(e.target.value as 'admin' | 'user')}

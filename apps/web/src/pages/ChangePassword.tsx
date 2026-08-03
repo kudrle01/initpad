@@ -33,8 +33,8 @@ export default function ChangePassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-[380px] rounded-lg border border-border bg-card p-9 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)]">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
+      <div className="w-full max-w-[380px] rounded-lg border border-border bg-card p-6 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
         <h1 className="text-[20px] font-semibold tracking-tight">Choose a new password</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {user?.username ? <>Signed in as <strong className="font-medium text-foreground">@{user.username}</strong>. </> : null}

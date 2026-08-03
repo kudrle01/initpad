@@ -118,7 +118,7 @@ function WorkspaceMenu({ compact, onCreate }: { compact?: boolean; onCreate: () 
           type="button"
           className={cn(
             'flex min-h-11 items-center gap-2 rounded-md border border-border bg-background px-3 text-left hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-            compact ? 'max-w-[12rem]' : 'w-full',
+            compact ? 'min-w-0 max-w-[calc(100vw-8rem)]' : 'w-full',
           )}
           title={activeWorkspace?.name ?? 'Workspace'}
           aria-label={`Workspace: ${activeWorkspace?.name ?? 'none'}`}
@@ -137,7 +137,7 @@ function WorkspaceMenu({ compact, onCreate }: { compact?: boolean; onCreate: () 
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent align="start" className="w-[min(16rem,calc(100vw-1.5rem))]">
         <DropdownMenuLabel>Switch workspace</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {workspaces.map((workspace) => (
@@ -251,7 +251,7 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
             </button>
           </DialogTrigger>
           <DialogContent
-            className="left-0 top-0 flex h-dvh w-[min(20rem,88vw)] max-w-none -translate-x-0 -translate-y-0 flex-col gap-0 rounded-none border-y-0 border-l-0 p-0"
+            className="left-0 top-0 flex h-dvh max-h-none w-[min(20rem,88vw)] max-w-none -translate-x-0 -translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-y-0 border-l-0 p-0"
             aria-describedby={undefined}
           >
             <DialogTitle className="sr-only">Navigation</DialogTitle>

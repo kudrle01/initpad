@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
+import { StatusDot } from '@/components/atoms/StatusDot';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import type { Project } from '@/types';
 
@@ -15,6 +16,16 @@ export function ProjectRow({ project, templateName }: { project: Project; templa
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{project.name}</div>
         <div className="truncate text-xs text-muted-foreground">{templateName}</div>
+        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 sm:hidden">
+          {project.environments.map((environment) => (
+            <span
+              key={environment.name}
+              className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground"
+            >
+              <StatusDot status={environment.status} /> {environment.name}
+            </span>
+          ))}
+        </div>
       </div>
       <div className="hidden flex-wrap items-center justify-end gap-1.5 sm:flex">
         {project.environments.map((e) => (

@@ -102,9 +102,9 @@ function ProvisioningNotice({ provisioning }: { provisioning: ProvisioningStatus
       {provisioning.effects.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-current/15 pt-2 text-xs">
           {provisioning.effects.map((effect) => (
-            <li key={effect.key} className="flex items-start justify-between gap-3">
+            <li key={effect.key} className="flex flex-col items-start gap-1 sm:flex-row sm:justify-between sm:gap-3">
               <span>{effect.kind === 'collaborator' ? 'Repository access' : effect.kind}</span>
-              <span className="text-right font-mono">
+              <span className="break-words font-mono sm:text-right">
                 {['compensation_failed', 'reconciliation_required'].includes(effect.status)
                   ? 'cleanup required'
                   : effect.status.replaceAll('_', ' ')}

@@ -52,7 +52,7 @@ export function WorkspaceAdministrationSettings() {
     >
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
-          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-card px-3 text-sm"
+          className="h-11 min-w-0 flex-1 rounded-md border border-input bg-card px-3 text-sm sm:h-9"
           aria-label="Current workspace name"
           value={name}
           onChange={(event) => setName(event.target.value)}

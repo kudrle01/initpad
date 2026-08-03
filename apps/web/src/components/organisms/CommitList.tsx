@@ -83,6 +83,9 @@ export function CommitList({
                 <span className="shrink-0 font-mono text-xs text-muted-foreground">{c.sha.slice(0, 7)}</span>
               )}
               <span className="flex-1 truncate text-sm">{c.message}</span>
+              <span className="sm:hidden" title={ci.label} aria-label={`CI ${ci.label}`}>
+                <StatusDot status={ci.dot} kind="ci" />
+              </span>
               <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{c.author}</span>
               <StatusBadge status={ci.dot} label={ci.label} kind="ci" className="hidden sm:inline-flex" />
             </div>

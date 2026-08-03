@@ -98,8 +98,8 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
                 <span className="text-muted-foreground">
                   {v.isSecret ? <Lock className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
                 </span>
-                <span className="font-mono text-sm font-medium">{v.key}</span>
-                <span className="ml-1 truncate font-mono text-xs text-muted-foreground">
+                <span className="min-w-0 break-all font-mono text-sm font-medium">{v.key}</span>
+                <span className="ml-1 min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
                   {v.isSecret ? '••••••••' : v.value}
                 </span>
                 {canManage && (
@@ -118,7 +118,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
 
             {canManage && (
               <div className="mt-2 flex flex-col gap-2 rounded-md border border-dashed p-3">
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Input
                     placeholder="KEY"
                     value={key}
@@ -133,7 +133,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
                     className="font-mono"
                   />
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <label className="flex items-center gap-2 text-sm text-muted-foreground">
                     <input
                       type="checkbox"
@@ -142,7 +142,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
                     />
                     Secret (encrypted, hidden)
                   </label>
-                  <Button size="sm" disabled={!validKey || saving} onClick={save}>
+                  <Button size="sm" className="self-end sm:self-auto" disabled={!validKey || saving} onClick={save}>
                     {saving ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Save
                   </Button>
                 </div>

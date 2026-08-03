@@ -93,14 +93,14 @@ export function WorkspaceMembersSettings() {
       {canManage && (
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
           <input
-            className="h-9 min-w-0 rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="h-11 min-w-0 rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9"
             placeholder="Username or e-mail"
             aria-label="New member username or e-mail"
             value={identity}
             onChange={(event) => setIdentity(event.target.value)}
           />
           <select
-            className="h-9 rounded-md border border-input bg-card px-2 text-sm"
+            className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
             aria-label="New member role"
             value={role}
             onChange={(event) => setRole(event.target.value as AssignableRole)}
@@ -146,7 +146,7 @@ export function WorkspaceMembersSettings() {
             {canManage && member.role !== 'owner' ? (
               <>
                 <select
-                  className="h-8 rounded-md border border-input bg-card px-2 text-xs"
+                  className="h-11 rounded-md border border-input bg-card px-2 text-xs sm:h-8"
                   aria-label={`Role for ${member.username}`}
                   value={member.role}
                   onChange={(event) => changeRole(member, event.target.value as AssignableRole)}

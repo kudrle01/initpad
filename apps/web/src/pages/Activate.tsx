@@ -35,8 +35,8 @@ export default function Activate() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-9 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)]">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
+      <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-6 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
         <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-base font-bold text-primary-foreground">
           IP
         </span>

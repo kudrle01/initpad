@@ -33,7 +33,7 @@ interface Props {
 }
 
 const selectCls =
-  'h-9 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
+  'h-11 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9';
 
 function defaultCapabilities(kind: 'ssh' | 'sftp'): RuntimeKind[] {
   // The primary SFTP use case is shared PHP hosting (ESO included). Keeping
@@ -116,8 +116,8 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2 flex flex-col gap-1.5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="t-name">Name</Label>
             <Input id="t-name" value={name} placeholder="ESO school server" onChange={(e) => setName(e.target.value)} />
           </div>
@@ -133,7 +133,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             <Input id="t-port" value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
           </div>
 
-          <div className="col-span-2 flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label>Can run</Label>
             <div className="flex flex-wrap gap-1.5">
               {ALL_CAPS.map((c) => {
@@ -164,7 +164,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             </p>
           </div>
 
-          <div className="col-span-2 flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="t-host">Host</Label>
             <Input id="t-host" value={host} placeholder="eso.example.edu" onChange={(e) => setHost(e.target.value)} />
           </div>
@@ -179,7 +179,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               <option value="key">SSH key</option>
             </select>
           </div>
-          <div className="col-span-2 flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="t-secret">{auth === 'key' ? 'Private key (PEM)' : 'Password'}</Label>
             {auth === 'key' ? (
               <textarea
@@ -199,11 +199,11 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               />
             )}
           </div>
-          <div className="col-span-2 flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="t-path">Remote path</Label>
             <Input id="t-path" value={remotePath} placeholder="/www/myapp" onChange={(e) => setRemotePath(e.target.value)} />
           </div>
-          <div className="col-span-2 flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="t-url">Public URL</Label>
             <Input id="t-url" value={publicUrl} placeholder="https://eso.example.edu/~user" onChange={(e) => setPublicUrl(e.target.value)} />
           </div>

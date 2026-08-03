@@ -108,7 +108,7 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
               >
                 <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-medium">{t.name}</span>
                     <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                       {t.scope === 'builtin' ? 'built-in' : 'yours'}
@@ -139,10 +139,10 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
           )}
         </div>
 
-        <DialogFooter className="items-center">
+        <DialogFooter className="items-stretch sm:items-center">
           <Link
             to="/infrastructure"
-            className="text-link mr-auto text-xs font-medium"
+            className="text-link mr-auto self-start py-2 text-xs font-medium sm:py-0"
           >
             Manage targets
           </Link>

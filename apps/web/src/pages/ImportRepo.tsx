@@ -221,13 +221,13 @@ export default function ImportRepo() {
         {preflight && (
           <div className="rounded-lg border border-border bg-card p-5">
             <h2 className="text-[15px] font-semibold">Preflight — {preflight.repo}</h2>
-            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+            <dl className="mt-3 grid grid-cols-1 gap-x-3 gap-y-1 text-sm sm:grid-cols-2 sm:gap-y-2">
               <dt className="text-muted-foreground">Default branch</dt>
-              <dd className="font-medium">{preflight.branch}</dd>
+              <dd className="mb-1 break-all font-medium sm:mb-0">{preflight.branch}</dd>
               <dt className="text-muted-foreground">Runtime</dt>
-              <dd className="font-medium">{preflight.runtime}</dd>
+              <dd className="mb-1 font-medium sm:mb-0">{preflight.runtime}</dd>
               <dt className="text-muted-foreground">Dockerfile</dt>
-              <dd className="font-medium">{preflight.hasDockerfile ? 'found' : 'not found'}</dd>
+              <dd className="mb-1 font-medium sm:mb-0">{preflight.hasDockerfile ? 'found' : 'not found'}</dd>
               <dt className="text-muted-foreground">InitPad workflow</dt>
               <dd className="font-medium">{preflight.hasCompatibleWorkflow ? 'compatible' : 'not found'}</dd>
             </dl>
