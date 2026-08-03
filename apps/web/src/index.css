@@ -56,3 +56,45 @@
     @apply text-primary underline-offset-4 transition-colors hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40;
   }
 }
+
+@layer utilities {
+  @keyframes deployment-progress-indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(250%);
+    }
+  }
+
+  @keyframes deployment-progress-shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  .deployment-progress-indeterminate {
+    animation: deployment-progress-indeterminate 1.6s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  .deployment-progress-shimmer {
+    animation: deployment-progress-shimmer 1.8s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .deployment-progress-indeterminate,
+    .deployment-progress-shimmer {
+      animation: none;
+      will-change: auto;
+    }
+
+    .deployment-progress-indeterminate {
+      left: 30%;
+    }
+  }
+}

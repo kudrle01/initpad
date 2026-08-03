@@ -305,14 +305,31 @@ export function EnvironmentPipeline({
                     </span>
                   </div>
                   {!waitingForRunner && (
-                    <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
-                      <div
-                        className={cn(
-                          'h-full rounded-full bg-warning transition-all duration-500',
-                          pct === null && 'w-1/3 animate-pulse',
-                        )}
-                        style={pct !== null ? { width: `${pct}%` } : undefined}
-                      />
+                    <div
+                      role="progressbar"
+                      aria-label={`${env.name} deployment progress`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={pct ?? undefined}
+                      aria-valuetext={env.statusReason ?? 'Deploying'}
+                      className="relative h-1 w-full overflow-hidden rounded-full bg-secondary"
+                    >
+                      {pct === null ? (
+                        <div
+                          aria-hidden="true"
+                          className="deployment-progress-indeterminate absolute inset-y-0 w-2/5 rounded-full bg-gradient-to-r from-warning/20 via-warning to-warning/20"
+                        />
+                      ) : (
+                        <div
+                          className="relative h-full overflow-hidden rounded-full bg-warning transition-[width] duration-700 ease-out"
+                          style={{ width: `${pct}%` }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="deployment-progress-shimmer absolute inset-0 bg-gradient-to-r from-transparent via-white/35 to-transparent"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
