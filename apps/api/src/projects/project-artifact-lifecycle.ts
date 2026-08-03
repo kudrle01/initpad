@@ -1,12 +1,19 @@
 import { Logger, NotFoundException } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { createReadStream, mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { ArtifactStore } from '../artifacts/artifact-store';
 import { config } from '../config';
+import { DeploymentService } from '../deployment/deployment.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ScmRepositoryRef } from '../scm/scm-provider';
+import { artifactImageRef } from './project-deployment-identity';
 
 /**
- * Durable artifact housekeeping owned by the project domain. CI ingestion and
- * deployment orchestration stay in ProjectsService; retention, download grants
- * and project-object cleanup live here behind one focused boundary.
+ * Durable artifact lifecycle owned by the project domain. CI ingestion stays
+ * outside this boundary; availability, retention, download grants and
+ * project-object cleanup live here together.
  */
 export class ProjectArtifactLifecycle {
   private readonly logger = new Logger('ProjectArtifactLifecycle');
@@ -14,7 +21,61 @@ export class ProjectArtifactLifecycle {
   constructor(
     private readonly prisma: PrismaService,
     private readonly store: ArtifactStore,
+    private readonly deployment: DeploymentService,
   ) {}
+
+  /**
+   * Ensures the exact verified image is available in the local runtime. The
+   * durable object store remains the source of truth when the daemon cache was
+   * pruned or the control plane restarted.
+   */
+  async ensureImageAvailable(
+    repository: ScmRepositoryRef,
+    projectId: string,
+    buildArtifactId: string,
+  ): Promise<boolean> {
+    const artifact = await this.prisma.buildArtifact.findFirst({
+      where: {
+        id: buildArtifactId,
+        projectId,
+        status: 'available',
+        storageKind: 'object-store',
+      },
+    });
+    if (!artifact?.storageRef) return false;
+    const imageRef = artifactImageRef(repository, {
+      commitSha: artifact.commitSha,
+      providerRunId: artifact.providerRunId,
+    });
+    if (await this.deployment.hasImage(imageRef)) return true;
+    return this.rehydrateImage(artifact.storageRef, imageRef, artifact.digest);
+  }
+
+  async rehydrateImage(
+    objectKey: string,
+    imageRef: string,
+    expectedDigest: string,
+  ): Promise<boolean> {
+    const dir = mkdtempSync(join(tmpdir(), 'initpad-rehydrate-'));
+    const filePath = join(dir, 'image.tar');
+    try {
+      await this.store.getToFile(objectKey, filePath);
+      const digest = await this.fileSha256(filePath);
+      if (digest !== expectedDigest.toLowerCase().replace(/^sha256:/, '')) {
+        throw new Error('Rehydrated artifact digest does not match the recorded value');
+      }
+      await this.deployment.loadImageArchive(filePath, imageRef);
+      this.logger.log(`Rehydrated verified image ${imageRef} from object storage`);
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Could not rehydrate ${imageRef} from object storage: ${(error as Error).message}`,
+      );
+      return false;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 
   // Deletes a project's durable artifact objects from the store. Returns the
   // object keys that could not be removed so deletion can surface or accept
@@ -111,5 +172,15 @@ export class ProjectArtifactLifecycle {
       where: { buildArtifactId, finishedAt: null },
     });
     return unfinishedOperations > 0;
+  }
+
+  private fileSha256(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = createHash('sha256');
+      const stream = createReadStream(filePath);
+      stream.on('error', reject);
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+    });
   }
 }

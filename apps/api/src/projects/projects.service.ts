@@ -7,10 +7,7 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
-import { createReadStream, mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { rmSync } from 'fs';
 import { Prisma } from '@prisma/client';
 import {
   ActivityEvent,
@@ -44,7 +41,6 @@ import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 import { generateToken, hashToken, tokenMatches } from '../common/token';
-import type { DeploymentAllocation } from '../deployment/deployment-provider.interface';
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
 import { publicHttpsUrlIssue } from '../common/public-url';
@@ -57,13 +53,13 @@ import { ProjectEnvironmentTargets } from './project-environment-targets';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectEnvironmentLifecycle } from './project-environment-lifecycle';
 import { ProjectDeploymentPreparation } from './project-deployment-preparation';
+import { ProjectDeploymentExecutor } from './project-deployment-executor';
 import { AppConfigService } from './app-config.service';
 import {
   artifactImageRef,
   deployedImageRef,
   deploymentSlug,
   imageRepository,
-  registryImageRef,
 } from './project-deployment-identity';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
@@ -88,6 +84,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly operations: ProjectDeploymentOperations;
   private readonly environmentLifecycle: ProjectEnvironmentLifecycle;
   private readonly deploymentPreparation: ProjectDeploymentPreparation;
+  private readonly deploymentExecutor: ProjectDeploymentExecutor;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -101,7 +98,7 @@ export class ProjectsService implements OnModuleInit {
     @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
   ) {
     this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
-    this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore);
+    this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
     this.operations = new ProjectDeploymentOperations(prisma);
     this.environmentLifecycle = new ProjectEnvironmentLifecycle(
@@ -115,6 +112,17 @@ export class ProjectsService implements OnModuleInit {
       deployment,
       workspaceScm,
       new AppConfigService(prisma, workspaces),
+    );
+    this.deploymentExecutor = new ProjectDeploymentExecutor(
+      prisma,
+      templates,
+      deployment,
+      this.environmentTargets,
+      this.environmentLifecycle,
+      this.operations,
+      this.deploymentPreparation,
+      this.artifactLifecycle,
+      (projectId) => this.actorForProject(projectId),
     );
   }
 
@@ -1713,66 +1721,6 @@ export class ProjectsService implements OnModuleInit {
     };
   }
 
-  // Ensures the verified image for a stored artifact is present in the local
-  // Docker daemon, rehydrating it from durable object storage when the daemon
-  // cache was lost (e.g. after an API restart). Returns false when the image is
-  // neither cached nor recoverable, so callers can fall back to a fresh build.
-  private async ensureArtifactImageAvailable(
-    repository: ScmRepositoryRef,
-    projectId: string,
-    buildArtifactId: string,
-  ): Promise<boolean> {
-    const artifact = await this.prisma.buildArtifact.findFirst({
-      where: { id: buildArtifactId, projectId, status: 'available', storageKind: 'object-store' },
-    });
-    if (!artifact?.storageRef) return false;
-    const imageRef = artifactImageRef(repository, {
-      commitSha: artifact.commitSha,
-      providerRunId: artifact.providerRunId,
-    });
-    if (await this.deployment.hasImage(imageRef)) return true;
-    return this.rehydrateArtifactImage(artifact.storageRef, imageRef, artifact.digest);
-  }
-
-  // Downloads a verified artifact back from object storage into a private temp
-  // file, re-checks its SHA-256 digest and Docker manifest identity, and loads it
-  // into the daemon. A corrupt or swapped object therefore can never be deployed.
-  private async rehydrateArtifactImage(
-    objectKey: string,
-    imageRef: string,
-    expectedDigest: string,
-  ): Promise<boolean> {
-    const dir = mkdtempSync(join(tmpdir(), 'initpad-rehydrate-'));
-    const filePath = join(dir, 'image.tar');
-    try {
-      await this.artifactStore.getToFile(objectKey, filePath);
-      const digest = await this.fileSha256(filePath);
-      if (digest !== expectedDigest.toLowerCase().replace(/^sha256:/, '')) {
-        throw new Error('Rehydrated artifact digest does not match the recorded value');
-      }
-      await this.deployment.loadImageArchive(filePath, imageRef);
-      this.logger.log(`Rehydrated verified image ${imageRef} from object storage`);
-      return true;
-    } catch (error) {
-      this.logger.warn(
-        `Could not rehydrate ${imageRef} from object storage: ${(error as Error).message}`,
-      );
-      return false;
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-
-  private fileSha256(filePath: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const hash = createHash('sha256');
-      const stream = createReadStream(filePath);
-      stream.on('error', reject);
-      stream.on('data', (chunk) => hash.update(chunk));
-      stream.on('end', () => resolve(hash.digest('hex')));
-    });
-  }
-
   async promote(id: string, target: EnvName): Promise<Project> {
     const project = await this.get(id);
     const idx = ENV_ORDER.indexOf(target);
@@ -1860,7 +1808,7 @@ export class ProjectsService implements OnModuleInit {
         repository.provider !== 'github' || !useRegistry
           ? true
           : previousOperation.buildArtifactId != null &&
-            (await this.ensureArtifactImageAvailable(
+            (await this.artifactLifecycle.ensureImageAvailable(
               repository,
               id,
               previousOperation.buildArtifactId,
@@ -2271,168 +2219,13 @@ export class ProjectsService implements OnModuleInit {
     useRegistry: boolean,
     operationId: string,
   ): Promise<boolean> {
-    const project = await this.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
-    const repository = repositoryRef(project);
-    const template = this.templates.get(project.templateId);
-    const env = await this.prisma.environment.findUniqueOrThrow({
-      where: { projectId_name: { projectId, name: envName } },
-      include: { target: true, allocation: true, buildArtifact: true },
-    });
-    const operation = await this.prisma.deploymentOperation.findUnique({
-      where: { id: operationId },
-      include: { buildArtifact: true },
-    });
-    let testedImageRef: string | undefined;
-    if (useRegistry) {
-      if (repository.provider === 'github') {
-        const artifact = operation?.buildArtifact;
-        if (
-          !artifact ||
-          artifact.projectId !== projectId ||
-          artifact.commitSha !== version.toLowerCase() ||
-          artifact.status !== 'available' ||
-          artifact.storageKind !== 'object-store' ||
-          !artifact.storageRef
-        ) {
-          throw new Error('GitHub deployment has no verified build artifact for this version');
-        }
-        // storageRef is the opaque object key, never the Docker ref (ADR-059 §6):
-        // derive the image ref and make sure it is in the daemon, rehydrating
-        // from durable storage if the local cache was lost.
-        testedImageRef = artifactImageRef(repository, {
-          commitSha: artifact.commitSha,
-          providerRunId: artifact.providerRunId,
-        });
-        if (!(await this.ensureArtifactImageAvailable(repository, projectId, artifact.id))) {
-          throw new Error('Verified build artifact could not be rehydrated from object storage');
-        }
-      } else {
-        testedImageRef = registryImageRef(repository, version);
-      }
-    }
-
-    // Route the deploy through the workspace-scoped allocation (ADR-060 §2):
-    // ensure one exists and link the environment to it, so quotas (P2.5) and
-    // authorization (P2.4) have a stable tenant-scoped anchor. The physical
-    // target and connection are unchanged (allocation.targetId == env.targetId),
-    // so existing container names, ports, URLs and ESO paths stay identical.
-    let allocationId: string | undefined;
-    let allocation: DeploymentAllocation | undefined;
-    if (env.targetId) {
-      const resolved = await this.environmentTargets.ensureAllocation(
-        project.workspaceId,
-        env.targetId,
-      );
-      await this.environmentTargets.assertAcceptsDeploy(
-        resolved.id,
-        env.id,
-        templateRuntime(template),
-      );
-      allocationId = resolved.id;
-      allocation = resolved;
-    }
-    await this.prisma.environment.updateMany({
-      where: { projectId, name: envName, activeOperationId: operationId },
-      data: { status: 'deploying', statusReason: null, ...(allocationId ? { allocationId } : {}) },
-    });
-    // The built-in SSH VPS is shared — allocate a unique app port from the
-    // database. A user's own SSH server uses the template port directly.
-    const appPort = this.environmentLifecycle.usesSharedSshPort(env)
-      ? await this.environmentLifecycle.allocateSharedSshPort(projectId, envName)
-      : undefined;
-
-    // Live progress: providers report steps via onProgress; the latest is
-    // persisted into statusReason so the UI can show it under the deploying env.
-    // It is cleared (success) or replaced by the failure reason at the end.
-    const setStage = (message: string) => {
-      void Promise.all([
-        this.prisma.deploymentOperation.updateMany({
-          where: { id: operationId, status: 'running' },
-          data: { message },
-        }),
-        this.prisma.environment.updateMany({
-          where: { projectId, name: envName, activeOperationId: operationId },
-          data: { statusReason: message },
-        }),
-      ]).catch(() => undefined);
-    };
-
-    const prepared = await this.deploymentPreparation.prepare({
-      environmentId: env.id,
-      provider: env.provider as ProviderKind,
-      template,
-      repository,
-      projectRepoPath: project.repoPath,
+    return this.deploymentExecutor.execute(
+      projectId,
+      envName,
       version,
       useRegistry,
-      testedImageRef,
-      resolveActor: () => this.actorForProject(projectId),
-      onProgress: setStage,
-    });
-
-    try {
-      const result = await this.deployment.deploy(env.provider as ProviderKind, {
-        projectName: deploymentSlug(repository),
-        version,
-        env: envName,
-        repoPath: prepared.repoPath,
-        port: template.port,
-        healthPath: template.healthPath ?? '/health',
-        startCommand: template.startCommand,
-        artifactDir: prepared.artifactDir,
-        webRoot: template.webRoot,
-        protectedWebLayout: prepared.protectedWebLayout,
-        writableDirs: prepared.writableDirs,
-        appPort,
-        onProgress: setStage,
-        connection: this.environmentTargets.connection(env),
-        allocation,
-        imageRef: testedImageRef,
-        allowBuildFallback: !useRegistry,
-        envVars: prepared.envVars,
-      });
-      if (await this.operations.cancelled(operationId)) {
-        const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
-          projectName: deploymentSlug(repository),
-          env: envName,
-          imageRef: testedImageRef,
-          connection: this.environmentTargets.connection(env),
-          allocation,
-        });
-        await this.prisma.environment.updateMany({
-          where: { projectId, name: envName, activeOperationId: operationId },
-          data: {
-            status: 'empty',
-            version: null,
-            buildArtifactId: null,
-            url: null,
-            statusReason: teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
-            allocatedPort: null,
-            activeOperationId: null,
-            deploymentRequired: false,
-          },
-        });
-        await this.operations.complete(operationId, 'cancelled', 'Cancelled by user');
-        return false;
-      }
-      if (result.status === 'failed') {
-        throw new Error(result.reason || `Deployment to '${envName}' failed`);
-      }
-      const published = await this.prisma.environment.updateMany({
-        where: { projectId, name: envName, activeOperationId: operationId },
-        data: {
-          status: result.status,
-          version,
-          buildArtifactId: operation?.buildArtifactId ?? null,
-          url: result.url,
-          statusReason: null,
-          deploymentRequired: false,
-        },
-      });
-      return published.count === 1;
-    } finally {
-      prepared.cleanup();
-    }
+      operationId,
+    );
   }
 
   private assertSaasCiCallback(): void {

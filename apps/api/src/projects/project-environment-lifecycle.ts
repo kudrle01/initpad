@@ -240,7 +240,7 @@ export class ProjectEnvironmentLifecycle {
     };
   }
 
-  private emptyState(statusReason: string | null = null) {
+  emptyState(statusReason: string | null = null) {
     return {
       status: 'empty',
       version: null,

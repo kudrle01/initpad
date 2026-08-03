@@ -137,13 +137,14 @@ describe('ProjectsService immutable artifact binding', () => {
     };
     const service = make(prisma, deployment);
     // Force the digest check to pass without a real download.
-    jest.spyOn(service as any, 'rehydrateArtifactImage').mockResolvedValue(true);
+    const artifacts = (service as any).artifactLifecycle;
+    jest.spyOn(artifacts, 'rehydrateImage').mockResolvedValue(true);
     jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
     const schedule = jest.spyOn(service as any, 'scheduleDeployment').mockResolvedValue(undefined);
 
     await service.runAgain('project-1');
 
-    expect((service as any).rehydrateArtifactImage).toHaveBeenCalledWith(
+    expect(artifacts.rehydrateImage).toHaveBeenCalledWith(
       'artifacts/ws/pr/artifact-1/dig.tar',
       `ghcr.io/acme/api:${sha}-run-1`,
       'd'.repeat(64),

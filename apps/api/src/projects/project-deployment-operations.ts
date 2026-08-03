@@ -129,4 +129,22 @@ export class ProjectDeploymentOperations {
     });
     return !operation || operation.status === 'cancelled';
   }
+
+  reportProgress(
+    operationId: string,
+    projectId: string,
+    envName: EnvName,
+    message: string,
+  ): void {
+    void Promise.all([
+      this.prisma.deploymentOperation.updateMany({
+        where: { id: operationId, status: 'running' },
+        data: { message },
+      }),
+      this.prisma.environment.updateMany({
+        where: { projectId, name: envName, activeOperationId: operationId },
+        data: { statusReason: message },
+      }),
+    ]).catch(() => undefined);
+  }
 }

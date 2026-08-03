@@ -1,7 +1,7 @@
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 
 function make(prisma: Record<string, unknown>, artifactStore: Record<string, unknown>) {
-  return new ProjectArtifactLifecycle(prisma as never, artifactStore as never);
+  return new ProjectArtifactLifecycle(prisma as never, artifactStore as never, {} as never);
 }
 
 describe('ProjectArtifactLifecycle.runRetention', () => {

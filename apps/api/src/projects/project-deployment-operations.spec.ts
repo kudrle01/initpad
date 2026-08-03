@@ -150,4 +150,29 @@ describe('ProjectDeploymentOperations', () => {
 
     await expect(operations.cancelled('operation-1')).resolves.toBe(expected);
   });
+
+  it('publishes provider progress to operation history and the live environment', async () => {
+    const operationUpdate = jest.fn(async () => ({ count: 1 }));
+    const environmentUpdate = jest.fn(async () => ({ count: 1 }));
+    const operations = new ProjectDeploymentOperations({
+      deploymentOperation: { updateMany: operationUpdate },
+      environment: { updateMany: environmentUpdate },
+    } as never);
+
+    operations.reportProgress('operation-1', 'project-1', 'prod', 'Uploading 5/10 files');
+    await Promise.resolve();
+
+    expect(operationUpdate).toHaveBeenCalledWith({
+      where: { id: 'operation-1', status: 'running' },
+      data: { message: 'Uploading 5/10 files' },
+    });
+    expect(environmentUpdate).toHaveBeenCalledWith({
+      where: {
+        projectId: 'project-1',
+        name: 'prod',
+        activeOperationId: 'operation-1',
+      },
+      data: { statusReason: 'Uploading 5/10 files' },
+    });
+  });
 });
