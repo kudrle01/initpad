@@ -5,7 +5,6 @@ import {
   OnModuleInit,
   NotFoundException,
   BadRequestException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { rmSync } from 'fs';
 import { Prisma } from '@prisma/client';
@@ -24,13 +23,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
 import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
-import { ARTIFACT_STORE, ArtifactStore, artifactObjectKey } from '../artifacts/artifact-store';
-import { assertImageArchiveIdentity } from '../artifacts/image-archive';
+import { ARTIFACT_STORE, ArtifactStore } from '../artifacts/artifact-store';
 import { TargetsService } from '../targets/targets.service';
 import {
   ScmProvider,
   ScmActor,
-  ScmBuildArtifact,
   ScmRepositoryIdentity,
   ScmRepositoryRef,
   ProjectScmFields,
@@ -40,11 +37,11 @@ import {
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
-import { generateToken, hashToken, tokenMatches } from '../common/token';
+import { generateToken, hashToken } from '../common/token';
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
 import { publicHttpsUrlIssue } from '../common/public-url';
-import { CI_RUNNING_REASON, CI_WAITING_REASON } from './ci-state';
+import { CI_WAITING_REASON } from './ci-state';
 import { pipelineStages } from './project-pipeline';
 import { ProjectQueries } from './project-queries';
 import { projectView } from './project-view';
@@ -54,9 +51,10 @@ import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectEnvironmentLifecycle } from './project-environment-lifecycle';
 import { ProjectDeploymentPreparation } from './project-deployment-preparation';
 import { ProjectDeploymentExecutor } from './project-deployment-executor';
+import { ProjectArtifactIngestion } from './project-artifact-ingestion';
+import { CiArtifactInput, ProjectCiOrchestrator } from './project-ci-orchestrator';
 import { AppConfigService } from './app-config.service';
 import {
-  artifactImageRef,
   deployedImageRef,
   deploymentSlug,
   imageRepository,
@@ -65,11 +63,6 @@ import {
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
-type CiArtifactInput = {
-  ciStatus?: string;
-  artifactId?: string;
-  artifactDigest?: string;
-};
 /**
  * The platform's core orchestrator: template scaffolding, repository
  * provisioning, environment lifecycle and deployments. State is persisted
@@ -85,6 +78,8 @@ export class ProjectsService implements OnModuleInit {
   private readonly environmentLifecycle: ProjectEnvironmentLifecycle;
   private readonly deploymentPreparation: ProjectDeploymentPreparation;
   private readonly deploymentExecutor: ProjectDeploymentExecutor;
+  private readonly artifactIngestion: ProjectArtifactIngestion;
+  private readonly ci: ProjectCiOrchestrator;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -95,7 +90,7 @@ export class ProjectsService implements OnModuleInit {
     private readonly workspaceScm: WorkspaceScmService,
     private readonly workspaces: WorkspacesService,
     private readonly provisioning: ProvisioningService,
-    @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
+    @Inject(ARTIFACT_STORE) artifactStore: ArtifactStore,
   ) {
     this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
@@ -124,6 +119,26 @@ export class ProjectsService implements OnModuleInit {
       this.artifactLifecycle,
       (projectId) => this.actorForProject(projectId),
     );
+    this.artifactIngestion = new ProjectArtifactIngestion(
+      prisma,
+      workspaceScm,
+      deployment,
+      artifactStore,
+      this.operations,
+      (projectId, version, operationId) =>
+        this.deployEnvInBackground(projectId, 'dev', version, true, operationId),
+    );
+    this.ci = new ProjectCiOrchestrator(
+      prisma,
+      workspaceScm,
+      this.operations,
+      this.artifactIngestion,
+      (projectId) => this.actorForProject(projectId),
+      (projectId, version, operationId) =>
+        this.deployEnvInBackground(projectId, 'dev', version, true, operationId),
+      (projectId, version, kind) =>
+        this.scheduleDeployment(projectId, 'dev', version, true, kind),
+    );
   }
 
   async onModuleInit(): Promise<void> {
@@ -131,51 +146,12 @@ export class ProjectsService implements OnModuleInit {
     await this.migrateLegacyCiTokens();
     await this.reconcileCiRuntimeSecrets();
     await this.operations.recoverInterrupted();
-    await this.recoverInterruptedArtifactIngestions();
+    await this.artifactIngestion.recoverInterrupted();
     await this.environmentTargets.reconcileAllocations();
     // Best-effort retention sweep; never blocks startup on storage issues.
     await this.runArtifactRetention().catch((error) =>
       this.logger.warn(`Artifact retention sweep skipped: ${(error as Error).message}`),
     );
-  }
-
-  private async recoverInterruptedArtifactIngestions(): Promise<void> {
-    try {
-      const interrupted = await this.prisma.buildArtifact.findMany({
-        where: { status: { in: ['accepted', 'ingesting'] } },
-        select: { id: true, projectId: true, commitSha: true },
-      });
-      for (const artifact of interrupted) {
-        const reason = 'Artifact ingestion was interrupted by a control-plane restart; run CI again';
-        await this.prisma.$transaction([
-          this.prisma.buildArtifact.update({
-            where: { id: artifact.id },
-            data: { status: 'failed', error: reason, storageKind: null, storageRef: null },
-          }),
-          this.prisma.deploymentOperation.updateMany({
-            where: {
-              environment: { projectId: artifact.projectId, name: 'dev' },
-              version: artifact.commitSha,
-              status: 'running',
-            },
-            data: { status: 'failed', message: reason, finishedAt: new Date() },
-          }),
-          this.prisma.environment.updateMany({
-            where: {
-              projectId: artifact.projectId,
-              name: 'dev',
-              activeOperationId: { not: null },
-            },
-            data: { status: 'failed', statusReason: reason, activeOperationId: null },
-          }),
-        ]);
-      }
-      if (interrupted.length > 0) {
-        this.logger.warn(`Recovered ${interrupted.length} interrupted build artifact ingestion(s)`);
-      }
-    } catch (error) {
-      this.logger.warn(`Build artifact recovery skipped: ${(error as Error).message}`);
-    }
   }
 
   // The SQL migration can safely backfill provider + owner/name without
@@ -1249,53 +1225,8 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
-  // CI → deploy: after a successful CI build, sync the latest commit and
-  // deploy it to dev. Closes the E2E loop: commit → CI build/test/docker →
-  // a running dev environment with the real code.
   async ciStarted(repo: string, sha: string, ref: string, token: string): Promise<void> {
-    const coordinates = repo.split('/');
-    if (coordinates.length !== 2 || coordinates.some((part) => !part)) {
-      throw new BadRequestException('Invalid repo');
-    }
-    if (!/^[0-9a-f]{40}$/i.test(sha)) {
-      throw new BadRequestException('CI start requires a full 40-character commit SHA');
-    }
-
-    // Full names can overlap across providers. The repository-specific secret
-    // is the authority that selects the correct project row.
-    const candidates = await this.prisma.project.findMany({
-      where: { scmFullName: repo },
-    });
-    const project = candidates.find((candidate) =>
-      tokenMatches(token, candidate.ciDeployTokenHash),
-    );
-    if (!project) {
-      if (candidates.length > 0) {
-        throw new UnauthorizedException('Invalid CI token for this repository');
-      }
-      // Repository creation and its push happen just before the project row is
-      // committed. A fast runner must receive a retryable non-2xx response,
-      // otherwise this one-shot progress edge would be lost in that race.
-      throw new NotFoundException('CI project is not ready yet');
-    }
-
-    const branch = project.scmDefaultBranch || 'main';
-    if (ref && ref !== branch && ref !== `refs/heads/${branch}`) return;
-
-    // Only the first deployment has no published version. The operation guard
-    // prevents a delayed progress callback from overwriting a publication that
-    // has already started. Later source pushes remain represented by SCM job
-    // statuses and their immutable deployment operation.
-    await this.prisma.environment.updateMany({
-      where: {
-        projectId: project.id,
-        name: 'dev',
-        status: 'deploying',
-        version: null,
-        activeOperationId: null,
-      },
-      data: { statusReason: CI_RUNNING_REASON },
-    });
+    return this.ci.started(repo, sha, ref, token);
   }
 
   async deployFromCi(
@@ -1305,420 +1236,7 @@ export class ProjectsService implements OnModuleInit {
     token: string,
     artifactInput: CiArtifactInput = {},
   ): Promise<void> {
-    const coordinates = repo.split('/');
-    if (coordinates.length !== 2 || coordinates.some((part) => !part)) {
-      throw new BadRequestException('Invalid repo');
-    }
-    const retryTag = ref.replace(/^refs\/tags\//, '');
-    const isRetry = /^initpad-retry-[a-z0-9-]+$/.test(retryTag);
-    // The repository coordinate is not globally unique across SCM providers.
-    // The per-project secret selects the exact row without trusting a provider
-    // value supplied by CI.
-    const candidates = await this.prisma.project.findMany({
-      where: { scmFullName: repo },
-    });
-    const project = candidates.find((candidate) =>
-      tokenMatches(token, candidate.ciDeployTokenHash),
-    );
-    if (!project) {
-      if (candidates.length > 0) {
-        throw new UnauthorizedException('Invalid CI token for this repository');
-      }
-      this.logger.warn(`CI deploy: project '${repo}' not found`);
-      return;
-    }
-    const repository = repositoryRef(project);
-    const scm = this.workspaceScm.provider(repository.provider);
-    // Deploy from the repository's recorded default branch, or from an
-    // InitPad-owned retry tag pointing at that branch's exact commit.
-    const branch = repository.defaultBranch;
-    if (ref && ref !== branch && ref !== `refs/heads/${branch}` && !isRetry) return;
-    if (!/^[0-9a-f]{40}$/i.test(sha)) {
-      throw new BadRequestException('CI deploy requires a full 40-character commit SHA');
-    }
-
-    const dev = await this.prisma.environment.findUnique({
-      where: { projectId_name: { projectId: project.id, name: 'dev' } },
-    });
-    if (!dev) throw new BadRequestException("Project has no 'dev' environment");
-
-    // The notification job runs even after an upstream CI failure. This closes
-    // the state machine instead of leaving dev on "deploying" forever when the
-    // image-producing job failed or was skipped before the normal callback.
-    const ciStatus = (artifactInput.ciStatus || 'success').trim().toLowerCase();
-    if (!['success', 'failure', 'cancelled', 'skipped'].includes(ciStatus)) {
-      throw new BadRequestException(`Unsupported CI result '${ciStatus}'`);
-    }
-    if (ciStatus !== 'success') {
-      const reason =
-        `CI did not produce a deployable image (docker job: ${ciStatus}). ` +
-        'Open the SCM run logs, fix the failed job and run again.';
-
-      if (isRetry) {
-        const actor = await this.actorForProject(project.id);
-        try {
-          const operation = dev.activeOperationId
-            ? await this.prisma.deploymentOperation.findUnique({
-                where: { id: dev.activeOperationId },
-              })
-            : null;
-          if (
-            !operation ||
-            operation.kind !== 'ci-retry' ||
-            operation.status !== 'running' ||
-            operation.version !== sha
-          ) {
-            this.logger.log(`Ignoring stale failed CI retry for ${repo} (${retryTag})`);
-            return;
-          }
-          await this.prisma.environment.updateMany({
-            where: { id: dev.id, activeOperationId: operation.id },
-            data: {
-              status: 'failed',
-              statusReason: reason,
-              deploymentRequired: true,
-              activeOperationId: null,
-            },
-          });
-          await this.operations.complete(operation.id, 'failed', reason);
-        } finally {
-          await scm.deleteTag(repository, retryTag, actor);
-        }
-      } else {
-        // Removing/cancelling the first dev deployment opts out of late CI.
-        if (dev.status === 'empty' && project.lastCommit !== 'import: existing repository') {
-          this.logger.log(`Ignoring failed CI callback for disabled dev environment: ${repo}`);
-          return;
-        }
-        const operationId = await this.operations.begin(
-          project.id,
-          'dev',
-          'ci-deploy',
-          sha.toLowerCase(),
-        );
-        // A failed new build must not claim that the previously published
-        // workload stopped. Initial/import waits become failed; an existing
-        // running/stopped version remains truthful while the failed attempt is
-        // recorded in DeploymentOperation and marked as still requiring deploy.
-        const finalStatus = ['running', 'stopped'].includes(dev.status)
-          ? dev.status
-          : 'failed';
-        await this.prisma.environment.updateMany({
-          where: { id: dev.id, activeOperationId: operationId },
-          data: {
-            status: finalStatus,
-            statusReason: reason,
-            deploymentRequired: true,
-            activeOperationId: null,
-          },
-        });
-        await this.operations.complete(operationId, 'failed', reason);
-      }
-      await this.prisma.project.update({
-        where: { id: project.id },
-        data: { lastCommit: `ci: failed ${sha.slice(0, 7)}` },
-      });
-      this.logger.warn(`CI failed before publication: ${repo} (${ciStatus})`);
-      return;
-    }
-
-    let buildArtifact: ScmBuildArtifact | null = null;
-    if (repository.provider === 'github') {
-      if (!artifactInput.artifactId || !artifactInput.artifactDigest) {
-        throw new BadRequestException(
-          'GitHub CI deploy requires an immutable artifact id and SHA-256 digest',
-        );
-      }
-      if (!scm.resolveBuildArtifact || !scm.downloadBuildArtifact) {
-        throw new BadRequestException('The GitHub artifact source is not configured');
-      }
-      try {
-        buildArtifact = await scm.resolveBuildArtifact(repository, {
-          providerArtifactId: artifactInput.artifactId,
-          digest: artifactInput.artifactDigest,
-          commitSha: sha,
-          expectedName: 'initpad-image.tar',
-        });
-      } catch (error) {
-        throw new BadRequestException(`Build artifact rejected: ${(error as Error).message}`);
-      }
-      const replay = await this.prisma.buildArtifact.findUnique({
-        where: {
-          sourceProvider_providerArtifactId: {
-            sourceProvider: buildArtifact.provider,
-            providerArtifactId: buildArtifact.providerArtifactId,
-          },
-        },
-      });
-      if (replay) {
-        if (replay.projectId !== project.id || replay.commitSha !== sha.toLowerCase()) {
-          throw new BadRequestException('Build artifact is already bound to another deployment');
-        }
-        if (replay.status !== 'failed') {
-          this.logger.log(`Ignoring duplicate CI artifact callback ${buildArtifact.providerArtifactId}`);
-          return;
-        }
-      }
-    }
-
-    if (isRetry) {
-      const actor = await this.actorForProject(project.id);
-      try {
-        const operation = dev.activeOperationId
-          ? await this.prisma.deploymentOperation.findUnique({
-              where: { id: dev.activeOperationId },
-            })
-          : null;
-        // Only the currently requested retry may deploy. Cancel clears the
-        // active operation, so a late CI callback is harmless.
-        if (
-          !operation ||
-          operation.kind !== 'ci-retry' ||
-          operation.status !== 'running' ||
-          operation.version !== sha
-        ) {
-          this.logger.log(`Ignoring stale CI retry for ${repo} (${retryTag})`);
-          return;
-        }
-        await this.prisma.project.update({
-          where: { id: project.id },
-          data: { lastCommit: `ci: retry ${sha.slice(0, 7)}` },
-        });
-        if (buildArtifact) {
-          await this.queueArtifactIngestion(
-            project.id,
-            repository,
-            buildArtifact,
-            operation.id,
-          );
-        } else {
-          void this.deployEnvInBackground(project.id, 'dev', sha, true, operation.id);
-        }
-        this.logger.log(`CI retry deploy: ${repo} → dev (${sha})`);
-        return;
-      } finally {
-        await scm.deleteTag(repository, retryTag, actor);
-      }
-    }
-
-    // Removing/cancelling an empty dev environment opts out of a late CI
-    // callback. A deliberate Run again creates the tracked operation above.
-    if (dev.status === 'empty' && project.lastCommit !== 'import: existing repository') {
-      this.logger.log(`Ignoring CI deploy for disabled dev environment: ${repo}`);
-      return;
-    }
-
-    // Version = source commit. Exact build identity is stored separately on
-    // BuildArtifact because the same commit can have multiple workflow runs.
-    const version = sha || '0.1.0';
-    await this.prisma.project.update({
-      where: { id: project.id },
-      data: { lastCommit: `ci: deploy ${version.slice(0, 7)}` },
-    });
-    // Runs in the background — the CI webhook returns immediately, the deploy
-    // (pull + run) finishes afterwards. useRegistry=true: run exactly the
-    // image CI built and tested.
-    if (buildArtifact) {
-      const operationId = await this.operations.begin(project.id, 'dev', 'ci-deploy', version);
-      await this.queueArtifactIngestion(project.id, repository, buildArtifact, operationId);
-    } else {
-      await this.scheduleDeployment(project.id, 'dev', version, true, 'ci-deploy');
-    }
-    this.logger.log(`CI deploy: ${repo} → dev (${version})`);
-  }
-
-  private async acceptBuildArtifact(
-    projectId: string,
-    artifact: ScmBuildArtifact,
-  ): Promise<{ id: string }> {
-    return this.prisma.buildArtifact.upsert({
-      where: {
-        sourceProvider_providerArtifactId: {
-          sourceProvider: artifact.provider,
-          providerArtifactId: artifact.providerArtifactId,
-        },
-      },
-      create: {
-        projectId,
-        sourceProvider: artifact.provider,
-        providerArtifactId: artifact.providerArtifactId,
-        providerRunId: artifact.providerRunId,
-        commitSha: artifact.commitSha,
-        name: artifact.name,
-        digest: artifact.digest,
-        sizeBytes: BigInt(artifact.sizeBytes),
-        expiresAt: artifact.expiresAt,
-      },
-      update: {
-        status: 'accepted',
-        storageKind: null,
-        storageRef: null,
-        error: null,
-      },
-      select: { id: true },
-    });
-  }
-
-  private async queueArtifactIngestion(
-    projectId: string,
-    repository: ScmRepositoryRef,
-    artifact: ScmBuildArtifact,
-    operationId: string,
-  ): Promise<void> {
-    try {
-      const accepted = await this.acceptBuildArtifact(projectId, artifact);
-      await this.prisma.deploymentOperation.update({
-        where: { id: operationId },
-        data: { buildArtifactId: accepted.id },
-      });
-    } catch (error) {
-      const message = `Could not record build artifact: ${(error as Error).message}`;
-      await this.prisma.environment.updateMany({
-        where: { projectId, name: 'dev', activeOperationId: operationId },
-        data: { status: 'failed', statusReason: message, activeOperationId: null },
-      }).catch(() => undefined);
-      await this.operations.complete(operationId, 'failed', message);
-      throw error;
-    }
-    void this.ingestArtifactAndDeploy(projectId, repository, artifact, operationId);
-  }
-
-  private async ingestArtifactAndDeploy(
-    projectId: string,
-    repository: ScmRepositoryRef,
-    artifact: ScmBuildArtifact,
-    operationId: string,
-  ): Promise<void> {
-    const claimed = await this.prisma.buildArtifact.updateMany({
-      where: {
-        sourceProvider: artifact.provider,
-        providerArtifactId: artifact.providerArtifactId,
-        projectId,
-        status: { in: ['accepted', 'failed'] },
-      },
-      data: { status: 'ingesting', error: null },
-    });
-    if (claimed.count !== 1) return;
-    await this.prisma.environment.updateMany({
-      where: { projectId, name: 'dev', activeOperationId: operationId },
-      data: { statusReason: 'Downloading and verifying tested image' },
-    });
-    await this.prisma.deploymentOperation.updateMany({
-      where: { id: operationId, status: 'running' },
-      data: { message: 'Downloading and verifying tested image' },
-    });
-    const scm = this.workspaceScm.provider(repository.provider);
-    let download: Awaited<
-      ReturnType<NonNullable<ScmProvider['downloadBuildArtifact']>>
-    > | null = null;
-    // Set once the durable object exists, so a failure can remove the partial
-    // upload before marking the artifact 'failed' (ADR-059 §5).
-    let objectKey: string | null = null;
-    try {
-      if (!scm.downloadBuildArtifact) throw new Error('Artifact download is unavailable');
-      download = await scm.downloadBuildArtifact(repository, artifact);
-      const imageRef = artifactImageRef(repository, artifact);
-      // Daemon-free identity check before anything durable is written.
-      await assertImageArchiveIdentity(download.filePath, imageRef);
-      // Durable object storage is the source of truth: stream the verified bytes
-      // up and confirm with a head() before accepting into the local daemon.
-      const keyInfo = await this.artifactObjectKeyFor(projectId, artifact);
-      objectKey = keyInfo.key;
-      await this.artifactStore.put(objectKey, download.filePath, {
-        sizeBytes: Number(artifact.sizeBytes),
-        contentType: 'application/x-tar',
-      });
-      const head = await this.artifactStore.head(objectKey);
-      if (!head) throw new Error('Artifact upload could not be confirmed in object storage');
-      // Local Docker acceptance from the same verified file for an immediate deploy.
-      await this.deployment.loadImageArchive(download.filePath, imageRef);
-      await this.prisma.buildArtifact.updateMany({
-        where: {
-          sourceProvider: artifact.provider,
-          providerArtifactId: artifact.providerArtifactId,
-          projectId,
-          status: 'ingesting',
-        },
-        data: {
-          status: 'available',
-          storageKind: 'object-store',
-          storageRef: objectKey,
-          error: null,
-        },
-      });
-      if (await this.operations.cancelled(operationId)) {
-        await this.prisma.environment.updateMany({
-          where: { projectId, name: 'dev', activeOperationId: operationId },
-          data: {
-            status: 'empty',
-            version: null,
-            buildArtifactId: null,
-            statusReason: null,
-            activeOperationId: null,
-          },
-        });
-        await this.operations.complete(
-          operationId,
-          'cancelled',
-          'Cancelled during artifact ingestion',
-        );
-        return;
-      }
-      await this.deployEnvInBackground(projectId, 'dev', artifact.commitSha, true, operationId);
-    } catch (error) {
-      const message = (error as Error).message;
-      // Remove any partially-uploaded object so a failed ingest leaves nothing
-      // durable behind (ADR-059 §5). Store delete is idempotent.
-      if (objectKey) {
-        await this.artifactStore.delete(objectKey).catch((e) =>
-          this.logger.warn(`Could not clean up partial artifact object: ${(e as Error).message}`),
-        );
-      }
-      await this.prisma.buildArtifact.updateMany({
-        where: {
-          sourceProvider: artifact.provider,
-          providerArtifactId: artifact.providerArtifactId,
-          projectId,
-        },
-        data: { status: 'failed', error: message, storageKind: null, storageRef: null },
-      }).catch(() => undefined);
-      await this.prisma.environment.updateMany({
-        where: { projectId, name: 'dev', activeOperationId: operationId },
-        data: { status: 'failed', statusReason: message, activeOperationId: null },
-      }).catch(() => undefined);
-      await this.operations.complete(operationId, 'failed', message);
-      this.logger.error(`Artifact ingestion failed for ${repository.fullName}: ${message}`);
-    } finally {
-      download?.cleanup();
-    }
-  }
-
-  // Resolves the tenant-scoped opaque object key for a build artifact (ADR-059
-  // §3). The key derives only from the workspace/project/artifact IDs and the
-  // content digest — never from a user path — so tenants can never collide.
-  private async artifactObjectKeyFor(
-    projectId: string,
-    artifact: Pick<ScmBuildArtifact, 'provider' | 'providerArtifactId' | 'digest'>,
-  ): Promise<{ key: string; buildArtifactId: string }> {
-    const row = await this.prisma.buildArtifact.findUnique({
-      where: {
-        sourceProvider_providerArtifactId: {
-          sourceProvider: artifact.provider,
-          providerArtifactId: artifact.providerArtifactId,
-        },
-      },
-      select: { id: true, project: { select: { workspaceId: true } } },
-    });
-    if (!row) throw new Error('Build artifact record vanished during ingestion');
-    return {
-      buildArtifactId: row.id,
-      key: artifactObjectKey({
-        workspaceId: row.project.workspaceId,
-        projectId,
-        artifactId: row.id,
-        digest: artifact.digest,
-      }),
-    };
+    return this.ci.deployFromCi(repo, sha, ref, token, artifactInput);
   }
 
   async promote(id: string, target: EnvName): Promise<Project> {
@@ -1856,7 +1374,7 @@ export class ProjectsService implements OnModuleInit {
             statusReason: `Recovering tested GitHub build; deployment target: ${env.target?.name ?? env.provider}`,
           },
         });
-        await this.queueArtifactIngestion(id, repository, recovered, operationId);
+        await this.artifactIngestion.queue(id, repository, recovered, operationId);
         return this.get(id);
       }
       this.assertGitHubCiCallback(repository);

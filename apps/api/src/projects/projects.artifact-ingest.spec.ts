@@ -4,7 +4,8 @@ import { join } from 'path';
 import { finished } from 'stream/promises';
 import * as tarStream from 'tar-stream';
 
-import { ProjectsService } from './projects.service';
+import { ProjectArtifactIngestion } from './project-artifact-ingestion';
+import { ProjectDeploymentOperations } from './project-deployment-operations';
 
 const SHA = 'a'.repeat(40);
 const RUN = 'run-1';
@@ -46,37 +47,27 @@ async function writeArchive(path: string): Promise<void> {
   await finished(out);
 }
 
-function makeService(
+function makeIngestion(
   prisma: Record<string, unknown>,
   scm: Record<string, unknown>,
   deployment: Record<string, unknown>,
   store: Record<string, unknown>,
 ) {
-  const service = new ProjectsService(
-    prisma as never,
-    {} as never,
-    {} as never,
-    deployment as never,
-    {} as never,
-    { provider: jest.fn(() => scm) } as never,
-    {} as never,
-    {} as never,
-    store as never,
-  );
-  // Isolate the ingest unit from the deploy tail.
-  const operations = (
-    service as never as {
-      operations: { cancelled: (operationId: string) => Promise<boolean> };
-    }
-  ).operations;
+  const operations = new ProjectDeploymentOperations(prisma as never);
   jest.spyOn(operations, 'cancelled').mockResolvedValue(false);
-  jest
-    .spyOn(service as never as { deployEnvInBackground: () => Promise<void> }, 'deployEnvInBackground')
-    .mockResolvedValue(undefined as never);
-  return service;
+  const deployVerifiedArtifact = jest.fn(async () => undefined);
+  const ingestion = new ProjectArtifactIngestion(
+    prisma as never,
+    { provider: jest.fn(() => scm) } as never,
+    deployment as never,
+    store as never,
+    operations,
+    deployVerifiedArtifact,
+  );
+  return { ingestion, deployVerifiedArtifact };
 }
 
-describe('ProjectsService artifact ingest → object storage', () => {
+describe('ProjectArtifactIngestion → object storage', () => {
   let dir: string;
   let filePath: string;
 
@@ -113,11 +104,9 @@ describe('ProjectsService artifact ingest → object storage', () => {
       head: jest.fn(async () => ({ sizeBytes: 12 })),
       delete: jest.fn(async () => undefined),
     };
-    const service = makeService(prisma, scm, deployment, store);
+    const { ingestion } = makeIngestion(prisma, scm, deployment, store);
 
-    await (service as never as {
-      ingestArtifactAndDeploy: (p: string, r: unknown, a: unknown, o: string) => Promise<void>;
-    }).ingestArtifactAndDeploy('project-1', repository, artifact, 'op-1');
+    await ingestion.ingest('project-1', repository, artifact, 'op-1');
 
     const expectedKey = 'artifacts/ws1/project-1/a1/' + 'd'.repeat(64) + '.tar';
     expect(store.put).toHaveBeenCalledWith(expectedKey, filePath, expect.any(Object));
@@ -148,11 +137,9 @@ describe('ProjectsService artifact ingest → object storage', () => {
       head: jest.fn(async () => null), // upload not confirmed
       delete: jest.fn(async () => undefined),
     };
-    const service = makeService(prisma, scm, deployment, store);
+    const { ingestion } = makeIngestion(prisma, scm, deployment, store);
 
-    await (service as never as {
-      ingestArtifactAndDeploy: (p: string, r: unknown, a: unknown, o: string) => Promise<void>;
-    }).ingestArtifactAndDeploy('project-1', repository, artifact, 'op-1');
+    await ingestion.ingest('project-1', repository, artifact, 'op-1');
 
     const expectedKey = 'artifacts/ws1/project-1/a1/' + 'd'.repeat(64) + '.tar';
     expect(store.delete).toHaveBeenCalledWith(expectedKey);
@@ -160,5 +147,34 @@ describe('ProjectsService artifact ingest → object storage', () => {
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
     );
+  });
+
+  it('does not reset an artifact identity already bound to another project', async () => {
+    const prisma = {
+      buildArtifact: {
+        findUnique: jest.fn(async () => ({
+          id: 'artifact-existing',
+          projectId: 'project-2',
+          commitSha: SHA,
+        })),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
+      deploymentOperation: { update: jest.fn(async () => ({})) },
+    };
+    const { ingestion, deployVerifiedArtifact } = makeIngestion(
+      prisma,
+      {},
+      {},
+      {},
+    );
+
+    await expect(
+      ingestion.queue('project-1', repository, artifact, 'op-1'),
+    ).rejects.toThrow('already bound to another deployment');
+    expect(prisma.buildArtifact.create).not.toHaveBeenCalled();
+    expect(prisma.buildArtifact.update).not.toHaveBeenCalled();
+    expect(deployVerifiedArtifact).not.toHaveBeenCalled();
   });
 });

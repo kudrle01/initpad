@@ -188,7 +188,9 @@ describe('ProjectsService immutable artifact binding', () => {
     jest
       .spyOn((service as any).operations, 'begin')
       .mockResolvedValue('operation-1');
-    const queue = jest.spyOn(service as any, 'queueArtifactIngestion').mockResolvedValue(undefined);
+    const queue = jest
+      .spyOn((service as any).artifactIngestion, 'queue')
+      .mockResolvedValue(undefined);
 
     await service.runAgain('project-1');
 
