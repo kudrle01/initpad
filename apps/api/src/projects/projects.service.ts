@@ -19,10 +19,8 @@ import {
   EnvName,
   Project,
   ProviderKind,
-  RuntimeKind,
-  TemplateManifest,
 } from '../domain/types';
-import { targetCanRun, templateRuntime } from '../domain/capability';
+import { templateRuntime } from '../domain/capability';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { ImportProjectDto } from './dto/import-project.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,8 +29,7 @@ import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { ARTIFACT_STORE, ArtifactStore, artifactObjectKey } from '../artifacts/artifact-store';
 import { assertImageArchiveIdentity } from '../artifacts/image-archive';
-import { TargetsService, TargetRow, BUILTIN_DOCKER } from '../targets/targets.service';
-import { allocationUsageDefaults } from '../targets/target-allocation-defaults';
+import { TargetsService, TargetRow } from '../targets/targets.service';
 import {
   ScmProvider,
   ScmActor,
@@ -49,10 +46,7 @@ import { exportVersion } from '../deployment/providers/source-export';
 import { config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 import { generateToken, hashToken, tokenMatches } from '../common/token';
-import type {
-  DeploymentAllocation,
-  ProviderConnection,
-} from '../deployment/deployment-provider.interface';
+import type { DeploymentAllocation } from '../deployment/deployment-provider.interface';
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
 import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
@@ -62,6 +56,7 @@ import { pipelineStages } from './project-pipeline';
 import { ProjectQueries } from './project-queries';
 import { projectView } from './project-view';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
+import { ProjectEnvironmentTargets } from './project-environment-targets';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -71,12 +66,6 @@ type CiArtifactInput = {
   artifactId?: string;
   artifactDigest?: string;
 };
-type ResolvedEnvironmentTarget = {
-  name: EnvName;
-  target: TargetRow;
-  allocationId: string;
-};
-
 /**
  * The platform's core orchestrator: template scaffolding, repository
  * provisioning, environment lifecycle and deployments. State is persisted
@@ -87,6 +76,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly logger = new Logger('ProjectsService');
   private readonly queries: ProjectQueries;
   private readonly artifactLifecycle: ProjectArtifactLifecycle;
+  private readonly environmentTargets: ProjectEnvironmentTargets;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -101,6 +91,7 @@ export class ProjectsService implements OnModuleInit {
   ) {
     this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore);
+    this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
   }
 
   async onModuleInit(): Promise<void> {
@@ -109,7 +100,7 @@ export class ProjectsService implements OnModuleInit {
     await this.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedOperations();
     await this.recoverInterruptedArtifactIngestions();
-    await this.reconcileTargetAllocations();
+    await this.environmentTargets.reconcileAllocations();
     // Best-effort retention sweep; never blocks startup on storage issues.
     await this.runArtifactRetention().catch((error) =>
       this.logger.warn(`Artifact retention sweep skipped: ${(error as Error).message}`),
@@ -629,9 +620,12 @@ export class ProjectsService implements OnModuleInit {
     const targets = await this.targets.listEntities(workspaceId);
     const resolvedTargets = ENV_ORDER.map((name) => {
       const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
-      return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
+      return {
+        name,
+        target: this.environmentTargets.resolveTarget(name, template, chosen, targets),
+      };
     });
-    const envTargets = await this.prepareEnvironmentAllocations(
+    const envTargets = await this.environmentTargets.prepareAllocations(
       workspaceId,
       resolvedTargets,
       templateRuntime(template),
@@ -914,9 +908,12 @@ export class ProjectsService implements OnModuleInit {
       const targets = await this.targets.listEntities(workspaceId);
       const resolvedTargets = ENV_ORDER.map((name) => {
         const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
-        return { name, target: this.resolveEnvTarget(name, template, chosen, targets) };
+        return {
+          name,
+          target: this.environmentTargets.resolveTarget(name, template, chosen, targets),
+        };
       });
-      const envTargets = await this.prepareEnvironmentAllocations(
+      const envTargets = await this.environmentTargets.prepareAllocations(
         workspaceId,
         resolvedTargets,
         templateRuntime(template),
@@ -1888,21 +1885,6 @@ export class ProjectsService implements OnModuleInit {
     return this.get(id);
   }
 
-  // Live connection for an environment's target. Built-in targets return
-  // undefined → the provider uses the config demo path (behaviour unchanged);
-  // user targets return their decrypted connection.
-  private targetConnection(env: { target?: TargetRow | null }): ProviderConnection | undefined {
-    return env.target ? this.targets.connectionForTarget(env.target) : undefined;
-  }
-
-  private deploymentAllocation(env: {
-    targetId?: string | null;
-    allocation?: DeploymentAllocation | null;
-  }): DeploymentAllocation | undefined {
-    if (!env.allocation || env.allocation.targetId !== env.targetId) return undefined;
-    return env.allocation;
-  }
-
   // Re-deploys the environment at its current version. A hash version comes
   // from the registry (build once); a bootstrap version (0.1.0) rebuilds
   // from the repository.
@@ -2097,8 +2079,8 @@ export class ProjectsService implements OnModuleInit {
     await this.deployment.stop(env.provider as ProviderKind, {
       projectName: slug,
       env: envName,
-      connection: this.targetConnection(env),
-      allocation: this.deploymentAllocation(env),
+      connection: this.environmentTargets.connection(env),
+      allocation: this.environmentTargets.allocation(env),
     });
     await this.prisma.environment.update({
       where: { projectId_name: { projectId: id, name: envName } },
@@ -2172,13 +2154,13 @@ export class ProjectsService implements OnModuleInit {
       return this.get(id);
     }
     const provider = env.provider as ProviderKind;
-    const connection = this.targetConnection(env);
+    const connection = this.environmentTargets.connection(env);
     const teardown = await this.deployment.teardown(provider, {
       projectName: slug,
       env: envName,
       imageRef: this.deployedImageRef(repository, env),
       connection,
-      allocation: this.deploymentAllocation(env),
+      allocation: this.environmentTargets.allocation(env),
     });
     const cleanupWarning = teardown?.warning
       ? `Cleanup pending: ${teardown.warning}`
@@ -2216,16 +2198,16 @@ export class ProjectsService implements OnModuleInit {
         startCommand: template.startCommand,
         version: env.version ?? undefined,
         appPort,
-        connection: this.targetConnection(env),
-        allocation: this.deploymentAllocation(env),
+        connection: this.environmentTargets.connection(env),
+        allocation: this.environmentTargets.allocation(env),
       });
       if (await this.operationCancelled(operationId)) {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: slug,
           env: envName,
           imageRef: this.deployedImageRef(repository, env),
-          connection: this.targetConnection(env),
-          allocation: this.deploymentAllocation(env),
+          connection: this.environmentTargets.connection(env),
+          allocation: this.environmentTargets.allocation(env),
         });
         await this.prisma.environment.updateMany({
           where: { projectId: id, name: envName, activeOperationId: operationId },
@@ -2419,8 +2401,8 @@ export class ProjectsService implements OnModuleInit {
           projectName: slug,
           env: env.name,
           imageRef: this.deployedImageRef(repository, env),
-          connection: this.targetConnection(env),
-          allocation: this.deploymentAllocation(env),
+          connection: this.environmentTargets.connection(env),
+          allocation: this.environmentTargets.allocation(env),
         });
         teardownWarning = teardown?.warning ?? null;
         // If a later target fails, keep an accurate, retryable project record
@@ -2528,182 +2510,6 @@ export class ProjectsService implements OnModuleInit {
       map[row.key] = row.isSecret ? decryptSecret(row.value) : row.value;
     }
     return map;
-  }
-
-  // Backfill for ADR-060: every environment that already runs on a target must
-  // point at a workspace-scoped TargetAllocation. Idempotent and safe to run on
-  // each boot — it only fills gaps (allocationId still null) and reuses the one
-  // allocation per (workspace, target) pair. Providers preserve legacy paths
-  // and also recognise pre-allocation Docker container names during transition.
-  private async reconcileTargetAllocations(): Promise<void> {
-    const pending = await this.prisma.environment.findMany({
-      where: { allocationId: null, targetId: { not: null } },
-      select: { id: true, targetId: true, project: { select: { workspaceId: true } } },
-    });
-    if (!pending.length) return;
-    let linked = 0;
-    for (const env of pending) {
-      if (!env.targetId) continue;
-      const allocation = await this.ensureTargetAllocation(
-        env.project.workspaceId,
-        env.targetId,
-        true,
-      );
-      const res = await this.prisma.environment.updateMany({
-        where: { id: env.id, allocationId: null },
-        data: { allocationId: allocation.id },
-      });
-      linked += res.count;
-    }
-    if (linked) this.logger.log(`Backfilled ${linked} environment(s) onto a target allocation`);
-  }
-
-  // Ensures exactly one allocation exists for a (workspace, target) pair. The
-  // backfilled allocation mirrors the target's current public URL, remote root
-  // and capabilities so existing URLs and ESO SFTP paths stay byte-for-byte the
-  // same; the namespace is the stable workspace slug. Credentials are never
-  // copied — they remain on the physical Target.
-  private async ensureTargetAllocation(
-    workspaceId: string,
-    targetId: string,
-    preserveLegacy = false,
-  ): Promise<DeploymentAllocation & {
-    capabilities: string;
-    status: string;
-    maxEnvironments: number;
-  }> {
-    const selection = {
-      id: true,
-      targetId: true,
-      namespace: true,
-      rootPath: true,
-      publicUrl: true,
-      capabilities: true,
-      status: true,
-      maxEnvironments: true,
-    } as const;
-    const existing = await this.prisma.targetAllocation.findUnique({
-      where: { workspaceId_targetId: { workspaceId, targetId } },
-      select: selection,
-    });
-    if (existing) return existing;
-    const target = await this.prisma.target.findUniqueOrThrow({ where: { id: targetId } });
-    const workspace = await this.prisma.workspace.findUniqueOrThrow({
-      where: { id: workspaceId },
-      select: { slug: true },
-    });
-    const usage = allocationUsageDefaults(target, workspace.slug, preserveLegacy);
-    try {
-      return await this.prisma.targetAllocation.create({
-        data: {
-          workspaceId,
-          targetId,
-          namespace: workspace.slug,
-          rootPath: usage.rootPath,
-          publicUrl: usage.publicUrl,
-          capabilities: target.capabilities,
-        },
-        select: selection,
-      });
-    } catch (error) {
-      // Lost a race on the unique (workspaceId, targetId): reuse the winner.
-      const winner = await this.prisma.targetAllocation.findUnique({
-        where: { workspaceId_targetId: { workspaceId, targetId } },
-        select: selection,
-      });
-      if (winner) return winner;
-      throw error;
-    }
-  }
-
-  // Resolves the workspace allocation before repository provisioning or import
-  // persistence. This prevents a disabled allocation, narrowed capability set,
-  // or exhausted quota from leaving an external repository or a project whose
-  // environments cannot ever deploy.
-  private async prepareEnvironmentAllocations(
-    workspaceId: string,
-    environments: Array<{ name: EnvName; target: TargetRow }>,
-    requiredRuntime: RuntimeKind,
-  ): Promise<ResolvedEnvironmentTarget[]> {
-    const grouped = new Map<string, Array<{ name: EnvName; target: TargetRow }>>();
-    for (const environment of environments) {
-      const group = grouped.get(environment.target.id) ?? [];
-      group.push(environment);
-      grouped.set(environment.target.id, group);
-    }
-
-    const allocationIds = new Map<string, string>();
-    for (const [targetId, planned] of grouped) {
-      const allocation = await this.ensureTargetAllocation(workspaceId, targetId);
-      if (allocation.status !== 'active') {
-        throw new BadRequestException(
-          `Target allocation for '${planned[0].target.name}' is disabled.`,
-        );
-      }
-      const capabilities = allocation.capabilities
-        .split(',')
-        .map((capability) => capability.trim())
-        .filter(Boolean);
-      if (!capabilities.includes(requiredRuntime)) {
-        throw new BadRequestException(
-          `Target allocation for '${planned[0].target.name}' does not allow ${requiredRuntime} applications.`,
-        );
-      }
-      const currentCount = await this.prisma.environment.count({
-        where: { allocationId: allocation.id },
-      });
-      if (currentCount + planned.length > allocation.maxEnvironments) {
-        throw new BadRequestException(
-          `Target allocation quota for '${planned[0].target.name}' would be exceeded ` +
-          `(using ${currentCount} of ${allocation.maxEnvironments}, project needs ${planned.length}).`,
-        );
-      }
-      allocationIds.set(targetId, allocation.id);
-    }
-
-    return environments.map(({ name, target }) => ({
-      name,
-      target,
-      allocationId: allocationIds.get(target.id)!,
-    }));
-  }
-
-  // Enforces allocation policy at deploy time (ADR-060 §6): a disabled allocation
-  // pauses NEW deploys (running environments are untouched), and binding a new
-  // environment may not exceed the allocation's maxEnvironments quota. Re-deploying
-  // an environment already bound to the allocation is always allowed.
-  private async assertAllocationAcceptsDeploy(
-    allocationId: string,
-    environmentId: string,
-    requiredRuntime?: RuntimeKind,
-  ): Promise<void> {
-    const allocation = await this.prisma.targetAllocation.findUnique({
-      where: { id: allocationId },
-      include: { _count: { select: { environments: true } } },
-    });
-    if (!allocation) return;
-    if (allocation.status !== 'active') {
-      throw new BadRequestException(
-        'This target allocation is disabled; new deployments are paused.',
-      );
-    }
-    const capabilities = allocation.capabilities
-      .split(',')
-      .map((capability) => capability.trim())
-      .filter(Boolean);
-    if (requiredRuntime && !capabilities.includes(requiredRuntime)) {
-      throw new BadRequestException(
-        `This target allocation does not allow ${requiredRuntime} applications.`,
-      );
-    }
-    const alreadyBound = await this.prisma.environment.count({
-      where: { id: environmentId, allocationId },
-    });
-    if (!alreadyBound && allocation._count.environments >= allocation.maxEnvironments) {
-      throw new BadRequestException(
-        `Target allocation quota reached (max ${allocation.maxEnvironments} environments).`,
-      );
-    }
   }
 
   // Identity for repository operations. Coordinates come from the explicit
@@ -2863,8 +2669,11 @@ export class ProjectsService implements OnModuleInit {
     let allocationId: string | undefined;
     let allocation: DeploymentAllocation | undefined;
     if (env.targetId) {
-      const resolved = await this.ensureTargetAllocation(project.workspaceId, env.targetId);
-      await this.assertAllocationAcceptsDeploy(
+      const resolved = await this.environmentTargets.ensureAllocation(
+        project.workspaceId,
+        env.targetId,
+      );
+      await this.environmentTargets.assertAcceptsDeploy(
         resolved.id,
         env.id,
         templateRuntime(template),
@@ -2966,7 +2775,7 @@ export class ProjectsService implements OnModuleInit {
         writableDirs: deployWritableDirs,
         appPort,
         onProgress: setStage,
-        connection: this.targetConnection(env),
+        connection: this.environmentTargets.connection(env),
         allocation,
         imageRef: testedImageRef,
         allowBuildFallback: !useRegistry,
@@ -2977,7 +2786,7 @@ export class ProjectsService implements OnModuleInit {
           projectName: this.deploySlug(repository),
           env: envName,
           imageRef: testedImageRef,
-          connection: this.targetConnection(env),
+          connection: this.environmentTargets.connection(env),
           allocation,
         });
         await this.prisma.environment.updateMany({
@@ -3017,18 +2826,6 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
-  // The "natural" prod target kind for a template. PHP framework templates
-  // prefer a PHP-capable shared host when the workspace registered one; plain
-  // PHP and Python still fall back to Docker when their manifest does not
-  // accept that provider kind.
-  private defaultKind(template: TemplateManifest): ProviderKind {
-    const rt = templateRuntime(template);
-    if (rt === 'static') return 'sftp';
-    if (rt === 'node') return 'ssh';
-    if (rt === 'php') return 'sftp';
-    return 'docker';
-  }
-
   private assertSaasCiCallback(): void {
     if (config.edition !== 'saas') return;
     const issue = publicHttpsUrlIssue(config.ci.publicUrl);
@@ -3047,75 +2844,6 @@ export class ProjectsService implements OnModuleInit {
         `${issue} No reusable tested artifact was found, so InitPad did not start another GitHub workflow. Configure a public InitPad URL first.`,
       );
     }
-  }
-
-  // Validates that a target can host a template (kind accepted + runtime
-  // supported), raising a specific error otherwise. The predicate itself lives
-  // in domain/capability (pure, unit-tested).
-  private assertUsable(target: TargetRow, template: TemplateManifest): void {
-    const capabilities = this.targets.parseCaps(target.capabilities);
-    if (targetCanRun(template, { kind: target.kind as ProviderKind, capabilities })) {
-      if (target.scope === 'user' && !target.verifiedAt) {
-        throw new BadRequestException(
-          `Target '${target.name}' must pass Test connection before it can host an environment.`,
-        );
-      }
-      return;
-    }
-    if (!template.compatibleProviders.includes(target.kind as ProviderKind)) {
-      throw new BadRequestException(`Template '${template.id}' cannot deploy over ${target.kind}.`);
-    }
-    throw new BadRequestException(
-      `Target '${target.name}' cannot run ${templateRuntime(template)} apps (its capabilities: ${target.capabilities}).`,
-    );
-  }
-
-  // Resolves the target for an environment at creation time. SaaS requires an
-  // explicit verified workspace target for dev/test/prod. Self-hosted keeps
-  // its convenient built-in defaults, while still accepting an explicit target
-  // for every environment.
-  private resolveEnvTarget(
-    name: EnvName,
-    template: TemplateManifest,
-    targetId: string | undefined,
-    entities: TargetRow[],
-  ): TargetRow {
-    const runtime = templateRuntime(template);
-    if (config.edition === 'saas' && !targetId) {
-      throw new BadRequestException(
-        `Choose a verified workspace target for the ${name} environment. Public SaaS has no local built-in deployment target.`,
-      );
-    }
-    if (targetId) {
-      const t = entities.find((e) => e.id === targetId);
-      if (!t) throw new NotFoundException(`Target '${targetId}' not found`);
-      this.assertUsable(t, template);
-      return t;
-    }
-    if (name === 'prod') {
-      const kind = this.defaultKind(template);
-      const candidates = entities.filter(
-        (e) =>
-          e.kind === kind &&
-          template.compatibleProviders.includes(e.kind as ProviderKind) &&
-          this.targets.parseCaps(e.capabilities).includes(runtime),
-      );
-      // Keep the deterministic simulated target for static/Node templates.
-      // When no built-in target has the required runtime (PHP on SFTP), prefer
-      // a verified workspace target. Unverified user targets are never an
-      // implicit default; the Docker fallback remains usable until verification.
-      const natural =
-        candidates.find((e) => e.scope === 'builtin') ??
-        candidates.find((e) => e.scope === 'user' && e.verifiedAt);
-      if (natural) return natural;
-    }
-    const docker = entities.find((e) => e.id === BUILTIN_DOCKER);
-    if (!docker) {
-      throw new BadRequestException(
-        'Built-in Docker target is missing — the platform has not seeded its infrastructure yet.',
-      );
-    }
-    return docker;
   }
 
   // Points an environment at a (different) target — the core of a configurable
@@ -3140,9 +2868,12 @@ export class ProjectsService implements OnModuleInit {
     const entities = await this.targets.listEntities(project.workspaceId);
     const target = entities.find((e) => e.id === targetId);
     if (!target) throw new NotFoundException(`Target '${targetId}' not found`);
-    this.assertUsable(target, template);
-    const allocation = await this.ensureTargetAllocation(project.workspaceId, target.id);
-    await this.assertAllocationAcceptsDeploy(
+    this.environmentTargets.assertUsable(target, template);
+    const allocation = await this.environmentTargets.ensureAllocation(
+      project.workspaceId,
+      target.id,
+    );
+    await this.environmentTargets.assertAcceptsDeploy(
       allocation.id,
       env.id,
       templateRuntime(template),
@@ -3164,8 +2895,8 @@ export class ProjectsService implements OnModuleInit {
         projectName: slug,
         env: envName,
         imageRef: this.deployedImageRef(repository, env),
-        connection: this.targetConnection(env),
-        allocation: this.deploymentAllocation(env),
+        connection: this.environmentTargets.connection(env),
+        allocation: this.environmentTargets.allocation(env),
       });
       if (teardown?.warning) {
         await this.prisma.environment.update({

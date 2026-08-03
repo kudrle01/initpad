@@ -1,25 +1,10 @@
-import { ProjectsService } from './projects.service';
+import { ProjectEnvironmentTargets } from './project-environment-targets';
 
 function make(prisma: Record<string, unknown>) {
-  return new ProjectsService(
-    prisma as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-  );
+  return new ProjectEnvironmentTargets(prisma as never, {} as never);
 }
 
-async function runReconcile(service: ProjectsService) {
-  await (service as unknown as { reconcileTargetAllocations: () => Promise<void> })
-    .reconcileTargetAllocations();
-}
-
-describe('ProjectsService.reconcileTargetAllocations (ADR-060 backfill)', () => {
+describe('ProjectEnvironmentTargets.reconcileAllocations (ADR-060 backfill)', () => {
   it('creates one allocation per (workspace,target) pair and links the environment', async () => {
     const create = jest.fn(async () => ({ id: 'alloc-1' }));
     const updateMany = jest.fn(async () => ({ count: 1 }));
@@ -46,7 +31,7 @@ describe('ProjectsService.reconcileTargetAllocations (ADR-060 backfill)', () => 
     };
     const service = make(prisma);
 
-    await runReconcile(service);
+    await service.reconcileAllocations();
 
     // Allocation mirrors the target so existing URLs/paths are unchanged.
     expect(create).toHaveBeenCalledWith(
@@ -86,10 +71,50 @@ describe('ProjectsService.reconcileTargetAllocations (ADR-060 backfill)', () => 
     };
     const service = make(prisma);
 
-    await runReconcile(service);
+    await service.reconcileAllocations();
 
     expect(create).not.toHaveBeenCalled();
     expect(prisma.target.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('reuses the allocation created by a concurrent project request', async () => {
+    const findUnique = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'alloc-winner',
+        targetId: 'tgt-1',
+        namespace: 'acme',
+        rootPath: '/var/www/acme',
+        publicUrl: 'http://host/acme',
+        capabilities: 'node',
+        status: 'active',
+        maxEnvironments: 50,
+      });
+    const prisma = {
+      targetAllocation: {
+        findUnique,
+        create: jest.fn(async () => {
+          throw new Error('unique constraint');
+        }),
+      },
+      target: {
+        findUniqueOrThrow: jest.fn(async () => ({
+          id: 'tgt-1',
+          kind: 'docker',
+          remotePath: null,
+          publicUrl: 'http://host',
+          capabilities: 'node',
+        })),
+      },
+      workspace: { findUniqueOrThrow: jest.fn(async () => ({ slug: 'acme' })) },
+    };
+    const service = make(prisma);
+
+    await expect(service.ensureAllocation('ws-1', 'tgt-1')).resolves.toEqual(
+      expect.objectContaining({ id: 'alloc-winner' }),
+    );
+    expect(findUnique).toHaveBeenCalledTimes(2);
   });
 
   it('is a no-op when every environment is already linked', async () => {
@@ -104,7 +129,7 @@ describe('ProjectsService.reconcileTargetAllocations (ADR-060 backfill)', () => 
     };
     const service = make(prisma);
 
-    await runReconcile(service);
+    await service.reconcileAllocations();
 
     expect(prisma.targetAllocation.findUnique).not.toHaveBeenCalled();
     expect(prisma.environment.updateMany).not.toHaveBeenCalled();
@@ -124,7 +149,7 @@ describe('ProjectsService.reconcileTargetAllocations (ADR-060 backfill)', () => 
     };
     const service = make(prisma);
 
-    await runReconcile(service);
+    await service.reconcileAllocations();
 
     expect(prisma.targetAllocation.findUnique).not.toHaveBeenCalled();
   });

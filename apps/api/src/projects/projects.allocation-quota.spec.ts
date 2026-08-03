@@ -1,33 +1,30 @@
 import { BadRequestException } from '@nestjs/common';
 
-import { ProjectsService } from './projects.service';
+import { ProjectEnvironmentTargets } from './project-environment-targets';
 
 function make(prisma: Record<string, unknown>) {
-  return new ProjectsService(
+  return new ProjectEnvironmentTargets(
     prisma as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
+    {
+      parseCaps: (value: string) =>
+        value
+          .split(',')
+          .map((capability) => capability.trim())
+          .filter(Boolean),
+    } as never,
   );
 }
 
 function assertDeploy(
-  service: ProjectsService,
+  service: ProjectEnvironmentTargets,
   allocationId: string,
   envId: string,
   runtime?: 'static' | 'node' | 'php' | 'python',
 ) {
-  return (service as unknown as {
-    assertAllocationAcceptsDeploy: (a: string, e: string, r?: string) => Promise<void>;
-  }).assertAllocationAcceptsDeploy(allocationId, envId, runtime);
+  return service.assertAcceptsDeploy(allocationId, envId, runtime);
 }
 
-describe('ProjectsService.assertAllocationAcceptsDeploy (ADR-060 P2.5)', () => {
+describe('ProjectEnvironmentTargets.assertAcceptsDeploy (ADR-060 P2.5)', () => {
   it('blocks a new deploy on a disabled allocation', async () => {
     const prisma = {
       targetAllocation: {
