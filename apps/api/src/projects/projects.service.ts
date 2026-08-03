@@ -29,7 +29,7 @@ import { GeneratorService } from '../generator/generator.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { ARTIFACT_STORE, ArtifactStore, artifactObjectKey } from '../artifacts/artifact-store';
 import { assertImageArchiveIdentity } from '../artifacts/image-archive';
-import { TargetsService, TargetRow } from '../targets/targets.service';
+import { TargetsService } from '../targets/targets.service';
 import {
   ScmProvider,
   ScmActor,
@@ -58,6 +58,14 @@ import { projectView } from './project-view';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
+import { ProjectEnvironmentLifecycle } from './project-environment-lifecycle';
+import {
+  artifactImageRef,
+  deployedImageRef,
+  deploymentSlug,
+  imageRepository,
+  registryImageRef,
+} from './project-deployment-identity';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -79,6 +87,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly artifactLifecycle: ProjectArtifactLifecycle;
   private readonly environmentTargets: ProjectEnvironmentTargets;
   private readonly operations: ProjectDeploymentOperations;
+  private readonly environmentLifecycle: ProjectEnvironmentLifecycle;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -95,6 +104,13 @@ export class ProjectsService implements OnModuleInit {
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
     this.operations = new ProjectDeploymentOperations(prisma);
+    this.environmentLifecycle = new ProjectEnvironmentLifecycle(
+      prisma,
+      templates,
+      deployment,
+      this.environmentTargets,
+      this.operations,
+    );
   }
 
   async onModuleInit(): Promise<void> {
@@ -1588,7 +1604,7 @@ export class ProjectsService implements OnModuleInit {
     try {
       if (!scm.downloadBuildArtifact) throw new Error('Artifact download is unavailable');
       download = await scm.downloadBuildArtifact(repository, artifact);
-      const imageRef = this.artifactImageRef(repository, artifact);
+      const imageRef = artifactImageRef(repository, artifact);
       // Daemon-free identity check before anything durable is written.
       await assertImageArchiveIdentity(download.filePath, imageRef);
       // Durable object storage is the source of truth: stream the verified bytes
@@ -1705,7 +1721,7 @@ export class ProjectsService implements OnModuleInit {
       where: { id: buildArtifactId, projectId, status: 'available', storageKind: 'object-store' },
     });
     if (!artifact?.storageRef) return false;
-    const imageRef = this.artifactImageRef(repository, {
+    const imageRef = artifactImageRef(repository, {
       commitSha: artifact.commitSha,
       providerRunId: artifact.providerRunId,
     });
@@ -1968,37 +1984,14 @@ export class ProjectsService implements OnModuleInit {
   // Suspends a running environment (stops the container/process). The version
   // is kept so it remains visible what is deployed; Start resumes it.
   async stopEnv(id: string, envName: EnvName): Promise<Project> {
-    const { env, slug } = await this.envContext(id, envName);
-    if (env.activeOperationId) {
-      throw new BadRequestException(`Environment '${envName}' has an active operation`);
-    }
-    if (env.status !== 'running') {
-      throw new BadRequestException(`Environment '${envName}' is not running`);
-    }
-    await this.deployment.stop(env.provider as ProviderKind, {
-      projectName: slug,
-      env: envName,
-      connection: this.environmentTargets.connection(env),
-      allocation: this.environmentTargets.allocation(env),
-    });
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId: id, name: envName } },
-      data: { status: 'stopped', statusReason: null },
-    });
+    await this.environmentLifecycle.stop(id, envName);
     return this.get(id);
   }
 
   // Re-starts a stopped environment at the same version (in the background;
   // the UI shows "deploying" and then the outcome).
   async startEnv(id: string, envName: EnvName): Promise<Project> {
-    const env = await this.prisma.environment.findUniqueOrThrow({
-      where: { projectId_name: { projectId: id, name: envName } },
-    });
-    if (!env.version) {
-      throw new BadRequestException(`Environment '${envName}' has nothing to start`);
-    }
-    const operationId = await this.operations.begin(id, envName, 'start', env.version);
-    void this.startEnvInBackground(id, envName, operationId);
+    await this.environmentLifecycle.start(id, envName);
     return this.get(id);
   }
 
@@ -2006,198 +1999,8 @@ export class ProjectsService implements OnModuleInit {
   // environment becomes "empty" and can be deployed again (redeploy/promote).
   // The repository and the project itself are untouched.
   async removeEnv(id: string, envName: EnvName): Promise<Project> {
-    const { project, env, slug } = await this.envContext(id, envName);
-    const repository = repositoryRef(project);
-    if (env.activeOperationId) {
-      const operation = await this.prisma.deploymentOperation.findUnique({
-        where: { id: env.activeOperationId },
-      });
-      // A CI retry is only waiting for Gitea and has no deployment process to
-      // clean up. Finish it synchronously so its eventual callback is stale.
-      if (operation?.kind === 'ci-retry') {
-        await this.prisma.$transaction([
-          this.prisma.deploymentOperation.update({
-            where: { id: operation.id },
-            data: {
-              status: 'cancelled',
-              message: 'Cancellation requested by user',
-              finishedAt: new Date(),
-            },
-          }),
-          this.prisma.environment.update({
-            where: { id: env.id },
-            data: {
-              status: 'empty',
-              version: null,
-              buildArtifactId: null,
-              url: null,
-              statusReason: null,
-              allocatedPort: null,
-              activeOperationId: null,
-              deploymentRequired: false,
-            },
-          }),
-        ]);
-        return this.get(id);
-      }
-      await this.prisma.$transaction([
-        this.prisma.deploymentOperation.update({
-          where: { id: env.activeOperationId },
-          data: { status: 'cancelled', message: 'Cancellation requested by user' },
-        }),
-        this.prisma.environment.update({
-          where: { id: env.id },
-          data: { statusReason: 'Cancellation requested — cleaning up' },
-        }),
-      ]);
-      return this.get(id);
-    }
-    const provider = env.provider as ProviderKind;
-    const connection = this.environmentTargets.connection(env);
-    const teardown = await this.deployment.teardown(provider, {
-      projectName: slug,
-      env: envName,
-      imageRef: this.deployedImageRef(repository, env),
-      connection,
-      allocation: this.environmentTargets.allocation(env),
-    });
-    const cleanupWarning = teardown?.warning
-      ? `Cleanup pending: ${teardown.warning}`
-      : null;
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId: id, name: envName } },
-      // Releasing allocatedPort returns the port to the pool.
-      data: {
-        status: 'empty',
-        version: null,
-        buildArtifactId: null,
-        url: null,
-        statusReason: cleanupWarning,
-        allocatedPort: null,
-        deploymentRequired: false,
-      },
-    });
+    await this.environmentLifecycle.remove(id, envName);
     return this.get(id);
-  }
-
-  private async startEnvInBackground(
-    id: string,
-    envName: EnvName,
-    operationId: string,
-  ): Promise<void> {
-    try {
-      const { project, template, env, slug } = await this.envContext(id, envName);
-      const repository = repositoryRef(project);
-      const appPort = this.isDemoSsh(env) ? await this.allocateSshPort(id, envName) : undefined;
-      const result = await this.deployment.start(env.provider as ProviderKind, {
-        projectName: slug,
-        env: envName,
-        port: template.port,
-        healthPath: template.healthPath ?? '/health',
-        startCommand: template.startCommand,
-        version: env.version ?? undefined,
-        appPort,
-        connection: this.environmentTargets.connection(env),
-        allocation: this.environmentTargets.allocation(env),
-      });
-      if (await this.operations.cancelled(operationId)) {
-        const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
-          projectName: slug,
-          env: envName,
-          imageRef: this.deployedImageRef(repository, env),
-          connection: this.environmentTargets.connection(env),
-          allocation: this.environmentTargets.allocation(env),
-        });
-        await this.prisma.environment.updateMany({
-          where: { projectId: id, name: envName, activeOperationId: operationId },
-          data: {
-            status: 'empty',
-            version: null,
-            buildArtifactId: null,
-            url: null,
-            statusReason: teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
-            activeOperationId: null,
-          },
-        });
-        await this.operations.complete(operationId, 'cancelled', 'Cancelled by user');
-        return;
-      }
-      await this.prisma.environment.updateMany({
-        where: { projectId: id, name: envName, activeOperationId: operationId },
-        data: {
-          status: result.status,
-          url: result.url,
-          statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
-        },
-      });
-      await this.operations.complete(
-        operationId,
-        result.status === 'failed' ? 'failed' : 'succeeded',
-        result.reason,
-      );
-    } catch (e) {
-      await this.prisma.environment
-        .updateMany({
-          where: { projectId: id, name: envName, activeOperationId: operationId },
-          data: { status: 'failed', statusReason: (e as Error).message, activeOperationId: null },
-        })
-        .catch(() => undefined);
-      await this.operations.complete(operationId, 'failed', (e as Error).message);
-    }
-  }
-
-  // Allocates a unique application port for an SSH deployment. Ports come
-  // from the configured range and are persisted in Environment.allocatedPort;
-  // the unique constraint on that column rules out collisions even under
-  // concurrent deployments (a losing writer just retries the next port).
-  private async allocateSshPort(projectId: string, envName: EnvName): Promise<number> {
-    const env = await this.prisma.environment.findUniqueOrThrow({
-      where: { projectId_name: { projectId, name: envName } },
-    });
-    if (env.allocatedPort) return env.allocatedPort;
-
-    const { appPortBase, appPortSlots } = config.providers.ssh;
-    const used = await this.prisma.environment.findMany({
-      where: { allocatedPort: { not: null } },
-      select: { allocatedPort: true },
-    });
-    const taken = new Set(used.map((u) => u.allocatedPort));
-    for (let port = appPortBase; port < appPortBase + appPortSlots; port++) {
-      if (taken.has(port)) continue;
-      try {
-        await this.prisma.environment.update({
-          where: { projectId_name: { projectId, name: envName } },
-          data: { allocatedPort: port },
-        });
-        return port;
-      } catch {
-        // Unique violation — another deployment grabbed this port between
-        // our read and write. Try the next candidate.
-      }
-    }
-    throw new Error(
-      `No free application ports on the SSH target (range ${appPortBase}–${appPortBase + appPortSlots - 1} is full). ` +
-        'Remove unused deployments or widen INITPAD_SSH_APP_PORT_SLOTS.',
-    );
-  }
-
-  // Shared context for environment operations: project, template, environment
-  // row and the deployment slug.
-  private async envContext(id: string, envName: EnvName) {
-    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
-    const template = this.templates.get(project.templateId);
-    const env = await this.prisma.environment.findUniqueOrThrow({
-      where: { projectId_name: { projectId: id, name: envName } },
-      include: { target: true, allocation: true, buildArtifact: true },
-    });
-    const slug = this.deploySlug(repositoryRef(project));
-    return { project, template, env, slug };
-  }
-
-  // The shared SSH port pool is only for the built-in demo VPS; a user's own
-  // SSH server runs the app on the template port directly (no pool).
-  private isDemoSsh(env: { provider: string; target?: TargetRow | null }): boolean {
-    return env.provider === 'ssh' && env.target?.scope !== 'user';
   }
 
   // Deletes the project only after every managed environment has been torn
@@ -2292,14 +2095,14 @@ export class ProjectsService implements OnModuleInit {
       where: { environment: { projectId: row.id }, finishedAt: null },
       data: { status: 'cancelled', message: 'Project deletion requested', finishedAt: new Date() },
     });
-    const slug = this.deploySlug(repository);
+    const slug = deploymentSlug(repository);
     for (const env of row.environments) {
       let teardownWarning: string | null = null;
       try {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
           projectName: slug,
           env: env.name,
-          imageRef: this.deployedImageRef(repository, env),
+          imageRef: deployedImageRef(repository, env),
           connection: this.environmentTargets.connection(env),
           allocation: this.environmentTargets.allocation(env),
         });
@@ -2346,7 +2149,7 @@ export class ProjectsService implements OnModuleInit {
     }
     // Only after all containers are stopped, remove the locally pulled
     // registry images of the project.
-    await this.deployment.removeImages(this.imageRepo(repository));
+    await this.deployment.removeImages(imageRepository(repository));
     // Also delete the images from the Gitea registry (Packages) so no
     // orphaned artifacts remain.
     const scm = this.workspaceScm.provider(repository.provider);
@@ -2432,51 +2235,6 @@ export class ProjectsService implements OnModuleInit {
     return { username: row.owner?.username || row.scmOwner || config.gitea.user, token };
   }
 
-  // Docker-safe deployment key namespaced by repo owner: <owner>-<name>.
-  // Guarantees unique image/container names even for same-named projects of
-  // different users.
-  private deploySlug(repository: ScmRepositoryRef): string {
-    return `${repository.owner}-${repository.name}`
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-  }
-
-  // Registry image tag: <registry>/<owner>/<name>:<version>. Must match what
-  // CI pushes (see ci.yml). Everything lowercase (registry requirement).
-  private imageRef(repository: ScmRepositoryRef, version: string): string {
-    return `${this.imageRepo(repository)}:${version}`;
-  }
-
-  private artifactImageRef(
-    repository: ScmRepositoryRef,
-    artifact: Pick<ScmBuildArtifact, 'commitSha' | 'providerRunId'>,
-  ): string {
-    return `${this.imageRepo(repository)}:${artifact.commitSha}-${artifact.providerRunId}`;
-  }
-
-  // Registry repository without a tag: <registry>/<owner>/<name> (lowercase).
-  private imageRepo(repository: ScmRepositoryRef): string {
-    const registry = repository.provider === 'github' ? 'ghcr.io' : config.registry.host;
-    return `${registry}/${repository.owner}/${repository.name}`.toLowerCase();
-  }
-
-  private deployedImageRef(
-    repository: ScmRepositoryRef,
-    env: {
-      version: string | null;
-      buildArtifact?: { commitSha: string; providerRunId: string } | null;
-    },
-  ): string | undefined {
-    if (!env.version || !/^[0-9a-f]{40}$/i.test(env.version)) return undefined;
-    if (repository.provider === 'github') {
-      return env.buildArtifact
-        ? this.artifactImageRef(repository, env.buildArtifact)
-        : undefined;
-    }
-    return this.imageRef(repository, env.version);
-  }
-
   private async actorForProject(projectId: string): Promise<ScmActor> {
     const row = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -2548,7 +2306,7 @@ export class ProjectsService implements OnModuleInit {
         // storageRef is the opaque object key, never the Docker ref (ADR-059 §6):
         // derive the image ref and make sure it is in the daemon, rehydrating
         // from durable storage if the local cache was lost.
-        testedImageRef = this.artifactImageRef(repository, {
+        testedImageRef = artifactImageRef(repository, {
           commitSha: artifact.commitSha,
           providerRunId: artifact.providerRunId,
         });
@@ -2556,7 +2314,7 @@ export class ProjectsService implements OnModuleInit {
           throw new Error('Verified build artifact could not be rehydrated from object storage');
         }
       } else {
-        testedImageRef = this.imageRef(repository, version);
+        testedImageRef = registryImageRef(repository, version);
       }
     }
 
@@ -2586,7 +2344,9 @@ export class ProjectsService implements OnModuleInit {
     });
     // The built-in SSH VPS is shared — allocate a unique app port from the
     // database. A user's own SSH server uses the template port directly.
-    const appPort = this.isDemoSsh(env) ? await this.allocateSshPort(projectId, envName) : undefined;
+    const appPort = this.environmentLifecycle.usesSharedSshPort(env)
+      ? await this.environmentLifecycle.allocateSharedSshPort(projectId, envName)
+      : undefined;
 
     // Live progress: providers report steps via onProgress; the latest is
     // persisted into statusReason so the UI can show it under the deploying env.
@@ -2627,7 +2387,7 @@ export class ProjectsService implements OnModuleInit {
       setStage('Fetching & extracting tested artifact');
       extractedDir = mkdtempSync(join(tmpdir(), 'initpad-artifact-'));
       await this.deployment.extractArtifact(
-        testedImageRef ?? this.imageRef(repository, version),
+        testedImageRef ?? registryImageRef(repository, version),
         template.buildArtifactPath!,
         extractedDir,
       );
@@ -2661,7 +2421,7 @@ export class ProjectsService implements OnModuleInit {
 
     try {
       const result = await this.deployment.deploy(env.provider as ProviderKind, {
-        projectName: this.deploySlug(repository),
+        projectName: deploymentSlug(repository),
         version,
         env: envName,
         repoPath: deployRepoPath,
@@ -2682,7 +2442,7 @@ export class ProjectsService implements OnModuleInit {
       });
       if (await this.operations.cancelled(operationId)) {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
-          projectName: this.deploySlug(repository),
+          projectName: deploymentSlug(repository),
           env: envName,
           imageRef: testedImageRef,
           connection: this.environmentTargets.connection(env),
@@ -2787,13 +2547,13 @@ export class ProjectsService implements OnModuleInit {
     const movingAway = !!env.targetId && targetChanged && env.status !== 'empty';
     if (movingAway) {
       const repository = repositoryRef(project);
-      const slug = this.deploySlug(repository);
+      const slug = deploymentSlug(repository);
       // Do not bind the new target until teardown succeeds; otherwise a failed
       // cleanup would leave an unreachable orphan on the old infrastructure.
       const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
         projectName: slug,
         env: envName,
-        imageRef: this.deployedImageRef(repository, env),
+        imageRef: deployedImageRef(repository, env),
         connection: this.environmentTargets.connection(env),
         allocation: this.environmentTargets.allocation(env),
       });
