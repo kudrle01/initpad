@@ -15,13 +15,11 @@ import { Prisma } from '@prisma/client';
 import {
   ActivityEvent,
   Commit,
-  DeployStatus,
   DeploymentOperationSummary,
   EnvName,
   Project,
   ProviderKind,
   RuntimeKind,
-  TargetScope,
   TemplateManifest,
 } from '../domain/types';
 import { targetCanRun, templateRuntime } from '../domain/capability';
@@ -58,9 +56,11 @@ import type {
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
 import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
-import { publicHttpsUrlIssue, withCurrentPublicHost } from '../common/public-url';
+import { publicHttpsUrlIssue } from '../common/public-url';
 import { CI_RUNNING_REASON, CI_WAITING_REASON } from './ci-state';
-import { pipelineStages, withDeploymentState } from './project-pipeline';
+import { pipelineStages } from './project-pipeline';
+import { ProjectQueries } from './project-queries';
+import { projectView } from './project-view';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 
@@ -76,10 +76,6 @@ type ResolvedEnvironmentTarget = {
   allocationId: string;
 };
 
-type ProjectRow = Prisma.ProjectGetPayload<{
-  include: { environments: { include: { target: true; buildArtifact: true } } };
-}>;
-
 /**
  * The platform's core orchestrator: template scaffolding, repository
  * provisioning, environment lifecycle and deployments. State is persisted
@@ -88,6 +84,7 @@ type ProjectRow = Prisma.ProjectGetPayload<{
 @Injectable()
 export class ProjectsService implements OnModuleInit {
   private readonly logger = new Logger('ProjectsService');
+  private readonly queries: ProjectQueries;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -99,7 +96,9 @@ export class ProjectsService implements OnModuleInit {
     private readonly workspaces: WorkspacesService,
     private readonly provisioning: ProvisioningService,
     @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
-  ) {}
+  ) {
+    this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
+  }
 
   async onModuleInit(): Promise<void> {
     await this.reconcileRepositoryIdentities();
@@ -434,7 +433,7 @@ export class ProjectsService implements OnModuleInit {
       include: { environments: { include: { target: true, buildArtifact: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    return rows.map((r) => this.toDomain(r));
+    return rows.map((row) => projectView(row, config.publicHost));
   }
 
   // Drops the owner's projects whose repositories no longer exist in Gitea.
@@ -562,7 +561,7 @@ export class ProjectsService implements OnModuleInit {
       include: { environments: { include: { target: true, buildArtifact: true } } },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
-    return this.toDomain(row);
+    return projectView(row, config.publicHost);
   }
 
   // Central workspace authorization boundary. Internal CI/SCM flows use their
@@ -2859,126 +2858,27 @@ export class ProjectsService implements OnModuleInit {
   }
 
   async getCommits(id: string, limit = 20): Promise<Commit[]> {
-    const project = await this.get(id);
-    const template = this.templates.get(project.templateId);
-    const actor = await this.actorForProject(id);
-    const scm = this.workspaceScm.provider(project.scm.provider);
-
-    const fromScm = await scm.listCommits(project.scm, actor, Math.min(Math.max(limit, 1), 100));
-    if (fromScm && fromScm.length > 0) {
-      const versions = fromScm
-        .map((commit) => commit.sha.toLowerCase())
-        .filter((sha) => /^[0-9a-f]{40}$/.test(sha));
-      const operations = versions.length > 0
-        ? await this.prisma.deploymentOperation.findMany({
-            where: {
-              environment: { projectId: id, name: 'dev' },
-              version: { in: versions },
-            },
-            orderBy: { createdAt: 'desc' },
-            include: { buildArtifact: { select: { providerRunId: true } } },
-          })
-        : [];
-      const operationByVersion = new Map<string, (typeof operations)[number]>();
-      for (const operation of operations) {
-        const version = operation.version?.toLowerCase();
-        if (version && !operationByVersion.has(version)) {
-          operationByVersion.set(version, operation);
-        }
-      }
-      const dev = project.environments.find((environment) => environment.name === 'dev');
-      return Promise.all(
-        fromScm.map(async (c, index) => {
-          const sha = c.sha.toLowerCase();
-          const operation = operationByVersion.get(sha);
-          const currentDev =
-            dev?.version?.toLowerCase() === sha ||
-            (index === 0 && dev?.status === 'deploying' && !dev.version)
-              ? dev
-              : null;
-          const preferredRunId =
-            operation?.buildArtifact?.providerRunId ?? currentDev?.artifact?.runId ?? null;
-          const statuses = await scm.listCommitStatuses(
-            project.scm,
-            c.sha,
-            actor,
-            preferredRunId,
-          );
-          const pipeline = withDeploymentState(
-            pipelineStages(template, statuses),
-            currentDev,
-            operation,
-          );
-          return { ...c, pipeline };
-        }),
-      );
-    }
-    return [
-      {
-        sha: 'initial',
-        message: project.lastCommit,
-        author: 'DevPlatform',
-        date: project.createdAt,
-        pipeline: pipelineStages(template, null),
-      },
-    ];
+    return this.queries.commits(
+      id,
+      limit,
+      (projectId) => this.get(projectId),
+      (projectId) => this.actorForProject(projectId),
+    );
   }
 
   async deploymentHistory(id: string, limit = 30): Promise<DeploymentOperationSummary[]> {
-    const operations = await this.prisma.deploymentOperation.findMany({
-      where: { environment: { projectId: id } },
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(Math.max(limit, 1), 100),
-      include: {
-        environment: { select: { name: true } },
-        buildArtifact: { select: { providerRunId: true } },
-      },
-    });
-    return operations.map((operation) => ({
-      id: operation.id,
-      environment: operation.environment.name as EnvName,
-      target: operation.targetName,
-      kind: operation.kind,
-      status: operation.status,
-      version: operation.version,
-      message: operation.message,
-      startedAt: operation.startedAt.toISOString(),
-      finishedAt: operation.finishedAt?.toISOString() ?? null,
-      artifactRunId: operation.buildArtifact?.providerRunId ?? null,
-    }));
+    return this.queries.deploymentHistory(id, limit);
   }
 
   // Cross-project activity feed: the recent commits of every owned project with
   // their CI/deploy pipeline state, merged newest-first. A failing project
   // (e.g. its Gitea repo is unreachable) is skipped, not fatal.
   async activity(userId: string, requestedWorkspaceId?: string): Promise<ActivityEvent[]> {
-    const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
-    const rows = await this.prisma.project.findMany({
-      where: { workspaceId },
-      select: { id: true, name: true },
-    });
-    const perProject = await Promise.all(
-      rows.map(async (p): Promise<ActivityEvent[]> => {
-        try {
-          const commits = await this.getCommits(p.id);
-          return commits.slice(0, 5).map((c) => ({
-            projectId: p.id,
-            projectName: p.name,
-            sha: c.sha,
-            message: c.message,
-            author: c.author,
-            date: c.date,
-            pipeline: c.pipeline,
-          }));
-        } catch {
-          return [];
-        }
-      }),
+    return this.queries.activity(
+      userId,
+      requestedWorkspaceId,
+      (projectId, limit) => this.getCommits(projectId, limit),
     );
-    return perProject
-      .flat()
-      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
-      .slice(0, 50);
   }
 
   // useRegistry=true → deploy the TESTED image from the registry (build
@@ -3292,61 +3192,6 @@ export class ProjectsService implements OnModuleInit {
       );
     }
     return docker;
-  }
-
-  private toDomain(row: ProjectRow): Project {
-    return {
-      id: row.id,
-      workspaceId: row.workspaceId,
-      name: row.name,
-      templateId: row.templateId,
-      repoPath: row.repoPath,
-      repoUrl: row.repoUrl,
-      scm: {
-        provider: row.scmProvider as ScmKind,
-        repositoryId: row.scmRepositoryId,
-        owner: row.scmOwner,
-        name: row.scmRepositoryName,
-        fullName: row.scmFullName,
-        defaultBranch: row.scmDefaultBranch,
-        repoUrl: row.repoUrl,
-        installationId: row.scmInstallationId,
-      },
-      createdAt: row.createdAt.toISOString(),
-      lastCommit: row.lastCommit,
-      environments: [...row.environments]
-        .sort((a, b) => a.order - b.order)
-        .map((e) => ({
-          name: e.name as EnvName,
-          provider: e.provider as ProviderKind,
-          status: e.status as DeployStatus,
-          version: e.version,
-          // A missing target is the pre-target-model representation of the
-          // built-in provider; keep legacy projects correct as well.
-          url: !e.target || e.target.scope === 'builtin'
-            ? withCurrentPublicHost(e.url, config.publicHost)
-            : e.url,
-          statusReason: e.statusReason,
-          deploymentRequired: e.deploymentRequired,
-          artifact: e.buildArtifact
-            ? {
-                id: e.buildArtifact.id,
-                provider: e.buildArtifact.sourceProvider,
-                digest: e.buildArtifact.digest,
-                runId: e.buildArtifact.providerRunId,
-              }
-            : null,
-          target: e.target
-            ? {
-                id: e.target.id,
-                name: e.target.name,
-                kind: e.target.kind as ProviderKind,
-                scope: e.target.scope as TargetScope,
-                host: e.target.host,
-              }
-            : null,
-        })),
-    };
   }
 
   // Points an environment at a (different) target — the core of a configurable
