@@ -1,0 +1,105 @@
+import { Cloud, Container, Pencil, Server, ShieldAlert, ShieldCheck, Trash2, Wifi } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { Spinner } from '@/components/atoms/Spinner';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import type { ProviderKind, Target } from '@/types';
+
+const KIND_ICON: Record<ProviderKind, LucideIcon> = {
+  docker: Container,
+  ssh: Server,
+  sftp: Cloud,
+};
+
+interface Props {
+  target: Target;
+  busy: boolean;
+  readOnly: boolean;
+  onVerify: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+export function TargetCard({ target, busy, readOnly, onVerify, onEdit, onDelete }: Props) {
+  const Icon = KIND_ICON[target.kind] ?? Server;
+  const isUserTarget = target.scope === 'user';
+
+  return (
+    <Card className="flex min-w-0 flex-col gap-3 p-5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+            <Icon className="h-[18px] w-[18px]" />
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">{target.name}</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+              {target.kind} · {target.scope === 'builtin' ? 'built-in' : 'your server'}
+            </div>
+          </div>
+        </div>
+        {target.verifiedAt ? (
+          <span
+            className="flex shrink-0 items-center gap-1 text-xs text-success"
+            title={`Verified ${new Date(target.verifiedAt).toLocaleString()}`}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" /> verified
+          </span>
+        ) : (
+          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+            <ShieldAlert className="h-3.5 w-3.5" /> not verified
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {target.capabilities.map((capability) => (
+          <span
+            key={capability}
+            className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+          >
+            {capability}
+          </span>
+        ))}
+      </div>
+
+      {(target.host || target.publicUrl) && (
+        <div className="flex min-w-0 flex-col gap-0.5 font-mono text-xs text-muted-foreground">
+          {target.host && (
+            <span className="truncate">
+              {target.username ? `${target.username}@` : ''}{target.host}
+              {target.port ? `:${target.port}` : ''}
+            </span>
+          )}
+          {target.publicUrl && <span className="truncate">{target.publicUrl}</span>}
+        </div>
+      )}
+
+      {!readOnly && (
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+          <Button variant="secondary" size="sm" disabled={busy} onClick={onVerify}>
+            {busy ? <Spinner className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
+            Test connection
+          </Button>
+          {isUserTarget && (
+            <>
+              <Button variant="ghost" size="icon-sm" aria-label="Edit target" onClick={onEdit}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Delete target"
+                disabled={busy || target.inUse}
+                title={target.inUse ? 'In use by an environment' : 'Delete target'}
+                onClick={onDelete}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
