@@ -11,7 +11,7 @@ const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HT
       <select
         ref={ref}
         className={cn(
-          'h-9 w-full appearance-none rounded-md border border-input bg-card pl-3 pr-8 text-sm text-foreground',
+          'h-11 w-full appearance-none rounded-md border border-input bg-card pl-3 pr-8 text-sm text-foreground sm:h-9',
           'transition-colors hover:bg-secondary/40',
           'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
           'disabled:cursor-not-allowed disabled:opacity-50',

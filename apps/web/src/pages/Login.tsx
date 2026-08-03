@@ -80,7 +80,7 @@ export default function Login() {
           <div className="mt-6">
             <a
               href="/api/auth/github?mode=login"
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-input bg-card text-sm font-medium hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-input bg-card text-sm font-medium hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9"
             >
               <GithubIcon /> Continue with GitHub
             </a>
@@ -106,7 +106,7 @@ export default function Login() {
                 setError(null);
               }}
               className={cn(
-                'flex-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+                'min-h-10 flex-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:min-h-0',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                 mode === m
                   ? 'bg-card text-foreground shadow-sm'
@@ -171,7 +171,7 @@ export default function Login() {
         </form>
 
         {mode === 'signin' && (
-          <Link to="/forgot-password" className="text-link mt-3 inline-block text-xs font-medium">
+          <Link to="/forgot-password" className="text-link mt-2 inline-flex min-h-11 items-center justify-center text-xs font-medium sm:min-h-0">
             Forgot your password?
           </Link>
         )}

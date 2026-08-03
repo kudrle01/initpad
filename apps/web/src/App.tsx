@@ -15,8 +15,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar user={user} onLogout={logout} />
-      <main className="pl-16 lg:pl-60">
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
+      <main className="pt-16 lg:pl-60 lg:pt-0">
+        <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
           <Outlet />
         </div>
       </main>

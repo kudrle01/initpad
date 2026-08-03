@@ -69,7 +69,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ToastProvider>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <RouterProvider router={router} future={{ v7_startTransition: true }} />
       </AuthProvider>
     </ToastProvider>
   </React.StrictMode>,
