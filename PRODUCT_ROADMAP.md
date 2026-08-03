@@ -228,6 +228,45 @@ existujících projektů. Neověřovat jen existencí DB řádku — prokázat r
 a izolaci mezi workspace. Reprodukovatelný postup je v
 [`deploy/SELF_HOSTED_ACCEPTANCE.md`](deploy/SELF_HOSTED_ACCEPTANCE.md).
 
+### Fáze 4.5 — quality checkpoint před Agentem — probíhá
+
+Agent přidá novou bezpečnostní hranici, durable job protokol a další obrazovky.
+Před jeho implementací proto proběhne omezený stabilizační milník; nejde o
+přepis fungujícího produktu.
+
+1. **Dokumentace a repository hygiene.** README je uživatelský vstupní bod;
+   roadmapa popisuje budoucí práci, ADR rozhodnutí, runbook provoz a acceptance
+   ověření. Osobní vysvětlení a handoffy zůstávají lokální. Dokončené
+   migrační deníky, mrtvé soubory a zastaralé duplicity se odstraní.
+2. **Charakterizační testy a modulární backend.** Nejdřív se uzamkne chování
+   kritických toků. Potom se `ProjectsService` rozdělí podle odpovědností na
+   provisioning, CI/artifact orchestration, environment lifecycle a read model.
+   GitHub/Gitea adaptery oddělí HTTP klienta od doménových operací. Veřejné API
+   a databázové chování se v tomto kroku nemění.
+3. **Frontendová struktura.** Velké stránky (`Settings`, `ProjectDetail`,
+   `Infrastructure`) se rozdělí na pojmenované sekce a hooks; formulářové,
+   loading/error a permission stavy dostanou jednotné komponenty. Odstraní se
+   duplicity bez zavádění abstrakcí použitých jen jednou.
+4. **UX/UI pass A.** Nad stabilní strukturou se otestují hlavní úkoly na
+   telefonu, tabletu a desktopu: navigace, založení/import projektu, detail,
+   target a workspace správa. Opraví se informační hierarchie, touch targets,
+   formuláře, focus/keyboard chování, loading/empty/error stavy a kontrast.
+   Vizuální identita zůstane střídmá a produktová, ne dekorativní redesign.
+5. **Gate.** Produkční build, API a template testy, dependency audit,
+   self-hosted smoke test, kontrola mrtvého kódu a browser acceptance musí být
+   zelené. Teprve potom začne Agent.
+
+Po Agent MVP proběhne bezpečnostní audit jeho enrollmentu, identity, lease a
+idempotence a **UX/UI pass B** pro nové agent/target obrazovky. Poslední audit
+před odevzdáním diplomové práce pokryje celou regresi, accessibility,
+závislosti, dokumentaci, failure injection a reprodukovatelnost evaluace.
+
+**Uživatelské ověření:** stejný uživatel dokončí založení projektu, kontrolu
+CI, změnu dev targetu a přidání člena workspace na šířkách 390, 768 a
+1440 px. Nesmí vzniknout horizontální scroll, skrytá primární akce ani krok
+vyžadující hover; klávesnicí musí zůstat viditelný focus a po reloadu se
+nezobrazí falešný empty/error stav.
+
 ### Fáze 5 — InitPad Agent
 
 - Pro MVP platí jeden target = jeden agent = jeden Linux Docker server.

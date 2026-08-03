@@ -11,6 +11,8 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "strictPropertyInitialization": false,
     "forceConsistentCasingInFileNames": true,
     "rootDir": "./src",

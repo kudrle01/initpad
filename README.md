@@ -1,76 +1,71 @@
-# InitPad — internal developer platform
+# InitPad
 
-InitPad je self-hosted vývojářská platforma pro výuku, malé týmy a organizace,
-které chtějí standardizovat založení projektu bez zavedení celého enterprise
-platform-engineering stacku. Z jednoho formuláře vytvoří privátní Git repozitář,
-zdrojový scaffold, reprodukovatelnou CI pipeline, OCI image a prostředí
-`dev → test → prod`.
+InitPad je interní vývojářská platforma pro školy, menší týmy a firemní
+sandboxy. Z jednoho formuláře připraví soukromý Git repozitář, výchozí kód,
+CI pipeline a prostředí `dev → test → prod`. Vývojář tak nemusí pro každý
+projekt znovu skládat Docker, CI/CD a základní provozní konfiguraci.
 
-Nejde o náhradu Kubernetes ani o obecný cloud. Aktuální produkt je bezpečný
-single-node control plane a realistická simulace firemního delivery procesu.
-Pro větší produkční provoz se mají deployment providery přesunout na oddělené
-agenty nebo Kubernetes; viz [THREAT_MODEL.md](THREAT_MODEL.md).
+Projekt vzniká jako praktická část diplomové práce na Vysoké škole ekonomické
+v Praze. Cílem není nahradit Kubernetes nebo velké platform-engineering
+produkty. InitPad zkoumá, jak lze jejich hlavní principy zpřístupnit v menším,
+srozumitelném a samostatně nasaditelném systému.
 
-## Co funguje
+## Co lze vyzkoušet
 
-- platform-native účty, první účet při výchozí instalaci, HTTP-only session a
-  OIDC SSO z InitPadu do Gitey;
-- Gitea jako SCM, Actions a OCI registry, privátní repozitáře a tokeny oddělené
-  pro každý projekt;
-- osobní a týmové workspaces, přepínání tenantů, role owner/admin/maintainer/
-  member/viewer a synchronizace přístupu do privátních repozitářů;
-- izolovaný rootless CI daemon bez přístupu k Docker socketu hostitele;
-- skutečné testy, zamčené závislosti a Dockerfile v každém golden pathu;
-- build once, deploy many: hash commitu označuje image propagovaný do dev/test/prod;
-- Docker, SSH a SFTP targety, ověření spojení, healthchecky, logy, stop/start,
-  redeploy, teardown a ochrana proti souběžným deployům;
-- verzované Prisma migrace, readiness/liveness, resource limity, security
-  headers, backup skript a automatické HTTPS v server profilu.
+- registraci nebo administrátorem spravované účty;
+- osobní a týmové workspaces s rolemi;
+- založení projektu ze dvanácti udržovaných šablon;
+- import existujícího repozitáře;
+- automatický build, test a nasazení do dev;
+- povýšení stejného buildu do testu a produ;
+- Docker, SSH a SFTP targety včetně PHP hostingu;
+- historii commitů, CI jobů a deployment operací;
+- bezpečné odstranění deploymentu i celého projektu.
 
-## Golden paths
+Self-hosted edice používá vestavěnou Giteu, Gitea Actions a privátní OCI
+registry. GitHub varianta umí přihlášení, instalaci GitHub App, založení nebo
+import repozitáře a převzetí ověřeného Actions artefaktu. Veřejný SaaS zatím
+není hotový produkční profil; vzdálené servery bude bezpečně připojovat
+připravovaný InitPad Agent.
 
-Node/JS: Express, NestJS, Next.js, React + Vite, Vue + Vite. Python: Django,
-FastAPI, Flask. PHP: jednoduché PHP, Laravel, Nette a Symfony. Laravel/Nette/
-Symfony obsahují zdrojový skeleton i `composer.lock`; framework se negeneruje
-až během release buildu.
+## Rychlé spuštění
 
-## Instalace jedním příkazem
-
-Požadavek: Docker s Compose pluginem.
+Jediným požadavkem je Docker s Compose pluginem:
 
 ```bash
-cd deploy
+git clone <adresa-repozitare> initpad
+cd initpad/deploy
 ./install.sh
 ```
 
-Platforma běží na `http://localhost:8080`, Gitea na
-`http://gitea.localhost:3001`. Instalátor vygeneruje secrety, vytvoří servisní
-účet, aplikuje migrace, nastaví OIDC a zaregistruje runner. Je idempotentní;
-upgrade se provádí `git pull && ./install.sh`.
+Po dokončení otevři:
 
-Serverovou instalaci, DNS/TLS, zálohu a restore drill popisuje
+- InitPad: <http://localhost:8080>
+- Gitea: <http://gitea.localhost:3001>
+
+Instalátor vygeneruje lokální secrety, spustí databázi a služby, aplikuje
+migrace, nastaví SSO a zaregistruje izolovaný CI runner. Je idempotentní, takže
+slouží i pro aktualizaci existující instalace.
+
+První ověření je jednoduché: vytvoř účet, založ projekt, otevři jeho CI
+pipeline a počkej na dev URL. Podrobné nasazení na server, DNS a HTTPS popisuje
 [deploy/README.md](deploy/README.md).
 
-GitHub/SaaS varianta nemůže použít `localhost` jako Actions callback:
-GitHub-hosted runner běží mimo počítač s InitPadem. `INITPAD_PUBLIC_URL`
-proto musí být veřejná HTTPS URL skutečné instalace nebo dočasného tunnelu.
-Stejné origin používá GitHub App OAuth callback, Setup URL a Webhook URL.
-SaaS projekty vybírají ověřený workspace target zvlášť pro dev/test/prod;
-lokální/private Docker server bude připojen odchozím InitPad Agentem.
-GitHub stages se čtou z Actions workflow jobs (`Actions: read`) a odkazují
-přímo na job log. Změna targetu zachová ověřený build, ale vyžaduje explicitní
-`Deploy` na nový server. Pokud callback původního runu selhal, ruční Deploy
-nejdřív obnoví jeho dosud platný Actions artifact; bez artifactu a veřejné
-HTTPS URL nevytvoří další nefunkční retry. Stages jsou vázané na run
-skutečně nasazeného artifactu a kliknutí na environment status otevře přímo
-konkrétní GitHub/Gitea Actions job, nikoli aplikační stdout.
-Aktuální upload/publish/verify kroky jsou v samostatné Deployment activity:
-redeploy ověřeného artifactu je CD operace InitPadu a nový CI runner
-záměrně nespouští.
+## Projektové šablony
+
+| Ekosystém | Šablony |
+|---|---|
+| JavaScript / TypeScript | Express, NestJS, Next.js, React + Vite, Vue + Vite |
+| Python | Django, FastAPI, Flask |
+| PHP | PHP, Laravel, Nette, Symfony |
+
+Každá šablona obsahuje reprodukovatelné závislosti, Dockerfile, health
+endpoint a CI workflow. PHP frameworky mají verzovaný skeleton i
+`composer.lock`; framework se negeneruje až během deploymentu.
 
 ## Lokální vývoj
 
-Požadavek: Node.js 20+ a Docker.
+Požadavky: Node.js 20+ a Docker.
 
 ```bash
 npm install
@@ -78,54 +73,46 @@ docker compose -f infra/docker-compose.yml up -d postgres gitea
 cp apps/api/.env.example apps/api/.env
 npm run db:migrate --workspace @initpad/api
 npm run dev:api
-# v druhém terminálu
+```
+
+Ve druhém terminálu:
+
+```bash
 npm run dev:web
 ```
 
-Web je na `http://localhost:5173`, API na `http://localhost:3000/api`.
-Plný kontejnerový stack v `deploy/` a vývojový stack v `infra/` nespouštějte
-současně — sdílejí jméno Compose projektu.
+Web běží na <http://localhost:5173>, API na
+<http://localhost:3000/api>. Vývojový stack v `infra/` a kompletní stack v
+`deploy/` nespouštěj současně; záměrně sdílejí Compose project name.
 
-## Architektura a tok změny
-
-```text
-Developer → InitPad web/API → Gitea repository
-                              ↓ push
-                     isolated Actions runner
-                              ↓ test/build/push
-               Gitea OCI registry (self-hosted)
-               GitHub artifact → object store (SaaS)
-                              ↓ verified callback
-             TargetAllocation → deploy dev → test → prod
-```
-
-Zdroj pravdy pro kód je SCM provider dané edice (self-hosted Gitea / SaaS
-GitHub), pro metadata PostgreSQL. Self-hosted Gitea buildy používají privátní
-OCI registry; ověřené GitHub Actions archivy se ukládají do durable
-S3-compatible object storage. Asynchronní deployment má per-environment
-operation lock; po restartu se přerušená operace označí jako failed a nemůže
-přepsat novější stav.
-
-## Ověření kvality
+## Kontrola změn
 
 ```bash
 npm run build
-npm run test --workspace @initpad/api -- --runInBand
+npm test --workspace @initpad/api -- --runInBand
 npm audit --audit-level=low
 docker compose -f deploy/docker-compose.yml --profile runner config --quiet
 ```
 
-Každý template se při změně má vyrenderovat se vzorovým názvem a spustit jeho
-lockfile install, test a build. PHP frameworky mají navíc `composer audit
---locked` a Docker `test` stage.
+Změna šablony navíc vyžaduje vyrenderovat vzorový projekt a ověřit jeho
+instalaci, test a Docker build.
 
-## Produktové zaměření
+## Důležité omezení
 
-Nejsilnější tržní pozice není „menší Backstage pro enterprise“, ale rychle
-nasaditelný paved road pro školy, bootcampy, interní sandboxy a malé týmy:
-jednotný onboarding, auditovatelný promotion flow a možnost připojit vlastní
-VPS/SFTP bez znalosti CI syntaxe. Další nejhodnotnější investice jsou hromadná
-správa účtů a týmů pro školy, import existujících repozitářů, approval flow,
-template versioning, observability a oddělený deployment agent.
+Self-hosted profil je single-node systém určený pro důvěryhodnou organizaci.
+Workspace RBAC odděluje data aplikace, ale není bezpečnostní hranicí proti
+škodlivému workloadu na sdíleném Docker hostu. Tento profil proto bez další
+izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
+[THREAT_MODEL.md](THREAT_MODEL.md).
 
-Návrhová rozhodnutí jsou v [DECISIONS.md](DECISIONS.md).
+## Dokumentace
+
+- [deploy/README.md](deploy/README.md) — instalace;
+- [deploy/OPERATIONS.md](deploy/OPERATIONS.md) — provoz, zálohy a obnova;
+- [deploy/SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md) — živé ověření;
+- [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) — stav a další milníky;
+- [DECISIONS.md](DECISIONS.md) — architektonická rozhodnutí;
+- [THREAT_MODEL.md](THREAT_MODEL.md) — hranice důvěry a produkční podmínky.
+
+Osobní poznámky, handoffy a jednorázová vysvětlení nejsou součástí
+produktové dokumentace a do repozitáře se necommitují.

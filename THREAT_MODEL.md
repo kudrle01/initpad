@@ -27,8 +27,9 @@ boundary.
 
 ## Main controls
 
-- Gitea self-registration is disabled; InitPad defaults to first-user
-  registration and rate-limits authentication endpoints.
+- Gitea self-registration is disabled. InitPad owns account creation and lets
+  the instance administrator choose open or admin-provisioned registration;
+  authentication endpoints are rate-limited.
 - Projects and user targets belong to a workspace. Every request resolves an
   authenticated membership server-side; `X-Workspace-Id` is only a selector,
   never proof of access. Viewer/member/maintainer/admin/owner roles separate
@@ -43,9 +44,9 @@ boundary.
 - Gitea webhooks use an HMAC signature (with bearer compatibility) and never put
   secrets in URLs.
 - The Actions runner uses a dedicated rootless DinD daemon. It mounts no host
-  socket or host workspace, allows no workflow-defined volumes and runs one job
-  at a time. Its control network is separate from PostgreSQL and deployment
-  networks.
+  socket or host workspace and allows no workflow-defined volumes. Concurrency
+  is explicitly bounded (one job by default) and its control network is
+  separate from PostgreSQL and deployment networks.
 - DTO allow-list validation, bounded lengths, workspace policy checks and target
   endpoint/path validation reduce injection, IDOR and resource-exhaustion risk.
 - Deployment operations atomically lock one environment. Cancellation is a
@@ -79,8 +80,8 @@ boundary.
 ## Production gates
 
 Before calling InitPad hosted multi-tenant or enterprise-ready: remove the host
-Docker socket from the control plane, add invitation/e-mail onboarding,
-allocations, approvals and quotas, reconcile SCM permissions, use an external
-secret manager, persist OIDC grants, add centralized audit logs/metrics/traces,
-scan images/SBOMs, sign artifacts, enforce network egress and test disaster
-recovery.
+Docker socket from the control plane, add production e-mail delivery,
+approval policy and complete quota enforcement, reconcile SCM permissions, use
+an external secret manager, persist OIDC grants, add centralized audit logs,
+metrics and traces, scan images/SBOMs, sign artifacts, enforce network egress
+and test disaster recovery.

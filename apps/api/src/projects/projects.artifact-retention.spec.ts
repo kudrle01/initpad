@@ -1,5 +1,4 @@
 import { ProjectsService } from './projects.service';
-import { config } from '../config';
 
 function make(prisma: Record<string, unknown>, artifactStore: Record<string, unknown>) {
   return new ProjectsService(
@@ -13,11 +12,6 @@ function make(prisma: Record<string, unknown>, artifactStore: Record<string, unk
     {} as never,
     artifactStore as never,
   );
-}
-
-// A creation time comfortably older than the retention window.
-function stale(): Date {
-  return new Date(Date.now() - (config.artifactStore.retentionDays + 5) * 86_400_000);
 }
 
 describe('ProjectsService.runArtifactRetention', () => {

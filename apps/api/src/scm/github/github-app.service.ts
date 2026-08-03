@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { createSign } from 'crypto';
 import { config } from '../../config';
 
@@ -76,8 +76,6 @@ function parseInstallation(data: {
  */
 @Injectable()
 export class GitHubAppService {
-  private readonly logger = new Logger('GitHubAppService');
-
   isConfigured(): boolean {
     return Boolean(config.github.appId && config.github.privateKey);
   }
