@@ -1,21 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, ArrowRight } from 'lucide-react';
+import { Plus, ArrowRight, LayoutTemplate } from 'lucide-react';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/molecules/PageHeader';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { EmptyState } from '@/components/molecules/EmptyState';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
+import { useLoadable } from '@/hooks/useLoadable';
 import type { TemplateManifest } from '@/types';
 
 export default function Templates() {
-  const [templates, setTemplates] = useState<TemplateManifest[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api.listTemplates().then(setTemplates).catch((e) => setError(e.message)).finally(() => setLoading(false));
-  }, []);
+  const loadTemplates = useCallback(() => api.listTemplates(), []);
+  const { data: templates, loading, error, reload } = useLoadable<TemplateManifest[]>(
+    loadTemplates,
+    [],
+  );
 
   return (
     <div>
@@ -31,13 +33,18 @@ export default function Templates() {
         }
       />
 
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
-
-      {loading && <div className="grid grid-cols-1 gap-4 md:grid-cols-2" aria-label="Loading templates">
-        {[0, 1, 2, 3].map((item) => <div key={item} className="h-44 animate-pulse rounded-lg border border-border bg-card/60" />)}
-      </div>}
-
-      {!loading && <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {error ? (
+        <LoadErrorState message={error} onRetry={reload} />
+      ) : loading ? (
+        <ContentLoading label="Loading templates" variant="cards" />
+      ) : templates.length === 0 ? (
+        <EmptyState
+          icon={LayoutTemplate}
+          title="No templates available"
+          description="The platform administrator has not installed any project templates yet."
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {templates.map((t) => (
           <Card key={t.id} className="flex flex-col p-5">
             <div className="flex items-center gap-3">
@@ -69,7 +76,8 @@ export default function Templates() {
             </Link>
           </Card>
         ))}
-      </div>}
+        </div>
+      )}
     </div>
   );
 }

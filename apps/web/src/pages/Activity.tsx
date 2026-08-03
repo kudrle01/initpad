@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Activity as ActivityIcon, GitCommit } from 'lucide-react';
 import { api } from '@/api';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { StatusDot } from '@/components/atoms/StatusDot';
+import { useAuth } from '@/auth';
+import { useLoadable } from '@/hooks/useLoadable';
 import type { ActivityEvent } from '@/types';
 
 function relTime(iso: string): string {
@@ -22,17 +26,9 @@ function relTime(iso: string): string {
 }
 
 export default function Activity() {
-  const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .getActivity()
-      .then(setEvents)
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false));
-  }, []);
+  const { activeWorkspace } = useAuth();
+  const loadEvents = useCallback(() => api.getActivity(), [activeWorkspace?.id]);
+  const { data: events, loading, error, reload } = useLoadable<ActivityEvent[]>(loadEvents, []);
 
   return (
     <div>
@@ -41,18 +37,17 @@ export default function Activity() {
         subtitle="Recent commits and their CI / deploy pipeline across all your projects."
       />
 
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
-      {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
-
-      {!loading && !error && events.length === 0 && (
+      {error ? (
+        <LoadErrorState message={error} onRetry={reload} />
+      ) : loading ? (
+        <ContentLoading label="Loading activity" />
+      ) : events.length === 0 ? (
         <EmptyState
           icon={ActivityIcon}
           title="No activity yet"
           description="Commits and CI runs across your projects will show up here."
         />
-      )}
-
-      {!loading && events.length > 0 && (
+      ) : (
         <div className="flex flex-col gap-2">
           {events.map((e) => (
             <div
@@ -61,7 +56,7 @@ export default function Activity() {
             >
               <GitCommit className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <Link
                     to={`/projects/${e.projectId}`}
                     className="text-link text-sm font-medium"
@@ -71,7 +66,7 @@ export default function Activity() {
                   <span className="font-mono text-xs text-muted-foreground">
                     {e.sha !== 'initial' ? e.sha.slice(0, 7) : '—'}
                   </span>
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                  <span className="ml-0 shrink-0 text-xs text-muted-foreground sm:ml-auto">
                     {relTime(e.date)}
                   </span>
                 </div>

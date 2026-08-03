@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '@/api';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { DeploymentActivity } from '@/components/organisms/DeploymentActivity';
 import type { DeploymentOperation, Project } from '@/types';
@@ -15,8 +17,12 @@ export default function ProjectDeployments() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (showLoading = false) => {
     if (!id) return;
+    if (showLoading) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [projectRow, operationRows] = await Promise.all([
         api.getProject(id),
@@ -33,7 +39,9 @@ export default function ProjectDeployments() {
   }, [id]);
 
   useEffect(() => {
-    load();
+    setProject(null);
+    setOperations([]);
+    void load(true);
   }, [load]);
 
   useEffect(() => {
@@ -57,9 +65,15 @@ export default function ProjectDeployments() {
         subtitle={`The ${HISTORY_LIMIT} most recent deployment operations. CI build links are grouped by source artifact because multiple deployments can reuse the same verified build.`}
       />
 
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+      {error && (
+        <LoadErrorState
+          className="mb-4"
+          message={error}
+          onRetry={() => void load(true)}
+        />
+      )}
       {loading ? (
-        <div className="h-40 animate-pulse rounded-lg border border-border bg-card/60" />
+        <ContentLoading label="Loading deployment history" />
       ) : project ? (
         <DeploymentActivity
           operations={operations}

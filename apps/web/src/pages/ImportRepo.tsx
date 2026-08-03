@@ -7,6 +7,8 @@ import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { Spinner } from '@/components/atoms/Spinner';
 import {
@@ -34,11 +36,23 @@ export default function ImportRepo() {
   const [preflight, setPreflight] = useState<ImportPreflight | null>(null);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
   const [environmentTargets, setEnvironmentTargets] = useState<EnvironmentTargets>({ dev: '', test: '', prod: '' });
 
   useEffect(() => {
+    let current = true;
+    setLoading(true);
+    setLoadError(null);
+    setRepos([]);
+    setTemplates([]);
+    setTargets([]);
+    setRepositoryId('');
+    setTemplateId('');
+    setPreflight(null);
+    setGhStatus(null);
     Promise.all([
       api.listImportableRepos(),
       api.listTemplates(),
@@ -46,6 +60,7 @@ export default function ImportRepo() {
       hosted ? api.githubStatus() : Promise.resolve(null),
     ])
       .then(([r, t, targetRows, github]) => {
+        if (!current) return;
         setRepos(r);
         setTemplates(t);
         setTargets(targetRows);
@@ -54,8 +69,16 @@ export default function ImportRepo() {
         const firstImportable = r.find((x) => !x.alreadyImported && !x.empty);
         if (firstImportable) setRepositoryId(firstImportable.repositoryId);
       })
-      .catch((e) => setLoadError((e as Error).message));
-  }, [hosted, activeWorkspace?.id]);
+      .catch((e) => {
+        if (current) setLoadError((e as Error).message);
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [hosted, activeWorkspace?.id, reloadKey]);
 
   // A fresh choice invalidates the previous preflight.
   useEffect(() => setPreflight(null), [repositoryId, templateId]);
@@ -117,7 +140,6 @@ export default function ImportRepo() {
         <ArrowLeft className="h-4 w-4" /> Start from a template instead
       </Link>
 
-      {loadError && <p role="alert" className="mb-4 text-sm text-destructive">{loadError}</p>}
       {readOnly && (
         <p role="alert" className="mb-4 rounded-md border border-border bg-secondary p-3 text-sm text-muted-foreground">
           Viewer access is read-only. Ask a workspace admin for a member or maintainer role to import projects.
@@ -131,7 +153,12 @@ export default function ImportRepo() {
         </p>
       )}
 
-      <div className="flex max-w-2xl flex-col gap-5">
+      {loadError ? (
+        <LoadErrorState message={loadError} onRetry={() => setReloadKey((value) => value + 1)} />
+      ) : loading ? (
+        <ContentLoading label="Loading repositories" variant="detail" />
+      ) : (
+        <div className="flex max-w-2xl flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <Label>Repository</Label>
           <Select
@@ -233,7 +260,8 @@ export default function ImportRepo() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

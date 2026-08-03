@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { PageHeader } from '@/components/molecules/PageHeader';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { FormField } from '@/components/molecules/FormField';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { Spinner } from '@/components/atoms/Spinner';
 import { cn } from '@/lib/utils';
@@ -30,6 +32,7 @@ export default function NewProject() {
   const { activeWorkspace, user } = useAuth();
   const readOnly = activeWorkspace?.role === 'viewer';
   const [params] = useSearchParams();
+  const requestedTemplate = params.get('template');
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
   const [name, setName] = useState('my-project');
@@ -38,7 +41,9 @@ export default function NewProject() {
   const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
   const [scmInstallationId, setScmInstallationId] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const validName = /^[a-z][a-z0-9-]{1,40}$/.test(name);
   const hosted = user?.edition === 'saas';
 
@@ -72,11 +77,20 @@ export default function NewProject() {
   );
 
   useEffect(() => {
+    let current = true;
+    setLoading(true);
+    setLoadError(null);
+    setTemplates([]);
+    setTargets([]);
+    setTemplateId('');
+    setGhStatus(null);
+    setScmInstallationId('');
     Promise.all([
       api.listTemplates(),
       api.listTargets(),
       hosted ? api.githubStatus() : Promise.resolve(null),
     ]).then(([t, tg, github]) => {
+      if (!current) return;
       setTemplates(t);
       setTargets(tg);
       setGhStatus(github);
@@ -85,13 +99,18 @@ export default function NewProject() {
       );
       setScmInstallationId(firstInstallation?.id ?? '');
       // "Use template" on the Templates page preselects a template via ?template=id.
-      const wanted = params.get('template');
-      const preselected = wanted && t.find((x) => x.id === wanted);
+      const preselected = requestedTemplate && t.find((x) => x.id === requestedTemplate);
       if (preselected) setTemplateId(preselected.id);
       else if (t[0]) setTemplateId(t[0].id);
-    }).catch((error) => setLoadError((error as Error).message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hosted, activeWorkspace?.id]);
+    }).catch((error) => {
+      if (current) setLoadError((error as Error).message);
+    }).finally(() => {
+      if (current) setLoading(false);
+    });
+    return () => {
+      current = false;
+    };
+  }, [hosted, activeWorkspace?.id, reloadKey, requestedTemplate]);
 
   // Self-hosted gets sensible defaults; SaaS deliberately requires the user
   // to choose each real workspace target because no control-plane-local Docker
@@ -137,10 +156,14 @@ export default function NewProject() {
         <DownloadCloud className="h-4 w-4" /> Import an existing repository instead
       </Link>
 
-      {loadError && <p role="alert" className="mb-4 text-sm text-destructive">{loadError}</p>}
       {readOnly && <p role="alert" className="mb-4 rounded-md border border-border bg-secondary p-3 text-sm text-muted-foreground">Viewer access is read-only. Ask a workspace admin for a member or maintainer role to create projects.</p>}
 
-      <div className="flex flex-col gap-6">
+      {loadError ? (
+        <LoadErrorState message={loadError} onRetry={() => setReloadKey((value) => value + 1)} />
+      ) : loading ? (
+        <ContentLoading label="Loading project setup" variant="cards" count={3} />
+      ) : (
+        <div className="flex flex-col gap-6">
         <FormField
           label="Project name"
           id="project-name"
@@ -282,7 +305,8 @@ export default function NewProject() {
             {busy ? 'Creating…' : 'Create project'}
           </Button>
         </div>
-      </div>
+        </div>
+      )}
 
       {busy && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm animate-in fade-in" role="status" aria-live="polite">

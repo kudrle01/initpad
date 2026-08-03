@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layers, Plus, Search } from 'lucide-react';
 import { api } from '@/api';
@@ -7,34 +7,31 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { ProjectRow } from '@/components/molecules/ProjectRow';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { useAuth } from '@/auth';
+import { useLoadable } from '@/hooks/useLoadable';
 import type { Project, TemplateManifest } from '@/types';
 
 export default function Projects() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [templates, setTemplates] = useState<Record<string, TemplateManifest>>({});
   const [query, setQuery] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const { activeWorkspace } = useAuth();
-
-  useEffect(() => {
-    let current = true;
-    setLoading(true);
-    setError(null);
-    setProjects([]);
-    Promise.all([api.listProjects(), api.listTemplates()])
-      .then(([projectRows, templateRows]) => {
-        if (!current) return;
-        setProjects(projectRows);
-        setTemplates(Object.fromEntries(templateRows.map((template) => [template.id, template])));
-      })
-      .catch((e) => current && setError((e as Error).message))
-      .finally(() => current && setLoading(false));
-    return () => {
-      current = false;
+  const loadProjects = useCallback(async () => {
+    const [projects, templateRows] = await Promise.all([api.listProjects(), api.listTemplates()]);
+    return {
+      projects,
+      templates: Object.fromEntries(templateRows.map((template) => [template.id, template])),
     };
   }, [activeWorkspace?.id]);
+  const {
+    data: { projects, templates },
+    loading,
+    error,
+    reload,
+  } = useLoadable<{ projects: Project[]; templates: Record<string, TemplateManifest> }>(
+    loadProjects,
+    { projects: [], templates: {} },
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -58,8 +55,6 @@ export default function Projects() {
         }
       />
 
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
-
       {!loading && projects.length > 0 && (
         <div className="relative mb-4 max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -73,15 +68,10 @@ export default function Projects() {
         </div>
       )}
 
-      {loading ? (
-        <div className="flex flex-col gap-2" aria-label="Loading projects" aria-busy="true">
-          {[0, 1, 2].map((item) => (
-            <div
-              key={item}
-              className="h-[76px] animate-pulse rounded-lg border border-border bg-card/60"
-            />
-          ))}
-        </div>
+      {error ? (
+        <LoadErrorState message={error} onRetry={reload} />
+      ) : loading ? (
+        <ContentLoading label="Loading projects" />
       ) : projects.length === 0 && !error ? (
         <EmptyState
           icon={Layers}

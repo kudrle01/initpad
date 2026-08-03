@@ -3,6 +3,7 @@ import { Plus, Trash2, Users } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/toast';
 import type { WorkspaceMember, WorkspaceRole } from '@/types';
@@ -20,6 +21,8 @@ export function WorkspaceMembersSettings() {
   const toast = useToast();
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [identity, setIdentity] = useState('');
   const [role, setRole] = useState<AssignableRole>('member');
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
@@ -30,12 +33,13 @@ export function WorkspaceMembersSettings() {
     let disposed = false;
     setMembers([]);
     setLoading(true);
+    setLoadError(null);
     api.listWorkspaceMembers(activeWorkspace.id)
       .then((rows) => {
         if (!disposed) setMembers(rows);
       })
       .catch((error) => {
-        if (!disposed) toast.error((error as Error).message);
+        if (!disposed) setLoadError((error as Error).message);
       })
       .finally(() => {
         if (!disposed) setLoading(false);
@@ -43,7 +47,7 @@ export function WorkspaceMembersSettings() {
     return () => {
       disposed = true;
     };
-  }, [activeWorkspace?.id]);
+  }, [activeWorkspace?.id, reloadKey]);
 
   async function addMember() {
     if (!activeWorkspace) return;
@@ -118,7 +122,13 @@ export function WorkspaceMembersSettings() {
         </p>
       )}
 
-      <div className="mt-4 divide-y divide-border rounded-md border border-border">
+      {loadError ? (
+        <LoadErrorState
+          className="mt-4"
+          message={loadError}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      ) : <div className="mt-4 divide-y divide-border rounded-md border border-border">
         {loading && <p className="p-3 text-sm text-muted-foreground">Loading members…</p>}
         {!loading && members.length === 0 && (
           <p className="p-3 text-sm text-muted-foreground">No workspace members found.</p>
@@ -161,7 +171,7 @@ export function WorkspaceMembersSettings() {
             )}
           </div>
         ))}
-      </div>
+      </div>}
     </SettingsSection>
   );
 }

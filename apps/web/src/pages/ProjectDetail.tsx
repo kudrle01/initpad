@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { DetailSection } from '@/components/molecules/DetailSection';
 import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline';
@@ -12,22 +14,6 @@ import { ProjectHistory } from '@/components/organisms/ProjectHistory';
 import { ProjectRepository } from '@/components/organisms/ProjectRepository';
 import { ProjectSummary } from '@/components/organisms/ProjectSummary';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
-
-function Skeleton() {
-  return (
-    <div className="animate-pulse">
-      <div className="h-6 w-44 rounded bg-secondary" />
-      <div className="mt-3 h-4 w-64 rounded bg-secondary" />
-      <div className="mt-6 flex gap-3">
-        <div className="h-32 flex-1 rounded-lg bg-secondary" />
-        <div className="h-32 flex-1 rounded-lg bg-secondary" />
-        <div className="h-32 flex-1 rounded-lg bg-secondary" />
-      </div>
-      <div className="mt-6 h-4 w-28 rounded bg-secondary" />
-      <div className="mt-3 h-16 w-full rounded-lg bg-secondary" />
-    </div>
-  );
-}
 
 export default function ProjectDetail() {
   const {
@@ -51,6 +37,7 @@ export default function ProjectDetail() {
     setConfirmOpen,
     setTargetEnv,
     setConfigEnv,
+    retryLoad,
     toggleCommit,
     promote,
     redeploy,
@@ -82,14 +69,19 @@ export default function ProjectDetail() {
       </div>
     );
   }
-  if (error) return <p className="text-sm text-destructive">{error}</p>;
-  if (loading && !project) return <Skeleton />;
-  if (!project) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (error && !project) return <LoadErrorState message={error} onRetry={retryLoad} />;
+  if (loading && !project) {
+    return <ContentLoading label="Loading project" variant="detail" />;
+  }
+  if (!project) return <ContentLoading label="Loading project" variant="detail" />;
 
   const commitsBySha = Object.fromEntries(commits.map((c) => [c.sha, c] as const));
 
   return (
     <div>
+      {error && (
+        <LoadErrorState className="mb-4" message={error} onRetry={retryLoad} />
+      )}
       <ProjectSummary
         project={project}
         template={template}

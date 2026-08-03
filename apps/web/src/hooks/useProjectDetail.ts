@@ -72,6 +72,8 @@ export function useProjectDetail() {
       setProvisioning(provisioningRow ?? null);
       setDeployments(deploymentRows);
       setOpenSha((current) => current ?? commitRows[0]?.sha ?? null);
+      setError(null);
+      setNotFound(false);
     } catch (loadError) {
       if (loadError instanceof ApiError && loadError.status === 404) {
         setNotFound(true);
@@ -84,6 +86,14 @@ export function useProjectDetail() {
   }, [id]);
 
   useEffect(() => {
+    setProject(null);
+    setTemplate(null);
+    setCommits([]);
+    setDeployments([]);
+    setProvisioning(null);
+    setOpenSha(null);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     void load();
   }, [load]);
@@ -264,6 +274,13 @@ export function useProjectDetail() {
     }
   }
 
+  function retryLoad() {
+    setError(null);
+    setNotFound(false);
+    setLoading(true);
+    void load();
+  }
+
   return {
     project,
     template,
@@ -285,6 +302,7 @@ export function useProjectDetail() {
     setConfirmOpen,
     setTargetEnv,
     setConfigEnv,
+    retryLoad,
     toggleCommit: (sha: string) =>
       setOpenSha((current) => (current === sha ? null : sha)),
     promote,

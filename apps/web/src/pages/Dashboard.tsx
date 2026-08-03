@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, Layers, Play, Plus, RotateCcw, Server, Wrench } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/molecules/PageHeader';
 import { StatCard } from '@/components/molecules/StatCard';
 import { ProjectRow } from '@/components/molecules/ProjectRow';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import type { Project, ProvisioningStatus, TemplateManifest } from '@/types';
 
 const RECENT_LIMIT = 6;
@@ -19,34 +20,65 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [provisioning, setProvisioning] = useState<ProvisioningStatus[]>([]);
   const [templates, setTemplates] = useState<Record<string, TemplateManifest>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [operationBusy, setOperationBusy] = useState<string | null>(null);
+  const requestSequence = useRef(0);
+
+  const loadDashboard = useCallback(async () => {
+    const request = ++requestSequence.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [projectRows, templateRows, provisioningRows] = await Promise.all([
+        api.listProjects(),
+        api.listTemplates().catch(() => [] as TemplateManifest[]),
+        api.listProvisioning().catch(() => [] as ProvisioningStatus[]),
+      ]);
+      if (request !== requestSequence.current) return;
+      setProjects(projectRows);
+      setTemplates(Object.fromEntries(templateRows.map((template) => [template.id, template])));
+      setProvisioning(provisioningRows);
+    } catch (cause) {
+      if (request === requestSequence.current) setLoadError((cause as Error).message);
+    } finally {
+      if (request === requestSequence.current) setLoading(false);
+    }
+  }, [activeWorkspace?.id]);
 
   useEffect(() => {
-    api.listProjects().then(setProjects).catch((e) => setError(e.message)).finally(() => setLoading(false));
-    api
-      .listTemplates()
-      .then((all) => setTemplates(Object.fromEntries(all.map((t) => [t.id, t]))))
-      .catch(() => {});
-    api.listProvisioning().then(setProvisioning).catch(() => {});
-  }, []);
+    setProjects([]);
+    setProvisioning([]);
+    void loadDashboard();
+    return () => {
+      requestSequence.current += 1;
+    };
+  }, [loadDashboard]);
 
   useEffect(() => {
+    let current = true;
     const timer = window.setInterval(() => {
-      void api.listProvisioning().then(setProvisioning).catch(() => undefined);
+      void api.listProvisioning()
+        .then((rows) => {
+          if (current) setProvisioning(rows);
+        })
+        .catch(() => undefined);
     }, 15_000);
-    return () => window.clearInterval(timer);
-  }, []);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+    };
+  }, [activeWorkspace?.id]);
 
   async function retryOperation(id: string) {
     setOperationBusy(id);
-    setError(null);
+    setActionError(null);
     try {
       const project = await api.retryProvisioning(id);
       navigate(`/projects/${project.id}`);
     } catch (e) {
-      setError((e as Error).message);
+      setActionError((e as Error).message);
       setProvisioning(await api.listProvisioning().catch(() => provisioning));
     } finally {
       setOperationBusy(null);
@@ -55,7 +87,7 @@ export default function Dashboard() {
 
   async function retryCleanup(id: string) {
     setOperationBusy(id);
-    setError(null);
+    setActionError(null);
     try {
       await api.cleanupProvisioning(id);
       const [nextOperations, nextProjects] = await Promise.all([
@@ -65,7 +97,7 @@ export default function Dashboard() {
       setProvisioning(nextOperations);
       setProjects(nextProjects);
     } catch (e) {
-      setError((e as Error).message);
+      setActionError((e as Error).message);
       setProvisioning(await api.listProvisioning().catch(() => provisioning));
     } finally {
       setOperationBusy(null);
@@ -97,12 +129,17 @@ export default function Dashboard() {
         }
       />
 
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+      {actionError && (
+        <p role="alert" className="mb-4 text-sm text-destructive">{actionError}</p>
+      )}
+      {loadError && (
+        <LoadErrorState className="mb-4" message={loadError} onRetry={loadDashboard} />
+      )}
 
       <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Projects" value={loading ? '—' : projects.length} icon={Layers} />
-        <StatCard label="Running deploys" value={loading ? '—' : running} icon={Play} />
-        <StatCard label="Environments" value={loading ? '—' : environmentCount} icon={Server} />
+        <StatCard label="Projects" value={loading || loadError ? '—' : projects.length} icon={Layers} />
+        <StatCard label="Running deploys" value={loading || loadError ? '—' : running} icon={Play} />
+        <StatCard label="Environments" value={loading || loadError ? '—' : environmentCount} icon={Server} />
       </div>
 
       {operationsNeedingAttention.length > 0 && (
@@ -172,7 +209,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {!loading && projects.length === 0 ? (
+      {!loadError && !loading && projects.length === 0 ? (
         <EmptyState
           icon={Layers}
           title="No projects yet"
@@ -185,7 +222,7 @@ export default function Dashboard() {
             </Button>
           }
         />
-      ) : !loading ? (
+      ) : !loadError && !loading ? (
         <div className="flex flex-col gap-2">
           {recent.map((p) => (
             <ProjectRow
@@ -195,7 +232,9 @@ export default function Dashboard() {
             />
           ))}
         </div>
-      ) : <div className="h-28 animate-pulse rounded-lg border border-border bg-card/60" aria-label="Loading projects" />}
+      ) : !loadError ? (
+        <div className="h-28 animate-pulse rounded-lg border border-border bg-card/60" aria-label="Loading projects" />
+      ) : null}
     </div>
   );
 }

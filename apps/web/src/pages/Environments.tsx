@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -14,9 +14,13 @@ import type { LucideIcon } from 'lucide-react';
 import { api } from '@/api';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { StatusDot } from '@/components/atoms/StatusDot';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/auth';
+import { useLoadable } from '@/hooks/useLoadable';
 import type { EnvName, ProviderKind, Project } from '@/types';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
@@ -29,19 +33,11 @@ const ENV_ORDER: Record<EnvName, number> = { dev: 0, test: 1, prod: 2 };
 const FILTERS: (EnvName | 'all')[] = ['all', 'dev', 'test', 'prod'];
 
 export default function Environments() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { activeWorkspace } = useAuth();
   const [filter, setFilter] = useState<EnvName | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    api
-      .listProjects()
-      .then(setProjects)
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false));
-  }, []);
+  const loadProjects = useCallback(() => api.listProjects(), [activeWorkspace?.id]);
+  const { data: projects, loading, error, reload } = useLoadable<Project[]>(loadProjects, []);
 
   const groups = useMemo(
     () =>
@@ -73,20 +69,19 @@ export default function Environments() {
         subtitle="Every project environment and the target it runs on — grouped by project."
       />
 
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
-      {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
-
-      {!loading && projects.length === 0 && (
+      {error ? (
+        <LoadErrorState message={error} onRetry={reload} />
+      ) : loading ? (
+        <ContentLoading label="Loading environments" />
+      ) : projects.length === 0 ? (
         <EmptyState
           icon={Layers}
           title="No environments yet"
           description="Create a project and its dev/test/prod environments will appear here."
         />
-      )}
-
-      {!loading && projects.length > 0 && (
+      ) : (
         <>
-          <div className="mb-4 flex gap-1.5">
+          <div className="mb-4 flex flex-wrap gap-1.5">
             {FILTERS.map((f) => (
               <button
                 key={f}
@@ -105,8 +100,15 @@ export default function Environments() {
             ))}
           </div>
 
-          <div className="flex flex-col gap-3">
-            {groups.map(({ project, envs }) => {
+          {groups.length === 0 ? (
+            <EmptyState
+              icon={Layers}
+              title={`No ${filter} environments`}
+              description={`None of this workspace's projects currently has a ${filter} environment.`}
+            />
+          ) : (
+            <div className="flex flex-col gap-3">
+              {groups.map(({ project, envs }) => {
               const open = !collapsed.has(project.id);
               return (
                 <div key={project.id} className="overflow-hidden rounded-lg border border-border bg-card">
@@ -199,8 +201,9 @@ export default function Environments() {
                   )}
                 </div>
               );
-            })}
-          </div>
+              })}
+            </div>
+          )}
         </>
       )}
     </div>

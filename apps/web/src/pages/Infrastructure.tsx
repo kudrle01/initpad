@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import type { TargetAllocation, TargetAllocationInput, TargetInput } from '@/api';
 import { useAuth } from '@/auth';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { AllocationDialog } from '@/components/organisms/AllocationDialog';
 import { AllocationSection } from '@/components/organisms/infrastructure/AllocationSection';
@@ -68,11 +70,10 @@ export default function Infrastructure() {
         ) : undefined}
       />
 
-      {infrastructure.error && (
-        <p role="alert" className="mb-4 text-sm text-destructive">{infrastructure.error}</p>
-      )}
-      {infrastructure.loading ? (
-        <p className="text-sm text-muted-foreground">Loading infrastructure…</p>
+      {infrastructure.error ? (
+        <LoadErrorState message={infrastructure.error} onRetry={infrastructure.reload} />
+      ) : infrastructure.loading ? (
+        <ContentLoading label="Loading infrastructure" variant="cards" />
       ) : (
         <div className="flex flex-col gap-8">
           <TargetSections

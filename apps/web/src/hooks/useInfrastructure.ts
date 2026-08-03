@@ -161,6 +161,7 @@ export function useInfrastructure(workspaceId?: string) {
     savingAllocation,
     busyTargetId,
     busyAllocationId,
+    reload: () => refresh(true),
     saveTarget,
     verifyTarget,
     deleteTarget,

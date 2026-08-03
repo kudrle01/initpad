@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { KeyRound, Plus, ShieldCheck, UserPlus } from 'lucide-react';
 import { api } from '@/api';
@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { CopyField } from '@/components/molecules/CopyField';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { Spinner } from '@/components/atoms/Spinner';
 import type { AdminUser } from '@/types';
 
@@ -25,6 +27,7 @@ export default function Admin() {
   const toast = useToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -32,16 +35,25 @@ export default function Admin() {
   const [creating, setCreating] = useState(false);
   const [oneTime, setOneTime] = useState<OneTime | null>(null);
 
-  useEffect(() => {
+  const loadUsers = useCallback(async () => {
     if (!user || user.edition !== 'self-hosted' || user.platformRole !== 'admin') {
       setLoading(false);
       return;
     }
-    api.adminListUsers()
-      .then(setUsers)
-      .catch((e) => toast.error((e as Error).message))
-      .finally(() => setLoading(false));
+    setLoading(true);
+    setLoadError(null);
+    try {
+      setUsers(await api.adminListUsers());
+    } catch (cause) {
+      setLoadError((cause as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }, [user?.id, user?.edition, user?.platformRole]);
+
+  useEffect(() => {
+    void loadUsers();
+  }, [loadUsers]);
 
   // Only platform administrators reach this page; ordinary users are redirected.
   if (user && (user.edition !== 'self-hosted' || user.platformRole !== 'admin')) {
@@ -181,9 +193,13 @@ export default function Admin() {
 
         <div className="rounded-lg border border-border bg-card p-6">
           <h2 className="text-[15px] font-semibold">Users</h2>
-          <div className="mt-4 divide-y divide-border rounded-md border border-border">
-            {loading && <p className="p-3 text-sm text-muted-foreground">Loading users…</p>}
-            {!loading && users.map((u) => (
+          {loadError ? (
+            <LoadErrorState className="mt-4" message={loadError} onRetry={loadUsers} />
+          ) : loading ? (
+            <ContentLoading className="mt-4" label="Loading users" count={2} />
+          ) : (
+            <div className="mt-4 divide-y divide-border rounded-md border border-border">
+              {users.map((u) => (
               <div key={u.id} className="flex flex-wrap items-center gap-3 p-3">
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 truncate text-sm font-medium">
@@ -211,8 +227,9 @@ export default function Admin() {
                   )}
                 </span>
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
