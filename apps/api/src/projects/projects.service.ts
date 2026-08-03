@@ -10,7 +10,7 @@ import {
 import { createHash } from 'crypto';
 import { createReadStream, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import { join, basename } from 'path';
+import { join } from 'path';
 import { Prisma } from '@prisma/client';
 import {
   ActivityEvent,
@@ -33,7 +33,6 @@ import { TargetsService } from '../targets/targets.service';
 import {
   ScmProvider,
   ScmActor,
-  RepoArchive,
   ScmBuildArtifact,
   ScmRepositoryIdentity,
   ScmRepositoryRef,
@@ -42,14 +41,12 @@ import {
   repositoryRef,
 } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
-import { exportVersion } from '../deployment/providers/source-export';
 import { config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 import { generateToken, hashToken, tokenMatches } from '../common/token';
 import type { DeploymentAllocation } from '../deployment/deployment-provider.interface';
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
-import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
 import { publicHttpsUrlIssue } from '../common/public-url';
 import { CI_RUNNING_REASON, CI_WAITING_REASON } from './ci-state';
 import { pipelineStages } from './project-pipeline';
@@ -59,6 +56,8 @@ import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectEnvironmentLifecycle } from './project-environment-lifecycle';
+import { ProjectDeploymentPreparation } from './project-deployment-preparation';
+import { AppConfigService } from './app-config.service';
 import {
   artifactImageRef,
   deployedImageRef,
@@ -88,6 +87,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly environmentTargets: ProjectEnvironmentTargets;
   private readonly operations: ProjectDeploymentOperations;
   private readonly environmentLifecycle: ProjectEnvironmentLifecycle;
+  private readonly deploymentPreparation: ProjectDeploymentPreparation;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -110,6 +110,11 @@ export class ProjectsService implements OnModuleInit {
       deployment,
       this.environmentTargets,
       this.operations,
+    );
+    this.deploymentPreparation = new ProjectDeploymentPreparation(
+      deployment,
+      workspaceScm,
+      new AppConfigService(prisma, workspaces),
     );
   }
 
@@ -2202,18 +2207,6 @@ export class ProjectsService implements OnModuleInit {
     return this.artifactLifecycle.presignDownload(buildArtifactId);
   }
 
-  // Decrypted application config & secrets for an environment (ADR-061), as a
-  // KEY=VALUE map for the deployment provider. Secrets are decrypted only here,
-  // in memory, at deploy time; the values are never logged.
-  private async appConfigForEnvironment(environmentId: string): Promise<Record<string, string>> {
-    const rows = await this.prisma.appConfigVar.findMany({ where: { environmentId } });
-    const map: Record<string, string> = {};
-    for (const row of rows) {
-      map[row.key] = row.isSecret ? decryptSecret(row.value) : row.value;
-    }
-    return map;
-  }
-
   // Identity for repository operations. Coordinates come from the explicit
   // SCM locator; the legacy owner relation still supplies the stored user PAT.
   private actorForRepo(row: {
@@ -2364,81 +2357,39 @@ export class ProjectsService implements OnModuleInit {
       ]).catch(() => undefined);
     };
 
-    // SFTP deploy of a template with a packaged artifact: extract the exact
-    // CI-tested tree from its registry image and upload that. This applies to
-    // Composer PHP apps and static nginx bundles alike; project build commands
-    // never run inside the control plane.
-    const useBuildExtract = env.provider === 'sftp' && !!template.buildArtifactPath;
-
-    // Source-based providers (and Docker's bootstrap build) need the source
-    // tree of the EXACT version. Gitea is the source of truth, so the tree is
-    // downloaded on demand into a temp directory; a local `git archive` from
-    // the (legacy) working copy is the fallback. The platform keeps no
-    // persistent checkouts.
-    const needsSource = !useBuildExtract && (env.provider !== 'docker' || !useRegistry);
-    let source: RepoArchive | null = null;
-    let extractedDir: string | null = null;
-    let deployRepoPath = project.repoPath;
-    let deployArtifactDir = template.artifactDir;
-    let deployWritableDirs = template.writableDirs;
-    let protectedWebLayout = false;
-
-    if (useBuildExtract) {
-      setStage('Fetching & extracting tested artifact');
-      extractedDir = mkdtempSync(join(tmpdir(), 'initpad-artifact-'));
-      await this.deployment.extractArtifact(
-        testedImageRef ?? registryImageRef(repository, version),
-        template.buildArtifactPath!,
-        extractedDir,
-      );
-      // getArchive packs the directory itself, so its tree is under the basename.
-      deployRepoPath = join(extractedDir, basename(template.buildArtifactPath!));
-      deployArtifactDir = undefined; // upload the whole extracted tree
-      if (template.webRoot) {
-        deployRepoPath = prepareProtectedWebLayout(
-          deployRepoPath,
-          extractedDir,
-          template.webRoot,
-        );
-        deployWritableDirs = (template.writableDirs ?? []).map(
-          (directory) => `${PRIVATE_APP_DIR}/${directory.replace(/^\/+|\/+$/g, '')}`,
-        );
-        protectedWebLayout = true;
-      }
-    } else if (needsSource) {
-      const actor = await this.actorForProject(projectId);
-      const scm = this.workspaceScm.provider(repository.provider);
-      source =
-        (await scm.downloadArchive(repository, version, actor)) ??
-        (await exportVersion(project.repoPath, version));
-      deployRepoPath = source?.dir ?? project.repoPath;
-    }
-
-    // Application config & secrets for this environment (ADR-061), decrypted in
-    // memory and injected at deploy so the same build-once image runs with
-    // per-environment configuration.
-    const envVars = await this.appConfigForEnvironment(env.id);
+    const prepared = await this.deploymentPreparation.prepare({
+      environmentId: env.id,
+      provider: env.provider as ProviderKind,
+      template,
+      repository,
+      projectRepoPath: project.repoPath,
+      version,
+      useRegistry,
+      testedImageRef,
+      resolveActor: () => this.actorForProject(projectId),
+      onProgress: setStage,
+    });
 
     try {
       const result = await this.deployment.deploy(env.provider as ProviderKind, {
         projectName: deploymentSlug(repository),
         version,
         env: envName,
-        repoPath: deployRepoPath,
+        repoPath: prepared.repoPath,
         port: template.port,
         healthPath: template.healthPath ?? '/health',
         startCommand: template.startCommand,
-        artifactDir: deployArtifactDir,
+        artifactDir: prepared.artifactDir,
         webRoot: template.webRoot,
-        protectedWebLayout,
-        writableDirs: deployWritableDirs,
+        protectedWebLayout: prepared.protectedWebLayout,
+        writableDirs: prepared.writableDirs,
         appPort,
         onProgress: setStage,
         connection: this.environmentTargets.connection(env),
         allocation,
         imageRef: testedImageRef,
         allowBuildFallback: !useRegistry,
-        envVars,
+        envVars: prepared.envVars,
       });
       if (await this.operations.cancelled(operationId)) {
         const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
@@ -2480,8 +2431,7 @@ export class ProjectsService implements OnModuleInit {
       });
       return published.count === 1;
     } finally {
-      source?.cleanup();
-      if (extractedDir) rmSync(extractedDir, { recursive: true, force: true });
+      prepared.cleanup();
     }
   }
 
