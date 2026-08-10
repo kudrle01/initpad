@@ -59,8 +59,11 @@ import {
   deploymentSlug,
   imageRepository,
 } from './project-deployment-identity';
+import { mapWithConcurrency } from '../common/concurrency';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
+const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
+const SCM_READ_CONCURRENCY = 4;
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
 /**
@@ -80,6 +83,8 @@ export class ProjectsService implements OnModuleInit {
   private readonly deploymentExecutor: ProjectDeploymentExecutor;
   private readonly artifactIngestion: ProjectArtifactIngestion;
   private readonly ci: ProjectCiOrchestrator;
+  private readonly repositoryReconcileAfter = new Map<string, number>();
+  private readonly repositoryReconcileInFlight = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -317,31 +322,53 @@ export class ProjectsService implements OnModuleInit {
 
   async list(userId: string, requestedWorkspaceId?: string): Promise<Project[]> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
-    // Reconcile on read: refreshing the project list is the moment the user
-    // expects reality — projects whose repositories were deleted directly in
-    // Gitea are cleaned up here (the webhook remains as an instant path when
-    // a Gitea version delivers it). No background timers needed.
-    await this.pruneMissingRepos(workspaceId);
     const rows = await this.prisma.project.findMany({
       where: { workspaceId },
       include: { environments: { include: { target: true, buildArtifact: true } } },
       orderBy: { createdAt: 'desc' },
     });
+    // SCM reconciliation is maintenance, not part of the user-facing read.
+    // Repository webhooks remain the immediate path; this throttled sweep is a
+    // fail-safe for missed events and must not make GET /projects O(repos).
+    this.scheduleMissingRepoReconciliation(workspaceId);
     return rows.map((row) => projectView(row, config.publicHost));
+  }
+
+  private scheduleMissingRepoReconciliation(workspaceId: string): void {
+    const now = Date.now();
+    if (
+      this.repositoryReconcileInFlight.has(workspaceId) ||
+      (this.repositoryReconcileAfter.get(workspaceId) ?? 0) > now
+    ) {
+      return;
+    }
+
+    this.repositoryReconcileAfter.set(workspaceId, now + REPOSITORY_RECONCILE_INTERVAL_MS);
+    this.repositoryReconcileInFlight.add(workspaceId);
+    void this.pruneMissingRepos(workspaceId)
+      .catch((error) =>
+        this.logger.warn(
+          `Repository reconciliation skipped for workspace ${workspaceId}: ${(error as Error).message}`,
+        ),
+      )
+      .finally(() => this.repositoryReconcileInFlight.delete(workspaceId));
   }
 
   // Drops the owner's projects whose repositories no longer exist in Gitea.
   // A repository counts as gone ONLY on an explicit 404 (with a short request
-  // timeout) — an outage never deletes anything and never blocks the list
-  // for long. Checks run in parallel; cheap at per-user scale.
+  // timeout) — an outage never deletes anything. The sweep runs outside the
+  // request path with bounded concurrency so a large workspace cannot flood
+  // its SCM provider.
   private async pruneMissingRepos(workspaceId: string): Promise<void> {
-    try {
-      const rows = await this.prisma.project.findMany({
-        where: { workspaceId },
-        include: { owner: true },
-      });
-      await Promise.all(
-        rows.map(async (row) => {
+    const rows = await this.prisma.project.findMany({
+      where: { workspaceId },
+      include: { owner: true },
+    });
+    await mapWithConcurrency(
+      rows,
+      SCM_READ_CONCURRENCY,
+      async (row) => {
+        try {
           const repository = repositoryRef(row);
           const actor = this.actorForRepo(row);
           if (await this.workspaceScm.provider(repository.provider).repoMissing(repository, actor)) {
@@ -354,11 +381,13 @@ export class ProjectsService implements OnModuleInit {
               repository.repositoryId ?? undefined,
             ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
           }
-        }),
-      );
-    } catch (e) {
-      this.logger.warn(`Repository reconciliation skipped: ${(e as Error).message}`);
-    }
+        } catch (error) {
+          this.logger.warn(
+            `Repository check failed for project ${row.id}: ${(error as Error).message}`,
+          );
+        }
+      },
+    );
   }
 
   // On-read reconciliation for a single project (detail view / refresh):

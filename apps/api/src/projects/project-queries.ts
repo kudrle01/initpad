@@ -10,7 +10,11 @@ import { ScmActor } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { TemplatesService } from '../templates/templates.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { mapWithConcurrency } from '../common/concurrency';
 import { pipelineStages, withDeploymentState } from './project-pipeline';
+
+const SCM_READ_CONCURRENCY = 4;
+const ACTIVITY_COMMITS_PER_PROJECT = 5;
 
 type ProjectReader = (id: string) => Promise<Project>;
 type ActorReader = (id: string) => Promise<ScmActor>;
@@ -62,8 +66,10 @@ export class ProjectQueries {
         if (version && !operationByVersion.has(version)) operationByVersion.set(version, operation);
       }
       const dev = project.environments.find((environment) => environment.name === 'dev');
-      return Promise.all(
-        fromScm.map(async (commit, index) => {
+      return mapWithConcurrency(
+        fromScm,
+        SCM_READ_CONCURRENCY,
+        async (commit, index) => {
           const sha = commit.sha.toLowerCase();
           const operation = operationByVersion.get(sha);
           const currentDev =
@@ -87,7 +93,7 @@ export class ProjectQueries {
               operation,
             ),
           };
-        }),
+        },
       );
     }
 
@@ -136,11 +142,13 @@ export class ProjectQueries {
       where: { workspaceId },
       select: { id: true, name: true },
     });
-    const perProject = await Promise.all(
-      rows.map(async (project): Promise<ActivityEvent[]> => {
+    const perProject = await mapWithConcurrency(
+      rows,
+      SCM_READ_CONCURRENCY,
+      async (project): Promise<ActivityEvent[]> => {
         try {
-          const commits = await getCommits(project.id);
-          return commits.slice(0, 5).map((commit) => ({
+          const commits = await getCommits(project.id, ACTIVITY_COMMITS_PER_PROJECT);
+          return commits.map((commit) => ({
             projectId: project.id,
             projectName: project.name,
             sha: commit.sha,
@@ -152,7 +160,7 @@ export class ProjectQueries {
         } catch {
           return [];
         }
-      }),
+      },
     );
     return perProject
       .flat()
