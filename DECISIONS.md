@@ -2603,3 +2603,36 @@ na dostatečně silném hostu nastavit kapacitu 2 a ověřit dva souběžné bui
 
 Reference: [Gitea Actions runner configuration](https://docs.gitea.com/usage/actions/act-runner),
 [Gitea Actions design](https://docs.gitea.com/usage/actions/design).
+
+## ADR-065 — CI a externí SCM nesmí blokovat control plane
+
+**Kontext.** Založení více projektů rychle po sobě správně vytvořilo frontu,
+ale jeden Docker build mohl bez cgroup limitu využít téměř celý host. UI navíc
+při každém načtení seznamu/detailu čekalo na externí SCM kontroly a pravidelný
+poll historie opakovaně načítal statusy mnoha commitů. Pomalá Gitea/GitHub nebo
+náročný Composer/npm build proto zpomalily i navigaci a API.
+
+**Rozhodnutí.**
+
+1. Rootless DinD kontejner dostává konfigurovatelný souhrnný cgroup limit pro
+   všechny vnořené buildy: ve výchozím stavu 1536 MB RAM, 1 CPU a 512 procesů.
+   `INITPAD_RUNNER_CAPACITY` dál určuje počet jobů; resource envelope určuje
+   jejich společný maximální dopad. Orchestrátor `act_runner` má malý vlastní
+   limit a host socket ani filesystem stále nejsou workflow dostupné.
+2. Seznam a detail projektů nikdy synchronně nečekají na SCM údržbu. Webhook je
+   okamžitá cesta; throttlovaná kontrola na pozadí pouze opravuje zmeškané
+   eventy a používá nejvýše čtyři souběžné externí dotazy.
+3. Aktivní projektová obrazovka polluje jen nejnovější commit a sloučí jej do
+   existující historie. Po dokončení zpomalí interval a na skryté kartě se
+   polling zastaví. Celá historie se načte pouze při explicitním otevření.
+
+**Důsledky.** Build může na malé VM trvat o něco déle, ale přihlášení,
+navigace a stavové API zůstanou použitelné. Větší instalace mohou limity i
+kapacitu zvýšit bez změny image. Zmeškané smazání repozitáře se může v UI
+projevit až po krátkém background cyklu; konzistence je eventual, nikoli ztracená.
+
+**Uživatelské testování.** Na VM s výchozí kapacitou 1 založ dva projekty
+bez čekání. Jeden staví, druhý ukazuje `awaiting CI`, oba se postupně dokončí
+a během buildu lze bez dlouhého čekání otevřít seznam, detail i Settings.
+`docker inspect initpad-runner-docker-1` potvrdí memory/CPU/PID envelope; skrytá
+karta nevytváří periodické commit requesty.

@@ -218,7 +218,10 @@ zůstanou beze změny. Otevřený je pouze **živý uživatelský test dvou work
 na skutečné VM. Durable object storage je hotové (ADR-059), takže po zeleném
 gate může začít Agent. Fronta jedním runnerem má explicitní `awaiting CI`
 stav, první job hlásí skutečné převzetí callbackem a počet souběžných slotů
-je provozně konfigurovatelný (ADR-064); zbývá živý dvouprojektový gate.
+je provozně konfigurovatelný (ADR-064). SCM údržba u listu/detailu je mimo
+synchronní read path, polling stahuje průběžně jen hlavičku historie a celý
+vnořený CI prostor má souhrnný CPU/RAM/PID limit (ADR-065); zbývá živý
+dvouprojektový gate.
 
 **Uživatelské ověření Fáze 4 (TargetAllocation):** dva workspace nasadí na stejný
 built-in target — každý má vlastní namespace, běží současně bez kolize a na cizí

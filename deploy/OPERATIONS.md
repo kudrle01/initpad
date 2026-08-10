@@ -111,6 +111,9 @@ selhal, obnov poslední zálohu (`./restore.sh …`).
 
 ## Kapacita a škálování
 
+- Pro pohodlný self-hosted provoz včetně sestavování šablon počítej
+  alespoň se 2 vCPU, 4 GB RAM a 20 GB volného disku. Samotné zobrazení
+  aplikace spotřebuje méně; CI build je záměrně nejnáročnější část.
 - Orientačně: každý projekt = 3 prostředí; N týmů × 3 běžící kontejnery + CI
   buildy. Hlídej RAM, CPU a **volné místo** (buildy a image rostou).
 - `INITPAD_RUNNER_CAPACITY=1` znamená jeden současný CI job a ostatní
@@ -118,6 +121,11 @@ selhal, obnov poslední zálohu (`./restore.sh …`).
   nastav `2` a znovu spusť `./install.sh`; instalátor vygeneruje runner config a
   runner bezpečně znovu vytvoří. Nezvyšuj hodnotu jen kvůli kratší frontě —
   každý slot může současně provádět náročný Docker build.
+- `INITPAD_RUNNER_MEMORY_LIMIT`, `INITPAD_RUNNER_CPU_LIMIT` a
+  `INITPAD_RUNNER_PIDS_LIMIT` omezují **součet** všech vnořených CI kontejnerů
+  (výchozí hodnoty `1536m`, `1.0`, `512`). Na silnějším hostu je lze zvýšit,
+  ale ponech dostatečnou rezervu pro databázi, Gitea, API a běžící aplikace.
+  Změnu uplatní opětovné `./install.sh`; nevyžaduje nový projekt.
 - Kvóty na tým nastav přes **Allocations** (max prostředí, ADR-060).
 - Když jeden host nestačí, přesuň nasazovací cíle na další stroje přes **Agenta**
   (roadmapa), případně managed DB/S3.

@@ -233,10 +233,21 @@ V `deploy/.env` ponech nejprve:
 
 ```dotenv
 INITPAD_RUNNER_CAPACITY=1
+INITPAD_RUNNER_MEMORY_LIMIT=1536m
+INITPAD_RUNNER_CPU_LIMIT=1.0
+INITPAD_RUNNER_PIDS_LIMIT=512
 ```
 
-Spusť `./install.sh`. Potom rychle po sobě, bez čekání na první CI, založ
-ve dvou workspacech projekty `queue-one` a `queue-two`. Očekávaný výsledek:
+Spusť `./install.sh` a ověř skutečný limit celého vnořeného CI prostoru:
+
+```bash
+docker inspect initpad-runner-docker-1 \
+  --format 'memory={{.HostConfig.Memory}} nano_cpus={{.HostConfig.NanoCpus}} pids={{.HostConfig.PidsLimit}}'
+```
+
+Výchozí hodnoty jsou `memory=1610612736`, `nano_cpus=1000000000` a
+`pids=512`. Potom rychle po sobě, bez čekání na první CI, založ ve dvou
+workspacech projekty `queue-one` a `queue-two`. Očekávaný výsledek:
 
 - oba projekty i oba oddělené repozitáře vzniknou bez konfliktu;
 - runner zpracovává první workflow a jeho commit ukazuje `running`;
@@ -246,7 +257,10 @@ ve dvou workspacech projekty `queue-one` a `queue-two`. Očekávaný výsledek:
   joby obou workflow spravedlivě prokládat) a oba dev deploymenty nakonec
   skončí samostatně jako `running`;
 - logy, odkazy, SHA, URL, kontejnery a deployment history se mezi projekty
-  nikdy nezamění.
+  nikdy nezamění;
+- během buildu lze plynule otevřít Projects, detail projektu a Settings;
+  skrytá karta se po návratu sama aktualizuje, aniž by na pozadí nepřetržitě
+  pollovala celou historii commitů.
 
 Volitelně na stroji s dostatkem prostředků nastav kapacitu `2`, spusť znovu
 `./install.sh` a test zopakuj s novými názvy. Oba první joby mohou běžet

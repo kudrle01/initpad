@@ -223,6 +223,8 @@ services:
   # Dedicated rootless Docker daemon for untrusted CI jobs. It is privileged
   # only inside this container so rootless Docker can create namespaces; the
   # physical host socket and filesystem are never mounted into a workflow.
+  # The outer cgroup is also the aggregate resource envelope for every nested
+  # build container, so CI cannot starve the platform control plane.
   runner-docker:
     image: docker:27.5.1-dind-rootless
     profiles: ["runner"]
@@ -252,6 +254,9 @@ services:
       - "host.docker.internal:172.31.250.1"
       - "gitea.localhost:172.31.250.1"
     networks: [ci-control]
+    mem_limit: ${INITPAD_RUNNER_MEMORY_LIMIT:-1536m}
+    cpus: ${INITPAD_RUNNER_CPU_LIMIT:-1.0}
+    pids_limit: ${INITPAD_RUNNER_PIDS_LIMIT:-512}
     restart: unless-stopped
 
   # Gitea Actions runner — registered automatically by install.sh.
@@ -276,6 +281,9 @@ services:
       api: { condition: service_healthy }
       runner-docker: { condition: service_healthy }
     networks: [platform, ci-control]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
     restart: unless-stopped
 
   # --- simulated deployment targets (real protocols, stand-in containers) ---
