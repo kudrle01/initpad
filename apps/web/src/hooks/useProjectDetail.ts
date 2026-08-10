@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, type DeleteProjectOptions } from '@/api';
 import { useAuth } from '@/auth';
 import { cleanupNotice } from '@/lib/deployment';
+import {
+  ACTIVE_PROJECT_POLL_MS,
+  IDLE_PROJECT_POLL_MS,
+  mergeCommitHead,
+} from '@/lib/commit-polling';
 import { useToast } from '@/toast';
 import type {
   Commit,
@@ -13,6 +18,8 @@ import type {
   Target,
   TemplateManifest,
 } from '@/types';
+
+const DETAIL_COMMIT_LIMIT = 6;
 
 function isLive(project: Project | null, commits: Commit[], rerunRequested: boolean): boolean {
   const environmentBusy =
@@ -50,6 +57,7 @@ export function useProjectDetail() {
   const [targetEnv, setTargetEnv] = useState<EnvName | null>(null);
   const [configEnv, setConfigEnv] = useState<EnvName | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
+  const pollInFlight = useRef(false);
 
   const projectRole = workspaces.find(
     (workspace) => workspace.id === project?.workspaceId,
@@ -58,17 +66,23 @@ export function useProjectDetail() {
   const canMaintain =
     projectRole === 'owner' || projectRole === 'admin' || projectRole === 'maintainer';
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (mode: 'full' | 'head' = 'full') => {
     if (!id) return;
+    if (mode === 'head' && pollInFlight.current) return;
+    if (mode === 'head') pollInFlight.current = true;
     try {
       const [projectRow, commitRows, provisioningRow, deploymentRows] = await Promise.all([
         api.getProject(id),
-        api.getCommits(id).catch(() => [] as Commit[]),
+        api.getCommits(id, mode === 'head' ? 1 : DETAIL_COMMIT_LIMIT).catch(() => [] as Commit[]),
         api.getProvisioning(id).catch(() => null),
         api.getDeployments(id).catch(() => [] as DeploymentOperation[]),
       ]);
       setProject(projectRow);
-      setCommits(commitRows);
+      setCommits((current) =>
+        mode === 'head'
+          ? mergeCommitHead(current, commitRows, DETAIL_COMMIT_LIMIT)
+          : commitRows,
+      );
       setProvisioning(provisioningRow ?? null);
       setDeployments(deploymentRows);
       setOpenSha((current) => current ?? commitRows[0]?.sha ?? null);
@@ -81,6 +95,7 @@ export function useProjectDetail() {
         setError((loadError as Error).message);
       }
     } finally {
+      if (mode === 'head') pollInFlight.current = false;
       setLoading(false);
     }
   }, [id]);
@@ -100,12 +115,22 @@ export function useProjectDetail() {
 
   useEffect(() => {
     if (notFound) return;
-    const timer = setTimeout(
-      load,
-      isLive(project, commits, ciRerunRequested) ? 2500 : 10_000,
-    );
+    const delay = isLive(project, commits, ciRerunRequested)
+      ? ACTIVE_PROJECT_POLL_MS
+      : IDLE_PROJECT_POLL_MS;
+    const timer = setTimeout(() => {
+      if (document.visibilityState === 'visible') void load('head');
+    }, delay);
     return () => clearTimeout(timer);
   }, [project, commits, load, notFound, ciRerunRequested]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void load('head');
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => document.removeEventListener('visibilitychange', refreshWhenVisible);
+  }, [load]);
 
   useEffect(() => {
     if (!ciRerunRequested) return;

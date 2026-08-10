@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '@/api';
@@ -6,6 +6,11 @@ import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { CommitList } from '@/components/organisms/CommitList';
+import {
+  ACTIVE_PROJECT_POLL_MS,
+  IDLE_PROJECT_POLL_MS,
+  mergeCommitHead,
+} from '@/lib/commit-polling';
 import type { Commit, Project } from '@/types';
 
 const HISTORY_LIMIT = 100;
@@ -27,9 +32,12 @@ export default function ProjectCommits() {
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const pollInFlight = useRef(false);
 
-  const load = useCallback(async (showLoading = false) => {
+  const load = useCallback(async (showLoading = false, mode: 'full' | 'head' = 'full') => {
     if (!id) return;
+    if (mode === 'head' && pollInFlight.current) return;
+    if (mode === 'head') pollInFlight.current = true;
     if (showLoading) {
       setLoading(true);
       setError(null);
@@ -37,15 +45,18 @@ export default function ProjectCommits() {
     try {
       const [projectRow, commitRows] = await Promise.all([
         api.getProject(id),
-        api.getCommits(id, HISTORY_LIMIT),
+        api.getCommits(id, mode === 'head' ? 1 : HISTORY_LIMIT),
       ]);
       setProject(projectRow);
-      setCommits(commitRows);
+      setCommits((current) =>
+        mode === 'head' ? mergeCommitHead(current, commitRows, HISTORY_LIMIT) : commitRows,
+      );
       setOpenSha((current) => current ?? commitRows[0]?.sha ?? null);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      if (mode === 'head') pollInFlight.current = false;
       setLoading(false);
     }
   }, [id]);
@@ -59,9 +70,20 @@ export default function ProjectCommits() {
 
   useEffect(() => {
     if (!project || error) return;
-    const timer = setTimeout(load, pipelineActive(commits) ? 2500 : 10_000);
+    const delay = pipelineActive(commits) ? ACTIVE_PROJECT_POLL_MS : IDLE_PROJECT_POLL_MS;
+    const timer = setTimeout(() => {
+      if (document.visibilityState === 'visible') void load(false, 'head');
+    }, delay);
     return () => clearTimeout(timer);
   }, [project, commits, error, load]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void load(false, 'head');
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => document.removeEventListener('visibilitychange', refreshWhenVisible);
+  }, [load]);
 
   return (
     <div>
