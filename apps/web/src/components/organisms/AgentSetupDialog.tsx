@@ -61,7 +61,7 @@ export function AgentSetupDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-3">
             <div>
               <p className="text-sm font-medium">Agent status</p>
@@ -73,7 +73,7 @@ export function AgentSetupDialog({
           </div>
 
           {enrollment ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
+            <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
               <div className="flex items-start gap-2 text-sm">
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 <p>
@@ -82,11 +82,11 @@ export function AgentSetupDialog({
                   Closing this dialog discards the plaintext.
                 </p>
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Enrollment token</p>
                 <CopyField command={enrollment.enrollmentToken} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Run on the Docker server</p>
                 <CopyField command={installCommand} />
                 <p className="mt-1.5 text-xs text-muted-foreground">
