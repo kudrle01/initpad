@@ -216,10 +216,37 @@ model Target {
   createdAt    DateTime      @default(now())
   environments Environment[]
   allocations  TargetAllocation[]
+  agent        Agent?
 
   // A workspace cannot have two user targets with the same name. Built-ins
   // have null workspaceId and stable ids (Postgres permits multiple NULLs).
   @@unique([workspaceId, name])
+}
+
+// Outbound-only identity of one InitPad Agent installed on one physical Docker
+// target (ADR-066). Raw enrollment and agent credentials are returned exactly
+// once and never persisted; only SHA-256 hashes cross the database boundary.
+// Workspace authorization remains derived from Target -> TargetAllocation so
+// the agent cannot become a second tenancy model.
+model Agent {
+  id                   String    @id @default(uuid())
+  target               Target    @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  targetId             String    @unique
+  enrollmentTokenHash  String?   @unique
+  enrollmentExpiresAt  DateTime?
+  credentialHash       String?   @unique
+  credentialGeneration Int       @default(0)
+  protocolVersion      Int       @default(1)
+  version              String?
+  capabilities         Json?
+  enrolledAt           DateTime?
+  lastSeenAt           DateTime?
+  disabledAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([lastSeenAt])
+  @@index([disabledAt])
 }
 
 // Workspace-scoped *usage* of a physical Target (ADR-060). Separates "what the

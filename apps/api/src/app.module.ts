@@ -14,6 +14,7 @@ import { AdminModule } from './admin/admin.module';
 import { IdentityModule } from './identity/identity.module';
 import { GitHubModule } from './scm/github/github.module';
 import { ArtifactsModule } from './artifacts/artifacts.module';
+import { AgentsModule } from './agents/agents.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { ArtifactsModule } from './artifacts/artifacts.module';
     IdentityModule,
     GitHubModule,
     ArtifactsModule,
+    AgentsModule,
   ],
   controllers: [HealthController],
 })
