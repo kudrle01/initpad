@@ -2686,3 +2686,41 @@ transport mimo lokální vývoj vyžaduje HTTPS.
 plaintextů v DB writech, expiraci, single-use compare-and-set, generaci
 credentialu a deaktivaci. Uživatelský test začne až instalačním UI a skutečným
 Agent procesem; samotný trust bootstrap není užitečné testovat ručním `curl`.
+
+## ADR-067 — Agent target je outbound-only a před delivery zůstává nepoužitelný
+
+**Kontext.** Trust bootstrap sám o sobě nestačí k bezpečnému nasazování. Pokud
+by se workspace-owned Docker target choval jako dnešní built-in Docker ještě
+před dokončením job protokolu, mohl by control plane omylem spustit workload na
+svém vlastním Docker daemonu. Instalační UX zároveň nesmí vracet zpět SSH
+hesla ani vložit jednorázový enrollment do shell historie.
+
+**Rozhodnutí.**
+
+1. Workspace-owned Docker target je explicitně Agent-backed. Ukládá jméno,
+   runtime capabilities a browser-reachable aplikační base URL, ale žádný host,
+   port, účet, heslo, privátní klíč ani remote path. Typ existujícího targetu je
+   neměnný; změna protokolu znamená založit nový target.
+2. Enrollment spravuje pouze owner/admin. UI ukáže plaintext token právě v
+   odpovědi na jeho vydání a po zavření dialogu jej zahodí. Kopírovaný příkaz
+   obsahuje jen URL control plane; Agent si token vyžádá interaktivně, aby
+   neskončil v shell historii.
+3. Stav `online` není ručně zapisovaný příznak. Control plane jej odvodí z
+   autentizovaného heartbeatu mladšího než 90 sekund; starší enrolled Agent je
+   `offline`. Stav bez credentialu je `not-enrolled`, revoke je `disabled`.
+4. Dokud není hotový durable job a Agent delivery protokol, tento target není
+   nabízen pro allocation a backend jej odmítne i při přímém API požadavku.
+   Stejná pojistka je také na projektovém deploymentu, takže neexistuje fallback
+   na Docker socket control plane.
+
+**Důsledky.** Uživatel může bezpečně připravit fyzický server a enrollment už
+před dodáním spustitelného Agenta, ale nemůže přes neúplnou cestu nasadit
+workload. SaaS nepotřebuje inbound přístup do zákaznické sítě a InitPad
+neuchovává další serverové tajemství. Base URL je konfigurační údaj pro odkazy
+na aplikace, nikoli management endpoint Agenta.
+
+**Testování.** API testy odmítají inbound údaje i předčasnou allocation a
+ověřují heartbeat-derived stav. Browser acceptance pokrývá založení targetu,
+oddělený jednorázový token a bezpečný příkaz, zahození plaintextu po zavření,
+skrytí targetu v allocation formuláři a mobilní šířku 390 px. Připojení
+skutečného procesu a stav `online` patří do podkroku 3.

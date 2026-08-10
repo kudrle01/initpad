@@ -278,7 +278,7 @@ nezobrazí falešný empty/error stav.
    Docker targetem. Owner/admin vydá patnáctiminutový jednorázový enrollment;
    token i následný credential jsou v databázi pouze hashované. Redeem je
    compare-and-set a deaktivace credential zneplatní bez smazání targetu.
-2. **Agent target a instalační UX.** Uživatel založí workspace-owned Docker
+2. ✅ **Agent target a instalační UX.** Uživatel založí workspace-owned Docker
    target bez SSH hesla, dostane kopírovatelný instalační příkaz a v UI vidí
    stav `not enrolled / offline / online / disabled`, verzi a poslední kontakt.
 3. **Spustitelný Agent a heartbeat.** Samostatný malý proces bezpečně uloží
@@ -298,9 +298,11 @@ nezobrazí falešný empty/error stav.
    dvou workspaces; následuje audit enrollmentu a idempotence.
 
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
-browser test. První uživatelské ověření bude po podkroku 2: owner vytvoří
-Docker target a instalační příkaz, member jej neuvidí; skutečné spojení
-a stav `online` se otestují po podkroku 3.
+browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
+údajů, vygeneroval jednorázový enrollment, po zavření dialogu už plaintext
+nebyl dostupný a Agent target nešel před dokončením delivery cesty alokovat.
+Skutečné spojení, heartbeat a přechod `offline → online` se otestují po
+podkroku 3.
 
 ### Fáze 6 — jednotný delivery tok
 
