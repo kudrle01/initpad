@@ -232,7 +232,7 @@ existujících projektů. Neověřovat jen existencí DB řádku — prokázat r
 a izolaci mezi workspace. Reprodukovatelný postup je v
 [`deploy/SELF_HOSTED_ACCEPTANCE.md`](deploy/SELF_HOSTED_ACCEPTANCE.md).
 
-### Fáze 4.5 — quality checkpoint před Agentem — kód dokončen, čeká živý gate
+### Fáze 4.5 — quality checkpoint před Agentem — ✅ dokončeno
 
 Agent přidá novou bezpečnostní hranici, durable job protokol a další obrazovky.
 Před jeho implementací proto proběhne omezený stabilizační milník; nejde o
@@ -256,9 +256,10 @@ přepis fungujícího produktu.
    target a workspace správa. Opraví se informační hierarchie, touch targets,
    formuláře, focus/keyboard chování, loading/empty/error stavy a kontrast.
    Vizuální identita zůstane střídmá a produktová, ne dekorativní redesign.
-5. **Živý gate.** Produkční build, API a template testy, dependency audit,
+5. ✅ **Živý gate.** Produkční build, API a template testy, dependency audit,
    self-hosted smoke test, kontrola mrtvého kódu a browser acceptance musí být
-   zelené. Teprve potom začne Agent.
+   zelené. Otestována byla izolace dvou workspaceů, role a kvóty, podporované
+   šablony, CI fronta, restart, backup/restore a delete/recreate bez kolize.
 
 Po Agent MVP proběhne bezpečnostní audit jeho enrollmentu, identity, lease a
 idempotence a **UX/UI pass B** pro nové agent/target obrazovky. Poslední audit
@@ -273,23 +274,33 @@ nezobrazí falešný empty/error stav.
 
 ### Fáze 5 — InitPad Agent
 
-- Pro MVP platí jeden target = jeden agent = jeden Linux Docker server.
-- Jednorázový enrollment token sváže agenta s fyzickým targetem a vymění se za
-  rotovatelnou identitu; agent jde zablokovat a eviduje verzi i poslední kontakt.
-- Agent navazuje pouze odchozí HTTPS spojení. První verze používá polling/long
-  polling; WebSocket je optimalizace, ne podmínka správnosti.
-- Control plane ukládá durable job; agent si jej pronajme, průběžně obnovuje
-  lease, posílá heartbeat/capabilities a publikuje strukturovaný progress.
-- Agent nepřijímá libovolný shell. Protokol povoluje pouze verzované operace
-  `DEPLOY_SERVICE`, `STOP_SERVICE`, `START_SERVICE`, `REMOVE_SERVICE`,
-  `GET_SERVICE_STATUS`, `FETCH_LOGS`, `RUN_HEALTH_CHECK` a `ROLLBACK_SERVICE`.
-- Agent stahuje image podle neměnného digestu, vynucuje allocation, resource limity,
-  síť a naming; control plane už nepotřebuje host Docker socket.
-- Každý job má tenant/target scope, correlation ID a idempotency key. Odpojení
-  agenta operaci neztratí: lease vyprší a job lze bezpečně zopakovat bez druhého
-  kontejneru nebo sítě.
-- Secret hodnoty mohou zůstat pouze na targetu; cloud ukládá jejich názvy a stav
-  `configured/missing`, agent je lokálně mapuje do deploymentu.
+1. ✅ **Trust bootstrap v control plane.** Agent má identitu 1:1 s fyzickým
+   Docker targetem. Owner/admin vydá patnáctiminutový jednorázový enrollment;
+   token i následný credential jsou v databázi pouze hashované. Redeem je
+   compare-and-set a deaktivace credential zneplatní bez smazání targetu.
+2. **Agent target a instalační UX.** Uživatel založí workspace-owned Docker
+   target bez SSH hesla, dostane kopírovatelný instalační příkaz a v UI vidí
+   stav `not enrolled / offline / online / disabled`, verzi a poslední kontakt.
+3. **Spustitelný Agent a heartbeat.** Samostatný malý proces bezpečně uloží
+   credential na targetu, provede enrollment a pouze odchozím HTTPS hlásí
+   verzi, protocol version, Docker capabilities a omezenou telemetrii.
+4. **Durable job a lease protokol.** Control plane vytváří target-scoped joby;
+   agent je atomicky pronajímá, obnovuje lease a reportuje strukturovaný progress.
+   Expirace nebo duplicitní doručení nesmí vytvořit druhý workload.
+5. **Docker lifecycle operace.** Agent implementuje verzované deploy, stop,
+   start, remove, status, health, omezené logy a rollback bez obecného shellu.
+   Image přebírá podle ověřené identity/digestu a vynucuje allocation.
+6. **Napojení delivery toku.** Agent-backed target použije stejné projektové
+   akce jako dnešní Docker provider; SaaS nepotřebuje Docker socket control plane.
+   Přímá self-hosted cesta zůstane kompatibilní pro diplomkový profil.
+7. **Živý a bezpečnostní gate.** Otestuje se instalace, revoke/re-enroll,
+   offline/reconnect, ztracená odpověď, lease expiry, duplicitní job a izolace
+   dvou workspaces; následuje audit enrollmentu a idempotence.
+
+Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
+browser test. První uživatelské ověření bude po podkroku 2: owner vytvoří
+Docker target a instalační příkaz, member jej neuvidí; skutečné spojení
+a stav `online` se otestují po podkroku 3.
 
 ### Fáze 6 — jednotný delivery tok
 

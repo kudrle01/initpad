@@ -2649,3 +2649,40 @@ bez čekání. Jeden staví, druhý ukazuje `awaiting CI`, oba se postupně doko
 a během buildu lze bez dlouhého čekání otevřít seznam, detail i Settings.
 `docker inspect initpad-runner-docker-1` potvrdí memory/CPU/PID envelope; skrytá
 karta nevytváří periodické commit requesty.
+
+## ADR-066 — Agent trust bootstrap patří fyzickému Targetu
+
+**Kontext.** Agent zavádí dlouhodobou strojovou identitu s oprávněním ovládat
+Docker server. Nesmí vzniknout druhá autorizační doména vedle workspace-scoped
+`TargetAllocation`, nesmí se ukládat znovu použitelný instalační secret a dva
+souběžné procesy nesmí redeemnout stejný token.
+
+**Rozhodnutí.**
+
+1. Jeden `Agent` je svázán 1:1 s jedním fyzickým `Target`. Workspace a jeho
+   namespace se do identity Agenta nekopírují; pro každý job je autoritativní
+   existující vazba target → allocation → workspace.
+2. Enrollment smí vydat jen owner/admin workspace-owned Docker targetu. Cizí
+   target vrací 404 a member 403. Built-in target se touto cestou nepřebírá.
+3. Enrollment token má 256 bitů entropie, platí patnáct minut a plaintext se
+   vrátí pouze jednou. Databáze ukládá SHA-256 hash. Redeem proběhne
+   atomickým compare-and-set nad hashem, expirací a disabled stavem.
+4. Redeem vydá oddělený dlouhodobý credential; i z něj se ukládá pouze hash
+   a monotónní generace. Nový enrollment nezruší dosavadní credential dřív,
+   než jej Agent úspěšně vymění. Deaktivace credential i pending enrollment
+   zneplatní, ale fyzický target ani jeho běžící workload automaticky nemaže.
+5. Protokol má od prvního requestu explicitní integer `protocolVersion`.
+   Enrollment eviduje také verzi programu; capabilities a `lastSeenAt` doplní
+   autentizovaný heartbeat, nikoli uživatelský browser.
+
+**Důsledky.** Ukradený databázový dump neobsahuje credential použitelný k
+ovládání serveru. Zkopírovaný enrollment příkaz lze použít jen jednou a
+krátce; souběh má jednoho vítěze. Target lze bezpečně revoke/re-enroll bez
+změny allocation a bez automatického zásahu do aplikací. Samotný credential
+je bearer secret a Agent jej proto musí později uložit do root-only souboru;
+transport mimo lokální vývoj vyžaduje HTTPS.
+
+**Testování.** Automatizované testy ověřují role a tenant hiding, absenci
+plaintextů v DB writech, expiraci, single-use compare-and-set, generaci
+credentialu a deaktivaci. Uživatelský test začne až instalačním UI a skutečným
+Agent procesem; samotný trust bootstrap není užitečné testovat ručním `curl`.
