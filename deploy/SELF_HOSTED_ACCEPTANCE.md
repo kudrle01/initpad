@@ -291,7 +291,11 @@ Na výzvu napiš `restore`. Po obnově ověř:
 
 - účty, workspace, původní projekty a Gitea repozitáře existují;
 - `after-backup` neexistuje;
-- existující Gitea OCI image umožní redeploy stejného buildu;
+- lokální runtime `after-backup` nezůstal jako osiřelý kontejner:
+  `docker ps -a --filter label=com.initpad.managed=true --format '{{.Names}}' | grep after-backup`
+  nevrátí nic;
+- obnovená aktivní prostředí pravdivě ukazují, že po restore vyžadují deploy;
+  existující Gitea OCI image umožní nasadit stejný zachovaný build znovu;
 - `docker compose run --rm minio-init` potvrdí dostupný privátní artifact bucket;
 - CI runner je online;
 - `restore.sh` vypíše `Restore complete` až po health ověření;

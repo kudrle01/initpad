@@ -75,6 +75,11 @@ předchozí konfigurace zůstane jako chráněný
 jednorázovém hostu/VM** — nevyzkoušená záloha není záloha. Po obnově spusť
 `./install.sh`, pokud je potřeba dorovnat registraci CI runneru.
 
+Datový backup není snapshot fyzických targetů. Restore proto odstraní pouze
+lokální kontejnery označené `com.initpad.managed=true` a obnovená nasazení
+označí `deploy required`; cizí host kontejnery ani vzdálené workloady nemaže.
+Po obnově zkontroluj target a z UI znovu nasaď zachovaný testovaný artifact.
+
 ## Úklid disku
 
 Bezpečné uvolnění místa (jen dangling images + build cache; datové volumes ani

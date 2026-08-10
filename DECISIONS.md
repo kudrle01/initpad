@@ -2488,6 +2488,11 @@ jednoho hostu (řeší roadmapa: Agent, managed DB/S3).
    Před destruktivním potvrzením se vyžaduje kompletní sada archivů,
    kontroluje jejich manifest i čitelnost PostgreSQL dumpu. Dokončení se
    ohlásí teprve po health checku Gitey, API, DinD a běhu runneru.
+   Běžící workloady nejsou součástí control-plane snapshotu a po jeho pořízení
+   se mohly změnit. Restore proto odstraní pouze lokální kontejnery s explicitním
+   `com.initpad.managed=true` a všechna obnovená aktivní prostředí označí jako
+   vyžadující ověření/redeploy; verze a artifact binding zachová. U vzdáleného
+   targetu nic destruktivně nemaže, pouze přestane tvrdit neověřený stav.
    „Zdokumentovaná obnova = otestovaná obnova."
 3. **Interní-CA HTTPS (volitelně).** Caddy umí `tls internal` (vlastní lokální
    CA) přes proměnnou `INITPAD_TLS_DIRECTIVE`, pro LAN/školu bez veřejné

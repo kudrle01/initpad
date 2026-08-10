@@ -121,6 +121,56 @@ printf "%s\n" "ALTER ROLE initpad PASSWORD :'restore_password';" | \
     'psql -v ON_ERROR_STOP=1 -U initpad -d postgres --set=restore_password="$INITPAD_RESTORE_DB_PASSWORD"' \
     >/dev/null
 
+# Runtime targets are not part of a control-plane data backup. A workload may
+# have been created, removed or redeployed after the checkpoint, so claiming
+# its restored database status is still current would be unsafe. Preserve the
+# artifact/version for deterministic redeploy, but require reconciliation.
+say "Marking restored deployments for target reconciliation"
+"${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U initpad -d initpad \
+  >/dev/null <<'SQL'
+UPDATE "Environment"
+SET "status" = 'failed',
+    "statusReason" = 'Control plane restored; verify the target state and deploy again.',
+    "deploymentRequired" = true,
+    "activeOperationId" = NULL,
+    "url" = CASE WHEN "provider" = 'docker' THEN NULL ELSE "url" END
+WHERE "status" <> 'empty'
+   OR "version" IS NOT NULL
+   OR "url" IS NOT NULL
+   OR "activeOperationId" IS NOT NULL;
+
+UPDATE "DeploymentOperation"
+SET "status" = 'failed',
+    "message" = 'Interrupted by control-plane restore; target reconciliation is required.',
+    "finishedAt" = NOW()
+WHERE "status" = 'running';
+
+UPDATE "ProvisioningOperation"
+SET "status" = 'interrupted',
+    "message" = 'Interrupted by control-plane restore; external effects require reconciliation.',
+    "finishedAt" = NOW(),
+    "leaseOwner" = NULL,
+    "leaseExpiresAt" = NULL
+WHERE "status" IN ('running', 'cleaning', 'retrying');
+
+UPDATE "ProvisioningEffect"
+SET "status" = 'reconciliation_required',
+    "error" = 'Control plane was restored while this effect may have been applying.'
+WHERE "status" = 'applying';
+SQL
+
+# Only containers explicitly labelled as InitPad-managed are removed. Compose
+# services and unrelated host workloads are outside this filter. Their tested
+# images remain cached/archived so the restored environment can be redeployed.
+managed_containers=()
+while IFS= read -r container_id; do
+  [ -n "$container_id" ] && managed_containers+=("$container_id")
+done < <(docker ps -aq --filter label=com.initpad.managed=true)
+if [ "${#managed_containers[@]}" -gt 0 ]; then
+  say "Removing ${#managed_containers[@]} local runtime workload(s) with stale checkpoint state"
+  docker rm -f "${managed_containers[@]}" >/dev/null
+fi
+
 restore_volume() {
   local volume=$1 archive=$2 required=${3:-yes}
   if [ ! -f "$src/$archive" ]; then
