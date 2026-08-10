@@ -183,4 +183,70 @@ describe('ProjectsService project deletion', () => {
     ).resolves.toBeUndefined();
     expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'project-1' } });
   });
+
+  it('preserves the source repository when durable artifact cleanup fails', async () => {
+    const project = {
+      id: 'project-1',
+      name: 'app',
+      repoUrl: 'https://git.test/team/app',
+      ...SCM_FIELDS,
+      repoPath: '/tmp/initpad-nonexistent-project-1',
+      environments: [],
+      owner: null,
+    };
+    const prisma = {
+      project: {
+        findUnique: jest.fn().mockResolvedValue(project),
+        delete: jest.fn().mockResolvedValue(undefined),
+      },
+      deploymentOperation: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      buildArtifact: {
+        findMany: jest.fn().mockResolvedValue([
+          { storageRef: 'artifacts/team/project-1/image.tar' },
+        ]),
+      },
+    };
+    const deployment = { removeImages: jest.fn().mockResolvedValue(undefined) };
+    const gitea = {
+      deletePackages: jest.fn().mockResolvedValue(undefined),
+      deleteRepo: jest.fn().mockResolvedValue(undefined),
+    };
+    const artifactStore = {
+      delete: jest.fn().mockRejectedValue(new Error('object store unavailable')),
+    };
+    const service = new ProjectsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      deployment as never,
+      {} as never,
+      { provider: jest.fn(() => gitea) } as never,
+      {} as never,
+      {} as never,
+      artifactStore as never,
+    );
+
+    await expect(
+      service.remove('project-1', {
+        deleteRemoteRepo: true,
+        confirmProduction: false,
+      }),
+    ).rejects.toThrow('deleting stored build artifacts failed');
+
+    expect(artifactStore.delete).toHaveBeenCalledWith('artifacts/team/project-1/image.tar');
+    expect(gitea.deletePackages).not.toHaveBeenCalled();
+    expect(gitea.deleteRepo).not.toHaveBeenCalled();
+    expect(prisma.project.delete).not.toHaveBeenCalled();
+
+    await expect(
+      service.remove('project-1', {
+        deleteRemoteRepo: true,
+        confirmProduction: false,
+        confirmCleanupDebt: true,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(gitea.deleteRepo).toHaveBeenCalledTimes(1);
+    expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'project-1' } });
+  });
 });

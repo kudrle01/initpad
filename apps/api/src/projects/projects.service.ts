@@ -1688,19 +1688,11 @@ export class ProjectsService implements OnModuleInit {
     // Only after all containers are stopped, remove the locally pulled
     // registry images of the project.
     await this.deployment.removeImages(imageRepository(repository));
-    // Also delete the images from the Gitea registry (Packages) so no
-    // orphaned artifacts remain.
-    const scm = this.workspaceScm.provider(repository.provider);
-    await scm.deletePackages(repository);
-    if (opts.repoAction === 'delete') {
-      await scm.deleteRepo(repository, this.actorForRepo(row));
-    } else if (opts.repoAction === 'detach') {
-      await scm.detachRepo(repository, this.actorForRepo(row));
-    }
-    // Remove the durable build-artifact objects before the DB rows are
-    // cascade-deleted (ADR-059 §7). Storage failures must not be reported as a
-    // successful deletion: for user-initiated removal we surface them (unless the
-    // caller explicitly accepts cleanup debt); a reactive webhook removal logs.
+    // Remove durable build-artifact objects before deleting or detaching the
+    // source repository. If object storage is unavailable, the most valuable
+    // external resource (the user's source code) therefore remains intact and
+    // the whole deletion can be retried safely. Store deletion is idempotent,
+    // so a partial object purge is also safe to repeat.
     const artifactCleanupFailures = await this.artifactLifecycle.purgeProjectObjects(row.id);
     if (
       artifactCleanupFailures.length &&
@@ -1715,6 +1707,14 @@ export class ProjectsService implements OnModuleInit {
       this.logger.warn(
         `Project ${row.id}: ${artifactCleanupFailures.length} stored artifact object(s) could not be deleted: ${artifactCleanupFailures.join('; ')}`,
       );
+    }
+    // Also delete images from the SCM registry so no generated packages remain.
+    const scm = this.workspaceScm.provider(repository.provider);
+    await scm.deletePackages(repository);
+    if (opts.repoAction === 'delete') {
+      await scm.deleteRepo(repository, this.actorForRepo(row));
+    } else if (opts.repoAction === 'detach') {
+      await scm.detachRepo(repository, this.actorForRepo(row));
     }
     rmSync(row.repoPath, { recursive: true, force: true });
     await this.prisma.project.delete({ where: { id: row.id } });
