@@ -41,8 +41,9 @@ export class ProjectsController {
   @Get(':id')
   async get(@Param('id') id: string, @CurrentUser() userId: string) {
     await this.projects.assertAccess(id, userId, 'read');
-    // Detail reads reconcile too — refreshing the detail of a project whose
-    // repository was deleted in Gitea cleans it up and returns 404.
+    // Detail reads trigger a throttled background fail-safe for SCM events
+    // missed by webhooks. The current response stays independent of SCM latency;
+    // once cleanup finishes, subsequent reads return 404.
     await this.projects.reconcileProject(id);
     return this.projects.get(id);
   }

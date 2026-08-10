@@ -133,7 +133,10 @@ describe('ProjectsService failed CI handoff', () => {
       {} as never,
     );
 
-    await expect(service.reconcileProject(project.id)).resolves.toBeUndefined();
+    const internal = service as unknown as {
+      reconcileProjectScmState(row: typeof project): Promise<void>;
+    };
+    await expect(internal.reconcileProjectScmState(project)).resolves.toBeUndefined();
 
     expect(prisma.environment.updateMany).toHaveBeenCalledWith({
       where: {

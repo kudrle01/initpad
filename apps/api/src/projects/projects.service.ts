@@ -63,6 +63,7 @@ import { mapWithConcurrency } from '../common/concurrency';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
+const PROJECT_SCM_RECONCILE_INTERVAL_MS = 15_000;
 const SCM_READ_CONCURRENCY = 4;
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
@@ -85,6 +86,8 @@ export class ProjectsService implements OnModuleInit {
   private readonly ci: ProjectCiOrchestrator;
   private readonly repositoryReconcileAfter = new Map<string, number>();
   private readonly repositoryReconcileInFlight = new Set<string>();
+  private readonly projectScmReconcileAfter = new Map<string, number>();
+  private readonly projectScmReconcileInFlight = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -390,16 +393,51 @@ export class ProjectsService implements OnModuleInit {
     );
   }
 
-  // On-read reconciliation for a single project (detail view / refresh):
-  // when the repository was deleted directly in Gitea, clean the project up
-  // and surface 404 to the caller. Same fail-safe as the list variant —
-  // only an explicit 404 from Gitea counts.
+  // Detail reads schedule SCM maintenance but never wait for it. Current
+  // workflows and repository webhooks provide the immediate state changes;
+  // this throttled path only recovers missed legacy callbacks/events.
   async reconcileProject(id: string): Promise<void> {
     const row = await this.prisma.project.findUnique({
       where: { id },
       include: { owner: true },
     });
     if (!row) return; // get() reports the 404
+    this.scheduleProjectScmReconciliation(row);
+  }
+
+  private scheduleProjectScmReconciliation(
+    row: ProjectScmFields & {
+      id: string;
+      templateId: string;
+      owner: { username: string; accessToken: string } | null;
+    },
+  ): void {
+    const now = Date.now();
+    if (
+      this.projectScmReconcileInFlight.has(row.id) ||
+      (this.projectScmReconcileAfter.get(row.id) ?? 0) > now
+    ) {
+      return;
+    }
+
+    this.projectScmReconcileAfter.set(row.id, now + PROJECT_SCM_RECONCILE_INTERVAL_MS);
+    this.projectScmReconcileInFlight.add(row.id);
+    void this.reconcileProjectScmState(row)
+      .catch((error) =>
+        this.logger.warn(
+          `SCM state reconciliation skipped for ${row.scmFullName}: ${(error as Error).message}`,
+        ),
+      )
+      .finally(() => this.projectScmReconcileInFlight.delete(row.id));
+  }
+
+  private async reconcileProjectScmState(
+    row: ProjectScmFields & {
+      id: string;
+      templateId: string;
+      owner: { username: string; accessToken: string } | null;
+    },
+  ): Promise<void> {
     const repository = repositoryRef(row);
     const actor = this.actorForRepo(row);
     if (await this.workspaceScm.provider(repository.provider).repoMissing(repository, actor)) {
@@ -411,7 +449,7 @@ export class ProjectsService implements OnModuleInit {
         repository.provider,
         repository.repositoryId ?? undefined,
       ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
-      throw new NotFoundException(`Project '${id}' not found`);
+      return;
     }
     await this.reconcileWaitingCiFailure(row, repository, actor).catch((error) =>
       this.logger.warn(
