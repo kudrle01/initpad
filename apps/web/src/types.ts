@@ -117,6 +117,24 @@ export type TargetScope = 'builtin' | 'user';
 export type EnvName = 'dev' | 'test' | 'prod';
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
 
+export interface AgentStatus {
+  id: string;
+  targetId: string;
+  state: 'not-enrolled' | 'offline' | 'online' | 'disabled';
+  enrollmentPending: boolean;
+  enrollmentExpiresAt: string | null;
+  credentialGeneration: number;
+  protocolVersion: number;
+  version: string | null;
+  enrolledAt: string | null;
+  lastSeenAt: string | null;
+  disabledAt: string | null;
+}
+
+export interface AgentEnrollment extends AgentStatus {
+  enrollmentToken: string;
+}
+
 export interface TemplateManifest {
   id: string;
   name: string;
@@ -146,6 +164,8 @@ export interface Target {
   publicUrl: string | null;
   verifiedAt: string | null;
   inUse?: boolean;
+  // Loaded alongside workspace-owned Docker targets by Infrastructure.
+  agent?: AgentStatus | null;
 }
 
 // Compact reference to the target an environment is bound to.

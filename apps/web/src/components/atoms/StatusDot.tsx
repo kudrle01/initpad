@@ -13,6 +13,10 @@ const DEPLOY_CLASS: Record<string, string> = {
   stopped: 'bg-muted-foreground/70',
   empty: 'bg-muted-foreground/40',
   idle: 'bg-muted-foreground/40',
+  online: 'bg-success',
+  offline: 'bg-muted-foreground/70',
+  disabled: 'bg-destructive',
+  'not-enrolled': 'bg-muted-foreground/40',
 };
 
 const CI_CLASS: Record<string, string> = {

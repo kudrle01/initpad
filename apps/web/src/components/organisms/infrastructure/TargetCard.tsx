@@ -1,6 +1,7 @@
-import { Cloud, Container, Pencil, Server, ShieldAlert, ShieldCheck, Trash2, Wifi } from 'lucide-react';
+import { Bot, Cloud, Container, Pencil, Server, ShieldAlert, ShieldCheck, Trash2, Wifi } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Spinner } from '@/components/atoms/Spinner';
+import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import type { ProviderKind, Target } from '@/types';
@@ -15,14 +16,27 @@ interface Props {
   target: Target;
   busy: boolean;
   readOnly: boolean;
+  canManageAgent: boolean;
   onVerify: () => void;
+  onManageAgent: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }
 
-export function TargetCard({ target, busy, readOnly, onVerify, onEdit, onDelete }: Props) {
+export function TargetCard({
+  target,
+  busy,
+  readOnly,
+  canManageAgent,
+  onVerify,
+  onManageAgent,
+  onEdit,
+  onDelete,
+}: Props) {
   const Icon = KIND_ICON[target.kind] ?? Server;
   const isUserTarget = target.scope === 'user';
+  const isAgentTarget = isUserTarget && target.kind === 'docker';
+  const agentState = target.agent?.state ?? 'not-enrolled';
 
   return (
     <Card className="flex min-w-0 flex-col gap-3 p-5">
@@ -38,7 +52,9 @@ export function TargetCard({ target, busy, readOnly, onVerify, onEdit, onDelete 
             </div>
           </div>
         </div>
-        {target.verifiedAt ? (
+        {isAgentTarget ? (
+          <StatusBadge status={agentState} label={agentState.replace('-', ' ')} />
+        ) : target.verifiedAt ? (
           <span
             className="flex shrink-0 items-center gap-1 text-xs text-success"
             title={`Verified ${new Date(target.verifiedAt).toLocaleString()}`}
@@ -77,10 +93,19 @@ export function TargetCard({ target, busy, readOnly, onVerify, onEdit, onDelete 
 
       {!readOnly && (
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
-          <Button variant="secondary" size="sm" disabled={busy} onClick={onVerify}>
-            {busy ? <Spinner className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
-            Test connection
-          </Button>
+          {isAgentTarget ? (
+            canManageAgent && (
+              <Button variant="secondary" size="sm" disabled={busy} onClick={onManageAgent}>
+                {busy ? <Spinner className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                {target.agent ? 'Manage Agent' : 'Set up Agent'}
+              </Button>
+            )
+          ) : (
+            <Button variant="secondary" size="sm" disabled={busy} onClick={onVerify}>
+              {busy ? <Spinner className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
+              Test connection
+            </Button>
+          )}
           {isUserTarget && (
             <>
               <Button variant="ghost" size="icon-sm" aria-label="Edit target" onClick={onEdit}>

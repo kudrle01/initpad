@@ -16,6 +16,8 @@ import type {
   ImportPreflight,
   ProvisioningStatus,
   DeploymentOperation,
+  AgentStatus,
+  AgentEnrollment,
 } from '@/types';
 
 export interface EnvConfig {
@@ -27,14 +29,14 @@ export interface EnvConfig {
 // Body for registering / editing a user deployment target.
 export interface TargetInput {
   name: string;
-  kind: 'ssh' | 'sftp';
+  kind: 'docker' | 'ssh' | 'sftp';
   capabilities: RuntimeKind[];
-  host: string;
-  port: number;
-  username: string;
-  auth: 'password' | 'key';
+  host?: string;
+  port?: number;
+  username?: string;
+  auth?: 'password' | 'key';
   secret?: string;
-  remotePath: string;
+  remotePath?: string;
   publicUrl: string;
 }
 
@@ -218,6 +220,10 @@ export const api = {
   deleteTarget: (id: string) => http<void>(`/targets/${id}`, { method: 'DELETE' }),
   verifyTarget: (id: string) =>
     http<{ ok: boolean; message: string }>(`/targets/${id}/verify`, { method: 'POST' }),
+  getTargetAgent: (id: string) => http<AgentStatus | null>(`/targets/${id}/agent`),
+  issueAgentEnrollment: (id: string) =>
+    http<AgentEnrollment>(`/targets/${id}/agent/enrollment`, { method: 'POST' }),
+  disableAgent: (id: string) => http<void>(`/targets/${id}/agent`, { method: 'DELETE' }),
   // Workspace-scoped target allocations (ADR-060). Owner/admin manage; members read.
   listAllocations: () => http<TargetAllocation[]>('/allocations'),
   createAllocation: (body: TargetAllocationInput) =>

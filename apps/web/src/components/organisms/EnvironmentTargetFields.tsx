@@ -17,6 +17,9 @@ export function targetSupports(target: Target, template: TemplateManifest): bool
 }
 
 export function targetIsReady(target: Target): boolean {
+  // Agent-backed Docker delivery is intentionally enabled only after the
+  // durable job path exists. Never fall through to the control-plane daemon.
+  if (target.scope === 'user' && target.kind === 'docker') return false;
   return target.scope === 'builtin' || Boolean(target.verifiedAt);
 }
 
@@ -79,7 +82,11 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
               {options.map((target) => (
                 <option key={target.id} value={target.id} disabled={!targetIsReady(target)}>
                   {target.name} · {target.kind}
-                  {!targetIsReady(target) ? ' · verify first' : ''}
+                  {!targetIsReady(target)
+                    ? target.scope === 'user' && target.kind === 'docker'
+                      ? ' · Agent setup pending'
+                      : ' · verify first'
+                    : ''}
                 </option>
               ))}
             </Select>
@@ -99,14 +106,14 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
       )}
       {hasUnverified && verifiedOptions.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Some compatible targets are disabled until you run{' '}
-          <Link to="/infrastructure" className="text-link font-medium">Test connection</Link>.
+          Some compatible targets are disabled until their connection or Agent is ready in{' '}
+          <Link to="/infrastructure" className="text-link font-medium">Infrastructure</Link>.
         </p>
       )}
       <p className="flex max-w-3xl items-start gap-1.5 text-xs text-muted-foreground">
         <CloudCog className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
         {hosted
-          ? 'Choose a workspace target for every environment. You may reuse one server; InitPad keeps dev, test and prod paths separate. Private or local Docker servers will connect through InitPad Agent in the next infrastructure milestone.'
+          ? 'Choose a workspace target for every environment. You may reuse one server; InitPad keeps dev, test and prod paths separate. Private or local Docker servers connect outbound through InitPad Agent.'
           : 'Every environment can use a different target. The self-hosted defaults are preselected and can be changed now or later from the project detail.'}
       </p>
     </div>

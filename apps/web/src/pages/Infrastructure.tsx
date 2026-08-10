@@ -6,12 +6,13 @@ import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { AllocationDialog } from '@/components/organisms/AllocationDialog';
+import { AgentSetupDialog } from '@/components/organisms/AgentSetupDialog';
 import { AllocationSection } from '@/components/organisms/infrastructure/AllocationSection';
 import { TargetSections } from '@/components/organisms/infrastructure/TargetSections';
 import { TargetFormDialog } from '@/components/organisms/TargetDialog';
 import { Button } from '@/components/ui/button';
 import { useInfrastructure } from '@/hooks/useInfrastructure';
-import type { Target } from '@/types';
+import type { AgentEnrollment, Target } from '@/types';
 
 export default function Infrastructure() {
   const { activeWorkspace, user } = useAuth();
@@ -20,16 +21,21 @@ export default function Infrastructure() {
   const [editingTarget, setEditingTarget] = useState<Target | null>(null);
   const [allocationDialogOpen, setAllocationDialogOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<TargetAllocation | null>(null);
+  const [agentTarget, setAgentTarget] = useState<Target | null>(null);
+  const [agentEnrollment, setAgentEnrollment] = useState<AgentEnrollment | null>(null);
 
   const readOnly = !activeWorkspace
     || !['owner', 'admin', 'maintainer'].includes(activeWorkspace.role);
   const canManageAllocations = !!activeWorkspace
     && ['owner', 'admin'].includes(activeWorkspace.role);
+  const canManageAgent = canManageAllocations;
   const allocatedTargetIds = new Set(
     infrastructure.allocations.map((allocation) => allocation.targetId),
   );
   const availableAllocationTargets = infrastructure.targets.filter(
-    (target) => !allocatedTargetIds.has(target.id),
+    (target) =>
+      !allocatedTargetIds.has(target.id) &&
+      !(target.scope === 'user' && target.kind === 'docker'),
   );
 
   function openNewTarget() {
@@ -43,9 +49,15 @@ export default function Infrastructure() {
   }
 
   async function submitTarget(values: TargetInput) {
-    if (await infrastructure.saveTarget(editingTarget, values)) {
+    const wasNew = !editingTarget;
+    const saved = await infrastructure.saveTarget(editingTarget, values);
+    if (saved) {
       setTargetDialogOpen(false);
       setEditingTarget(null);
+      if (wasNew && saved.kind === 'docker' && canManageAgent) {
+        setAgentEnrollment(null);
+        setAgentTarget({ ...saved, agent: null });
+      }
     }
   }
 
@@ -79,6 +91,7 @@ export default function Infrastructure() {
           <TargetSections
             targets={infrastructure.targets}
             readOnly={readOnly}
+            canManageAgent={canManageAgent}
             busyTargetId={infrastructure.busyTargetId}
             onAdd={openNewTarget}
             onEdit={(target) => {
@@ -86,6 +99,10 @@ export default function Infrastructure() {
               setTargetDialogOpen(true);
             }}
             onVerify={infrastructure.verifyTarget}
+            onManageAgent={(target) => {
+              setAgentEnrollment(null);
+              setAgentTarget(target);
+            }}
             onDelete={infrastructure.deleteTarget}
           />
           <AllocationSection
@@ -126,6 +143,34 @@ export default function Infrastructure() {
           if (!open) setEditingAllocation(null);
         }}
         onSubmit={submitAllocation}
+      />
+
+      <AgentSetupDialog
+        open={!!agentTarget}
+        target={agentTarget}
+        busy={!!agentTarget && infrastructure.busyTargetId === agentTarget.id}
+        enrollment={agentEnrollment}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAgentEnrollment(null);
+            setAgentTarget(null);
+          }
+        }}
+        onIssueEnrollment={() => {
+          if (!agentTarget) return;
+          void infrastructure.issueAgentEnrollment(agentTarget).then((result) => {
+            if (result) setAgentEnrollment(result);
+          });
+        }}
+        onDisable={() => {
+          if (!agentTarget) return;
+          void infrastructure.disableAgent(agentTarget).then((disabled) => {
+            if (disabled) {
+              setAgentEnrollment(null);
+              setAgentTarget(null);
+            }
+          });
+        }}
       />
     </div>
   );

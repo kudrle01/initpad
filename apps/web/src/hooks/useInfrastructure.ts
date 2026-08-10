@@ -26,10 +26,15 @@ export function useInfrastructure(workspaceId?: string) {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const [nextTargets, nextAllocations] = await Promise.all([
+      const [rawTargets, nextAllocations] = await Promise.all([
         api.listTargets(),
         api.listAllocations(),
       ]);
+      const nextTargets = await Promise.all(rawTargets.map(async (target) =>
+        target.scope === 'user' && target.kind === 'docker'
+          ? { ...target, agent: await api.getTargetAgent(target.id) }
+          : target,
+      ));
       if (request !== requestSequence.current) return;
       setTargets(nextTargets);
       setAllocations(nextAllocations);
@@ -57,16 +62,47 @@ export function useInfrastructure(workspaceId?: string) {
   async function saveTarget(target: Target | null, values: TargetInput) {
     setSavingTarget(true);
     try {
-      if (target) await api.updateTarget(target.id, values);
-      else await api.createTarget(values);
+      const saved = target
+        ? await api.updateTarget(target.id, values)
+        : await api.createTarget(values);
       toast.success(target ? 'Target saved' : 'Target added');
+      await refresh();
+      return saved;
+    } catch (cause) {
+      toast.error((cause as Error).message);
+      return null;
+    } finally {
+      setSavingTarget(false);
+    }
+  }
+
+  async function issueAgentEnrollment(target: Target) {
+    setBusyTargetId(target.id);
+    try {
+      const enrollment = await api.issueAgentEnrollment(target.id);
+      toast.success('One-time Agent enrollment created');
+      await refresh();
+      return enrollment;
+    } catch (cause) {
+      toast.error((cause as Error).message);
+      return null;
+    } finally {
+      setBusyTargetId(null);
+    }
+  }
+
+  async function disableAgent(target: Target) {
+    setBusyTargetId(target.id);
+    try {
+      await api.disableAgent(target.id);
+      toast.success('Agent disabled');
       await refresh();
       return true;
     } catch (cause) {
       toast.error((cause as Error).message);
       return false;
     } finally {
-      setSavingTarget(false);
+      setBusyTargetId(null);
     }
   }
 
@@ -165,6 +201,8 @@ export function useInfrastructure(workspaceId?: string) {
     saveTarget,
     verifyTarget,
     deleteTarget,
+    issueAgentEnrollment,
+    disableAgent,
     saveAllocation,
     toggleAllocation,
     deleteAllocation,

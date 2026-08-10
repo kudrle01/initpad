@@ -7,20 +7,24 @@ import { TargetCard } from './TargetCard';
 interface Props {
   targets: Target[];
   readOnly: boolean;
+  canManageAgent: boolean;
   busyTargetId: string | null;
   onAdd: () => void;
   onEdit: (target: Target) => void;
   onVerify: (target: Target) => void;
+  onManageAgent: (target: Target) => void;
   onDelete: (target: Target) => void;
 }
 
 export function TargetSections({
   targets,
   readOnly,
+  canManageAgent,
   busyTargetId,
   onAdd,
   onEdit,
   onVerify,
+  onManageAgent,
   onDelete,
 }: Props) {
   const builtins = targets.filter((target) => target.scope === 'builtin');
@@ -40,7 +44,9 @@ export function TargetSections({
                 target={target}
                 busy={busyTargetId === target.id}
                 readOnly={readOnly}
+                canManageAgent={false}
                 onVerify={() => onVerify(target)}
+                onManageAgent={() => undefined}
                 onEdit={() => undefined}
                 onDelete={() => undefined}
               />
@@ -72,7 +78,9 @@ export function TargetSections({
                 target={target}
                 busy={busyTargetId === target.id}
                 readOnly={readOnly}
+                canManageAgent={canManageAgent}
                 onVerify={() => onVerify(target)}
+                onManageAgent={() => onManageAgent(target)}
                 onEdit={() => onEdit(target)}
                 onDelete={() => onDelete(target)}
               />
