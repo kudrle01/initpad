@@ -90,6 +90,14 @@ export function useProjectDetail() {
       setNotFound(false);
     } catch (loadError) {
       if (loadError instanceof ApiError && loadError.status === 404) {
+        // A project can disappear while this tab remains open (delete in
+        // another tab or control-plane restore). Never leave stale actions
+        // visible once the authoritative read says it is gone.
+        setProject(null);
+        setCommits([]);
+        setDeployments([]);
+        setProvisioning(null);
+        setError(null);
         setNotFound(true);
       } else {
         setError((loadError as Error).message);
@@ -115,14 +123,16 @@ export function useProjectDetail() {
 
   useEffect(() => {
     if (notFound) return;
-    const delay = isLive(project, commits, ciRerunRequested)
+    // During a short API restart retain the last useful view with a visible
+    // warning, but retry quickly instead of waiting for the idle interval.
+    const delay = error || isLive(project, commits, ciRerunRequested)
       ? ACTIVE_PROJECT_POLL_MS
       : IDLE_PROJECT_POLL_MS;
     const timer = setTimeout(() => {
       if (document.visibilityState === 'visible') void load('head');
     }, delay);
     return () => clearTimeout(timer);
-  }, [project, commits, load, notFound, ciRerunRequested]);
+  }, [project, commits, load, error, notFound, ciRerunRequested]);
 
   useEffect(() => {
     const refreshWhenVisible = () => {

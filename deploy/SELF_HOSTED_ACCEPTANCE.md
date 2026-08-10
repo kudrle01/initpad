@@ -273,7 +273,7 @@ Tento krok dělej pouze na této jednorázové VM:
 ```bash
 cd initpad/deploy
 ./backup.sh ./backups/acceptance
-find ./backups/acceptance -maxdepth 1 -type f -printf '%f\n' | sort
+ls -1 ./backups/acceptance | sort
 ```
 
 Výpis musí obsahovat `SHA256SUMS`, `postgres.dump`, `initpad.env` a archivy
