@@ -273,7 +273,13 @@ Tento krok dělej pouze na této jednorázové VM:
 ```bash
 cd initpad/deploy
 ./backup.sh ./backups/acceptance
+find ./backups/acceptance -maxdepth 1 -type f -printf '%f\n' | sort
 ```
+
+Výpis musí obsahovat `SHA256SUMS`, `postgres.dump`, `initpad.env` a archivy
+Gitey, MinIO, API, SFTP a runneru; nesmí zůstat adresář
+`acceptance.partial-*`. Stejný příkaz se stejným cílem se musí bezpečně
+odmítnout, nikoli zálohu přepsat.
 
 Po záloze vytvoř v UI projekt `after-backup` a ověř, že existuje. Potom spusť:
 
@@ -288,6 +294,7 @@ Na výzvu napiš `restore`. Po obnově ověř:
 - existující Gitea OCI image umožní redeploy stejného buildu;
 - `docker compose run --rm minio-init` potvrdí dostupný privátní artifact bucket;
 - CI runner je online;
+- `restore.sh` vypíše `Restore complete` až po health ověření;
 - `docker compose --profile runner ps` nehlásí unhealthy službu.
 
 ## 10. Ověř smazání a opětovné použití názvu

@@ -2472,7 +2472,12 @@ jednoho hostu (řeší roadmapa: Agent, managed DB/S3).
    časově razítkované, rotované (ponech N) a řízené **host cronem** volajícím
    `deploy/backup.sh` — transparentní, bez dalšího privilegovaného sidecaru.
    Cílový adresář je konfigurovatelný; doporučena je offsite kopie a šifrování
-   (záloha obsahuje `.env` se secrety).
+   (záloha obsahuje `.env` se secrety). Checkpoint se nejprve sestaví do
+   unikátního dočasného adresáře a pod finálním názvem se atomicky zveřejní
+   až po vytvoření manifestu kontrolních součtů. Existující cíl se nikdy
+   nepřepisuje, aby se nesmíchaly soubory dvou snapshotů. Aktivní vnořený CI
+   kontejner backup odmítne; rozpracovaný workflow se nesmí přerušit uprostřed
+   buildu, jeho transientní DinD cache není součástí durable dat.
 2. **Ověřená obnova.** `deploy/restore.sh` je explicitní, destruktivní a
    potvrzovaný: zastaví celý stack včetně volitelných profilů, obnoví
    zálohovaný `.env` (a vedle ponechá chráněnou kopii předchozího), dorovná
@@ -2480,6 +2485,9 @@ jednoho hostu (řeší roadmapa: Agent, managed DB/S3).
    teprve potom nastartuje základní stack, runner a případně HTTPS profil.
    Bez původního šifrovacího klíče a dalších secretů by obnovená data nebyla
    použitelná, proto je konfigurace součástí atomu obnovy.
+   Před destruktivním potvrzením se vyžaduje kompletní sada archivů,
+   kontroluje jejich manifest i čitelnost PostgreSQL dumpu. Dokončení se
+   ohlásí teprve po health checku Gitey, API, DinD a běhu runneru.
    „Zdokumentovaná obnova = otestovaná obnova."
 3. **Interní-CA HTTPS (volitelně).** Caddy umí `tls internal` (vlastní lokální
    CA) přes proměnnou `INITPAD_TLS_DIRECTIVE`, pro LAN/školu bez veřejné

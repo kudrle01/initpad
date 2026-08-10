@@ -40,7 +40,12 @@ MinIO artefakty, workspace) do `./backups/<časové-razítko>/`:
 Skript vytvoří společný konzistentní checkpoint: na dobu snapshotu krátce
 zastaví platformní zapisovatele a potom obnoví přesně ty služby, které před
 zálohou běžely. Počítej proto s krátkým servisním oknem; při chybě se skript
-pokusí původní stav služeb obnovit také.
+pokusí původní stav služeb obnovit také. Záloha se publikuje až po úspěšném
+dokončení a nikdy nepřepisuje existující adresář; pro nový pokus proto zvol
+nový název.
+
+Pokud právě běží CI build, skript jej nepřeruší a skončí s jasnou chybou;
+zálohu zopakuj po dokončení workflow.
 
 Naplánuj přes cron (např. denně ve 2:00, ponech 7 posledních):
 
@@ -61,8 +66,10 @@ Obnovení z konkrétní zálohy (DESTRUKTIVNÍ — přepíše aktuální data):
 ```
 
 Skript ověří kontrolní součty, zastaví zapisovatele, obnoví DB a volumes a stack
-znovu nastartuje včetně CI runneru a nakonfigurovaného HTTPS profilu. Součástí
-obnovy je zálohovaný `.env`, protože obsahuje šifrovací klíč a identity služeb;
+znovu nastartuje včetně CI runneru a nakonfigurovaného HTTPS profilu. Za
+dokončený restore jej označí až po ověření zdraví Gitey, API, vnitřního
+Docker daemonu a běhu runneru. Součástí obnovy je zálohovaný `.env`, protože
+obsahuje šifrovací klíč a identity služeb;
 předchozí konfigurace zůstane jako chráněný
 `.env.before-restore-<časové-razítko>`. **Pravidelně obnovu testuj na
 jednorázovém hostu/VM** — nevyzkoušená záloha není záloha. Po obnově spusť
