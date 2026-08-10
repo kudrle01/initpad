@@ -303,14 +303,28 @@ Na výzvu napiš `restore`. Po obnově ověř:
 
 ## 10. Ověř smazání a opětovné použití názvu
 
-Smaž testovací projekt včetně jeho deploymentů a repozitáře. Ověř, že:
+V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení
+CI a dev deploymentu. Potom jej v dialogu smaž včetně zdrojového repozitáře.
+Při výchozím uživateli `alice` ověř přesné project/allocation labely:
 
 ```bash
-docker ps -a --format '{{.Names}}' | grep isolation-demo
+docker ps -a \
+  --filter label=com.initpad.project=alice-delete-recreate \
+  --filter label=com.initpad.allocation.namespace=team-alpha \
+  --format '{{.Names}}'
+docker image ls --format '{{.Repository}}:{{.Tag}}' \
+  | grep '/alice/delete-recreate:'
 ```
 
-nevrátí jeho kontejner a Gitea repozitář zmizel. Potom založ projekt se stejným
-názvem. Scaffold, CI i deploy musí projít bez konfliktu se starým workloadem.
+Oba příkazy nemají nic vypsat (druhý proto může skončit kódem 1). Gitea
+repozitář `alice/delete-recreate` musí zmizet. Sdílená síť
+`net-team-alpha-dev` naopak zůstává: patří allocation, ne jednomu projektu.
+Projekt i kontejner Team Beta se nesmí změnit.
+
+Potom v Team Alpha založ nový projekt se stejným názvem `delete-recreate`.
+Musí vzniknout nový repozitář a scaffold, CI i dev deployment musí projít
+bez konfliktu se starým workloadem. Výsledný Docker výpis smí pro kombinaci
+`alice-delete-recreate` / `team-alpha` / `dev` obsahovat právě jeden kontejner.
 
 ## 11. Výsledek milníku
 
