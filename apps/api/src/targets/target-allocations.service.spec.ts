@@ -95,6 +95,28 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     ).rejects.toThrow(/not offered by the target/);
   });
 
+  it('does not allocate an Agent target before Agent delivery is enabled', async () => {
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'agent-target',
+          kind: 'docker',
+          scope: 'user',
+          workspaceId: 'ws-1',
+          capabilities: 'static,node,php,python',
+        })),
+      },
+      targetAllocation: { findUnique: jest.fn(), create: jest.fn() },
+      workspace: { findUniqueOrThrow: jest.fn() },
+    };
+    const service = makeService(prisma, 'owner');
+
+    await expect(
+      service.create('u1', { targetId: 'agent-target' }, 'ws-1'),
+    ).rejects.toThrow('become allocatable after Agent delivery is enabled');
+    expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
+  });
+
   it('hides an allocation in another workspace as 404 (not 403)', async () => {
     const prisma = {
       targetAllocation: { findUnique: jest.fn(async () => ({ ...allocationRow })) },

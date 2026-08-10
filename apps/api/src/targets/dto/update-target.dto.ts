@@ -26,8 +26,8 @@ export class UpdateTargetDto {
   name?: string;
 
   @IsOptional()
-  @IsIn(['ssh', 'sftp'])
-  kind?: 'ssh' | 'sftp';
+  @IsIn(['docker', 'ssh', 'sftp'])
+  kind?: 'docker' | 'ssh' | 'sftp';
 
   @IsOptional()
   @IsArray()

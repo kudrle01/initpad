@@ -198,6 +198,11 @@ export class ProjectEnvironmentTargets {
   }
 
   assertUsable(target: TargetRow, template: TemplateManifest): void {
+    if (target.scope === 'user' && target.kind === 'docker') {
+      throw new BadRequestException(
+        `Agent-backed target '${target.name}' is not deployable until Agent delivery is enabled.`,
+      );
+    }
     const capabilities = this.targets.parseCaps(target.capabilities);
     if (targetCanRun(template, { kind: target.kind as ProviderKind, capabilities })) {
       if (target.scope === 'user' && !target.verifiedAt) {

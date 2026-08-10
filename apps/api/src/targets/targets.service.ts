@@ -186,7 +186,13 @@ export class TargetsService implements OnModuleInit {
   async create(userId: string, dto: CreateTargetDto, requestedWorkspaceId?: string): Promise<Target> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspaceId, 'maintain');
-    this.assertSafeEndpoint(dto.host, dto.publicUrl);
+    const agentBacked = dto.kind === 'docker';
+    if (agentBacked) {
+      this.assertNoRemoteCredentials(dto);
+      this.assertSafePublicUrl(dto.publicUrl);
+    } else {
+      this.assertSafeEndpoint(dto.host!, dto.publicUrl);
+    }
     if (await this.prisma.target.findFirst({ where: { workspaceId, name: dto.name } })) {
       throw new BadRequestException(`This workspace already has a target named '${dto.name}'`);
     }
@@ -196,12 +202,12 @@ export class TargetsService implements OnModuleInit {
         kind: dto.kind,
         scope: 'user',
         capabilities: this.toCsv(dto.capabilities),
-        host: dto.host,
-        port: dto.port,
-        username: dto.username,
-        auth: dto.auth,
-        secret: encryptSecret(dto.secret),
-        remotePath: dto.remotePath,
+        host: agentBacked ? null : dto.host!,
+        port: agentBacked ? null : dto.port!,
+        username: agentBacked ? null : dto.username!,
+        auth: agentBacked ? null : dto.auth!,
+        secret: agentBacked ? null : encryptSecret(dto.secret!),
+        remotePath: agentBacked ? null : dto.remotePath!,
         publicUrl: dto.publicUrl,
         ownerId: userId,
         workspaceId,
@@ -212,14 +218,22 @@ export class TargetsService implements OnModuleInit {
 
   async update(id: string, ownerId: string, dto: UpdateTargetDto): Promise<Target> {
     const row = await this.getUserTarget(id, ownerId, 'maintain');
-    this.assertSafeEndpoint(dto.host ?? row.host ?? '', dto.publicUrl ?? row.publicUrl ?? '');
+    if (dto.kind !== undefined && dto.kind !== row.kind) {
+      throw new BadRequestException('Target type cannot be changed; create a new target instead');
+    }
+    const agentBacked = row.kind === 'docker';
+    if (agentBacked) {
+      this.assertNoRemoteCredentials(dto);
+      if (dto.publicUrl !== undefined) this.assertSafePublicUrl(dto.publicUrl);
+    } else {
+      this.assertSafeEndpoint(dto.host ?? row.host ?? '', dto.publicUrl ?? row.publicUrl ?? '');
+    }
     if (dto.name && dto.name !== row.name) {
       const duplicate = await this.prisma.target.findFirst({
         where: { workspaceId: row.workspaceId, name: dto.name, id: { not: row.id } },
       });
       if (duplicate) throw new BadRequestException(`You already have a target named '${dto.name}'`);
     }
-    const kindChanged = dto.kind !== undefined && dto.kind !== row.kind;
     const currentCapabilities = this.parseCaps(row.capabilities);
     const capabilitiesChanged =
       dto.capabilities !== undefined &&
@@ -230,30 +244,29 @@ export class TargetsService implements OnModuleInit {
     // one can, so only destructive capability changes are blocked while the
     // target is in use. This lets a shared host evolve from static-only to
     // static+PHP without first moving every existing static deployment away.
-    if (kindChanged || capabilitiesRemoved) {
+    if (capabilitiesRemoved) {
       const inUse = await this.prisma.environment.count({ where: { targetId: row.id } });
       if (inUse > 0) {
         throw new BadRequestException(
-          'A target in use cannot change kind or remove runtime capabilities. Move its environments first.',
+          'A target in use cannot remove runtime capabilities. Move its environments first.',
         );
       }
     }
     // Any change to the connection invalidates the previous verification.
     const connectionChanged =
-      kindChanged ||
-      dto.host !== undefined ||
-      dto.port !== undefined ||
-      dto.username !== undefined ||
-      dto.auth !== undefined ||
-      dto.secret !== undefined ||
-      dto.remotePath !== undefined ||
-      dto.publicUrl !== undefined ||
-      capabilitiesChanged;
+      !agentBacked &&
+      (dto.host !== undefined ||
+        dto.port !== undefined ||
+        dto.username !== undefined ||
+        dto.auth !== undefined ||
+        dto.secret !== undefined ||
+        dto.remotePath !== undefined ||
+        dto.publicUrl !== undefined ||
+        capabilitiesChanged);
     const updated = (await this.prisma.target.update({
       where: { id: row.id },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.kind !== undefined ? { kind: dto.kind } : {}),
         ...(dto.capabilities !== undefined ? { capabilities: this.toCsv(dto.capabilities) } : {}),
         ...(dto.host !== undefined ? { host: dto.host } : {}),
         ...(dto.port !== undefined ? { port: dto.port } : {}),
@@ -265,14 +278,6 @@ export class TargetsService implements OnModuleInit {
         ...(connectionChanged ? { verifiedAt: null } : {}),
       },
     })) as TargetRow;
-    // Keep the denormalised Environment.provider in sync with the target kind
-    // so bound environments deploy over the right protocol.
-    if (kindChanged) {
-      await this.prisma.environment.updateMany({
-        where: { targetId: row.id },
-        data: { provider: dto.kind },
-      });
-    }
     return this.toSummary(updated, false);
   }
 
@@ -290,6 +295,11 @@ export class TargetsService implements OnModuleInit {
   // Runs a live connection test and stamps verifiedAt on success.
   async verify(id: string, userId: string, requestedWorkspaceId?: string): Promise<VerifyResult> {
     const row = await this.getVisibleTarget(id, userId, 'maintain');
+    if (row.scope === 'user' && row.kind === 'docker') {
+      throw new BadRequestException(
+        'Agent-backed Docker targets are verified by Agent heartbeat, not an inbound connection test',
+      );
+    }
     if (row.scope === 'builtin') {
       const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
       await this.workspaces.require(userId, workspaceId, 'maintain');
@@ -385,6 +395,22 @@ export class TargetsService implements OnModuleInit {
     ) {
       throw new BadRequestException('This target host is reserved or unsafe');
     }
+    this.assertSafePublicUrl(publicUrl);
+  }
+
+  private assertSafePublicUrl(publicUrl: string): void {
+    const blocked = new Set([
+      'localhost',
+      '0.0.0.0',
+      '::',
+      '::1',
+      'api',
+      'postgres',
+      'gitea',
+      'host.docker.internal',
+      '169.254.169.254',
+      'metadata.google.internal',
+    ]);
     try {
       const url = new URL(publicUrl);
       const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -393,6 +419,28 @@ export class TargetsService implements OnModuleInit {
       }
     } catch {
       throw new BadRequestException('Public URL must be a safe HTTP(S) address');
+    }
+  }
+
+  private assertNoRemoteCredentials(dto: {
+    host?: string;
+    port?: number;
+    username?: string;
+    auth?: string;
+    secret?: string;
+    remotePath?: string;
+  }): void {
+    if (
+      dto.host !== undefined ||
+      dto.port !== undefined ||
+      dto.username !== undefined ||
+      dto.auth !== undefined ||
+      dto.secret !== undefined ||
+      dto.remotePath !== undefined
+    ) {
+      throw new BadRequestException(
+        'Agent-backed Docker targets must not contain inbound host credentials',
+      );
     }
   }
 

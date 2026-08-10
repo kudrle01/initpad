@@ -11,6 +11,7 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
 
 const ENROLLMENT_TTL_MS = 15 * 60_000;
+const ONLINE_AFTER_HEARTBEAT_MS = 90_000;
 const ENROLLMENT_PREFIX = 'initpad_enroll_';
 const CREDENTIAL_PREFIX = 'initpad_agent_';
 
@@ -33,7 +34,7 @@ interface AgentRow {
 export interface AgentSummary {
   id: string;
   targetId: string;
-  state: 'not-enrolled' | 'enrolled' | 'disabled';
+  state: 'not-enrolled' | 'offline' | 'online' | 'disabled';
   enrollmentPending: boolean;
   enrollmentExpiresAt: string | null;
   credentialGeneration: number;
@@ -181,13 +182,17 @@ export class AgentsService {
   }
 
   private summary(agent: AgentRow): AgentSummary {
+    const heartbeatFresh =
+      !!agent.lastSeenAt && Date.now() - agent.lastSeenAt.getTime() <= ONLINE_AFTER_HEARTBEAT_MS;
     return {
       id: agent.id,
       targetId: agent.targetId,
       state: agent.disabledAt
         ? 'disabled'
         : agent.credentialHash
-          ? 'enrolled'
+          ? heartbeatFresh
+            ? 'online'
+            : 'offline'
           : 'not-enrolled',
       enrollmentPending:
         !!agent.enrollmentTokenHash &&

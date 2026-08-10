@@ -69,6 +69,11 @@ export class TargetAllocationsService {
     if (!target || (target.scope !== 'builtin' && target.workspaceId !== workspaceId)) {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
     }
+    if (target.scope === 'user' && target.kind === 'docker') {
+      throw new BadRequestException(
+        'Agent-backed Docker targets become allocatable after Agent delivery is enabled',
+      );
+    }
     if (await this.prisma.targetAllocation.findUnique({
       where: { workspaceId_targetId: { workspaceId, targetId: dto.targetId } },
     })) {

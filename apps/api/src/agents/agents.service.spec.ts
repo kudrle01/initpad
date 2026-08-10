@@ -104,6 +104,26 @@ describe('AgentsService trust bootstrap', () => {
     expect(prisma.agent.findUnique).not.toHaveBeenCalled();
   });
 
+  it('derives online/offline from the latest heartbeat without persisting a transient status', async () => {
+    const { service, prisma } = setup();
+    prisma.agent.findUnique
+      .mockResolvedValueOnce(agentRow({
+        credentialHash: hashToken('credential'),
+        lastSeenAt: new Date(NOW.getTime() - 30_000),
+      }))
+      .mockResolvedValueOnce(agentRow({
+        credentialHash: hashToken('credential'),
+        lastSeenAt: new Date(NOW.getTime() - 120_000),
+      }));
+
+    await expect(service.getForTarget('target-1', 'owner-1')).resolves.toMatchObject({
+      state: 'online',
+    });
+    await expect(service.getForTarget('target-1', 'owner-1')).resolves.toMatchObject({
+      state: 'offline',
+    });
+  });
+
   it('redeems the enrollment once and stores only the Agent credential hash', async () => {
     const token = `initpad_enroll_${'a'.repeat(43)}`;
     const { service, prisma } = setup();

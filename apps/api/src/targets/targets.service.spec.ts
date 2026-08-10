@@ -80,6 +80,89 @@ describe('target authorization', () => {
     );
     expect(deployment.verify).not.toHaveBeenCalled();
   });
+
+  it('uses Agent heartbeat instead of probing the control-plane Docker daemon', async () => {
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'agent-docker',
+          scope: 'user',
+          kind: 'docker',
+          workspaceId: 'w1',
+        })),
+      },
+    };
+    const deployment = { verify: jest.fn() };
+    const workspaces = { require: jest.fn(async () => 'maintainer') };
+    const service = new TargetsService(prisma as never, deployment as never, workspaces as never);
+
+    await expect(service.verify('agent-docker', 'u1')).rejects.toThrow('Agent heartbeat');
+    expect(deployment.verify).not.toHaveBeenCalled();
+  });
+});
+
+describe('Agent-backed Docker target creation', () => {
+  function setup() {
+    const create = jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 'target-agent',
+      verifiedAt: null,
+      createdAt: new Date(),
+      ...data,
+    }));
+    const prisma = {
+      target: { findFirst: jest.fn(async () => null), create },
+    };
+    const workspaces = {
+      resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })),
+      require: jest.fn(async () => 'owner'),
+    };
+    return {
+      service: new TargetsService(prisma as never, {} as never, workspaces as never),
+      create,
+    };
+  }
+
+  it('creates an outbound-only Docker target without inbound credentials', async () => {
+    const { service, create } = setup();
+
+    await expect(service.create('owner-1', {
+      name: 'Office Docker',
+      kind: 'docker',
+      capabilities: ['static', 'node', 'php', 'python'],
+      publicUrl: 'http://192.168.1.50',
+    }, 'workspace-1')).resolves.toMatchObject({
+      id: 'target-agent',
+      kind: 'docker',
+      host: null,
+      verifiedAt: null,
+    });
+
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        kind: 'docker',
+        host: null,
+        port: null,
+        username: null,
+        auth: null,
+        secret: null,
+        remotePath: null,
+        workspaceId: 'workspace-1',
+      }),
+    });
+  });
+
+  it('rejects inbound credentials on an Agent-backed Docker target', async () => {
+    const { service, create } = setup();
+
+    await expect(service.create('owner-1', {
+      name: 'Unsafe Docker',
+      kind: 'docker',
+      capabilities: ['node'],
+      publicUrl: 'https://apps.example.test',
+      host: 'server.example.test',
+    }, 'workspace-1')).rejects.toThrow('must not contain inbound host credentials');
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe('target capability updates', () => {
@@ -132,7 +215,7 @@ describe('target capability updates', () => {
 
     await expect(
       service.update('target-1', 'u1', { capabilities: ['php'] }),
-    ).rejects.toThrow('cannot change kind or remove runtime capabilities');
+    ).rejects.toThrow('cannot remove runtime capabilities');
   });
 });
 
