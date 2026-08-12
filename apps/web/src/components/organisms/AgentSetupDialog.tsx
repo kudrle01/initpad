@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Bot, ShieldAlert, WifiOff } from 'lucide-react';
+import { Activity, Bot, Container, ShieldAlert, WifiOff } from 'lucide-react';
 import type { AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
 import { CopyField } from '@/components/molecules/CopyField';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
@@ -20,13 +20,14 @@ interface Props {
   agent: AgentStatus | null;
   jobs: AgentJobSummary[];
   protocolError: string | null;
-  protocolBusy: boolean;
+  testBusy: 'protocol' | 'lifecycle' | null;
   busy: boolean;
   enrollment: AgentEnrollment | null;
   onOpenChange: (open: boolean) => void;
   onIssueEnrollment: () => void;
   onDisable: () => void;
   onTestProtocol: () => void;
+  onTestLifecycle: () => void;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -53,13 +54,14 @@ export function AgentSetupDialog({
   agent,
   jobs,
   protocolError,
-  protocolBusy,
+  testBusy,
   busy,
   enrollment,
   onOpenChange,
   onIssueEnrollment,
   onDisable,
   onTestProtocol,
+  onTestLifecycle,
 }: Props) {
   const [confirmDisable, setConfirmDisable] = useState(false);
   useEffect(() => {
@@ -186,12 +188,36 @@ export function AgentSetupDialog({
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={busy || protocolBusy || !canQueueProbe}
+                disabled={busy || testBusy !== null || !canQueueProbe}
                 title={canQueueProbe ? 'Queue a protocol probe' : 'The Agent must be enrolled'}
                 onClick={onTestProtocol}
               >
-                {protocolBusy ? <Spinner className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                {testBusy === 'protocol' ? <Spinner className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
                 Test protocol
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border pt-3">
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <Container className="h-4 w-4 text-primary" /> Restricted Docker lifecycle
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Pulls one digest-pinned diagnostic image, then verifies deploy, health, bounded
+                  logs, replacement, rollback, stop and restart. The temporary container, image and
+                  empty diagnostic network are removed afterwards. No shell command, host mount or
+                  deployment secret is sent to the Agent.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy || testBusy !== null || !canQueueProbe}
+                title={canQueueProbe ? 'Queue a Docker lifecycle test' : 'Agent 0.3.0 or newer must be enrolled'}
+                onClick={onTestLifecycle}
+              >
+                {testBusy === 'lifecycle' ? <Spinner className="h-4 w-4" /> : <Container className="h-4 w-4" />}
+                Test Docker
               </Button>
             </div>
 
@@ -201,7 +227,7 @@ export function AgentSetupDialog({
             ) : (
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-muted-foreground">
-                  Recent protocol tests · newest first
+                  Recent Agent tests · newest first
                 </p>
                 {jobs.slice(0, 3).map((job) => {
                   const leaseExpired = hasExpiredLease(job);

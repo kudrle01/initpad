@@ -9,7 +9,7 @@ export function useAgentProtocol(target: Target | null) {
   const requestSequence = useRef(0);
   const [agent, setAgent] = useState<AgentStatus | null>(target?.agent ?? null);
   const [jobs, setJobs] = useState<AgentJobSummary[]>([]);
-  const [testing, setTesting] = useState(false);
+  const [testing, setTesting] = useState<'protocol' | 'lifecycle' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const targetId = target?.id;
 
@@ -52,7 +52,7 @@ export function useAgentProtocol(target: Target | null) {
 
   async function testProtocol(): Promise<void> {
     if (!targetId || testing) return;
-    setTesting(true);
+    setTesting('protocol');
     try {
       const created = await api.createAgentProbeJob(targetId, crypto.randomUUID());
       setJobs((current) => [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10));
@@ -61,9 +61,26 @@ export function useAgentProtocol(target: Target | null) {
     } catch (cause) {
       toast.error((cause as Error).message);
     } finally {
-      setTesting(false);
+      setTesting(null);
     }
   }
 
-  return { agent, jobs, error, testing, testProtocol };
+  async function testLifecycle(): Promise<boolean> {
+    if (!targetId || testing) return false;
+    setTesting('lifecycle');
+    try {
+      const created = await api.createAgentLifecycleTest(targetId, crypto.randomUUID());
+      setJobs((current) => [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10));
+      toast.success('Docker lifecycle test queued');
+      await refresh();
+      return true;
+    } catch (cause) {
+      toast.error((cause as Error).message);
+      return false;
+    } finally {
+      setTesting(null);
+    }
+  }
+
+  return { agent, jobs, error, testing, testProtocol, testLifecycle };
 }

@@ -159,7 +159,7 @@ export default function Infrastructure() {
         agent={agentProtocol.agent}
         jobs={agentProtocol.jobs}
         protocolError={agentProtocol.error}
-        protocolBusy={agentProtocol.testing}
+        testBusy={agentProtocol.testing}
         busy={!!agentTarget && infrastructure.busyTargetId === agentTarget.id}
         enrollment={agentEnrollment}
         onOpenChange={(open) => {
@@ -184,6 +184,11 @@ export default function Infrastructure() {
           });
         }}
         onTestProtocol={() => void agentProtocol.testProtocol()}
+        onTestLifecycle={() => {
+          void agentProtocol.testLifecycle().then((queued) => {
+            if (queued) void infrastructure.reload();
+          });
+        }}
       />
     </div>
   );

@@ -231,6 +231,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ requestId, durationSeconds }),
     }),
+  createAgentLifecycleTest: (id: string, requestId: string) =>
+    http<AgentJobSummary>(`/targets/${id}/agent/jobs/lifecycle-test`, {
+      method: 'POST',
+      body: JSON.stringify({ requestId }),
+    }),
   // Workspace-scoped target allocations (ADR-060). Owner/admin manage; members read.
   listAllocations: () => http<TargetAllocation[]>('/allocations'),
   createAllocation: (body: TargetAllocationInput) =>
