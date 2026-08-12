@@ -2713,11 +2713,11 @@ hesla ani vložit jednorázový enrollment do shell historie.
    Stejná pojistka je také na projektovém deploymentu, takže neexistuje fallback
    na Docker socket control plane.
 
-**Důsledky.** Uživatel může bezpečně připravit fyzický server a enrollment už
-před dodáním spustitelného Agenta, ale nemůže přes neúplnou cestu nasadit
-workload. SaaS nepotřebuje inbound přístup do zákaznické sítě a InitPad
-neuchovává další serverové tajemství. Base URL je konfigurační údaj pro odkazy
-na aplikace, nikoli management endpoint Agenta.
+**Důsledky.** Uživatel mohl bezpečně připravit fyzický server a enrollment už
+před dodáním spustitelného Agenta. Dočasný zámek target pickeru byl odstraněn
+až po splnění podmínek v ADR-072. SaaS nepotřebuje inbound přístup do
+zákaznické sítě a InitPad neuchovává další serverové tajemství. Base URL je
+konfigurační údaj pro odkazy na aplikace, nikoli management endpoint Agenta.
 
 **Testování.** API testy odmítají inbound údaje i předčasnou allocation a
 ověřují heartbeat-derived stav. Browser acceptance pokrývá založení targetu,
@@ -2904,12 +2904,65 @@ management endpoint.
 **Důsledky.** Artifact storage zůstá interní implementační detail a stejný
 transport funguje pro lokální MinIO i cloudové S3. Odcizený lease bez Agent
 credentialu ani credential bez lease nestačí. Config existuje v plaintextu jen
-v paměti control plane a Agenta po dobu aktivního pokusu. Samotný kontrakt je
-záměrně neaktivní, dokud API nevytváří projektové joby a Agent neumí archiv
-ověřit, načíst a spustit; target picker proto zůstá zamčený.
+v paměti control plane a Agenta po dobu aktivního pokusu. Kontrakt aktivoval
+Agent 0.4 a projektové napojení podle ADR-072; target picker jej nabídne až po
+splnění všech readiness podmínek.
 
 **Testování.** API testy ověřují materializaci masked configu pouze po
 platném claimu, absenci secrets v durable payloadu, shodu objektu a odmítnutí
 starého lease. Agent test kontroluje bearer i lease hlavičku, prázdnou query
 string a odmítnutí cizí/absolutní artifact URL. Artifact store má streamovací
 round-trip regresi.
+
+## ADR-072 — Projektová operace zůstává autoritou nad Agent jobem
+
+**Kontext.** Po zavedení bezpečného artifact streamu bylo nutné napojit
+vzdálený Docker server na stejné projektové akce jako built-in Docker. Technický
+`AgentJob` ale nesmí vytvořit druhou uživatelskou historii, obejít approval tok
+ani dovolit, aby změna targetu nebo configu nechala na serveru osiřelý workload.
+
+**Rozhodnutí.**
+
+1. `DeploymentOperation` zůstává autoritativním uživatelským auditem.
+   `AgentJob` je pouze idempotentní transport svázaný s touto operací, fyzickým
+   targetem a workspace `TargetAllocation`. Progress Agenta se zrcadlí do
+   operace a environmentu; až validní strukturovaný terminální výsledek nastaví
+   `running`, `stopped` nebo `empty`.
+2. Agent-backed deploy nikdy nepoužije Docker socket control plane. Gitea OCI
+   image se před zařazením uloží jako ověřený object-store archiv; GitHub
+   použije stejný již ingestovaný artifact. Agent stream průběžně ověří
+   velikost a SHA-256, načte archiv a ověří očekávaný image tag.
+3. Deploy použije health-gated candidate replacement. Start, stop a remove
+   jsou samostatné allow-listed joby se stejnou workload identitou. Remove
+   odstraní vlastní base/candidate kontejnery, bezpečně se pokusí uvolnit
+   image a smaže pouze vlastní prázdnou síť. Cizí label nebo sdílený image
+   zůstane nedotčený.
+4. Durable payload neobsahuje secrets. Obsahuje keyed HMAC fingerprint
+   encrypted-at-rest config snapshotu; plaintext vznikne až při vítězném
+   claimu. Config nejde běžným API měnit při aktivní operaci. Pokud se snapshot
+   přesto liší, job bezpečně skončí `delivery_invalid` a uživatel spustí nový
+   deployment.
+5. Target picker a ruční allocation nabídnou workspace Docker target jen
+   pokud má credential, není disabled, hlásí Agent 0.4.0+ a control plane má
+   durable S3/MinIO store. Aktuální offline stav target nezakáže: job se smí
+   trvale zařadit a po reconnectu dokončit. Inbound `verifiedAt` se na Agent
+   nevztahuje.
+6. Živý Agent deployment se musí nejprve explicitně odstranit, teprve potom
+   lze environment přesunout na jiný target nebo smazat projekt. Přerušený
+   rozpracovaný deploy lze zrušit a nahradit remove jobem, který uklidí
+   případný candidate. Control plane nikdy nepředstírá lokální teardown
+   vzdáleného Dockeru.
+
+**Důsledky.** SaaS může bezpečně provozovat control plane bez Docker socketu
+a bez inbound portu do zákaznické sítě. Self-hosted built-in Docker zůstává
+kompatibilní. Offline target znamená zpoždění, ne ztrátu požadavku. Uživatel
+vidí jednu konzistentní historii projektové operace a technické pokusy Agenta
+zůstávají diagnostikou targetu.
+
+**Testování.** API testy pokrývají durable artifact binding, starého/disabled
+Agenta, cizí allocation, secrets mimo payload, config fingerprint, restartové
+reconcile a strukturované deploy/start/stop/remove výsledky. Agent testy ověřují
+stream/digest/tag, health-gated publikaci, explicitní lifecycle dispatch a
+absenci secrets v progressu/completion. Produkční API import navíc musí
+proběhnout bez decorator forward-reference chyby. Živý projektový gate je
+popsaný v `apps/agent/README.md` a zůstává podmínkou uzavření Fáze 5.

@@ -6,10 +6,9 @@ The target therefore needs Docker and outbound HTTPS, not Node.js.
 
 The implemented runtime provides enrollment, a root-only credential file,
 Docker capability discovery, heartbeat, a durable leased-job transport and an
-allocation-scoped Docker lifecycle engine. The wire protocol deliberately has
-no generic shell endpoint. Real project delivery remains disabled until the
-control plane can attach a verified artifact and masked environment config to
-the restricted operations.
+allocation-scoped Docker lifecycle engine. Agent 0.4 also executes real
+project deploy/start/stop/remove jobs from verified build artifacts. The wire
+protocol deliberately has no generic shell endpoint.
 
 The repository currently builds the Agent as an executable Node.js package and
 as a minimal container image. The local lab below is the supported acceptance
@@ -72,6 +71,54 @@ publish progress after reassignment.
 hostname differs. HTTP is accepted only because the lab passes the explicit
 `--allow-insecure-http` flag; real internet-facing installations require HTTPS.
 
+## Real project delivery acceptance
+
+After the diagnostic tests above pass, verify the actual project path:
+
+1. Rebuild the current control plane and Agent without resetting volumes:
+
+   ```sh
+   cd deploy
+   docker compose build api web
+   docker compose up -d api web
+   ./agent-lab.sh build
+   ./agent-lab.sh start
+   ```
+
+2. In **Infrastructure**, confirm the target is `online` and reports Agent
+   `0.4.0` or newer. The target must now be selectable in **New project**.
+3. Create a disposable project (for example React) and select the Agent target
+   for `dev`. Keep test/prod on their existing targets. Wait for CI and then
+   for the dev environment to change from `Waiting for Agent` through artifact
+   verification and health checking to `running`.
+4. Verify the isolated daemon owns exactly the expected allocation-scoped
+   workload:
+
+   ```sh
+   ./agent-lab.sh docker ps \
+     --filter label=com.initpad.managed=true \
+     --format '{{.Names}}  {{.Image}}  {{.Ports}}'
+   ```
+
+   Its image tag/revision must match the build shown by the project. The Agent
+   already completed an HTTP health check inside the target. The random app
+   port from this DinD lab is intentionally not published to the Mac/Windows
+   host, so the browser URL itself is tested on a real VM/remote Agent target,
+   not by weakening the isolated lab.
+5. From the environment tools run **Stop**, **Start**, then **Remove
+   deployment**. Each operation must progress through an Agent job and the
+   environment must end as `stopped`, `running`, then `empty`. The `docker ps
+   -a` command above must return no container after removal.
+6. Start another deploy, stop the Agent before it claims the job and wait until
+   UI marks it offline. The operation must remain `Waiting for Agent`, not fail
+   or execute locally. Start the Agent again; the same operation finishes once.
+7. Confirm a second workspace cannot see or allocate the first workspace's
+   Agent target. To test two Agent workloads on one physical daemon, register a
+   second workspace-owned target and run a second Agent identity against the
+   lab daemon; labels, names and networks must use different namespaces and
+   neither workspace may act on the other's workload. A centrally shared
+   multi-workspace Agent target requires a future platform-admin sharing model.
+
 ## Credential storage
 
 The credential is written atomically to
@@ -84,11 +131,13 @@ bound it; each claimed job additionally requires its short-lived fencing token.
 
 ## Docker lifecycle boundary
 
-Agent 0.3.0 accepts a strict, versioned payload containing only allocation ID,
+Agent 0.4.0 accepts a strict, versioned payload containing only allocation ID,
 namespace, project/environment identity, revision, immutable image digest,
-container port and health path. Unknown fields are rejected. The engine never
-accepts a command, entrypoint, bind mount, privileged mode, host network or
-secret value.
+container port, health path and a keyed config fingerprint. Unknown fields are
+rejected. The engine never accepts a command, entrypoint, bind mount,
+privileged mode or host network. Config values are resolved only for the
+winning lease and remain in memory; they are never stored in the durable job,
+progress or completion result.
 
 Container and network labels must match the target and allocation before every
 mutation. A same-named foreign object is treated as a collision and left
