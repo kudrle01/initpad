@@ -4,9 +4,10 @@ InitPad Agent runs on a Docker target and connects **outbound** to the InitPad
 control plane. It does not expose SSH, a Docker API or a management HTTP port.
 The target therefore needs Docker and outbound HTTPS, not Node.js.
 
-This milestone implements enrollment, a root-only credential file, Docker
-capability discovery and heartbeat. Delivery jobs and Docker lifecycle commands
-arrive in the following Agent milestones; the current protocol deliberately has
+The implemented runtime provides enrollment, a root-only credential file,
+Docker capability discovery, heartbeat and a durable leased-job transport. Its
+only executable job is currently a bounded protocol probe. Docker lifecycle
+commands arrive in the following Agent milestone; the protocol deliberately has
 no generic shell endpoint.
 
 The repository currently builds the Agent as an executable Node.js package and
@@ -38,9 +39,17 @@ though everything runs on one development machine.
    changes to `online` and shows the Agent/Docker versions and last contact.
 6. Stop the lab with `./agent-lab.sh stop`; after 90 seconds the UI changes to
    `offline`. Starting it again returns it to `online` without re-enrollment.
-7. **Disable Agent** invalidates the credential. The running process receives
+7. Click **Manage Agent → Test protocol**. The job moves through `queued`,
+   `leased` and `succeeded`, its progress advances for 35 seconds and `attempt`
+   remains 1 during a normal run. The probe does not create a container.
+8. **Disable Agent** invalidates the credential. The running process receives
    `401`, logs `agent.credential_rejected` and exits; a new enrollment is then
    required.
+
+To verify lease recovery, start another probe, stop `agent-lab` after it becomes
+`leased`, wait at least 30 seconds and start it again. The same job is reclaimed
+as `attempt 2` and finishes successfully. A stale first attempt cannot renew or
+publish progress after reassignment.
 
 `INITPAD_AGENT_LAB_URL` overrides the control-plane URL when the web port or
 hostname differs. HTTP is accepted only because the lab passes the explicit
@@ -51,5 +60,7 @@ hostname differs. HTTP is accepted only because the lab passes the explicit
 The credential is written atomically to
 `/var/lib/initpad-agent/agent.json`. The directory is mode `0700`, the file is
 mode `0600`, and symlink/non-regular config files are rejected. Database and
-Agent logs never contain the plaintext credential. Possession of the credential
-authorizes only the physical target to which enrollment bound it.
+Agent logs never contain the plaintext credential or a job lease token. The
+database stores only SHA-256 hashes of both credential types. Possession of the
+long-lived credential authorizes only the physical target to which enrollment
+bound it; each claimed job additionally requires its short-lived fencing token.

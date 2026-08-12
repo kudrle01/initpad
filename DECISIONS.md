@@ -2754,9 +2754,9 @@ Docker daemon zároveň nesmí vyžadovat nový enrollment.
    chyby Dockeru, sítě a `5xx` opakuje s exponenciálním intervalem 2–60 sekund;
    odmítnutý nebo deaktivovaný credential (`4xx`) je konečný stav a proces
    skončí. Serverem doporučený heartbeat interval je omezen na 10–300 sekund.
-5. Současná verze Docker API pouze čte `_ping`, `/version` a `/info`. Nemá job
-   endpoint ani obecnou shell operaci; deployment zůstává zablokovaný do
-   durable job/lease podkroku.
+5. Tato verze Docker API pouze čte `_ping`, `/version` a `/info`. Nemá obecnou
+   shell operaci ani Docker write operace; deployment zůstává zablokovaný do
+   lifecycle a delivery podkroků. Durable job endpoint doplňuje ADR-069.
 
 **Důsledky.** Restart hostitele nebo krátce nedostupný Docker daemon se zahojí
 bez re-enrollmentu, ale odcizený credential stále představuje oprávnění k
@@ -2771,3 +2771,53 @@ práva `0700/0600`, Docker capability discovery, heartbeat a přechod
 prošel retry sekvencí při startujícím DinD a sám obnovil heartbeat. API testy
 navíc pokrývají neznámý, chybný a souběžně deaktivovaný credential; celý
 produkční build, testy a dependency audit jsou zelené.
+
+## ADR-069 — Agent job je durable target-scoped envelope s fencing lease
+
+**Kontext.** Heartbeat dokazuje, že fyzický Docker target žije, ale nestačí pro
+bezpečné předání práce přes výpadek sítě nebo restart Agenta. Opakovaný claim,
+ztracená HTTP odpověď či dva souběžné procesy nesmí dovolit starému workeru
+publikovat výsledek po převzetí jobu jiným pokusem. Technický transport zároveň
+nemá suplovat uživatelskou historii deploymentu ani otevřít obecný vzdálený
+shell.
+
+**Rozhodnutí.**
+
+1. `AgentJob` je samostatný target-scoped delivery envelope. Může odkazovat na
+   allocation a právě jednu `DeploymentOperation`, ale uživatelská operace
+   zůstává autoritativním auditem delivery toku. `dedupeKey` dělá vytvoření
+   jobu idempotentní a `protocolVersion` odděluje evoluci wire protokolu.
+2. Agent polluje pouze odchozím autentizovaným HTTPS requestem a smí claimnout
+   jen kompatibilní job svého targetu. Claim používá compare-and-set nad stavem
+   `queued` nebo expirovaným `leased`; vítěz zvýší `attempt` a dostane nový
+   třicetisekundový fencing token.
+3. Plaintext lease token se vrátí pouze vítěznému claimu. Databáze ukládá jen
+   jeho SHA-256 hash. Renew, progress i completion vyžadují současný token,
+   stejného Agenta, aktivní dlouhodobý credential a neexpirovaný lease. Starý
+   pokus po reassignmentu dostane konflikt a nemůže měnit stav jobu.
+4. Progress má monotónní sequence number a omezené stage, procento i zprávu.
+   Opakovaný nebo opožděný progress stejného platného lease je bezpečně
+   idempotentní. Identické zopakování completion po ztracené odpovědi vrátí již
+   uložený výsledek; jiný výsledek nebo starý token je odmítnut.
+5. Deaktivace Agenta atomicky zneplatní credential a zruší jeho čekající či
+   pronajaté joby. Payload se nikdy nevyhodnocuje jako shell. Verze 0.2.0 umí
+   jen validovaný 5–60sekundový `probe`; neznámý kind nebo verzi ukončí jako
+   `unsupported_job` bez dotyku Docker daemonu.
+6. Skutečné lifecycle handlery musí navíc před každou fyzickou změnou ověřit
+   allocation a používat deterministické názvy podle jobu/workload identity.
+   Lease brání stale publikaci, ale sám nemůže vrátit zpět externí side effect;
+   idempotentní Docker operace jsou proto povinnou součástí podkroku 5.
+
+**Důsledky.** Krátký výpadek control plane nebo ztracená progress/completion
+odpověď nevyrobí nový logický job. Ztracená odpověď na claim může práci nejvýše
+pozdržet do expirace lease; bezpečnost má přednost před paralelním provedením.
+Fronta je nyní persistentní a restartovatelná, ale ještě neopravňuje Agent target
+k allocation ani skutečnému deploymentu.
+
+**Testování.** API testy pokrývají target/protocol filtr, atomický claim,
+reclaim expirovaného lease, renewal, monotónní progress, stale fencing token a
+idempotentní completion po ztracené odpovědi. Agent testy simulují ztrátu
+progress i completion odpovědi a ověřují, že neznámý shell-like payload není
+spuštěn. V živém izolovaném labu se 35sekundový probe pronajal jako `attempt 1`;
+po zastavení Agenta lease vypršel, tentýž job se převzal jako `attempt 2` a
+dokončil `succeeded`. Databáze obsahovala pouze 64znakový hash lease tokenu.

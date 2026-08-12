@@ -16,16 +16,18 @@ for the thesis/single-node profile, but not a hard multi-tenant boundary. A
 hosted multi-tenant edition must use a remote deployment agent or Kubernetes
 API with a restricted service account instead of the host socket. Workspace
 RBAC is an application authorization boundary, not a hostile-workload compute
-boundary. The implemented Agent currently performs trust bootstrap, bounded
-Docker discovery and heartbeat only; remote workload operations remain locked
-until the job/lease protocol is complete.
+boundary. The implemented Agent performs trust bootstrap, bounded Docker
+discovery, heartbeat and a leased outbound job protocol. Remote workload
+operations remain locked until the allocation-scoped Docker command allow-list
+is complete.
 
 ## Assets
 
 - Gitea admin token, user PATs, per-repository deploy tokens and webhook secret;
 - JWT/OIDC signing keys and encryption key;
 - source repositories, OCI images and deployment target credentials;
-- Agent enrollment tokens and per-target long-lived credentials;
+- Agent enrollment tokens, per-target long-lived credentials and short-lived
+  job lease tokens;
 - PostgreSQL project/identity state and availability of the host.
 
 ## Main controls
@@ -56,6 +58,11 @@ until the job/lease protocol is complete.
   database stores only enrollment/credential hashes; the target stores its
   credential atomically as `0600`. Heartbeat is outbound-only and reports a
   bounded Docker capability object, not host or workload inventory.
+- Agent jobs are target-scoped, atomically claimed and fenced by a short lease
+  whose plaintext token is never persisted or logged. Monotonic progress,
+  idempotency keys and idempotent completion make response loss and lease
+  reassignment safe. Unknown job kinds are failed without interpreting their
+  payload as a command; the current probe cannot create a workload.
 - Deployment operations atomically lock one environment. Cancellation is a
   persisted request; stale background work cannot publish over a newer state.
 - App containers receive memory/CPU/PID/log limits, dropped capabilities and
@@ -79,9 +86,9 @@ until the job/lease protocol is complete.
   self-hosted control plane's provider credentials and Docker trust boundary.
   Do not expose this profile as a hostile public SaaS.
 - Agent access to a Docker daemon is root-equivalent on that target. A stolen
-  Agent credential is target-scoped and revocable, but production delivery also
-  needs short-lived job credentials, allocation enforcement and an audited,
-  non-shell command allow-list.
+  Agent credential is target-scoped and revocable, and individual claims now
+  use short-lived fencing tokens. Production delivery still needs allocation
+  enforcement and an audited, non-shell Docker command allow-list.
 - Gitea collaborator synchronization spans two systems and therefore uses
   compensation rather than a distributed transaction. Reconciliation and an
   audit log are required before hosted production use.

@@ -19,7 +19,8 @@ srozumitelném a samostatně nasaditelném systému.
 - automatický build, test a nasazení do dev;
 - povýšení stejného buildu do testu a produ;
 - Docker, SSH a SFTP targety včetně PHP hostingu;
-- outbound enrollment a heartbeat vzdáleného Docker targetu přes InitPad Agent;
+- outbound enrollment, heartbeat a durable job protokol vzdáleného Docker
+  targetu přes InitPad Agent;
 - historii commitů, CI jobů a deployment operací;
 - bezpečné odstranění deploymentu i celého projektu.
 
@@ -27,8 +28,9 @@ Self-hosted edice používá vestavěnou Giteu, Gitea Actions a privátní OCI
 registry. GitHub varianta umí přihlášení, instalaci GitHub App, založení nebo
 import repozitáře a převzetí ověřeného Actions artefaktu. Veřejný SaaS zatím
 není hotový produkční profil. InitPad Agent už umí bezpečný outbound enrollment,
-heartbeat a Docker capability discovery; vzdálené deployment joby a veřejně
-publikovaný installer jsou další část roadmapy.
+heartbeat, Docker capability discovery a pronajímané joby s obnovou po výpadku.
+Vzdálené Docker lifecycle operace a veřejně publikovaný installer jsou další
+část roadmapy.
 
 ## Rychlé spuštění
 

@@ -201,7 +201,7 @@ neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 GitLab je vědomě až další adapter. Template manifest jako verzovaný blueprint
 contract a firemní blueprint repozitáře zůstávají následným rozšířením.
 
-### Fáze 4 — target pool a allocations — kód dokončen, čeká živý gate (ADR-060)
+### Fáze 4 — target pool a allocations — ✅ dokončeno (ADR-060)
 
 - Fyzický `Target` spravuje škola, firma nebo uživatel.
 - `TargetAllocation` přiděluje omezený výsek targetu workspace/týmu a prostředí.
@@ -214,14 +214,14 @@ providerové routování root/URL, workspace-scoped Docker síť i jméno kontej
 CRUD API a create/edit UI `/allocations`, role/cross-tenant 404 a policy při
 create/import, změně targetu i deploy — implementováno a automaticky testováno.
 Nové built-in allocations dostávají workspace prefix; legacy URL a ESO cesty
-zůstanou beze změny. Otevřený je pouze **živý uživatelský test dvou workspaceů**
-na skutečné VM. Durable object storage je hotové (ADR-059), takže po zeleném
-gate může začít Agent. Fronta jedním runnerem má explicitní `awaiting CI`
+zůstanou beze změny. Živý test na VM prokázal dva workspaces s oddělenými
+namespace, souběžné workloady i bezpečné delete/recreate bez kolize. Durable
+object storage je hotové (ADR-059). Fronta jedním runnerem má explicitní `awaiting CI`
 stav, první job hlásí skutečné převzetí callbackem a počet souběžných slotů
 je provozně konfigurovatelný (ADR-064). SCM údržba u listu/detailu je mimo
 synchronní read path, polling stahuje průběžně jen hlavičku historie a celý
-vnořený CI prostor má souhrnný CPU/RAM/PID limit (ADR-065); zbývá živý
-dvouprojektový gate.
+vnořený CI prostor má souhrnný CPU/RAM/PID limit (ADR-065); živý dvouprojektový
+gate prošel bez blokování navigace.
 
 **Uživatelské ověření Fáze 4 (TargetAllocation):** dva workspace nasadí na stejný
 built-in target — každý má vlastní namespace, běží současně bez kolize a na cizí
@@ -284,7 +284,7 @@ nezobrazí falešný empty/error stav.
 3. ✅ **Spustitelný Agent a heartbeat.** Samostatný malý proces bezpečně uloží
    credential na targetu, provede enrollment a pouze odchozím HTTPS hlásí
    verzi, protocol version, Docker capabilities a omezenou telemetrii.
-4. **Durable job a lease protokol.** Control plane vytváří target-scoped joby;
+4. ✅ **Durable job a lease protokol.** Control plane vytváří target-scoped joby;
    agent je atomicky pronajímá, obnovuje lease a reportuje strukturovaný progress.
    Expirace nebo duplicitní doručení nesmí vytvořit druhý workload.
 5. **Docker lifecycle operace.** Agent implementuje verzované deploy, stop,
@@ -305,7 +305,11 @@ Podkrok 3 prošel v izolovaném labu podle `apps/agent/README.md`: skutečný Ag
 se enrollmentem připojil k oddělenému Docker daemonu, UI ukázalo omezené
 capabilities a proběhl přechod `online → offline → online` bez nového
 credentialu. Produkčně publikovaný release image/installer se ověří v podkroku
-7; deployment přes Agent zůstává záměrně uzamčený do podkroků 4–6.
+7. Podkrok 4 přidal samostatnou durable frontu, atomické claimy, třicetisekundový
+lease s hashovaným fencing tokenem, obnovu, sekvenční progress a idempotentní
+dokončení. Živý 35sekundový probe po přerušení Agenta bezpečně vypršel, byl
+převzat jako druhý pokus a dokončil se bez spuštění workloadu. Deployment přes
+Agent zůstává záměrně uzamčený do podkroků 5–6.
 
 ### Fáze 6 — jednotný delivery tok
 
