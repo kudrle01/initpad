@@ -190,6 +190,8 @@ export interface Target {
   remotePath: string | null;
   publicUrl: string | null;
   verifiedAt: string | null;
+  agentReady?: boolean;
+  agentVersion?: string | null;
   inUse?: boolean;
   // Loaded alongside workspace-owned Docker targets by Infrastructure.
   agent?: AgentStatus | null;

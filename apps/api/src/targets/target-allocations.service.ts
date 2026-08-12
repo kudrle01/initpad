@@ -10,6 +10,8 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateTargetAllocationDto } from './dto/create-target-allocation.dto';
 import { UpdateTargetAllocationDto } from './dto/update-target-allocation.dto';
 import { allocationUsageDefaults } from './target-allocation-defaults';
+import { supportsProjectAgent } from '../agents/agent-version';
+import { artifactStoreConfigured } from '../config';
 
 export interface TargetAllocationSummary {
   id: string;
@@ -65,14 +67,26 @@ export class TargetAllocationsService {
 
     // The target must be usable by this workspace: a shared built-in or one the
     // workspace owns. A target owned by another workspace is treated as absent.
-    const target = await this.prisma.target.findUnique({ where: { id: dto.targetId } });
+    const target = await this.prisma.target.findUnique({
+      where: { id: dto.targetId },
+      include: {
+        agent: { select: { credentialHash: true, disabledAt: true, version: true } },
+      },
+    });
     if (!target || (target.scope !== 'builtin' && target.workspaceId !== workspaceId)) {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
     }
     if (target.scope === 'user' && target.kind === 'docker') {
-      throw new BadRequestException(
-        'Agent-backed Docker targets become allocatable after Agent delivery is enabled',
-      );
+      if (
+        !artifactStoreConfigured()
+        || !target.agent?.credentialHash
+        || target.agent.disabledAt
+        || !supportsProjectAgent(target.agent.version)
+      ) {
+        throw new BadRequestException(
+          'Enroll and enable InitPad Agent 0.4.0 or newer before allocating this Docker target',
+        );
+      }
     }
     if (await this.prisma.targetAllocation.findUnique({
       where: { workspaceId_targetId: { workspaceId, targetId: dto.targetId } },

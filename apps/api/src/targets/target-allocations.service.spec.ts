@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
 import { TargetAllocationsService } from './target-allocations.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { config } from '../config';
 
 // A real WorkspacesService gives us the genuine role→permission matrix; only its
 // prisma membership lookup is stubbed per test.
@@ -95,7 +96,7 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     ).rejects.toThrow(/not offered by the target/);
   });
 
-  it('does not allocate an Agent target before Agent delivery is enabled', async () => {
+  it('does not allocate a Docker target before its compatible Agent is ready', async () => {
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
@@ -104,6 +105,7 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
           scope: 'user',
           workspaceId: 'ws-1',
           capabilities: 'static,node,php,python',
+          agent: null,
         })),
       },
       targetAllocation: { findUnique: jest.fn(), create: jest.fn() },
@@ -113,8 +115,48 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
 
     await expect(
       service.create('u1', { targetId: 'agent-target' }, 'ws-1'),
-    ).rejects.toThrow('become allocatable after Agent delivery is enabled');
+    ).rejects.toThrow('Enroll and enable InitPad Agent 0.4.0');
     expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
+  });
+
+  it('allocates a Docker target backed by a compatible enrolled Agent', async () => {
+    const savedStore = { ...config.artifactStore };
+    Object.assign(config.artifactStore, {
+      bucket: 'test-artifacts',
+      accessKeyId: 'test-access',
+      secretAccessKey: 'test-secret',
+    });
+    const create = jest.fn(async () => ({
+      ...allocationRow,
+      targetId: 'agent-target',
+      target: { name: 'Remote Docker', capabilities: 'static,node' },
+    }));
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'agent-target',
+          kind: 'docker',
+          scope: 'user',
+          workspaceId: 'ws-1',
+          capabilities: 'static,node',
+          remotePath: null,
+          publicUrl: 'https://apps.example.test',
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.4.0' },
+        })),
+      },
+      targetAllocation: { findUnique: jest.fn(async () => null), create },
+      workspace: { findUniqueOrThrow: jest.fn(async () => ({ slug: 'acme' })) },
+    };
+    const service = makeService(prisma, 'owner');
+
+    try {
+      await expect(
+        service.create('u1', { targetId: 'agent-target' }, 'ws-1'),
+      ).resolves.toMatchObject({ targetId: 'agent-target' });
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.assign(config.artifactStore, savedStore);
+    }
   });
 
   it('hides an allocation in another workspace as 404 (not 403)', async () => {

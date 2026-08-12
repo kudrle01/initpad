@@ -64,6 +64,10 @@ export interface Target {
   remotePath: string | null;
   publicUrl: string | null;
   verifiedAt: string | null;
+  // Agent targets are ready when enrolled, enabled, on a compatible version,
+  // and this control plane has durable artifact storage configured.
+  agentReady?: boolean;
+  agentVersion?: string | null;
   // True when at least one environment currently references this target
   // (blocks deletion). Optional — only populated by the targets listing.
   inUse?: boolean;

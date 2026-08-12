@@ -37,7 +37,7 @@ export default function Infrastructure() {
   const availableAllocationTargets = infrastructure.targets.filter(
     (target) =>
       !allocatedTargetIds.has(target.id) &&
-      !(target.scope === 'user' && target.kind === 'docker'),
+      (target.scope !== 'user' || target.kind !== 'docker' || target.agentReady === true),
   );
 
   useEffect(() => {

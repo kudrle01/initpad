@@ -117,7 +117,11 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" aria-label="Verified" />
                     )}
                     {isCurrent && <span className="text-[11px] text-muted-foreground">current</span>}
-                    {!targetIsReady(t) && <span className="text-[11px] text-warning">verify first</span>}
+                    {!targetIsReady(t) && (
+                      <span className="text-[11px] text-warning">
+                        {t.kind === 'docker' && t.scope === 'user' ? 'Agent not ready' : 'verify first'}
+                      </span>
+                    )}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
                     {t.kind}

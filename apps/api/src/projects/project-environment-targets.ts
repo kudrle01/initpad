@@ -11,7 +11,8 @@ import type {
   ProviderConnection,
 } from '../deployment/deployment-provider.interface';
 import { PrismaService } from '../prisma/prisma.service';
-import { config } from '../config';
+import { artifactStoreConfigured, config } from '../config';
+import { MIN_PROJECT_AGENT_VERSION, supportsProjectAgent } from '../agents/agent-version';
 import { allocationUsageDefaults } from '../targets/target-allocation-defaults';
 import { BUILTIN_DOCKER, TargetRow, TargetsService } from '../targets/targets.service';
 
@@ -199,13 +200,25 @@ export class ProjectEnvironmentTargets {
 
   assertUsable(target: TargetRow, template: TemplateManifest): void {
     if (target.scope === 'user' && target.kind === 'docker') {
-      throw new BadRequestException(
-        `Agent-backed target '${target.name}' is not deployable until Agent delivery is enabled.`,
-      );
+      if (!artifactStoreConfigured()) {
+        throw new BadRequestException(
+          `Agent-backed target '${target.name}' requires durable S3/MinIO artifact storage.`,
+        );
+      }
+      if (!target.agent?.credentialHash || target.agent.disabledAt) {
+        throw new BadRequestException(
+          `Enroll and enable the Agent for target '${target.name}' before using it.`,
+        );
+      }
+      if (!supportsProjectAgent(target.agent.version)) {
+        throw new BadRequestException(
+          `Target '${target.name}' requires InitPad Agent ${MIN_PROJECT_AGENT_VERSION.join('.')} or newer.`,
+        );
+      }
     }
     const capabilities = this.targets.parseCaps(target.capabilities);
     if (targetCanRun(template, { kind: target.kind as ProviderKind, capabilities })) {
-      if (target.scope === 'user' && !target.verifiedAt) {
+      if (target.scope === 'user' && target.kind !== 'docker' && !target.verifiedAt) {
         throw new BadRequestException(
           `Target '${target.name}' must pass Test connection before it can host an environment.`,
         );

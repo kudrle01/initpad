@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeploymentService } from '../deployment/deployment.service';
-import { config } from '../config';
+import { artifactStoreConfigured, config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 import {
   ProviderKind,
@@ -20,6 +20,7 @@ import type { ProviderConnection, VerifyResult } from '../deployment/deployment-
 import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { supportsProjectAgent } from '../agents/agent-version';
 
 // Stable ids for the seeded built-in targets (the simulated infrastructure).
 export const BUILTIN_DOCKER = 'builtin-docker';
@@ -44,6 +45,11 @@ export interface TargetRow {
   ownerId: string | null;
   workspaceId: string | null;
   createdAt: Date;
+  agent?: {
+    credentialHash: string | null;
+    disabledAt: Date | null;
+    version: string | null;
+  } | null;
 }
 
 /**
@@ -70,7 +76,7 @@ export class TargetsService implements OnModuleInit {
   // boot; connection details for these come from config at deploy time.
   private async seedBuiltins(): Promise<void> {
     const { ssh, sftp } = config.providers;
-    const builtins: Array<Omit<TargetRow, 'verifiedAt' | 'createdAt'>> = [
+    const builtins: Array<Omit<TargetRow, 'verifiedAt' | 'createdAt' | 'agent'>> = [
       {
         id: BUILTIN_DOCKER,
         name: 'Company Docker (dev/test)',
@@ -162,6 +168,9 @@ export class TargetsService implements OnModuleInit {
         ? { workspaceId }
         : { OR: [{ scope: 'builtin' }, { workspaceId }] },
       orderBy: [{ scope: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        agent: { select: { credentialHash: true, disabledAt: true, version: true } },
+      },
     })) as TargetRow[];
 
     const counts = await this.prisma.environment.groupBy({
@@ -180,6 +189,9 @@ export class TargetsService implements OnModuleInit {
       where: config.edition === 'saas'
         ? { workspaceId }
         : { OR: [{ scope: 'builtin' }, { workspaceId }] },
+      include: {
+        agent: { select: { credentialHash: true, disabledAt: true, version: true } },
+      },
     })) as TargetRow[];
   }
 
@@ -445,6 +457,14 @@ export class TargetsService implements OnModuleInit {
   }
 
   private toSummary(row: TargetRow, inUse: boolean): Target {
+    const agentReady = row.scope === 'user' && row.kind === 'docker'
+      ? Boolean(
+          artifactStoreConfigured()
+          && row.agent?.credentialHash
+          && !row.agent.disabledAt
+          && supportsProjectAgent(row.agent.version),
+        )
+      : undefined;
     return {
       id: row.id,
       name: row.name,
@@ -458,6 +478,9 @@ export class TargetsService implements OnModuleInit {
       remotePath: row.remotePath,
       publicUrl: row.publicUrl,
       verifiedAt: row.verifiedAt ? row.verifiedAt.toISOString() : null,
+      ...(agentReady !== undefined
+        ? { agentReady, agentVersion: row.agent?.version ?? null }
+        : {}),
       inUse,
     };
   }

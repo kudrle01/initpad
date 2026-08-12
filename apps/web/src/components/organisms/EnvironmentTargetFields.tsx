@@ -17,9 +17,7 @@ export function targetSupports(target: Target, template: TemplateManifest): bool
 }
 
 export function targetIsReady(target: Target): boolean {
-  // Agent-backed Docker delivery is intentionally enabled only after the
-  // durable job path exists. Never fall through to the control-plane daemon.
-  if (target.scope === 'user' && target.kind === 'docker') return false;
+  if (target.scope === 'user' && target.kind === 'docker') return target.agentReady === true;
   return target.scope === 'builtin' || Boolean(target.verifiedAt);
 }
 
@@ -84,7 +82,7 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
                   {target.name} · {target.kind}
                   {!targetIsReady(target)
                     ? target.scope === 'user' && target.kind === 'docker'
-                      ? ' · Agent setup pending'
+                      ? ` · ${target.agentVersion ? 'update or enable Agent' : 'enroll Agent'}`
                       : ' · verify first'
                     : ''}
                 </option>
