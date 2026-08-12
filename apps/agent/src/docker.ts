@@ -1,10 +1,7 @@
-import http from 'node:http';
-import https from 'node:https';
-import type { RequestOptions } from 'node:http';
 import type { DockerCapabilities } from './types.js';
+import { dockerError, dockerHttpRequest } from './docker-http.js';
+import type { DockerTransport } from './docker-http.js';
 
-const DOCKER_TIMEOUT_MS = 5_000;
-const MAX_RESPONSE_BYTES = 1024 * 1024;
 type DockerRequester = (path: string, dockerHost: string) => Promise<string>;
 
 interface DockerVersionResponse {
@@ -20,55 +17,14 @@ interface DockerInfoResponse {
   SecurityOptions?: unknown;
 }
 
-function dockerRequestOptions(path: string, dockerHost: string): {
-  client: typeof http | typeof https;
-  options: RequestOptions;
-} {
-  if (dockerHost.startsWith('unix://')) {
-    return {
-      client: http,
-      options: { socketPath: dockerHost.slice('unix://'.length), path, method: 'GET' },
-    };
-  }
-  const endpoint = new URL(dockerHost.replace(/^tcp:/, 'http:'));
-  return {
-    client: endpoint.protocol === 'https:' ? https : http,
-    options: {
-      hostname: endpoint.hostname,
-      port: endpoint.port || (endpoint.protocol === 'https:' ? 443 : 80),
-      path,
-      method: 'GET',
-    },
+function dockerRequest(transport: DockerTransport = dockerHttpRequest): DockerRequester {
+  return async (path, dockerHost) => {
+    const response = await transport({ method: 'GET', path, timeoutMs: 5_000 }, dockerHost);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw dockerError(response, path);
+    }
+    return response.body.toString('utf8');
   };
-}
-
-async function dockerRequest(path: string, dockerHost: string): Promise<string> {
-  const { client, options } = dockerRequestOptions(path, dockerHost);
-  return new Promise((resolve, reject) => {
-    const request = client.request(options, (response) => {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      response.on('data', (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > MAX_RESPONSE_BYTES) {
-          request.destroy(new Error('Docker API response is too large'));
-          return;
-        }
-        chunks.push(chunk);
-      });
-      response.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8');
-        if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-          reject(new Error(`Docker API returned HTTP ${response.statusCode || 0}`));
-          return;
-        }
-        resolve(body);
-      });
-    });
-    request.setTimeout(DOCKER_TIMEOUT_MS, () => request.destroy(new Error('Docker API timed out')));
-    request.on('error', reject);
-    request.end();
-  });
 }
 
 function requiredString(value: unknown, label: string): string {
@@ -87,7 +43,7 @@ function positiveInteger(value: unknown, label: string): number {
 
 export async function inspectDocker(
   dockerHost = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock',
-  requestDocker: DockerRequester = dockerRequest,
+  requestDocker: DockerRequester = dockerRequest(),
 ): Promise<DockerCapabilities> {
   const pong = await requestDocker('/_ping', dockerHost);
   if (pong.trim() !== 'OK') throw new Error('Docker daemon ping failed');

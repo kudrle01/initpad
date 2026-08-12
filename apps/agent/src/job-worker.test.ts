@@ -79,7 +79,7 @@ test('renews a long probe and retries lost progress/completion responses idempot
     },
   };
 
-  await executeClaimedJob(claim(), new AbortController().signal, client, timing);
+  await executeClaimedJob(claim(), new AbortController().signal, client, { timing });
 
   assert.ok(renewals.length >= 3);
   assert.equal(renewals.every((token) => token === LEASE), true);
@@ -110,4 +110,50 @@ test('fails a future or unknown job without interpreting its payload as a comman
   );
 
   assert.deepEqual(calls, ['failed:unsupported_job']);
+});
+
+test('runs only the explicit Docker lifecycle acceptance interface', async () => {
+  const progress: number[] = [];
+  const completions: string[] = [];
+  const lifecycleCalls: string[] = [];
+  const payload = {
+    allocationId: '123e4567-e89b-42d3-a456-426614174000',
+    namespace: 'team-alpha',
+    projectSlug: 'agent-lifecycle-check',
+    environment: 'diagnostic',
+    revision: 'probe-a',
+    imageRef: `nginx@sha256:${'a'.repeat(64)}`,
+    containerPort: 80,
+    healthPath: '/',
+  };
+  const client: AgentJobClient = {
+    renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+    progress: async (_jobId, input) => {
+      progress.push(input.percent);
+      return summary({ sequence: input.sequence, percent: input.percent });
+    },
+    complete: async (_jobId, input) => {
+      completions.push(`${input.status}:${input.resultCode}`);
+      return summary({ status: input.status, percent: input.status === 'succeeded' ? 100 : 0 });
+    },
+  };
+
+  await executeClaimedJob(
+    claim({ kind: 'lifecycle-test', payload }),
+    new AbortController().signal,
+    client,
+    {
+      lifecycle: {
+        acceptance: async (received, jobId, _signal, report) => {
+          lifecycleCalls.push(`${jobId}:${(received as typeof payload).namespace}`);
+          await report({ percent: 25, stage: 'working', message: 'Created' });
+          await report({ percent: 90, stage: 'verifying', message: 'Verified' });
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(lifecycleCalls, ['job-1:team-alpha']);
+  assert.deepEqual(progress, [25, 90]);
+  assert.deepEqual(completions, ['succeeded:ok']);
 });

@@ -1,0 +1,571 @@
+import { setTimeout as sleep } from 'node:timers/promises';
+import { createHash } from 'node:crypto';
+import { dockerError, dockerHttpRequest } from './docker-http.js';
+import type { DockerHttpResponse, DockerTransport } from './docker-http.js';
+
+const IMAGE_REF_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,199}@sha256:[a-f0-9]{64}$/;
+const SAFE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+const SAFE_NAMESPACE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const HEALTH_PATH_PATTERN = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$/;
+const MAX_LOG_BYTES = 32 * 1024;
+const SAFE_RUNTIME_CAPABILITIES = [
+  'CHOWN',
+  'DAC_OVERRIDE',
+  'SETGID',
+  'SETUID',
+  'NET_BIND_SERVICE',
+] as const;
+const LIFECYCLE_PAYLOAD_FIELDS = new Set([
+  'allocationId',
+  'namespace',
+  'projectSlug',
+  'environment',
+  'revision',
+  'imageRef',
+  'containerPort',
+  'healthPath',
+]);
+
+export interface DockerLifecyclePayload {
+  allocationId: string;
+  namespace: string;
+  projectSlug: string;
+  environment: string;
+  revision: string;
+  imageRef: string;
+  containerPort: number;
+  healthPath: string;
+}
+
+export interface DockerWorkloadStatus {
+  state: 'missing' | 'running' | 'stopped';
+  revision?: string;
+  hostPort?: number;
+}
+
+export interface DockerLifecycleProgress {
+  percent: number;
+  stage: 'working' | 'verifying';
+  message: string;
+}
+
+type ProgressReporter = (progress: DockerLifecycleProgress) => Promise<void>;
+
+interface ContainerInspect {
+  Id: string;
+  Name?: string;
+  Config?: {
+    Image?: string;
+    Labels?: Record<string, string>;
+  };
+  State?: { Running?: boolean };
+  NetworkSettings?: {
+    Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+  };
+}
+
+interface ImageInspect {
+  Id?: string;
+  RepoDigests?: string[];
+}
+
+interface NetworkInspect {
+  Containers?: Record<string, unknown>;
+  Labels?: Record<string, string>;
+}
+
+function requiredSafeString(value: unknown, label: string, pattern = SAFE_ID_PATTERN): string {
+  if (typeof value !== 'string' || !pattern.test(value)) {
+    throw new Error(`Lifecycle payload contains an invalid ${label}`);
+  }
+  return value;
+}
+
+export function parseLifecyclePayload(value: unknown): DockerLifecyclePayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Lifecycle payload is invalid');
+  }
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).some((field) => !LIFECYCLE_PAYLOAD_FIELDS.has(field))) {
+    throw new Error('Lifecycle payload contains unsupported fields');
+  }
+  const containerPort = Number(input.containerPort);
+  if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65_535) {
+    throw new Error('Lifecycle payload contains an invalid container port');
+  }
+  return {
+    allocationId: requiredSafeString(input.allocationId, 'allocation id'),
+    namespace: requiredSafeString(input.namespace, 'namespace', SAFE_NAMESPACE_PATTERN),
+    projectSlug: requiredSafeString(input.projectSlug, 'project slug'),
+    environment: requiredSafeString(input.environment, 'environment'),
+    revision: requiredSafeString(input.revision, 'revision'),
+    imageRef: requiredSafeString(input.imageRef, 'immutable image reference', IMAGE_REF_PATTERN),
+    containerPort,
+    healthPath: requiredSafeString(input.healthPath, 'health path', HEALTH_PATH_PATTERN),
+  };
+}
+
+function dockerNamePart(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+}
+
+function publishedHost(dockerHost: string): string {
+  const configured = process.env.INITPAD_AGENT_PUBLISHED_HOST?.trim();
+  if (configured) return configured;
+  if (!dockerHost.startsWith('unix://')) {
+    return new URL(dockerHost.replace(/^tcp:/, 'http:')).hostname;
+  }
+  return '127.0.0.1';
+}
+
+function resourceNumber(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${name} must be between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
+function responseJson<T>(response: DockerHttpResponse, action: string): T {
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw dockerError(response, action);
+  }
+  try {
+    return JSON.parse(response.body.toString('utf8')) as T;
+  } catch {
+    throw new Error(`Docker API ${action} returned invalid JSON`);
+  }
+}
+
+function demuxLogs(body: Buffer): string {
+  let output = '';
+  let offset = 0;
+  while (offset + 8 <= body.length) {
+    const length = body.readUInt32BE(offset + 4);
+    if (offset + 8 + length > body.length) break;
+    output += body.subarray(offset + 8, offset + 8 + length).toString('utf8');
+    offset += 8 + length;
+  }
+  return (output || body.toString('utf8')).replace(/\u0000/g, '').trim().slice(-MAX_LOG_BYTES);
+}
+
+/**
+ * Explicit Docker allow-list used by Agent jobs. It never exposes exec, build,
+ * bind mounts, privileged mode, host networking or caller-defined commands.
+ */
+export class DockerLifecycle {
+  private readonly host: string;
+
+  constructor(
+    private readonly targetId: string,
+    private readonly dockerHost = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock',
+    private readonly transport: DockerTransport = dockerHttpRequest,
+    host?: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {
+    this.host = host ?? publishedHost(dockerHost);
+  }
+
+  async acceptance(
+    rawPayload: unknown,
+    jobId: string,
+    signal: AbortSignal,
+    report: ProgressReporter,
+  ): Promise<void> {
+    const original = parseLifecyclePayload(rawPayload);
+    const promoted = { ...original, revision: `${original.revision}-next` };
+    let imageWasPresent = false;
+    try {
+      await report({ percent: 8, stage: 'working', message: 'Pulling immutable diagnostic image' });
+      imageWasPresent = await this.imageMatches(original.imageRef, signal);
+      await this.pullImage(original.imageRef, signal);
+      await report({ percent: 24, stage: 'working', message: 'Creating isolated diagnostic workload' });
+      await this.deploy(original, jobId, signal);
+      await report({ percent: 40, stage: 'verifying', message: 'Verifying health and bounded logs' });
+      if (!(await this.healthy(original, signal))) throw new Error('Diagnostic workload is unhealthy');
+      await this.logs(original, signal);
+      await report({ percent: 52, stage: 'working', message: 'Replacing workload idempotently' });
+      await this.deploy(promoted, jobId, signal);
+      await report({ percent: 64, stage: 'working', message: 'Rolling back to the previous revision' });
+      await this.rollback(original, jobId, signal);
+      await report({ percent: 76, stage: 'working', message: 'Stopping and restarting workload' });
+      await this.stop(original, signal);
+      const stopped = await this.status(original, signal);
+      if (stopped.state !== 'stopped') throw new Error('Diagnostic workload did not stop');
+      await this.start(original, signal);
+      await report({ percent: 90, stage: 'verifying', message: 'Verifying final state and cleanup' });
+      const running = await this.status(original, signal);
+      if (running.state !== 'running' || !(await this.healthy(original, signal))) {
+        throw new Error('Diagnostic workload did not recover after restart');
+      }
+    } finally {
+      // A stale worker must not remove a replacement created by a newer lease.
+      if (!signal.aborted) {
+        await this.remove(original, signal).catch(() => undefined);
+        if (!imageWasPresent) {
+          await this.removeImage(original.imageRef, signal).catch(() => undefined);
+        }
+        await this.removeNetworkIfEmpty(original, signal).catch(() => undefined);
+      }
+    }
+  }
+
+  async pullImage(imageRef: string, signal: AbortSignal): Promise<void> {
+    if (!IMAGE_REF_PATTERN.test(imageRef)) throw new Error('Image reference must use an immutable sha256 digest');
+    if (await this.imageMatches(imageRef, signal)) return;
+    const response = await this.request({
+      method: 'POST',
+      path: `/images/create?fromImage=${encodeURIComponent(imageRef)}`,
+      maxResponseBytes: 4 * 1024 * 1024,
+      timeoutMs: 120_000,
+      signal,
+    });
+    if (response.statusCode < 200 || response.statusCode >= 300) throw dockerError(response, 'pull image');
+    if (!(await this.imageMatches(imageRef, signal))) {
+      throw new Error('Docker pulled an image that does not expose the requested RepoDigest');
+    }
+  }
+
+  async deploy(payload: DockerLifecyclePayload, jobId: string, signal: AbortSignal): Promise<DockerWorkloadStatus> {
+    const desired = parseLifecyclePayload(payload);
+    const baseName = this.containerName(desired);
+    const candidateName = this.candidateName(desired);
+    const current = await this.ownedContainer(baseName, desired, signal);
+    if (current && this.matches(current, desired)) {
+      if (!current.State?.Running) await this.start(desired, signal);
+      if (!(await this.healthy(desired, signal))) throw new Error('Existing workload failed its health check');
+      return this.status(desired, signal);
+    }
+
+    await this.ensureNetwork(desired, signal);
+    const existingCandidate = await this.ownedContainer(candidateName, desired, signal);
+    if (existingCandidate && !this.matches(existingCandidate, desired)) {
+      await this.removeContainer(existingCandidate.Id, signal);
+    }
+    let candidate = await this.inspectContainer(candidateName, signal);
+    if (!candidate) {
+      const portKey = `${desired.containerPort}/tcp`;
+      const memoryMb = resourceNumber('INITPAD_AGENT_WORKLOAD_MEMORY_MB', 512, 64, 65_536);
+      const cpu = resourceNumber('INITPAD_AGENT_WORKLOAD_CPU', 1, 0.1, 64);
+      const pids = resourceNumber('INITPAD_AGENT_WORKLOAD_PIDS', 256, 32, 32_768);
+      const created = responseJson<{ Id: string }>(await this.request({
+        method: 'POST',
+        path: `/containers/create?name=${encodeURIComponent(candidateName)}`,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          Image: desired.imageRef,
+          Labels: this.labels(desired, jobId),
+          ExposedPorts: { [portKey]: {} },
+          HostConfig: {
+            NetworkMode: this.networkName(desired),
+            PortBindings: { [portKey]: [{ HostIp: '0.0.0.0', HostPort: '' }] },
+            Memory: Math.round(memoryMb * 1024 * 1024),
+            MemorySwap: Math.round(memoryMb * 1024 * 1024),
+            NanoCpus: Math.round(cpu * 1_000_000_000),
+            PidsLimit: Math.round(pids),
+            CapDrop: ['ALL'],
+            CapAdd: [...SAFE_RUNTIME_CAPABILITIES],
+            SecurityOpt: ['no-new-privileges'],
+            Init: true,
+            // A broken candidate must fail once instead of entering a restart
+            // storm. The durable policy is applied only after health succeeds.
+            RestartPolicy: { Name: 'no' },
+            LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
+          },
+        }),
+        signal,
+      }), 'create container');
+      await this.expect([204, 304], {
+        method: 'POST', path: `/containers/${encodeURIComponent(created.Id)}/start`, signal,
+      }, 'start candidate');
+      candidate = await this.inspectContainer(created.Id, signal);
+    } else if (!candidate.State?.Running) {
+      await this.expect([204, 304], {
+        method: 'POST', path: `/containers/${encodeURIComponent(candidate.Id)}/start`, signal,
+      }, 'start candidate');
+      candidate = await this.inspectContainer(candidate.Id, signal);
+    }
+    if (!candidate || !(await this.waitHealthy(candidate, desired, signal))) {
+      if (candidate) await this.removeContainer(candidate.Id, signal).catch(() => undefined);
+      throw new Error('Candidate workload failed its health check');
+    }
+    await this.expect([200], {
+      method: 'POST',
+      path: `/containers/${encodeURIComponent(candidate.Id)}/update`,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ RestartPolicy: { Name: 'unless-stopped' } }),
+      signal,
+    }, 'set durable restart policy');
+    if (current) await this.removeContainer(current.Id, signal);
+    await this.expect([204], {
+      method: 'POST',
+      path: `/containers/${encodeURIComponent(candidate.Id)}/rename?name=${encodeURIComponent(baseName)}`,
+      signal,
+    }, 'publish candidate');
+    return this.status(desired, signal);
+  }
+
+  rollback(payload: DockerLifecyclePayload, jobId: string, signal: AbortSignal): Promise<DockerWorkloadStatus> {
+    return this.deploy(payload, jobId, signal);
+  }
+
+  async stop(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
+    const desired = parseLifecyclePayload(payload);
+    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    if (!container || !container.State?.Running) return;
+    await this.expect([204, 304], {
+      method: 'POST', path: `/containers/${encodeURIComponent(container.Id)}/stop?t=10`, signal,
+    }, 'stop container');
+  }
+
+  async start(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
+    const desired = parseLifecyclePayload(payload);
+    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    if (!container) throw new Error('Workload does not exist');
+    if (!container.State?.Running) {
+      await this.expect([204, 304], {
+        method: 'POST', path: `/containers/${encodeURIComponent(container.Id)}/start`, signal,
+      }, 'start container');
+    }
+    if (!(await this.healthy(desired, signal))) throw new Error('Workload failed its health check after start');
+  }
+
+  async remove(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
+    const desired = parseLifecyclePayload(payload);
+    for (const name of [this.containerName(desired), this.candidateName(desired)]) {
+      const container = await this.ownedContainer(name, desired, signal);
+      if (container) await this.removeContainer(container.Id, signal);
+    }
+  }
+
+  async status(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<DockerWorkloadStatus> {
+    const desired = parseLifecyclePayload(payload);
+    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    return container ? this.toStatus(container, desired) : { state: 'missing' };
+  }
+
+  async healthy(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<boolean> {
+    const desired = parseLifecyclePayload(payload);
+    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    return container ? this.waitHealthy(container, desired, signal) : false;
+  }
+
+  async logs(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<string> {
+    const desired = parseLifecyclePayload(payload);
+    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    if (!container) return '';
+    const response = await this.request({
+      method: 'GET',
+      path: `/containers/${encodeURIComponent(container.Id)}/logs?stdout=1&stderr=1&tail=200`,
+      maxResponseBytes: MAX_LOG_BYTES + 8 * 200,
+      signal,
+    });
+    if (response.statusCode !== 200) throw dockerError(response, 'read logs');
+    return demuxLogs(response.body);
+  }
+
+  private async imageMatches(imageRef: string, signal: AbortSignal): Promise<boolean> {
+    const response = await this.request({
+      method: 'GET', path: `/images/${encodeURIComponent(imageRef)}/json`, signal,
+    });
+    if (response.statusCode === 404) return false;
+    const image = responseJson<ImageInspect>(response, 'inspect image');
+    const digest = imageRef.slice(imageRef.indexOf('@'));
+    return Boolean(image.Id && image.RepoDigests?.some((item) => item.endsWith(digest)));
+  }
+
+  private async removeImage(imageRef: string, signal: AbortSignal): Promise<void> {
+    const response = await this.request({
+      method: 'DELETE', path: `/images/${encodeURIComponent(imageRef)}?force=false&noprune=false`, signal,
+    });
+    if (![200, 404, 409].includes(response.statusCode)) throw dockerError(response, 'remove image');
+  }
+
+  private async ensureNetwork(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
+    const name = this.networkName(payload);
+    const inspected = await this.request({ method: 'GET', path: `/networks/${encodeURIComponent(name)}`, signal });
+    if (inspected.statusCode === 200) {
+      this.assertNetworkOwnership(responseJson<NetworkInspect>(inspected, 'inspect network'), payload);
+      return;
+    }
+    if (inspected.statusCode !== 404) throw dockerError(inspected, 'inspect network');
+    const created = await this.request({
+      method: 'POST',
+      path: '/networks/create',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        Name: name,
+        CheckDuplicate: true,
+        Labels: {
+          'com.initpad.managed': 'true',
+          'com.initpad.target': this.targetId,
+          'com.initpad.allocation.id': payload.allocationId,
+          'com.initpad.allocation.namespace': payload.namespace,
+          'com.initpad.environment': payload.environment,
+        },
+      }),
+      signal,
+    });
+    if (created.statusCode === 201) return;
+    if (created.statusCode !== 409) throw dockerError(created, 'create network');
+    const raced = await this.request({ method: 'GET', path: `/networks/${encodeURIComponent(name)}`, signal });
+    this.assertNetworkOwnership(responseJson<NetworkInspect>(raced, 'inspect raced network'), payload);
+  }
+
+  private async removeNetworkIfEmpty(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
+    const name = this.networkName(payload);
+    const inspected = await this.request({
+      method: 'GET', path: `/networks/${encodeURIComponent(name)}`, signal,
+    });
+    if (inspected.statusCode === 404) return;
+    const network = responseJson<NetworkInspect>(inspected, 'inspect network');
+    this.assertNetworkOwnership(network, payload);
+    if (!network.Containers || Object.keys(network.Containers).length > 0) return;
+    await this.expect([204, 404], {
+      method: 'DELETE', path: `/networks/${encodeURIComponent(name)}`, signal,
+    }, 'remove empty diagnostic network');
+  }
+
+  private async inspectContainer(name: string, signal: AbortSignal): Promise<ContainerInspect | null> {
+    const response = await this.request({
+      method: 'GET', path: `/containers/${encodeURIComponent(name)}/json`, signal,
+    });
+    if (response.statusCode === 404) return null;
+    return responseJson<ContainerInspect>(response, 'inspect container');
+  }
+
+  private async ownedContainer(
+    name: string,
+    payload: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<ContainerInspect | null> {
+    const container = await this.inspectContainer(name, signal);
+    if (container && !this.belongsToWorkload(container, payload)) {
+      throw new Error(`Docker container name collision outside allocation '${payload.allocationId}'`);
+    }
+    return container;
+  }
+
+  private async removeContainer(id: string, signal: AbortSignal): Promise<void> {
+    await this.expect([204, 404], {
+      method: 'DELETE', path: `/containers/${encodeURIComponent(id)}?force=true&v=true`, signal,
+    }, 'remove container');
+  }
+
+  private async waitHealthy(
+    container: ContainerInspect,
+    payload: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (!container.State?.Running) return false;
+    const mapping = container.NetworkSettings?.Ports?.[`${payload.containerPort}/tcp`];
+    const hostPort = Number(mapping?.[0]?.HostPort);
+    if (!Number.isInteger(hostPort) || hostPort < 1 || hostPort > 65_535) return false;
+    const url = `http://${this.host}:${hostPort}${payload.healthPath}`;
+    for (let attempt = 0; attempt < 20 && !signal.aborted; attempt += 1) {
+      try {
+        const response = await this.fetchImpl(url, {
+          signal: AbortSignal.any([signal, AbortSignal.timeout(3_000)]),
+        });
+        if (response.ok) return true;
+      } catch {
+        // Workload is still starting or the published port is not ready.
+      }
+      await sleep(500, undefined, { signal }).catch(() => undefined);
+    }
+    return false;
+  }
+
+  private toStatus(container: ContainerInspect, payload: DockerLifecyclePayload): DockerWorkloadStatus {
+    const mapping = container.NetworkSettings?.Ports?.[`${payload.containerPort}/tcp`];
+    const hostPort = Number(mapping?.[0]?.HostPort);
+    return {
+      state: container.State?.Running ? 'running' : 'stopped',
+      revision: container.Config?.Labels?.['com.initpad.revision'],
+      ...(Number.isInteger(hostPort) && hostPort > 0 ? { hostPort } : {}),
+    };
+  }
+
+  private matches(container: ContainerInspect, payload: DockerLifecyclePayload): boolean {
+    return this.belongsToWorkload(container, payload)
+      && container.Config?.Labels?.['com.initpad.revision'] === payload.revision
+      && container.Config?.Image === payload.imageRef;
+  }
+
+  private belongsToWorkload(container: ContainerInspect, payload: DockerLifecyclePayload): boolean {
+    const labels = container.Config?.Labels ?? {};
+    return labels['com.initpad.target'] === this.targetId
+      && labels['com.initpad.allocation.id'] === payload.allocationId
+      && labels['com.initpad.workload'] === this.workloadKey(payload);
+  }
+
+  private assertNetworkOwnership(network: NetworkInspect, payload: DockerLifecyclePayload): void {
+    const labels = network.Labels ?? {};
+    if (
+      labels['com.initpad.managed'] !== 'true'
+      || labels['com.initpad.target'] !== this.targetId
+      || labels['com.initpad.allocation.id'] !== payload.allocationId
+      || labels['com.initpad.allocation.namespace'] !== payload.namespace
+      || labels['com.initpad.environment'] !== payload.environment
+    ) {
+      throw new Error(`Docker network name collision outside allocation '${payload.allocationId}'`);
+    }
+  }
+
+  private labels(payload: DockerLifecyclePayload, jobId: string): Record<string, string> {
+    return {
+      'com.initpad.managed': 'true',
+      'com.initpad.target': this.targetId,
+      'com.initpad.allocation.id': payload.allocationId,
+      'com.initpad.allocation.namespace': payload.namespace,
+      'com.initpad.project': payload.projectSlug,
+      'com.initpad.environment': payload.environment,
+      'com.initpad.workload': this.workloadKey(payload),
+      'com.initpad.revision': payload.revision,
+      'com.initpad.job': jobId,
+    };
+  }
+
+  private workloadKey(payload: DockerLifecyclePayload): string {
+    return `${payload.allocationId}:${payload.projectSlug}:${payload.environment}`;
+  }
+
+  private networkName(payload: DockerLifecyclePayload): string {
+    return this.boundedName(`net-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.environment)}`);
+  }
+
+  private containerName(payload: DockerLifecyclePayload): string {
+    return this.boundedName(
+      `initpad-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`,
+    );
+  }
+
+  private candidateName(payload: DockerLifecyclePayload): string {
+    const suffix = dockerNamePart(payload.revision).slice(0, 12);
+    return `${this.containerName(payload).slice(0, 108)}-next-${suffix}`;
+  }
+
+  private boundedName(value: string): string {
+    if (value.length <= 128) return value;
+    const digest = createHash('sha256').update(value).digest('hex').slice(0, 12);
+    return `${value.slice(0, 115)}-${digest}`;
+  }
+
+  private request(input: Parameters<DockerTransport>[0]): Promise<DockerHttpResponse> {
+    return this.transport(input, this.dockerHost);
+  }
+
+  private async expect(
+    statuses: number[],
+    input: Parameters<DockerTransport>[0],
+    action: string,
+  ): Promise<void> {
+    const response = await this.request(input);
+    if (!statuses.includes(response.statusCode)) throw dockerError(response, action);
+  }
+}
