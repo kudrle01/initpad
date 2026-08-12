@@ -69,6 +69,27 @@ export class AgentJobProgressDto extends AgentLeaseDto {
   message!: string;
 }
 
+export class AgentJobResultDto {
+  @IsString()
+  @IsIn(['running', 'stopped', 'missing'])
+  state!: 'running' | 'stopped' | 'missing';
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)
+  revision?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65_535)
+  hostPort?: number;
+}
+
+// Keep the nested class above the decorated reference. With
+// emitDecoratorMetadata, TypeScript emits a direct runtime reference for the
+// property type; placing it below this class causes a temporal-dead-zone crash
+// when Node imports the production build.
 export class AgentJobCompleteDto extends AgentLeaseDto {
   @IsString()
   @IsIn(['succeeded', 'failed'])
@@ -88,21 +109,4 @@ export class AgentJobCompleteDto extends AgentLeaseDto {
   @ValidateNested()
   @Type(() => AgentJobResultDto)
   result?: AgentJobResultDto;
-}
-
-export class AgentJobResultDto {
-  @IsString()
-  @IsIn(['running', 'stopped', 'missing'])
-  state!: 'running' | 'stopped' | 'missing';
-
-  @IsOptional()
-  @IsString()
-  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)
-  revision?: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(65_535)
-  hostPort?: number;
 }
