@@ -34,6 +34,10 @@ case "${1:-help}" in
   logs)
     compose logs --tail=100 -f agent-lab
     ;;
+  docker)
+    shift
+    compose exec -T agent-lab-docker docker "$@"
+    ;;
   stop)
     compose stop agent-lab agent-lab-docker
     ;;
@@ -47,6 +51,7 @@ Usage: ./agent-lab.sh <command>
   once    Send one heartbeat and exit
   status  Show the two lab containers
   logs    Follow structured Agent logs
+  docker  Run a Docker CLI inspection inside the isolated target daemon
   stop    Stop only the Agent lab (the InitPad platform keeps running)
 
 Create a Docker (InitPad Agent) target in Infrastructure and generate its

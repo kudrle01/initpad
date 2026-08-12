@@ -17,9 +17,9 @@ hosted multi-tenant edition must use a remote deployment agent or Kubernetes
 API with a restricted service account instead of the host socket. Workspace
 RBAC is an application authorization boundary, not a hostile-workload compute
 boundary. The implemented Agent performs trust bootstrap, bounded Docker
-discovery, heartbeat and a leased outbound job protocol. Remote workload
-operations remain locked until the allocation-scoped Docker command allow-list
-is complete.
+discovery, heartbeat, a leased outbound job protocol and an allocation-scoped
+Docker lifecycle allow-list. Real project delivery remains locked until a
+verified artifact and secret-safe configuration contract are attached to it.
 
 ## Assets
 
@@ -62,7 +62,13 @@ is complete.
   whose plaintext token is never persisted or logged. Monotonic progress,
   idempotency keys and idempotent completion make response loss and lease
   reassignment safe. Unknown job kinds are failed without interpreting their
-  payload as a command; the current probe cannot create a workload.
+  payload as a command. Lifecycle payloads reject unknown fields and contain no
+  command, entrypoint, mount or secret. Docker mutations require matching
+  target/allocation/workload labels; foreign name collisions are left intact.
+- Agent workloads use immutable image digests, resource/log limits,
+  `no-new-privileges`, dropped capabilities plus a small runtime allow-list and
+  health-gated replacement. Failed candidates do not enter restart loops;
+  diagnostic cleanup preserves images that existed before the job.
 - Deployment operations atomically lock one environment. Cancellation is a
   persisted request; stale background work cannot publish over a newer state.
 - App containers receive memory/CPU/PID/log limits, dropped capabilities and
@@ -87,8 +93,10 @@ is complete.
   Do not expose this profile as a hostile public SaaS.
 - Agent access to a Docker daemon is root-equivalent on that target. A stolen
   Agent credential is target-scoped and revocable, and individual claims now
-  use short-lived fencing tokens. Production delivery still needs allocation
-  enforcement and an audited, non-shell Docker command allow-list.
+  use short-lived fencing tokens. Allocation enforcement and a non-shell Docker
+  allow-list now exist; production delivery still needs verified artifact
+  authorization, secret-safe config delivery, installer signing and an
+  independent security review.
 - Gitea collaborator synchronization spans two systems and therefore uses
   compensation rather than a distributed transaction. Reconciliation and an
   audit log are required before hosted production use.

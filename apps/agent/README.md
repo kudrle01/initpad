@@ -5,10 +5,11 @@ control plane. It does not expose SSH, a Docker API or a management HTTP port.
 The target therefore needs Docker and outbound HTTPS, not Node.js.
 
 The implemented runtime provides enrollment, a root-only credential file,
-Docker capability discovery, heartbeat and a durable leased-job transport. Its
-only executable job is currently a bounded protocol probe. Docker lifecycle
-commands arrive in the following Agent milestone; the protocol deliberately has
-no generic shell endpoint.
+Docker capability discovery, heartbeat, a durable leased-job transport and an
+allocation-scoped Docker lifecycle engine. The wire protocol deliberately has
+no generic shell endpoint. Real project delivery remains disabled until the
+control plane can attach a verified artifact and masked environment config to
+the restricted operations.
 
 The repository currently builds the Agent as an executable Node.js package and
 as a minimal container image. The local lab below is the supported acceptance
@@ -42,7 +43,23 @@ though everything runs on one development machine.
 7. Click **Manage Agent → Test protocol**. The job moves through `queued`,
    `leased` and `succeeded`, its progress advances for 35 seconds and `attempt`
    remains 1 during a normal run. The probe does not create a container.
-8. **Disable Agent** invalidates the credential. The running process receives
+8. Click **Test Docker**. A digest-pinned Nginx image exercises create, health,
+   bounded logs, replacement, rollback, stop, start and remove. The newest
+   `lifecycle-test` entry must finish as `succeeded` with the message
+   `Docker lifecycle test completed and cleaned up`.
+9. Confirm that the isolated target contains no diagnostic residue:
+
+   ```sh
+   ./agent-lab.sh docker ps -a --filter label=com.initpad.managed=true
+   ./agent-lab.sh docker image inspect \
+     nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
+   ./agent-lab.sh docker network inspect net-<workspace-slug>-diagnostic
+   ```
+
+   The first command prints no workload; both inspect commands return not
+   found when the test pulled the image and created the network itself. An
+   image already cached before the test is intentionally preserved.
+10. **Disable Agent** invalidates the credential. The running process receives
    `401`, logs `agent.credential_rejected` and exits; a new enrollment is then
    required.
 
@@ -64,3 +81,19 @@ Agent logs never contain the plaintext credential or a job lease token. The
 database stores only SHA-256 hashes of both credential types. Possession of the
 long-lived credential authorizes only the physical target to which enrollment
 bound it; each claimed job additionally requires its short-lived fencing token.
+
+## Docker lifecycle boundary
+
+Agent 0.3.0 accepts a strict, versioned payload containing only allocation ID,
+namespace, project/environment identity, revision, immutable image digest,
+container port and health path. Unknown fields are rejected. The engine never
+accepts a command, entrypoint, bind mount, privileged mode, host network or
+secret value.
+
+Container and network labels must match the target and allocation before every
+mutation. A same-named foreign object is treated as a collision and left
+untouched. Candidate workloads receive CPU, memory, PID and log limits,
+`no-new-privileges` and a small capability allow-list. A candidate starts with
+no restart policy, becomes `unless-stopped` only after health succeeds, and
+replaces the current revision atomically enough for the single-host prototype.
+Application logs are tail-bounded to 32 KiB.

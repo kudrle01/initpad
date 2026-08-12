@@ -20,7 +20,7 @@ srozumitelném a samostatně nasaditelném systému.
 - povýšení stejného buildu do testu a produ;
 - Docker, SSH a SFTP targety včetně PHP hostingu;
 - outbound enrollment, heartbeat a durable job protokol vzdáleného Docker
-  targetu přes InitPad Agent;
+  targetu přes InitPad Agent včetně izolovaného Docker lifecycle testu;
 - historii commitů, CI jobů a deployment operací;
 - bezpečné odstranění deploymentu i celého projektu.
 
@@ -29,8 +29,9 @@ registry. GitHub varianta umí přihlášení, instalaci GitHub App, založení 
 import repozitáře a převzetí ověřeného Actions artefaktu. Veřejný SaaS zatím
 není hotový produkční profil. InitPad Agent už umí bezpečný outbound enrollment,
 heartbeat, Docker capability discovery a pronajímané joby s obnovou po výpadku.
-Vzdálené Docker lifecycle operace a veřejně publikovaný installer jsou další
-část roadmapy.
+Omezený lifecycle engine už umí digest-pinned deploy, health/logs,
+replace/rollback/stop/start a cleanup bez obecného shellu. Napojení ověřeného
+projektového artefaktu a veřejně publikovaný installer jsou další část roadmapy.
 
 ## Rychlé spuštění
 

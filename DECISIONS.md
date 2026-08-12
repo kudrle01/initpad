@@ -2754,9 +2754,10 @@ Docker daemon zároveň nesmí vyžadovat nový enrollment.
    chyby Dockeru, sítě a `5xx` opakuje s exponenciálním intervalem 2–60 sekund;
    odmítnutý nebo deaktivovaný credential (`4xx`) je konečný stav a proces
    skončí. Serverem doporučený heartbeat interval je omezen na 10–300 sekund.
-5. Tato verze Docker API pouze čte `_ping`, `/version` a `/info`. Nemá obecnou
-   shell operaci ani Docker write operace; deployment zůstává zablokovaný do
-   lifecycle a delivery podkroků. Durable job endpoint doplňuje ADR-069.
+5. Verze 0.2.0 Docker API pouze četla `_ping`, `/version` a `/info`. Verze
+   0.3.0 doplnila omezené write operace podle ADR-070; projektový deployment
+   zůstává zablokovaný do napojení artifact delivery. Durable job endpoint
+   popisuje ADR-069.
 
 **Důsledky.** Restart hostitele nebo krátce nedostupný Docker daemon se zahojí
 bez re-enrollmentu, ale odcizený credential stále představuje oprávnění k
@@ -2801,7 +2802,8 @@ shell.
    uložený výsledek; jiný výsledek nebo starý token je odmítnut.
 5. Deaktivace Agenta atomicky zneplatní credential a zruší jeho čekající či
    pronajaté joby. Payload se nikdy nevyhodnocuje jako shell. Verze 0.2.0 umí
-   jen validovaný 5–60sekundový `probe`; neznámý kind nebo verzi ukončí jako
+   jen validovaný 5–60sekundový `probe`; verze 0.3.0 přidává explicitní
+   `lifecycle-test` podle ADR-070. Neznámý kind nebo verzi ukončí jako
    `unsupported_job` bez dotyku Docker daemonu.
 6. Skutečné lifecycle handlery musí navíc před každou fyzickou změnou ověřit
    allocation a používat deterministické názvy podle jobu/workload identity.
@@ -2811,8 +2813,9 @@ shell.
 **Důsledky.** Krátký výpadek control plane nebo ztracená progress/completion
 odpověď nevyrobí nový logický job. Ztracená odpověď na claim může práci nejvýše
 pozdržet do expirace lease; bezpečnost má přednost před paralelním provedením.
-Fronta je nyní persistentní a restartovatelná, ale ještě neopravňuje Agent target
-k allocation ani skutečnému deploymentu.
+Fronta je nyní persistentní a restartovatelná. Diagnostika od ADR-070 smí
+interně založit workspace allocation, ale Agent target ještě nelze vybrat pro
+projektové prostředí ani použít ke skutečnému delivery.
 
 **Testování.** API testy pokrývají target/protocol filtr, atomický claim,
 reclaim expirovaného lease, renewal, monotónní progress, stale fencing token a
@@ -2821,3 +2824,51 @@ progress i completion odpovědi a ověřují, že neznámý shell-like payload n
 spuštěn. V živém izolovaném labu se 35sekundový probe pronajal jako `attempt 1`;
 po zastavení Agenta lease vypršel, tentýž job se převzal jako `attempt 2` a
 dokončil `succeeded`. Databáze obsahovala pouze 64znakový hash lease tokenu.
+
+## ADR-070 — Docker lifecycle Agenta je allocation-scoped allow-list
+
+**Kontext.** Durable lease zaručuje vlastnictví pokusu, ale sám neurčuje, jaké
+Docker operace jsou dovolené ani které objekty patří konkrétnímu workspace.
+Obecný shell, caller-defined command nebo nekontrolovaný Docker API proxy by z
+odcizeného jobu udělaly plný vzdálený přístup k targetu.
+
+**Rozhodnutí.**
+
+1. Agent 0.3.0 implementuje interní explicitní operace `pull`, `deploy`,
+   `status`, `health`, omezené `logs`, `stop`, `start`, `remove` a `rollback`.
+   Wire protokol v tomto podkroku zpřístupňuje pouze složený
+   `lifecycle-test`; samostatné projektové joby zapojí artifact delivery.
+2. Payload má přesný allow-list: allocation ID, namespace, project,
+   environment, revision, immutable `image@sha256`, container port a relativní
+   health path. Jakékoli další pole je chyba. Command, entrypoint, bind mount,
+   privileged/host network ani secret nejsou součástí kontraktu.
+3. API smí diagnostiku vytvořit pouze workspace owner/adminovi pro enrolled
+   Docker target s Agentem alespoň 0.3.0. Založí nebo znovu použije skutečnou
+   `TargetAllocation`; namespace tedy nevymýšlí klient ani Agent. Job je
+   idempotentní podle request UUID a používá fixní multi-platform Nginx digest.
+4. Kontejnery a sítě mají target, allocation, namespace, workload, environment
+   a revision labels. Každá mutace ověří jejich vlastnictví; shoda jména s
+   cizím objektem skončí chybou bez odstranění objektu. Názvy jsou
+   deterministické a dlouhé identity dostanou hash suffix.
+5. Workload dostane CPU/RAM/PID a log limity, `no-new-privileges`, `CapDrop=ALL`
+   a minimální runtime sadu `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` a
+   `NET_BIND_SERVICE`. Candidate má restart policy `no`; teprve po zdravém HTTP
+   probe dostane `unless-stopped` a smí nahradit současnou revision.
+6. Lifecycle i po opakování bezpečně naváže na existující stav. Při ztrátě
+   lease se worker abortuje a nesmí uklízet náhradu novějšího pokusu. Běžná
+   chyba diagnostiku uklidí; image existující před testem zachová a síť smaže
+   jen pokud je vlastní a prázdná. Log tail je omezen na 32 KiB.
+
+**Důsledky.** Control plane už nemusí mít inbound SSH ani přístup k Docker
+socketu vzdáleného serveru a může ověřit fyzický lifecycle. Nejde ještě o
+projektový deployment: job nemá vazbu na ověřený `BuildArtifact`, masked
+environment config ani `DeploymentOperation`. Tyto vazby jsou povinným
+podkrokem 6 a teprve poté se odemkne target picker.
+
+**Testování.** Unit testy ověřují odmítnutí shell-like/unknown fields,
+vlastnictví objektů, resource hardening, health-gated replacement, rollback,
+stop/start, bounded logy, zachování předem existujícího image a cleanup. API
+testy ověřují admin autorizaci, reálnou allocation, immutable digest a
+odmítnutí starého Agenta. V izolovaném DinD labu job dokončil celý cyklus
+jako `succeeded`; následná kontrola nenašla managed kontejner, testem stažený
+image ani diagnostickou síť.

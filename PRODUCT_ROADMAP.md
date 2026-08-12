@@ -287,7 +287,7 @@ nezobrazí falešný empty/error stav.
 4. ✅ **Durable job a lease protokol.** Control plane vytváří target-scoped joby;
    agent je atomicky pronajímá, obnovuje lease a reportuje strukturovaný progress.
    Expirace nebo duplicitní doručení nesmí vytvořit druhý workload.
-5. **Docker lifecycle operace.** Agent implementuje verzované deploy, stop,
+5. ✅ **Docker lifecycle operace.** Agent implementuje verzované deploy, stop,
    start, remove, status, health, omezené logy a rollback bez obecného shellu.
    Image přebírá podle ověřené identity/digestu a vynucuje allocation.
 6. **Napojení delivery toku.** Agent-backed target použije stejné projektové
@@ -308,8 +308,16 @@ credentialu. Produkčně publikovaný release image/installer se ověří v podk
 7. Podkrok 4 přidal samostatnou durable frontu, atomické claimy, třicetisekundový
 lease s hashovaným fencing tokenem, obnovu, sekvenční progress a idempotentní
 dokončení. Živý 35sekundový probe po přerušení Agenta bezpečně vypršel, byl
-převzat jako druhý pokus a dokončil se bez spuštění workloadu. Deployment přes
-Agent zůstává záměrně uzamčený do podkroků 5–6.
+převzat jako druhý pokus a dokončil se bez spuštění workloadu. Podkrok 5 přidal
+striktní Docker allow-list bez shellu, mountů a privileged režimu, immutable
+image digest, allocation/target label fencing, resource limity, bounded logy,
+health-gated replacement, rollback a idempotentní cleanup. UI založí skutečnou
+workspace allocation pouze pro diagnostiku a ukazuje průběh celého lifecycle
+testu. Živý DinD test dokončil deploy → health/logs → replace → rollback →
+stop/start → remove jako `succeeded`; po dokončení nezůstal kontejner, testem
+stažený image ani prázdná diagnostická síť. Projektový target picker zůstává
+zamčený do podkroku 6, protože job zatím nenese ověřený projektový artefakt ani
+secrets.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -380,7 +388,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 4 — identity/onboarding | ano | Self-hosted `open`: samoobslužná registrace. Self-hosted soukromě: admin vytvoří účet a předá aktivační odkaz nebo dočasné heslo s vynucenou změnou. SaaS: pouze GitHub login. Majitel přidá do týmu existující účet podle e-mailu; role platí i v SCM. |
 | 5 — import repa/SCM | částečně | Self-hosted: stávající Gitea projekty beze změny URL projdou detail/import/deploy/delete. SaaS se živou App: New project nabídne osobní/organizační instalace aktivního workspace, založí soukromé GitHub repo a import vypíše repa všech grantů; cizí workspace installation ID musí vrátit 400. Import bez Dockerfile nebo nového artifact callbacku je zablokovaný. Ověřit commity/check runs, artifact ID/digest, dev deploy stejného SHA, retry a delete/detach. Durable object-store ingestion je hotová; plný cloudový workload provoz čeká na Agenta. |
 | 6 — target allocations | ano | Podle `deploy/SELF_HOSTED_ACCEPTANCE.md` dva workspace nasadí na jeden Docker target; sítě/jména se nepřekrývají, role/cizí data jsou izolované a disabled/quota policy je vynucená. |
-| 7 — agent | ano | Instalace/enrollment, online heartbeat, deploy image, logy; po vypnutí agent přejde offline a job čeká bez duplikace. |
+| 7 — agent | ano | Instalace/enrollment, online heartbeat, **Test protocol** a **Test Docker**; lifecycle ověří digest-pinned image, health, bounded logy, replace/rollback/stop/start a úplný cleanup. Po vypnutí Agent přejde offline a job čeká bez duplikace. Skutečný projektový deploy se ověří po napojení artefaktu v dalším podkroku. |
 | 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. |
 | 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
 
@@ -398,8 +406,9 @@ runtime cache, bezpečné uvolnění kanonické cesty při částečném teardow
 self-hosted izolaci dvou workspaceů podle
 [SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md). Agent lab navíc
 prokázal single-use enrollment, omezenou telemetrii, restart/retry a přechod
-`online → offline → online`. Tyto dílčí výsledky nenahrazují závěrečný školní
-E2E scénář s nezávislým týmem.
+`online → offline → online`. Allocation-scoped Docker diagnostika navíc živě
+prošla celý omezený lifecycle a nezanechala workload, image ani síť. Tyto dílčí
+výsledky nenahrazují závěrečný školní E2E scénář s nezávislým týmem.
 
 ## Vyhodnocení pro diplomovou práci
 
