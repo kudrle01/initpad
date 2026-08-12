@@ -8,12 +8,15 @@ import {
 import { generateToken, hashToken } from '../common/token';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
 
 const ENROLLMENT_TTL_MS = 15 * 60_000;
 const ONLINE_AFTER_HEARTBEAT_MS = 90_000;
 const ENROLLMENT_PREFIX = 'initpad_enroll_';
 const CREDENTIAL_PREFIX = 'initpad_agent_';
+const HEARTBEAT_INTERVAL_SECONDS = 30;
+const AGENT_CREDENTIAL_PATTERN = /^Bearer (initpad_agent_[A-Za-z0-9_-]{43})$/;
 
 interface AgentRow {
   id: string;
@@ -24,6 +27,7 @@ interface AgentRow {
   credentialGeneration: number;
   protocolVersion: number;
   version: string | null;
+  capabilities: unknown | null;
   enrolledAt: Date | null;
   lastSeenAt: Date | null;
   disabledAt: Date | null;
@@ -40,6 +44,7 @@ export interface AgentSummary {
   credentialGeneration: number;
   protocolVersion: number;
   version: string | null;
+  capabilities: unknown | null;
   enrolledAt: string | null;
   lastSeenAt: string | null;
   disabledAt: string | null;
@@ -144,6 +149,53 @@ export class AgentsService {
     };
   }
 
+  async heartbeat(
+    authorization: string | undefined,
+    dto: AgentHeartbeatDto,
+  ): Promise<{
+    targetId: string;
+    credentialGeneration: number;
+    acceptedAt: string;
+    nextHeartbeatSeconds: number;
+  }> {
+    const credential = authorization?.match(AGENT_CREDENTIAL_PATTERN)?.[1];
+    if (!credential) throw new UnauthorizedException('Invalid Agent credential');
+    const credentialHash = hashToken(credential);
+    const agent = (await this.prisma.agent.findUnique({
+      where: { credentialHash },
+    })) as AgentRow | null;
+    if (!agent || agent.disabledAt || !agent.credentialHash) {
+      throw new UnauthorizedException('Invalid Agent credential');
+    }
+
+    const now = new Date();
+    // Compare-and-set closes the revoke race between credential lookup and the
+    // heartbeat write. A revoked Agent never becomes online again because an
+    // already in-flight request happened to finish late.
+    const accepted = await this.prisma.agent.updateMany({
+      where: {
+        id: agent.id,
+        credentialHash,
+        disabledAt: null,
+      },
+      data: {
+        version: dto.version,
+        protocolVersion: dto.protocolVersion,
+        capabilities: { ...dto.docker },
+        lastSeenAt: now,
+      },
+    });
+    if (accepted.count !== 1) {
+      throw new UnauthorizedException('Invalid Agent credential');
+    }
+    return {
+      targetId: agent.targetId,
+      credentialGeneration: agent.credentialGeneration,
+      acceptedAt: now.toISOString(),
+      nextHeartbeatSeconds: HEARTBEAT_INTERVAL_SECONDS,
+    };
+  }
+
   async disable(targetId: string, userId: string): Promise<void> {
     await this.authorizeTarget(targetId, userId, 'admin');
     const agent = await this.prisma.agent.findUnique({ where: { targetId } });
@@ -202,6 +254,7 @@ export class AgentsService {
       credentialGeneration: agent.credentialGeneration,
       protocolVersion: agent.protocolVersion,
       version: agent.version,
+      capabilities: agent.capabilities,
       enrolledAt: agent.enrolledAt?.toISOString() ?? null,
       lastSeenAt: agent.lastSeenAt?.toISOString() ?? null,
       disabledAt: agent.disabledAt?.toISOString() ?? null,

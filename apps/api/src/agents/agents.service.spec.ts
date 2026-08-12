@@ -160,6 +160,91 @@ describe('AgentsService trust bootstrap', () => {
     expect(JSON.stringify(update.data)).not.toContain(result.credential);
   });
 
+  it('accepts an authenticated heartbeat and stores only bounded Docker telemetry', async () => {
+    const credential = `initpad_agent_${'c'.repeat(43)}`;
+    const { service, prisma } = setup();
+    prisma.agent.findUnique.mockResolvedValue(agentRow({
+      credentialHash: hashToken(credential),
+      credentialGeneration: 3,
+      enrolledAt: NOW,
+    }));
+
+    await expect(service.heartbeat(`Bearer ${credential}`, {
+      version: '0.1.0',
+      protocolVersion: 1,
+      docker: {
+        engineVersion: '27.5.1',
+        apiVersion: '1.47',
+        os: 'linux',
+        arch: 'arm64',
+        rootless: true,
+        cpus: 4,
+        memoryBytes: 8_589_934_592,
+      },
+    })).resolves.toEqual({
+      targetId: 'target-1',
+      credentialGeneration: 3,
+      acceptedAt: NOW.toISOString(),
+      nextHeartbeatSeconds: 30,
+    });
+
+    expect(prisma.agent.findUnique).toHaveBeenCalledWith({
+      where: { credentialHash: hashToken(credential) },
+    });
+    expect(prisma.agent.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'agent-1',
+        credentialHash: hashToken(credential),
+        disabledAt: null,
+      },
+      data: expect.objectContaining({
+        version: '0.1.0',
+        protocolVersion: 1,
+        lastSeenAt: NOW,
+        capabilities: expect.objectContaining({ engineVersion: '27.5.1', cpus: 4 }),
+      }),
+    });
+  });
+
+  it('rejects malformed, unknown and concurrently revoked Agent credentials', async () => {
+    const credential = `initpad_agent_${'d'.repeat(43)}`;
+    const malformed = setup();
+    await expect(malformed.service.heartbeat('Basic nope', {
+      version: '0.1.0',
+      protocolVersion: 1,
+      docker: {
+        engineVersion: '27.5.1', apiVersion: '1.47', os: 'linux', arch: 'amd64',
+        rootless: false, cpus: 2, memoryBytes: 1_073_741_824,
+      },
+    })).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(malformed.prisma.agent.findUnique).not.toHaveBeenCalled();
+
+    const unknown = setup();
+    unknown.prisma.agent.findUnique.mockResolvedValue(null);
+    await expect(unknown.service.heartbeat(`Bearer ${credential}`, {
+      version: '0.1.0',
+      protocolVersion: 1,
+      docker: {
+        engineVersion: '27.5.1', apiVersion: '1.47', os: 'linux', arch: 'amd64',
+        rootless: false, cpus: 2, memoryBytes: 1_073_741_824,
+      },
+    })).rejects.toBeInstanceOf(UnauthorizedException);
+
+    const revoked = setup();
+    revoked.prisma.agent.findUnique.mockResolvedValue(agentRow({
+      credentialHash: hashToken(credential),
+    }));
+    revoked.prisma.agent.updateMany.mockResolvedValue({ count: 0 });
+    await expect(revoked.service.heartbeat(`Bearer ${credential}`, {
+      version: '0.1.0',
+      protocolVersion: 1,
+      docker: {
+        engineVersion: '27.5.1', apiVersion: '1.47', os: 'linux', arch: 'amd64',
+        rootless: false, cpus: 2, memoryBytes: 1_073_741_824,
+      },
+    })).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it('rejects expired and concurrently consumed enrollment tokens', async () => {
     const token = `initpad_enroll_${'b'.repeat(43)}`;
     const expired = setup();
