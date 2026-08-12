@@ -41,7 +41,31 @@ function setup() {
       findUnique: jest.fn(async (): Promise<{
         credentialHash: string;
         disabledAt: Date | null;
-      } | null> => ({ credentialHash: 'hash', disabledAt: null })),
+        version: string;
+        target: {
+          kind: string;
+          scope: string;
+          workspaceId: string;
+          capabilities: string;
+          publicUrl: string;
+          workspace: { slug: string };
+        };
+      } | null> => ({
+        credentialHash: 'hash',
+        disabledAt: null,
+        version: '0.3.0',
+        target: {
+          kind: 'docker',
+          scope: 'user',
+          workspaceId: 'workspace-1',
+          capabilities: 'node,php,static',
+          publicUrl: 'https://apps.example.test',
+          workspace: { slug: 'team-alpha' },
+        },
+      })),
+    },
+    targetAllocation: {
+      upsert: jest.fn(async () => ({ id: 'allocation-1', namespace: 'team-alpha' })),
     },
     agentJob: {
       upsert: jest.fn(async ({ create }: { create: Record<string, unknown> }) =>
@@ -101,6 +125,43 @@ describe('AgentJobsService durable lease protocol', () => {
       durationSeconds: 35,
     })).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.agentJob.upsert).not.toHaveBeenCalled();
+  });
+
+  it('queues an allocation-scoped lifecycle test without executable input or secrets', async () => {
+    const { service, prisma, agents } = setup();
+    const requestId = '123e4567-e89b-42d3-a456-426614174000';
+
+    await expect(service.createLifecycleTest('target-1', 'owner-1', { requestId }))
+      .resolves.toMatchObject({ kind: 'lifecycle-test', status: 'queued' });
+
+    expect(agents.requireTargetAccess).toHaveBeenCalledWith('target-1', 'owner-1', 'admin');
+    expect(prisma.targetAllocation.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { workspaceId_targetId: { workspaceId: 'workspace-1', targetId: 'target-1' } },
+      create: expect.objectContaining({ namespace: 'team-alpha', capabilities: 'node,php,static' }),
+    }));
+    const create = prisma.agentJob.upsert.mock.calls.at(-1)?.[0].create as {
+      allocationId: string;
+      payload: Record<string, unknown>;
+    };
+    expect(create.allocationId).toBe('allocation-1');
+    expect(create.payload).toEqual(expect.objectContaining({
+      allocationId: 'allocation-1',
+      namespace: 'team-alpha',
+      imageRef: expect.stringMatching(/^nginx@sha256:[a-f0-9]{64}$/),
+    }));
+    expect(create.payload).not.toHaveProperty('command');
+    expect(create.payload).not.toHaveProperty('secret');
+  });
+
+  it('does not queue lifecycle work for an outdated Agent', async () => {
+    const { service, prisma } = setup();
+    const enrolled = await prisma.agent.findUnique();
+    prisma.agent.findUnique.mockResolvedValue({ ...enrolled!, version: '0.2.0' });
+
+    await expect(service.createLifecycleTest('target-1', 'owner-1', {
+      requestId: '123e4567-e89b-42d3-a456-426614174000',
+    })).rejects.toThrow(/0\.3\.0 or newer/);
+    expect(prisma.targetAllocation.upsert).not.toHaveBeenCalled();
   });
 
   it('atomically claims only a compatible job on the authenticated target', async () => {

@@ -5,12 +5,15 @@ import { AgentsService, type AuthenticatedAgent } from './agents.service';
 import {
   AgentJobCompleteDto,
   AgentJobProgressDto,
+  CreateAgentLifecycleTestDto,
   CreateAgentProbeJobDto,
 } from './dto/agent-job.dto';
 
 const LEASE_MS = 30_000;
 const NEXT_POLL_SECONDS = 2;
 const LEASE_PREFIX = 'initpad_lease_';
+const MIN_LIFECYCLE_AGENT_VERSION = [0, 3, 0] as const;
+const LIFECYCLE_TEST_IMAGE = 'nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa';
 
 interface JobRow {
   id: string;
@@ -77,6 +80,91 @@ export class AgentJobsService {
         kind: 'probe',
         protocolVersion: 1,
         payload: { durationSeconds: dto.durationSeconds },
+        status: 'queued',
+        progressStage: 'queued',
+        message: 'Waiting for Agent',
+      },
+    });
+    return this.summary(row as JobRow);
+  }
+
+  async createLifecycleTest(
+    targetId: string,
+    userId: string,
+    dto: CreateAgentLifecycleTestDto,
+  ): Promise<AgentJobSummary> {
+    await this.agents.requireTargetAccess(targetId, userId, 'admin');
+    const agent = await this.prisma.agent.findUnique({
+      where: { targetId },
+      select: {
+        credentialHash: true,
+        disabledAt: true,
+        version: true,
+        target: {
+          select: {
+            kind: true,
+            scope: true,
+            workspaceId: true,
+            capabilities: true,
+            publicUrl: true,
+            workspace: { select: { slug: true } },
+          },
+        },
+      },
+    });
+    if (!agent?.credentialHash || agent.disabledAt) {
+      throw new BadRequestException('Enroll and connect the Agent before testing Docker lifecycle operations');
+    }
+    if (!this.supportsLifecycle(agent.version)) {
+      throw new BadRequestException(`Docker lifecycle testing requires InitPad Agent ${MIN_LIFECYCLE_AGENT_VERSION.join('.')} or newer`);
+    }
+    const target = agent.target;
+    if (
+      target.kind !== 'docker'
+      || target.scope !== 'user'
+      || !target.workspaceId
+      || !target.workspace?.slug
+    ) {
+      throw new BadRequestException('Docker lifecycle testing requires a workspace-owned Docker target');
+    }
+
+    // The diagnostic uses the same first-class allocation boundary as future
+    // deployments. It cannot invent a namespace in an Agent job payload.
+    const allocation = await this.prisma.targetAllocation.upsert({
+      where: {
+        workspaceId_targetId: { workspaceId: target.workspaceId, targetId },
+      },
+      update: {},
+      create: {
+        workspaceId: target.workspaceId,
+        targetId,
+        namespace: target.workspace.slug,
+        rootPath: null,
+        publicUrl: target.publicUrl,
+        capabilities: target.capabilities,
+        maxEnvironments: 50,
+      },
+    });
+    const revision = `probe-${dto.requestId.replace(/-/g, '').slice(0, 12)}`;
+    const row = await this.prisma.agentJob.upsert({
+      where: { dedupeKey: `lifecycle-test:${targetId}:${dto.requestId}` },
+      update: {},
+      create: {
+        targetId,
+        allocationId: allocation.id,
+        dedupeKey: `lifecycle-test:${targetId}:${dto.requestId}`,
+        kind: 'lifecycle-test',
+        protocolVersion: 1,
+        payload: {
+          allocationId: allocation.id,
+          namespace: allocation.namespace,
+          projectSlug: 'agent-lifecycle-check',
+          environment: 'diagnostic',
+          revision,
+          imageRef: LIFECYCLE_TEST_IMAGE,
+          containerPort: 80,
+          healthPath: '/',
+        },
         status: 'queued',
         progressStage: 'queued',
         message: 'Waiting for Agent',
@@ -298,6 +386,19 @@ export class AgentJobsService {
 
   private lostLease(): ConflictException {
     return new ConflictException('Agent job lease is no longer valid');
+  }
+
+  private supportsLifecycle(version: string | null): boolean {
+    if (!version) return false;
+    const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+    if (!match) return false;
+    const actual = match.slice(1).map(Number);
+    for (let index = 0; index < MIN_LIFECYCLE_AGENT_VERSION.length; index += 1) {
+      if (actual[index] !== MIN_LIFECYCLE_AGENT_VERSION[index]) {
+        return actual[index] > MIN_LIFECYCLE_AGENT_VERSION[index];
+      }
+    }
+    return true;
   }
 
   private summary(row: JobRow): AgentJobSummary {

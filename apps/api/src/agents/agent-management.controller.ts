@@ -3,7 +3,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AgentsService } from './agents.service';
 import { AgentJobsService } from './agent-jobs.service';
-import { CreateAgentProbeJobDto } from './dto/agent-job.dto';
+import { CreateAgentLifecycleTestDto, CreateAgentProbeJobDto } from './dto/agent-job.dto';
 
 @Controller('targets/:targetId/agent')
 @UseGuards(JwtAuthGuard)
@@ -41,5 +41,14 @@ export class AgentManagementController {
     @Body() dto: CreateAgentProbeJobDto,
   ) {
     return this.jobs.createProbe(targetId, userId, dto);
+  }
+
+  @Post('jobs/lifecycle-test')
+  createLifecycleTest(
+    @Param('targetId') targetId: string,
+    @CurrentUser() userId: string,
+    @Body() dto: CreateAgentLifecycleTestDto,
+  ) {
+    return this.jobs.createLifecycleTest(targetId, userId, dto);
   }
 }

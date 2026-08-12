@@ -24,6 +24,11 @@ export class CreateAgentProbeJobDto {
   durationSeconds!: number;
 }
 
+export class CreateAgentLifecycleTestDto {
+  @IsUUID('4')
+  requestId!: string;
+}
+
 export class AgentClaimJobDto {
   @IsString()
   @MinLength(1)
