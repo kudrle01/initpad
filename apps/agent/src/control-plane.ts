@@ -1,6 +1,8 @@
 import { AGENT_VERSION, PROTOCOL_VERSION } from './types.js';
 import type {
   AgentConfig,
+  AgentJobSummary,
+  ClaimJobResponse,
   DockerCapabilities,
   EnrollmentResponse,
   HeartbeatResponse,
@@ -71,4 +73,56 @@ export function heartbeat(
     protocolVersion: PROTOCOL_VERSION,
     docker,
   }, config.credential, fetchImpl);
+}
+
+export function claimJob(
+  config: AgentConfig,
+  fetchImpl: FetchLike = fetch,
+): Promise<ClaimJobResponse> {
+  return postJson<ClaimJobResponse>(config.controlPlaneUrl, '/api/agent/jobs/claim', {
+    version: AGENT_VERSION,
+    protocolVersion: PROTOCOL_VERSION,
+  }, config.credential, fetchImpl);
+}
+
+export function renewJobLease(
+  config: AgentConfig,
+  jobId: string,
+  leaseToken: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<{ leaseExpiresAt: string }> {
+  return postJson(config.controlPlaneUrl, `/api/agent/jobs/${encodeURIComponent(jobId)}/lease`, {
+    leaseToken,
+  }, config.credential, fetchImpl);
+}
+
+export function reportJobProgress(
+  config: AgentConfig,
+  jobId: string,
+  input: {
+    leaseToken: string;
+    sequence: number;
+    percent: number;
+    stage: 'accepted' | 'working' | 'verifying';
+    message: string;
+  },
+  fetchImpl: FetchLike = fetch,
+): Promise<AgentJobSummary> {
+  return postJson(config.controlPlaneUrl, `/api/agent/jobs/${encodeURIComponent(jobId)}/progress`, input,
+    config.credential, fetchImpl);
+}
+
+export function completeJob(
+  config: AgentConfig,
+  jobId: string,
+  input: {
+    leaseToken: string;
+    status: 'succeeded' | 'failed';
+    message: string;
+    resultCode?: string;
+  },
+  fetchImpl: FetchLike = fetch,
+): Promise<AgentJobSummary> {
+  return postJson(config.controlPlaneUrl, `/api/agent/jobs/${encodeURIComponent(jobId)}/complete`, input,
+    config.credential, fetchImpl);
 }

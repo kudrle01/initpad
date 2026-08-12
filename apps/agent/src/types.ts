@@ -1,4 +1,4 @@
-export const AGENT_VERSION = '0.1.0';
+export const AGENT_VERSION = '0.2.0';
 export const PROTOCOL_VERSION = 1;
 
 export interface AgentConfig {
@@ -34,4 +34,36 @@ export interface HeartbeatResponse {
   credentialGeneration: number;
   acceptedAt: string;
   nextHeartbeatSeconds: number;
+}
+
+export interface AgentJobClaim {
+  id: string;
+  targetId: string;
+  kind: string;
+  protocolVersion: number;
+  payload: unknown;
+  attempt: number;
+  leaseToken: string;
+  leaseExpiresAt: string;
+}
+
+export interface AgentJobSummary {
+  id: string;
+  kind: string;
+  status: string;
+  attempt: number;
+  progressSequence: number;
+  progressPercent: number;
+  progressStage: string;
+  message: string | null;
+  resultCode: string | null;
+  createdAt: string;
+  leasedAt: string | null;
+  leaseExpiresAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface ClaimJobResponse {
+  job: AgentJobClaim | null;
+  nextPollSeconds: number;
 }

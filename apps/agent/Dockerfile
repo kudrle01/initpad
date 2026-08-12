@@ -9,6 +9,7 @@ RUN npm run build --workspace @initpad/agent
 FROM node:22-alpine
 LABEL org.opencontainers.image.title="InitPad Agent"
 LABEL org.opencontainers.image.description="Outbound-only agent for an InitPad Docker target"
+LABEL org.opencontainers.image.version="0.2.0"
 WORKDIR /app
 COPY --from=build /repo/apps/agent/dist ./dist
 COPY apps/agent/package.json ./package.json

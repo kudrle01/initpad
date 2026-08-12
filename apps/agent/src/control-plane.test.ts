@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { enroll, heartbeat } from './control-plane.js';
+import {
+  claimJob,
+  completeJob,
+  enroll,
+  heartbeat,
+  renewJobLease,
+  reportJobProgress,
+} from './control-plane.js';
 import type { AgentConfig } from './types.js';
 
 test('uses separate enrollment and bearer-authenticated heartbeat requests', async () => {
@@ -20,6 +27,16 @@ test('uses separate enrollment and bearer-authenticated heartbeat requests', asy
           credential: `initpad_agent_${'b'.repeat(43)}`,
           credentialGeneration: 2, protocolVersion: 1,
       }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.endsWith('/api/agent/jobs/claim')) {
+      return new Response(JSON.stringify({ job: null, nextPollSeconds: 2 }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.endsWith('/lease')) {
+      return new Response(JSON.stringify({ leaseExpiresAt: '2026-08-10T12:00:30.000Z' }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
     }
     return new Response(JSON.stringify({
           targetId: 'target-1', credentialGeneration: 2,
@@ -42,6 +59,21 @@ test('uses separate enrollment and bearer-authenticated heartbeat requests', asy
     engineVersion: '27.5.1', apiVersion: '1.47', os: 'linux', arch: 'amd64',
     rootless: false, cpus: 2, memoryBytes: 1_073_741_824,
   }, fetchImpl as typeof fetch);
+  await claimJob(config, fetchImpl as typeof fetch);
+  await renewJobLease(config, 'job-1', `initpad_lease_${'c'.repeat(43)}`, fetchImpl as typeof fetch);
+  await reportJobProgress(config, 'job-1', {
+    leaseToken: `initpad_lease_${'c'.repeat(43)}`,
+    sequence: 1,
+    percent: 5,
+    stage: 'accepted',
+    message: 'Accepted',
+  }, fetchImpl as typeof fetch);
+  await completeJob(config, 'job-1', {
+    leaseToken: `initpad_lease_${'c'.repeat(43)}`,
+    status: 'succeeded',
+    message: 'Done',
+    resultCode: 'ok',
+  }, fetchImpl as typeof fetch);
 
   assert.equal(requests[0].url, '/api/agent/enroll');
   assert.equal(requests[0].authorization, undefined);
@@ -49,4 +81,11 @@ test('uses separate enrollment and bearer-authenticated heartbeat requests', asy
   assert.equal(requests[1].url, '/api/agent/heartbeat');
   assert.equal(requests[1].authorization, `Bearer ${enrollment.credential}`);
   assert.equal('token' in requests[1].body, false);
+  assert.deepEqual(requests.slice(2).map((request) => request.url), [
+    '/api/agent/jobs/claim',
+    '/api/agent/jobs/job-1/lease',
+    '/api/agent/jobs/job-1/progress',
+    '/api/agent/jobs/job-1/complete',
+  ]);
+  assert.equal(requests.slice(2).every((request) => request.authorization === `Bearer ${enrollment.credential}`), true);
 });
