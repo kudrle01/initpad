@@ -1,0 +1,64 @@
+# Isolated local simulation of a customer-owned Docker server. Compose this
+# file with docker-compose.yml through ./agent-lab.sh; it is not part of the
+# normal self-hosted runtime and publishes no Docker API port to the host.
+
+services:
+  agent-lab-docker:
+    image: docker:27.5.1-dind
+    profiles: ["agent-lab"]
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    command:
+      - "--host=tcp://0.0.0.0:2375"
+      - "--tls=false"
+    volumes:
+      - agent-lab-docker-data:/var/lib/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+    networks: [agent-lab-target]
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 384
+    restart: unless-stopped
+
+  agent-lab:
+    build:
+      context: ..
+      dockerfile: apps/agent/Dockerfile
+    profiles: ["agent-lab"]
+    environment:
+      DOCKER_HOST: tcp://agent-lab-docker:2375
+      INITPAD_AGENT_CONFIG: /var/lib/initpad-agent/agent.json
+    volumes:
+      - agent-lab-config:/var/lib/initpad-agent
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      agent-lab-docker: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "/app/dist/cli.js", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks: [agent-lab-target]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 96
+    restart: unless-stopped
+
+networks:
+  agent-lab-target:
+    name: initpad-agent-lab-target
+
+volumes:
+  agent-lab-config:
+  agent-lab-docker-data:
