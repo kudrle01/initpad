@@ -4,7 +4,9 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Readable } from 'stream';
 import { ARTIFACT_STORE, type ArtifactStore } from '../artifacts/artifact-store';
 import { decryptSecret } from '../common/secret';
@@ -39,6 +41,7 @@ interface JobRow {
   progressStage: string;
   message: string | null;
   resultCode: string | null;
+  result: unknown;
   createdAt: Date;
   leasedAt: Date | null;
   finishedAt: Date | null;
@@ -77,12 +80,25 @@ export interface AgentArtifactDownload {
 }
 
 @Injectable()
-export class AgentJobsService {
+export class AgentJobsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agents: AgentsService,
     @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // A crash can occur after the terminal AgentJob write but before its
+    // Environment projection. The job result is durable, so safely replay it.
+    const pending = await this.prisma.agentJob.findMany({
+      where: {
+        status: { in: ['succeeded', 'failed'] },
+        deploymentOperation: { is: { status: 'running', finishedAt: null } },
+      },
+      select: { id: true },
+    }).catch(() => []);
+    for (const job of pending) await this.reconcileTerminalJob(job.id).catch(() => undefined);
+  }
 
   async createProbe(
     targetId: string,
@@ -268,6 +284,7 @@ export class AgentJobsService {
           progressStage: 'assigned',
           message: 'Claimed by Agent',
           resultCode: null,
+          result: Prisma.DbNull,
           finishedAt: null,
         },
       });
@@ -364,9 +381,12 @@ export class AgentJobsService {
       ) {
         throw this.lostLease();
       }
+      await this.mirrorDeploymentProgress(jobId, dto.message);
       return this.summary(current as JobRow);
     }
-    return this.summary(await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } }) as JobRow);
+    const current = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } });
+    await this.mirrorDeploymentProgress(jobId, dto.message);
+    return this.summary(current as JobRow);
   }
 
   async complete(
@@ -385,6 +405,13 @@ export class AgentJobsService {
         progressStage: dto.status,
         message: dto.message,
         resultCode: dto.resultCode ?? null,
+        result: dto.result
+          ? {
+              state: dto.result.state,
+              ...(dto.result.revision ? { revision: dto.result.revision } : {}),
+              ...(dto.result.hostPort ? { hostPort: dto.result.hostPort } : {}),
+            }
+          : Prisma.DbNull,
         leaseExpiresAt: null,
         finishedAt: now,
       },
@@ -398,12 +425,137 @@ export class AgentJobsService {
         current.status !== dto.status ||
         current.message !== dto.message ||
         current.resultCode !== (dto.resultCode ?? null)
+        || !this.sameResult(current.result, dto.result)
       ) {
         throw this.lostLease();
       }
+      await this.reconcileTerminalJob(jobId);
       return this.summary(current as JobRow);
     }
+    await this.reconcileTerminalJob(jobId);
     return this.summary(await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } }) as JobRow);
+  }
+
+  private async mirrorDeploymentProgress(jobId: string, message: string): Promise<void> {
+    const job = await this.prisma.agentJob.findUnique({
+      where: { id: jobId },
+      select: { deploymentOperationId: true },
+    });
+    if (!job?.deploymentOperationId) return;
+    await this.prisma.$transaction([
+      this.prisma.deploymentOperation.updateMany({
+        where: { id: job.deploymentOperationId, status: 'running' },
+        data: { message },
+      }),
+      this.prisma.environment.updateMany({
+        where: { activeOperationId: job.deploymentOperationId },
+        data: { statusReason: message },
+      }),
+    ]);
+  }
+
+  private async reconcileTerminalJob(jobId: string): Promise<void> {
+    const job = await this.prisma.agentJob.findUnique({
+      where: { id: jobId },
+      include: {
+        deploymentOperation: {
+          include: {
+            environment: { include: { target: { select: { publicUrl: true } } } },
+          },
+        },
+      },
+    });
+    const operation = job?.deploymentOperation;
+    if (!job || !operation || !['succeeded', 'failed'].includes(job.status)) return;
+    if (operation.status !== 'running' || operation.finishedAt) return;
+    const result = this.jobResult(job.result);
+    const successfulDeploy =
+      job.kind === 'deploy'
+      && job.status === 'succeeded'
+      && result?.state === 'running'
+      && result.revision === operation.version
+      && result.hostPort !== undefined;
+    const now = new Date();
+    if (successfulDeploy) {
+      const url = this.workloadUrl(operation.environment.target?.publicUrl, result.hostPort!);
+      await this.prisma.$transaction([
+        this.prisma.environment.updateMany({
+          where: { id: operation.environmentId, activeOperationId: operation.id },
+          data: {
+            status: 'running',
+            version: operation.version,
+            buildArtifactId: operation.buildArtifactId,
+            url,
+            statusReason: null,
+            deploymentRequired: false,
+            activeOperationId: null,
+          },
+        }),
+        this.prisma.deploymentOperation.updateMany({
+          where: { id: operation.id, status: 'running', finishedAt: null },
+          data: { status: 'succeeded', message: job.message, finishedAt: now },
+        }),
+      ]);
+      return;
+    }
+    const reason = job.status === 'failed'
+      ? (job.message || 'Agent deployment failed')
+      : 'Agent returned an invalid deployment result';
+    await this.prisma.$transaction([
+      this.prisma.environment.updateMany({
+        where: { id: operation.environmentId, activeOperationId: operation.id },
+        data: {
+          status: 'failed',
+          statusReason: reason,
+          deploymentRequired: true,
+          activeOperationId: null,
+        },
+      }),
+      this.prisma.deploymentOperation.updateMany({
+        where: { id: operation.id, status: 'running', finishedAt: null },
+        data: { status: 'failed', message: reason, finishedAt: now },
+      }),
+    ]);
+  }
+
+  private jobResult(value: unknown): {
+    state: 'running' | 'stopped' | 'missing';
+    revision?: string;
+    hostPort?: number;
+  } | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const input = value as Record<string, unknown>;
+    if (!['running', 'stopped', 'missing'].includes(String(input.state))) return null;
+    if (input.revision !== undefined && typeof input.revision !== 'string') return null;
+    if (
+      input.hostPort !== undefined
+      && (!Number.isInteger(input.hostPort) || Number(input.hostPort) < 1 || Number(input.hostPort) > 65_535)
+    ) return null;
+    return {
+      state: input.state as 'running' | 'stopped' | 'missing',
+      ...(typeof input.revision === 'string' ? { revision: input.revision } : {}),
+      ...(typeof input.hostPort === 'number' ? { hostPort: input.hostPort } : {}),
+    };
+  }
+
+  private workloadUrl(publicUrl: string | null | undefined, hostPort: number): string {
+    if (!publicUrl) throw new BadRequestException('Agent target has no public URL');
+    const url = new URL(publicUrl);
+    url.port = String(hostPort);
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/$/, '');
+  }
+
+  private sameResult(stored: unknown, received: AgentJobCompleteDto['result']): boolean {
+    if (!received) return stored == null;
+    const parsed = this.jobResult(stored);
+    return Boolean(
+      parsed
+      && parsed.state === received.state
+      && parsed.revision === received.revision
+      && parsed.hostPort === received.hostPort,
+    );
   }
 
   private activeAgentFilter(agent: AuthenticatedAgent) {

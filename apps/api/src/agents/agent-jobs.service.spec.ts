@@ -79,6 +79,13 @@ function setup() {
       findUniqueOrThrow: jest.fn(async () => job()),
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
+    deploymentOperation: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
+    environment: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
+    $transaction: jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
   };
   const agents = {
     requireTargetAccess: jest.fn(async () => undefined),
@@ -374,5 +381,113 @@ describe('AgentJobsService durable lease protocol', () => {
       message: 'Probe completed',
       resultCode: 'ok',
     })).resolves.toMatchObject({ status: 'succeeded', resultCode: 'ok' });
+  });
+
+  it('mirrors Agent progress into the project operation and live environment', async () => {
+    const { service, prisma } = setup();
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({ deploymentOperationId: 'operation-1' }));
+    prisma.agentJob.findUnique.mockResolvedValue(job({ deploymentOperationId: 'operation-1' }));
+
+    await service.progress('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      sequence: 2,
+      percent: 40,
+      stage: 'working',
+      message: 'Loading verified image',
+    });
+
+    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'operation-1', status: 'running' },
+      data: { message: 'Loading verified image' },
+    });
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { activeOperationId: 'operation-1' },
+      data: { statusReason: 'Loading verified image' },
+    });
+  });
+
+  it('publishes a successful Agent deploy from its durable structured result', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'deploy',
+      status: 'succeeded',
+      resultCode: 'ok',
+      result: { state: 'running', revision: 'a'.repeat(40), hostPort: 32780 },
+      message: 'Deployment healthy',
+      deploymentOperationId: 'operation-1',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-1',
+        status: 'running',
+        finishedAt: null,
+        version: 'a'.repeat(40),
+        environment: {
+          target: { publicUrl: 'http://192.0.2.10' },
+        },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Deployment healthy',
+      resultCode: 'ok',
+      result: { state: 'running', revision: 'a'.repeat(40), hostPort: 32780 },
+    });
+
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'environment-1', activeOperationId: 'operation-1' },
+      data: expect.objectContaining({
+        status: 'running',
+        version: 'a'.repeat(40),
+        buildArtifactId: 'artifact-1',
+        url: 'http://192.0.2.10:32780',
+        activeOperationId: null,
+      }),
+    });
+    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'operation-1', status: 'running', finishedAt: null },
+      data: expect.objectContaining({ status: 'succeeded', message: 'Deployment healthy' }),
+    });
+  });
+
+  it('fails the project operation when Agent completion has no valid deploy result', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'deploy',
+      status: 'succeeded',
+      result: null,
+      message: 'Done without workload identity',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-1',
+        status: 'running',
+        finishedAt: null,
+        version: 'a'.repeat(40),
+        environment: { target: { publicUrl: 'https://apps.example.test' } },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Done without workload identity',
+      resultCode: 'ok',
+    });
+
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'environment-1', activeOperationId: 'operation-1' },
+      data: expect.objectContaining({
+        status: 'failed',
+        statusReason: 'Agent returned an invalid deployment result',
+        activeOperationId: null,
+      }),
+    });
   });
 });

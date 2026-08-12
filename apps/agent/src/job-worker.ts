@@ -1,7 +1,7 @@
 import { ControlPlaneError } from './control-plane.js';
 import { DockerLifecycle, parseLifecyclePayload } from './docker-lifecycle.js';
 import type { DockerLifecycleProgress } from './docker-lifecycle.js';
-import type { AgentJobClaim, AgentJobSummary } from './types.js';
+import type { AgentJobClaim, AgentJobResult, AgentJobSummary } from './types.js';
 
 const RENEW_EVERY_MS = 10_000;
 const PROGRESS_EVERY_MS = 5_000;
@@ -20,6 +20,7 @@ export interface AgentJobClient {
     status: 'succeeded' | 'failed';
     message: string;
     resultCode?: string;
+    result?: AgentJobResult;
   }): Promise<AgentJobSummary>;
 }
 

@@ -81,8 +81,8 @@ describe('ProjectDeploymentOperations', () => {
     const prisma = {
       deploymentOperation: {
         findMany: jest.fn(async () => [
-          { id: 'running-1', status: 'running' },
-          { id: 'cancelled-1', status: 'cancelled' },
+          { id: 'running-1', status: 'running', agentJob: null },
+          { id: 'cancelled-1', status: 'cancelled', agentJob: null },
         ]),
         update: operationUpdate,
       },
@@ -117,6 +117,26 @@ describe('ProjectDeploymentOperations', () => {
         }),
       }),
     );
+  });
+
+  it('preserves a durable Agent operation across an API restart', async () => {
+    const operationUpdate = jest.fn();
+    const environmentUpdate = jest.fn();
+    const operations = new ProjectDeploymentOperations({
+      deploymentOperation: {
+        findMany: jest.fn(async () => [
+          { id: 'agent-operation', status: 'running', agentJob: { id: 'job-1' } },
+        ]),
+        update: operationUpdate,
+      },
+      environment: { updateMany: environmentUpdate },
+      $transaction: jest.fn(),
+    } as never);
+
+    await operations.recoverInterrupted();
+
+    expect(operationUpdate).not.toHaveBeenCalled();
+    expect(environmentUpdate).not.toHaveBeenCalled();
   });
 
   it('clears the environment lock even if operation history cannot be updated', async () => {

@@ -531,6 +531,9 @@ model AgentJob {
   progressStage    String   @default("queued")
   message          String?
   resultCode       String?
+  // Bounded structured lifecycle outcome (state/revision/host port). It never
+  // contains application logs, config or secrets.
+  result           Json?
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt

@@ -71,6 +71,12 @@ export interface AgentJobSummary {
   finishedAt: string | null;
 }
 
+export interface AgentJobResult {
+  state: 'running' | 'stopped' | 'missing';
+  revision?: string;
+  hostPort?: number;
+}
+
 export interface ClaimJobResponse {
   job: AgentJobClaim | null;
   nextPollSeconds: number;

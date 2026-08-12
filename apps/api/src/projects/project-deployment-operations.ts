@@ -18,9 +18,12 @@ export class ProjectDeploymentOperations {
     try {
       const interrupted = await this.prisma.deploymentOperation.findMany({
         where: { status: { in: ['running', 'cancelled'] }, finishedAt: null },
-        select: { id: true, status: true },
+        select: { id: true, status: true, agentJob: { select: { id: true } } },
       });
       for (const operation of interrupted) {
+        // Agent jobs are durable across API restarts. Their lease/reclaim and
+        // terminal replay own recovery; never turn an offline wait into failure.
+        if (operation.agentJob) continue;
         const cancelled = operation.status === 'cancelled';
         await this.prisma.$transaction([
           this.prisma.deploymentOperation.update({

@@ -10,7 +10,9 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 const LEASE_TOKEN_PATTERN = /^initpad_lease_[A-Za-z0-9_-]{43}$/;
 
@@ -81,4 +83,26 @@ export class AgentJobCompleteDto extends AgentLeaseDto {
   @IsString()
   @Matches(/^[a-z0-9][a-z0-9._-]{0,63}$/)
   resultCode?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentJobResultDto)
+  result?: AgentJobResultDto;
+}
+
+export class AgentJobResultDto {
+  @IsString()
+  @IsIn(['running', 'stopped', 'missing'])
+  state!: 'running' | 'stopped' | 'missing';
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)
+  revision?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65_535)
+  hostPort?: number;
 }

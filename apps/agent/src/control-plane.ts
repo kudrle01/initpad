@@ -1,6 +1,7 @@
 import { AGENT_VERSION, PROTOCOL_VERSION } from './types.js';
 import type {
   AgentConfig,
+  AgentJobResult,
   AgentJobSummary,
   ClaimJobResponse,
   DockerCapabilities,
@@ -156,6 +157,7 @@ export function completeJob(
     status: 'succeeded' | 'failed';
     message: string;
     resultCode?: string;
+    result?: AgentJobResult;
   },
   fetchImpl: FetchLike = fetch,
 ): Promise<AgentJobSummary> {
