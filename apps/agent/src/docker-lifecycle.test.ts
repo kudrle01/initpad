@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DockerLifecycle, parseLifecyclePayload } from './docker-lifecycle.js';
+import { createHash } from 'node:crypto';
+import {
+  DockerLifecycle,
+  parseLifecyclePayload,
+  parseProjectDelivery,
+  parseProjectPayload,
+} from './docker-lifecycle.js';
 import type { DockerHttpRequest, DockerHttpResponse, DockerTransport } from './docker-http.js';
 
 const IMAGE_REF = `nginx@sha256:${'a'.repeat(64)}`;
@@ -34,6 +40,7 @@ interface FakeContainer {
 function fakeEngine(initialImagePresent = false) {
   let imagePresent = initialImagePresent;
   let networkPresent = false;
+  let loadedBytes = Buffer.alloc(0);
   let networkLabels: Record<string, string> = {};
   let nextId = 1;
   const containers = new Map<string, FakeContainer>();
@@ -55,6 +62,17 @@ function fakeEngine(initialImagePresent = false) {
     if (input.method === 'POST' && input.path.startsWith('/images/create')) {
       imagePresent = true;
       return response(200, '{"status":"pulled"}\n');
+    }
+    if (input.method === 'POST' && input.path.startsWith('/images/load')) {
+      const chunks: Buffer[] = [];
+      if (input.body && typeof input.body === 'object' && Symbol.asyncIterator in input.body) {
+        for await (const chunk of input.body as AsyncIterable<Uint8Array>) {
+          chunks.push(Buffer.from(chunk));
+        }
+      }
+      loadedBytes = Buffer.concat(chunks);
+      imagePresent = true;
+      return response(200, '{"stream":"Loaded image"}\n');
     }
     if (input.method === 'DELETE' && decodedPath.startsWith('/images/')) {
       imagePresent = false;
@@ -131,6 +149,7 @@ function fakeEngine(initialImagePresent = false) {
     createdBodies,
     imagePresent: () => imagePresent,
     networkPresent: () => networkPresent,
+    loadedBytes: () => loadedBytes,
     seedForeign: (name: string) => {
       containers.set('foreign-1', {
         Id: 'foreign-1',
@@ -160,6 +179,119 @@ test('rejects untrusted lifecycle fields before contacting Docker', () => {
     () => parseLifecyclePayload({ ...PAYLOAD, command: ['sh', '-c', 'id'] }),
     /invalid|contains/i,
   );
+});
+
+test('validates project artifact metadata and transient config independently', () => {
+  const payload = {
+    ...PAYLOAD,
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    imageRef: `registry.test/acme/api:${'a'.repeat(40)}`,
+    configFingerprint: 'b'.repeat(64),
+  };
+  assert.deepEqual(parseProjectPayload(payload), payload);
+  assert.throws(() => parseProjectPayload({ ...payload, command: ['sh'] }), /unsupported fields/);
+  assert.throws(() => parseProjectPayload({ ...payload, configFingerprint: 'raw-secret' }), /fingerprint/);
+  assert.throws(
+    () => parseProjectDelivery({
+      artifact: { path: 'https://attacker.test/archive', sha256: 'c'.repeat(64), sizeBytes: 10 },
+      envVars: {},
+    }),
+    /artifact path/,
+  );
+  assert.throws(
+    () => parseProjectDelivery({
+      artifact: { path: '/api/agent/jobs/job-1/artifact', sha256: 'c'.repeat(64), sizeBytes: 10 },
+      envVars: { PORT: '9999' },
+    }),
+    /invalid variable/,
+  );
+});
+
+test('streams and verifies an image archive before publishing an isolated project workload', async () => {
+  const bytes = Buffer.from('verified-image-archive');
+  const payload = {
+    ...PAYLOAD,
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    imageRef: `registry.test/acme/api:${'a'.repeat(40)}`,
+    configFingerprint: 'b'.repeat(64),
+  };
+  const delivery = {
+    artifact: {
+      path: '/api/agent/jobs/job-1/artifact',
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      sizeBytes: bytes.length,
+    },
+    envVars: { APP_ENV: 'production', DATABASE_PASSWORD: 'never-log-this' },
+  };
+  const engine = fakeEngine();
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+  const progress: number[] = [];
+
+  const status = await lifecycle.deployProject(
+    payload,
+    delivery,
+    (async function* () { yield bytes; })(),
+    'job-1',
+    new AbortController().signal,
+    async (item) => { progress.push(item.percent); },
+  );
+
+  assert.equal(status.state, 'running');
+  assert.equal(status.revision, payload.revision);
+  assert.deepEqual(progress, [8, 38, 82, 96]);
+  assert.deepEqual(engine.loadedBytes(), bytes);
+  assert.equal(engine.containers.size, 1);
+  const created = engine.createdBodies[0];
+  assert.deepEqual(created.Env, [
+    'APP_ENV=production',
+    'DATABASE_PASSWORD=never-log-this',
+  ]);
+  assert.equal(
+    (created.Labels as Record<string, string>)['com.initpad.config-fingerprint'],
+    payload.configFingerprint,
+  );
+});
+
+test('rejects a corrupt project archive without publishing a workload', async () => {
+  const bytes = Buffer.from('corrupt-image-archive');
+  const payload = {
+    ...PAYLOAD,
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    imageRef: `registry.test/acme/api:${'a'.repeat(40)}`,
+    configFingerprint: 'b'.repeat(64),
+  };
+  const engine = fakeEngine();
+  const lifecycle = new DockerLifecycle('target-1', 'tcp://docker:2375', engine.transport, 'docker');
+
+  await assert.rejects(
+    lifecycle.deployProject(
+      payload,
+      {
+        artifact: {
+          path: '/api/agent/jobs/job-1/artifact',
+          sha256: 'f'.repeat(64),
+          sizeBytes: bytes.length,
+        },
+        envVars: {},
+      },
+      (async function* () { yield bytes; })(),
+      'job-1',
+      new AbortController().signal,
+      async () => undefined,
+    ),
+    /SHA-256/,
+  );
+  assert.equal(engine.containers.size, 0);
+  assert.equal(engine.imagePresent(), false);
 });
 
 test('preserves an immutable diagnostic image that was already cached', async () => {

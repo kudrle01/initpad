@@ -8,7 +8,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 export interface DockerHttpRequest {
   method: 'GET' | 'POST' | 'DELETE';
   path: string;
-  body?: Buffer | string;
+  body?: Buffer | string | AsyncIterable<Uint8Array>;
   headers?: Record<string, string>;
   maxResponseBytes?: number;
   timeoutMs?: number;
@@ -59,11 +59,14 @@ export async function dockerHttpRequest(
 ): Promise<DockerHttpResponse> {
   const body = input.body === undefined
     ? undefined
-    : Buffer.isBuffer(input.body) ? input.body : Buffer.from(input.body);
+    : isAsyncIterable(input.body)
+      ? input.body
+      : Buffer.isBuffer(input.body) ? input.body : Buffer.from(input.body);
+  const bufferedBody = body && !isAsyncIterable(body) ? body : undefined;
   const request = {
     ...input,
     headers: {
-      ...(body ? { 'content-length': String(body.length) } : {}),
+      ...(bufferedBody ? { 'content-length': String(bufferedBody.length) } : {}),
       ...input.headers,
     },
   };
@@ -98,9 +101,38 @@ export async function dockerHttpRequest(
     );
     req.on('error', reject);
     req.on('close', () => input.signal?.removeEventListener('abort', abort));
-    if (body) req.write(body);
-    req.end();
+    if (body && isAsyncIterable(body)) {
+      void writeStream(req, body, input.signal).catch((error) => req.destroy(error as Error));
+    } else {
+      if (bufferedBody) req.write(bufferedBody);
+      req.end();
+    }
   });
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array> {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && Symbol.asyncIterator in value,
+  );
+}
+
+async function writeStream(
+  request: http.ClientRequest,
+  body: AsyncIterable<Uint8Array>,
+  signal?: AbortSignal,
+): Promise<void> {
+  for await (const chunk of body) {
+    if (signal?.aborted) throw new Error('Docker API request aborted');
+    if (!request.write(Buffer.from(chunk))) {
+      await new Promise<void>((resolve, reject) => {
+        request.once('drain', resolve);
+        request.once('error', reject);
+      });
+    }
+  }
+  request.end();
 }
 
 export function dockerError(response: DockerHttpResponse, action: string): Error {

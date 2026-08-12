@@ -4,6 +4,8 @@ import { dockerError, dockerHttpRequest } from './docker-http.js';
 import type { DockerHttpResponse, DockerTransport } from './docker-http.js';
 
 const IMAGE_REF_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,199}@sha256:[a-f0-9]{64}$/;
+const PROJECT_IMAGE_REF_PATTERN = /^[a-z0-9][a-z0-9._:/-]{0,254}:[a-z0-9_][a-z0-9._-]{0,127}$/;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SAFE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const SAFE_NAMESPACE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const HEALTH_PATH_PATTERN = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$/;
@@ -25,6 +27,14 @@ const LIFECYCLE_PAYLOAD_FIELDS = new Set([
   'containerPort',
   'healthPath',
 ]);
+const PROJECT_PAYLOAD_FIELDS = new Set([
+  ...LIFECYCLE_PAYLOAD_FIELDS,
+  'configFingerprint',
+]);
+const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
+const MAX_ENV_VARS = 128;
+const MAX_ENV_VALUE_BYTES = 8 * 1024;
+const MAX_ENV_TOTAL_BYTES = 128 * 1024;
 
 export interface DockerLifecyclePayload {
   allocationId: string;
@@ -35,6 +45,16 @@ export interface DockerLifecyclePayload {
   imageRef: string;
   containerPort: number;
   healthPath: string;
+  configFingerprint?: string;
+}
+
+export interface DockerProjectDelivery {
+  artifact: {
+    path: string;
+    sha256: string;
+    sizeBytes: number;
+  };
+  envVars: Record<string, string>;
 }
 
 export interface DockerWorkloadStatus {
@@ -82,11 +102,27 @@ function requiredSafeString(value: unknown, label: string, pattern = SAFE_ID_PAT
 }
 
 export function parseLifecyclePayload(value: unknown): DockerLifecyclePayload {
+  return parseWorkloadPayload(value, false);
+}
+
+export function parseProjectPayload(value: unknown): DockerLifecyclePayload & {
+  configFingerprint: string;
+} {
+  const parsed = parseWorkloadPayload(value, true);
+  if (!parsed.configFingerprint) throw new Error('Project payload has no config fingerprint');
+  return parsed as DockerLifecyclePayload & { configFingerprint: string };
+}
+
+function parseWorkloadPayload(
+  value: unknown,
+  projectDelivery: boolean,
+): DockerLifecyclePayload {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Lifecycle payload is invalid');
   }
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some((field) => !LIFECYCLE_PAYLOAD_FIELDS.has(field))) {
+  const allowed = projectDelivery ? PROJECT_PAYLOAD_FIELDS : LIFECYCLE_PAYLOAD_FIELDS;
+  if (Object.keys(input).some((field) => !allowed.has(field))) {
     throw new Error('Lifecycle payload contains unsupported fields');
   }
   const containerPort = Number(input.containerPort);
@@ -99,9 +135,72 @@ export function parseLifecyclePayload(value: unknown): DockerLifecyclePayload {
     projectSlug: requiredSafeString(input.projectSlug, 'project slug'),
     environment: requiredSafeString(input.environment, 'environment'),
     revision: requiredSafeString(input.revision, 'revision'),
-    imageRef: requiredSafeString(input.imageRef, 'immutable image reference', IMAGE_REF_PATTERN),
+    imageRef: requiredSafeString(
+      input.imageRef,
+      projectDelivery ? 'tested image reference' : 'immutable image reference',
+      projectDelivery ? PROJECT_IMAGE_REF_PATTERN : IMAGE_REF_PATTERN,
+    ),
     containerPort,
     healthPath: requiredSafeString(input.healthPath, 'health path', HEALTH_PATH_PATTERN),
+    ...(projectDelivery
+      ? {
+          configFingerprint: requiredSafeString(
+            input.configFingerprint,
+            'config fingerprint',
+            SHA256_PATTERN,
+          ),
+        }
+      : {}),
+  };
+}
+
+export function parseProjectDelivery(value: unknown): DockerProjectDelivery {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Project delivery material is invalid');
+  }
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).some((field) => !['artifact', 'envVars'].includes(field))) {
+    throw new Error('Project delivery material contains unsupported fields');
+  }
+  if (!input.artifact || typeof input.artifact !== 'object' || Array.isArray(input.artifact)) {
+    throw new Error('Project artifact delivery is invalid');
+  }
+  const artifact = input.artifact as Record<string, unknown>;
+  if (Object.keys(artifact).some((field) => !['path', 'sha256', 'sizeBytes'].includes(field))) {
+    throw new Error('Project artifact delivery contains unsupported fields');
+  }
+  const sizeBytes = Number(artifact.sizeBytes);
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 20 * 1024 ** 3) {
+    throw new Error('Project artifact size is invalid');
+  }
+  if (!input.envVars || typeof input.envVars !== 'object' || Array.isArray(input.envVars)) {
+    throw new Error('Project environment config is invalid');
+  }
+  const entries = Object.entries(input.envVars as Record<string, unknown>);
+  if (entries.length > MAX_ENV_VARS) throw new Error('Project environment has too many variables');
+  const envVars: Record<string, string> = {};
+  let totalBytes = 0;
+  for (const [key, rawValue] of entries) {
+    if (!ENV_KEY_PATTERN.test(key) || key === 'PORT' || typeof rawValue !== 'string') {
+      throw new Error('Project environment config contains an invalid variable');
+    }
+    const bytes = Buffer.byteLength(rawValue);
+    if (bytes > MAX_ENV_VALUE_BYTES) throw new Error(`Project environment variable '${key}' is too large`);
+    totalBytes += Buffer.byteLength(key) + bytes;
+    if (totalBytes > MAX_ENV_TOTAL_BYTES) throw new Error('Project environment config is too large');
+    envVars[key] = rawValue;
+  }
+  return {
+    artifact: {
+      path: requiredSafeString(
+        artifact.path,
+        'artifact path',
+        /^\/api\/agent\/jobs\/[A-Za-z0-9_-]+\/artifact$/,
+      ),
+      sha256: requiredSafeString(artifact.sha256, 'artifact digest', SHA256_PATTERN),
+      sizeBytes,
+    },
+    envVars,
   };
 }
 
@@ -231,8 +330,94 @@ export class DockerLifecycle {
     }
   }
 
-  async deploy(payload: DockerLifecyclePayload, jobId: string, signal: AbortSignal): Promise<DockerWorkloadStatus> {
-    const desired = parseLifecyclePayload(payload);
+  async deployProject(
+    rawPayload: unknown,
+    rawDelivery: unknown,
+    archive: AsyncIterable<Uint8Array>,
+    jobId: string,
+    signal: AbortSignal,
+    report: ProgressReporter,
+  ): Promise<DockerWorkloadStatus> {
+    const payload = parseProjectPayload(rawPayload);
+    const delivery = parseProjectDelivery(rawDelivery);
+    let imageWasPresent = false;
+    try {
+      await report({ percent: 8, stage: 'working', message: 'Receiving verified image artifact' });
+      imageWasPresent = await this.imageExists(payload.imageRef, signal);
+      await this.loadImageArchive(
+        payload.imageRef,
+        archive,
+        delivery.artifact.sha256,
+        delivery.artifact.sizeBytes,
+        signal,
+      );
+      await report({ percent: 38, stage: 'working', message: 'Creating isolated candidate workload' });
+      const status = await this.deploy(payload, jobId, signal, delivery.envVars);
+      await report({ percent: 82, stage: 'verifying', message: 'Verifying published workload health' });
+      if (status.state !== 'running' || !(await this.healthy(payload, signal))) {
+        throw new Error('Published workload did not pass final health verification');
+      }
+      await report({ percent: 96, stage: 'verifying', message: 'Publishing deployment result' });
+      return status;
+    } catch (error) {
+      // Only discard an image introduced by this failed attempt. A preexisting
+      // tag can still back the currently published revision.
+      if (!imageWasPresent && !signal.aborted) {
+        await this.removeImage(payload.imageRef, signal).catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  async loadImageArchive(
+    imageRef: string,
+    archive: AsyncIterable<Uint8Array>,
+    expectedSha256: string,
+    expectedSize: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!PROJECT_IMAGE_REF_PATTERN.test(imageRef)) throw new Error('Tested image reference is invalid');
+    if (!SHA256_PATTERN.test(expectedSha256)) throw new Error('Artifact digest is invalid');
+    let size = 0;
+    const hash = createHash('sha256');
+    const verified = (async function* () {
+      for await (const rawChunk of archive) {
+        if (signal.aborted) throw new Error('Agent job interrupted');
+        const chunk = Buffer.from(rawChunk);
+        size += chunk.length;
+        if (size > expectedSize) throw new Error('Artifact stream exceeds its recorded size');
+        hash.update(chunk);
+        yield chunk;
+      }
+      if (size !== expectedSize) throw new Error('Artifact stream size does not match its record');
+      if (hash.digest('hex') !== expectedSha256) {
+        throw new Error('Artifact stream SHA-256 does not match its record');
+      }
+    })();
+    const response = await this.request({
+      method: 'POST',
+      path: '/images/load?quiet=1',
+      headers: { 'content-type': 'application/x-tar' },
+      body: verified,
+      maxResponseBytes: 4 * 1024 * 1024,
+      timeoutMs: 10 * 60_000,
+      signal,
+    });
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw dockerError(response, 'load image archive');
+    }
+    if (!(await this.imageExists(imageRef, signal))) {
+      throw new Error('Loaded image archive did not create its expected tested tag');
+    }
+  }
+
+  async deploy(
+    payload: DockerLifecyclePayload,
+    jobId: string,
+    signal: AbortSignal,
+    envVars: Record<string, string> = {},
+  ): Promise<DockerWorkloadStatus> {
+    const desired = this.validatedPayload(payload);
     const baseName = this.containerName(desired);
     const candidateName = this.candidateName(desired);
     const current = await this.ownedContainer(baseName, desired, signal);
@@ -260,6 +445,9 @@ export class DockerLifecycle {
         body: JSON.stringify({
           Image: desired.imageRef,
           Labels: this.labels(desired, jobId),
+          ...(Object.keys(envVars).length
+            ? { Env: Object.entries(envVars).map(([key, value]) => `${key}=${value}`) }
+            : {}),
           ExposedPorts: { [portKey]: {} },
           HostConfig: {
             NetworkMode: this.networkName(desired),
@@ -315,7 +503,7 @@ export class DockerLifecycle {
   }
 
   async stop(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
-    const desired = parseLifecyclePayload(payload);
+    const desired = this.validatedPayload(payload);
     const container = await this.ownedContainer(this.containerName(desired), desired, signal);
     if (!container || !container.State?.Running) return;
     await this.expect([204, 304], {
@@ -324,7 +512,7 @@ export class DockerLifecycle {
   }
 
   async start(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
-    const desired = parseLifecyclePayload(payload);
+    const desired = this.validatedPayload(payload);
     const container = await this.ownedContainer(this.containerName(desired), desired, signal);
     if (!container) throw new Error('Workload does not exist');
     if (!container.State?.Running) {
@@ -336,7 +524,7 @@ export class DockerLifecycle {
   }
 
   async remove(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
-    const desired = parseLifecyclePayload(payload);
+    const desired = this.validatedPayload(payload);
     for (const name of [this.containerName(desired), this.candidateName(desired)]) {
       const container = await this.ownedContainer(name, desired, signal);
       if (container) await this.removeContainer(container.Id, signal);
@@ -344,19 +532,19 @@ export class DockerLifecycle {
   }
 
   async status(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<DockerWorkloadStatus> {
-    const desired = parseLifecyclePayload(payload);
+    const desired = this.validatedPayload(payload);
     const container = await this.ownedContainer(this.containerName(desired), desired, signal);
     return container ? this.toStatus(container, desired) : { state: 'missing' };
   }
 
   async healthy(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<boolean> {
-    const desired = parseLifecyclePayload(payload);
+    const desired = this.validatedPayload(payload);
     const container = await this.ownedContainer(this.containerName(desired), desired, signal);
     return container ? this.waitHealthy(container, desired, signal) : false;
   }
 
   async logs(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<string> {
-    const desired = parseLifecyclePayload(payload);
+    const desired = this.validatedPayload(payload);
     const container = await this.ownedContainer(this.containerName(desired), desired, signal);
     if (!container) return '';
     const response = await this.request({
@@ -377,6 +565,14 @@ export class DockerLifecycle {
     const image = responseJson<ImageInspect>(response, 'inspect image');
     const digest = imageRef.slice(imageRef.indexOf('@'));
     return Boolean(image.Id && image.RepoDigests?.some((item) => item.endsWith(digest)));
+  }
+
+  private async imageExists(imageRef: string, signal: AbortSignal): Promise<boolean> {
+    const response = await this.request({
+      method: 'GET', path: `/images/${encodeURIComponent(imageRef)}/json`, signal,
+    });
+    if (response.statusCode === 404) return false;
+    return Boolean(responseJson<ImageInspect>(response, 'inspect image').Id);
   }
 
   private async removeImage(imageRef: string, signal: AbortSignal): Promise<void> {
@@ -494,6 +690,8 @@ export class DockerLifecycle {
   private matches(container: ContainerInspect, payload: DockerLifecyclePayload): boolean {
     return this.belongsToWorkload(container, payload)
       && container.Config?.Labels?.['com.initpad.revision'] === payload.revision
+      && (!payload.configFingerprint
+        || container.Config?.Labels?.['com.initpad.config-fingerprint'] === payload.configFingerprint)
       && container.Config?.Image === payload.imageRef;
   }
 
@@ -528,7 +726,16 @@ export class DockerLifecycle {
       'com.initpad.workload': this.workloadKey(payload),
       'com.initpad.revision': payload.revision,
       'com.initpad.job': jobId,
+      ...(payload.configFingerprint
+        ? { 'com.initpad.config-fingerprint': payload.configFingerprint }
+        : {}),
     };
+  }
+
+  private validatedPayload(payload: DockerLifecyclePayload): DockerLifecyclePayload {
+    return payload.configFingerprint
+      ? parseProjectPayload(payload)
+      : parseLifecyclePayload(payload);
   }
 
   private workloadKey(payload: DockerLifecyclePayload): string {

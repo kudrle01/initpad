@@ -1,5 +1,10 @@
 import { ControlPlaneError } from './control-plane.js';
-import { DockerLifecycle, parseLifecyclePayload } from './docker-lifecycle.js';
+import {
+  DockerLifecycle,
+  parseLifecyclePayload,
+  parseProjectDelivery,
+  parseProjectPayload,
+} from './docker-lifecycle.js';
 import type { DockerLifecycleProgress } from './docker-lifecycle.js';
 import type { AgentJobClaim, AgentJobResult, AgentJobSummary } from './types.js';
 
@@ -22,6 +27,12 @@ export interface AgentJobClient {
     resultCode?: string;
     result?: AgentJobResult;
   }): Promise<AgentJobSummary>;
+  downloadArtifact?(
+    jobId: string,
+    leaseToken: string,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<Response>;
 }
 
 interface ProbePayload {
@@ -62,6 +73,14 @@ export interface LifecycleRunner {
     signal: AbortSignal,
     report: (progress: DockerLifecycleProgress) => Promise<void>,
   ): Promise<void>;
+  deployProject?(
+    payload: unknown,
+    delivery: unknown,
+    archive: AsyncIterable<Uint8Array>,
+    jobId: string,
+    signal: AbortSignal,
+    report: (progress: DockerLifecycleProgress) => Promise<void>,
+  ): Promise<AgentJobResult>;
 }
 
 export interface JobExecutionOptions {
@@ -119,12 +138,124 @@ export async function executeClaimedJob(
       timing,
     );
 
-  if (job.protocolVersion !== 1 || !['probe', 'lifecycle-test'].includes(job.kind)) {
+  if (job.protocolVersion !== 1 || !['probe', 'lifecycle-test', 'deploy'].includes(job.kind)) {
     await complete({
       leaseToken: job.leaseToken,
       status: 'failed',
       message: `Agent ${job.protocolVersion === 1 ? 'does not support this job kind' : 'does not support this protocol version'}`,
       resultCode: 'unsupported_job',
+    });
+    return;
+  }
+
+  if (job.kind === 'deploy') {
+    let delivery: ReturnType<typeof parseProjectDelivery>;
+    try {
+      parseProjectPayload(job.payload);
+      delivery = parseProjectDelivery(job.delivery);
+    } catch (error) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Project deployment payload is invalid',
+        resultCode: 'invalid_payload',
+      });
+      return;
+    }
+    const lifecycle = options.lifecycle
+      ?? new DockerLifecycle(job.targetId, options.dockerHost);
+    if (!lifecycle.deployProject || !client.downloadArtifact) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: 'Agent does not support project artifact delivery',
+        resultCode: 'unsupported_job',
+      });
+      return;
+    }
+    const localController = new AbortController();
+    const combinedSignal = AbortSignal.any([signal, localController.signal]);
+    let renewalError: unknown;
+    const renewal = renewLeaseLoop(
+      job,
+      client,
+      timing,
+      combinedSignal,
+      localController,
+      () => leaseDeadline,
+      (deadline) => { leaseDeadline = deadline; },
+      (error) => { renewalError = error; },
+    );
+    let sequence = 0;
+    let deploymentError: unknown;
+    let result: AgentJobResult | undefined;
+    try {
+      const response = await client.downloadArtifact(
+        job.id,
+        job.leaseToken,
+        delivery.artifact.path,
+        combinedSignal,
+      );
+      const headerDigest = response.headers.get('x-initpad-artifact-sha256');
+      const headerSize = Number(response.headers.get('content-length'));
+      if (headerDigest && headerDigest !== delivery.artifact.sha256) {
+        throw new Error('Artifact response digest does not match the claimed delivery');
+      }
+      if (Number.isFinite(headerSize) && headerSize !== delivery.artifact.sizeBytes) {
+        throw new Error('Artifact response size does not match the claimed delivery');
+      }
+      if (!response.body) throw new Error('Control plane returned an empty artifact stream');
+      result = await lifecycle.deployProject(
+        job.payload,
+        delivery,
+        response.body,
+        job.id,
+        combinedSignal,
+        async (progress) => {
+          sequence += 1;
+          await retryProtocolCall(
+            () => client.progress(job.id, {
+              leaseToken: job.leaseToken,
+              sequence,
+              percent: progress.percent,
+              stage: progress.stage,
+              message: progress.message,
+            }),
+            () => leaseDeadline,
+            combinedSignal,
+            timing,
+          );
+        },
+      );
+    } catch (error) {
+      deploymentError = error;
+    } finally {
+      localController.abort();
+      await renewal;
+    }
+    if (signal.aborted) return;
+    if (renewalError) throw renewalError;
+    if (
+      deploymentError instanceof ControlPlaneError
+      && [401, 403, 409].includes(deploymentError.status)
+    ) throw deploymentError;
+    if (deploymentError || !result) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: (deploymentError instanceof Error
+          ? deploymentError.message
+          : 'Agent project deployment failed').slice(0, 240),
+        resultCode: 'deployment_failed',
+      });
+      return;
+    }
+    await complete({
+      leaseToken: job.leaseToken,
+      status: 'succeeded',
+      message: 'Deployment is running and healthy',
+      resultCode: 'ok',
+      result,
     });
     return;
   }
@@ -312,4 +443,37 @@ export async function executeClaimedJob(
     message: 'Agent job protocol probe completed',
     resultCode: 'ok',
   });
+}
+
+function renewLeaseLoop(
+  job: AgentJobClaim,
+  client: AgentJobClient,
+  timing: JobTiming,
+  signal: AbortSignal,
+  controller: AbortController,
+  leaseDeadline: () => number,
+  setLeaseDeadline: (value: number) => void,
+  setError: (error: unknown) => void,
+): Promise<void> {
+  return (async () => {
+    while (!signal.aborted) {
+      await timing.sleep(timing.renewEveryMs, signal);
+      if (signal.aborted) return;
+      try {
+        const renewed = await retryProtocolCall(
+          () => client.renew(job.id, job.leaseToken),
+          leaseDeadline,
+          signal,
+          timing,
+        );
+        const deadline = Date.parse(renewed.leaseExpiresAt);
+        if (!Number.isFinite(deadline)) throw new Error('Renewed Agent job lease is invalid');
+        setLeaseDeadline(deadline);
+      } catch (error) {
+        setError(error);
+        controller.abort();
+        return;
+      }
+    }
+  })();
 }

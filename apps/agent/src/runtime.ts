@@ -1,6 +1,7 @@
 import {
   claimJob,
   completeJob,
+  downloadJobArtifact,
   heartbeat,
   renewJobLease,
   reportJobProgress,
@@ -133,6 +134,8 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
           renew: (jobId, leaseToken) => renewJobLease(config, jobId, leaseToken),
           progress: (jobId, input) => reportJobProgress(config, jobId, input),
           complete: (jobId, input) => completeJob(config, jobId, input),
+          downloadArtifact: (jobId, leaseToken, path, jobSignal) =>
+            downloadJobArtifact(config, jobId, leaseToken, path, jobSignal),
         }, { dockerHost: process.env.DOCKER_HOST });
         if (!signal.aborted) {
           log('info', 'job.completed', {

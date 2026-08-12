@@ -38,6 +38,10 @@ function operation(overrides: Record<string, unknown> = {}) {
         workspaceId: 'workspace-1',
         namespace: 'team-alpha',
       },
+      configVars: [
+        { key: 'APP_ENV', value: 'production', isSecret: false },
+        { key: 'DATABASE_PASSWORD', value: 'enc:v1:opaque', isSecret: true },
+      ],
     },
     ...overrides,
   };
@@ -94,6 +98,7 @@ describe('ProjectAgentDelivery', () => {
           imageRef: `registry.test/alice/api:${'a'.repeat(40)}`,
           containerPort: 3000,
           healthPath: '/health',
+          configFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
         },
       }),
     });

@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
+import { createHmac } from 'crypto';
 import { ArtifactStore } from '../artifacts/artifact-store';
+import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 
 const MIN_PROJECT_AGENT_VERSION = [0, 4, 0] as const;
@@ -36,6 +38,10 @@ export class ProjectAgentDelivery {
             project: { select: { workspaceId: true } },
             target: { include: { agent: true } },
             allocation: true,
+            configVars: {
+              orderBy: { key: 'asc' },
+              select: { key: true, value: true, isSecret: true },
+            },
           },
         },
       },
@@ -95,6 +101,7 @@ export class ProjectAgentDelivery {
           imageRef: intent.imageRef,
           containerPort: intent.containerPort,
           healthPath: intent.healthPath,
+          configFingerprint: this.configFingerprint(environment.configVars),
         },
         status: 'queued',
         progressStage: 'queued',
@@ -116,6 +123,21 @@ export class ProjectAgentDelivery {
         },
       }),
     ]);
+  }
+
+  private configFingerprint(
+    variables: Array<{ key: string; value: string; isSecret: boolean }>,
+  ): string {
+    const hmac = createHmac('sha256', config.security.encryptionKey);
+    for (const variable of variables) {
+      hmac.update(variable.key);
+      hmac.update('\0');
+      hmac.update(variable.isSecret ? 'secret' : 'plain');
+      hmac.update('\0');
+      hmac.update(variable.value);
+      hmac.update('\0');
+    }
+    return hmac.digest('hex');
   }
 
   private supportsProjectDelivery(version: string | null): boolean {

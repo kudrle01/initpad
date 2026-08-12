@@ -157,3 +157,83 @@ test('runs only the explicit Docker lifecycle acceptance interface', async () =>
   assert.deepEqual(progress, [25, 90]);
   assert.deepEqual(completions, ['succeeded:ok']);
 });
+
+test('downloads and runs a project artifact without exposing config to progress or completion', async () => {
+  const bytes = Buffer.from('archive');
+  const digest = 'd'.repeat(64);
+  const payload = {
+    allocationId: '123e4567-e89b-42d3-a456-426614174000',
+    namespace: 'team-alpha',
+    projectSlug: 'alice-api',
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    imageRef: `registry.test/alice/api:${'a'.repeat(40)}`,
+    containerPort: 3000,
+    healthPath: '/health',
+    configFingerprint: 'b'.repeat(64),
+  };
+  const delivery = {
+    artifact: {
+      path: '/api/agent/jobs/job-1/artifact',
+      sha256: digest,
+      sizeBytes: bytes.length,
+    },
+    envVars: { DATABASE_PASSWORD: 'top-secret' },
+  };
+  const progressMessages: string[] = [];
+  const completions: Array<Record<string, unknown>> = [];
+  const client: AgentJobClient = {
+    renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+    progress: async (_jobId, input) => {
+      progressMessages.push(input.message);
+      return summary({ sequence: input.sequence, percent: input.percent });
+    },
+    complete: async (_jobId, input) => {
+      completions.push(input as unknown as Record<string, unknown>);
+      return summary({ status: input.status, percent: 100 });
+    },
+    downloadArtifact: async (_jobId, leaseToken, path) => {
+      assert.equal(leaseToken, LEASE);
+      assert.equal(path, delivery.artifact.path);
+      return new Response(bytes, {
+        status: 200,
+        headers: {
+          'content-length': String(bytes.length),
+          'x-initpad-artifact-sha256': digest,
+        },
+      });
+    },
+  };
+  const lifecycleCalls: unknown[] = [];
+
+  await executeClaimedJob(
+    claim({ kind: 'deploy', payload, delivery }),
+    new AbortController().signal,
+    client,
+    {
+      lifecycle: {
+        acceptance: async () => undefined,
+        deployProject: async (receivedPayload, receivedDelivery, archive, _jobId, _signal, report) => {
+          lifecycleCalls.push(receivedPayload, receivedDelivery);
+          const chunks: Buffer[] = [];
+          for await (const chunk of archive) chunks.push(Buffer.from(chunk));
+          assert.deepEqual(Buffer.concat(chunks), bytes);
+          await report({ percent: 50, stage: 'working', message: 'Creating workload' });
+          return { state: 'running', revision: payload.revision, hostPort: 32780 };
+        },
+      },
+    },
+  );
+
+  assert.equal(lifecycleCalls.length, 2);
+  assert.deepEqual(progressMessages, ['Creating workload']);
+  assert.deepEqual(completions, [{
+    leaseToken: LEASE,
+    status: 'succeeded',
+    message: 'Deployment is running and healthy',
+    resultCode: 'ok',
+    result: { state: 'running', revision: payload.revision, hostPort: 32780 },
+  }]);
+  assert.equal(JSON.stringify(progressMessages).includes('top-secret'), false);
+  assert.equal(JSON.stringify(completions).includes('top-secret'), false);
+});
