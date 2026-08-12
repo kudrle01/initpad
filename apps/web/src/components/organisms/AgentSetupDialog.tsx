@@ -36,6 +36,12 @@ const STATE_LABEL: Record<string, string> = {
   disabled: 'disabled',
 };
 
+function hasExpiredLease(job: AgentJobSummary, now = Date.now()): boolean {
+  return job.status === 'leased'
+    && job.leaseExpiresAt !== null
+    && new Date(job.leaseExpiresAt).getTime() <= now;
+}
+
 function formatMemory(bytes: number): string {
   const gibibytes = bytes / (1024 ** 3);
   return `${gibibytes >= 10 ? gibibytes.toFixed(0) : gibibytes.toFixed(1)} GiB`;
@@ -162,36 +168,60 @@ export function AgentSetupDialog({
             </div>
 
             {protocolError && <p className="text-xs text-destructive">{protocolError}</p>}
+            {state === 'offline' && (
+              <div className="rounded-md border border-warning/40 bg-warning/5 p-2.5 text-xs">
+                <p className="font-medium">Agent is offline</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Protocol jobs remain safely queued and continue automatically after the Agent
+                  reconnects. No action is required in InitPad.
+                </p>
+              </div>
+            )}
             {jobs.length === 0 ? (
               <p className="text-xs text-muted-foreground">No protocol jobs yet.</p>
             ) : (
               <div className="flex flex-col gap-2">
-                {jobs.slice(0, 3).map((job) => (
-                  <div key={job.id} className="rounded-md bg-secondary/30 p-2.5">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-medium">{job.kind} · attempt {job.attempt}</span>
-                      <StatusBadge status={job.status} />
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {job.message ?? job.progressStage}
-                    </p>
-                    <div
-                      className="mt-2 h-1.5 overflow-hidden rounded-full bg-border"
-                      role="progressbar"
-                      aria-label={`${job.kind} job progress`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={job.progressPercent}
-                    >
+                <p className="text-xs font-medium text-muted-foreground">
+                  Recent protocol tests · newest first
+                </p>
+                {jobs.slice(0, 3).map((job) => {
+                  const leaseExpired = hasExpiredLease(job);
+                  const displayStatus = leaseExpired ? 'waiting' : job.status;
+                  const displayMessage = leaseExpired
+                    ? 'Lease expired. Waiting for the Agent to reconnect and retry automatically.'
+                    : (job.message ?? job.progressStage);
+                  return (
+                    <div key={job.id} className="rounded-md bg-secondary/30 p-2.5">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-medium">{job.kind} · attempt {job.attempt}</span>
+                        <StatusBadge status={displayStatus} />
+                      </div>
+                      <time className="mt-0.5 block text-[11px] text-muted-foreground" dateTime={job.createdAt}>
+                        {new Date(job.createdAt).toLocaleString()}
+                      </time>
+                      <p className="mt-1 text-xs text-muted-foreground">{displayMessage}</p>
                       <div
-                        className={`h-full rounded-full transition-[width] duration-500 ${
-                          job.status === 'failed' ? 'bg-destructive' : 'bg-primary'
-                        }`}
-                        style={{ width: `${job.progressPercent}%` }}
-                      />
+                        className="mt-2 h-1.5 overflow-hidden rounded-full bg-border"
+                        role="progressbar"
+                        aria-label={`${job.kind} job progress`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={job.progressPercent}
+                      >
+                        <div
+                          className={`h-full rounded-full transition-[width] duration-500 ${
+                            job.status === 'failed'
+                              ? 'bg-destructive'
+                              : leaseExpired
+                                ? 'bg-warning'
+                                : 'bg-primary'
+                          }`}
+                          style={{ width: `${job.progressPercent}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

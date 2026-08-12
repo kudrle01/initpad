@@ -11,6 +11,7 @@ const DEPLOY_CLASS: Record<string, string> = {
   pending: 'bg-warning',
   queued: 'bg-muted-foreground/40',
   leased: 'bg-warning animate-pulse',
+  waiting: 'bg-warning',
   succeeded: 'bg-success',
   cancelled: 'bg-muted-foreground/70',
   failed: 'bg-destructive',
