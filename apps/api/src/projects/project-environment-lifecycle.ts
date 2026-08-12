@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { repositoryRef } from '../scm/scm-provider';
 import { TemplatesService } from '../templates/templates.service';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
+import { ProjectAgentDelivery, type AgentProjectAction } from './project-agent-delivery';
 import { deployedImageRef, deploymentSlug } from './project-deployment-identity';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
 
@@ -26,15 +27,32 @@ export class ProjectEnvironmentLifecycle {
     private readonly deployment: DeploymentService,
     private readonly targets: ProjectEnvironmentTargets,
     private readonly operations: ProjectDeploymentOperations,
+    private readonly agentDelivery: ProjectAgentDelivery,
   ) {}
 
   async stop(projectId: string, envName: EnvName): Promise<void> {
-    const { environment, slug } = await this.context(projectId, envName);
+    const { project, template, environment, slug } = await this.context(projectId, envName);
     if (environment.activeOperationId) {
       throw new BadRequestException(`Environment '${envName}' has an active operation`);
     }
     if (environment.status !== 'running') {
       throw new BadRequestException(`Environment '${envName}' is not running`);
+    }
+    if (this.isAgentBacked(environment)) {
+      const operationId = await this.operations.begin(
+        projectId,
+        envName,
+        'stop',
+        environment.version,
+        environment.buildArtifactId,
+      );
+      try {
+        await this.queueAgentLifecycle(project, template, environment, slug, 'stop', operationId);
+      } catch (error) {
+        await this.failQueuedLifecycle(environment.id, operationId, 'running', error);
+        throw error;
+      }
+      return;
     }
     await this.deployment.stop(environment.provider as ProviderKind, {
       projectName: slug,
@@ -68,11 +86,12 @@ export class ProjectEnvironmentLifecycle {
   }
 
   async remove(projectId: string, envName: EnvName): Promise<void> {
-    const { project, environment, slug } = await this.context(projectId, envName);
+    const { project, template, environment, slug } = await this.context(projectId, envName);
     const repository = repositoryRef(project);
     if (environment.activeOperationId) {
       const operation = await this.prisma.deploymentOperation.findUnique({
         where: { id: environment.activeOperationId },
+        include: { agentJob: true, buildArtifact: true },
       });
       // A CI retry is only waiting for the SCM workflow. Finish it
       // synchronously so an eventual callback cannot revive this environment.
@@ -93,6 +112,60 @@ export class ProjectEnvironmentLifecycle {
         ]);
         return;
       }
+      if (operation?.agentJob && this.isAgentBacked(environment)) {
+        const now = new Date();
+        await this.prisma.$transaction([
+          this.prisma.agentJob.updateMany({
+            where: { id: operation.agentJob.id, status: { in: ['queued', 'leased'] } },
+            data: {
+              status: 'cancelled',
+              message: 'Cancellation requested by user',
+              leaseExpiresAt: null,
+              finishedAt: now,
+            },
+          }),
+          this.prisma.deploymentOperation.update({
+            where: { id: operation.id },
+            data: {
+              status: 'cancelled',
+              message: 'Cancellation requested by user',
+              finishedAt: now,
+            },
+          }),
+          this.prisma.environment.update({
+            where: { id: environment.id },
+            data: { activeOperationId: null, statusReason: 'Cancellation requested — cleaning up' },
+          }),
+        ]);
+        const cleanupVersion = operation.version ?? environment.version;
+        if (!cleanupVersion) throw new BadRequestException('Cancelled Agent deployment has no revision to clean up');
+        const cleanupOperationId = await this.operations.begin(
+          projectId,
+          envName,
+          'remove',
+          cleanupVersion,
+          operation.buildArtifactId ?? environment.buildArtifactId,
+        );
+        const cleanupEnvironment = {
+          ...environment,
+          version: cleanupVersion,
+          buildArtifact: operation.buildArtifact ?? environment.buildArtifact,
+        };
+        try {
+          await this.queueAgentLifecycle(
+            project,
+            template,
+            cleanupEnvironment,
+            slug,
+            'remove',
+            cleanupOperationId,
+          );
+        } catch (error) {
+          await this.failQueuedLifecycle(environment.id, cleanupOperationId, 'failed', error);
+          throw error;
+        }
+        return;
+      }
       await this.prisma.$transaction([
         this.prisma.deploymentOperation.update({
           where: { id: environment.activeOperationId },
@@ -103,6 +176,29 @@ export class ProjectEnvironmentLifecycle {
           data: { statusReason: 'Cancellation requested — cleaning up' },
         }),
       ]);
+      return;
+    }
+    if (this.isAgentBacked(environment)) {
+      if (!environment.version) {
+        await this.prisma.environment.update({
+          where: { id: environment.id },
+          data: this.emptyState(),
+        });
+        return;
+      }
+      const operationId = await this.operations.begin(
+        projectId,
+        envName,
+        'remove',
+        environment.version,
+        environment.buildArtifactId,
+      );
+      try {
+        await this.queueAgentLifecycle(project, template, environment, slug, 'remove', operationId);
+      } catch (error) {
+        await this.failQueuedLifecycle(environment.id, operationId, environment.status, error);
+        throw error;
+      }
       return;
     }
     const teardown = await this.deployment.teardown(environment.provider as ProviderKind, {
@@ -166,6 +262,17 @@ export class ProjectEnvironmentLifecycle {
     try {
       const { project, template, environment, slug } = await this.context(projectId, envName);
       const repository = repositoryRef(project);
+      if (this.isAgentBacked(environment)) {
+        await this.queueAgentLifecycle(
+          project,
+          template,
+          environment,
+          slug,
+          'start',
+          operationId,
+        );
+        return;
+      }
       const appPort = this.usesSharedSshPort(environment)
         ? await this.allocateSharedSshPort(projectId, envName)
         : undefined;
@@ -238,6 +345,47 @@ export class ProjectEnvironmentLifecycle {
       environment,
       slug: deploymentSlug(repositoryRef(project)),
     };
+  }
+
+  private isAgentBacked(environment: { provider: string; target?: { scope: string } | null }): boolean {
+    return environment.provider === 'docker' && environment.target?.scope === 'user';
+  }
+
+  private async queueAgentLifecycle(
+    project: Awaited<ReturnType<PrismaService['project']['findUniqueOrThrow']>>,
+    template: ReturnType<TemplatesService['get']>,
+    environment: {
+      version: string | null;
+      buildArtifact?: { commitSha: string; providerRunId: string } | null;
+    },
+    slug: string,
+    kind: AgentProjectAction,
+    operationId: string,
+  ): Promise<void> {
+    const imageRef = deployedImageRef(repositoryRef(project), environment);
+    if (!environment.version || !imageRef) {
+      throw new BadRequestException(`Agent ${kind} requires a verified deployed image`);
+    }
+    await this.agentDelivery.queueLifecycle(operationId, kind, {
+      projectSlug: slug,
+      imageRef,
+      containerPort: template.port ?? 8080,
+      healthPath: template.healthPath ?? '/health',
+    });
+  }
+
+  private async failQueuedLifecycle(
+    environmentId: string,
+    operationId: string,
+    status: string,
+    error: unknown,
+  ): Promise<void> {
+    const message = error instanceof Error ? error.message : 'Could not queue Agent operation';
+    await this.prisma.environment.updateMany({
+      where: { id: environmentId, activeOperationId: operationId },
+      data: { status, statusReason: message, activeOperationId: null },
+    });
+    await this.operations.complete(operationId, 'failed', message);
   }
 
   emptyState(statusReason: string | null = null) {

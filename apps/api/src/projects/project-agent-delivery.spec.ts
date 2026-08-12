@@ -131,6 +131,29 @@ describe('ProjectAgentDelivery', () => {
     expect(oldAgent.prisma.agentJob.upsert).not.toHaveBeenCalled();
   });
 
+  it('queues stop/start/remove without attaching artifact bytes or secrets', async () => {
+    for (const kind of ['start', 'stop', 'remove'] as const) {
+      const { service, prisma } = setup();
+      await service.queueLifecycle('operation-1', kind, intent);
+      const create = prisma.agentJob.upsert.mock.calls[0][0].create as Record<string, unknown>;
+      expect(create.kind).toBe(kind);
+      expect(create.deploymentOperationId).toBe('operation-1');
+      expect(create.payload).toEqual(expect.objectContaining({
+        imageRef: intent.imageRef,
+        configFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }));
+      expect(JSON.stringify(create)).not.toContain('DATABASE_PASSWORD');
+      expect(JSON.stringify(create)).not.toContain('enc:v1:opaque');
+      expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'environment-1', activeOperationId: 'operation-1' },
+        data: expect.objectContaining({
+          status: 'deploying',
+          ...(kind === 'remove' ? { deploymentRequired: false } : {}),
+        }),
+      });
+    }
+  });
+
   it('rejects a cross-workspace allocation before queuing side effects', async () => {
     const row = operation({
       environment: {

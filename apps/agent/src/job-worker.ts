@@ -5,7 +5,7 @@ import {
   parseProjectDelivery,
   parseProjectPayload,
 } from './docker-lifecycle.js';
-import type { DockerLifecycleProgress } from './docker-lifecycle.js';
+import type { DockerLifecyclePayload, DockerLifecycleProgress } from './docker-lifecycle.js';
 import type { AgentJobClaim, AgentJobResult, AgentJobSummary } from './types.js';
 
 const RENEW_EVERY_MS = 10_000;
@@ -81,6 +81,10 @@ export interface LifecycleRunner {
     signal: AbortSignal,
     report: (progress: DockerLifecycleProgress) => Promise<void>,
   ): Promise<AgentJobResult>;
+  start?(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void>;
+  stop?(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void>;
+  removeProject?(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void>;
+  status?(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<AgentJobResult>;
 }
 
 export interface JobExecutionOptions {
@@ -138,12 +142,112 @@ export async function executeClaimedJob(
       timing,
     );
 
-  if (job.protocolVersion !== 1 || !['probe', 'lifecycle-test', 'deploy'].includes(job.kind)) {
+  if (
+    job.protocolVersion !== 1
+    || !['probe', 'lifecycle-test', 'deploy', 'start', 'stop', 'remove'].includes(job.kind)
+  ) {
     await complete({
       leaseToken: job.leaseToken,
       status: 'failed',
       message: `Agent ${job.protocolVersion === 1 ? 'does not support this job kind' : 'does not support this protocol version'}`,
       resultCode: 'unsupported_job',
+    });
+    return;
+  }
+
+  if (['start', 'stop', 'remove'].includes(job.kind)) {
+    let payload: ReturnType<typeof parseProjectPayload>;
+    try {
+      payload = parseProjectPayload(job.payload);
+    } catch (error) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Project lifecycle payload is invalid',
+        resultCode: 'invalid_payload',
+      });
+      return;
+    }
+    const lifecycle = options.lifecycle ?? new DockerLifecycle(job.targetId, options.dockerHost);
+    if (!lifecycle.start || !lifecycle.stop || !lifecycle.removeProject || !lifecycle.status) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: 'Agent does not support project lifecycle operations',
+        resultCode: 'unsupported_job',
+      });
+      return;
+    }
+    const localController = new AbortController();
+    const combinedSignal = AbortSignal.any([signal, localController.signal]);
+    let renewalError: unknown;
+    const renewal = renewLeaseLoop(
+      job,
+      client,
+      timing,
+      combinedSignal,
+      localController,
+      () => leaseDeadline,
+      (deadline) => { leaseDeadline = deadline; },
+      (error) => { renewalError = error; },
+    );
+    let actionError: unknown;
+    let result: AgentJobResult | undefined;
+    try {
+      await retryProtocolCall(
+        () => client.progress(job.id, {
+          leaseToken: job.leaseToken,
+          sequence: 1,
+          percent: 20,
+          stage: 'working',
+          message: `${job.kind === 'remove' ? 'Removing' : job.kind === 'stop' ? 'Stopping' : 'Starting'} managed workload`,
+        }),
+        () => leaseDeadline,
+        combinedSignal,
+        timing,
+      );
+      if (job.kind === 'start') await lifecycle.start(payload, combinedSignal);
+      if (job.kind === 'stop') await lifecycle.stop(payload, combinedSignal);
+      if (job.kind === 'remove') await lifecycle.removeProject(payload, combinedSignal);
+      result = await lifecycle.status(payload, combinedSignal);
+      await retryProtocolCall(
+        () => client.progress(job.id, {
+          leaseToken: job.leaseToken,
+          sequence: 2,
+          percent: 95,
+          stage: 'verifying',
+          message: 'Verifying managed workload state',
+        }),
+        () => leaseDeadline,
+        combinedSignal,
+        timing,
+      );
+    } catch (error) {
+      actionError = error;
+    } finally {
+      localController.abort();
+      await renewal;
+    }
+    if (signal.aborted) return;
+    if (renewalError) throw renewalError;
+    if (actionError instanceof ControlPlaneError && [401, 403, 409].includes(actionError.status)) {
+      throw actionError;
+    }
+    if (actionError || !result) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: (actionError instanceof Error ? actionError.message : 'Agent lifecycle action failed').slice(0, 240),
+        resultCode: 'lifecycle_failed',
+      });
+      return;
+    }
+    await complete({
+      leaseToken: job.leaseToken,
+      status: 'succeeded',
+      message: `Managed workload ${job.kind} completed`,
+      resultCode: 'ok',
+      result,
     });
     return;
   }

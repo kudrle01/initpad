@@ -13,6 +13,8 @@ import { decryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentsService, type AuthenticatedAgent } from './agents.service';
+import { agentConfigFingerprint } from './agent-config-fingerprint';
+import { agentVersionAtLeast, MIN_LIFECYCLE_AGENT_VERSION } from './agent-version';
 import {
   AgentJobCompleteDto,
   AgentJobProgressDto,
@@ -23,7 +25,6 @@ import {
 const LEASE_MS = 30_000;
 const NEXT_POLL_SECONDS = 2;
 const LEASE_PREFIX = 'initpad_lease_';
-const MIN_LIFECYCLE_AGENT_VERSION = [0, 3, 0] as const;
 const LIFECYCLE_TEST_IMAGE = 'nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa';
 
 interface JobRow {
@@ -290,9 +291,20 @@ export class AgentJobsService implements OnModuleInit {
       });
       if (claimed.count !== 1) continue;
       const row = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: candidate.id } });
-      const delivery = ['deploy', 'rollback'].includes(row.kind)
-        ? await this.deliveryForLease(agent, row.id, leaseToken)
-        : undefined;
+      let delivery: AgentJobDelivery | undefined;
+      if (['deploy', 'rollback'].includes(row.kind)) {
+        try {
+          delivery = await this.deliveryForLease(agent, row.id, leaseToken);
+        } catch (error) {
+          await this.failInvalidDelivery(
+            agent,
+            row.id,
+            leaseToken,
+            error instanceof Error ? error.message : 'Agent delivery could not be prepared',
+          );
+          continue;
+        }
+      }
       return {
         job: {
           id: row.id,
@@ -475,6 +487,21 @@ export class AgentJobsService implements OnModuleInit {
       && result?.state === 'running'
       && result.revision === operation.version
       && result.hostPort !== undefined;
+    const successfulStart =
+      job.kind === 'start'
+      && job.status === 'succeeded'
+      && result?.state === 'running'
+      && result.revision === operation.version
+      && result.hostPort !== undefined;
+    const successfulStop =
+      job.kind === 'stop'
+      && job.status === 'succeeded'
+      && result?.state === 'stopped'
+      && result.revision === operation.version;
+    const successfulRemove =
+      job.kind === 'remove'
+      && job.status === 'succeeded'
+      && result?.state === 'missing';
     const now = new Date();
     if (successfulDeploy) {
       const url = this.workloadUrl(operation.environment.target?.publicUrl, result.hostPort!);
@@ -498,6 +525,34 @@ export class AgentJobsService implements OnModuleInit {
       ]);
       return;
     }
+    if (successfulStart) {
+      const url = this.workloadUrl(operation.environment.target?.publicUrl, result.hostPort!);
+      await this.finishLifecycle(operation, job.message, {
+        status: 'running',
+        url,
+        statusReason: null,
+      });
+      return;
+    }
+    if (successfulStop) {
+      await this.finishLifecycle(operation, job.message, {
+        status: 'stopped',
+        statusReason: null,
+      });
+      return;
+    }
+    if (successfulRemove) {
+      await this.finishLifecycle(operation, job.message, {
+        status: 'empty',
+        version: null,
+        buildArtifactId: null,
+        url: null,
+        statusReason: null,
+        allocatedPort: null,
+        deploymentRequired: false,
+      });
+      return;
+    }
     const reason = job.status === 'failed'
       ? (job.message || 'Agent deployment failed')
       : 'Agent returned an invalid deployment result';
@@ -514,6 +569,26 @@ export class AgentJobsService implements OnModuleInit {
       this.prisma.deploymentOperation.updateMany({
         where: { id: operation.id, status: 'running', finishedAt: null },
         data: { status: 'failed', message: reason, finishedAt: now },
+      }),
+    ]);
+  }
+
+  private async finishLifecycle(
+    operation: {
+      id: string;
+      environmentId: string;
+    },
+    message: string | null,
+    environmentData: Record<string, unknown>,
+  ): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.environment.updateMany({
+        where: { id: operation.environmentId, activeOperationId: operation.id },
+        data: { ...environmentData, activeOperationId: null },
+      }),
+      this.prisma.deploymentOperation.updateMany({
+        where: { id: operation.id, status: 'running', finishedAt: null },
+        data: { status: 'succeeded', message, finishedAt: new Date() },
       }),
     ]);
   }
@@ -580,6 +655,18 @@ export class AgentJobsService implements OnModuleInit {
     const binding = await this.deliveryBinding(agent, jobId, leaseToken);
     if (!binding) throw this.lostLease();
     const artifact = this.assertDeliveryBinding(binding);
+    const payload = this.objectRecord(binding.payload);
+    const queuedFingerprint = typeof payload?.configFingerprint === 'string'
+      ? payload.configFingerprint
+      : '';
+    const currentFingerprint = agentConfigFingerprint(
+      binding.deploymentOperation!.environment.configVars,
+    );
+    if (!queuedFingerprint || queuedFingerprint !== currentFingerprint) {
+      throw new BadRequestException(
+        'Application config changed after this deployment was queued; start a new deployment',
+      );
+    }
     const sizeBytes = this.safeSize(artifact.sizeBytes);
     const object = await this.artifactStore.head(artifact.storageRef);
     if (!object || object.sizeBytes !== sizeBytes) {
@@ -610,6 +697,7 @@ export class AgentJobsService implements OnModuleInit {
       where: this.activeLeaseWhere(agent, jobId, leaseToken, new Date()),
       select: {
         kind: true,
+        payload: true,
         targetId: true,
         allocationId: true,
         deploymentOperation: {
@@ -664,6 +752,34 @@ export class AgentJobsService implements OnModuleInit {
     return digest;
   }
 
+  private objectRecord(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null;
+  }
+
+  private async failInvalidDelivery(
+    agent: AuthenticatedAgent,
+    jobId: string,
+    leaseToken: string,
+    message: string,
+  ): Promise<void> {
+    const now = new Date();
+    const failed = await this.prisma.agentJob.updateMany({
+      where: this.activeLeaseWhere(agent, jobId, leaseToken, now),
+      data: {
+        status: 'failed',
+        progressStage: 'failed',
+        message: message.slice(0, 500),
+        resultCode: 'delivery_invalid',
+        result: Prisma.DbNull,
+        leaseExpiresAt: null,
+        finishedAt: now,
+      },
+    });
+    if (failed.count === 1) await this.reconcileTerminalJob(jobId);
+  }
+
   private safeSize(value: bigint): number {
     const size = Number(value);
     if (!Number.isSafeInteger(size) || size < 1) {
@@ -694,16 +810,7 @@ export class AgentJobsService implements OnModuleInit {
   }
 
   private supportsLifecycle(version: string | null): boolean {
-    if (!version) return false;
-    const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
-    if (!match) return false;
-    const actual = match.slice(1).map(Number);
-    for (let index = 0; index < MIN_LIFECYCLE_AGENT_VERSION.length; index += 1) {
-      if (actual[index] !== MIN_LIFECYCLE_AGENT_VERSION[index]) {
-        return actual[index] > MIN_LIFECYCLE_AGENT_VERSION[index];
-      }
-    }
-    return true;
+    return agentVersionAtLeast(version, MIN_LIFECYCLE_AGENT_VERSION);
   }
 
   private summary(row: JobRow): AgentJobSummary {

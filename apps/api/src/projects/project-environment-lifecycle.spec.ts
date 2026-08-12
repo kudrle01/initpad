@@ -19,6 +19,7 @@ function make(
   prisma: Record<string, unknown>,
   deployment: Record<string, unknown> = {},
   operations: Record<string, unknown> = {},
+  agentDelivery: Record<string, unknown> = {},
 ) {
   return new ProjectEnvironmentLifecycle(
     prisma as never,
@@ -35,6 +36,7 @@ function make(
       allocation: jest.fn(() => undefined),
     } as never,
     operations as never,
+    agentDelivery as never,
   );
 }
 
@@ -76,6 +78,40 @@ describe('ProjectEnvironmentLifecycle', () => {
       where: { projectId_name: { projectId: 'project-1', name: 'dev' } },
       data: { status: 'stopped', statusReason: null },
     });
+  });
+
+  it('queues Agent stop without touching the control-plane Docker provider', async () => {
+    const environment = {
+      id: 'env-1',
+      provider: 'docker',
+      status: 'running',
+      version: 'a'.repeat(40),
+      buildArtifactId: 'artifact-1',
+      activeOperationId: null,
+      target: { scope: 'user' },
+      allocation: { id: 'allocation-1' },
+      buildArtifact: null,
+    };
+    const prisma = {
+      project: { findUniqueOrThrow: jest.fn(async () => PROJECT) },
+      environment: { findUniqueOrThrow: jest.fn(async () => environment), updateMany: jest.fn() },
+    };
+    const deployment = { stop: jest.fn() };
+    const operations = { begin: jest.fn(async () => 'operation-1') };
+    const agentDelivery = { queueLifecycle: jest.fn(async () => undefined) };
+    const lifecycle = make(prisma, deployment, operations, agentDelivery);
+
+    await lifecycle.stop('project-1', 'dev');
+
+    expect(operations.begin).toHaveBeenCalledWith(
+      'project-1', 'dev', 'stop', 'a'.repeat(40), 'artifact-1',
+    );
+    expect(agentDelivery.queueLifecycle).toHaveBeenCalledWith(
+      'operation-1',
+      'stop',
+      expect.objectContaining({ projectSlug: 'acme-api', containerPort: 3000 }),
+    );
+    expect(deployment.stop).not.toHaveBeenCalled();
   });
 
   it('rejects stop while another operation owns the environment lock', async () => {

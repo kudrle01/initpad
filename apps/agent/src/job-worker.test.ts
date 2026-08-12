@@ -237,3 +237,51 @@ test('downloads and runs a project artifact without exposing config to progress 
   assert.equal(JSON.stringify(progressMessages).includes('top-secret'), false);
   assert.equal(JSON.stringify(completions).includes('top-secret'), false);
 });
+
+test('executes only explicit project stop/start/remove lifecycle methods', async () => {
+  const payload = {
+    allocationId: '123e4567-e89b-42d3-a456-426614174000',
+    namespace: 'team-alpha',
+    projectSlug: 'alice-api',
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    imageRef: `registry.test/alice/api:${'a'.repeat(40)}`,
+    containerPort: 3000,
+    healthPath: '/health',
+    configFingerprint: 'b'.repeat(64),
+  };
+  for (const kind of ['stop', 'start', 'remove'] as const) {
+    const calls: string[] = [];
+    const completions: Array<Record<string, unknown>> = [];
+    const client: AgentJobClient = {
+      renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+      progress: async (_jobId, input) => summary({ sequence: input.sequence, percent: input.percent }),
+      complete: async (_jobId, input) => {
+        completions.push(input as unknown as Record<string, unknown>);
+        return summary({ status: input.status });
+      },
+    };
+    await executeClaimedJob(
+      claim({ kind, payload }),
+      new AbortController().signal,
+      client,
+      {
+        lifecycle: {
+          acceptance: async () => undefined,
+          start: async () => { calls.push('start'); },
+          stop: async () => { calls.push('stop'); },
+          removeProject: async () => { calls.push('remove'); },
+          status: async () => kind === 'remove'
+            ? { state: 'missing' }
+            : { state: kind === 'stop' ? 'stopped' : 'running', revision: payload.revision, hostPort: 32780 },
+        },
+      },
+    );
+    assert.deepEqual(calls, [kind]);
+    assert.equal(completions[0]?.status, 'succeeded');
+    assert.deepEqual(
+      (completions[0]?.result as Record<string, unknown>).state,
+      kind === 'remove' ? 'missing' : kind === 'stop' ? 'stopped' : 'running',
+    );
+  }
+});

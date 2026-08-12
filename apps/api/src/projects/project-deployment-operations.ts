@@ -92,8 +92,15 @@ export class ProjectDeploymentOperations {
       data: {
         activeOperationId: operation.id,
         status: 'deploying',
-        statusReason: kind === 'start' ? 'Starting environment' : 'Preparing deployment',
-        ...(kind !== 'start' ? { deploymentRequired: true } : {}),
+        statusReason:
+          kind === 'start'
+            ? 'Starting environment'
+            : kind === 'stop'
+              ? 'Stopping environment'
+              : kind === 'remove'
+                ? 'Removing deployment'
+                : 'Preparing deployment',
+        ...(!['start', 'stop', 'remove'].includes(kind) ? { deploymentRequired: true } : {}),
       },
     });
     if (claimed.count === 1) return operation.id;

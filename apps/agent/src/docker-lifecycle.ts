@@ -531,6 +531,13 @@ export class DockerLifecycle {
     }
   }
 
+  async removeProject(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
+    const desired = this.validatedPayload(payload);
+    await this.remove(desired, signal);
+    await this.removeImage(desired.imageRef, signal);
+    await this.removeNetworkIfEmpty(desired, signal);
+  }
+
   async status(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<DockerWorkloadStatus> {
     const desired = this.validatedPayload(payload);
     const container = await this.ownedContainer(this.containerName(desired), desired, signal);

@@ -3,6 +3,7 @@ import { Readable } from 'stream';
 import { encryptSecret } from '../common/secret';
 import { hashToken } from '../common/token';
 import { AgentJobsService } from './agent-jobs.service';
+import { agentConfigFingerprint } from './agent-config-fingerprint';
 
 const NOW = new Date('2026-08-12T09:00:00.000Z');
 const AGENT = {
@@ -104,8 +105,13 @@ function setup() {
 }
 
 function deliveryBinding(overrides: Record<string, unknown> = {}) {
+  const configVars = [
+    { key: 'APP_MODE', value: 'production', isSecret: false },
+    { key: 'DATABASE_PASSWORD', value: encryptSecret('db-secret'), isSecret: true },
+  ];
   return {
     kind: 'deploy',
+    payload: { configFingerprint: agentConfigFingerprint(configVars) },
     targetId: 'target-1',
     allocationId: 'allocation-1',
     deploymentOperation: {
@@ -119,10 +125,7 @@ function deliveryBinding(overrides: Record<string, unknown> = {}) {
       environment: {
         targetId: 'target-1',
         allocationId: 'allocation-1',
-        configVars: [
-          { key: 'APP_MODE', value: 'production', isSecret: false },
-          { key: 'DATABASE_PASSWORD', value: encryptSecret('db-secret'), isSecret: true },
-        ],
+        configVars,
       },
     },
     ...overrides,
@@ -293,6 +296,35 @@ describe('AgentJobsService durable lease protocol', () => {
     expect((result.job?.payload as Record<string, unknown>)).not.toHaveProperty('envVars');
     expect(JSON.stringify(prisma.agentJob.updateMany.mock.calls)).not.toContain('db-secret');
     expect(artifactStore.head).toHaveBeenCalledWith('artifacts/ws/project/artifact/a.tar');
+  });
+
+  it('fails a claimed deploy instead of delivering config changed after queueing', async () => {
+    const { service, prisma, artifactStore } = setup();
+    prisma.agentJob.findFirst
+      .mockResolvedValueOnce({ id: 'job-1', status: 'queued', leaseTokenHash: null })
+      .mockResolvedValueOnce(deliveryBinding({
+        payload: { configFingerprint: 'f'.repeat(64) },
+      }))
+      .mockResolvedValueOnce(null);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({ kind: 'deploy' }));
+    prisma.agentJob.findUnique.mockResolvedValue(job({
+      kind: 'deploy',
+      status: 'failed',
+      deploymentOperation: null,
+    }));
+
+    await expect(service.claim('Bearer credential')).resolves.toEqual({
+      job: null,
+      nextPollSeconds: 2,
+    });
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: 'failed',
+        resultCode: 'delivery_invalid',
+        message: expect.stringContaining('config changed'),
+      }),
+    }));
+    expect(artifactStore.head).not.toHaveBeenCalled();
   });
 
   it('streams a verified artifact only under the current target lease', async () => {
@@ -486,6 +518,47 @@ describe('AgentJobsService durable lease protocol', () => {
       data: expect.objectContaining({
         status: 'failed',
         statusReason: 'Agent returned an invalid deployment result',
+        activeOperationId: null,
+      }),
+    });
+  });
+
+  it('clears deployment identity only after a successful Agent remove result', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'remove',
+      status: 'succeeded',
+      result: { state: 'missing' },
+      message: 'Managed workload remove completed',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-1',
+        status: 'running',
+        finishedAt: null,
+        version: 'a'.repeat(40),
+        environment: { target: { publicUrl: 'https://apps.example.test' } },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Managed workload remove completed',
+      resultCode: 'ok',
+      result: { state: 'missing' },
+    });
+
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'environment-1', activeOperationId: 'operation-1' },
+      data: expect.objectContaining({
+        status: 'empty',
+        version: null,
+        buildArtifactId: null,
+        url: null,
+        deploymentRequired: false,
         activeOperationId: null,
       }),
     });

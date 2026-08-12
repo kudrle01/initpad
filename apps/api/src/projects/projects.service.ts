@@ -105,12 +105,14 @@ export class ProjectsService implements OnModuleInit {
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
     this.operations = new ProjectDeploymentOperations(prisma);
+    const agentDelivery = new ProjectAgentDelivery(prisma, artifactStore);
     this.environmentLifecycle = new ProjectEnvironmentLifecycle(
       prisma,
       templates,
       deployment,
       this.environmentTargets,
       this.operations,
+      agentDelivery,
     );
     this.deploymentPreparation = new ProjectDeploymentPreparation(
       deployment,
@@ -126,7 +128,7 @@ export class ProjectsService implements OnModuleInit {
       this.operations,
       this.deploymentPreparation,
       this.artifactLifecycle,
-      new ProjectAgentDelivery(prisma, artifactStore),
+      agentDelivery,
       (projectId) => this.actorForProject(projectId),
     );
     this.artifactIngestion = new ProjectArtifactIngestion(
@@ -1630,6 +1632,22 @@ export class ProjectsService implements OnModuleInit {
       confirmCleanupDebt?: boolean;
     },
   ): Promise<void> {
+    const remoteAgentDeployments = row.environments.filter(
+      (environment) =>
+        environment.target?.scope === 'user'
+        && environment.target.kind === 'docker'
+        && (
+          environment.status !== 'empty'
+          || environment.version !== null
+          || environment.activeOperationId !== null
+        ),
+    );
+    if (remoteAgentDeployments.length > 0) {
+      throw new BadRequestException(
+        `Remove Agent-managed deployments first (${remoteAgentDeployments.map((item) => item.name).join(', ')}). `
+        + 'The project can be deleted after their cleanup jobs succeed.',
+      );
+    }
     const repository = repositoryRef(row);
     await this.prisma.deploymentOperation.updateMany({
       where: { environment: { projectId: row.id }, finishedAt: null },
@@ -1876,6 +1894,11 @@ export class ProjectsService implements OnModuleInit {
     }
     const movingAway = !!env.targetId && targetChanged && env.status !== 'empty';
     if (movingAway) {
+      if (env.target?.scope === 'user' && env.target.kind === 'docker') {
+        throw new BadRequestException(
+          `Remove the Agent-managed '${envName}' deployment before changing its target.`,
+        );
+      }
       const repository = repositoryRef(project);
       const slug = deploymentSlug(repository);
       // Do not bind the new target until teardown succeeds; otherwise a failed

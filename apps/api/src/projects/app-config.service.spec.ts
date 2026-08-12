@@ -75,6 +75,25 @@ describe('AppConfigService (ADR-061 FC.3)', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('does not mutate config while an environment operation is active', async () => {
+    const prisma = {
+      environment: {
+        findUnique: jest.fn(async () => ({ id: 'env-1', activeOperationId: 'operation-1' })),
+      },
+      appConfigVar: { upsert: jest.fn(), deleteMany: jest.fn() },
+    };
+    const { service } = make(prisma);
+
+    await expect(
+      service.upsert('u1', 'p1', 'dev', 'GREETING', { value: 'new' }),
+    ).rejects.toThrow('is busy');
+    await expect(
+      service.remove('u1', 'p1', 'dev', 'GREETING'),
+    ).rejects.toThrow('is busy');
+    expect(prisma.appConfigVar.upsert).not.toHaveBeenCalled();
+    expect(prisma.appConfigVar.deleteMany).not.toHaveBeenCalled();
+  });
+
   it('masks secrets when listing', async () => {
     const prisma = {
       environment: envLookup,

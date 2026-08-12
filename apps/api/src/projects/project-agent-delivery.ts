@@ -1,10 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { agentConfigFingerprint } from '../agents/agent-config-fingerprint';
+import { MIN_PROJECT_AGENT_VERSION, supportsProjectAgent } from '../agents/agent-version';
 import { ArtifactStore } from '../artifacts/artifact-store';
-import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
-
-const MIN_PROJECT_AGENT_VERSION = [0, 4, 0] as const;
 
 export interface AgentDeploymentIntent {
   projectSlug: string;
@@ -12,6 +10,8 @@ export interface AgentDeploymentIntent {
   containerPort: number;
   healthPath: string;
 }
+
+export type AgentProjectAction = 'start' | 'stop' | 'remove';
 
 /** Creates the durable, non-secret handoff for one project deployment. */
 export class ProjectAgentDelivery {
@@ -29,41 +29,9 @@ export class ProjectAgentDelivery {
         'Agent deployment requires durable artifact storage; configure the S3/MinIO artifact bucket',
       );
     }
-    const operation = await this.prisma.deploymentOperation.findUnique({
-      where: { id: operationId },
-      include: {
-        buildArtifact: true,
-        environment: {
-          include: {
-            project: { select: { workspaceId: true } },
-            target: { include: { agent: true } },
-            allocation: true,
-            configVars: {
-              orderBy: { key: 'asc' },
-              select: { key: true, value: true, isSecret: true },
-            },
-          },
-        },
-      },
-    });
-    if (!operation || operation.status !== 'running' || operation.finishedAt) {
-      throw new BadRequestException('Deployment operation is no longer active');
-    }
-    const environment = operation.environment;
-    const target = environment.target;
-    const allocation = environment.allocation;
+    const operation = await this.loadOperation(operationId);
+    const { environment, target, allocation } = this.assertAgentBinding(operation);
     const artifact = operation.buildArtifact;
-    if (
-      !target
-      || target.kind !== 'docker'
-      || target.scope !== 'user'
-      || target.workspaceId !== environment.project.workspaceId
-      || !allocation
-      || allocation.targetId !== target.id
-      || allocation.workspaceId !== environment.project.workspaceId
-    ) {
-      throw new BadRequestException('Deployment is not bound to a workspace Agent allocation');
-    }
     if (
       !artifact
       || artifact.projectId !== environment.projectId
@@ -72,14 +40,6 @@ export class ProjectAgentDelivery {
       || !artifact.storageRef
     ) {
       throw new BadRequestException('Agent deployment requires an available verified build artifact');
-    }
-    if (!target.agent?.credentialHash || target.agent.disabledAt) {
-      throw new BadRequestException('Enroll the target Agent before deploying to it');
-    }
-    if (!this.supportsProjectDelivery(target.agent.version)) {
-      throw new BadRequestException(
-        `Project delivery requires InitPad Agent ${MIN_PROJECT_AGENT_VERSION.join('.')} or newer`,
-      );
     }
 
     const row = await this.prisma.agentJob.upsert({
@@ -101,7 +61,7 @@ export class ProjectAgentDelivery {
           imageRef: intent.imageRef,
           containerPort: intent.containerPort,
           healthPath: intent.healthPath,
-          configFingerprint: this.configFingerprint(environment.configVars),
+          configFingerprint: agentConfigFingerprint(environment.configVars),
         },
         status: 'queued',
         progressStage: 'queued',
@@ -109,47 +69,117 @@ export class ProjectAgentDelivery {
       },
     });
     if (!['queued', 'leased'].includes(row.status)) return;
+    await this.publishQueued(operation.id, environment.id, allocation.id, false);
+  }
+
+  async queueLifecycle(
+    operationId: string,
+    kind: AgentProjectAction,
+    intent: AgentDeploymentIntent,
+  ): Promise<void> {
+    const operation = await this.loadOperation(operationId);
+    const { environment, target, allocation } = this.assertAgentBinding(operation);
+    const row = await this.prisma.agentJob.upsert({
+      where: { dedupeKey: `${kind}:${operation.id}` },
+      update: {},
+      create: {
+        targetId: target.id,
+        allocationId: allocation.id,
+        deploymentOperationId: operation.id,
+        dedupeKey: `${kind}:${operation.id}`,
+        kind,
+        protocolVersion: 1,
+        payload: {
+          allocationId: allocation.id,
+          namespace: allocation.namespace,
+          projectSlug: intent.projectSlug,
+          environment: environment.name,
+          revision: operation.version,
+          imageRef: intent.imageRef,
+          containerPort: intent.containerPort,
+          healthPath: intent.healthPath,
+          configFingerprint: agentConfigFingerprint(environment.configVars),
+        },
+        status: 'queued',
+        progressStage: 'queued',
+        message: 'Waiting for Agent',
+      },
+    });
+    if (!['queued', 'leased'].includes(row.status)) return;
+    await this.publishQueued(operation.id, environment.id, allocation.id, kind === 'remove');
+  }
+
+  private async publishQueued(
+    operationId: string,
+    environmentId: string,
+    allocationId: string,
+    removing: boolean,
+  ): Promise<void> {
     await this.prisma.$transaction([
       this.prisma.deploymentOperation.updateMany({
-        where: { id: operation.id, status: 'running' },
+        where: { id: operationId, status: 'running' },
         data: { message: 'Waiting for Agent' },
       }),
       this.prisma.environment.updateMany({
-        where: { id: environment.id, activeOperationId: operation.id },
+        where: { id: environmentId, activeOperationId: operationId },
         data: {
           status: 'deploying',
           statusReason: 'Waiting for Agent',
-          allocationId: allocation.id,
+          allocationId,
+          ...(removing ? { deploymentRequired: false } : {}),
         },
       }),
     ]);
   }
 
-  private configFingerprint(
-    variables: Array<{ key: string; value: string; isSecret: boolean }>,
-  ): string {
-    const hmac = createHmac('sha256', config.security.encryptionKey);
-    for (const variable of variables) {
-      hmac.update(variable.key);
-      hmac.update('\0');
-      hmac.update(variable.isSecret ? 'secret' : 'plain');
-      hmac.update('\0');
-      hmac.update(variable.value);
-      hmac.update('\0');
+  private async loadOperation(operationId: string) {
+    const operation = await this.prisma.deploymentOperation.findUnique({
+      where: { id: operationId },
+      include: {
+        buildArtifact: true,
+        environment: {
+          include: {
+            project: { select: { workspaceId: true } },
+            target: { include: { agent: true } },
+            allocation: true,
+            configVars: {
+              orderBy: { key: 'asc' },
+              select: { key: true, value: true, isSecret: true },
+            },
+          },
+        },
+      },
+    });
+    if (!operation || operation.status !== 'running' || operation.finishedAt) {
+      throw new BadRequestException('Deployment operation is no longer active');
     }
-    return hmac.digest('hex');
+    return operation;
   }
 
-  private supportsProjectDelivery(version: string | null): boolean {
-    if (!version) return false;
-    const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
-    if (!match) return false;
-    const actual = match.slice(1).map(Number);
-    for (let index = 0; index < MIN_PROJECT_AGENT_VERSION.length; index += 1) {
-      if (actual[index] !== MIN_PROJECT_AGENT_VERSION[index]) {
-        return actual[index] > MIN_PROJECT_AGENT_VERSION[index];
-      }
+  private assertAgentBinding(operation: Awaited<ReturnType<ProjectAgentDelivery['loadOperation']>>) {
+    const environment = operation.environment;
+    const target = environment.target;
+    const allocation = environment.allocation;
+    if (
+      !target
+      || target.kind !== 'docker'
+      || target.scope !== 'user'
+      || target.workspaceId !== environment.project.workspaceId
+      || !allocation
+      || allocation.targetId !== target.id
+      || allocation.workspaceId !== environment.project.workspaceId
+    ) {
+      throw new BadRequestException('Deployment is not bound to a workspace Agent allocation');
     }
-    return true;
+    if (!target.agent?.credentialHash || target.agent.disabledAt) {
+      throw new BadRequestException('Enroll the target Agent before deploying to it');
+    }
+    if (!supportsProjectAgent(target.agent.version)) {
+      throw new BadRequestException(
+        `Project delivery requires InitPad Agent ${MIN_PROJECT_AGENT_VERSION.join('.')} or newer`,
+      );
+    }
+    return { environment, target, allocation };
   }
+
 }
