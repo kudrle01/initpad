@@ -2872,3 +2872,44 @@ testy ověřují admin autorizaci, reálnou allocation, immutable digest a
 odmítnutí starého Agenta. V izolovaném DinD labu job dokončil celý cyklus
 jako `succeeded`; následná kontrola nenašla managed kontejner, testem stažený
 image ani diagnostickou síť.
+
+## ADR-071 — Agent delivery odděluje trvalý intent od lease-scoped materiálu
+
+**Kontext.** Projektový Agent job musí odkázat na neměnný `BuildArtifact` a
+současně předat runtime konfiguraci. Uložení plaintext secrets, registry
+hesla nebo presigned bearer URL do durable `AgentJob.payload` by je zaneslo do
+databáze, záloh a diagnostiky. Přímá S3/MinIO URL navíc nemusí být z Docker
+serveru dosažitelná a v self-hosted instalaci by zbytečně zveřejnila další
+management endpoint.
+
+**Rozhodnutí.**
+
+1. Durable payload obsahuje pouze nesenzitivní workload intent a interní
+   identity. Teprve vítězný claim `deploy`/`rollback` jobu znovu ověří
+   target, allocation, `DeploymentOperation` a dostupný object-store artifact.
+2. Environment config se načte a secret hodnoty dešifrují pouze při tomto
+   claimu. Vrátí se v transientní `delivery` části HTTPS odpovědi a neukládají
+   se zpět do `AgentJob`, progressu ani logu.
+3. Archiv se nestahuje přímým bucket credentialem ani presigned URL. Control
+   plane poskytne job-scoped stream, který vyžaduje současně dlouhodobý Agent
+   credential a plaintext fencing token aktuálního neexpirovaného lease.
+   Token je v HTTP hlavičce, nikdy v URL.
+4. Před otevřením streamu se kontroluje stav artefaktu, storage binding a
+   velikost objektu. Claim nese očekávaný SHA-256 a velikost; Agent v dalším
+   podkroku digest ověří při přenosu před publikací workloadu.
+5. Cesta je relativní a přesně svázaná s ID jobu. Agent odmítne absolutní
+   nebo jinou cestu, takže odpověď control plane nelze zneužít jako SSRF
+   instrukci. Response zakazuje cache a bucket zůstá privátní.
+
+**Důsledky.** Artifact storage zůstá interní implementační detail a stejný
+transport funguje pro lokální MinIO i cloudové S3. Odcizený lease bez Agent
+credentialu ani credential bez lease nestačí. Config existuje v plaintextu jen
+v paměti control plane a Agenta po dobu aktivního pokusu. Samotný kontrakt je
+záměrně neaktivní, dokud API nevytváří projektové joby a Agent neumí archiv
+ověřit, načíst a spustit; target picker proto zůstá zamčený.
+
+**Testování.** API testy ověřují materializaci masked configu pouze po
+platném claimu, absenci secrets v durable payloadu, shodu objektu a odmítnutí
+starého lease. Agent test kontroluje bearer i lease hlavičku, prázdnou query
+string a odmítnutí cizí/absolutní artifact URL. Artifact store má streamovací
+round-trip regresi.

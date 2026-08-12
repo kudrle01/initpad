@@ -293,6 +293,9 @@ nezobrazí falešný empty/error stav.
 6. **Napojení delivery toku.** Agent-backed target použije stejné projektové
    akce jako dnešní Docker provider; SaaS nepotřebuje Docker socket control plane.
    Přímá self-hosted cesta zůstane kompatibilní pro diplomkový profil.
+   ✅ Bezpečnostní základ už odděluje durable intent od transientních secrets
+   a přenáší privátní artifact pouze job-scoped streamem pod platným lease;
+   zbývá skutečné queue/execute/reconcile napojení a projektové UX.
 7. **Živý a bezpečnostní gate.** Otestuje se instalace, revoke/re-enroll,
    offline/reconnect, ztracená odpověď, lease expiry, duplicitní job a izolace
    dvou workspaces; následuje audit enrollmentu a idempotence.
