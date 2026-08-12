@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Bot, ShieldAlert } from 'lucide-react';
-import type { AgentEnrollment, Target } from '@/types';
+import { Activity, Bot, ShieldAlert } from 'lucide-react';
+import type { AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
 import { CopyField } from '@/components/molecules/CopyField';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
@@ -17,11 +17,16 @@ import {
 interface Props {
   open: boolean;
   target: Target | null;
+  agent: AgentStatus | null;
+  jobs: AgentJobSummary[];
+  protocolError: string | null;
+  protocolBusy: boolean;
   busy: boolean;
   enrollment: AgentEnrollment | null;
   onOpenChange: (open: boolean) => void;
   onIssueEnrollment: () => void;
   onDisable: () => void;
+  onTestProtocol: () => void;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -39,11 +44,16 @@ function formatMemory(bytes: number): string {
 export function AgentSetupDialog({
   open,
   target,
+  agent,
+  jobs,
+  protocolError,
+  protocolBusy,
   busy,
   enrollment,
   onOpenChange,
   onIssueEnrollment,
   onDisable,
+  onTestProtocol,
 }: Props) {
   const [confirmDisable, setConfirmDisable] = useState(false);
   useEffect(() => {
@@ -51,8 +61,8 @@ export function AgentSetupDialog({
   }, [open]);
 
   if (!target) return null;
-  const agent = target.agent;
   const state = agent?.state ?? 'not-enrolled';
+  const canQueueProbe = state === 'online' || state === 'offline';
   const insecureFlag = window.location.protocol === 'http:' ? ' --allow-insecure-http' : '';
   const installCommand = `sudo initpad-agent enroll --url '${window.location.origin}'${insecureFlag}`;
 
@@ -126,6 +136,65 @@ export function AgentSetupDialog({
               Last contact: {new Date(agent.lastSeenAt).toLocaleString()}
             </p>
           )}
+
+          <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <Activity className="h-4 w-4 text-primary" /> Durable job protocol
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  A safe 35-second probe exercises claim, progress, lease renewal and completion.
+                  It does not run a shell command or create a workload. When the Agent is offline,
+                  the probe safely waits in the queue.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy || protocolBusy || !canQueueProbe}
+                title={canQueueProbe ? 'Queue a protocol probe' : 'The Agent must be enrolled'}
+                onClick={onTestProtocol}
+              >
+                {protocolBusy ? <Spinner className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                Test protocol
+              </Button>
+            </div>
+
+            {protocolError && <p className="text-xs text-destructive">{protocolError}</p>}
+            {jobs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No protocol jobs yet.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {jobs.slice(0, 3).map((job) => (
+                  <div key={job.id} className="rounded-md bg-secondary/30 p-2.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-medium">{job.kind} · attempt {job.attempt}</span>
+                      <StatusBadge status={job.status} />
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {job.message ?? job.progressStage}
+                    </p>
+                    <div
+                      className="mt-2 h-1.5 overflow-hidden rounded-full bg-border"
+                      role="progressbar"
+                      aria-label={`${job.kind} job progress`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={job.progressPercent}
+                    >
+                      <div
+                        className={`h-full rounded-full transition-[width] duration-500 ${
+                          job.status === 'failed' ? 'bg-destructive' : 'bg-primary'
+                        }`}
+                        style={{ width: `${job.progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {confirmDisable && (
             <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">

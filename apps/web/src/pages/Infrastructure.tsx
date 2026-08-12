@@ -12,6 +12,7 @@ import { TargetSections } from '@/components/organisms/infrastructure/TargetSect
 import { TargetFormDialog } from '@/components/organisms/TargetDialog';
 import { Button } from '@/components/ui/button';
 import { useInfrastructure } from '@/hooks/useInfrastructure';
+import { useAgentProtocol } from '@/hooks/useAgentProtocol';
 import type { AgentEnrollment, Target } from '@/types';
 
 export default function Infrastructure() {
@@ -23,6 +24,7 @@ export default function Infrastructure() {
   const [editingAllocation, setEditingAllocation] = useState<TargetAllocation | null>(null);
   const [agentTarget, setAgentTarget] = useState<Target | null>(null);
   const [agentEnrollment, setAgentEnrollment] = useState<AgentEnrollment | null>(null);
+  const agentProtocol = useAgentProtocol(agentTarget);
 
   const readOnly = !activeWorkspace
     || !['owner', 'admin', 'maintainer'].includes(activeWorkspace.role);
@@ -154,6 +156,10 @@ export default function Infrastructure() {
       <AgentSetupDialog
         open={!!agentTarget}
         target={agentTarget}
+        agent={agentProtocol.agent}
+        jobs={agentProtocol.jobs}
+        protocolError={agentProtocol.error}
+        protocolBusy={agentProtocol.testing}
         busy={!!agentTarget && infrastructure.busyTargetId === agentTarget.id}
         enrollment={agentEnrollment}
         onOpenChange={(open) => {
@@ -177,6 +183,7 @@ export default function Infrastructure() {
             }
           });
         }}
+        onTestProtocol={() => void agentProtocol.testProtocol()}
       />
     </div>
   );

@@ -18,6 +18,7 @@ import type {
   DeploymentOperation,
   AgentStatus,
   AgentEnrollment,
+  AgentJobSummary,
 } from '@/types';
 
 export interface EnvConfig {
@@ -224,6 +225,12 @@ export const api = {
   issueAgentEnrollment: (id: string) =>
     http<AgentEnrollment>(`/targets/${id}/agent/enrollment`, { method: 'POST' }),
   disableAgent: (id: string) => http<void>(`/targets/${id}/agent`, { method: 'DELETE' }),
+  listAgentJobs: (id: string) => http<AgentJobSummary[]>(`/targets/${id}/agent/jobs`),
+  createAgentProbeJob: (id: string, requestId: string, durationSeconds = 35) =>
+    http<AgentJobSummary>(`/targets/${id}/agent/jobs/probe`, {
+      method: 'POST',
+      body: JSON.stringify({ requestId, durationSeconds }),
+    }),
   // Workspace-scoped target allocations (ADR-060). Owner/admin manage; members read.
   listAllocations: () => http<TargetAllocation[]>('/allocations'),
   createAllocation: (body: TargetAllocationInput) =>

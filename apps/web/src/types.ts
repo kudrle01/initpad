@@ -146,6 +146,22 @@ export interface AgentEnrollment extends AgentStatus {
   enrollmentToken: string;
 }
 
+export interface AgentJobSummary {
+  id: string;
+  kind: string;
+  status: 'queued' | 'leased' | 'succeeded' | 'failed' | 'cancelled';
+  attempt: number;
+  progressSequence: number;
+  progressPercent: number;
+  progressStage: string;
+  message: string | null;
+  resultCode: string | null;
+  createdAt: string;
+  leasedAt: string | null;
+  leaseExpiresAt: string | null;
+  finishedAt: string | null;
+}
+
 export interface TemplateManifest {
   id: string;
   name: string;
