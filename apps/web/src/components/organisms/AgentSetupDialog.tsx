@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Bot, ShieldAlert } from 'lucide-react';
+import { Activity, Bot, ShieldAlert, WifiOff } from 'lucide-react';
 import type { AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
 import { CopyField } from '@/components/molecules/CopyField';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
@@ -91,8 +91,36 @@ export function AgentSetupDialog({
                 {agent?.version ? `Version ${agent.version} · protocol ${agent.protocolVersion}` : 'No Agent heartbeat received yet'}
               </p>
             </div>
-            <StatusBadge status={state} label={STATE_LABEL[state]} />
+            <StatusBadge
+              status={state}
+              label={STATE_LABEL[state]}
+              className={state === 'offline' ? 'border-warning/50 bg-warning/10 text-foreground' : undefined}
+            />
           </div>
+
+          {state === 'offline' && (
+            <div
+              className="flex items-start gap-3 rounded-lg border border-warning/60 bg-warning/10 p-4"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+                <WifiOff className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Agent is offline</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The control plane has not received a heartbeat for more than 90 seconds.
+                  Jobs remain safely queued and continue automatically after the Agent reconnects.
+                </p>
+                {agent?.lastSeenAt && (
+                  <p className="mt-2 text-xs font-medium text-foreground">
+                    Last contact: {new Date(agent.lastSeenAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {agent?.capabilities && (
             <div className="grid gap-1 rounded-lg border border-border bg-secondary/20 p-3 text-xs text-muted-foreground sm:grid-cols-2">
@@ -137,7 +165,7 @@ export function AgentSetupDialog({
             </div>
           )}
 
-          {agent?.lastSeenAt && (
+          {agent?.lastSeenAt && state !== 'offline' && (
             <p className="text-xs text-muted-foreground">
               Last contact: {new Date(agent.lastSeenAt).toLocaleString()}
             </p>
@@ -168,15 +196,6 @@ export function AgentSetupDialog({
             </div>
 
             {protocolError && <p className="text-xs text-destructive">{protocolError}</p>}
-            {state === 'offline' && (
-              <div className="rounded-md border border-warning/40 bg-warning/5 p-2.5 text-xs">
-                <p className="font-medium">Agent is offline</p>
-                <p className="mt-0.5 text-muted-foreground">
-                  Protocol jobs remain safely queued and continue automatically after the Agent
-                  reconnects. No action is required in InitPad.
-                </p>
-              </div>
-            )}
             {jobs.length === 0 ? (
               <p className="text-xs text-muted-foreground">No protocol jobs yet.</p>
             ) : (

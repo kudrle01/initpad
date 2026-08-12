@@ -19,7 +19,7 @@ const DEPLOY_CLASS: Record<string, string> = {
   empty: 'bg-muted-foreground/40',
   idle: 'bg-muted-foreground/40',
   online: 'bg-success',
-  offline: 'bg-muted-foreground/70',
+  offline: 'bg-warning',
   disabled: 'bg-destructive',
   'not-enrolled': 'bg-muted-foreground/40',
 };

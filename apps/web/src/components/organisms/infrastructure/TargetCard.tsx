@@ -1,9 +1,10 @@
-import { Bot, Cloud, Container, Pencil, Server, ShieldAlert, ShieldCheck, Trash2, Wifi } from 'lucide-react';
+import { Bot, Cloud, Container, Pencil, Server, ShieldAlert, ShieldCheck, Trash2, Wifi, WifiOff } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Spinner } from '@/components/atoms/Spinner';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import type { ProviderKind, Target } from '@/types';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
@@ -39,7 +40,10 @@ export function TargetCard({
   const agentState = target.agent?.state ?? 'not-enrolled';
 
   return (
-    <Card className="flex min-w-0 flex-col gap-3 p-5">
+    <Card className={cn(
+      'flex min-w-0 flex-col gap-3 p-5',
+      isAgentTarget && agentState === 'offline' && 'border-warning/60 bg-warning/[0.04]',
+    )}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
@@ -53,7 +57,11 @@ export function TargetCard({
           </div>
         </div>
         {isAgentTarget ? (
-          <StatusBadge status={agentState} label={agentState.replace('-', ' ')} />
+          <StatusBadge
+            status={agentState}
+            label={agentState.replace('-', ' ')}
+            className={agentState === 'offline' ? 'border-warning/50 bg-warning/10 text-foreground' : undefined}
+          />
         ) : target.verifiedAt ? (
           <span
             className="flex shrink-0 items-center gap-1 text-xs text-success"
@@ -67,6 +75,18 @@ export function TargetCard({
           </span>
         )}
       </div>
+
+      {isAgentTarget && agentState === 'offline' && (
+        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs">
+          <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <div>
+            <p className="font-medium text-foreground">Connection lost</p>
+            <p className="mt-0.5 text-muted-foreground">
+              Jobs will wait safely and resume when the Agent reconnects.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-1.5">
         {target.capabilities.map((capability) => (
