@@ -7,8 +7,9 @@ adresáře `deploy/`.
 
 Kompletní instalační a uživatelský test na Ubuntu VM je v
 [`SELF_HOSTED_ACCEPTANCE.md`](./SELF_HOSTED_ACCEPTANCE.md). Je to závazný živý
-gate před implementací Agenta; samotné unit testy tenant izolaci na skutečném
-Docker hostu neprokazují.
+gate, který proběhl před implementací Agenta; samotné unit testy tenant izolaci
+na skutečném Docker hostu neprokazují. Izolovaný Agent enrollment/heartbeat
+test je samostatně v [`../apps/agent/README.md`](../apps/agent/README.md).
 
 ## Start / stop / stav
 
@@ -140,7 +141,7 @@ selhal, obnov poslední zálohu (`./restore.sh …`).
   Změnu uplatní opětovné `./install.sh`; nevyžaduje nový projekt.
 - Kvóty na tým nastav přes **Allocations** (max prostředí, ADR-060).
 - Když jeden host nestačí, přesuň nasazovací cíle na další stroje přes **Agenta**
-  (roadmapa), případně managed DB/S3.
+  po dokončení jeho job/delivery protokolu (roadmapa), případně managed DB/S3.
 
 ## Troubleshooting
 

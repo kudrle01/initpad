@@ -281,7 +281,7 @@ nezobrazí falešný empty/error stav.
 2. ✅ **Agent target a instalační UX.** Uživatel založí workspace-owned Docker
    target bez SSH hesla, dostane kopírovatelný instalační příkaz a v UI vidí
    stav `not enrolled / offline / online / disabled`, verzi a poslední kontakt.
-3. **Spustitelný Agent a heartbeat.** Samostatný malý proces bezpečně uloží
+3. ✅ **Spustitelný Agent a heartbeat.** Samostatný malý proces bezpečně uloží
    credential na targetu, provede enrollment a pouze odchozím HTTPS hlásí
    verzi, protocol version, Docker capabilities a omezenou telemetrii.
 4. **Durable job a lease protokol.** Control plane vytváří target-scoped joby;
@@ -301,8 +301,11 @@ Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
 údajů, vygeneroval jednorázový enrollment, po zavření dialogu už plaintext
 nebyl dostupný a Agent target nešel před dokončením delivery cesty alokovat.
-Skutečné spojení, heartbeat a přechod `offline → online` se otestují po
-podkroku 3.
+Podkrok 3 prošel v izolovaném labu podle `apps/agent/README.md`: skutečný Agent
+se enrollmentem připojil k oddělenému Docker daemonu, UI ukázalo omezené
+capabilities a proběhl přechod `online → offline → online` bez nového
+credentialu. Produkčně publikovaný release image/installer se ověří v podkroku
+7; deployment přes Agent zůstává záměrně uzamčený do podkroků 4–6.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -379,23 +382,20 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 
 ## Aktuální stav ověření
 
-Automatizovanou regresi tvoří produkční build obou aplikací a kompletní API
-sada spouštěná příkazem `npm run check`. TypeScript má zapnuté
+Automatizovanou regresi tvoří produkční build API, webu a Agentu, kompletní API
+sada a Agent testy spouštěné příkazem `npm run check`. TypeScript má zapnuté
 `noUnusedLocals` i `noUnusedParameters`; audit importního grafu nesmí najít
 osiřelý produkční modul. Historické Prisma migrace se nemažou ani po odstranění
 původní funkce, protože jsou součástí reprodukovatelné instalace databáze od nuly.
 
 Dosavadní živé ověření prokázalo workspace RBAC a synchronizaci rolí do Gitey,
 React i Nette deployment na ESO, chráněný PHP layout, opakovaný deploy po vzniku
-runtime cache a bezpečné uvolnění kanonické cesty při částečném teardownu.
-Tyto dílčí výsledky nenahrazují celý self-hosted acceptance gate.
-
-Před zahájením Agenta zbývá na čisté VM dokončit
-[SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md): dva workspaces musí
-současně nasadit na sdílený Docker target bez kolize jmen, sítí, portů nebo dat;
-cizí projekt, allocation a operace musí zůstat nedostupné. Výsledek se uloží jako
-samostatný testovací protokol pro diplomovou práci, ne jako průběžný deník v
-roadmapě.
+runtime cache, bezpečné uvolnění kanonické cesty při částečném teardownu a
+self-hosted izolaci dvou workspaceů podle
+[SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md). Agent lab navíc
+prokázal single-use enrollment, omezenou telemetrii, restart/retry a přechod
+`online → offline → online`. Tyto dílčí výsledky nenahrazují závěrečný školní
+E2E scénář s nezávislým týmem.
 
 ## Vyhodnocení pro diplomovou práci
 

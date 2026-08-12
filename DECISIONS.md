@@ -2724,3 +2724,50 @@ ověřují heartbeat-derived stav. Browser acceptance pokrývá založení targe
 oddělený jednorázový token a bezpečný příkaz, zahození plaintextu po zavření,
 skrytí targetu v allocation formuláři a mobilní šířku 390 px. Připojení
 skutečného procesu a stav `online` patří do podkroku 3.
+
+## ADR-068 — Agent heartbeat je minimální, odchozí a provozně obnovitelný
+
+**Kontext.** Enrollment musí pokračovat skutečným procesem na cílovém Docker
+serveru. Tento proces drží dlouhodobý bearer credential a přístup k Docker API,
+proto nesmí přidat obecný vzdálený shell, poslouchající management port ani
+neomezenou telemetrii hostitele. Krátký výpadek control plane nebo startující
+Docker daemon zároveň nesmí vyžadovat nový enrollment.
+
+**Rozhodnutí.**
+
+1. Agent je samostatný verzovaný workspace s minimálním kontejnerovým image a
+   bez runtime npm závislostí. Vývojový acceptance používá oddělený DinD daemon,
+   nikdy hostitelský Docker socket InitPadu. Podepsaný release image a produkční
+   installer vzniknou v závěrečném Agent release gate; UI nyní ukazuje
+   post-install enrollment příkaz.
+2. Enrollment token se zadává skrytým interaktivním vstupem, nikoli argumentem
+   procesu. Credential se atomicky ukládá do pravidelného souboru `0600` v
+   adresáři `0700`; symlink a příliš široká práva jsou odmítnuta. Mimo loopback
+   vyžaduje control-plane URL HTTPS, HTTP lze povolit jen explicitním lokálním
+   testovacím přepínačem.
+3. Heartbeat každých 30 sekund posílá jen verzi Agentu a protokolu a omezený
+   výřez Docker capabilities: engine/API verzi, OS, architekturu, rootless stav,
+   CPU a dostupnou paměť. Neodesílá hostname, seznamy image/kontejnerů ani data
+   aplikací. Control plane payload validuje, credential vyhledává pouze přes
+   jeho hash a revoke race uzavírá compare-and-set zápisem.
+4. Agent ověřuje target ID i generaci credentialu vrácené serverem. Přechodné
+   chyby Dockeru, sítě a `5xx` opakuje s exponenciálním intervalem 2–60 sekund;
+   odmítnutý nebo deaktivovaný credential (`4xx`) je konečný stav a proces
+   skončí. Serverem doporučený heartbeat interval je omezen na 10–300 sekund.
+5. Současná verze Docker API pouze čte `_ping`, `/version` a `/info`. Nemá job
+   endpoint ani obecnou shell operaci; deployment zůstává zablokovaný do
+   durable job/lease podkroku.
+
+**Důsledky.** Restart hostitele nebo krátce nedostupný Docker daemon se zahojí
+bez re-enrollmentu, ale odcizený credential stále představuje oprávnění k
+jednomu fyzickému targetu a musí být možné jej okamžitě deaktivovat. Stav v UI
+je eventual-consistent: heartbeat běží po 30 sekundách a po 90 sekundách bez
+kontaktu se zobrazí `offline`. Agent zatím nelze zaměnit za hotovou delivery
+cestu ani za produkčně publikovaný instalační artefakt.
+
+**Testování.** Izolovaný lokální lab ověřil skutečný single-use enrollment,
+práva `0700/0600`, Docker capability discovery, heartbeat a přechod
+`online → offline → online` bez nového credentialu. Po restartu hostitele Agent
+prošel retry sekvencí při startujícím DinD a sám obnovil heartbeat. API testy
+navíc pokrývají neznámý, chybný a souběžně deaktivovaný credential; celý
+produkční build, testy a dependency audit jsou zelené.

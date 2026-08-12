@@ -19,14 +19,16 @@ srozumitelném a samostatně nasaditelném systému.
 - automatický build, test a nasazení do dev;
 - povýšení stejného buildu do testu a produ;
 - Docker, SSH a SFTP targety včetně PHP hostingu;
+- outbound enrollment a heartbeat vzdáleného Docker targetu přes InitPad Agent;
 - historii commitů, CI jobů a deployment operací;
 - bezpečné odstranění deploymentu i celého projektu.
 
 Self-hosted edice používá vestavěnou Giteu, Gitea Actions a privátní OCI
 registry. GitHub varianta umí přihlášení, instalaci GitHub App, založení nebo
 import repozitáře a převzetí ověřeného Actions artefaktu. Veřejný SaaS zatím
-není hotový produkční profil; vzdálené servery bude bezpečně připojovat
-připravovaný InitPad Agent.
+není hotový produkční profil. InitPad Agent už umí bezpečný outbound enrollment,
+heartbeat a Docker capability discovery; vzdálené deployment joby a veřejně
+publikovaný installer jsou další část roadmapy.
 
 ## Rychlé spuštění
 
@@ -109,6 +111,7 @@ izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
 - [deploy/README.md](deploy/README.md) — instalace;
 - [deploy/OPERATIONS.md](deploy/OPERATIONS.md) — provoz, zálohy a obnova;
 - [deploy/SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md) — živé ověření;
+- [apps/agent/README.md](apps/agent/README.md) — izolovaný Agent lab;
 - [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) — stav a další milníky;
 - [DECISIONS.md](DECISIONS.md) — architektonická rozhodnutí;
 - [THREAT_MODEL.md](THREAT_MODEL.md) — hranice důvěry a produkční podmínky.

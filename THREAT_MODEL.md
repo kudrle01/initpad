@@ -16,13 +16,16 @@ for the thesis/single-node profile, but not a hard multi-tenant boundary. A
 hosted multi-tenant edition must use a remote deployment agent or Kubernetes
 API with a restricted service account instead of the host socket. Workspace
 RBAC is an application authorization boundary, not a hostile-workload compute
-boundary.
+boundary. The implemented Agent currently performs trust bootstrap, bounded
+Docker discovery and heartbeat only; remote workload operations remain locked
+until the job/lease protocol is complete.
 
 ## Assets
 
 - Gitea admin token, user PATs, per-repository deploy tokens and webhook secret;
 - JWT/OIDC signing keys and encryption key;
 - source repositories, OCI images and deployment target credentials;
+- Agent enrollment tokens and per-target long-lived credentials;
 - PostgreSQL project/identity state and availability of the host.
 
 ## Main controls
@@ -49,6 +52,10 @@ boundary.
   separate from PostgreSQL and deployment networks.
 - DTO allow-list validation, bounded lengths, workspace policy checks and target
   endpoint/path validation reduce injection, IDOR and resource-exhaustion risk.
+- Agent enrollment is workspace-admin-only, short-lived and single-use. The
+  database stores only enrollment/credential hashes; the target stores its
+  credential atomically as `0600`. Heartbeat is outbound-only and reports a
+  bounded Docker capability object, not host or workload inventory.
 - Deployment operations atomically lock one environment. Cancellation is a
   persisted request; stale background work cannot publish over a newer state.
 - App containers receive memory/CPU/PID/log limits, dropped capabilities and
@@ -71,25 +78,15 @@ boundary.
 - Workspace RBAC isolates application data but all deployments still share the
   self-hosted control plane's provider credentials and Docker trust boundary.
   Do not expose this profile as a hostile public SaaS.
+- Agent access to a Docker daemon is root-equivalent on that target. A stolen
+  Agent credential is target-scoped and revocable, but production delivery also
+  needs short-lived job credentials, allocation enforcement and an audited,
+  non-shell command allow-list.
 - Gitea collaborator synchronization spans two systems and therefore uses
   compensation rather than a distributed transaction. Reconciliation and an
   audit log are required before hosted production use.
 - Backups contain credentials. They must be encrypted, stored off-host and
   tested with periodic restore drills.
-
-### Tracked dependency exception
-
-As of 2026-08-03, `npm audit` reports GHSA-qwww-vcr4-c8h2 for the current
-React Router release. The upstream advisory states that the issue only affects
-applications using the unstable React Server Components APIs. InitPad ships a
-static Vite single-page application and defines no RSC server, server actions or
-unstable RSC routes, so the vulnerable execution path is absent. The dependency
-remains on the latest compatible release instead of being downgraded to a
-version with broader navigation and hydration advisories. This exception must
-be removed as soon as a patched stable package compatible with the frontend is
-published, and the audit must be reviewed again before a public SaaS release.
-
-Reference: https://github.com/advisories/GHSA-qwww-vcr4-c8h2
 
 ## Production gates
 
