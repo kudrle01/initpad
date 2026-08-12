@@ -11,6 +11,7 @@ import { ArtifactObjectHead, ArtifactStore } from './artifact-store';
  * without a real store (see validateConfig), so this is never its source of truth.
  */
 export class InMemoryArtifactStore implements ArtifactStore {
+  readonly durable = false;
   private readonly objects = new Map<string, Buffer>();
 
   async put(key: string, filePath: string): Promise<void> {

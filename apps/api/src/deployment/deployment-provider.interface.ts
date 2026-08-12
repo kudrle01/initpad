@@ -143,6 +143,9 @@ export interface DeploymentProvider {
   // Imports a provider-verified `docker save` archive into the platform's
   // image store and proves that it contains only the expected immutable tag.
   loadImageArchive?(filePath: string, expectedRef: string): Promise<void>;
+  // Exports one exact tested image as a Docker archive for remote Agent
+  // delivery. The provider may pull it from its authenticated registry first.
+  saveImageArchive?(imageRef: string, destPath: string): Promise<void>;
   hasImage?(imageRef: string): Promise<boolean>;
   // Removes the deployment of the given environment; optional.
   teardown?(input: TeardownInput): Promise<TeardownResult | void>;

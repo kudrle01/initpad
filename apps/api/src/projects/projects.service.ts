@@ -46,6 +46,7 @@ import { pipelineStages } from './project-pipeline';
 import { ProjectQueries } from './project-queries';
 import { projectView } from './project-view';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
+import { ProjectAgentDelivery } from './project-agent-delivery';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectEnvironmentLifecycle } from './project-environment-lifecycle';
@@ -125,6 +126,7 @@ export class ProjectsService implements OnModuleInit {
       this.operations,
       this.deploymentPreparation,
       this.artifactLifecycle,
+      new ProjectAgentDelivery(prisma, artifactStore),
       (projectId) => this.actorForProject(projectId),
     );
     this.artifactIngestion = new ProjectArtifactIngestion(

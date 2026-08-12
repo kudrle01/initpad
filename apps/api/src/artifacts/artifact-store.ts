@@ -10,6 +10,9 @@ import type { Readable } from 'stream';
  * must never log credentials or presigned URLs.
  */
 export interface ArtifactStore {
+  /** False only for the process-memory development fallback. */
+  readonly durable: boolean;
+
   /**
    * Uploads a local file to the given opaque key. Overwrites any existing object
    * at that key (keys embed the content digest, so this is idempotent per build).

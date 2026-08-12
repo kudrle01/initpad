@@ -30,6 +30,7 @@ export interface S3ArtifactStoreOptions {
  * are never logged.
  */
 export class S3ArtifactStore implements ArtifactStore {
+  readonly durable = true;
   private readonly client: S3Client;
   private readonly bucket: string;
 

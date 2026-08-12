@@ -35,6 +35,7 @@ function make(overrides: {
   operations?: Record<string, unknown>;
   preparation?: Record<string, unknown>;
   artifacts?: Record<string, unknown>;
+  agentDelivery?: Record<string, unknown>;
 } = {}) {
   const updateMany = jest.fn(async () => ({ count: 1 }));
   const prisma = {
@@ -92,6 +93,9 @@ function make(overrides: {
   const artifacts = overrides.artifacts ?? {
     ensureImageAvailable: jest.fn(async () => true),
   };
+  const agentDelivery = overrides.agentDelivery ?? {
+    queueDeployment: jest.fn(async () => undefined),
+  };
   const executor = new ProjectDeploymentExecutor(
     prisma as never,
     {
@@ -108,6 +112,7 @@ function make(overrides: {
     operations as never,
     preparation as never,
     artifacts as never,
+    agentDelivery as never,
     jest.fn(async () => ({ username: 'alice', token: 'token' })),
   );
   return {
@@ -121,6 +126,7 @@ function make(overrides: {
     lifecycle,
     operations,
     artifacts,
+    agentDelivery,
   };
 }
 
@@ -228,5 +234,43 @@ describe('ProjectDeploymentExecutor', () => {
       ctx.executor.execute('project-1', 'prod', VERSION, true, 'operation-1'),
     ).rejects.toThrow('health check failed');
     expect(ctx.cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues an Agent deployment without preparing source, secrets or using local Docker', async () => {
+    const artifact = {
+      id: 'artifact-1',
+      projectId: 'project-1',
+      commitSha: VERSION,
+      providerRunId: 'run-1',
+      status: 'available',
+      storageKind: 'object-store',
+      storageRef: 'artifact/key',
+    };
+    const environment = {
+      ...ENVIRONMENT,
+      targetId: 'target-1',
+      target: { id: 'target-1', scope: 'user' },
+      allocation: { id: 'allocation-1', targetId: 'target-1', namespace: 'workspace-1' },
+    };
+    const operation = { id: 'operation-1', buildArtifactId: 'artifact-1', buildArtifact: artifact };
+    const ctx = make({ environment, operation });
+    (ctx.targets as any).ensureAllocation = jest.fn(async () => environment.allocation);
+    (ctx.targets as any).assertAcceptsDeploy = jest.fn(async () => undefined);
+
+    await expect(
+      ctx.executor.execute('project-1', 'dev', VERSION, true, 'operation-1'),
+    ).resolves.toBe(false);
+
+    expect((ctx.agentDelivery as any).queueDeployment).toHaveBeenCalledWith(
+      'operation-1',
+      expect.objectContaining({
+        projectSlug: 'acme-api',
+        imageRef: `127.0.0.1:3001/acme/api:${VERSION}`,
+        containerPort: 3000,
+        healthPath: '/health',
+      }),
+    );
+    expect((ctx.preparation as any).prepare).not.toHaveBeenCalled();
+    expect((ctx.deployment as any).deploy).not.toHaveBeenCalled();
   });
 });

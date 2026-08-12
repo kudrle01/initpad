@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Docker from 'dockerode';
-import { createReadStream } from 'fs';
+import { createReadStream, createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
 import * as tar from 'tar-fs';
 import { ProviderKind } from '../../domain/types';
 import { config } from '../../config';
@@ -396,6 +397,20 @@ export class DockerProvider implements DeploymentProvider {
       throw new Error(`The ingested image archive did not create expected tag '${expectedRef}'`);
     }
     this.logger.log(`Verified and ingested image archive: ${expectedRef}`);
+  }
+
+  async saveImageArchive(imageRef: string, destPath: string): Promise<void> {
+    if (!(await this.isAvailable())) {
+      throw new Error('Docker daemon is not available — cannot export the tested image.');
+    }
+    if (!(await this.imageExists(imageRef))) {
+      const pull = await this.tryPull(imageRef);
+      if (!pull.ok) throw new Error(`Could not pull tested image ${imageRef}: ${pull.error}`);
+    }
+    const stream = await this.docker.getImage(imageRef).get();
+    await pipeline(stream, createWriteStream(destPath, { mode: 0o600 }));
+    await assertImageArchiveIdentity(destPath, imageRef);
+    this.logger.log(`Exported verified image archive: ${imageRef}`);
   }
 
   async hasImage(imageRef: string): Promise<boolean> {

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { existsSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 
 const REPOSITORY = {
@@ -116,5 +116,98 @@ describe('ProjectArtifactLifecycle image availability', () => {
     ).resolves.toBe(false);
     expect(deployment.loadImageArchive).not.toHaveBeenCalled();
     expect(existsSync(downloadedPath)).toBe(false);
+  });
+});
+
+describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
+  const GITEA_REPOSITORY = {
+    ...REPOSITORY,
+    provider: 'gitea',
+    repoUrl: 'https://git.example.test/acme/api',
+    installationId: null,
+  } as const;
+
+  it('exports an exact tested image into tenant-scoped durable storage and binds the operation', async () => {
+    let uploadedBytes = '';
+    const store = {
+      durable: true,
+      head: jest.fn(async () => null),
+      put: jest.fn(async (_key: string, path: string) => {
+        uploadedBytes = readFileSync(path, 'utf8');
+      }),
+      delete: jest.fn(async () => undefined),
+    };
+    const deployment = {
+      saveImageArchive: jest.fn(async (_imageRef: string, path: string) => {
+        writeFileSync(path, 'verified-registry-archive');
+      }),
+    };
+    const created = {
+      id: 'artifact-1',
+      projectId: 'project-1',
+      sourceProvider: 'gitea-oci',
+      providerArtifactId: `project-1:${'a'.repeat(40)}`,
+      providerRunId: '',
+      commitSha: 'a'.repeat(40),
+      name: 'initpad-image.tar',
+      digest: createHash('sha256').update('verified-registry-archive').digest('hex'),
+      sizeBytes: 25n,
+      expiresAt: new Date(),
+      status: 'available',
+      storageKind: 'object-store',
+      storageRef: 'stored/key',
+      error: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const prisma = {
+      buildArtifact: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async () => created),
+      },
+      deploymentOperation: { updateMany: jest.fn(async () => ({ count: 1 })) },
+    };
+    const lifecycle = new ProjectArtifactLifecycle(
+      prisma as never,
+      store as never,
+      deployment as never,
+    );
+
+    await expect(lifecycle.captureRegistryArtifact(
+      GITEA_REPOSITORY,
+      { id: 'project-1', workspaceId: 'workspace-1' },
+      'operation-1',
+      'a'.repeat(40),
+    )).resolves.toBe(created);
+
+    expect(deployment.saveImageArchive).toHaveBeenCalledWith(
+      `127.0.0.1:3001/acme/api:${'a'.repeat(40)}`,
+      expect.any(String),
+    );
+    expect(uploadedBytes).toBe('verified-registry-archive');
+    expect(store.put).toHaveBeenCalledWith(
+      expect.stringMatching(/^artifacts\/workspace-1\/project-1\//),
+      expect.any(String),
+      expect.objectContaining({ contentType: 'application/x-tar' }),
+    );
+    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'operation-1', status: 'running', environment: { projectId: 'project-1' } },
+      data: { buildArtifactId: 'artifact-1' },
+    });
+  });
+
+  it('refuses remote delivery when storage is only process memory', async () => {
+    const lifecycle = new ProjectArtifactLifecycle(
+      {} as never,
+      { durable: false } as never,
+      { saveImageArchive: jest.fn() } as never,
+    );
+
+    await expect(lifecycle.captureRegistryArtifact(
+      GITEA_REPOSITORY,
+      { id: 'project-1', workspaceId: 'workspace-1' },
+      'operation-1',
+      'a'.repeat(40),
+    )).rejects.toThrow(/durable artifact storage/);
   });
 });

@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { repositoryRef, ScmActor } from '../scm/scm-provider';
 import { TemplatesService } from '../templates/templates.service';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
+import { ProjectAgentDelivery } from './project-agent-delivery';
 import { artifactImageRef, deploymentSlug, registryImageRef } from './project-deployment-identity';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectDeploymentPreparation } from './project-deployment-preparation';
@@ -23,6 +24,7 @@ export class ProjectDeploymentExecutor {
     private readonly operations: ProjectDeploymentOperations,
     private readonly preparation: ProjectDeploymentPreparation,
     private readonly artifacts: ProjectArtifactLifecycle,
+    private readonly agentDelivery: ProjectAgentDelivery,
     private readonly resolveActor: (projectId: string) => Promise<ScmActor>,
   ) {}
 
@@ -40,10 +42,13 @@ export class ProjectDeploymentExecutor {
       where: { projectId_name: { projectId, name: envName } },
       include: { target: true, allocation: true, buildArtifact: true },
     });
-    const operation = await this.prisma.deploymentOperation.findUnique({
+    let operation = await this.prisma.deploymentOperation.findUnique({
       where: { id: operationId },
       include: { buildArtifact: true },
     });
+    const agentBacked =
+      environment.provider === 'docker'
+      && environment.target?.scope === 'user';
     let testedImageRef: string | undefined;
     if (useRegistry) {
       if (repository.provider === 'github') {
@@ -59,11 +64,23 @@ export class ProjectDeploymentExecutor {
           throw new Error('GitHub deployment has no verified build artifact for this version');
         }
         testedImageRef = artifactImageRef(repository, artifact);
-        if (!(await this.artifacts.ensureImageAvailable(repository, projectId, artifact.id))) {
+        if (
+          !agentBacked
+          && !(await this.artifacts.ensureImageAvailable(repository, projectId, artifact.id))
+        ) {
           throw new Error('Verified build artifact could not be rehydrated from object storage');
         }
       } else {
         testedImageRef = registryImageRef(repository, version);
+        if (agentBacked && !operation?.buildArtifactId) {
+          const artifact = await this.artifacts.captureRegistryArtifact(
+            repository,
+            project,
+            operationId,
+            version,
+          );
+          operation = { ...operation!, buildArtifactId: artifact.id, buildArtifact: artifact };
+        }
       }
     }
 
@@ -87,6 +104,20 @@ export class ProjectDeploymentExecutor {
         ...(allocationId ? { allocationId } : {}),
       },
     });
+
+    if (agentBacked) {
+      if (!useRegistry || !testedImageRef || !operation?.buildArtifactId) {
+        throw new Error('Agent deployment requires a CI-tested build artifact');
+      }
+      await this.agentDelivery.queueDeployment(operationId, {
+        projectSlug: deploymentSlug(repository),
+        imageRef: testedImageRef,
+        containerPort: template.port ?? 8080,
+        healthPath: template.healthPath ?? '/health',
+      });
+      // The durable Agent completion owns publication and operation completion.
+      return false;
+    }
 
     const appPort = this.environmentLifecycle.usesSharedSshPort(environment)
       ? await this.environmentLifecycle.allocateSharedSshPort(projectId, envName)

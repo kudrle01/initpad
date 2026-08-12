@@ -108,6 +108,14 @@ export class DeploymentService {
     await impl.loadImageArchive(filePath, expectedRef);
   }
 
+  async saveImageArchive(imageRef: string, destPath: string): Promise<void> {
+    const impl = this.registry.get('docker');
+    if (!impl?.saveImageArchive) {
+      throw new BadRequestException('Image archive export requires the Docker provider');
+    }
+    await impl.saveImageArchive(imageRef, destPath);
+  }
+
   async hasImage(imageRef: string): Promise<boolean> {
     return (await this.registry.get('docker')?.hasImage?.(imageRef)) ?? false;
   }

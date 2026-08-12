@@ -1,14 +1,16 @@
 import { Logger, NotFoundException } from '@nestjs/common';
-import { createHash } from 'crypto';
+import type { BuildArtifact } from '@prisma/client';
+import { createHash, randomUUID } from 'crypto';
 import { createReadStream, mkdtempSync, rmSync } from 'fs';
+import { stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { ArtifactStore } from '../artifacts/artifact-store';
+import { ArtifactStore, artifactObjectKey } from '../artifacts/artifact-store';
 import { config } from '../config';
 import { DeploymentService } from '../deployment/deployment.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScmRepositoryRef } from '../scm/scm-provider';
-import { artifactImageRef } from './project-deployment-identity';
+import { artifactImageRef, registryImageRef } from './project-deployment-identity';
 
 /**
  * Durable artifact lifecycle owned by the project domain. CI ingestion stays
@@ -72,6 +74,116 @@ export class ProjectArtifactLifecycle {
         `Could not rehydrate ${imageRef} from object storage: ${(error as Error).message}`,
       );
       return false;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Captures the exact Gitea OCI image into the same durable object-store
+   * representation used by GitHub Actions. Remote Agents therefore never need
+   * a registry password and both editions share one delivery trust boundary.
+   */
+  async captureRegistryArtifact(
+    repository: ScmRepositoryRef,
+    project: { id: string; workspaceId: string },
+    operationId: string,
+    version: string,
+  ): Promise<BuildArtifact> {
+    if (!this.store.durable) {
+      throw new Error(
+        'Agent deployment requires durable artifact storage; configure the S3/MinIO artifact bucket',
+      );
+    }
+    const normalizedVersion = version.toLowerCase();
+    const providerArtifactId = `${project.id}:${normalizedVersion}`;
+    const unique = {
+      sourceProvider_providerArtifactId: {
+        sourceProvider: 'gitea-oci',
+        providerArtifactId,
+      },
+    } as const;
+    const existing = await this.prisma.buildArtifact.findUnique({ where: unique });
+    if (existing?.projectId !== undefined && existing.projectId !== project.id) {
+      throw new Error('Registry artifact identity is already bound to another project');
+    }
+    if (
+      existing?.status === 'available'
+      && existing.storageKind === 'object-store'
+      && existing.storageRef
+      && (await this.store.head(existing.storageRef))?.sizeBytes === Number(existing.sizeBytes)
+    ) {
+      await this.bindOperationArtifact(operationId, project.id, existing.id);
+      return existing;
+    }
+
+    const dir = mkdtempSync(join(tmpdir(), 'initpad-registry-artifact-'));
+    const filePath = join(dir, 'image.tar');
+    const imageRef = registryImageRef(repository, normalizedVersion);
+    const artifactId = existing?.id ?? randomUUID();
+    let objectKey: string | null = null;
+    let persisted = false;
+    try {
+      await this.deployment.saveImageArchive(imageRef, filePath);
+      const [digest, metadata] = await Promise.all([
+        this.fileSha256(filePath),
+        stat(filePath),
+      ]);
+      objectKey = artifactObjectKey({
+        workspaceId: project.workspaceId,
+        projectId: project.id,
+        artifactId,
+        digest,
+      });
+      await this.store.put(objectKey, filePath, {
+        contentType: 'application/x-tar',
+        sizeBytes: metadata.size,
+      });
+      const values = {
+        projectId: project.id,
+        sourceProvider: 'gitea-oci',
+        providerArtifactId,
+        providerRunId: '',
+        commitSha: normalizedVersion,
+        name: 'initpad-image.tar',
+        digest,
+        sizeBytes: BigInt(metadata.size),
+        expiresAt: new Date(Date.now() + config.artifactStore.retentionDays * 86_400_000),
+        status: 'available',
+        storageKind: 'object-store',
+        storageRef: objectKey,
+        error: null,
+      } as const;
+      let artifact: BuildArtifact;
+      if (existing) {
+        artifact = await this.prisma.buildArtifact.update({
+          where: { id: existing.id },
+          data: values,
+        });
+      } else {
+        try {
+          artifact = await this.prisma.buildArtifact.create({
+            data: { id: artifactId, ...values },
+          });
+        } catch (error) {
+          const winner = await this.prisma.buildArtifact.findUnique({ where: unique });
+          if (!winner || winner.projectId !== project.id || winner.status !== 'available') {
+            throw error;
+          }
+          if (winner.storageRef !== objectKey) await this.store.delete(objectKey);
+          artifact = winner;
+        }
+      }
+      persisted = true;
+      if (existing?.storageRef && existing.storageRef !== artifact.storageRef) {
+        await this.store.delete(existing.storageRef).catch(() => undefined);
+      }
+      await this.bindOperationArtifact(operationId, project.id, artifact.id);
+      this.logger.log(`Captured registry image ${imageRef} for Agent delivery`);
+      return artifact;
+    } catch (error) {
+      if (objectKey && !persisted) await this.store.delete(objectKey).catch(() => undefined);
+      throw error;
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -182,5 +294,19 @@ export class ProjectArtifactLifecycle {
       stream.on('data', (chunk) => hash.update(chunk));
       stream.on('end', () => resolve(hash.digest('hex')));
     });
+  }
+
+  private async bindOperationArtifact(
+    operationId: string,
+    projectId: string,
+    buildArtifactId: string,
+  ): Promise<void> {
+    const bound = await this.prisma.deploymentOperation.updateMany({
+      where: { id: operationId, status: 'running', environment: { projectId } },
+      data: { buildArtifactId },
+    });
+    if (bound.count !== 1) {
+      throw new Error('Deployment operation is no longer active');
+    }
   }
 }
