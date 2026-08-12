@@ -1,4 +1,13 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type { Readable } from 'stream';
+import { ARTIFACT_STORE, type ArtifactStore } from '../artifacts/artifact-store';
+import { decryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentsService, type AuthenticatedAgent } from './agents.service';
@@ -51,11 +60,28 @@ export interface AgentJobSummary {
   finishedAt: string | null;
 }
 
+export interface AgentJobDelivery {
+  artifact: {
+    path: string;
+    sha256: string;
+    sizeBytes: number;
+  };
+  /** Resolved only for the winning lease and never stored in AgentJob.payload. */
+  envVars: Record<string, string>;
+}
+
+export interface AgentArtifactDownload {
+  stream: Readable;
+  sha256: string;
+  sizeBytes: number;
+}
+
 @Injectable()
 export class AgentJobsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agents: AgentsService,
+    @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
   ) {}
 
   async createProbe(
@@ -193,6 +219,7 @@ export class AgentJobsService {
       attempt: number;
       leaseToken: string;
       leaseExpiresAt: string;
+      delivery?: AgentJobDelivery;
     };
     nextPollSeconds: number;
   }> {
@@ -246,6 +273,9 @@ export class AgentJobsService {
       });
       if (claimed.count !== 1) continue;
       const row = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: candidate.id } });
+      const delivery = ['deploy', 'rollback'].includes(row.kind)
+        ? await this.deliveryForLease(agent, row.id, leaseToken)
+        : undefined;
       return {
         job: {
           id: row.id,
@@ -256,11 +286,34 @@ export class AgentJobsService {
           attempt: row.attempt,
           leaseToken,
           leaseExpiresAt: leaseExpiresAt.toISOString(),
+          ...(delivery ? { delivery } : {}),
         },
         nextPollSeconds: NEXT_POLL_SECONDS,
       };
     }
     return { job: null, nextPollSeconds: 1 };
+  }
+
+  async openArtifact(
+    authorization: string | undefined,
+    jobId: string,
+    leaseToken: string | undefined,
+  ): Promise<AgentArtifactDownload> {
+    if (!leaseToken?.startsWith(LEASE_PREFIX)) throw this.lostLease();
+    const agent = await this.agents.authenticateCredential(authorization);
+    const binding = await this.deliveryBinding(agent, jobId, leaseToken);
+    if (!binding || !['deploy', 'rollback'].includes(binding.kind)) throw this.lostLease();
+    const artifact = this.assertDeliveryBinding(binding);
+    const object = await this.artifactStore.head(artifact.storageRef);
+    const sizeBytes = this.safeSize(artifact.sizeBytes);
+    if (!object || object.sizeBytes !== sizeBytes) {
+      throw new NotFoundException('Verified build artifact is no longer available');
+    }
+    return {
+      stream: await this.artifactStore.openRead(artifact.storageRef),
+      sha256: this.normalizedDigest(artifact.digest),
+      sizeBytes,
+    };
   }
 
   async renew(
@@ -365,6 +418,106 @@ export class AgentJobsService {
         },
       },
     };
+  }
+
+  private async deliveryForLease(
+    agent: AuthenticatedAgent,
+    jobId: string,
+    leaseToken: string,
+  ): Promise<AgentJobDelivery> {
+    const binding = await this.deliveryBinding(agent, jobId, leaseToken);
+    if (!binding) throw this.lostLease();
+    const artifact = this.assertDeliveryBinding(binding);
+    const sizeBytes = this.safeSize(artifact.sizeBytes);
+    const object = await this.artifactStore.head(artifact.storageRef);
+    if (!object || object.sizeBytes !== sizeBytes) {
+      throw new NotFoundException('Verified build artifact is no longer available');
+    }
+    const envVars: Record<string, string> = {};
+    for (const variable of binding.deploymentOperation!.environment.configVars) {
+      envVars[variable.key] = variable.isSecret
+        ? decryptSecret(variable.value)
+        : variable.value;
+    }
+    return {
+      artifact: {
+        path: `/api/agent/jobs/${encodeURIComponent(jobId)}/artifact`,
+        sha256: this.normalizedDigest(artifact.digest),
+        sizeBytes,
+      },
+      envVars,
+    };
+  }
+
+  private deliveryBinding(
+    agent: AuthenticatedAgent,
+    jobId: string,
+    leaseToken: string,
+  ) {
+    return this.prisma.agentJob.findFirst({
+      where: this.activeLeaseWhere(agent, jobId, leaseToken, new Date()),
+      select: {
+        kind: true,
+        targetId: true,
+        allocationId: true,
+        deploymentOperation: {
+          select: {
+            buildArtifact: {
+              select: {
+                digest: true,
+                sizeBytes: true,
+                status: true,
+                storageKind: true,
+                storageRef: true,
+              },
+            },
+            environment: {
+              select: {
+                targetId: true,
+                allocationId: true,
+                configVars: {
+                  orderBy: { key: 'asc' },
+                  select: { key: true, value: true, isSecret: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  private assertDeliveryBinding(binding: Awaited<ReturnType<AgentJobsService['deliveryBinding']>>) {
+    const operation = binding?.deploymentOperation;
+    const artifact = operation?.buildArtifact;
+    if (
+      !binding
+      || !operation
+      || !artifact?.storageRef
+      || artifact.status !== 'available'
+      || artifact.storageKind !== 'object-store'
+      || operation.environment.targetId !== binding.targetId
+      || operation.environment.allocationId !== binding.allocationId
+    ) {
+      throw new BadRequestException('Agent job is not bound to an available deployment artifact');
+    }
+    return artifact as typeof artifact & { storageRef: string };
+  }
+
+  private normalizedDigest(value: string): string {
+    const digest = value.toLowerCase().replace(/^sha256:/, '');
+    if (!/^[a-f0-9]{64}$/.test(digest)) {
+      throw new BadRequestException('Build artifact has an invalid SHA-256 digest');
+    }
+    return digest;
+  }
+
+  private safeSize(value: bigint): number {
+    const size = Number(value);
+    if (!Number.isSafeInteger(size) || size < 1) {
+      throw new BadRequestException('Build artifact has an invalid size');
+    }
+    return size;
   }
 
   private activeLeaseWhere(

@@ -84,6 +84,17 @@ export class S3ArtifactStore implements ArtifactStore {
     await pipeline(body, createWriteStream(destPath));
   }
 
+  async openRead(key: string): Promise<Readable> {
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const body = res.Body;
+    if (!body || !(body instanceof Readable)) {
+      throw new Error(`S3ArtifactStore: unexpected empty body for '${key}'`);
+    }
+    return body;
+  }
+
   async delete(key: string): Promise<void> {
     // S3 DeleteObject is idempotent: deleting a missing key returns 204.
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));

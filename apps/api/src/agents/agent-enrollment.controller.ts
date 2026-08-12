@@ -1,4 +1,15 @@
-import { Body, Controller, Headers, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Res,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import { AuthRateLimitGuard } from '../auth/auth-rate-limit.guard';
 import { AgentsService } from './agents.service';
 import { AgentJobsService } from './agent-jobs.service';
@@ -47,6 +58,24 @@ export class AgentEnrollmentController {
     @Body() dto: AgentLeaseDto,
   ) {
     return this.jobs.renew(authorization, jobId, dto.leaseToken);
+  }
+
+  @Get('jobs/:jobId/artifact')
+  async downloadJobArtifact(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-initpad-job-lease') leaseToken: string | undefined,
+    @Param('jobId') jobId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const artifact = await this.jobs.openArtifact(authorization, jobId, leaseToken);
+    response.setHeader('cache-control', 'private, no-store');
+    response.setHeader('x-content-type-options', 'nosniff');
+    response.setHeader('x-initpad-artifact-sha256', artifact.sha256);
+    return new StreamableFile(artifact.stream, {
+      type: 'application/x-tar',
+      length: artifact.sizeBytes,
+      disposition: 'attachment; filename="initpad-image.tar"',
+    });
   }
 
   @Post('jobs/:jobId/progress')

@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Readable } from 'stream';
+import { encryptSecret } from '../common/secret';
 import { hashToken } from '../common/token';
 import { AgentJobsService } from './agent-jobs.service';
 
@@ -82,10 +84,41 @@ function setup() {
     requireTargetAccess: jest.fn(async () => undefined),
     authenticateCredential: jest.fn(async () => AGENT),
   };
+  const artifactStore = {
+    head: jest.fn(async () => ({ sizeBytes: 13 })),
+    openRead: jest.fn(async () => Readable.from('archive-bytes')),
+  };
   return {
-    service: new AgentJobsService(prisma as never, agents as never),
+    service: new AgentJobsService(prisma as never, agents as never, artifactStore as never),
     prisma,
     agents,
+    artifactStore,
+  };
+}
+
+function deliveryBinding(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: 'deploy',
+    targetId: 'target-1',
+    allocationId: 'allocation-1',
+    deploymentOperation: {
+      buildArtifact: {
+        digest: 'a'.repeat(64),
+        sizeBytes: 13n,
+        status: 'available',
+        storageKind: 'object-store',
+        storageRef: 'artifacts/ws/project/artifact/a.tar',
+      },
+      environment: {
+        targetId: 'target-1',
+        allocationId: 'allocation-1',
+        configVars: [
+          { key: 'APP_MODE', value: 'production', isSecret: false },
+          { key: 'DATABASE_PASSWORD', value: encryptSecret('db-secret'), isSecret: true },
+        ],
+      },
+    },
+    ...overrides,
   };
 }
 
@@ -211,6 +244,73 @@ describe('AgentJobsService durable lease protocol', () => {
       }),
       data: expect.objectContaining({ attempt: { increment: 1 } }),
     }));
+  });
+
+  it('materializes artifact metadata and decrypted config only for the winning deploy lease', async () => {
+    const { service, prisma, artifactStore } = setup();
+    prisma.agentJob.findFirst
+      .mockResolvedValueOnce({ id: 'job-1', status: 'queued', leaseTokenHash: null })
+      .mockResolvedValueOnce(deliveryBinding());
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({
+      kind: 'deploy',
+      allocationId: 'allocation-1',
+      deploymentOperationId: 'operation-1',
+      payload: {
+        allocationId: 'allocation-1',
+        projectSlug: 'sample-project',
+        environment: 'dev',
+      },
+    }));
+
+    const result = await service.claim('Bearer credential');
+
+    expect(result.job).toMatchObject({
+      kind: 'deploy',
+      payload: {
+        allocationId: 'allocation-1',
+        projectSlug: 'sample-project',
+        environment: 'dev',
+      },
+      delivery: {
+        artifact: {
+          path: '/api/agent/jobs/job-1/artifact',
+          sha256: 'a'.repeat(64),
+          sizeBytes: 13,
+        },
+        envVars: {
+          APP_MODE: 'production',
+          DATABASE_PASSWORD: 'db-secret',
+        },
+      },
+    });
+    expect((result.job?.payload as Record<string, unknown>)).not.toHaveProperty('envVars');
+    expect(JSON.stringify(prisma.agentJob.updateMany.mock.calls)).not.toContain('db-secret');
+    expect(artifactStore.head).toHaveBeenCalledWith('artifacts/ws/project/artifact/a.tar');
+  });
+
+  it('streams a verified artifact only under the current target lease', async () => {
+    const { service, prisma, artifactStore } = setup();
+    prisma.agentJob.findFirst.mockResolvedValue(deliveryBinding());
+
+    const download = await service.openArtifact('Bearer credential', 'job-1', LEASE);
+
+    expect(download).toMatchObject({ sha256: 'a'.repeat(64), sizeBytes: 13 });
+    expect(artifactStore.openRead).toHaveBeenCalledWith('artifacts/ws/project/artifact/a.tar');
+    expect(await new Promise<string>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      download.stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      download.stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      download.stream.on('error', reject);
+    })).toBe('archive-bytes');
+  });
+
+  it('does not expose an artifact after the lease is lost', async () => {
+    const { service, prisma, artifactStore } = setup();
+    prisma.agentJob.findFirst.mockResolvedValue(null);
+
+    await expect(service.openArtifact('Bearer credential', 'job-1', LEASE))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(artifactStore.openRead).not.toHaveBeenCalled();
   });
 
   it('renews and advances progress only under the current unexpired lease', async () => {

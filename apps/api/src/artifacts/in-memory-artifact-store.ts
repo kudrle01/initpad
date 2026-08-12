@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import { Readable } from 'stream';
 
 import { ArtifactObjectHead, ArtifactStore } from './artifact-store';
 
@@ -25,6 +26,12 @@ export class InMemoryArtifactStore implements ArtifactStore {
     const buf = this.objects.get(key);
     if (!buf) throw new Error(`ArtifactStore: object '${key}' not found`);
     await fs.writeFile(destPath, buf);
+  }
+
+  async openRead(key: string): Promise<Readable> {
+    const buf = this.objects.get(key);
+    if (!buf) throw new Error(`ArtifactStore: object '${key}' not found`);
+    return Readable.from(buf);
   }
 
   async delete(key: string): Promise<void> {

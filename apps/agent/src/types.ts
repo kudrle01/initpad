@@ -45,6 +45,14 @@ export interface AgentJobClaim {
   attempt: number;
   leaseToken: string;
   leaseExpiresAt: string;
+  delivery?: {
+    artifact: {
+      path: string;
+      sha256: string;
+      sizeBytes: number;
+    };
+    envVars: Record<string, string>;
+  };
 }
 
 export interface AgentJobSummary {

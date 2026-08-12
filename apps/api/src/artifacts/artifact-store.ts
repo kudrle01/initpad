@@ -1,3 +1,5 @@
+import type { Readable } from 'stream';
+
 /**
  * Durable object storage for verified build artifacts (ADR-059).
  *
@@ -23,6 +25,12 @@ export interface ArtifactStore {
 
   /** Streams the object down to a local destination path (for rehydration). */
   getToFile(key: string, destPath: string): Promise<void>;
+
+  /**
+   * Opens a bounded-identity object as a stream. Callers remain responsible for
+   * authenticating the consumer; the store never exposes bucket credentials.
+   */
+  openRead(key: string): Promise<Readable>;
 
   /** Removes the object. Idempotent: a missing object is not an error. */
   delete(key: string): Promise<void>;

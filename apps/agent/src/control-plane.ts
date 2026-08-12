@@ -96,6 +96,42 @@ export function renewJobLease(
   }, config.credential, fetchImpl);
 }
 
+/**
+ * Streams one verified image archive under the current job lease. The Agent
+ * credential identifies the physical target; the lease token fences this
+ * concrete delivery attempt. Neither value is placed in the URL.
+ */
+export async function downloadJobArtifact(
+  config: AgentConfig,
+  jobId: string,
+  leaseToken: string,
+  path: string,
+  signal?: AbortSignal,
+  fetchImpl: FetchLike = fetch,
+): Promise<Response> {
+  if (path !== `/api/agent/jobs/${encodeURIComponent(jobId)}/artifact`) {
+    throw new Error('Control plane returned an invalid Agent artifact path');
+  }
+  const response = await fetchImpl(`${config.controlPlaneUrl}${path}`, {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${config.credential}`,
+      'x-initpad-job-lease': leaseToken,
+    },
+    signal,
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    const apiMessage = typeof payload?.message === 'string' ? payload.message : undefined;
+    throw new ControlPlaneError(
+      response.status,
+      apiMessage || `Control plane returned HTTP ${response.status}`,
+    );
+  }
+  if (!response.body) throw new Error('Control plane returned an empty artifact stream');
+  return response;
+}
+
 export function reportJobProgress(
   config: AgentConfig,
   jobId: string,

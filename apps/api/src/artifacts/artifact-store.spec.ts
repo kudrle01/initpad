@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { text } from 'stream/consumers';
 
 import { artifactObjectKey } from './artifact-store';
 import { InMemoryArtifactStore } from './in-memory-artifact-store';
@@ -65,6 +66,7 @@ describe('InMemoryArtifactStore', () => {
 
     await store.getToFile('artifacts/ws/pr/ar/d.tar', dest);
     expect((await readFile(dest)).toString()).toBe('payload-bytes');
+    expect(await text(await store.openRead('artifacts/ws/pr/ar/d.tar'))).toBe('payload-bytes');
   });
 
   it('reports a missing object via head() rather than throwing', async () => {
@@ -73,6 +75,7 @@ describe('InMemoryArtifactStore', () => {
 
   it('throws when getToFile targets a missing object', async () => {
     await expect(store.getToFile('nope', join(dir, 'x'))).rejects.toThrow(/not found/);
+    await expect(store.openRead('nope')).rejects.toThrow(/not found/);
   });
 
   it('delete is idempotent', async () => {

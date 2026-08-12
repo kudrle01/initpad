@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   claimJob,
   completeJob,
+  downloadJobArtifact,
   enroll,
   heartbeat,
   renewJobLease,
@@ -88,4 +89,48 @@ test('uses separate enrollment and bearer-authenticated heartbeat requests', asy
     '/api/agent/jobs/job-1/complete',
   ]);
   assert.equal(requests.slice(2).every((request) => request.authorization === `Bearer ${enrollment.credential}`), true);
+});
+
+test('downloads an artifact only through bearer plus lease headers', async () => {
+  const config: AgentConfig = {
+    controlPlaneUrl: 'https://initpad.example.test',
+    agentId: 'agent-1',
+    targetId: 'target-1',
+    credential: `initpad_agent_${'b'.repeat(43)}`,
+    credentialGeneration: 1,
+    protocolVersion: 1,
+    enrolledAt: '2026-08-12T09:00:00.000Z',
+  };
+  const leaseToken = `initpad_lease_${'c'.repeat(43)}`;
+  const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input.toString());
+    const headers = new Headers(init?.headers);
+    assert.equal(url.pathname, '/api/agent/jobs/job-1/artifact');
+    assert.equal(url.search, '');
+    assert.equal(headers.get('authorization'), `Bearer ${config.credential}`);
+    assert.equal(headers.get('x-initpad-job-lease'), leaseToken);
+    return new Response('archive-bytes', { status: 200 });
+  };
+
+  const response = await downloadJobArtifact(
+    config,
+    'job-1',
+    leaseToken,
+    '/api/agent/jobs/job-1/artifact',
+    undefined,
+    fetchImpl as typeof fetch,
+  );
+  assert.equal(await response.text(), 'archive-bytes');
+
+  await assert.rejects(
+    () => downloadJobArtifact(
+      config,
+      'job-1',
+      leaseToken,
+      'https://attacker.example/artifact',
+      undefined,
+      fetchImpl as typeof fetch,
+    ),
+    /invalid Agent artifact path/,
+  );
 });
