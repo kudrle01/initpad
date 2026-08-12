@@ -117,6 +117,16 @@ export type TargetScope = 'builtin' | 'user';
 export type EnvName = 'dev' | 'test' | 'prod';
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
 
+export interface AgentDockerCapabilities {
+  engineVersion: string;
+  apiVersion: string;
+  os: string;
+  arch: string;
+  rootless: boolean;
+  cpus: number;
+  memoryBytes: number;
+}
+
 export interface AgentStatus {
   id: string;
   targetId: string;
@@ -126,6 +136,7 @@ export interface AgentStatus {
   credentialGeneration: number;
   protocolVersion: number;
   version: string | null;
+  capabilities: AgentDockerCapabilities | null;
   enrolledAt: string | null;
   lastSeenAt: string | null;
   disabledAt: string | null;

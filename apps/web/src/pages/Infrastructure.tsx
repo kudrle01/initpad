@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import type { TargetAllocation, TargetAllocationInput, TargetInput } from '@/api';
 import { useAuth } from '@/auth';
@@ -37,6 +37,12 @@ export default function Infrastructure() {
       !allocatedTargetIds.has(target.id) &&
       !(target.scope === 'user' && target.kind === 'docker'),
   );
+
+  useEffect(() => {
+    if (!agentTarget) return;
+    const refreshed = infrastructure.targets.find((target) => target.id === agentTarget.id);
+    if (refreshed && refreshed !== agentTarget) setAgentTarget(refreshed);
+  }, [agentTarget, infrastructure.targets]);
 
   function openNewTarget() {
     setEditingTarget(null);

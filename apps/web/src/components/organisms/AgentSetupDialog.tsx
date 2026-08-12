@@ -31,6 +31,11 @@ const STATE_LABEL: Record<string, string> = {
   disabled: 'disabled',
 };
 
+function formatMemory(bytes: number): string {
+  const gibibytes = bytes / (1024 ** 3);
+  return `${gibibytes >= 10 ? gibibytes.toFixed(0) : gibibytes.toFixed(1)} GiB`;
+}
+
 export function AgentSetupDialog({
   open,
   target,
@@ -48,7 +53,8 @@ export function AgentSetupDialog({
   if (!target) return null;
   const agent = target.agent;
   const state = agent?.state ?? 'not-enrolled';
-  const installCommand = `sudo initpad-agent enroll --url '${window.location.origin}'`;
+  const insecureFlag = window.location.protocol === 'http:' ? ' --allow-insecure-http' : '';
+  const installCommand = `sudo initpad-agent enroll --url '${window.location.origin}'${insecureFlag}`;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
@@ -72,6 +78,19 @@ export function AgentSetupDialog({
             <StatusBadge status={state} label={STATE_LABEL[state]} />
           </div>
 
+          {agent?.capabilities && (
+            <div className="grid gap-1 rounded-lg border border-border bg-secondary/20 p-3 text-xs text-muted-foreground sm:grid-cols-2">
+              <span>Docker {agent.capabilities.engineVersion} · API {agent.capabilities.apiVersion}</span>
+              <span className="sm:text-right">
+                {agent.capabilities.os}/{agent.capabilities.arch}
+                {agent.capabilities.rootless ? ' · rootless' : ''}
+              </span>
+              <span className="sm:col-span-2">
+                {agent.capabilities.cpus} CPU · {formatMemory(agent.capabilities.memoryBytes)} available to Docker
+              </span>
+            </div>
+          )}
+
           {enrollment ? (
             <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
               <div className="flex items-start gap-2 text-sm">
@@ -90,7 +109,8 @@ export function AgentSetupDialog({
                 <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Run on the Docker server</p>
                 <CopyField command={installCommand} />
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  The command prompts for the token so the secret does not enter shell history.
+                  After installing the Agent package, run this command. It prompts for the token,
+                  so the secret does not enter shell history.
                 </p>
               </div>
             </div>

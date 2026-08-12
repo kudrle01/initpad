@@ -59,6 +59,14 @@ export function useInfrastructure(workspaceId?: string) {
     };
   }, [refresh]);
 
+  useEffect(() => {
+    if (!workspaceId) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [refresh, workspaceId]);
+
   async function saveTarget(target: Target | null, values: TargetInput) {
     setSavingTarget(true);
     try {
