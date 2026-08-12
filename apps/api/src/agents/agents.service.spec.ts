@@ -48,6 +48,10 @@ function setup(role: string | null = 'owner') {
       updateMany: jest.fn(async (_args: Record<string, unknown>) => ({ count: 1 })),
       update: jest.fn(async (_args: Record<string, unknown>) => agentRow()),
     },
+    agentJob: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
+    $transaction: jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
   };
   const workspaces = {
     roleFor: jest.fn(async () => role),
@@ -288,5 +292,12 @@ describe('AgentsService trust bootstrap', () => {
       }),
     });
     expect(prisma.target.findUnique).toHaveBeenCalled();
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith({
+      where: { targetId: 'target-1', status: { in: ['queued', 'leased'] } },
+      data: expect.objectContaining({
+        status: 'cancelled',
+        finishedAt: NOW,
+      }),
+    });
   });
 });

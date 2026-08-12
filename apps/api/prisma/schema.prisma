@@ -217,6 +217,7 @@ model Target {
   environments Environment[]
   allocations  TargetAllocation[]
   agent        Agent?
+  agentJobs    AgentJob[]
 
   // A workspace cannot have two user targets with the same name. Built-ins
   // have null workspaceId and stable ids (Postgres permits multiple NULLs).
@@ -244,6 +245,7 @@ model Agent {
   disabledAt           DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
+  leasedJobs           AgentJob[] @relation("AgentJobLeaseOwner")
 
   @@index([lastSeenAt])
   @@index([disabledAt])
@@ -276,6 +278,7 @@ model TargetAllocation {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   environments    Environment[]
+  agentJobs       AgentJob[]
 
   @@unique([workspaceId, targetId])
   @@index([targetId])
@@ -488,8 +491,52 @@ model DeploymentOperation {
   createdAt     DateTime    @default(now())
   startedAt     DateTime    @default(now())
   finishedAt    DateTime?
+  agentJob       AgentJob?
 
   @@index([environmentId, createdAt])
   @@index([status])
   @@index([buildArtifactId])
+}
+
+// Durable, target-scoped delivery envelope polled by an outbound InitPad Agent
+// (ADR-069). The long-lived Agent credential authenticates the physical target;
+// every claim additionally receives a short-lived fencing token. A stale
+// worker therefore cannot renew or publish after the lease is reassigned.
+model AgentJob {
+  id                    String               @id @default(uuid())
+  target                Target               @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  targetId              String
+  allocation            TargetAllocation?    @relation(fields: [allocationId], references: [id], onDelete: SetNull)
+  allocationId          String?
+  deploymentOperation   DeploymentOperation? @relation(fields: [deploymentOperationId], references: [id], onDelete: SetNull)
+  deploymentOperationId String?               @unique
+  leasedByAgent         Agent?                @relation("AgentJobLeaseOwner", fields: [leasedByAgentId], references: [id], onDelete: SetNull)
+  leasedByAgentId       String?
+
+  dedupeKey       String   @unique
+  kind            String   // probe | deploy | start | stop | remove | status | logs | rollback
+  protocolVersion Int      @default(1)
+  payload         Json
+  status          String   @default("queued") // queued | leased | succeeded | failed | cancelled
+  attempt         Int      @default(0)
+
+  // Only the SHA-256 hash crosses the DB boundary. The plaintext lease token is
+  // returned once to the winning Agent claim and acts as its fencing token.
+  leaseTokenHash String?   @unique
+  leasedAt       DateTime?
+  leaseExpiresAt DateTime?
+
+  progressSequence Int      @default(0)
+  progressPercent  Int      @default(0)
+  progressStage    String   @default("queued")
+  message          String?
+  resultCode       String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  finishedAt DateTime?
+
+  @@index([targetId, status, createdAt])
+  @@index([status, leaseExpiresAt])
+  @@index([allocationId])
 }

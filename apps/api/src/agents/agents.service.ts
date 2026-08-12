@@ -35,6 +35,14 @@ interface AgentRow {
   updatedAt: Date;
 }
 
+export interface AuthenticatedAgent {
+  id: string;
+  targetId: string;
+  credentialHash: string;
+  credentialGeneration: number;
+  protocolVersion: number;
+}
+
 export interface AgentSummary {
   id: string;
   targetId: string;
@@ -63,7 +71,7 @@ export class AgentsService {
   ) {}
 
   async getForTarget(targetId: string, userId: string): Promise<AgentSummary | null> {
-    await this.authorizeTarget(targetId, userId, 'read');
+    await this.requireTargetAccess(targetId, userId, 'read');
     const agent = await this.prisma.agent.findUnique({ where: { targetId } });
     return agent ? this.summary(agent as AgentRow) : null;
   }
@@ -72,7 +80,7 @@ export class AgentsService {
     targetId: string,
     userId: string,
   ): Promise<AgentSummary & { enrollmentToken: string }> {
-    await this.authorizeTarget(targetId, userId, 'admin');
+    await this.requireTargetAccess(targetId, userId, 'admin');
     const now = new Date();
     const enrollmentToken = `${ENROLLMENT_PREFIX}${generateToken()}`;
     const enrollmentExpiresAt = new Date(now.getTime() + ENROLLMENT_TTL_MS);
@@ -158,15 +166,8 @@ export class AgentsService {
     acceptedAt: string;
     nextHeartbeatSeconds: number;
   }> {
-    const credential = authorization?.match(AGENT_CREDENTIAL_PATTERN)?.[1];
-    if (!credential) throw new UnauthorizedException('Invalid Agent credential');
-    const credentialHash = hashToken(credential);
-    const agent = (await this.prisma.agent.findUnique({
-      where: { credentialHash },
-    })) as AgentRow | null;
-    if (!agent || agent.disabledAt || !agent.credentialHash) {
-      throw new UnauthorizedException('Invalid Agent credential');
-    }
+    const agent = await this.authenticateCredential(authorization);
+    const credentialHash = agent.credentialHash;
 
     const now = new Date();
     // Compare-and-set closes the revoke race between credential lookup and the
@@ -197,21 +198,55 @@ export class AgentsService {
   }
 
   async disable(targetId: string, userId: string): Promise<void> {
-    await this.authorizeTarget(targetId, userId, 'admin');
+    await this.requireTargetAccess(targetId, userId, 'admin');
     const agent = await this.prisma.agent.findUnique({ where: { targetId } });
     if (!agent) throw new NotFoundException(`Agent for target '${targetId}' not found`);
-    await this.prisma.agent.update({
-      where: { targetId },
-      data: {
-        disabledAt: new Date(),
-        enrollmentTokenHash: null,
-        enrollmentExpiresAt: null,
-        credentialHash: null,
-      },
-    });
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.agent.update({
+        where: { targetId },
+        data: {
+          disabledAt: now,
+          enrollmentTokenHash: null,
+          enrollmentExpiresAt: null,
+          credentialHash: null,
+        },
+      }),
+      this.prisma.agentJob.updateMany({
+        where: { targetId, status: { in: ['queued', 'leased'] } },
+        data: {
+          status: 'cancelled',
+          progressStage: 'cancelled',
+          message: 'Agent disabled by a workspace administrator',
+          leaseExpiresAt: null,
+          finishedAt: now,
+        },
+      }),
+    ]);
   }
 
-  private async authorizeTarget(
+  async authenticateCredential(
+    authorization: string | undefined,
+  ): Promise<AuthenticatedAgent> {
+    const credential = authorization?.match(AGENT_CREDENTIAL_PATTERN)?.[1];
+    if (!credential) throw new UnauthorizedException('Invalid Agent credential');
+    const credentialHash = hashToken(credential);
+    const agent = (await this.prisma.agent.findUnique({
+      where: { credentialHash },
+    })) as AgentRow | null;
+    if (!agent || agent.disabledAt || !agent.credentialHash) {
+      throw new UnauthorizedException('Invalid Agent credential');
+    }
+    return {
+      id: agent.id,
+      targetId: agent.targetId,
+      credentialHash,
+      credentialGeneration: agent.credentialGeneration,
+      protocolVersion: agent.protocolVersion,
+    };
+  }
+
+  async requireTargetAccess(
     targetId: string,
     userId: string,
     permission: 'read' | 'admin',
