@@ -102,7 +102,7 @@ export async function dockerHttpRequest(
     req.on('error', reject);
     req.on('close', () => input.signal?.removeEventListener('abort', abort));
     if (body && isAsyncIterable(body)) {
-      void writeStream(req, body, input.signal).catch((error) => req.destroy(error as Error));
+      void writeRequestStream(req, body, input.signal).catch((error) => req.destroy(error as Error));
     } else {
       if (bufferedBody) req.write(bufferedBody);
       req.end();
@@ -118,7 +118,7 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array> {
   );
 }
 
-async function writeStream(
+export async function writeRequestStream(
   request: http.ClientRequest,
   body: AsyncIterable<Uint8Array>,
   signal?: AbortSignal,
@@ -126,13 +126,34 @@ async function writeStream(
   for await (const chunk of body) {
     if (signal?.aborted) throw new Error('Docker API request aborted');
     if (!request.write(Buffer.from(chunk))) {
-      await new Promise<void>((resolve, reject) => {
-        request.once('drain', resolve);
-        request.once('error', reject);
-      });
+      await waitForDrain(request, signal);
     }
   }
   request.end();
+}
+
+function waitForDrain(request: http.ClientRequest, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      request.removeListener('drain', drained);
+      request.removeListener('error', failed);
+      signal?.removeEventListener('abort', aborted);
+    };
+    const drained = () => {
+      cleanup();
+      resolve();
+    };
+    const failed = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const aborted = () => failed(new Error('Docker API request aborted'));
+
+    request.once('drain', drained);
+    request.once('error', failed);
+    signal?.addEventListener('abort', aborted, { once: true });
+    if (signal?.aborted) aborted();
+  });
 }
 
 export function dockerError(response: DockerHttpResponse, action: string): Error {
