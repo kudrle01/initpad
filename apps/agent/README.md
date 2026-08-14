@@ -118,9 +118,21 @@ After the diagnostic tests above pass, verify the actual project path:
 7. Confirm a second workspace cannot see or allocate the first workspace's
    Agent target. To test two Agent workloads on one physical daemon, register a
    second workspace-owned target and run a second Agent identity against the
-   lab daemon; labels, names and networks must use different namespaces and
-   neither workspace may act on the other's workload. A centrally shared
-   multi-workspace Agent target requires a future platform-admin sharing model.
+   lab daemon:
+
+   ```sh
+   ./agent-lab.sh enroll-secondary
+   ./agent-lab.sh start-secondary
+   ./agent-lab.sh status
+   ```
+
+   The secondary identity has its own `0600` credential volume but deliberately
+   uses the same DinD daemon. Deploy one project from each workspace. Labels,
+   names and networks must use different namespaces; stopping or removing the
+   second workload must leave the first one running and reachable. Neither
+   workspace may see or act on the other's target or workload. A centrally
+   shared multi-workspace Agent target requires a future platform-admin sharing
+   model.
 
 ## Credential storage
 

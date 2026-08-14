@@ -22,24 +22,37 @@ case "${1:-help}" in
     compose run --rm -it agent-lab \
       enroll --url "$control_plane_url" --allow-insecure-http
     ;;
+  enroll-secondary)
+    compose run --rm -it agent-lab-secondary \
+      enroll --url "$control_plane_url" --allow-insecure-http
+    ;;
   start)
     compose up -d agent-lab-docker agent-lab-ports agent-lab
+    ;;
+  start-secondary)
+    compose up -d agent-lab-docker agent-lab-ports agent-lab-secondary
     ;;
   once)
     compose run --rm agent-lab once
     ;;
   status)
-    compose ps agent-lab agent-lab-docker agent-lab-ports
+    compose ps agent-lab agent-lab-secondary agent-lab-docker agent-lab-ports
     ;;
   logs)
     compose logs --tail=100 -f agent-lab
+    ;;
+  logs-secondary)
+    compose logs --tail=100 -f agent-lab-secondary
     ;;
   docker)
     shift
     compose exec -T agent-lab-docker docker "$@"
     ;;
   stop)
-    compose stop agent-lab agent-lab-ports agent-lab-docker
+    compose stop agent-lab agent-lab-secondary agent-lab-ports agent-lab-docker
+    ;;
+  stop-secondary)
+    compose stop agent-lab-secondary
     ;;
   *)
     cat <<'USAGE'
@@ -48,8 +61,12 @@ Usage: ./agent-lab.sh <command>
   build   Build the local InitPad Agent image
   enroll  Prompt for a one-time token and store the resulting credential
   start   Start the Agent and its isolated Docker daemon
+  enroll-secondary  Enroll a separate second target identity
+  start-secondary   Start the second identity against the same Docker daemon
+  logs-secondary    Follow structured logs for the second identity
+  stop-secondary    Stop only the second identity
   once    Send one heartbeat and exit
-  status  Show the two lab containers
+  status  Show the lab daemon, port bridge and both Agent identities
   logs    Follow structured Agent logs
   docker  Run a Docker CLI inspection inside the isolated target daemon
   stop    Stop only the Agent lab (the InitPad platform keeps running)

@@ -88,10 +88,21 @@ services:
     pids_limit: 96
     restart: unless-stopped
 
+  # A second target identity backed by the same physical DinD daemon. It is
+  # started only through the explicit secondary helper commands and keeps a
+  # separate root-only credential volume. This models two customer-owned
+  # targets on one server without weakening either target identity.
+  agent-lab-secondary:
+    extends:
+      service: agent-lab
+    volumes:
+      - agent-lab-secondary-config:/var/lib/initpad-agent
+
 networks:
   agent-lab-target:
     name: initpad-agent-lab-target
 
 volumes:
   agent-lab-config:
+  agent-lab-secondary-config:
   agent-lab-docker-data:
