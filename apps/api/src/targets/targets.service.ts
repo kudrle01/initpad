@@ -6,7 +6,6 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import { isIP } from 'node:net';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { artifactStoreConfigured, config } from '../config';
@@ -19,6 +18,7 @@ import {
   TargetScope,
 } from '../domain/types';
 import type { ProviderConnection, VerifyResult } from '../deployment/deployment-provider.interface';
+import { normalizeManagedGatewayOrigin } from './managed-gateway';
 import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
 import { WorkspacesService } from '../workspaces/workspaces.service';
@@ -470,22 +470,7 @@ export class TargetsService implements OnModuleInit {
   ): string {
     this.assertSafePublicUrl(publicUrl);
     if (routingMode === 'direct-port') return publicUrl;
-
-    const url = new URL(publicUrl);
-    if (
-      url.protocol !== 'https:'
-      || url.username
-      || url.password
-      || url.pathname !== '/'
-      || url.search
-      || url.hash
-      || isIP(url.hostname) !== 0
-    ) {
-      throw new BadRequestException(
-        'Managed gateway base URL must be an HTTPS DNS origin without credentials, path, query or fragment',
-      );
-    }
-    return url.origin;
+    return normalizeManagedGatewayOrigin(publicUrl);
   }
 
   private assertNoRemoteCredentials(dto: {

@@ -3062,6 +3062,15 @@ Produkční režim záměrně zůstává `setup pending` a nejde alokovat ani po
 projekt, dokud neexistuje gateway preflight a idempotentní reconcile. Tím se
 konfigurace, která jen vypadá produkčně, nemůže omylem označit jako připravená.
 
+**Stav implementace — rezervace hostname.** `GatewayRoute` je samostatný
+per-environment záznam s unikátním `environmentId`, `hostname` a `publicUrl`.
+Čitelný DNS label doplňuje dvanáctiznakový SHA-256 suffix immutable environment
+ID; unikátní databázové indexy jsou konečnou ochranou souběžných zápisů.
+Rezervace je idempotentní, po rename vrací uloženou hodnotu a odmítne tiché
+převázání na jiný target nebo allocation. Allocation smí použít jen target
+zónu nebo její DNS podzónu. Model už odděluje desired/observed stav a generation
+pro následující Agent reconcile, ale sám zatím žádnou gateway nemění.
+
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
 nakonfiguruje DNS. Dva workspace současně nasadí stejně pojmenovaný projekt;

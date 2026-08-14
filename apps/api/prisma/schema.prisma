@@ -188,39 +188,40 @@ model WorkspaceMember {
 // deploy path for them is unchanged. User targets carry an encrypted secret
 // (password / PEM key) and are used to build the real connection.
 model Target {
-  id           String             @id @default(uuid())
-  name         String
-  kind         String // 'docker' | 'ssh' | 'sftp'
-  scope        String // 'builtin' | 'user'
+  id            String             @id @default(uuid())
+  name          String
+  kind          String // 'docker' | 'ssh' | 'sftp'
+  scope         String // 'builtin' | 'user'
   // What runtimes this target can execute (comma-separated): a subset of
   // 'static','node','php','python'. An environment can bind to a target only
   // when its template's runtime is in this set (e.g. our static nginx host
   // cannot run PHP, but a real PHP-capable SFTP host can).
-  capabilities String
-  host         String?
-  port         Int?
-  username     String?
-  auth         String? // 'password' | 'key'
-  secret       String? // encrypted password or PEM private key (user targets)
-  remotePath   String? // writable root on the remote
-  publicUrl    String? // public address the deployed app/site is reachable at
+  capabilities  String
+  host          String?
+  port          Int?
+  username      String?
+  auth          String? // 'password' | 'key'
+  secret        String? // encrypted password or PEM private key (user targets)
+  remotePath    String? // writable root on the remote
+  publicUrl     String? // public address the deployed app/site is reachable at
   // Docker application exposure: random published ports for local/lab, or a
   // stable HTTPS hostname reconciled through a trusted gateway (ADR-073).
-  routingMode  String             @default("direct-port") // direct-port | managed-gateway
+  routingMode   String             @default("direct-port") // direct-port | managed-gateway
   // Last successful connection test; null = never verified.
-  verifiedAt   DateTime?
+  verifiedAt    DateTime?
   // Owner of a user target; null for built-in (shared) targets.
-  owner        User?              @relation(fields: [ownerId], references: [id])
-  ownerId      String?
+  owner         User?              @relation(fields: [ownerId], references: [id])
+  ownerId       String?
   // Null only for built-in shared targets. User targets belong to a workspace;
   // ownerId remains the credential/SCM identity during the tenancy migration.
-  workspace    Workspace?         @relation(fields: [workspaceId], references: [id])
-  workspaceId  String?
-  createdAt    DateTime           @default(now())
-  environments Environment[]
-  allocations  TargetAllocation[]
-  agent        Agent?
-  agentJobs    AgentJob[]
+  workspace     Workspace?         @relation(fields: [workspaceId], references: [id])
+  workspaceId   String?
+  createdAt     DateTime           @default(now())
+  environments  Environment[]
+  allocations   TargetAllocation[]
+  agent         Agent?
+  agentJobs     AgentJob[]
+  gatewayRoutes GatewayRoute[]
 
   // A workspace cannot have two user targets with the same name. Built-ins
   // have null workspaceId and stable ids (Postgres permits multiple NULLs).
@@ -262,10 +263,10 @@ model Agent {
 // collide on container names or SFTP release paths. Credentials are NEVER
 // duplicated here.
 model TargetAllocation {
-  id              String        @id @default(uuid())
-  target          Target        @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  id              String         @id @default(uuid())
+  target          Target         @relation(fields: [targetId], references: [id], onDelete: Cascade)
   targetId        String
-  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId     String
   // Isolating prefix for this workspace on the (possibly shared) target:
   // a container-name prefix for docker/ssh, the releases root for sftp.
@@ -275,13 +276,14 @@ model TargetAllocation {
   publicUrl       String?
   // Subset of the target's capabilities this workspace may use.
   capabilities    String
-  status          String        @default("active") // active | disabled
+  status          String         @default("active") // active | disabled
   // Basic quota: how many environments may bind to this allocation.
-  maxEnvironments Int           @default(50)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  maxEnvironments Int            @default(50)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
   environments    Environment[]
   agentJobs       AgentJob[]
+  gatewayRoutes   GatewayRoute[]
 
   @@unique([workspaceId, targetId])
   @@index([targetId])
@@ -396,10 +398,40 @@ model Environment {
   buildArtifact     BuildArtifact?        @relation(fields: [buildArtifactId], references: [id], onDelete: SetNull)
   buildArtifactId   String?
 
-  configVars AppConfigVar[]
+  configVars   AppConfigVar[]
+  gatewayRoute GatewayRoute?
 
   @@unique([projectId, name])
   @@index([buildArtifactId])
+  @@index([allocationId])
+}
+
+// Stable, control-plane-owned route reservation for managed-gateway targets
+// (ADR-073). The hostname is allocated once from the immutable Environment id;
+// project rename, redeploy and stop/start therefore preserve the public URL.
+// Desired and observed state remain separate so Agent reconciliation can be
+// idempotent and a failed gateway update cannot be mistaken for publication.
+model GatewayRoute {
+  id               String           @id @default(uuid())
+  environment      Environment      @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  environmentId    String           @unique
+  target           Target           @relation(fields: [targetId], references: [id], onDelete: Restrict)
+  targetId         String
+  allocation       TargetAllocation @relation(fields: [allocationId], references: [id], onDelete: Restrict)
+  allocationId     String
+  hostname         String           @unique
+  publicUrl        String           @unique
+  desiredState     String           @default("reserved") // reserved | active | stopped | absent
+  desiredRevision  String?
+  observedState    String           @default("absent") // absent | active | stopped | failed
+  observedRevision String?
+  generation       Int              @default(0)
+  lastError        String?
+  reconciledAt     DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([targetId, desiredState])
   @@index([allocationId])
 }
 

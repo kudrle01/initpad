@@ -310,6 +310,12 @@ nezobrazí falešný empty/error stav.
    chování; produkční režim vyžaduje čistý HTTPS DNS origin a do dokončení
    preflight/reconcile zůstává bezpečně nealokovatelný jako `setup pending`.
 
+   ✅ **8b — stabilní route rezervace.** `GatewayRoute` jednou rezervuje
+   collision-safe hostname a HTTPS URL pro immutable environment. Databáze
+   vynucuje unikátní environment, hostname i URL; souběžný zápis převezme pouze
+   přesného vítěze. Rename, redeploy a stop/start rezervaci nepřepočítají.
+   Desired a observed stav jsou oddělené pro následující Agent reconcile.
+
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
 údajů, vygeneroval jednorázový enrollment, po zavření dialogu už plaintext

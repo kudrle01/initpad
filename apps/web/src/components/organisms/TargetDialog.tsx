@@ -47,10 +47,20 @@ function validManagedGatewayOrigin(value: string): boolean {
     const url = new URL(value);
     const ipLiteral = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(url.hostname)
       || url.hostname.includes(':');
+    const dnsName = url.hostname.length <= 253
+      && url.hostname.split('.').every((label) =>
+        /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
     return url.protocol === 'https:'
-      && url.origin === value.replace(/\/$/, '')
+      && !url.username
+      && !url.password
+      && !url.port
+      && url.pathname === '/'
+      && !url.search
+      && !url.hash
       && !ipLiteral
-      && url.hostname.length > 0;
+      && url.hostname !== 'localhost'
+      && !url.hostname.endsWith('.localhost')
+      && dnsName;
   } catch {
     return false;
   }
