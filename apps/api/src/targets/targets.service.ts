@@ -6,6 +6,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
+import { isIP } from 'node:net';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { artifactStoreConfigured, config } from '../config';
@@ -14,6 +15,7 @@ import {
   ProviderKind,
   RuntimeKind,
   Target,
+  TargetRoutingMode,
   TargetScope,
 } from '../domain/types';
 import type { ProviderConnection, VerifyResult } from '../deployment/deployment-provider.interface';
@@ -41,6 +43,7 @@ export interface TargetRow {
   secret: string | null;
   remotePath: string | null;
   publicUrl: string | null;
+  routingMode?: string;
   verifiedAt: Date | null;
   ownerId: string | null;
   workspaceId: string | null;
@@ -90,6 +93,7 @@ export class TargetsService implements OnModuleInit {
         secret: null,
         remotePath: null,
         publicUrl: null,
+        routingMode: 'direct-port',
         ownerId: null,
         workspaceId: null,
       },
@@ -106,6 +110,7 @@ export class TargetsService implements OnModuleInit {
         secret: null,
         remotePath: ssh.remoteRoot,
         publicUrl: null,
+        routingMode: 'direct-port',
         ownerId: null,
         workspaceId: null,
       },
@@ -122,6 +127,7 @@ export class TargetsService implements OnModuleInit {
         secret: null,
         remotePath: sftp.remoteRoot,
         publicUrl: sftp.publicUrl,
+        routingMode: 'direct-port',
         ownerId: null,
         workspaceId: null,
       },
@@ -141,6 +147,7 @@ export class TargetsService implements OnModuleInit {
             username: rest.username,
             remotePath: rest.remotePath,
             publicUrl: rest.publicUrl,
+            routingMode: rest.routingMode,
           },
           // Built-ins are treated as ready (they represent the platform's own
           // infra); the user can still run a live connection test.
@@ -199,10 +206,15 @@ export class TargetsService implements OnModuleInit {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspaceId, 'maintain');
     const agentBacked = dto.kind === 'docker';
+    const routingMode = agentBacked ? dto.routingMode ?? 'direct-port' : 'direct-port';
+    let publicUrl = dto.publicUrl;
     if (agentBacked) {
       this.assertNoRemoteCredentials(dto);
-      this.assertSafePublicUrl(dto.publicUrl);
+      publicUrl = this.normalizeAgentPublicUrl(dto.publicUrl, routingMode);
     } else {
+      if (dto.routingMode && dto.routingMode !== 'direct-port') {
+        throw new BadRequestException('Managed gateway routing is available only for Docker Agent targets');
+      }
       this.assertSafeEndpoint(dto.host!, dto.publicUrl);
     }
     if (await this.prisma.target.findFirst({ where: { workspaceId, name: dto.name } })) {
@@ -220,7 +232,8 @@ export class TargetsService implements OnModuleInit {
         auth: agentBacked ? null : dto.auth!,
         secret: agentBacked ? null : encryptSecret(dto.secret!),
         remotePath: agentBacked ? null : dto.remotePath!,
-        publicUrl: dto.publicUrl,
+        publicUrl,
+        routingMode,
         ownerId: userId,
         workspaceId,
       },
@@ -234,10 +247,17 @@ export class TargetsService implements OnModuleInit {
       throw new BadRequestException('Target type cannot be changed; create a new target instead');
     }
     const agentBacked = row.kind === 'docker';
+    const routingMode = (dto.routingMode ?? row.routingMode ?? 'direct-port') as TargetRoutingMode;
+    let publicUrl = dto.publicUrl ?? row.publicUrl ?? '';
     if (agentBacked) {
       this.assertNoRemoteCredentials(dto);
-      if (dto.publicUrl !== undefined) this.assertSafePublicUrl(dto.publicUrl);
+      if (dto.publicUrl !== undefined || dto.routingMode !== undefined) {
+        publicUrl = this.normalizeAgentPublicUrl(publicUrl, routingMode);
+      }
     } else {
+      if (dto.routingMode && dto.routingMode !== 'direct-port') {
+        throw new BadRequestException('Managed gateway routing is available only for Docker Agent targets');
+      }
       this.assertSafeEndpoint(dto.host ?? row.host ?? '', dto.publicUrl ?? row.publicUrl ?? '');
     }
     if (dto.name && dto.name !== row.name) {
@@ -252,6 +272,7 @@ export class TargetsService implements OnModuleInit {
       this.toCsv(dto.capabilities) !== this.toCsv(currentCapabilities);
     const capabilitiesRemoved = dto.capabilities !== undefined &&
       currentCapabilities.some((capability) => !dto.capabilities!.includes(capability));
+    const routingChanged = routingMode !== (row.routingMode ?? 'direct-port');
     // Adding a capability cannot invalidate an existing environment. Removing
     // one can, so only destructive capability changes are blocked while the
     // target is in use. This lets a shared host evolve from static-only to
@@ -261,6 +282,14 @@ export class TargetsService implements OnModuleInit {
       if (inUse > 0) {
         throw new BadRequestException(
           'A target in use cannot remove runtime capabilities. Move its environments first.',
+        );
+      }
+    }
+    if (routingChanged) {
+      const inUse = await this.prisma.environment.count({ where: { targetId: row.id } });
+      if (inUse > 0) {
+        throw new BadRequestException(
+          'A target in use cannot change routing mode. Remove or move its environments first.',
         );
       }
     }
@@ -286,7 +315,8 @@ export class TargetsService implements OnModuleInit {
         ...(dto.auth !== undefined ? { auth: dto.auth } : {}),
         ...(dto.secret ? { secret: encryptSecret(dto.secret) } : {}),
         ...(dto.remotePath !== undefined ? { remotePath: dto.remotePath } : {}),
-        ...(dto.publicUrl !== undefined ? { publicUrl: dto.publicUrl } : {}),
+        ...(dto.publicUrl !== undefined || routingChanged ? { publicUrl } : {}),
+        ...(dto.routingMode !== undefined ? { routingMode } : {}),
         ...(connectionChanged ? { verifiedAt: null } : {}),
       },
     })) as TargetRow;
@@ -434,6 +464,30 @@ export class TargetsService implements OnModuleInit {
     }
   }
 
+  private normalizeAgentPublicUrl(
+    publicUrl: string,
+    routingMode: TargetRoutingMode,
+  ): string {
+    this.assertSafePublicUrl(publicUrl);
+    if (routingMode === 'direct-port') return publicUrl;
+
+    const url = new URL(publicUrl);
+    if (
+      url.protocol !== 'https:'
+      || url.username
+      || url.password
+      || url.pathname !== '/'
+      || url.search
+      || url.hash
+      || isIP(url.hostname) !== 0
+    ) {
+      throw new BadRequestException(
+        'Managed gateway base URL must be an HTTPS DNS origin without credentials, path, query or fragment',
+      );
+    }
+    return url.origin;
+  }
+
   private assertNoRemoteCredentials(dto: {
     host?: string;
     port?: number;
@@ -460,6 +514,7 @@ export class TargetsService implements OnModuleInit {
     const agentReady = row.scope === 'user' && row.kind === 'docker'
       ? Boolean(
           artifactStoreConfigured()
+          && (row.routingMode ?? 'direct-port') === 'direct-port'
           && row.agent?.credentialHash
           && !row.agent.disabledAt
           && supportsProjectAgent(row.agent.version),
@@ -477,6 +532,7 @@ export class TargetsService implements OnModuleInit {
       auth: row.auth,
       remotePath: row.remotePath,
       publicUrl: row.publicUrl,
+      routingMode: (row.routingMode ?? 'direct-port') as TargetRoutingMode,
       verifiedAt: row.verifiedAt ? row.verifiedAt.toISOString() : null,
       ...(agentReady !== undefined
         ? { agentReady, agentVersion: row.agent?.version ?? null }

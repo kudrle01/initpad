@@ -3054,6 +3054,14 @@ nakonec živý rollback/izolační test. Produkční režim se neoznačí `ready
 neprojde výpadek gateway, kolize dvou současných deployů a izolace dvou
 workspaces.
 
+**Stav implementace — základ routování.** Target má explicitní, databázově
+omezený `routingMode`. Migrace zachovává všechny existující targety v režimu
+`direct-port`; `managed-gateway` přijímá pouze čistý HTTPS DNS origin bez IP,
+credentials, cesty, query nebo fragmentu. UI oba režimy jasně rozlišuje.
+Produkční režim záměrně zůstává `setup pending` a nejde alokovat ani použít pro
+projekt, dokud neexistuje gateway preflight a idempotentní reconcile. Tím se
+konfigurace, která jen vypadá produkčně, nemůže omylem označit jako připravená.
+
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
 nakonfiguruje DNS. Dva workspace současně nasadí stejně pojmenovaný projekt;

@@ -114,6 +114,7 @@ export interface LinkedIdentity {
 export type ProviderKind = 'docker' | 'sftp' | 'ssh';
 export type RuntimeKind = 'static' | 'node' | 'php' | 'python';
 export type TargetScope = 'builtin' | 'user';
+export type TargetRoutingMode = 'direct-port' | 'managed-gateway';
 export type EnvName = 'dev' | 'test' | 'prod';
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
 
@@ -189,6 +190,7 @@ export interface Target {
   auth: string | null; // 'password' | 'key'
   remotePath: string | null;
   publicUrl: string | null;
+  routingMode: TargetRoutingMode;
   verifiedAt: string | null;
   agentReady?: boolean;
   agentVersion?: string | null;

@@ -70,4 +70,17 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
       agent: { credentialHash: 'hash', disabledAt: null, version: '0.3.0' },
     }, template)).toThrow('0.4.0');
   });
+
+  it('keeps managed gateway targets unavailable until preflight and reconcile exist', () => {
+    Object.assign(config.artifactStore, {
+      bucket: 'test-artifacts',
+      accessKeyId: 'test-access',
+      secretAccessKey: 'test-secret',
+    });
+
+    expect(() => service.assertUsable({
+      ...target,
+      routingMode: 'managed-gateway',
+    }, template)).toThrow('gateway preflight and reconcile');
+  });
 });

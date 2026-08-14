@@ -77,6 +77,11 @@ export class TargetAllocationsService {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
     }
     if (target.scope === 'user' && target.kind === 'docker') {
+      if ((target.routingMode ?? 'direct-port') === 'managed-gateway') {
+        throw new BadRequestException(
+          'Managed gateway targets cannot be allocated until gateway preflight and reconcile are ready',
+        );
+      }
       if (
         !artifactStoreConfigured()
         || !target.agent?.credentialHash

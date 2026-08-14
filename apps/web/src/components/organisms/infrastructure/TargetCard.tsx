@@ -99,6 +99,14 @@ export function TargetCard({
         ))}
       </div>
 
+      {isAgentTarget && (
+        <div className="text-xs text-muted-foreground">
+          {target.routingMode === 'managed-gateway'
+            ? 'managed gateway · setup pending'
+            : 'direct ports · local/lab'}
+        </div>
+      )}
+
       {(target.host || target.publicUrl) && (
         <div className="flex min-w-0 flex-col gap-0.5 font-mono text-xs text-muted-foreground">
           {target.host && (

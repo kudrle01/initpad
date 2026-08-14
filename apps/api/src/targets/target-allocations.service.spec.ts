@@ -159,6 +159,27 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     }
   });
 
+  it('does not allocate managed gateway capacity before its preflight exists', async () => {
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'gateway-target',
+          kind: 'docker',
+          scope: 'user',
+          workspaceId: 'ws-1',
+          capabilities: 'static,node',
+          routingMode: 'managed-gateway',
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.4.0' },
+        })),
+      },
+    };
+    const service = makeService(prisma, 'owner');
+
+    await expect(
+      service.create('u1', { targetId: 'gateway-target' }, 'ws-1'),
+    ).rejects.toThrow('gateway preflight and reconcile');
+  });
+
   it('hides an allocation in another workspace as 404 (not 403)', async () => {
     const prisma = {
       targetAllocation: { findUnique: jest.fn(async () => ({ ...allocationRow })) },

@@ -31,6 +31,7 @@ export interface EnvConfig {
 export interface TargetInput {
   name: string;
   kind: 'docker' | 'ssh' | 'sftp';
+  routingMode?: 'direct-port' | 'managed-gateway';
   capabilities: RuntimeKind[];
   host?: string;
   port?: number;

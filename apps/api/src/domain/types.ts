@@ -10,6 +10,8 @@ export type RuntimeKind = 'static' | 'node' | 'php' | 'python';
 // ('builtin') vs. a server the user registered themselves ('user').
 export type TargetScope = 'builtin' | 'user';
 
+export type TargetRoutingMode = 'direct-port' | 'managed-gateway';
+
 export type EnvName = 'dev' | 'test' | 'prod';
 
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
@@ -63,6 +65,7 @@ export interface Target {
   auth: string | null; // 'password' | 'key'
   remotePath: string | null;
   publicUrl: string | null;
+  routingMode: TargetRoutingMode;
   verifiedAt: string | null;
   // Agent targets are ready when enrolled, enabled, on a compatible version,
   // and this control plane has durable artifact storage configured.

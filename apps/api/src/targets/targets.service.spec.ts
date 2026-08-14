@@ -133,6 +133,7 @@ describe('Agent-backed Docker target creation', () => {
     }, 'workspace-1')).resolves.toMatchObject({
       id: 'target-agent',
       kind: 'docker',
+      routingMode: 'direct-port',
       host: null,
       verifiedAt: null,
     });
@@ -162,6 +163,31 @@ describe('Agent-backed Docker target creation', () => {
       host: 'server.example.test',
     }, 'workspace-1')).rejects.toThrow('must not contain inbound host credentials');
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('requires a clean HTTPS DNS origin for managed gateway routing', async () => {
+    const { service, create } = setup();
+
+    await expect(service.create('owner-1', {
+      name: 'Production gateway',
+      kind: 'docker',
+      routingMode: 'managed-gateway',
+      capabilities: ['node'],
+      publicUrl: 'http://apps.example.test/path',
+    }, 'workspace-1')).rejects.toThrow('HTTPS DNS origin');
+    expect(create).not.toHaveBeenCalled();
+
+    await expect(service.create('owner-1', {
+      name: 'Production gateway',
+      kind: 'docker',
+      routingMode: 'managed-gateway',
+      capabilities: ['node'],
+      publicUrl: 'https://apps.example.test/',
+    }, 'workspace-1')).resolves.toMatchObject({
+      routingMode: 'managed-gateway',
+      publicUrl: 'https://apps.example.test',
+      agentReady: false,
+    });
   });
 });
 

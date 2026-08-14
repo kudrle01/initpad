@@ -6,6 +6,7 @@ import {
   IsInt,
   IsString,
   IsUrl,
+  IsOptional,
   MaxLength,
   Matches,
   MinLength,
@@ -27,6 +28,10 @@ export class CreateTargetDto {
 
   @IsIn(['docker', 'ssh', 'sftp'])
   kind!: 'docker' | 'ssh' | 'sftp';
+
+  @IsOptional()
+  @IsIn(['direct-port', 'managed-gateway'])
+  routingMode?: 'direct-port' | 'managed-gateway';
 
   // Which runtimes the server can run (e.g. ['static','php'] for a PHP host).
   @IsArray()

@@ -111,24 +111,24 @@ model GitHubInstallationSetup {
 // links to at most one InitPad user, and an InitPad user links at most one
 // account per provider.
 model ExternalIdentity {
-  id                       String    @id @default(uuid())
-  user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId                   String
-  provider                 String // github | gitlab
-  providerUserId           String // immutable id from the provider
-  username                 String? // provider login at link time (display only, mutable)
+  id                     String    @id @default(uuid())
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                 String
+  provider               String // github | gitlab
+  providerUserId         String // immutable id from the provider
+  username               String? // provider login at link time (display only, mutable)
   // User credentials are distinct from the identity itself. They authorize
   // provider operations on behalf of the user (personal GitHub repo creation),
   // are encrypted independently at rest and never appear in identity DTOs.
-  accessTokenEncrypted     String?
-  accessTokenExpiresAt     DateTime?
-  refreshTokenEncrypted    String?
-  refreshTokenExpiresAt    DateTime?
-  credentialVersion        Int       @default(0)
+  accessTokenEncrypted   String?
+  accessTokenExpiresAt   DateTime?
+  refreshTokenEncrypted  String?
+  refreshTokenExpiresAt  DateTime?
+  credentialVersion      Int       @default(0)
   // Short database lease for rotation. GitHub refresh tokens are single-use;
   // this prevents two API instances from refreshing the same value at once.
-  credentialRefreshingAt   DateTime?
-  createdAt                DateTime  @default(now())
+  credentialRefreshingAt DateTime?
+  createdAt              DateTime  @default(now())
 
   @@unique([provider, providerUserId])
   @@unique([provider, userId])
@@ -188,7 +188,7 @@ model WorkspaceMember {
 // deploy path for them is unchanged. User targets carry an encrypted secret
 // (password / PEM key) and are used to build the real connection.
 model Target {
-  id           String        @id @default(uuid())
+  id           String             @id @default(uuid())
   name         String
   kind         String // 'docker' | 'ssh' | 'sftp'
   scope        String // 'builtin' | 'user'
@@ -204,16 +204,19 @@ model Target {
   secret       String? // encrypted password or PEM private key (user targets)
   remotePath   String? // writable root on the remote
   publicUrl    String? // public address the deployed app/site is reachable at
+  // Docker application exposure: random published ports for local/lab, or a
+  // stable HTTPS hostname reconciled through a trusted gateway (ADR-073).
+  routingMode  String             @default("direct-port") // direct-port | managed-gateway
   // Last successful connection test; null = never verified.
   verifiedAt   DateTime?
   // Owner of a user target; null for built-in (shared) targets.
-  owner        User?         @relation(fields: [ownerId], references: [id])
+  owner        User?              @relation(fields: [ownerId], references: [id])
   ownerId      String?
   // Null only for built-in shared targets. User targets belong to a workspace;
   // ownerId remains the credential/SCM identity during the tenancy migration.
-  workspace    Workspace?    @relation(fields: [workspaceId], references: [id])
+  workspace    Workspace?         @relation(fields: [workspaceId], references: [id])
   workspaceId  String?
-  createdAt    DateTime      @default(now())
+  createdAt    DateTime           @default(now())
   environments Environment[]
   allocations  TargetAllocation[]
   agent        Agent?
@@ -230,21 +233,21 @@ model Target {
 // Workspace authorization remains derived from Target -> TargetAllocation so
 // the agent cannot become a second tenancy model.
 model Agent {
-  id                   String    @id @default(uuid())
-  target               Target    @relation(fields: [targetId], references: [id], onDelete: Cascade)
-  targetId             String    @unique
-  enrollmentTokenHash  String?   @unique
+  id                   String     @id @default(uuid())
+  target               Target     @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  targetId             String     @unique
+  enrollmentTokenHash  String?    @unique
   enrollmentExpiresAt  DateTime?
-  credentialHash       String?   @unique
-  credentialGeneration Int       @default(0)
-  protocolVersion      Int       @default(1)
+  credentialHash       String?    @unique
+  credentialGeneration Int        @default(0)
+  protocolVersion      Int        @default(1)
   version              String?
   capabilities         Json?
   enrolledAt           DateTime?
   lastSeenAt           DateTime?
   disabledAt           DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
   leasedJobs           AgentJob[] @relation("AgentJobLeaseOwner")
 
   @@index([lastSeenAt])
@@ -327,8 +330,8 @@ model Project {
 // GitHub artifacts are verified through the workspace-bound App installation,
 // then ingested into platform-owned storage (the prototype's Docker daemon).
 model BuildArtifact {
-  id                 String   @id @default(uuid())
-  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                 String                @id @default(uuid())
+  project            Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId          String
   sourceProvider     String // github-actions (Gitea continues to use OCI)
   providerArtifactId String
@@ -338,12 +341,12 @@ model BuildArtifact {
   digest             String
   sizeBytes          BigInt
   expiresAt          DateTime
-  status             String   @default("accepted") // accepted | ingesting | available | failed
+  status             String                @default("accepted") // accepted | ingesting | available | failed
   storageKind        String?
   storageRef         String?
   error              String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
   environments       Environment[]
   operations         DeploymentOperation[]
 
@@ -353,17 +356,17 @@ model BuildArtifact {
 }
 
 model Environment {
-  id            String  @id @default(uuid())
-  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId     String
-  name          String
-  order         Int
-  provider      String
-  status        String
-  version       String?
-  url           String?
+  id                 String  @id @default(uuid())
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId          String
+  name               String
+  order              Int
+  provider           String
+  status             String
+  version            String?
+  url                String?
   // Reason of the last failure (health check / missing image / …), otherwise null.
-  statusReason  String?
+  statusReason       String?
   // True while a requested deployment (including a target move) has not yet
   // published successfully. Distinguishes the UI action Deploy from an idle,
   // explicitly cancelled first run (Run again).
@@ -372,7 +375,7 @@ model Environment {
   // from a configured range on the first SSH deploy, released on teardown.
   // The unique constraint makes port collisions impossible by construction
   // (Postgres allows multiple NULLs in a unique column).
-  allocatedPort Int?    @unique
+  allocatedPort      Int?    @unique
 
   // The deployment target this environment runs on. dev/test point at a
   // built-in target (the simulated infra); prod points at a built-in or a
@@ -390,10 +393,10 @@ model Environment {
   operations        DeploymentOperation[]
   // Exact build output currently running. Commit SHA alone is insufficient:
   // two workflow runs of the same commit may produce different digests.
-  buildArtifact      BuildArtifact? @relation(fields: [buildArtifactId], references: [id], onDelete: SetNull)
-  buildArtifactId    String?
+  buildArtifact     BuildArtifact?        @relation(fields: [buildArtifactId], references: [id], onDelete: SetNull)
+  buildArtifactId   String?
 
-  configVars         AppConfigVar[]
+  configVars AppConfigVar[]
 
   @@unique([projectId, name])
   @@index([buildArtifactId])
@@ -426,22 +429,22 @@ model AppConfigVar {
 // exist before its step succeeded. Kept as a plain audit row (no FK) so it
 // survives project deletion.
 model ProvisioningOperation {
-  id             String    @id @default(uuid())
+  id             String               @id @default(uuid())
   workspaceId    String
   projectId      String?
   projectName    String
   kind           String // create | import
-  status         String    @default("running") // running | succeeded | failed | interrupted | retrying | retried | cleaning
-  step           String    @default("validate") // validate | repository | ci | done
+  status         String               @default("running") // running | succeeded | failed | interrupted | retrying | retried | cleaning
+  step           String               @default("validate") // validate | repository | ci | done
   message        String?
   requestedById  String?
   request        Json? // validated create/import DTO; never credentials
   retryOfId      String?
-  attempt        Int       @default(1)
+  attempt        Int                  @default(1)
   leaseOwner     String?
   leaseExpiresAt DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
   finishedAt     DateTime?
   effects        ProvisioningEffect[]
 
@@ -474,24 +477,24 @@ model ProvisioningEffect {
 }
 
 model DeploymentOperation {
-  id            String      @id @default(uuid())
-  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  environmentId String
-  buildArtifact BuildArtifact? @relation(fields: [buildArtifactId], references: [id], onDelete: SetNull)
-  buildArtifactId String?
-  kind          String // deploy | promote | redeploy | start
-  status        String // running | succeeded | failed | cancelled
-  version       String?
-  message       String?
+  id               String         @id @default(uuid())
+  environment      Environment    @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  environmentId    String
+  buildArtifact    BuildArtifact? @relation(fields: [buildArtifactId], references: [id], onDelete: SetNull)
+  buildArtifactId  String?
+  kind             String // deploy | promote | redeploy | start
+  status           String // running | succeeded | failed | cancelled
+  version          String?
+  message          String?
   // Immutable deployment destination snapshot. Environment.target may change
   // later; historical activity must keep the target that actually received it.
   targetIdSnapshot String?
   targetName       String
   providerSnapshot String
-  createdAt     DateTime    @default(now())
-  startedAt     DateTime    @default(now())
-  finishedAt    DateTime?
-  agentJob       AgentJob?
+  createdAt        DateTime       @default(now())
+  startedAt        DateTime       @default(now())
+  finishedAt       DateTime?
+  agentJob         AgentJob?
 
   @@index([environmentId, createdAt])
   @@index([status])
@@ -509,16 +512,16 @@ model AgentJob {
   allocation            TargetAllocation?    @relation(fields: [allocationId], references: [id], onDelete: SetNull)
   allocationId          String?
   deploymentOperation   DeploymentOperation? @relation(fields: [deploymentOperationId], references: [id], onDelete: SetNull)
-  deploymentOperationId String?               @unique
-  leasedByAgent         Agent?                @relation("AgentJobLeaseOwner", fields: [leasedByAgentId], references: [id], onDelete: SetNull)
+  deploymentOperationId String?              @unique
+  leasedByAgent         Agent?               @relation("AgentJobLeaseOwner", fields: [leasedByAgentId], references: [id], onDelete: SetNull)
   leasedByAgentId       String?
 
-  dedupeKey       String   @unique
-  kind            String   // probe | lifecycle-test | deploy | start | stop | remove | status | logs | rollback
-  protocolVersion Int      @default(1)
+  dedupeKey       String @unique
+  kind            String // probe | lifecycle-test | deploy | start | stop | remove | status | logs | rollback
+  protocolVersion Int    @default(1)
   payload         Json
-  status          String   @default("queued") // queued | leased | succeeded | failed | cancelled
-  attempt         Int      @default(0)
+  status          String @default("queued") // queued | leased | succeeded | failed | cancelled
+  attempt         Int    @default(0)
 
   // Only the SHA-256 hash crosses the DB boundary. The plaintext lease token is
   // returned once to the winning Agent claim and acts as its fencing token.
@@ -526,9 +529,9 @@ model AgentJob {
   leasedAt       DateTime?
   leaseExpiresAt DateTime?
 
-  progressSequence Int      @default(0)
-  progressPercent  Int      @default(0)
-  progressStage    String   @default("queued")
+  progressSequence Int     @default(0)
+  progressPercent  Int     @default(0)
+  progressStage    String  @default("queued")
   message          String?
   resultCode       String?
   // Bounded structured lifecycle outcome (state/revision/host port). It never

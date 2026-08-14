@@ -305,6 +305,11 @@ nezobrazí falešný empty/error stav.
    Docker socketu, deklarativní reconcile a health-gated atomické přepnutí
    routy. Podrobný kontrakt a bezpečnostní hranice jsou v ADR-073.
 
+   ✅ **8a — explicitní režim targetu.** Databáze, API a UI rozlišují
+   `direct-port` a `managed-gateway`. Existující instalace se migrují beze změny
+   chování; produkční režim vyžaduje čistý HTTPS DNS origin a do dokončení
+   preflight/reconcile zůstává bezpečně nealokovatelný jako `setup pending`.
+
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
 údajů, vygeneroval jednorázový enrollment, po zavření dialogu už plaintext

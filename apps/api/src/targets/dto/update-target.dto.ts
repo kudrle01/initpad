@@ -30,6 +30,10 @@ export class UpdateTargetDto {
   kind?: 'docker' | 'ssh' | 'sftp';
 
   @IsOptional()
+  @IsIn(['direct-port', 'managed-gateway'])
+  routingMode?: 'direct-port' | 'managed-gateway';
+
+  @IsOptional()
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()

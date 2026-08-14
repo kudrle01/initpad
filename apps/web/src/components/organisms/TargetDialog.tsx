@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/atoms/Spinner';
 import { cn } from '@/lib/utils';
 import type { TargetInput } from '@/api';
-import type { ProviderKind, RuntimeKind, Target } from '@/types';
+import type { ProviderKind, RuntimeKind, Target, TargetRoutingMode } from '@/types';
 
 const ALL_CAPS: { id: RuntimeKind; label: string }[] = [
   { id: 'static', label: 'Static' },
@@ -42,12 +42,27 @@ function defaultCapabilities(kind: ProviderKind): RuntimeKind[] {
   return kind === 'sftp' ? ['static', 'php'] : ['node'];
 }
 
+function validManagedGatewayOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const ipLiteral = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(url.hostname)
+      || url.hostname.includes(':');
+    return url.protocol === 'https:'
+      && url.origin === value.replace(/\/$/, '')
+      && !ipLiteral
+      && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 // Register or edit one of the user's own deployment targets (a server the
 // platform can deploy to). Built-in targets are read-only and never edited here.
 export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }: Props) {
   const editing = !!target;
   const [name, setName] = useState('');
   const [kind, setKind] = useState<ProviderKind>('docker');
+  const [routingMode, setRoutingMode] = useState<TargetRoutingMode>('direct-port');
   const [caps, setCaps] = useState<RuntimeKind[]>(defaultCapabilities('docker'));
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
@@ -61,6 +76,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
     if (!open) return;
     setName(target?.name ?? '');
     setKind(target?.kind ?? 'docker');
+    setRoutingMode(target?.routingMode ?? 'direct-port');
     setCaps(target?.capabilities ?? defaultCapabilities('docker'));
     setHost(target?.host ?? '');
     setPort(String(target?.port ?? 22));
@@ -77,12 +93,14 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
 
   function changeKind(next: ProviderKind) {
     setKind(next);
+    if (next !== 'docker') setRoutingMode('direct-port');
     if (!editing) setCaps(defaultCapabilities(next));
   }
 
   const valid =
     name.trim() &&
     publicUrl.trim() &&
+    (kind !== 'docker' || routingMode === 'direct-port' || validManagedGatewayOrigin(publicUrl.trim())) &&
     caps.length > 0 &&
     (kind === 'docker' || (
       host.trim() &&
@@ -98,7 +116,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
       capabilities: caps,
       publicUrl: publicUrl.trim(),
     };
-    onSubmit(kind === 'docker' ? common : {
+    onSubmit(kind === 'docker' ? { ...common, routingMode } : {
       ...common,
       host: host.trim(),
       port: Number(port) || 22,
@@ -145,6 +163,20 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="t-port">Port</Label>
               <Input id="t-port" value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
+            </div>
+          )}
+          {kind === 'docker' && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="t-routing">Application exposure</Label>
+              <select
+                id="t-routing"
+                className={selectCls}
+                value={routingMode}
+                onChange={(e) => setRoutingMode(e.target.value as TargetRoutingMode)}
+              >
+                <option value="direct-port">Direct ports (local / lab)</option>
+                <option value="managed-gateway">Managed gateway (production)</option>
+              </select>
             </div>
           )}
 
@@ -225,16 +257,30 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             </>
           )}
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="t-url">{kind === 'docker' ? 'Application base URL' : 'Public URL'}</Label>
+            <Label htmlFor="t-url">
+              {kind === 'docker' && routingMode === 'managed-gateway'
+                ? 'Gateway base URL'
+                : kind === 'docker' ? 'Application base URL' : 'Public URL'}
+            </Label>
             <Input
               id="t-url"
               value={publicUrl}
-              placeholder={kind === 'docker' ? 'http://192.168.1.50' : 'https://eso.example.edu/~user'}
+              placeholder={kind === 'docker'
+                ? routingMode === 'managed-gateway'
+                  ? 'https://apps.example.cz'
+                  : 'http://192.168.1.50'
+                : 'https://eso.example.edu/~user'}
               onChange={(e) => setPublicUrl(e.target.value)}
+              aria-invalid={kind === 'docker'
+                && routingMode === 'managed-gateway'
+                && publicUrl.length > 0
+                && !validManagedGatewayOrigin(publicUrl.trim())}
             />
             {kind === 'docker' && (
               <p className="text-xs text-muted-foreground">
-                Browser-reachable host of this server. Agent-managed applications will receive their own published port.
+                {routingMode === 'managed-gateway'
+                  ? 'HTTPS DNS origin for stable application hostnames. Deployment stays unavailable until DNS, TLS and gateway preflight are implemented and pass.'
+                  : 'Browser-reachable host of this server. Agent-managed applications receive their own published port; use this only for local or lab targets.'}
               </p>
             )}
           </div>

@@ -200,6 +200,11 @@ export class ProjectEnvironmentTargets {
 
   assertUsable(target: TargetRow, template: TemplateManifest): void {
     if (target.scope === 'user' && target.kind === 'docker') {
+      if ((target.routingMode ?? 'direct-port') === 'managed-gateway') {
+        throw new BadRequestException(
+          `Managed gateway target '${target.name}' is not deployable until its gateway preflight and reconcile are ready.`,
+        );
+      }
       if (!artifactStoreConfigured()) {
         throw new BadRequestException(
           `Agent-backed target '${target.name}' requires durable S3/MinIO artifact storage.`,
