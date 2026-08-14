@@ -2964,5 +2964,8 @@ Agenta, cizí allocation, secrets mimo payload, config fingerprint, restartové
 reconcile a strukturované deploy/start/stop/remove výsledky. Agent testy ověřují
 stream/digest/tag, health-gated publikaci, explicitní lifecycle dispatch a
 absenci secrets v progressu/completion. Produkční API import navíc musí
-proběhnout bez decorator forward-reference chyby. Živý projektový gate je
-popsaný v `apps/agent/README.md` a zůstává podmínkou uzavření Fáze 5.
+proběhnout bez decorator forward-reference chyby. Živý React deployment v
+odděleném DinD targetu převzal 63,4 MB ověřený archiv, publikoval zdravý workload
+a přes lab-only loopback bridge vrátil browser-reachable URL bez vystavení
+Docker API. Zbývající offline, revoke a multi-workspace scénáře jsou popsané v
+`apps/agent/README.md` a zůstávají podmínkou uzavření Fáze 5.

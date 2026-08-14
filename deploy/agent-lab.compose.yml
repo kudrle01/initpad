@@ -1,6 +1,8 @@
 # Isolated local simulation of a customer-owned Docker server. Compose this
 # file with docker-compose.yml through ./agent-lab.sh; it is not part of the
 # normal self-hosted runtime and publishes no Docker API port to the host.
+# A dedicated bridge exposes only the workload test range on host loopback so
+# links returned by the Agent can be opened from the local browser.
 
 services:
   agent-lab-docker:
@@ -12,6 +14,11 @@ services:
     command:
       - "--host=tcp://0.0.0.0:2375"
       - "--tls=false"
+    # Keep automatically allocated workload ports inside a small lab-only
+    # range. Docker Desktop cannot reliably forward a nested DinD NAT mapping,
+    # so agent-lab-ports bridges these ports explicitly on the outer network.
+    sysctls:
+      net.ipv4.ip_local_port_range: "${INITPAD_AGENT_LAB_PORT_START:-42000} ${INITPAD_AGENT_LAB_PORT_END:-42031}"
     volumes:
       - agent-lab-docker-data:/var/lib/docker
     healthcheck:
@@ -24,6 +31,32 @@ services:
     mem_limit: 1g
     cpus: 1.0
     pids_limit: 384
+    restart: unless-stopped
+
+  agent-lab-ports:
+    image: node:22-alpine
+    profiles: ["agent-lab"]
+    command: ["node", "/bridge/agent-lab-port-bridge.mjs"]
+    environment:
+      INITPAD_AGENT_LAB_TARGET_HOST: agent-lab-docker
+      INITPAD_AGENT_LAB_PORT_START: ${INITPAD_AGENT_LAB_PORT_START:-42000}
+      INITPAD_AGENT_LAB_PORT_END: ${INITPAD_AGENT_LAB_PORT_END:-42031}
+    volumes:
+      - ./agent-lab-port-bridge.mjs:/bridge/agent-lab-port-bridge.mjs:ro
+    ports:
+      - "${INITPAD_AGENT_LAB_BIND_ADDRESS:-127.0.0.1}:${INITPAD_AGENT_LAB_PORT_START:-42000}-${INITPAD_AGENT_LAB_PORT_END:-42031}:${INITPAD_AGENT_LAB_PORT_START:-42000}-${INITPAD_AGENT_LAB_PORT_END:-42031}"
+    depends_on:
+      agent-lab-docker: { condition: service_healthy }
+    networks: [agent-lab-target]
+    user: "65532:65532"
+    read_only: true
+    tmpfs:
+      - /tmp:size=1m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 48m
+    cpus: 0.1
+    pids_limit: 32
     restart: unless-stopped
 
   agent-lab:

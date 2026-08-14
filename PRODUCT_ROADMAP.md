@@ -324,8 +324,11 @@ object-store archiv, Agent ověří SHA-256 a očekávaný image tag, config dos
 jen v paměti pod aktivním lease a strukturovaný Docker výsledek dokončí původní
 `DeploymentOperation`. Project picker je odemčený pouze pro kompatibilní enrolled
 Agent a nikdy nepřepadne na Docker socket control plane. Automatizované testy a
-lokální UI/readiness kontrola jsou zelené; skutečný projektový deploy, offline
-fronta a dva workspace tvoří živý gate podkroku 7.
+lokální UI/readiness kontrola jsou zelené. Skutečný React projekt byl živě
+nasazen z 63,4 MB ověřeného archivu do odděleného Agent DinD targetu; výsledný
+workload prošel health checkem a jeho loopback URL byla dosažitelná přes
+lab-only bridge bez publikování Docker API. Offline fronta, revoke/re-enroll a
+dva workspace tvoří zbývající živý gate podkroku 7.
 
 ### Fáze 6 — jednotný delivery tok
 

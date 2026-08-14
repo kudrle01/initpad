@@ -26,7 +26,8 @@ though everything runs on one development machine.
 2. In **Infrastructure**, add `Docker (InitPad Agent)` with an application base
    URL such as `http://127.0.0.1`.
 3. Generate an enrollment token, but do not close the dialog yet.
-4. From `deploy/`, run:
+4. From `deploy/`, run (if the shell prompt already shows `deploy`, do not run
+   `cd deploy` again):
 
    ```sh
    ./agent-lab.sh build
@@ -101,10 +102,12 @@ After the diagnostic tests above pass, verify the actual project path:
    ```
 
    Its image tag/revision must match the build shown by the project. The Agent
-   already completed an HTTP health check inside the target. The random app
-   port from this DinD lab is intentionally not published to the Mac/Windows
-   host, so the browser URL itself is tested on a real VM/remote Agent target,
-   not by weakening the isolated lab.
+   already completed an HTTP health check inside the target. The lab confines
+   random ports to `42000–42031` and exposes them through a non-privileged TCP
+   bridge bound only to host loopback. With target application URL
+   `http://127.0.0.1`, the link shown by InitPad must therefore open from the
+   same development machine. The bridge does not publish Docker API port 2375
+   and is not a replacement for a production ingress on a real target.
 5. From the environment tools run **Stop**, **Start**, then **Remove
    deployment**. Each operation must progress through an Agent job and the
    environment must end as `stopped`, `running`, then `empty`. The `docker ps

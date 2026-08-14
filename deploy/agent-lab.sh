@@ -23,13 +23,13 @@ case "${1:-help}" in
       enroll --url "$control_plane_url" --allow-insecure-http
     ;;
   start)
-    compose up -d agent-lab-docker agent-lab
+    compose up -d agent-lab-docker agent-lab-ports agent-lab
     ;;
   once)
     compose run --rm agent-lab once
     ;;
   status)
-    compose ps agent-lab agent-lab-docker
+    compose ps agent-lab agent-lab-docker agent-lab-ports
     ;;
   logs)
     compose logs --tail=100 -f agent-lab
@@ -39,7 +39,7 @@ case "${1:-help}" in
     compose exec -T agent-lab-docker docker "$@"
     ;;
   stop)
-    compose stop agent-lab agent-lab-docker
+    compose stop agent-lab agent-lab-ports agent-lab-docker
     ;;
   *)
     cat <<'USAGE'
@@ -56,6 +56,9 @@ Usage: ./agent-lab.sh <command>
 
 Create a Docker (InitPad Agent) target in Infrastructure and generate its
 one-time enrollment before running `./agent-lab.sh enroll`.
+For local browser links, set the target public URL to http://127.0.0.1. The
+lab publishes only its dedicated workload range on host loopback; it never
+publishes the nested Docker API.
 USAGE
     ;;
 esac
