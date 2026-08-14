@@ -193,7 +193,7 @@ export function EnvironmentPipeline({
                         )}
                         {canRunAgain && (
                           <DropdownMenuItem onSelect={onRunAgain}>
-                            <Play className="h-4 w-4" /> Run again
+                            <Play className="h-4 w-4" /> Deploy
                           </DropdownMenuItem>
                         )}
                         {hasDeployment && !targetNeedsDeploy && (

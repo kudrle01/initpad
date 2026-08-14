@@ -1364,10 +1364,10 @@ export class ProjectsService implements OnModuleInit {
     return this.get(id);
   }
 
-  // Restarts dev after a cancelled/failed first deployment. If CI already
-  // produced an image, retry only the deployment. Otherwise queue CI for the
-  // latest main commit through a temporary tag and track the wait as an
-  // operation so Cancel also invalidates a late callback.
+  // Deploys dev after a cancelled/failed attempt or an explicit removal. If
+  // CI already produced an immutable artifact, reuse only that deployment.
+  // Otherwise queue CI for the latest main commit through a temporary tag and
+  // track the wait as an operation so Cancel also invalidates a late callback.
   async runAgain(id: string): Promise<Project> {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: 'dev' } },
@@ -1380,36 +1380,45 @@ export class ProjectsService implements OnModuleInit {
 
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
     const repository = repositoryRef(project);
-    const previousOperation = await this.prisma.deploymentOperation.findFirst({
+    const reusableOperation = await this.prisma.deploymentOperation.findFirst({
       where: {
         environmentId: env.id,
-        status: { in: ['cancelled', 'failed'] },
         version: { not: null },
+        // A successful remove clears the Environment binding but deliberately
+        // keeps the immutable artifact on its historical operation. Reuse it
+        // instead of spending another CI run to publish identical bytes.
+        OR: [
+          {
+            status: { in: ['succeeded', 'cancelled', 'failed'] },
+            buildArtifactId: { not: null },
+          },
+          { status: { in: ['cancelled', 'failed'] } },
+        ],
       },
       orderBy: { createdAt: 'desc' },
     });
-    if (previousOperation?.version) {
-      const useRegistry = /^[0-9a-f]{40}$/i.test(previousOperation.version);
+    if (reusableOperation?.version) {
+      const useRegistry = /^[0-9a-f]{40}$/i.test(reusableOperation.version);
       // For a GitHub registry image, reuse is possible only when the verified
       // artifact is present in the local daemon — or can be rehydrated from
       // durable object storage (ADR-059 §6). Non-GitHub paths reuse directly.
       const canReuseArtifact =
         repository.provider !== 'github' || !useRegistry
           ? true
-          : previousOperation.buildArtifactId != null &&
+          : reusableOperation.buildArtifactId != null &&
             (await this.artifactLifecycle.ensureImageAvailable(
               repository,
               id,
-              previousOperation.buildArtifactId,
+              reusableOperation.buildArtifactId,
             ));
       if (canReuseArtifact) {
         await this.scheduleDeployment(
           id,
           'dev',
-          previousOperation.version,
+          reusableOperation.version,
           useRegistry,
-          'retry',
-          previousOperation.buildArtifactId,
+          reusableOperation.status === 'succeeded' ? 'redeploy' : 'retry',
+          reusableOperation.buildArtifactId,
         );
         return this.get(id);
       }

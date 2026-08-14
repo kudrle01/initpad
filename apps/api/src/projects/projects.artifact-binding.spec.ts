@@ -107,6 +107,55 @@ describe('ProjectsService immutable artifact binding', () => {
     );
   });
 
+  it('redeploys the verified artifact after a successful remove without starting CI again', async () => {
+    const sha = 'a'.repeat(40);
+    const giteaProject = {
+      ...projectRow,
+      scmProvider: 'gitea',
+      scmRepositoryId: '77',
+      scmOwner: 'alice',
+      scmRepositoryName: 'api',
+      scmFullName: 'alice/api',
+      scmInstallationId: null,
+      repoUrl: 'http://gitea:3000/alice/api',
+    };
+    const prisma = {
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1', status: 'empty', activeOperationId: null,
+        })),
+      },
+      project: { findUniqueOrThrow: jest.fn(async () => giteaProject) },
+      deploymentOperation: {
+        findFirst: jest.fn(async () => ({
+          kind: 'remove',
+          status: 'succeeded',
+          version: sha,
+          buildArtifactId: 'artifact-1',
+        })),
+      },
+    };
+    const service = make(prisma);
+    jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
+    const schedule = jest.spyOn(service as any, 'scheduleDeployment').mockResolvedValue(undefined);
+
+    await service.runAgain('project-1');
+
+    expect(prisma.deploymentOperation.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        environmentId: 'env-1',
+        version: { not: null },
+        OR: expect.arrayContaining([
+          expect.objectContaining({ buildArtifactId: { not: null } }),
+        ]),
+      }),
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(schedule).toHaveBeenCalledWith(
+      'project-1', 'dev', sha, true, 'redeploy', 'artifact-1',
+    );
+  });
+
   it('rehydrates the verified image from object storage when the daemon cache is gone', async () => {
     const sha = 'a'.repeat(40);
     const prisma = {
