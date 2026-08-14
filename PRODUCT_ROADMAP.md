@@ -335,9 +335,12 @@ workload prošel health checkem a jeho loopback URL byla dosažitelná přes
 lab-only bridge bez publikování Docker API. Následný projektový
 `Stop → Start → Remove` prošel jako tři samostatné Agent joby; prostředí skončilo
 `empty` a izolovaný daemon neobsahoval managed kontejner, image projektu ani
-Agent síť. Offline fronta, revoke/re-enroll a dva workspace tvoří zbývající
-živý gate podkroku 7. Produkční gateway je navazující podkrok 8; současný
-náhodný port je záměrně pouze local/lab cesta.
+Agent síť. Offline fronta následně také prošla: po heartbeat grace
+period target přešel na `offline`, `Deploy` znovu použil tentýž historický
+artifact bez nového SCM runu a zůstal `Waiting for Agent`; po reconnectu jediný
+job `deploy · attempt 1` dokončil právě jeden workload stejné revize. Zbývá
+revoke/re-enroll a dva workspace. Produkční gateway je navazující podkrok 8;
+současný náhodný port je záměrně pouze local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -432,7 +435,9 @@ prošla celý omezený lifecycle a nezanechala workload, image ani síť. Agent
 artifactu živě nasazen, prošel health checkem a byl dostupný přes lab-only
 loopback bridge bez vystavení Docker API. Projektový `Stop → Start → Remove`
 navíc skončil `empty` bez zbylého managed kontejneru, image projektu nebo Agent
-sítě. Zbývá offline fronta, revoke/re-enroll a dvou-workspace gate podle
+sítě. Offline deploy znovu použil ověřený artifact bez nového SCM runu, čekal
+ve frontě a po reconnectu se dokončil jediným `attempt 1` do právě jednoho
+workloadu. Zbývá revoke/re-enroll a dvou-workspace gate podle
 `apps/agent/README.md`; produkční stabilní HTTPS routing následuje podle
 ADR-073. Tyto dílčí výsledky nenahrazují závěrečný školní E2E scénář s
 nezávislým týmem.

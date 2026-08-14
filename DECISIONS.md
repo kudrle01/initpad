@@ -2969,9 +2969,13 @@ odděleném DinD targetu převzal 63,4 MB ověřený archiv, publikoval zdravý 
 a přes lab-only loopback bridge vrátil browser-reachable URL bez vystavení
 Docker API. Jeho následný `Stop → Start → Remove` prošel přes tři samostatné
 joby; prostředí skončilo `empty` a izolovaný daemon neobsahoval managed
-kontejner, image projektu ani Agent síť. Zbývající offline, revoke a
-multi-workspace scénáře jsou popsané v `apps/agent/README.md` a zůstávají
-podmínkou uzavření Fáze 5.
+kontejner, image projektu ani Agent síť. Postup offline, revoke a
+multi-workspace gate je popsaný v `apps/agent/README.md`. Offline scénář
+následně prošel: po grace period UI
+ukázalo `offline`, nový deploy stejného historického artifactu nevyvolal SCM
+run a zůstal `Waiting for Agent`; po reconnectu byl jediný job claimnutý a
+dokončený jako `attempt 1` a daemon obsahoval právě jeden workload. Zbývá
+revoke/re-enroll a multi-workspace scénář.
 
 ## ADR-073 — Produkční Agent target používá spravovanou gateway a stabilní hostname
 
