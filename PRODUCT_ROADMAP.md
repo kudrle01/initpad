@@ -332,9 +332,12 @@ Agent a nikdy nepřepadne na Docker socket control plane. Automatizované testy 
 lokální UI/readiness kontrola jsou zelené. Skutečný React projekt byl živě
 nasazen z 63,4 MB ověřeného archivu do odděleného Agent DinD targetu; výsledný
 workload prošel health checkem a jeho loopback URL byla dosažitelná přes
-lab-only bridge bez publikování Docker API. Offline fronta, revoke/re-enroll a
-dva workspace tvoří zbývající živý gate podkroku 7. Produkční gateway je
-navazující podkrok 8; současný náhodný port je záměrně pouze local/lab cesta.
+lab-only bridge bez publikování Docker API. Následný projektový
+`Stop → Start → Remove` prošel jako tři samostatné Agent joby; prostředí skončilo
+`empty` a izolovaný daemon neobsahoval managed kontejner, image projektu ani
+Agent síť. Offline fronta, revoke/re-enroll a dva workspace tvoří zbývající
+živý gate podkroku 7. Produkční gateway je navazující podkrok 8; současný
+náhodný port je záměrně pouze local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -427,8 +430,9 @@ prokázal single-use enrollment, omezenou telemetrii, restart/retry a přechod
 prošla celý omezený lifecycle a nezanechala workload, image ani síť. Agent
 0.4 je napojený do projektového toku a skutečný React workload byl z ověřeného
 artifactu živě nasazen, prošel health checkem a byl dostupný přes lab-only
-loopback bridge bez vystavení Docker API. Zbývá projektový Stop → Start → Remove,
-offline fronta, revoke/re-enroll a dvou-workspace gate podle
+loopback bridge bez vystavení Docker API. Projektový `Stop → Start → Remove`
+navíc skončil `empty` bez zbylého managed kontejneru, image projektu nebo Agent
+sítě. Zbývá offline fronta, revoke/re-enroll a dvou-workspace gate podle
 `apps/agent/README.md`; produkční stabilní HTTPS routing následuje podle
 ADR-073. Tyto dílčí výsledky nenahrazují závěrečný školní E2E scénář s
 nezávislým týmem.

@@ -2967,8 +2967,11 @@ absenci secrets v progressu/completion. Produkční API import navíc musí
 proběhnout bez decorator forward-reference chyby. Živý React deployment v
 odděleném DinD targetu převzal 63,4 MB ověřený archiv, publikoval zdravý workload
 a přes lab-only loopback bridge vrátil browser-reachable URL bez vystavení
-Docker API. Zbývající offline, revoke a multi-workspace scénáře jsou popsané v
-`apps/agent/README.md` a zůstávají podmínkou uzavření Fáze 5.
+Docker API. Jeho následný `Stop → Start → Remove` prošel přes tři samostatné
+joby; prostředí skončilo `empty` a izolovaný daemon neobsahoval managed
+kontejner, image projektu ani Agent síť. Zbývající offline, revoke a
+multi-workspace scénáře jsou popsané v `apps/agent/README.md` a zůstávají
+podmínkou uzavření Fáze 5.
 
 ## ADR-073 — Produkční Agent target používá spravovanou gateway a stabilní hostname
 
