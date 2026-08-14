@@ -316,6 +316,24 @@ nezobrazí falešný empty/error stav.
    přesného vítěze. Rename, redeploy a stop/start rezervaci nepřepočítají.
    Desired a observed stav jsou oddělené pro následující Agent reconcile.
 
+   ✅ **8c — DNS/TLS/Caddy preflight.** Agent 0.5 spustí idempotentní,
+   read-only job: prověří wildcard DNS přes reprezentativní aplikační
+   hostname, trusted TLS explicitního gateway originu na 443 a privátní Caddy
+   admin API. Endpoint adapteru je pouze lokální konfigurace Agenta, musí se
+   přeložit na privátní adresu a Caddy nedostane Docker socket ani host port.
+   Stav `not-run/queued/running/passed/failed` je vidět v Infrastructure a
+   starší souběžný job nemůže přepsat novější výsledek.
+
+   **TODO 8d — deklarativní route reconcile.** Agent vytvoří a odstraní jen
+   validované Caddy routy z uloženého `GatewayRoute`, připojí gateway pouze k
+   allocation síti aktivního workloadu a desired/observed generation bezpečně
+   srovná po restartu nebo ztracené odpovědi.
+
+   **TODO 8e — health-gated přepnutí a živý gate.** Deploy přepne route až po
+   interním health checku, ověří veřejné HTTPS a při chybě zachová předchozí
+   revision. Musí projít souběh, restart, výpadek gateway, rollback a izolace
+   dvou workspaces.
+
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
 údajů, vygeneroval jednorázový enrollment, po zavření dialogu už plaintext
@@ -357,7 +375,10 @@ automaticky odstraní. Dvou-workspace gate následně použil dvě target identi
 se dvěma credential volumes nad jedním fyzickým DinD daemonem. Současné
 workloady měly namespaces `team-alpha` a `it000`; Stop a Remove druhého ponechal
 první kontejner, síť i URL beze změny a dostupné s HTTP `200`. Produkční gateway
-je navazující podkrok 8; současný náhodný port je záměrně pouze local/lab cesta.
+je navazující podkrok 8; 8a–8c nyní pokrývají explicitní režim, trvalou
+rezervaci hostname a bezpečný read-only preflight. Samotné Caddy route změny
+a health-gated přepnutí zůstávají v 8d–8e; současný náhodný port je záměrně
+pouze local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 

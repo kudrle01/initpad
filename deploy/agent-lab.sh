@@ -36,7 +36,7 @@ case "${1:-help}" in
     compose run --rm agent-lab once
     ;;
   status)
-    compose ps agent-lab agent-lab-secondary agent-lab-docker agent-lab-ports
+    compose ps agent-lab agent-lab-secondary agent-lab-docker agent-lab-gateway agent-lab-ports
     ;;
   logs)
     compose logs --tail=100 -f agent-lab
@@ -49,7 +49,7 @@ case "${1:-help}" in
     compose exec -T agent-lab-docker docker "$@"
     ;;
   stop)
-    compose stop agent-lab agent-lab-secondary agent-lab-ports agent-lab-docker
+    compose stop agent-lab agent-lab-secondary agent-lab-ports agent-lab-gateway agent-lab-docker
     ;;
   stop-secondary)
     compose stop agent-lab-secondary
@@ -66,7 +66,7 @@ Usage: ./agent-lab.sh <command>
   logs-secondary    Follow structured logs for the second identity
   stop-secondary    Stop only the second identity
   once    Send one heartbeat and exit
-  status  Show the lab daemon, port bridge and both Agent identities
+  status  Show the lab daemon, private gateway, port bridge and Agent identities
   logs    Follow structured Agent logs
   docker  Run a Docker CLI inspection inside the isolated target daemon
   stop    Stop only the Agent lab (the InitPad platform keeps running)

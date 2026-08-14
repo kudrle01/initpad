@@ -11,6 +11,7 @@ import { DeploymentService } from '../deployment/deployment.service';
 import { artifactStoreConfigured, config } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 import {
+  GatewayPreflightStatus,
   ProviderKind,
   RuntimeKind,
   Target,
@@ -44,6 +45,11 @@ export interface TargetRow {
   remotePath: string | null;
   publicUrl: string | null;
   routingMode?: string;
+  gatewayAdapter?: string | null;
+  gatewayPreflightStatus?: string;
+  gatewayPreflightJobId?: string | null;
+  gatewayPreflightAt?: Date | null;
+  gatewayPreflightError?: string | null;
   verifiedAt: Date | null;
   ownerId: string | null;
   workspaceId: string | null;
@@ -234,6 +240,7 @@ export class TargetsService implements OnModuleInit {
         remotePath: agentBacked ? null : dto.remotePath!,
         publicUrl,
         routingMode,
+        gatewayAdapter: routingMode === 'managed-gateway' ? 'caddy' : null,
         ownerId: userId,
         workspaceId,
       },
@@ -317,6 +324,17 @@ export class TargetsService implements OnModuleInit {
         ...(dto.remotePath !== undefined ? { remotePath: dto.remotePath } : {}),
         ...(dto.publicUrl !== undefined || routingChanged ? { publicUrl } : {}),
         ...(dto.routingMode !== undefined ? { routingMode } : {}),
+        ...(routingChanged
+          ? { gatewayAdapter: routingMode === 'managed-gateway' ? 'caddy' : null }
+          : {}),
+        ...(agentBacked && (routingChanged || dto.publicUrl !== undefined)
+          ? {
+              gatewayPreflightStatus: 'not-run',
+              gatewayPreflightJobId: null,
+              gatewayPreflightAt: null,
+              gatewayPreflightError: null,
+            }
+          : {}),
         ...(connectionChanged ? { verifiedAt: null } : {}),
       },
     })) as TargetRow;
@@ -518,6 +536,14 @@ export class TargetsService implements OnModuleInit {
       remotePath: row.remotePath,
       publicUrl: row.publicUrl,
       routingMode: (row.routingMode ?? 'direct-port') as TargetRoutingMode,
+      gatewayPreflight: (row.routingMode ?? 'direct-port') === 'managed-gateway'
+        ? {
+            adapter: 'caddy',
+            status: (row.gatewayPreflightStatus ?? 'not-run') as GatewayPreflightStatus,
+            checkedAt: row.gatewayPreflightAt?.toISOString() ?? null,
+            error: row.gatewayPreflightError ?? null,
+          }
+        : null,
       verifiedAt: row.verifiedAt ? row.verifiedAt.toISOString() : null,
       ...(agentReady !== undefined
         ? { agentReady, agentVersion: row.agent?.version ?? null }

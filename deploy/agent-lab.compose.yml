@@ -5,6 +5,37 @@
 # links returned by the Agent can be opened from the local browser.
 
 services:
+  # Co-located production-gateway adapter simulation. Its admin API is visible
+  # only on an internal management network shared with the Agent, never on a
+  # host port, and the container receives no Docker socket.
+  agent-lab-gateway:
+    image: caddy:2.10-alpine
+    profiles: ["agent-lab"]
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
+    volumes:
+      - ./agent-lab-Caddyfile:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks: [agent-lab-gateway-admin]
+    read_only: true
+    tmpfs:
+      - /config:size=8m,mode=0700
+      - /data:size=16m,mode=0700
+      - /tmp:size=4m,mode=1777
+    cap_drop: [ALL]
+    # The official Caddy binary carries cap_net_bind_service. Retain only that
+    # bounded capability; without it Linux refuses to exec the file at all.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    cpus: 0.15
+    pids_limit: 64
+    restart: unless-stopped
+
   agent-lab-docker:
     image: docker:27.5.1-dind
     profiles: ["agent-lab"]
@@ -67,19 +98,21 @@ services:
     environment:
       DOCKER_HOST: tcp://agent-lab-docker:2375
       INITPAD_AGENT_CONFIG: /var/lib/initpad-agent/agent.json
+      INITPAD_AGENT_GATEWAY_ADMIN_URL: http://agent-lab-gateway:2019
     volumes:
       - agent-lab-config:/var/lib/initpad-agent
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       agent-lab-docker: { condition: service_healthy }
+      agent-lab-gateway: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "node", "/app/dist/cli.js", "health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    networks: [agent-lab-target]
+    networks: [agent-lab-target, agent-lab-gateway-admin]
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -101,6 +134,9 @@ services:
 networks:
   agent-lab-target:
     name: initpad-agent-lab-target
+  agent-lab-gateway-admin:
+    name: initpad-agent-lab-gateway-admin
+    internal: true
 
 volumes:
   agent-lab-config:

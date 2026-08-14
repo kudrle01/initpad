@@ -3071,6 +3071,19 @@ převázání na jiný target nebo allocation. Allocation smí použít jen targ
 zónu nebo její DNS podzónu. Model už odděluje desired/observed stav a generation
 pro následující Agent reconcile, ale sám zatím žádnou gateway nemění.
 
+**Stav implementace — read-only preflight.** Agent 0.5 přijímá pouze
+allow-listed `gateway-preflight` job s pevným adapterem `caddy` a validovaným
+veřejným HTTPS originem. Pro reprezentativní hostname
+`initpad-preflight.<zóna>` ověří wildcard DNS, na explicitním originu provede
+důvěryhodný TLS handshake na portu 443 a read-only dotaz na Caddy admin API.
+Adresu admin API nikdy neposílá control plane ani projekt: je lokální
+konfigurací Agenta a musí se přeložit pouze na privátní nebo loopback adresy.
+Lab proto provozuje Caddy bez Docker socketu a jeho management síť je interní
+bez host portu. Výsledek je uložen na targetu přes job-id fence; retry starého
+požadavku nemůže přepsat novější preflight. Změna zóny nebo routing mode
+výsledek zneplatní. Preflight záměrně nemění Caddy konfiguraci a neodemkne
+deployment; route reconcile zůstá dalším samostatným bezpečnostním krokem.
+
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
 nakonfiguruje DNS. Dva workspace současně nasadí stejně pojmenovaný projekt;

@@ -237,6 +237,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ requestId }),
     }),
+  createGatewayPreflight: (id: string, requestId: string) =>
+    http<AgentJobSummary>(`/targets/${id}/agent/jobs/gateway-preflight`, {
+      method: 'POST',
+      body: JSON.stringify({ requestId }),
+    }),
   // Workspace-scoped target allocations (ADR-060). Owner/admin manage; members read.
   listAllocations: () => http<TargetAllocation[]>('/allocations'),
   createAllocation: (body: TargetAllocationInput) =>

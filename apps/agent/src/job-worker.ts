@@ -7,6 +7,11 @@ import {
 } from './docker-lifecycle.js';
 import type { DockerLifecyclePayload, DockerLifecycleProgress } from './docker-lifecycle.js';
 import type { AgentJobClaim, AgentJobResult, AgentJobSummary } from './types.js';
+import {
+  GatewayPreflight,
+  parseGatewayPreflightPayload,
+} from './gateway-preflight.js';
+import type { GatewayPreflightProgress } from './gateway-preflight.js';
 
 const RENEW_EVERY_MS = 10_000;
 const PROGRESS_EVERY_MS = 5_000;
@@ -87,9 +92,18 @@ export interface LifecycleRunner {
   status?(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<AgentJobResult>;
 }
 
+export interface GatewayPreflightRunner {
+  run(
+    payload: unknown,
+    signal: AbortSignal,
+    report: (progress: GatewayPreflightProgress) => Promise<void>,
+  ): Promise<void>;
+}
+
 export interface JobExecutionOptions {
   timing?: JobTiming;
   lifecycle?: LifecycleRunner;
+  gateway?: GatewayPreflightRunner;
   dockerHost?: string;
 }
 
@@ -144,13 +158,86 @@ export async function executeClaimedJob(
 
   if (
     job.protocolVersion !== 1
-    || !['probe', 'lifecycle-test', 'deploy', 'start', 'stop', 'remove'].includes(job.kind)
+    || !['probe', 'lifecycle-test', 'gateway-preflight', 'deploy', 'start', 'stop', 'remove'].includes(job.kind)
   ) {
     await complete({
       leaseToken: job.leaseToken,
       status: 'failed',
       message: `Agent ${job.protocolVersion === 1 ? 'does not support this job kind' : 'does not support this protocol version'}`,
       resultCode: 'unsupported_job',
+    });
+    return;
+  }
+
+  if (job.kind === 'gateway-preflight') {
+    try {
+      parseGatewayPreflightPayload(job.payload);
+    } catch (error) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Gateway preflight payload is invalid',
+        resultCode: 'invalid_payload',
+      });
+      return;
+    }
+    const gateway = options.gateway ?? new GatewayPreflight();
+    const localController = new AbortController();
+    const combinedSignal = AbortSignal.any([signal, localController.signal]);
+    let renewalError: unknown;
+    const renewal = renewLeaseLoop(
+      job,
+      client,
+      timing,
+      combinedSignal,
+      localController,
+      () => leaseDeadline,
+      (deadline) => { leaseDeadline = deadline; },
+      (error) => { renewalError = error; },
+    );
+    let sequence = 0;
+    let preflightError: unknown;
+    try {
+      await gateway.run(job.payload, combinedSignal, async (progress) => {
+        sequence += 1;
+        await retryProtocolCall(
+          () => client.progress(job.id, {
+            leaseToken: job.leaseToken,
+            sequence,
+            percent: progress.percent,
+            stage: progress.stage,
+            message: progress.message,
+          }),
+          () => leaseDeadline,
+          combinedSignal,
+          timing,
+        );
+      });
+    } catch (error) {
+      preflightError = error;
+    } finally {
+      localController.abort();
+      await renewal;
+    }
+    if (signal.aborted) return;
+    if (renewalError) throw renewalError;
+    if (preflightError instanceof ControlPlaneError) throw preflightError;
+    if (preflightError) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: (preflightError instanceof Error
+          ? preflightError.message
+          : 'Gateway preflight failed').slice(0, 240),
+        resultCode: 'gateway_preflight_failed',
+      });
+      return;
+    }
+    await complete({
+      leaseToken: job.leaseToken,
+      status: 'succeeded',
+      message: 'Gateway DNS, TLS and Caddy adapter preflight passed',
+      resultCode: 'ok',
     });
     return;
   }

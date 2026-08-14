@@ -31,6 +31,11 @@ export class CreateAgentLifecycleTestDto {
   requestId!: string;
 }
 
+export class CreateGatewayPreflightDto {
+  @IsUUID('4')
+  requestId!: string;
+}
+
 export class AgentClaimJobDto {
   @IsString()
   @MinLength(1)

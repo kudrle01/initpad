@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import type { TargetAllocation, TargetAllocationInput, TargetInput } from '@/api';
 import { useAuth } from '@/auth';
@@ -25,6 +25,7 @@ export default function Infrastructure() {
   const [agentTarget, setAgentTarget] = useState<Target | null>(null);
   const [agentEnrollment, setAgentEnrollment] = useState<AgentEnrollment | null>(null);
   const agentProtocol = useAgentProtocol(agentTarget);
+  const lastGatewayRefreshJob = useRef<string | null>(null);
 
   const readOnly = !activeWorkspace
     || !['owner', 'admin', 'maintainer'].includes(activeWorkspace.role);
@@ -45,6 +46,14 @@ export default function Infrastructure() {
     const refreshed = infrastructure.targets.find((target) => target.id === agentTarget.id);
     if (refreshed && refreshed !== agentTarget) setAgentTarget(refreshed);
   }, [agentTarget, infrastructure.targets]);
+
+  useEffect(() => {
+    const terminal = agentProtocol.jobs.find((job) =>
+      job.kind === 'gateway-preflight' && ['succeeded', 'failed'].includes(job.status));
+    if (!terminal || terminal.id === lastGatewayRefreshJob.current) return;
+    lastGatewayRefreshJob.current = terminal.id;
+    void infrastructure.reload();
+  }, [agentProtocol.jobs, infrastructure.reload]);
 
   useEffect(() => {
     if (!agentEnrollment) return;
@@ -214,6 +223,11 @@ export default function Infrastructure() {
         onTestProtocol={() => void agentProtocol.testProtocol()}
         onTestLifecycle={() => {
           void agentProtocol.testLifecycle().then((queued) => {
+            if (queued) void infrastructure.reload();
+          });
+        }}
+        onTestGateway={() => {
+          void agentProtocol.testGateway().then((queued) => {
             if (queued) void infrastructure.reload();
           });
         }}

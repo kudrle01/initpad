@@ -112,6 +112,42 @@ test('fails a future or unknown job without interpreting its payload as a comman
   assert.deepEqual(calls, ['failed:unsupported_job']);
 });
 
+test('runs the fixed gateway preflight interface without accepting an admin URL', async () => {
+  const progress: number[] = [];
+  const completions: string[] = [];
+  const client: AgentJobClient = {
+    renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+    progress: async (_jobId, input) => {
+      progress.push(input.percent);
+      return summary({ sequence: input.sequence, percent: input.percent });
+    },
+    complete: async (_jobId, input) => {
+      completions.push(`${input.status}:${input.resultCode}`);
+      return summary({ status: input.status });
+    },
+  };
+
+  await executeClaimedJob(
+    claim({
+      kind: 'gateway-preflight',
+      payload: { adapter: 'caddy', publicUrl: 'https://apps.example.test' },
+    }),
+    new AbortController().signal,
+    client,
+    {
+      gateway: {
+        run: async (_payload, _signal, report) => {
+          await report({ percent: 15, stage: 'working', message: 'DNS ready' });
+          await report({ percent: 80, stage: 'verifying', message: 'Caddy ready' });
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(progress, [15, 80]);
+  assert.deepEqual(completions, ['succeeded:ok']);
+});
+
 test('runs only the explicit Docker lifecycle acceptance interface', async () => {
   const progress: number[] = [];
   const completions: string[] = [];

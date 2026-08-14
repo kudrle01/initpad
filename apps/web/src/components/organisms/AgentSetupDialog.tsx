@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Bot, Container, ShieldAlert, WifiOff } from 'lucide-react';
+import { Activity, Bot, Container, Globe2, ShieldAlert, WifiOff } from 'lucide-react';
 import type { AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
 import { CopyField } from '@/components/molecules/CopyField';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
@@ -20,7 +20,7 @@ interface Props {
   agent: AgentStatus | null;
   jobs: AgentJobSummary[];
   protocolError: string | null;
-  testBusy: 'protocol' | 'lifecycle' | null;
+  testBusy: 'protocol' | 'lifecycle' | 'gateway' | null;
   busy: boolean;
   enrollment: AgentEnrollment | null;
   onOpenChange: (open: boolean) => void;
@@ -28,6 +28,7 @@ interface Props {
   onDisable: () => void;
   onTestProtocol: () => void;
   onTestLifecycle: () => void;
+  onTestGateway: () => void;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -62,6 +63,7 @@ export function AgentSetupDialog({
   onDisable,
   onTestProtocol,
   onTestLifecycle,
+  onTestGateway,
 }: Props) {
   const [confirmDisable, setConfirmDisable] = useState(false);
   useEffect(() => {
@@ -220,6 +222,50 @@ export function AgentSetupDialog({
                 Test Docker
               </Button>
             </div>
+
+            {target.routingMode === 'managed-gateway' && (
+              <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border pt-3">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <Globe2 className="h-4 w-4 text-primary" /> Production gateway preflight
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Read-only check of the configured DNS zone, trusted TLS on port 443 and the
+                    private Caddy adapter. It does not create a route or modify gateway config.
+                  </p>
+                  {target.gatewayPreflight && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <StatusBadge
+                        status={target.gatewayPreflight.status === 'passed'
+                          ? 'success'
+                          : target.gatewayPreflight.status}
+                        label={`preflight ${target.gatewayPreflight.status}`}
+                      />
+                      {target.gatewayPreflight.checkedAt && (
+                        <span className="text-muted-foreground">
+                          {new Date(target.gatewayPreflight.checkedAt).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {target.gatewayPreflight?.error && (
+                    <p className="mt-2 text-xs text-destructive">{target.gatewayPreflight.error}</p>
+                  )}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy || testBusy !== null || !canQueueProbe}
+                  title={canQueueProbe
+                    ? 'Queue a read-only gateway preflight (Agent 0.5.0 or newer)'
+                    : 'The Agent must be enrolled'}
+                  onClick={onTestGateway}
+                >
+                  {testBusy === 'gateway' ? <Spinner className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
+                  Test gateway
+                </Button>
+              </div>
+            )}
 
             {protocolError && <p className="text-xs text-destructive">{protocolError}</p>}
             {jobs.length === 0 ? (

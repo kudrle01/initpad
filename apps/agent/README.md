@@ -10,6 +10,9 @@ allocation-scoped Docker lifecycle engine. Agent 0.4 also executes real
 project deploy/start/stop/remove jobs from verified build artifacts. The wire
 protocol deliberately has no generic shell endpoint.
 
+Agent 0.5 adds the read-only readiness gate for production Caddy routing. It
+does not yet mutate routes or expose managed-gateway targets to projects.
+
 The repository currently builds the Agent as an executable Node.js package and
 as a minimal container image. The local lab below is the supported acceptance
 path during development. Publishing a signed/versioned release image and its
@@ -133,6 +136,33 @@ After the diagnostic tests above pass, verify the actual project path:
    workspace may see or act on the other's target or workload. A centrally
    shared multi-workspace Agent target requires a future platform-admin sharing
    model.
+
+## Managed gateway preflight (Agent 0.5)
+
+The positive preflight is intentionally an infrastructure acceptance test, not
+a localhost simulation. The target administrator prepares:
+
+- the gateway origin itself, for example `apps.example.test`, resolving to the
+  gateway and serving a certificate trusted by the Agent host on port 443;
+- wildcard DNS so `initpad-preflight.apps.example.test` resolves to the same
+  gateway path used by application hostnames;
+- the Agent-local `INITPAD_AGENT_GATEWAY_ADMIN_URL`, pointing to Caddy's admin
+  API over a loopback or private management network.
+
+The control plane never sends or stores that admin URL in a job. The bundled
+lab sets it to `http://agent-lab-gateway:2019`; the Caddy container has no
+Docker socket and its management network has no host-facing port.
+
+After rebuilding API, web and Agent 0.5, create a disposable Docker Agent
+target with **Managed gateway (production)** and the HTTPS gateway origin,
+enroll/start it, then choose **Manage Agent → Test gateway**. The job must
+advance through wildcard DNS, trusted TLS and private Caddy readiness and end
+as `passed`. Stopping the Agent leaves a queued test waiting; an invalid DNS
+zone or certificate ends as `failed` with the corresponding bounded error.
+Changing the target origin resets the previous result to `not-run`.
+
+Passing preflight does not yet make the target selectable for a project. That
+requires the next route-reconcile and health-gated cutover steps from ADR-073.
 
 ## Credential storage
 

@@ -67,6 +67,8 @@ export function useInfrastructure(workspaceId?: string) {
     return () => window.clearInterval(interval);
   }, [refresh, workspaceId]);
 
+  const reload = useCallback(() => refresh(true), [refresh]);
+
   async function saveTarget(target: Target | null, values: TargetInput) {
     setSavingTarget(true);
     try {
@@ -205,7 +207,7 @@ export function useInfrastructure(workspaceId?: string) {
     savingAllocation,
     busyTargetId,
     busyAllocationId,
-    reload: () => refresh(true),
+    reload,
     saveTarget,
     verifyTarget,
     deleteTarget,

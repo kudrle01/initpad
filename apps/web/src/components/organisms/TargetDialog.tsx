@@ -289,7 +289,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             {kind === 'docker' && (
               <p className="text-xs text-muted-foreground">
                 {routingMode === 'managed-gateway'
-                  ? 'HTTPS DNS origin for stable application hostnames. Deployment stays unavailable until DNS, TLS and gateway preflight are implemented and pass.'
+                  ? 'HTTPS DNS origin for stable application hostnames. Deployment stays unavailable until preflight passes and managed route reconciliation is ready.'
                   : 'Browser-reachable host of this server. Agent-managed applications receive their own published port; use this only for local or lab targets.'}
               </p>
             )}

@@ -9,7 +9,7 @@ export function useAgentProtocol(target: Target | null) {
   const requestSequence = useRef(0);
   const [agent, setAgent] = useState<AgentStatus | null>(target?.agent ?? null);
   const [jobs, setJobs] = useState<AgentJobSummary[]>([]);
-  const [testing, setTesting] = useState<'protocol' | 'lifecycle' | null>(null);
+  const [testing, setTesting] = useState<'protocol' | 'lifecycle' | 'gateway' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const targetId = target?.id;
 
@@ -82,5 +82,22 @@ export function useAgentProtocol(target: Target | null) {
     }
   }
 
-  return { agent, jobs, error, testing, testProtocol, testLifecycle };
+  async function testGateway(): Promise<boolean> {
+    if (!targetId || testing) return false;
+    setTesting('gateway');
+    try {
+      const created = await api.createGatewayPreflight(targetId, crypto.randomUUID());
+      setJobs((current) => [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10));
+      toast.success('Gateway preflight queued');
+      await refresh();
+      return true;
+    } catch (cause) {
+      toast.error((cause as Error).message);
+      return false;
+    } finally {
+      setTesting(null);
+    }
+  }
+
+  return { agent, jobs, error, testing, testProtocol, testLifecycle, testGateway };
 }

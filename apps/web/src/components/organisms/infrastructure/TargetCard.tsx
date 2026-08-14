@@ -102,7 +102,7 @@ export function TargetCard({
       {isAgentTarget && (
         <div className="text-xs text-muted-foreground">
           {target.routingMode === 'managed-gateway'
-            ? 'managed gateway · setup pending'
+            ? `managed gateway · preflight ${target.gatewayPreflight?.status ?? 'not-run'}`
             : 'direct ports · local/lab'}
         </div>
       )}

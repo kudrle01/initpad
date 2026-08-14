@@ -14,12 +14,17 @@ import { generateToken, hashToken } from '../common/token';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentsService, type AuthenticatedAgent } from './agents.service';
 import { agentConfigFingerprint } from './agent-config-fingerprint';
-import { agentVersionAtLeast, MIN_LIFECYCLE_AGENT_VERSION } from './agent-version';
+import {
+  agentVersionAtLeast,
+  MIN_GATEWAY_AGENT_VERSION,
+  MIN_LIFECYCLE_AGENT_VERSION,
+} from './agent-version';
 import {
   AgentJobCompleteDto,
   AgentJobProgressDto,
   CreateAgentLifecycleTestDto,
   CreateAgentProbeJobDto,
+  CreateGatewayPreflightDto,
 } from './dto/agent-job.dto';
 
 const LEASE_MS = 30_000;
@@ -91,14 +96,32 @@ export class AgentJobsService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     // A crash can occur after the terminal AgentJob write but before its
     // Environment projection. The job result is durable, so safely replay it.
-    const pending = await this.prisma.agentJob.findMany({
+    const pendingOperations = await this.prisma.agentJob.findMany({
       where: {
         status: { in: ['succeeded', 'failed'] },
         deploymentOperation: { is: { status: 'running', finishedAt: null } },
       },
       select: { id: true },
     }).catch(() => []);
-    for (const job of pending) await this.reconcileTerminalJob(job.id).catch(() => undefined);
+    for (const job of pendingOperations) {
+      await this.reconcileTerminalJob(job.id).catch(() => undefined);
+    }
+
+    // Read only the currently fenced target jobs. Scanning every historical
+    // terminal preflight on each API restart would grow without bound.
+    const pendingPreflights = await this.prisma.target.findMany({
+      where: {
+        gatewayPreflightStatus: { in: ['queued', 'running'] },
+        gatewayPreflightJobId: { not: null },
+      },
+      select: { gatewayPreflightJobId: true },
+    }).catch(() => []);
+    for (const target of pendingPreflights) {
+      if (target.gatewayPreflightJobId) {
+        await this.reconcileGatewayPreflight(target.gatewayPreflightJobId)
+          .catch(() => undefined);
+      }
+    }
   }
 
   async createProbe(
@@ -214,6 +237,88 @@ export class AgentJobsService implements OnModuleInit {
       },
     });
     return this.summary(row as JobRow);
+  }
+
+  async createGatewayPreflight(
+    targetId: string,
+    userId: string,
+    dto: CreateGatewayPreflightDto,
+  ): Promise<AgentJobSummary> {
+    await this.agents.requireTargetAccess(targetId, userId, 'admin');
+    const agent = await this.prisma.agent.findUnique({
+      where: { targetId },
+      select: {
+        credentialHash: true,
+        disabledAt: true,
+        version: true,
+        target: {
+          select: {
+            kind: true,
+            scope: true,
+            routingMode: true,
+            gatewayAdapter: true,
+            publicUrl: true,
+          },
+        },
+      },
+    });
+    if (!agent?.credentialHash || agent.disabledAt) {
+      throw new BadRequestException('Enroll and connect the Agent before testing its gateway');
+    }
+    if (!agentVersionAtLeast(agent.version, MIN_GATEWAY_AGENT_VERSION)) {
+      throw new BadRequestException(
+        `Gateway preflight requires InitPad Agent ${MIN_GATEWAY_AGENT_VERSION.join('.')} or newer`,
+      );
+    }
+    const target = agent.target;
+    if (
+      target.kind !== 'docker'
+      || target.scope !== 'user'
+      || target.routingMode !== 'managed-gateway'
+      || target.gatewayAdapter !== 'caddy'
+      || !target.publicUrl
+    ) {
+      throw new BadRequestException('Gateway preflight requires a managed-gateway Docker target');
+    }
+
+    const dedupeKey = `gateway-preflight:${targetId}:${dto.requestId}`;
+    let row: JobRow;
+    try {
+      row = await this.prisma.$transaction(async (transaction) => {
+        const created = await transaction.agentJob.create({
+          data: {
+          targetId,
+          dedupeKey,
+          kind: 'gateway-preflight',
+          protocolVersion: 1,
+          payload: { adapter: 'caddy', publicUrl: target.publicUrl },
+          status: 'queued',
+          progressStage: 'queued',
+          message: 'Waiting for Agent',
+          },
+        });
+        await transaction.target.update({
+          where: { id: targetId },
+          data: {
+            gatewayPreflightStatus: 'queued',
+            gatewayPreflightJobId: created.id,
+            gatewayPreflightAt: null,
+            gatewayPreflightError: null,
+          },
+        });
+        return created as JobRow;
+      });
+    } catch (error) {
+      // An HTTP retry with the same request id is idempotent, but must never
+      // move the target fence back to this older job after a newer preflight.
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+        throw error;
+      }
+      const existing = await this.prisma.agentJob.findUnique({ where: { dedupeKey } });
+      if (!existing) throw error;
+      row = existing as JobRow;
+    }
+    return this.summary(row);
   }
 
   async list(targetId: string, userId: string): Promise<AgentJobSummary[]> {
@@ -394,10 +499,12 @@ export class AgentJobsService implements OnModuleInit {
         throw this.lostLease();
       }
       await this.mirrorDeploymentProgress(jobId, dto.message);
+      await this.mirrorGatewayPreflightProgress(jobId);
       return this.summary(current as JobRow);
     }
     const current = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } });
     await this.mirrorDeploymentProgress(jobId, dto.message);
+    await this.mirrorGatewayPreflightProgress(jobId);
     return this.summary(current as JobRow);
   }
 
@@ -441,9 +548,11 @@ export class AgentJobsService implements OnModuleInit {
       ) {
         throw this.lostLease();
       }
+      await this.reconcileGatewayPreflight(jobId);
       await this.reconcileTerminalJob(jobId);
       return this.summary(current as JobRow);
     }
+    await this.reconcileGatewayPreflight(jobId);
     await this.reconcileTerminalJob(jobId);
     return this.summary(await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } }) as JobRow);
   }
@@ -464,6 +573,43 @@ export class AgentJobsService implements OnModuleInit {
         data: { statusReason: message },
       }),
     ]);
+  }
+
+  private async mirrorGatewayPreflightProgress(jobId: string): Promise<void> {
+    const job = await this.prisma.agentJob.findUnique({
+      where: { id: jobId },
+      select: { id: true, targetId: true, kind: true },
+    });
+    if (job?.kind !== 'gateway-preflight') return;
+    await this.prisma.target.updateMany({
+      where: { id: job.targetId, gatewayPreflightJobId: job.id },
+      data: { gatewayPreflightStatus: 'running' },
+    });
+  }
+
+  private async reconcileGatewayPreflight(jobId: string): Promise<void> {
+    const job = await this.prisma.agentJob.findUnique({
+      where: { id: jobId },
+      select: {
+        id: true,
+        targetId: true,
+        kind: true,
+        status: true,
+        message: true,
+        finishedAt: true,
+      },
+    });
+    if (job?.kind !== 'gateway-preflight' || !['succeeded', 'failed'].includes(job.status)) return;
+    await this.prisma.target.updateMany({
+      where: { id: job.targetId, gatewayPreflightJobId: job.id },
+      data: {
+        gatewayPreflightStatus: job.status === 'succeeded' ? 'passed' : 'failed',
+        gatewayPreflightAt: job.finishedAt ?? new Date(),
+        gatewayPreflightError: job.status === 'failed'
+          ? (job.message ?? 'Gateway preflight failed')
+          : null,
+      },
+    });
   }
 
   private async reconcileTerminalJob(jobId: string): Promise<void> {

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Readable } from 'stream';
 import { encryptSecret } from '../common/secret';
 import { hashToken } from '../common/token';
@@ -51,6 +52,8 @@ function setup() {
           workspaceId: string;
           capabilities: string;
           publicUrl: string;
+          routingMode: string;
+          gatewayAdapter: string | null;
           workspace: { slug: string };
         };
       } | null> => ({
@@ -63,6 +66,8 @@ function setup() {
           workspaceId: 'workspace-1',
           capabilities: 'node,php,static',
           publicUrl: 'https://apps.example.test',
+          routingMode: 'direct-port',
+          gatewayAdapter: null,
           workspace: { slug: 'team-alpha' },
         },
       })),
@@ -71,6 +76,9 @@ function setup() {
       upsert: jest.fn(async () => ({ id: 'allocation-1', namespace: 'team-alpha' })),
     },
     agentJob: {
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) =>
+        job({ ...data, status: 'queued', attempt: 0, leasedAt: null, leaseExpiresAt: null }),
+      ),
       upsert: jest.fn(async ({ create }: { create: Record<string, unknown> }) =>
         job({ ...create, status: 'queued', attempt: 0, leasedAt: null, leaseExpiresAt: null }),
       ),
@@ -86,8 +94,17 @@ function setup() {
     environment: {
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
-    $transaction: jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
+    target: {
+      findMany: jest.fn(async (): Promise<Array<{ gatewayPreflightJobId: string | null }>> => []),
+      update: jest.fn(async () => ({ id: 'target-1' })),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
+    $transaction: jest.fn(),
   };
+  prisma.$transaction.mockImplementation(async (input: unknown) =>
+    typeof input === 'function'
+      ? (input as (transaction: typeof prisma) => Promise<unknown>)(prisma)
+      : Promise.all(input as Promise<unknown>[]));
   const agents = {
     requireTargetAccess: jest.fn(async () => undefined),
     authenticateCredential: jest.fn(async () => AGENT),
@@ -139,6 +156,35 @@ describe('AgentJobsService durable lease protocol', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('replays only current preflight fences instead of scanning terminal history', async () => {
+    const { service, prisma } = setup();
+    prisma.agentJob.findMany.mockResolvedValue([]);
+    prisma.target.findMany.mockResolvedValue([{ gatewayPreflightJobId: 'current-preflight' }]);
+    prisma.agentJob.findUnique.mockResolvedValue(job({
+      id: 'current-preflight',
+      kind: 'gateway-preflight',
+      status: 'succeeded',
+      finishedAt: NOW,
+    }));
+
+    await service.onModuleInit();
+
+    expect(prisma.agentJob.findMany).toHaveBeenCalledWith({
+      where: {
+        status: { in: ['succeeded', 'failed'] },
+        deploymentOperation: { is: { status: 'running', finishedAt: null } },
+      },
+      select: { id: true },
+    });
+    expect(prisma.target.findMany).toHaveBeenCalledWith({
+      where: {
+        gatewayPreflightStatus: { in: ['queued', 'running'] },
+        gatewayPreflightJobId: { not: null },
+      },
+      select: { gatewayPreflightJobId: true },
+    });
   });
 
   it('creates an idempotent, bounded probe job for an enrolled target', async () => {
@@ -205,6 +251,113 @@ describe('AgentJobsService durable lease protocol', () => {
       requestId: '123e4567-e89b-42d3-a456-426614174000',
     })).rejects.toThrow(/0\.3\.0 or newer/);
     expect(prisma.targetAllocation.upsert).not.toHaveBeenCalled();
+  });
+
+  it('queues a fenced read-only gateway preflight for Agent 0.5', async () => {
+    const { service, prisma, agents } = setup();
+    const enrolled = await prisma.agent.findUnique();
+    prisma.agent.findUnique.mockResolvedValue({
+      ...enrolled!,
+      version: '0.5.0',
+      target: {
+        ...enrolled!.target,
+        routingMode: 'managed-gateway',
+        gatewayAdapter: 'caddy',
+      },
+    });
+    const requestId = '123e4567-e89b-42d3-a456-426614174000';
+
+    await expect(service.createGatewayPreflight('target-1', 'owner-1', { requestId }))
+      .resolves.toMatchObject({ kind: 'gateway-preflight', status: 'queued' });
+
+    expect(agents.requireTargetAccess).toHaveBeenCalledWith('target-1', 'owner-1', 'admin');
+    expect(prisma.agentJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        dedupeKey: `gateway-preflight:target-1:${requestId}`,
+        kind: 'gateway-preflight',
+        payload: { adapter: 'caddy', publicUrl: 'https://apps.example.test' },
+      }),
+    });
+    expect(prisma.target.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'target-1' },
+      data: expect.objectContaining({ gatewayPreflightStatus: 'queued' }),
+    }));
+  });
+
+  it('returns an idempotent gateway retry without moving the current target fence', async () => {
+    const { service, prisma } = setup();
+    const enrolled = await prisma.agent.findUnique();
+    prisma.agent.findUnique.mockResolvedValue({
+      ...enrolled!,
+      version: '0.5.0',
+      target: {
+        ...enrolled!.target,
+        routingMode: 'managed-gateway',
+        gatewayAdapter: 'caddy',
+      },
+    });
+    const existing = job({
+      id: 'older-job',
+      kind: 'gateway-preflight',
+      status: 'succeeded',
+      finishedAt: NOW,
+    });
+    prisma.agentJob.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      { code: 'P2002', clientVersion: '6.19.2' },
+    ));
+    prisma.agentJob.findUnique.mockResolvedValue(existing);
+
+    await expect(service.createGatewayPreflight('target-1', 'owner-1', {
+      requestId: '123e4567-e89b-42d3-a456-426614174000',
+    })).resolves.toMatchObject({ id: 'older-job', status: 'succeeded' });
+
+    expect(prisma.target.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects gateway preflight for an old Agent or a direct-port target', async () => {
+    const { service, prisma } = setup();
+    await expect(service.createGatewayPreflight('target-1', 'owner-1', {
+      requestId: '123e4567-e89b-42d3-a456-426614174000',
+    })).rejects.toThrow('0.5.0');
+
+    const enrolled = await prisma.agent.findUnique();
+    prisma.agent.findUnique.mockResolvedValue({ ...enrolled!, version: '0.5.0' });
+    await expect(service.createGatewayPreflight('target-1', 'owner-1', {
+      requestId: '123e4567-e89b-42d3-a456-426614174001',
+    })).rejects.toThrow('managed-gateway');
+  });
+
+  it('publishes a terminal gateway preflight only through the current job fence', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'gateway-preflight',
+      status: 'succeeded',
+      message: 'Gateway DNS, TLS and Caddy adapter preflight passed',
+      resultCode: 'ok',
+      leaseExpiresAt: null,
+      finishedAt: NOW,
+    });
+    prisma.agentJob.findUnique
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce({ ...terminal, deploymentOperation: null });
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: terminal.message,
+      resultCode: 'ok',
+    });
+
+    expect(prisma.target.updateMany).toHaveBeenCalledWith({
+      where: { id: 'target-1', gatewayPreflightJobId: 'job-1' },
+      data: {
+        gatewayPreflightStatus: 'passed',
+        gatewayPreflightAt: NOW,
+        gatewayPreflightError: null,
+      },
+    });
   });
 
   it('atomically claims only a compatible job on the authenticated target', async () => {

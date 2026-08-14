@@ -115,6 +115,7 @@ export type ProviderKind = 'docker' | 'sftp' | 'ssh';
 export type RuntimeKind = 'static' | 'node' | 'php' | 'python';
 export type TargetScope = 'builtin' | 'user';
 export type TargetRoutingMode = 'direct-port' | 'managed-gateway';
+export type GatewayPreflightStatus = 'not-run' | 'queued' | 'running' | 'passed' | 'failed';
 export type EnvName = 'dev' | 'test' | 'prod';
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
 
@@ -191,6 +192,12 @@ export interface Target {
   remotePath: string | null;
   publicUrl: string | null;
   routingMode: TargetRoutingMode;
+  gatewayPreflight?: {
+    adapter: 'caddy';
+    status: GatewayPreflightStatus;
+    checkedAt: string | null;
+    error: string | null;
+  } | null;
   verifiedAt: string | null;
   agentReady?: boolean;
   agentVersion?: string | null;
