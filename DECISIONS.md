@@ -2969,3 +2969,88 @@ odděleném DinD targetu převzal 63,4 MB ověřený archiv, publikoval zdravý 
 a přes lab-only loopback bridge vrátil browser-reachable URL bez vystavení
 Docker API. Zbývající offline, revoke a multi-workspace scénáře jsou popsané v
 `apps/agent/README.md` a zůstávají podmínkou uzavření Fáze 5.
+
+## ADR-073 — Produkční Agent target používá spravovanou gateway a stabilní hostname
+
+**Kontext.** Agent dnes publikuje workload na náhodném host portu a control
+plane z explicitního `publicUrl` targetu sestaví browser URL. To je vhodné pro
+lokální lab, vývojovou VM a jednoduchý interní server, ale není to produkční
+aplikační ingress: URL se při novém deploymentu může změnit, provoz není
+ukončený na standardních portech 80/443 a každý workload rozšiřuje veřejnou
+plochu hostitele. Automatická detekce IP by navíc za proxy, NATem, VPN nebo na
+serveru s více rozhraními mohla zveřejnit nesprávnou adresu.
+
+**Rozhodnutí.** Agent Docker target dostane explicitní režim routování:
+
+1. `direct-port` zachová dnešní chování pro local/lab a zpětnou kompatibilitu.
+   Dynamický port je v labu vázaný jen na výslovně nastavené rozhraní;
+   tento režim se nebude vydávat za stabilní veřejný ingress.
+2. `managed-gateway` bude produkční režim. Administrátor potvrdí HTTPS
+   `publicUrl` targetu, například `https://apps.example.cz`; jeho hostname je
+   explicitní základ spravované DNS zóny, nikoli automaticky odhadnutá IP.
+   Allocation může mít explicitní podzónu. Platforma z ní při prvním deployi
+   **jednou alokuje a uloží** collision-safe hostname projektu/prostředí,
+   například `shop-dev-a1b2.apps.example.cz`. Rename projektu ani redeploy URL
+   nezmění; unikátní databázové omezení zabrání souběžné alokaci stejného jména.
+3. DNS je odpovědností správce targetu: wildcard `A`/`AAAA` (nebo ekvivalent
+   load balanceru) směruje zónu na gateway. `publicUrl` zůstává explicitní a
+   administrátorem potvrzený zdroj pravdy. InitPad před aktivací provede
+   read-only preflight DNS, dostupnosti gateway a TLS; nebude měnit DNS ani
+   vybírat síťové rozhraní bez samostatné budoucí integrace.
+4. Výchozí veřejné TLS používá automatické certifikáty pro jednotlivé uložené
+   hostname. Volitelný wildcard certifikát je samostatný režim, protože vyžaduje
+   ACME DNS challenge a úzce omezený credential DNS provideru. Interní síť může
+   použít správcem zvolenou interní CA; klienti jí musí důvěřovat. Externí load
+   balancer může TLS ukončovat mimo gateway, ale tento stav musí být explicitní.
+5. Agent nadále spravuje jen allow-listed workload lifecycle. Jedna co-located
+   gateway (první adapter Caddy) ukončuje TLS a routuje podle `Host`; nedostane
+   Docker socket. Agent jí předává pouze validovaný deklarativní route snapshot
+   přes permissioned Unix socket nebo izolovaný management endpoint. Admin API
+   se nikdy nepublikuje do internetu a projektový payload nemůže dodat vlastní
+   Caddy/Traefik konfiguraci, upstream ani hostname.
+6. Workload nepublikuje náhodný veřejný host port. Zůstane v allocation-scoped
+   Docker síti a trusted gateway se připojí pouze k sítím s aktivními routami.
+   Workloady různých allocations nesdílejí jednu aplikační síť a samy se
+   navzájem neadresují; gateway je vědomý, auditovaný trust boundary bez práva
+   vytvářet či mazat kontejnery.
+7. Deploy je health-gated i na úrovni routy: Agent připraví candidate, ověří
+   jeho interní health, atomicky přepne deklarativní route, ověří veřejné HTTPS
+   a teprve potom dokončí `DeploymentOperation`. Selhání gateway zachová
+   předchozí funkční route/revision a candidate uklidí. Stop hostname rezervuje,
+   start obnoví stejnou route a remove route odstraní; úplné smazání projektu
+   ji uvolní až po potvrzeném teardownu.
+8. Control plane uloží desired route intent a poslední Agentem potvrzený stav.
+   Agent po reconnectu provede idempotentní reconcile, takže restart gateway,
+   ztracená odpověď ani duplicitní job nevytvoří dvě routy a nepublikuje cizí
+   allocation. Konkrétní gateway je za interním adapterem, aby později mohl být
+   přidán Traefik, Kubernetes Ingress nebo cloud load balancer bez změny
+   projektového delivery toku.
+
+**Důsledky.** Produkční aplikace dostanou stabilní HTTPS adresy bez veřejného
+portu pro každý kontejner a Agent zůstane jedinou komponentou s lokálním Docker
+oprávněním. Provozovatel musí zajistit DNS, dosažitelnost 80/443 a zvolený TLS
+model. Gateway se stává kritickou sdílenou komponentou, proto vyžaduje durable
+konfiguraci, health/readiness, audit změn a bezpečný rollback. `direct-port`
+zůstává užitečný pro vývoj a neblokuje instalaci bez domény.
+
+**Pořadí implementace.** Nejdřív se uzavře bezpečnostní gate ADR-072. Potom se
+přidá doménový model routy a migrace, gateway adapter a Agent protokol,
+co-located Caddy bez Docker socketu, DNS/TLS preflight, UI konfigurace targetu a
+nakonec živý rollback/izolační test. Produkční režim se neoznačí `ready`, dokud
+neprojde výpadek gateway, kolize dvou současných deployů a izolace dvou
+workspaces.
+
+**Uživatelské testování.** Administrátor založí Agent target v režimu
+`managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
+nakonfiguruje DNS. Dva workspace současně nasadí stejně pojmenovaný projekt;
+oba dostanou odlišné stabilní HTTPS URL a navzájem nevidí své workloady. Redeploy,
+stop/start a rename URL nezmění. Nezdravý candidate ani nedostupná gateway
+nepřepíše poslední funkční route. Remove vrátí 404/410 a úplný teardown nezanechá
+kontejner, route ani allocation síť. Gateway admin endpoint a Docker API nejsou
+z klientské sítě dostupné.
+
+Reference:
+[Caddy — API a ochrana admin endpointu](https://caddyserver.com/docs/api),
+[Caddy — automatic HTTPS](https://caddyserver.com/docs/automatic-https),
+[Caddy — wildcard certificate pattern](https://caddyserver.com/docs/caddyfile/patterns),
+[Caddy — reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
