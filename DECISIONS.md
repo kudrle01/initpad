@@ -2977,8 +2977,12 @@ multi-workspace gate je popsaný v `apps/agent/README.md`. Offline scénář
 následně prošel: po grace period UI
 ukázalo `offline`, nový deploy stejného historického artifactu nevyvolal SCM
 run a zůstal `Waiting for Agent`; po reconnectu byl jediný job claimnutý a
-dokončený jako `attempt 1` a daemon obsahoval právě jeden workload. Zbývá
-revoke/re-enroll a multi-workspace scénář.
+dokončený jako `attempt 1` a daemon obsahoval právě jeden workload.
+Revoke/re-enroll odmítl starou generaci `401`, zachoval běžící aplikaci a nový
+credential obnovil heartbeat. Multi-workspace scénář použil dvě target identity
+s oddělenými credential volumes nad stejným DinD daemonem. Současné workloady
+měly namespaces `team-alpha` a `it000`; Stop a Remove `it000` neovlivnil první
+kontejner, jeho síť ani HTTP `200` dostupnost.
 
 ## ADR-073 — Produkční Agent target používá spravovanou gateway a stabilní hostname
 

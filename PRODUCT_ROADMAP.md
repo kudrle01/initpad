@@ -296,7 +296,7 @@ nezobrazí falešný empty/error stav.
    Deploy/start/stop/remove nyní tvoří `AgentJob`, stahují ověřený artifact
    job-scoped streamem, promítají progress i výsledek zpět do projektu a picker
    zpřístupní jen enrolled Agent 0.4+ s durable artifact store.
-7. **Živý a bezpečnostní gate.** Otestuje se instalace, revoke/re-enroll,
+7. ✅ **Živý a bezpečnostní gate.** Otestuje se instalace, revoke/re-enroll,
    offline/reconnect, ztracená odpověď, lease expiry, duplicitní job a izolace
    dvou workspaces; následuje audit enrollmentu a idempotence.
 8. **Produkční gateway routing.** Po uzavření bezpečnostního gate se vedle
@@ -342,9 +342,11 @@ job `deploy · attempt 1` dokončil právě jeden workload stejné revize.
 Revoke/re-enroll gate také prošel: credential generace 1 byl ihned odmítnut,
 běžící workload zůstal dostupný, nový jednorázový enrollment vytvořil generaci
 2 a obnovil heartbeat. Spotřebovaný či expirovaný plaintext se z dialogu
-automaticky odstraní. Zbývá izolace dvou workspaceů na Agent targetech.
-Produkční gateway je navazující podkrok 8; současný náhodný port je záměrně
-pouze local/lab cesta.
+automaticky odstraní. Dvou-workspace gate následně použil dvě target identity
+se dvěma credential volumes nad jedním fyzickým DinD daemonem. Současné
+workloady měly namespaces `team-alpha` a `it000`; Stop a Remove druhého ponechal
+první kontejner, síť i URL beze změny a dostupné s HTTP `200`. Produkční gateway
+je navazující podkrok 8; současný náhodný port je záměrně pouze local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -443,9 +445,10 @@ sítě. Offline deploy znovu použil ověřený artifact bez nového SCM runu, �
 ve frontě a po reconnectu se dokončil jediným `attempt 1` do právě jednoho
 workloadu. Revoke/re-enroll následně zneplatnil credential generace 1 bez
 zásahu do běžící aplikace a nový enrollment obnovil Agent jako generaci 2.
-Zbývá dvou-workspace gate podle `apps/agent/README.md`; produkční stabilní
-HTTPS routing následuje podle
-ADR-073. Tyto dílčí výsledky nenahrazují závěrečný školní E2E scénář s
+Dvě oddělené target identity nad jedním izolovaným daemonem poté nasadily
+současně namespaces `team-alpha` a `it000`; Stop/Remove druhého workloadu
+nezměnil první. Produkční stabilní HTTPS routing následuje podle ADR-073. Tyto
+dílčí výsledky nenahrazují závěrečný školní E2E scénář s
 nezávislým týmem.
 
 ## Vyhodnocení pro diplomovou práci
