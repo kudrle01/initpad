@@ -46,6 +46,34 @@ export default function Infrastructure() {
     if (refreshed && refreshed !== agentTarget) setAgentTarget(refreshed);
   }, [agentTarget, infrastructure.targets]);
 
+  useEffect(() => {
+    if (!agentEnrollment) return;
+
+    // The plaintext is useful only while this exact one-time enrollment can
+    // still be redeemed. A successful enrollment advances the credential
+    // generation; expiry must remove the secret even if the dialog stays open.
+    if (
+      agentProtocol.agent?.targetId === agentEnrollment.targetId
+      && agentProtocol.agent.credentialGeneration > agentEnrollment.credentialGeneration
+    ) {
+      setAgentEnrollment(null);
+      return;
+    }
+
+    const remainingMs = new Date(agentEnrollment.enrollmentExpiresAt!).getTime() - Date.now();
+    if (remainingMs <= 0) {
+      setAgentEnrollment(null);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setAgentEnrollment(null), remainingMs);
+    return () => window.clearTimeout(timeout);
+  }, [
+    agentEnrollment,
+    agentProtocol.agent?.credentialGeneration,
+    agentProtocol.agent?.targetId,
+  ]);
+
   function openNewTarget() {
     setEditingTarget(null);
     setTargetDialogOpen(true);

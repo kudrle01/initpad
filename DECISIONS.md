@@ -2702,9 +2702,9 @@ hesla ani vložit jednorázový enrollment do shell historie.
    port, účet, heslo, privátní klíč ani remote path. Typ existujícího targetu je
    neměnný; změna protokolu znamená založit nový target.
 2. Enrollment spravuje pouze owner/admin. UI ukáže plaintext token právě v
-   odpovědi na jeho vydání a po zavření dialogu jej zahodí. Kopírovaný příkaz
-   obsahuje jen URL control plane; Agent si token vyžádá interaktivně, aby
-   neskončil v shell historii.
+   odpovědi na jeho vydání a zahodí jej po zavření dialogu, po úspěšném redeem
+   nebo po expiraci. Kopírovaný příkaz obsahuje jen URL control plane; Agent si
+   token vyžádá interaktivně, aby neskončil v shell historii.
 3. Stav `online` není ručně zapisovaný příznak. Control plane jej odvodí z
    autentizovaného heartbeatu mladšího než 90 sekund; starší enrolled Agent je
    `offline`. Stav bez credentialu je `not-enrolled`, revoke je `disabled`.
@@ -2722,8 +2722,8 @@ konfigurační údaj pro odkazy na aplikace, nikoli management endpoint Agenta.
 **Testování.** API testy odmítají inbound údaje i předčasnou allocation a
 ověřují heartbeat-derived stav. Browser acceptance pokrývá založení targetu,
 oddělený jednorázový token a bezpečný příkaz, zahození plaintextu po zavření,
-skrytí targetu v allocation formuláři a mobilní šířku 390 px. Připojení
-skutečného procesu a stav `online` patří do podkroku 3.
+redeem nebo expiraci, skrytí targetu v allocation formuláři a mobilní šířku
+390 px. Připojení skutečného procesu a stav `online` patří do podkroku 3.
 
 ## ADR-068 — Agent heartbeat je minimální, odchozí a provozně obnovitelný
 
@@ -2771,7 +2771,10 @@ práva `0700/0600`, Docker capability discovery, heartbeat a přechod
 `online → offline → online` bez nového credentialu. Po restartu hostitele Agent
 prošel retry sekvencí při startujícím DinD a sám obnovil heartbeat. API testy
 navíc pokrývají neznámý, chybný a souběžně deaktivovaný credential; celý
-produkční build, testy a dependency audit jsou zelené.
+produkční build, testy a dependency audit jsou zelené. Živý revoke navíc
+okamžitě odmítl credential generace 1 odpovědí `401`, aniž by odstranil běžící
+workload; nový single-use enrollment vytvořil generaci 2, obnovil heartbeat a
+tentýž workload zůstal dostupný. UI po redeem odstraní spotřebovaný plaintext.
 
 ## ADR-069 — Agent job je durable target-scoped envelope s fencing lease
 

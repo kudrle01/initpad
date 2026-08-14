@@ -338,9 +338,13 @@ lab-only bridge bez publikování Docker API. Následný projektový
 Agent síť. Offline fronta následně také prošla: po heartbeat grace
 period target přešel na `offline`, `Deploy` znovu použil tentýž historický
 artifact bez nového SCM runu a zůstal `Waiting for Agent`; po reconnectu jediný
-job `deploy · attempt 1` dokončil právě jeden workload stejné revize. Zbývá
-revoke/re-enroll a dva workspace. Produkční gateway je navazující podkrok 8;
-současný náhodný port je záměrně pouze local/lab cesta.
+job `deploy · attempt 1` dokončil právě jeden workload stejné revize.
+Revoke/re-enroll gate také prošel: credential generace 1 byl ihned odmítnut,
+běžící workload zůstal dostupný, nový jednorázový enrollment vytvořil generaci
+2 a obnovil heartbeat. Spotřebovaný či expirovaný plaintext se z dialogu
+automaticky odstraní. Zbývá izolace dvou workspaceů na Agent targetech.
+Produkční gateway je navazující podkrok 8; současný náhodný port je záměrně
+pouze local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -437,8 +441,10 @@ loopback bridge bez vystavení Docker API. Projektový `Stop → Start → Remov
 navíc skončil `empty` bez zbylého managed kontejneru, image projektu nebo Agent
 sítě. Offline deploy znovu použil ověřený artifact bez nového SCM runu, čekal
 ve frontě a po reconnectu se dokončil jediným `attempt 1` do právě jednoho
-workloadu. Zbývá revoke/re-enroll a dvou-workspace gate podle
-`apps/agent/README.md`; produkční stabilní HTTPS routing následuje podle
+workloadu. Revoke/re-enroll následně zneplatnil credential generace 1 bez
+zásahu do běžící aplikace a nový enrollment obnovil Agent jako generaci 2.
+Zbývá dvou-workspace gate podle `apps/agent/README.md`; produkční stabilní
+HTTPS routing následuje podle
 ADR-073. Tyto dílčí výsledky nenahrazují závěrečný školní E2E scénář s
 nezávislým týmem.
 
