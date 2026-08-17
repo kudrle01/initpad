@@ -211,6 +211,21 @@ function dockerNamePart(value: string): string {
     .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
 }
 
+function boundedDockerName(value: string): string {
+  if (value.length <= 128) return value;
+  const digest = createHash('sha256').update(value).digest('hex').slice(0, 12);
+  return `${value.slice(0, 115)}-${digest}`;
+}
+
+export function workloadContainerName(payload: Pick<
+  DockerLifecyclePayload,
+  'namespace' | 'projectSlug' | 'environment'
+>): string {
+  return boundedDockerName(
+    `initpad-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`,
+  );
+}
+
 function publishedHost(dockerHost: string): string {
   const configured = process.env.INITPAD_AGENT_PUBLISHED_HOST?.trim();
   if (configured) return configured;
@@ -750,24 +765,16 @@ export class DockerLifecycle {
   }
 
   private networkName(payload: DockerLifecyclePayload): string {
-    return this.boundedName(`net-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.environment)}`);
+    return boundedDockerName(`net-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.environment)}`);
   }
 
   private containerName(payload: DockerLifecyclePayload): string {
-    return this.boundedName(
-      `initpad-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`,
-    );
+    return workloadContainerName(payload);
   }
 
   private candidateName(payload: DockerLifecyclePayload): string {
     const suffix = dockerNamePart(payload.revision).slice(0, 12);
     return `${this.containerName(payload).slice(0, 108)}-next-${suffix}`;
-  }
-
-  private boundedName(value: string): string {
-    if (value.length <= 128) return value;
-    const digest = createHash('sha256').update(value).digest('hex').slice(0, 12);
-    return `${value.slice(0, 115)}-${digest}`;
   }
 
   private request(input: Parameters<DockerTransport>[0]): Promise<DockerHttpResponse> {

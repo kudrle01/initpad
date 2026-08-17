@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { connect as tlsConnect } from 'node:tls';
+import { CaddyAdminClient } from './caddy-admin.js';
 
 const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
@@ -57,18 +58,6 @@ export function parseGatewayPreflightPayload(value: unknown): GatewayPreflightPa
   return { adapter: 'caddy', publicUrl: url.origin.toLowerCase() };
 }
 
-function privateAddress(address: string): boolean {
-  if (address === '::1' || address.startsWith('fc') || address.startsWith('fd')) return true;
-  if (address.startsWith('fe8') || address.startsWith('fe9') || address.startsWith('fea') || address.startsWith('feb')) return true;
-  const octets = address.split('.').map(Number);
-  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part))) return false;
-  return octets[0] === 10
-    || octets[0] === 127
-    || (octets[0] === 169 && octets[1] === 254)
-    || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
-    || (octets[0] === 192 && octets[1] === 168);
-}
-
 async function verifyTrustedTls(hostname: string, signal: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -104,55 +93,11 @@ async function verifyTrustedTls(hostname: string, signal: AbortSignal): Promise<
   });
 }
 
-export class CaddyAdminAdapter {
-  constructor(
-    private readonly adminUrl = process.env.INITPAD_AGENT_GATEWAY_ADMIN_URL ?? '',
-    private readonly resolve: GatewayPreflightDependencies['resolve'] =
-      (hostname) => lookup(hostname, { all: true }),
-    private readonly request: typeof fetch = fetch,
-  ) {}
-
-  async ready(signal: AbortSignal): Promise<void> {
-    if (!this.adminUrl) {
-      throw new Error('Caddy adapter is not configured on this Agent');
-    }
-    let url: URL;
-    try {
-      url = new URL(this.adminUrl);
-    } catch {
-      throw new Error('Caddy adapter URL is invalid');
-    }
-    if (
-      !['http:', 'https:'].includes(url.protocol)
-      || url.username
-      || url.password
-      || (url.pathname !== '/' && url.pathname !== '')
-      || url.search
-      || url.hash
-    ) {
-      throw new Error('Caddy adapter URL must be a private HTTP(S) origin');
-    }
-    const addresses = await this.resolve(url.hostname);
-    if (!addresses.length || addresses.some(({ address }) => !privateAddress(address))) {
-      throw new Error('Caddy adapter must resolve only to private target addresses');
-    }
-    const response = await this.request(new URL('/config/', url), {
-      headers: { accept: 'application/json' },
-      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-    });
-    if (!response.ok) throw new Error(`Caddy adapter readiness returned HTTP ${response.status}`);
-    const config: unknown = await response.json();
-    if (!config || typeof config !== 'object' || Array.isArray(config)) {
-      throw new Error('Caddy adapter returned an invalid configuration document');
-    }
-  }
-}
-
 export class GatewayPreflight {
   constructor(private readonly dependencies: GatewayPreflightDependencies = {
     resolve: (hostname) => lookup(hostname, { all: true }),
     verifyTls: verifyTrustedTls,
-    verifyCaddy: (signal) => new CaddyAdminAdapter().ready(signal),
+    verifyCaddy: (signal) => new CaddyAdminClient().ready(signal),
   }) {}
 
   async run(

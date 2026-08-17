@@ -99,6 +99,10 @@ function setup() {
       update: jest.fn(async () => ({ id: 'target-1' })),
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
+    gatewayRoute: {
+      findMany: jest.fn(async (): Promise<Array<{ reconcileJobId: string | null }>> => []),
+      updateMany: jest.fn(async (_input: unknown) => ({ count: 1 })),
+    },
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(async (input: unknown) =>
@@ -184,6 +188,10 @@ describe('AgentJobsService durable lease protocol', () => {
         gatewayPreflightJobId: { not: null },
       },
       select: { gatewayPreflightJobId: true },
+    });
+    expect(prisma.gatewayRoute.findMany).toHaveBeenCalledWith({
+      where: { reconcileJobId: { not: null } },
+      select: { reconcileJobId: true },
     });
   });
 
@@ -358,6 +366,94 @@ describe('AgentJobsService durable lease protocol', () => {
         gatewayPreflightError: null,
       },
     });
+  });
+
+  it('publishes a successful gateway route only through its generation and job fences', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'gateway-route',
+      status: 'succeeded',
+      gatewayRouteId: 'route-1',
+      payload: {
+        routeId: 'route-1',
+        generation: 7,
+        desiredState: 'active',
+        revision: 'abc123',
+      },
+      message: 'Gateway route generation 7 reconciled to active',
+      resultCode: 'ok',
+      leaseExpiresAt: null,
+      finishedAt: NOW,
+    });
+    prisma.agentJob.findUnique
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce({ ...terminal, deploymentOperation: null });
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: terminal.message,
+      resultCode: 'ok',
+    });
+
+    expect(prisma.gatewayRoute.updateMany).toHaveBeenCalledWith({
+      where: { id: 'route-1', generation: 7, reconcileJobId: 'job-1' },
+      data: {
+        observedState: 'active',
+        observedRevision: 'abc123',
+        observedGeneration: 7,
+        reconcileJobId: null,
+        lastError: null,
+        reconciledAt: NOW,
+      },
+    });
+  });
+
+  it('records a route failure without discarding the last known-good observation', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'gateway-route',
+      status: 'failed',
+      gatewayRouteId: 'route-1',
+      payload: {
+        routeId: 'route-1',
+        generation: 8,
+        desiredState: 'stopped',
+        revision: 'abc123',
+      },
+      message: 'Caddy configuration changed concurrently',
+      resultCode: 'gateway_route_failed',
+      leaseExpiresAt: null,
+      finishedAt: NOW,
+    });
+    prisma.agentJob.findUnique
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce({ ...terminal, deploymentOperation: null });
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'failed',
+      message: terminal.message,
+      resultCode: 'gateway_route_failed',
+    });
+
+    const update = prisma.gatewayRoute.updateMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    };
+    expect(update.where).toEqual({ id: 'route-1', generation: 8, reconcileJobId: 'job-1' });
+    expect(update.data).toEqual({
+      reconcileJobId: null,
+      lastError: 'Caddy configuration changed concurrently',
+      reconciledAt: NOW,
+    });
+    expect(update.data).not.toHaveProperty('observedState');
+    expect(update.data).not.toHaveProperty('observedRevision');
+    expect(update.data).not.toHaveProperty('observedGeneration');
   });
 
   it('atomically claims only a compatible job on the authenticated target', async () => {

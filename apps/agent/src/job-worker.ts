@@ -12,6 +12,11 @@ import {
   parseGatewayPreflightPayload,
 } from './gateway-preflight.js';
 import type { GatewayPreflightProgress } from './gateway-preflight.js';
+import {
+  GatewayRouteReconciler,
+  parseGatewayRoutePayload,
+} from './gateway-route.js';
+import type { GatewayRouteProgress } from './gateway-route.js';
 
 const RENEW_EVERY_MS = 10_000;
 const PROGRESS_EVERY_MS = 5_000;
@@ -100,10 +105,19 @@ export interface GatewayPreflightRunner {
   ): Promise<void>;
 }
 
+export interface GatewayRouteRunner {
+  run(
+    payload: unknown,
+    signal: AbortSignal,
+    report: (progress: GatewayRouteProgress) => Promise<void>,
+  ): Promise<void>;
+}
+
 export interface JobExecutionOptions {
   timing?: JobTiming;
   lifecycle?: LifecycleRunner;
   gateway?: GatewayPreflightRunner;
+  gatewayRoute?: GatewayRouteRunner;
   dockerHost?: string;
 }
 
@@ -158,7 +172,7 @@ export async function executeClaimedJob(
 
   if (
     job.protocolVersion !== 1
-    || !['probe', 'lifecycle-test', 'gateway-preflight', 'deploy', 'start', 'stop', 'remove'].includes(job.kind)
+    || !['probe', 'lifecycle-test', 'gateway-preflight', 'gateway-route', 'deploy', 'start', 'stop', 'remove'].includes(job.kind)
   ) {
     await complete({
       leaseToken: job.leaseToken,
@@ -237,6 +251,78 @@ export async function executeClaimedJob(
       leaseToken: job.leaseToken,
       status: 'succeeded',
       message: 'Gateway DNS, TLS and Caddy adapter preflight passed',
+      resultCode: 'ok',
+    });
+    return;
+  }
+
+  if (job.kind === 'gateway-route') {
+    let payload: ReturnType<typeof parseGatewayRoutePayload>;
+    try {
+      payload = parseGatewayRoutePayload(job.payload);
+    } catch (error) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Gateway route payload is invalid',
+        resultCode: 'invalid_payload',
+      });
+      return;
+    }
+    const gatewayRoute = options.gatewayRoute ?? new GatewayRouteReconciler();
+    const localController = new AbortController();
+    const combinedSignal = AbortSignal.any([signal, localController.signal]);
+    let renewalError: unknown;
+    const renewal = renewLeaseLoop(
+      job,
+      client,
+      timing,
+      combinedSignal,
+      localController,
+      () => leaseDeadline,
+      (deadline) => { leaseDeadline = deadline; },
+      (error) => { renewalError = error; },
+    );
+    let sequence = 0;
+    let routeError: unknown;
+    try {
+      await gatewayRoute.run(job.payload, combinedSignal, async (progress) => {
+        sequence += 1;
+        await retryProtocolCall(
+          () => client.progress(job.id, {
+            leaseToken: job.leaseToken,
+            sequence,
+            percent: progress.percent,
+            stage: progress.stage,
+            message: progress.message,
+          }),
+          () => leaseDeadline,
+          combinedSignal,
+          timing,
+        );
+      });
+    } catch (error) {
+      routeError = error;
+    } finally {
+      localController.abort();
+      await renewal;
+    }
+    if (signal.aborted) return;
+    if (renewalError) throw renewalError;
+    if (routeError instanceof ControlPlaneError) throw routeError;
+    if (routeError) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: (routeError instanceof Error ? routeError.message : 'Gateway route reconcile failed').slice(0, 240),
+        resultCode: 'gateway_route_failed',
+      });
+      return;
+    }
+    await complete({
+      leaseToken: job.leaseToken,
+      status: 'succeeded',
+      message: `Gateway route generation ${payload.generation} reconciled to ${payload.desiredState}`,
       resultCode: 'ok',
     });
     return;

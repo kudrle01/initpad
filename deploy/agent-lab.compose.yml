@@ -11,11 +11,11 @@ services:
   agent-lab-gateway:
     image: caddy:2.10-alpine
     profiles: ["agent-lab"]
-    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
+    command: ["caddy", "run", "--config", "/etc/caddy/initpad.json"]
     volumes:
-      - ./agent-lab-Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./agent-lab-caddy.json:/etc/caddy/initpad.json:ro
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/apps/http/servers/initpad/routes"]
       interval: 3s
       timeout: 3s
       retries: 30

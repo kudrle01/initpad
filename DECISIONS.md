@@ -3068,8 +3068,8 @@ per-environment záznam s unikátním `environmentId`, `hostname` a `publicUrl`.
 ID; unikátní databázové indexy jsou konečnou ochranou souběžných zápisů.
 Rezervace je idempotentní, po rename vrací uloženou hodnotu a odmítne tiché
 převázání na jiný target nebo allocation. Allocation smí použít jen target
-zónu nebo její DNS podzónu. Model už odděluje desired/observed stav a generation
-pro následující Agent reconcile, ale sám zatím žádnou gateway nemění.
+zónu nebo její DNS podzónu. Model odděluje desired/observed stav a generation
+pro Agent reconcile.
 
 **Stav implementace — read-only preflight.** Agent 0.5 přijímá pouze
 allow-listed `gateway-preflight` job s pevným adapterem `caddy` a validovaným
@@ -3081,8 +3081,28 @@ konfigurací Agenta a musí se přeložit pouze na privátní nebo loopback adre
 Lab proto provozuje Caddy bez Docker socketu a jeho management síť je interní
 bez host portu. Výsledek je uložen na targetu přes job-id fence; retry starého
 požadavku nemůže přepsat novější preflight. Změna zóny nebo routing mode
-výsledek zneplatní. Preflight záměrně nemění Caddy konfiguraci a neodemkne
-deployment; route reconcile zůstá dalším samostatným bezpečnostním krokem.
+výsledek zneplatní. Preflight záměrně nemění Caddy konfiguraci a sám neodemkne
+deployment.
+
+**Stav implementace — deklarativní reconcile.** Agent 0.6 má samostatný
+allow-listed `gateway-route` job. Durable payload obsahuje pouze route ID,
+generation, desired state, uložený hostname a allocation/workload identitu;
+neobsahuje admin URL, upstream ani volnou Caddy konfiguraci. Agent z identity
+deterministicky odvodí jméno workload kontejneru a jedinou povolenou
+reverse-proxy route. Caddy adapter přijímá jen privátní lokální admin origin,
+načte dedikované pole serveru `initpad` s ETag, vlastní route přidá nebo odebere
+jedním atomickým `PATCH` s `If-Match` a výsledek znovu ověří. Konflikt změny
+retryuje bez ztráty cizích rout a kolizi vlastního route ID s jiným hostname
+odmítne.
+
+Control plane před zařazením vyžaduje úspěšný preflight, aktivní allocation a
+enrolled Agent 0.6+. Každý intent inkrementuje `GatewayRoute.generation`, ruší
+ještě nezačaté starší joby a ukládá aktuální `reconcileJobId`. Terminal result
+se promítne jen při shodě route ID, generation a job fence; failure zachová
+poslední známý observed state/revision. Restart API přehrává pouze právě
+referencované joby, ne neomezenou historii. Tento základ ještě není napojený
+na project deploy/start/stop/remove a gateway zatím není připojována do
+allocation sítě; to je následující samostatný krok před aktivací targetu.
 
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem

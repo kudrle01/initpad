@@ -418,24 +418,27 @@ model Environment {
 // Desired and observed state remain separate so Agent reconciliation can be
 // idempotent and a failed gateway update cannot be mistaken for publication.
 model GatewayRoute {
-  id               String           @id @default(uuid())
-  environment      Environment      @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  environmentId    String           @unique
-  target           Target           @relation(fields: [targetId], references: [id], onDelete: Restrict)
-  targetId         String
-  allocation       TargetAllocation @relation(fields: [allocationId], references: [id], onDelete: Restrict)
-  allocationId     String
-  hostname         String           @unique
-  publicUrl        String           @unique
-  desiredState     String           @default("reserved") // reserved | active | stopped | absent
-  desiredRevision  String?
-  observedState    String           @default("absent") // absent | active | stopped | failed
-  observedRevision String?
-  generation       Int              @default(0)
-  lastError        String?
-  reconciledAt     DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  id                 String           @id @default(uuid())
+  environment        Environment      @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  environmentId      String           @unique
+  target             Target           @relation(fields: [targetId], references: [id], onDelete: Restrict)
+  targetId           String
+  allocation         TargetAllocation @relation(fields: [allocationId], references: [id], onDelete: Restrict)
+  allocationId       String
+  hostname           String           @unique
+  publicUrl          String           @unique
+  desiredState       String           @default("reserved") // reserved | active | stopped | absent
+  desiredRevision    String?
+  observedState      String           @default("absent") // absent | active | stopped | failed
+  observedRevision   String?
+  generation         Int              @default(0)
+  observedGeneration Int              @default(0)
+  reconcileJobId     String?
+  lastError          String?
+  reconciledAt       DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  agentJobs          AgentJob[]
 
   @@index([targetId, desiredState])
   @@index([allocationId])
@@ -551,11 +554,13 @@ model AgentJob {
   allocationId          String?
   deploymentOperation   DeploymentOperation? @relation(fields: [deploymentOperationId], references: [id], onDelete: SetNull)
   deploymentOperationId String?              @unique
+  gatewayRoute          GatewayRoute?        @relation(fields: [gatewayRouteId], references: [id], onDelete: SetNull)
+  gatewayRouteId        String?
   leasedByAgent         Agent?               @relation("AgentJobLeaseOwner", fields: [leasedByAgentId], references: [id], onDelete: SetNull)
   leasedByAgentId       String?
 
   dedupeKey       String @unique
-  kind            String // probe | lifecycle-test | gateway-preflight | deploy | start | stop | remove | status | logs | rollback
+  kind            String // probe | lifecycle-test | gateway-preflight | gateway-route | deploy | start | stop | remove | status | logs | rollback
   protocolVersion Int    @default(1)
   payload         Json
   status          String @default("queued") // queued | leased | succeeded | failed | cancelled
@@ -583,4 +588,5 @@ model AgentJob {
   @@index([targetId, status, createdAt])
   @@index([status, leaseExpiresAt])
   @@index([allocationId])
+  @@index([gatewayRouteId])
 }

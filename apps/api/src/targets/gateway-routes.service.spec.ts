@@ -61,6 +61,120 @@ describe('GatewayRoutesService stable reservations', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
+  it('queues a bounded generation-fenced Caddy intent after a successful preflight', async () => {
+    const managedEnvironment = {
+      ...environment,
+      target: {
+        ...environment.target,
+        kind: 'docker',
+        scope: 'user',
+        workspaceId: 'workspace-1',
+        gatewayAdapter: 'caddy',
+        gatewayPreflightStatus: 'passed',
+        agent: {
+          credentialHash: 'hash',
+          disabledAt: null,
+          version: '0.6.0',
+        },
+      },
+      allocation: { ...environment.allocation, namespace: 'team-alpha' },
+    };
+    const createdJob = {
+      id: 'job-1',
+      status: 'queued',
+      payload: { generation: 1 },
+    };
+    const transaction = jest.fn();
+    const prisma = {
+      environment: { findUnique: jest.fn(async () => managedEnvironment) },
+      gatewayRoute: {
+        findUnique: jest.fn(async () => route),
+        create: jest.fn(),
+        update: jest.fn()
+          .mockResolvedValueOnce({ ...route, generation: 1 })
+          .mockResolvedValueOnce({ ...route, generation: 1, reconcileJobId: 'job-1' }),
+      },
+      agentJob: {
+        findUnique: jest.fn(async () => null),
+        updateMany: jest.fn(async () => ({ count: 0 })),
+        create: jest.fn(async (_input: unknown) => createdJob),
+      },
+      $transaction: transaction,
+    };
+    transaction.mockImplementation(async (callback: (client: unknown) => Promise<unknown>) => callback(prisma));
+    const request = {
+      requestId: '323e4567-e89b-42d3-a456-426614174000',
+      desiredState: 'active' as const,
+      revision: 'abc123',
+      projectSlug: 'customer-portal',
+      containerPort: 8080,
+    };
+
+    await expect(new GatewayRoutesService(prisma as never).queueReconcile(environment.id, request))
+      .resolves.toEqual({ routeId: route.id, jobId: 'job-1', generation: 1, status: 'queued' });
+
+    expect(prisma.agentJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        targetId: 'target-1',
+        allocationId: 'allocation-1',
+        gatewayRouteId: route.id,
+        kind: 'gateway-route',
+        payload: {
+          adapter: 'caddy',
+          routeId: route.id,
+          generation: 1,
+          desiredState: 'active',
+          hostname: route.hostname,
+          allocationId: 'allocation-1',
+          namespace: 'team-alpha',
+          projectSlug: 'customer-portal',
+          environment: 'dev',
+          revision: 'abc123',
+          containerPort: 8080,
+        },
+      }),
+    });
+    const queuedPayload = (prisma.agentJob.create.mock.calls[0]?.[0] as {
+      data: { payload: Record<string, unknown> };
+    }).data.payload;
+    expect(queuedPayload).not.toHaveProperty('adminUrl');
+    expect(queuedPayload).not.toHaveProperty('upstream');
+  });
+
+  it('does not queue routes before preflight or for an outdated Agent', async () => {
+    const managedEnvironment = {
+      ...environment,
+      target: {
+        ...environment.target,
+        kind: 'docker',
+        scope: 'user',
+        workspaceId: 'workspace-1',
+        gatewayAdapter: 'caddy',
+        gatewayPreflightStatus: 'pending',
+        agent: { credentialHash: 'hash', disabledAt: null, version: '0.5.0' },
+      },
+      allocation: { ...environment.allocation, namespace: 'team-alpha' },
+    };
+    const prisma = {
+      environment: { findUnique: jest.fn(async () => managedEnvironment) },
+      gatewayRoute: { findUnique: jest.fn(async () => route), create: jest.fn() },
+      agentJob: { findUnique: jest.fn(), create: jest.fn() },
+    };
+    const service = new GatewayRoutesService(prisma as never);
+    const request = {
+      requestId: '323e4567-e89b-42d3-a456-426614174000',
+      desiredState: 'active' as const,
+      revision: 'abc123',
+      projectSlug: 'customer-portal',
+      containerPort: 8080,
+    };
+    await expect(service.queueReconcile(environment.id, request)).rejects.toThrow('preflighted');
+
+    managedEnvironment.target.gatewayPreflightStatus = 'passed';
+    await expect(service.queueReconcile(environment.id, request)).rejects.toThrow('0.6.0');
+    expect(prisma.agentJob.create).not.toHaveBeenCalled();
+  });
+
   it('returns the existing reservation unchanged after a project rename', async () => {
     const prisma = {
       environment: {

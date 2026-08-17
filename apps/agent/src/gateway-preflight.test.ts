@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  CaddyAdminAdapter,
   GatewayPreflight,
   parseGatewayPreflightPayload,
 } from './gateway-preflight.js';
@@ -52,40 +51,4 @@ test('checks DNS, trusted TLS and the local Caddy adapter in order', async () =>
     'caddy',
   ]);
   assert.deepEqual(progress, [15, 50, 80, 95]);
-});
-
-test('refuses to contact a Caddy admin endpoint that resolves publicly', async () => {
-  let contacted = false;
-  const adapter = new CaddyAdminAdapter(
-    'http://caddy.example.test:2019',
-    async () => [{ address: '192.0.2.20', family: 4 }],
-    async () => {
-      contacted = true;
-      return new Response('{}');
-    },
-  );
-
-  await assert.rejects(
-    adapter.ready(new AbortController().signal),
-    /resolve only to private target addresses/,
-  );
-  assert.equal(contacted, false);
-});
-
-test('reads only the private Caddy configuration endpoint', async () => {
-  let requested = '';
-  const adapter = new CaddyAdminAdapter(
-    'http://gateway.internal:2019',
-    async () => [{ address: '172.20.0.4', family: 4 }],
-    async (input) => {
-      requested = input.toString();
-      return new Response('{"apps":{}}', {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    },
-  );
-
-  await adapter.ready(new AbortController().signal);
-  assert.equal(requested, 'http://gateway.internal:2019/config/');
 });

@@ -148,6 +148,55 @@ test('runs the fixed gateway preflight interface without accepting an admin URL'
   assert.deepEqual(completions, ['succeeded:ok']);
 });
 
+test('runs the bounded gateway route interface and reports its generation', async () => {
+  const progress: number[] = [];
+  const completions: Array<{ status: string; message: string }> = [];
+  const payload = {
+    adapter: 'caddy',
+    routeId: '123e4567-e89b-42d3-a456-426614174000',
+    generation: 4,
+    desiredState: 'active',
+    hostname: 'portal-dev-a1b2c3d4e5f6.team.apps.example.test',
+    allocationId: '223e4567-e89b-42d3-a456-426614174000',
+    namespace: 'team-alpha',
+    projectSlug: 'customer-portal',
+    environment: 'dev',
+    revision: 'abc123',
+    containerPort: 8080,
+  };
+  const client: AgentJobClient = {
+    renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+    progress: async (_jobId, input) => {
+      progress.push(input.percent);
+      return summary({ sequence: input.sequence, percent: input.percent });
+    },
+    complete: async (_jobId, input) => {
+      completions.push({ status: input.status, message: input.message });
+      return summary({ status: input.status });
+    },
+  };
+
+  await executeClaimedJob(
+    claim({ kind: 'gateway-route', payload }),
+    new AbortController().signal,
+    client,
+    {
+      gatewayRoute: {
+        run: async (_payload, _signal, report) => {
+          await report({ percent: 60, stage: 'working', message: 'Applying route' });
+          await report({ percent: 95, stage: 'verifying', message: 'Verifying route' });
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(progress, [60, 95]);
+  assert.deepEqual(completions, [{
+    status: 'succeeded',
+    message: 'Gateway route generation 4 reconciled to active',
+  }]);
+});
+
 test('runs only the explicit Docker lifecycle acceptance interface', async () => {
   const progress: number[] = [];
   const completions: string[] = [];

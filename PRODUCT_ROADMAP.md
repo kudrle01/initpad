@@ -324,12 +324,19 @@ nezobrazí falešný empty/error stav.
    Stav `not-run/queued/running/passed/failed` je vidět v Infrastructure a
    starší souběžný job nemůže přepsat novější výsledek.
 
-   **TODO 8d — deklarativní route reconcile.** Agent vytvoří a odstraní jen
-   validované Caddy routy z uloženého `GatewayRoute`, připojí gateway pouze k
-   allocation síti aktivního workloadu a desired/observed generation bezpečně
-   srovná po restartu nebo ztracené odpovědi.
+   ✅ **8d — deklarativní route reconcile.** Agent 0.6 přijímá pouze bounded
+   identitu routy a workloadu, sám odvodí Caddy route i upstream a atomicky
+   nahrazuje dedikované route pole přes ETag/`If-Match`. Control plane ukládá
+   desired/observed generation a aktuální job fence; restart, duplicitní
+   odpověď ani starší dokončení proto nepřepíší novější stav. Projekt nemůže
+   dodat Caddy JSON, admin URL ani vlastní upstream.
 
-   **TODO 8e — health-gated přepnutí a živý gate.** Deploy přepne route až po
+   **TODO 8e — delivery a síťová integrace.** Deploy/start/stop/remove zařadí
+   odpovídající route generation a Agent připojí gateway pouze k allocation
+   síti aktivního workloadu. Teprve tento krok zpřístupní managed-gateway target
+   v project pickeru a nahradí náhodný veřejný port stabilním hostname.
+
+   **TODO 8f — health-gated přepnutí a živý gate.** Deploy přepne route až po
    interním health checku, ověří veřejné HTTPS a při chybě zachová předchozí
    revision. Musí projít souběh, restart, výpadek gateway, rollback a izolace
    dvou workspaces.
@@ -375,10 +382,10 @@ automaticky odstraní. Dvou-workspace gate následně použil dvě target identi
 se dvěma credential volumes nad jedním fyzickým DinD daemonem. Současné
 workloady měly namespaces `team-alpha` a `it000`; Stop a Remove druhého ponechal
 první kontejner, síť i URL beze změny a dostupné s HTTP `200`. Produkční gateway
-je navazující podkrok 8; 8a–8c nyní pokrývají explicitní režim, trvalou
-rezervaci hostname a bezpečný read-only preflight. Samotné Caddy route změny
-a health-gated přepnutí zůstávají v 8d–8e; současný náhodný port je záměrně
-pouze local/lab cesta.
+je navazující podkrok 8; 8a–8d nyní pokrývají explicitní režim, trvalou
+rezervaci hostname, bezpečný preflight a generačně chráněný Caddy adapter.
+Napojení routy na skutečný project delivery/network a health-gated přepnutí
+zůstávají v 8e–8f; současný náhodný port je záměrně pouze local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 

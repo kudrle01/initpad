@@ -122,6 +122,18 @@ export class AgentJobsService implements OnModuleInit {
           .catch(() => undefined);
       }
     }
+
+    // GatewayRoute.reconcileJobId is the durable generation fence. Replay
+    // only those current projections, never the unbounded AgentJob history.
+    const pendingRoutes = await this.prisma.gatewayRoute.findMany({
+      where: { reconcileJobId: { not: null } },
+      select: { reconcileJobId: true },
+    }).catch(() => []);
+    for (const route of pendingRoutes) {
+      if (route.reconcileJobId) {
+        await this.reconcileGatewayRoute(route.reconcileJobId).catch(() => undefined);
+      }
+    }
   }
 
   async createProbe(
@@ -549,10 +561,12 @@ export class AgentJobsService implements OnModuleInit {
         throw this.lostLease();
       }
       await this.reconcileGatewayPreflight(jobId);
+      await this.reconcileGatewayRoute(jobId);
       await this.reconcileTerminalJob(jobId);
       return this.summary(current as JobRow);
     }
     await this.reconcileGatewayPreflight(jobId);
+    await this.reconcileGatewayRoute(jobId);
     await this.reconcileTerminalJob(jobId);
     return this.summary(await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } }) as JobRow);
   }
@@ -608,6 +622,68 @@ export class AgentJobsService implements OnModuleInit {
         gatewayPreflightError: job.status === 'failed'
           ? (job.message ?? 'Gateway preflight failed')
           : null,
+      },
+    });
+  }
+
+  private async reconcileGatewayRoute(jobId: string): Promise<void> {
+    const job = await this.prisma.agentJob.findUnique({
+      where: { id: jobId },
+      select: {
+        id: true,
+        kind: true,
+        status: true,
+        message: true,
+        finishedAt: true,
+        gatewayRouteId: true,
+        payload: true,
+      },
+    });
+    if (
+      job?.kind !== 'gateway-route'
+      || !job.gatewayRouteId
+      || !['succeeded', 'failed'].includes(job.status)
+    ) return;
+    const payload = this.objectRecord(job.payload);
+    const generation = payload?.generation;
+    const desiredState = payload?.desiredState;
+    const revision = payload?.revision;
+    if (
+      typeof generation !== 'number'
+      || !Number.isInteger(generation)
+      || generation < 1
+      || !['active', 'stopped', 'absent'].includes(String(desiredState))
+      || (revision !== null && typeof revision !== 'string')
+    ) return;
+    const now = job.finishedAt ?? new Date();
+    if (job.status === 'succeeded') {
+      await this.prisma.gatewayRoute.updateMany({
+        where: {
+          id: job.gatewayRouteId,
+          generation,
+          reconcileJobId: job.id,
+        },
+        data: {
+          observedState: desiredState as string,
+          observedRevision: desiredState === 'absent' ? null : revision as string,
+          observedGeneration: generation,
+          reconcileJobId: null,
+          lastError: null,
+          reconciledAt: now,
+        },
+      });
+      return;
+    }
+    await this.prisma.gatewayRoute.updateMany({
+      where: {
+        id: job.gatewayRouteId,
+        generation,
+        reconcileJobId: job.id,
+      },
+      data: {
+        reconcileJobId: null,
+        lastError: (job.message ?? 'Gateway route reconcile failed').slice(0, 500),
+        reconciledAt: now,
       },
     });
   }

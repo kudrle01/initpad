@@ -10,8 +10,10 @@ allocation-scoped Docker lifecycle engine. Agent 0.4 also executes real
 project deploy/start/stop/remove jobs from verified build artifacts. The wire
 protocol deliberately has no generic shell endpoint.
 
-Agent 0.5 adds the read-only readiness gate for production Caddy routing. It
-does not yet mutate routes or expose managed-gateway targets to projects.
+Agent 0.5 added the read-only readiness gate for production Caddy routing.
+Agent 0.6 adds a durable, generation-fenced Caddy route reconciler. It still
+does not expose managed-gateway targets to projects until workload networking
+and health-gated delivery are integrated.
 
 The repository currently builds the Agent as an executable Node.js package and
 as a minimal container image. The local lab below is the supported acceptance
@@ -137,7 +139,7 @@ After the diagnostic tests above pass, verify the actual project path:
    shared multi-workspace Agent target requires a future platform-admin sharing
    model.
 
-## Managed gateway preflight (Agent 0.5)
+## Managed gateway preflight and route adapter (Agent 0.6)
 
 The positive preflight is intentionally an infrastructure acceptance test, not
 a localhost simulation. The target administrator prepares:
@@ -153,7 +155,7 @@ The control plane never sends or stores that admin URL in a job. The bundled
 lab sets it to `http://agent-lab-gateway:2019`; the Caddy container has no
 Docker socket and its management network has no host-facing port.
 
-After rebuilding API, web and Agent 0.5, create a disposable Docker Agent
+After rebuilding API, web and Agent 0.6, create a disposable Docker Agent
 target with **Managed gateway (production)** and the HTTPS gateway origin,
 enroll/start it, then choose **Manage Agent → Test gateway**. The job must
 advance through wildcard DNS, trusted TLS and private Caddy readiness and end
@@ -161,8 +163,16 @@ as `passed`. Stopping the Agent leaves a queued test waiting; an invalid DNS
 zone or certificate ends as `failed` with the corresponding bounded error.
 Changing the target origin resets the previous result to `not-run`.
 
-Passing preflight does not yet make the target selectable for a project. That
-requires the next route-reconcile and health-gated cutover steps from ADR-073.
+The same private adapter can now reconcile only control-plane-owned routes in
+the dedicated Caddy `initpad` server. It uses ETags to avoid overwriting a
+concurrent change and never accepts Caddy JSON, an admin URL or an upstream
+from a project. There is intentionally no manual UI button for a synthetic
+route: durable jobs are internal and will be triggered by project lifecycle
+once the allocation-network integration is complete.
+
+Passing preflight therefore still does not make the target selectable for a
+project. That requires the workload-network and health-gated cutover steps from
+ADR-073.
 
 ## Credential storage
 
