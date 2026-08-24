@@ -16,6 +16,8 @@ control_plane_url="${INITPAD_AGENT_LAB_URL:-http://host.docker.internal:${public
 
 case "${1:-help}" in
   build)
+    # The secondary service inherits this exact image tag, so one build keeps
+    # every lab identity on the same Agent protocol version.
     compose build agent-lab
     ;;
   enroll)

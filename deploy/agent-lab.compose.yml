@@ -92,6 +92,10 @@ services:
     restart: unless-stopped
 
   agent-lab:
+    # Both lab identities deliberately use the same versioned development
+    # image. Without an explicit tag Compose builds the extended secondary
+    # service under a separate name, which can silently remain outdated.
+    image: initpad-agent-lab:dev
     build:
       context: ..
       dockerfile: apps/agent/Dockerfile
