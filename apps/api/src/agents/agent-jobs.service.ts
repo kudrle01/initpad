@@ -544,6 +544,7 @@ export class AgentJobsService implements OnModuleInit {
               state: dto.result.state,
               ...(dto.result.revision ? { revision: dto.result.revision } : {}),
               ...(dto.result.hostPort ? { hostPort: dto.result.hostPort } : {}),
+              ...(dto.result.workloadSlot ? { workloadSlot: dto.result.workloadSlot } : {}),
             }
           : Prisma.DbNull,
         leaseExpiresAt: null,
@@ -824,6 +825,8 @@ export class AgentJobsService implements OnModuleInit {
       kind: string;
       version: string | null;
       environment: {
+        version: string | null;
+        url: string | null;
         gatewayRoute: {
           publicUrl: string;
           observedState: string;
@@ -834,7 +837,15 @@ export class AgentJobsService implements OnModuleInit {
     },
   ): Promise<void> {
     if (job.status === 'failed') {
-      await this.failManagedOperation(operation, job.message || 'Agent operation failed');
+      const reason = job.message || 'Agent operation failed';
+      const routeRollback = job.kind === 'gateway-route'
+        ? reason.includes('previous serving route restored')
+          ? 'serving'
+          : reason.includes('previous gateway state restored')
+            ? 'stopped'
+            : 'unknown'
+        : undefined;
+      await this.failManagedOperation(operation, reason, routeRollback);
       return;
     }
     if (![1, 2].includes(job.operationStep ?? 0)) {
@@ -883,6 +894,7 @@ export class AgentJobsService implements OnModuleInit {
       const payload = this.objectRecord(job.payload);
       const projectSlug = payload?.projectSlug;
       const containerPort = payload?.containerPort;
+      const healthPath = payload?.healthPath;
       if (
         !['deploy', 'start'].includes(job.kind)
         || result?.state !== 'running'
@@ -890,6 +902,8 @@ export class AgentJobsService implements OnModuleInit {
         || result.revision !== operation.version
         || typeof projectSlug !== 'string'
         || !Number.isInteger(containerPort)
+        || typeof healthPath !== 'string'
+        || !result.workloadSlot
       ) {
         await this.failManagedOperation(operation, 'Agent returned an invalid managed workload result');
         return;
@@ -901,6 +915,9 @@ export class AgentJobsService implements OnModuleInit {
           revision: operation.version,
           projectSlug,
           containerPort: Number(containerPort),
+          healthPath,
+          workloadSlot: result.workloadSlot,
+          activation: operation.kind === 'start' ? 'start' : 'deploy',
           deploymentOperationId: operation.id,
           operationStep: 2,
         });
@@ -962,7 +979,11 @@ export class AgentJobsService implements OnModuleInit {
       || route.observedRevision !== operation.version
       || route.observedGeneration !== generation
     ) {
-      await this.failManagedOperation(operation, 'Gateway did not publish the requested workload revision');
+      await this.failManagedOperation(
+        operation,
+        'Gateway did not publish the requested workload revision',
+        'unknown',
+      );
       return;
     }
     if (operation.kind === 'start') {
@@ -1010,11 +1031,48 @@ export class AgentJobsService implements OnModuleInit {
   }
 
   private async failManagedOperation(
-    operation: { id: string; environmentId: string },
+    operation: {
+      id: string;
+      environmentId: string;
+      kind: string;
+      version: string | null;
+      environment: {
+        version: string | null;
+        url: string | null;
+        gatewayRoute: {
+          publicUrl: string;
+          observedState: string;
+          observedRevision: string | null;
+          observedGeneration: number;
+        } | null;
+      };
+    },
     reason: string,
+    routeRollback?: 'serving' | 'stopped' | 'unknown',
   ): Promise<void> {
     const message = reason.slice(0, 500);
     const now = new Date();
+    const route = operation.environment.gatewayRoute;
+    const previousStillServing = Boolean(
+      route
+      && route.observedState === 'active'
+      && route.observedRevision
+      && route.observedRevision === operation.environment.version
+      && (routeRollback === undefined || routeRollback === 'serving')
+    );
+    const previousStillStopped = Boolean(
+      route
+      && operation.kind === 'start'
+      && route.observedState === 'stopped'
+      && route.observedRevision
+      && route.observedRevision === operation.environment.version
+      && (routeRollback === undefined || routeRollback === 'stopped')
+    );
+    const preservedMessage = previousStillServing
+      ? `Deployment failed; revision ${route!.observedRevision!.slice(0, 12)} remains online. ${message}`.slice(0, 500)
+      : previousStillStopped
+        ? `Start failed; the previous revision remains stopped. ${message}`.slice(0, 500)
+        : message;
     await this.prisma.$transaction([
       this.prisma.agentJob.updateMany({
         where: {
@@ -1030,16 +1088,32 @@ export class AgentJobsService implements OnModuleInit {
       }),
       this.prisma.environment.updateMany({
         where: { id: operation.environmentId, activeOperationId: operation.id },
-        data: {
-          status: 'failed',
-          statusReason: message,
-          deploymentRequired: true,
-          activeOperationId: null,
-        },
+        data: previousStillServing
+          ? {
+              status: 'running',
+              url: route!.publicUrl,
+              statusReason: preservedMessage,
+              deploymentRequired: !['start', 'stop', 'remove'].includes(operation.kind),
+              activeOperationId: null,
+            }
+          : previousStillStopped
+            ? {
+                status: 'stopped',
+                url: route!.publicUrl,
+                statusReason: preservedMessage,
+                deploymentRequired: false,
+                activeOperationId: null,
+              }
+            : {
+                status: 'failed',
+                statusReason: message,
+                deploymentRequired: true,
+                activeOperationId: null,
+              },
       }),
       this.prisma.deploymentOperation.updateMany({
         where: { id: operation.id, status: 'running', finishedAt: null },
-        data: { status: 'failed', message, finishedAt: now },
+        data: { status: 'failed', message: preservedMessage, finishedAt: now },
       }),
     ]);
   }
@@ -1068,6 +1142,7 @@ export class AgentJobsService implements OnModuleInit {
     state: 'running' | 'stopped' | 'missing';
     revision?: string;
     hostPort?: number;
+    workloadSlot?: string;
   } | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const input = value as Record<string, unknown>;
@@ -1077,10 +1152,12 @@ export class AgentJobsService implements OnModuleInit {
       input.hostPort !== undefined
       && (!Number.isInteger(input.hostPort) || Number(input.hostPort) < 1 || Number(input.hostPort) > 65_535)
     ) return null;
+    if (input.workloadSlot !== undefined && !/^[a-f0-9]{12}$/.test(String(input.workloadSlot))) return null;
     return {
       state: input.state as 'running' | 'stopped' | 'missing',
       ...(typeof input.revision === 'string' ? { revision: input.revision } : {}),
       ...(typeof input.hostPort === 'number' ? { hostPort: input.hostPort } : {}),
+      ...(typeof input.workloadSlot === 'string' ? { workloadSlot: input.workloadSlot } : {}),
     };
   }
 
@@ -1100,7 +1177,8 @@ export class AgentJobsService implements OnModuleInit {
       parsed
       && parsed.state === received.state
       && parsed.revision === received.revision
-      && parsed.hostPort === received.hostPort,
+      && parsed.hostPort === received.hostPort
+      && parsed.workloadSlot === received.workloadSlot
     );
   }
 

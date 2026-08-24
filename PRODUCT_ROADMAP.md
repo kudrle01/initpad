@@ -343,7 +343,7 @@ nezobrazí falešný empty/error stav.
    nese očíslované durable Agent kroky. Deploy/start provede workload → route,
    stop/remove route → workload; druhý krok je do splnění prvního neclaimovatelný
    a restart API terminální stav bezpečně přehraje. Project picker přijme jen
-   preflighted Caddy target s durable artifact store a Agentem 0.7+. Úspěch se
+   preflighted Caddy target s durable artifact store a kompatibilní verzí Agenta. Úspěch se
    publikuje až po obou krocích a browser URL je uložený stabilní HTTPS hostname,
    nikoli diagnostický náhodný port.
 
@@ -355,10 +355,18 @@ nezobrazí falešný empty/error stav.
    trusted TLS i HTTPS proxy cesta prošly živě;
    profil neotevírá Docker API ani Caddy admin port a nenahrazuje produkční DNS.
 
-   **TODO 8f-b — health-gated přepnutí a živý gate.** Deploy přepne route až
-   po interním health checku, ověří veřejné HTTPS a při chybě zachová
-   předchozí revision. Musí projít souběh, restart, výpadek gateway, rollback
-   a izolace dvou workspaces.
+   ✅ **8f-b — health-gated atomické přepnutí.** Agent 0.8 vytváří
+   immutable revision slot, ponechá předchozí workload i route v provozu,
+   interně ověří candidate, přepne Caddy a potom ověří přesný veřejný
+   `https://hostname<healthPath>`. Teprve úspěch odstraní starou revizi a její
+   nepoužívaný image. Při chybě obnoví předchozí upstream a candidate
+   odstraní; control plane ponechá poslední potvrzenou revision `running`.
+   Úplný remove je ownership-bounded a uklidí i případné starší revize.
+
+   **TODO 8f-c — živý odolnostní gate.** Na skutečném Agent labu musí
+   projít první deploy, zdravý redeploy, záměrně rozbitý veřejný health
+   s rollbackem, restart Agenta/API, výpadek gateway a souběžné nasazení dvou
+   workspaces. Po každém scénáři se ověří route, kontejnery, image a sítě.
 
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
@@ -401,11 +409,11 @@ automaticky odstraní. Dvou-workspace gate následně použil dvě target identi
 se dvěma credential volumes nad jedním fyzickým DinD daemonem. Současné
 workloady měly namespaces `team-alpha` a `it000`; Stop a Remove druhého ponechal
 první kontejner, síť i URL beze změny a dostupné s HTTP `200`. Produkční gateway
-je navazující podkrok 8; 8a–8e nyní pokrývají explicitní režim, trvalou
+je navazující podkrok 8; 8a–8f-b nyní pokrývají explicitní režim, trvalou
 rezervaci hostname, bezpečný preflight, generačně chráněný Caddy adapter,
-síťovou vazbu i dvoukrokový project lifecycle. Health-gated veřejné přepnutí a
-živý výpadkový/izolační gate zůstávají v 8f; současný náhodný port je záměrně
-pouze local/lab cesta.
+síťovou vazbu, dvoukrokový lifecycle i health-gated veřejné přepnutí se
+zachováním poslední potvrzené revize. Zbývá živý výpadkový a izolační gate
+8f-c; současný náhodný port je záměrně pouze `direct-port` local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -506,7 +514,9 @@ workloadu. Revoke/re-enroll následně zneplatnil credential generace 1 bez
 zásahu do běžící aplikace a nový enrollment obnovil Agent jako generaci 2.
 Dvě oddělené target identity nad jedním izolovaným daemonem poté nasadily
 současně namespaces `team-alpha` a `it000`; Stop/Remove druhého workloadu
-nezměnil první. Produkční stabilní HTTPS routing následuje podle ADR-073. Tyto
+nezměnil první. Stabilní HTTPS routing podle ADR-073 má hotový lokální
+DNS/TLS profil i automatizovaný dual-revision cutover Agenta 0.8; živý
+rollback, výpadek gateway a souběh dvou workspaceů je poslední gate 8f-c. Tyto
 dílčí výsledky nenahrazují závěrečný školní E2E scénář s
 nezávislým týmem.
 

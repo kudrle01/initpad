@@ -832,9 +832,14 @@ describe('AgentJobsService durable lease protocol', () => {
     const terminal = job({
       kind: 'deploy',
       operationStep: 1,
-      payload: { projectSlug: 'acme-api', containerPort: 8080 },
+      payload: { projectSlug: 'acme-api', containerPort: 8080, healthPath: '/health' },
       status: 'succeeded',
-      result: { state: 'running', revision: 'a'.repeat(40), hostPort: 32780 },
+      result: {
+        state: 'running',
+        revision: 'a'.repeat(40),
+        hostPort: 32780,
+        workloadSlot: 'a1b2c3d4e5f6',
+      },
       message: 'Workload healthy',
       deploymentOperationId: 'operation-1',
       deploymentOperation: {
@@ -859,7 +864,12 @@ describe('AgentJobsService durable lease protocol', () => {
       status: 'succeeded',
       message: 'Workload healthy',
       resultCode: 'ok',
-      result: { state: 'running', revision: 'a'.repeat(40), hostPort: 32780 },
+      result: {
+        state: 'running',
+        revision: 'a'.repeat(40),
+        hostPort: 32780,
+        workloadSlot: 'a1b2c3d4e5f6',
+      },
     });
 
     expect(gatewayRoutes.queueReconcile).toHaveBeenCalledWith('environment-1', {
@@ -868,6 +878,9 @@ describe('AgentJobsService durable lease protocol', () => {
       revision: 'a'.repeat(40),
       projectSlug: 'acme-api',
       containerPort: 8080,
+      healthPath: '/health',
+      workloadSlot: 'a1b2c3d4e5f6',
+      activation: 'deploy',
       deploymentOperationId: 'operation-1',
       operationStep: 2,
     });
@@ -928,6 +941,88 @@ describe('AgentJobsService durable lease protocol', () => {
         url: stableUrl,
         activeOperationId: null,
       }),
+    });
+  });
+
+  it('keeps the previous revision running when the managed public HTTPS gate fails', async () => {
+    const { service, prisma } = setup();
+    const stableUrl = 'https://acme-api-dev-a1b2c3d4e5f6.apps.example.test';
+    const previousRevision = 'b'.repeat(40);
+    const requestedRevision = 'a'.repeat(40);
+    const terminal = job({
+      kind: 'gateway-route',
+      operationStep: 2,
+      payload: {
+        generation: 4,
+        desiredState: 'active',
+        revision: requestedRevision,
+      },
+      status: 'failed',
+      result: null,
+      message: 'Public HTTPS health check failed; previous serving route restored',
+      gatewayRouteId: 'route-1',
+      deploymentOperationId: 'operation-1',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-new',
+        kind: 'redeploy',
+        status: 'running',
+        finishedAt: null,
+        version: requestedRevision,
+        environment: {
+          version: previousRevision,
+          url: stableUrl,
+          target: { publicUrl: 'https://apps.example.test', routingMode: 'managed-gateway' },
+          gatewayRoute: {
+            publicUrl: stableUrl,
+            observedState: 'active',
+            observedRevision: previousRevision,
+            observedGeneration: 3,
+          },
+        },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'failed',
+      message: terminal.message,
+      resultCode: 'gateway_route_failed',
+    });
+
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'environment-1', activeOperationId: 'operation-1' },
+      data: expect.objectContaining({
+        status: 'running',
+        url: stableUrl,
+        deploymentRequired: true,
+        activeOperationId: null,
+        statusReason: expect.stringContaining('remains online'),
+      }),
+    });
+    expect(prisma.environment.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ version: requestedRevision }),
+    }));
+
+    prisma.environment.updateMany.mockClear();
+    terminal.message = 'Public HTTPS health check failed; rollback incomplete: route restore failed';
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'failed',
+      message: terminal.message,
+      resultCode: 'gateway_route_failed',
+    });
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'environment-1', activeOperationId: 'operation-1' },
+      data: {
+        status: 'failed',
+        statusReason: terminal.message,
+        deploymentRequired: true,
+        activeOperationId: null,
+      },
     });
   });
 

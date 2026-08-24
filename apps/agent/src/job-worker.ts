@@ -16,7 +16,7 @@ import {
   GatewayRouteReconciler,
   parseGatewayRoutePayload,
 } from './gateway-route.js';
-import type { GatewayRouteProgress } from './gateway-route.js';
+import type { GatewayRouteProgress, GatewayRouteRunResult } from './gateway-route.js';
 
 const RENEW_EVERY_MS = 10_000;
 const PROGRESS_EVERY_MS = 5_000;
@@ -110,7 +110,7 @@ export interface GatewayRouteRunner {
     payload: unknown,
     signal: AbortSignal,
     report: (progress: GatewayRouteProgress) => Promise<void>,
-  ): Promise<void>;
+  ): Promise<GatewayRouteRunResult>;
 }
 
 export interface JobExecutionOptions {
@@ -285,8 +285,9 @@ export async function executeClaimedJob(
     );
     let sequence = 0;
     let routeError: unknown;
+    let routeResult: GatewayRouteRunResult | undefined;
     try {
-      await gatewayRoute.run(job.payload, combinedSignal, async (progress) => {
+      routeResult = await gatewayRoute.run(job.payload, combinedSignal, async (progress) => {
         sequence += 1;
         await retryProtocolCall(
           () => client.progress(job.id, {
@@ -322,8 +323,10 @@ export async function executeClaimedJob(
     await complete({
       leaseToken: job.leaseToken,
       status: 'succeeded',
-      message: `Gateway route generation ${payload.generation} reconciled to ${payload.desiredState}`,
-      resultCode: 'ok',
+      message: routeResult?.cleanupComplete === false
+        ? `Gateway route generation ${payload.generation} is active; superseded workload cleanup is pending`
+        : `Gateway route generation ${payload.generation} reconciled to ${payload.desiredState}`,
+      resultCode: routeResult?.cleanupComplete === false ? 'ok_cleanup_pending' : 'ok',
     });
     return;
   }

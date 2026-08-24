@@ -1,4 +1,4 @@
-export const AGENT_VERSION = '0.7.0';
+export const AGENT_VERSION = '0.8.0';
 export const PROTOCOL_VERSION = 1;
 
 export interface AgentConfig {
@@ -75,6 +75,7 @@ export interface AgentJobResult {
   state: 'running' | 'stopped' | 'missing';
   revision?: string;
   hostPort?: number;
+  workloadSlot?: string;
 }
 
 export interface ClaimJobResponse {

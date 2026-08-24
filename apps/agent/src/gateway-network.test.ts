@@ -15,6 +15,9 @@ const payload = {
   environment: 'dev',
   revision: 'abc123',
   containerPort: 8080,
+  healthPath: '/health',
+  workloadSlot: 'a1b2c3d4e5f6',
+  activation: 'deploy',
 } as const;
 
 function response(statusCode: number, body: unknown = ''): DockerHttpResponse {
@@ -106,4 +109,86 @@ test('refuses a foreign gateway or allocation network without mutating Docker', 
     /name collision outside allocation/,
   );
   assert.equal(foreignNetwork.requests.some((request) => request.method === 'POST'), false);
+});
+
+function publicationEngine() {
+  const requests: DockerHttpRequest[] = [];
+  const common = {
+    'com.initpad.managed': 'true',
+    'com.initpad.target': 'target-1',
+    'com.initpad.allocation.id': payload.allocationId,
+    'com.initpad.allocation.namespace': payload.namespace,
+    'com.initpad.project': payload.projectSlug,
+    'com.initpad.environment': payload.environment,
+    'com.initpad.workload': `${payload.allocationId}:${payload.projectSlug}:${payload.environment}`,
+    'com.initpad.routing.mode': 'managed-gateway',
+  };
+  const desired = {
+    Id: 'desired-id',
+    Names: ['/initpad-team-alpha-customer-portal-dev-rev-a1b2c3d4e5f6'],
+    Image: `registry.test/acme/customer-portal:${'a'.repeat(40)}`,
+    State: 'running',
+    Labels: {
+      ...common,
+      'com.initpad.revision': payload.revision,
+      'com.initpad.workload.slot': payload.workloadSlot,
+    },
+  };
+  const previous = {
+    Id: 'previous-id',
+    Names: ['/initpad-team-alpha-customer-portal-dev-rev-111111111111'],
+    Image: `registry.test/acme/customer-portal:${'b'.repeat(40)}`,
+    State: 'running',
+    Labels: {
+      ...common,
+      'com.initpad.revision': 'previous',
+      'com.initpad.workload.slot': '111111111111',
+    },
+  };
+  const transport: DockerTransport = async (request) => {
+    requests.push(request);
+    if (request.method === 'GET' && request.path.startsWith('/containers/json?')) {
+      return response(200, [desired, previous]);
+    }
+    if (request.method === 'DELETE' && request.path.startsWith('/containers/')) return response(204);
+    if (request.method === 'DELETE' && request.path.startsWith('/images/')) return response(200, []);
+    if (request.method === 'POST' && request.path.includes('/stop?t=10')) return response(204);
+    return response(500, { message: `Unhandled ${request.method} ${request.path}` });
+  };
+  return { transport, requests };
+}
+
+test('publishes only the verified workload slot and retires the previous revision afterwards', async () => {
+  const engine = publicationEngine();
+  const network = new GatewayDockerNetwork('target-1', 'tcp://docker:2375', engine.transport, 'initpad-gateway');
+  const signal = new AbortController().signal;
+
+  assert.equal(
+    await network.resolveUpstream(payload, signal),
+    'initpad-team-alpha-customer-portal-dev-rev-a1b2c3d4e5f6:8080',
+  );
+  await network.commit(payload, signal);
+
+  const containerDeletes = engine.requests.filter(
+    (request) => request.method === 'DELETE' && request.path.startsWith('/containers/'),
+  );
+  const imageDeletes = engine.requests.filter(
+    (request) => request.method === 'DELETE' && request.path.startsWith('/images/'),
+  );
+  assert.equal(containerDeletes.length, 1);
+  assert.match(containerDeletes[0].path, /previous-id/);
+  assert.equal(imageDeletes.length, 1);
+  assert.match(decodeURIComponent(imageDeletes[0].path), /customer-portal:b{40}/);
+});
+
+test('discards only the failed candidate during route rollback', async () => {
+  const engine = publicationEngine();
+  const network = new GatewayDockerNetwork('target-1', 'tcp://docker:2375', engine.transport, 'initpad-gateway');
+  await network.rollback(payload, new AbortController().signal);
+
+  const deletes = engine.requests.filter(
+    (request) => request.method === 'DELETE' && request.path.startsWith('/containers/'),
+  );
+  assert.equal(deletes.length, 1);
+  assert.match(deletes[0].path, /desired-id/);
 });

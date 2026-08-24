@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CaddyRouteIntent } from './caddy-admin.js';
-import { GatewayRouteReconciler, parseGatewayRoutePayload } from './gateway-route.js';
+import {
+  GatewayRouteReconciler,
+  PublicGatewayHealth,
+  parseGatewayRoutePayload,
+} from './gateway-route.js';
 
 const payload = {
   adapter: 'caddy',
@@ -15,6 +19,9 @@ const payload = {
   environment: 'dev',
   revision: 'abc123',
   containerPort: 8080,
+  healthPath: '/health',
+  workloadSlot: 'a1b2c3d4e5f6',
+  activation: 'deploy',
 } as const;
 
 test('accepts only a bounded declarative route intent', () => {
@@ -37,6 +44,22 @@ test('accepts only a bounded declarative route intent', () => {
   );
 });
 
+test('retries the exact public HTTPS health path until it returns 2xx', async () => {
+  const requests: string[] = [];
+  const statuses = [503, 204];
+  const health = new PublicGatewayHealth(async (input, init) => {
+    requests.push(input.toString());
+    assert.equal(init?.redirect, 'error');
+    return new Response(null, { status: statuses.shift() });
+  }, 2, 0);
+
+  await health.verify(payload, new AbortController().signal);
+  assert.deepEqual(requests, [
+    `https://${payload.hostname}/health`,
+    `https://${payload.hostname}/health`,
+  ]);
+});
+
 test('derives the owned Caddy route and upstream from workload identity', async () => {
   let intent: CaddyRouteIntent | undefined;
   const progress: number[] = [];
@@ -44,25 +67,60 @@ test('derives the owned Caddy route and upstream from workload identity', async 
   const reconciler = new GatewayRouteReconciler(
     'target-1',
     'unix:///var/run/docker.sock',
-    { reconcileRoute: async (value) => { intent = value; actions.push('route'); } },
+    {
+      currentRoute: async () => { actions.push('current'); return null; },
+      reconcileRoute: async (value) => { intent = value; actions.push('route'); },
+    },
     {
       connect: async () => { actions.push('connect'); },
       disconnect: async () => { actions.push('disconnect'); },
+      resolveUpstream: async () => { actions.push('resolve'); return 'owned-workload:8080'; },
+      commit: async () => { actions.push('commit'); },
+      rollback: async () => { actions.push('rollback'); },
     },
+    { verify: async () => { actions.push('health'); } },
   );
 
-  await reconciler.run(payload, new AbortController().signal, async (item) => {
+  const result = await reconciler.run(payload, new AbortController().signal, async (item) => {
     progress.push(item.percent);
   });
 
   assert.deepEqual(intent, {
     id: 'initpad_route_123e4567e89b42d3a456426614174000',
     hostname: payload.hostname,
-    upstream: 'initpad-team-alpha-customer-portal-dev:8080',
+    upstream: 'owned-workload:8080',
     present: true,
   });
-  assert.deepEqual(actions, ['connect', 'route']);
-  assert.deepEqual(progress, [20, 40, 65, 95]);
+  assert.deepEqual(actions, ['current', 'connect', 'resolve', 'route', 'health', 'commit']);
+  assert.deepEqual(progress, [20, 40, 60, 78, 92, 97]);
+  assert.deepEqual(result, { cleanupComplete: true });
+});
+
+test('keeps a healthy cutover successful while exposing pending superseded cleanup', async () => {
+  const messages: string[] = [];
+  const reconciler = new GatewayRouteReconciler(
+    'target-1',
+    'unix:///var/run/docker.sock',
+    {
+      currentRoute: async () => ({ upstream: 'previous-revision:8080' }),
+      reconcileRoute: async () => undefined,
+    },
+    {
+      connect: async () => undefined,
+      disconnect: async () => undefined,
+      resolveUpstream: async () => 'candidate-revision:8080',
+      commit: async () => { throw new Error('Docker is temporarily busy'); },
+      rollback: async () => undefined,
+    },
+    { verify: async () => undefined },
+  );
+
+  const result = await reconciler.run(payload, new AbortController().signal, async (progress) => {
+    messages.push(progress.message);
+  });
+
+  assert.deepEqual(result, { cleanupComplete: false });
+  assert.match(messages.at(-1) ?? '', /cleanup is pending/);
 });
 
 test('stopped and absent desired states remove the owned route', async () => {
@@ -71,14 +129,135 @@ test('stopped and absent desired states remove the owned route', async () => {
   const reconciler = new GatewayRouteReconciler(
     'target-1',
     'unix:///var/run/docker.sock',
-    { reconcileRoute: async (value) => { intents.push(value); actions.push('route'); } },
+    {
+      currentRoute: async () => null,
+      reconcileRoute: async (value) => { intents.push(value); actions.push('route'); },
+    },
     {
       connect: async () => { actions.push('connect'); },
       disconnect: async () => { actions.push('disconnect'); },
+      resolveUpstream: async () => 'unused:1',
+      commit: async () => undefined,
+      rollback: async () => undefined,
     },
+    { verify: async () => undefined },
   );
-  await reconciler.run({ ...payload, desiredState: 'stopped' }, new AbortController().signal, async () => undefined);
-  await reconciler.run({ ...payload, desiredState: 'absent', revision: null }, new AbortController().signal, async () => undefined);
+  await reconciler.run(
+    { ...payload, desiredState: 'stopped', workloadSlot: null, activation: null },
+    new AbortController().signal,
+    async () => undefined,
+  );
+  await reconciler.run(
+    { ...payload, desiredState: 'absent', revision: null, workloadSlot: null, activation: null },
+    new AbortController().signal,
+    async () => undefined,
+  );
   assert.deepEqual(intents.map((intent) => intent.present), [false, false]);
   assert.deepEqual(actions, ['route', 'disconnect', 'route', 'disconnect']);
 });
+
+test('restores the serving route when gateway disconnect fails during teardown', async () => {
+  const intents: CaddyRouteIntent[] = [];
+  const reconciler = new GatewayRouteReconciler(
+    'target-1',
+    'unix:///var/run/docker.sock',
+    {
+      currentRoute: async () => ({ upstream: 'serving-revision:8080' }),
+      reconcileRoute: async (intent) => { intents.push(intent); },
+    },
+    {
+      connect: async () => undefined,
+      disconnect: async () => { throw new Error('Docker network is busy'); },
+      resolveUpstream: async () => 'unused:1',
+      commit: async () => undefined,
+      rollback: async () => undefined,
+    },
+    { verify: async () => undefined },
+  );
+
+  await assert.rejects(
+    reconciler.run(
+      { ...payload, desiredState: 'stopped', workloadSlot: null, activation: null },
+      new AbortController().signal,
+      async () => undefined,
+    ),
+    /previous serving route restored/,
+  );
+  assert.deepEqual(intents, [
+    expectRoute(false, 'inactive.invalid:1'),
+    expectRoute(true, 'serving-revision:8080'),
+  ]);
+});
+
+test('restores the previous serving route when public HTTPS verification fails', async () => {
+  const intents: CaddyRouteIntent[] = [];
+  const actions: string[] = [];
+  const reconciler = new GatewayRouteReconciler(
+    'target-1',
+    'unix:///var/run/docker.sock',
+    {
+      currentRoute: async () => ({ upstream: 'previous-revision:8080' }),
+      reconcileRoute: async (intent) => { intents.push(intent); actions.push(`route:${intent.upstream}`); },
+    },
+    {
+      connect: async () => { actions.push('connect'); },
+      disconnect: async () => { actions.push('disconnect'); },
+      resolveUpstream: async () => 'candidate-revision:8080',
+      commit: async () => { actions.push('commit'); },
+      rollback: async () => { actions.push('rollback'); },
+    },
+    { verify: async () => { throw new Error('Public HTTPS returned 500'); } },
+  );
+
+  await assert.rejects(
+    reconciler.run(payload, new AbortController().signal, async () => undefined),
+    /previous serving route restored/,
+  );
+  assert.deepEqual(intents.map((intent) => intent.upstream), [
+    'candidate-revision:8080',
+    'previous-revision:8080',
+  ]);
+  assert.deepEqual(actions, [
+    'connect',
+    'route:candidate-revision:8080',
+    'route:previous-revision:8080',
+    'rollback',
+  ]);
+});
+
+test('removes a failed first route and disconnects the gateway', async () => {
+  const intents: CaddyRouteIntent[] = [];
+  const actions: string[] = [];
+  const reconciler = new GatewayRouteReconciler(
+    'target-1',
+    'unix:///var/run/docker.sock',
+    {
+      currentRoute: async () => null,
+      reconcileRoute: async (intent) => { intents.push(intent); },
+    },
+    {
+      connect: async () => undefined,
+      disconnect: async () => { actions.push('disconnect'); },
+      resolveUpstream: async () => 'first-revision:8080',
+      commit: async () => undefined,
+      rollback: async () => { actions.push('discard'); },
+    },
+    { verify: async () => { throw new Error('TLS verification failed'); } },
+  );
+
+  await assert.rejects(
+    reconciler.run(payload, new AbortController().signal, async () => undefined),
+    /previous gateway state restored/,
+  );
+  assert.deepEqual(intents.map((intent) => intent.present), [true, false]);
+  assert.deepEqual(actions, ['discard', 'disconnect']);
+});
+
+function expectRoute(present: boolean, upstream: string): CaddyRouteIntent {
+  return {
+    id: 'initpad_route_123e4567e89b42d3a456426614174000',
+    hostname: payload.hostname,
+    upstream,
+    present,
+  };
+}

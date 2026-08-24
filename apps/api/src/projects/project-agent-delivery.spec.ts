@@ -176,7 +176,7 @@ describe('ProjectAgentDelivery', () => {
           gatewayAdapter: 'caddy',
           gatewayPreflightStatus: 'passed',
           publicUrl: 'https://apps.example.test',
-          agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
         },
       },
     });
@@ -217,6 +217,9 @@ describe('ProjectAgentDelivery', () => {
       revision: 'a'.repeat(40),
       projectSlug: intent.projectSlug,
       containerPort: intent.containerPort,
+      healthPath: intent.healthPath,
+      workloadSlot: null,
+      activation: null,
       deploymentOperationId: 'operation-1',
       operationStep: 1,
     });

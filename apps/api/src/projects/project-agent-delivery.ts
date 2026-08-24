@@ -128,6 +128,9 @@ export class ProjectAgentDelivery {
           revision: kind === 'stop' ? operation.version : null,
           projectSlug: intent.projectSlug,
           containerPort: intent.containerPort,
+          healthPath: intent.healthPath,
+          workloadSlot: null,
+          activation: null,
           deploymentOperationId: operation.id,
           operationStep: 1,
         });

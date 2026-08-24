@@ -3141,13 +3141,13 @@ uzavře původní operaci jako failed, místo aby environment zůstal navždy
 `deploying`.
 
 Managed target se nabídne projektu pouze s durable artifact store, aktivním
-Agentem 0.7+, explicitním Caddy adapterem, HTTPS gateway originem a úspěšným
+Agentem 0.8+, explicitním Caddy adapterem, HTTPS gateway originem a úspěšným
 preflightem. Každý workload payload nese explicitní routing mode. Náhodný host
 port zůstává jen diagnostickým údajem Agenta; control plane po úspěšném druhém
 kroku uloží do environmentu rezervovanou `GatewayRoute.publicUrl`. Stop URL
 rezervuje, start obnoví stejnou adresu a remove veřejnou route odstraní před
 workloadem. Veřejný HTTPS health gate a zachování předchozí revision při chybě
-nové routy zůstávají samostatným následujícím krokem 8f.
+nové routy implementuje následující Agent 0.8 kontrakt.
 
 **Stav implementace — lokální DNS/TLS acceptance profil.** Produkční
 preflight lze reprodukovat bez koupené domény nad rezervovanou zónou
@@ -3160,6 +3160,31 @@ používá explicitní lab resolver; host resolver a trust store mění pouze
 administrátorem spuštěné příkazy vypsané `agent-lab.sh gateway-setup`.
 Vygenerovaná CA je v ignorované runtime cestě. Tento profil je testovací
 harness, nikoli automatizace veřejného DNS nebo produkční ingressu.
+
+**Stav implementace — health-gated cutover a rollback.** Agent 0.8 odvozuje
+z revision, image identity a config fingerprintu immutable dvanáctiznakový
+`workloadSlot`. Managed workload proto nepřepisuje jeden sdílený Docker name:
+nový candidate a poslední potvrzená revize mohou po omezenou dobu současně
+běžet na stejné allocation-scoped síti. Route job nepřijímá upstream od
+control plane; podle slotu a ownership labelů musí v Dockeru nalézt právě
+jeden běžící workload a jeho skutečné jméno použije jako upstream.
+
+Před změnou si Agent načte přesný původní Caddy upstream. Po atomické
+změně vyžaduje bez redirectu 2xx odpověď z uloženého veřejného HTTPS
+hostname a projektového `healthPath`. Teprve potom odstraní všechny ostatní
+vlastněné revize a nepoužívané image; image sdílený jiným prostředím
+Docker bezpečně ponechá. Selhání veřejného testu obnoví původní route,
+odstraní jen chybný deploy candidate (nebo znovu zastaví neúspěšný start)
+a u prvního deploye gateway opět odpojí.
+
+Observed route se v control plane posune pouze po úspěšném terminal
+výsledku. Selhá-li nový deploy a observed revision se shoduje s dosavadní
+environment revision, projekt zůstane `running` na stabilní URL a nová revize
+se nepublikuje. Pokud po již úspěšném HTTPS cutoveru selže pouze odstranění
+starého kontejneru, operace zůstane pravdivě úspěšná a job nese varování
+`cleanup pending`; příští deploy a úplný project remove znovu uklízejí
+všechny ownership-bounded revize. Kompatibilita start/stop/remove s
+nesuffixovaným workloadem Agenta 0.7 je zachována pro bezpečný in-place upgrade.
 
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem

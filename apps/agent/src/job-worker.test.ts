@@ -163,6 +163,9 @@ test('runs the bounded gateway route interface and reports its generation', asyn
     environment: 'dev',
     revision: 'abc123',
     containerPort: 8080,
+    healthPath: '/health',
+    workloadSlot: 'a1b2c3d4e5f6',
+    activation: 'deploy',
   };
   const client: AgentJobClient = {
     renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
@@ -185,6 +188,7 @@ test('runs the bounded gateway route interface and reports its generation', asyn
         run: async (_payload, _signal, report) => {
           await report({ percent: 60, stage: 'working', message: 'Applying route' });
           await report({ percent: 95, stage: 'verifying', message: 'Verifying route' });
+          return { cleanupComplete: true };
         },
       },
     },

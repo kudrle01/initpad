@@ -11,11 +11,11 @@ project deploy/start/stop/remove jobs from verified build artifacts. The wire
 protocol deliberately has no generic shell endpoint.
 
 Agent 0.5 added the read-only readiness gate for production Caddy routing,
-Agent 0.6 the durable generation-fenced route reconciler and Agent 0.7 the
-allocation-owned workload network. The control plane now orchestrates workload
-and route jobs in the safe order, so a preflighted managed-gateway target can
-be selected by a project. Public HTTPS verification and rollback of an already
-serving revision remain the next health-gated delivery step.
+Agent 0.6 the durable generation-fenced route reconciler, Agent 0.7 the
+allocation-owned workload network and Agent 0.8 a dual-revision, public-HTTPS
+health gate. The control plane orchestrates workload and route jobs in a safe
+order and publishes a managed deployment only after its stable browser URL
+returns 2xx. A failed cutover restores the previously serving revision.
 
 The repository currently builds the Agent as an executable Node.js package and
 as a minimal container image. The local lab below is the supported acceptance
@@ -141,7 +141,7 @@ After the diagnostic tests above pass, verify the actual project path:
    shared multi-workspace Agent target requires a future platform-admin sharing
    model.
 
-## Managed gateway preflight, route and network adapter (Agent 0.7)
+## Managed gateway preflight and health-gated routing (Agent 0.8)
 
 A production preflight is an infrastructure acceptance test. The target
 administrator prepares:
@@ -192,7 +192,7 @@ lab is no longer needed; do not delete certificates by a broad common-name
 match. A real server instead uses administrator-managed public or private DNS
 and a CA trusted by its clients.
 
-After rebuilding API, web and Agent 0.7, create a disposable Docker Agent
+After rebuilding API, web and Agent 0.8, create a disposable Docker Agent
 target with **Managed gateway (production)** and the HTTPS gateway origin,
 enroll/start it, then choose **Manage Agent → Test gateway**. The job must
 advance through wildcard DNS, trusted TLS and private Caddy readiness and end
@@ -217,9 +217,14 @@ used as the managed browser URL.
 
 There is intentionally no manual UI button for a synthetic route: durable
 route jobs are internal and are triggered by the two-stage project lifecycle.
-Passing preflight makes a compatible target selectable. The remaining
-health-gated cutover work will verify the public hostname before publishing a
-new revision and preserve the last serving revision on failure.
+Passing preflight makes a compatible target selectable. Each managed deploy
+creates a revision-specific workload, verifies its internal health, atomically
+switches Caddy and then requests the exact public HTTPS health path. Only a 2xx
+response commits the new revision and retires the old container and unused
+image. DNS, TLS, redirects and non-2xx responses fail the gate, restore the
+previous upstream and discard only the failed candidate. A full project remove
+lists and deletes every workload revision carrying the exact target,
+allocation, project and environment ownership labels.
 
 ## Credential storage
 

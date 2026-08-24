@@ -89,6 +89,11 @@ export class AgentJobResultDto {
   @Min(1)
   @Max(65_535)
   hostPort?: number;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-f0-9]{12}$/)
+  workloadSlot?: string;
 }
 
 // Keep the nested class above the decorated reference. With

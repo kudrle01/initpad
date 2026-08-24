@@ -74,7 +74,7 @@ describe('GatewayRoutesService stable reservations', () => {
         agent: {
           credentialHash: 'hash',
           disabledAt: null,
-          version: '0.7.0',
+          version: '0.8.0',
         },
       },
       allocation: { ...environment.allocation, namespace: 'team-alpha' },
@@ -108,6 +108,9 @@ describe('GatewayRoutesService stable reservations', () => {
       revision: 'abc123',
       projectSlug: 'customer-portal',
       containerPort: 8080,
+      healthPath: '/health',
+      workloadSlot: 'a1b2c3d4e5f6',
+      activation: 'deploy' as const,
       deploymentOperationId: '323e4567-e89b-42d3-a456-426614174000',
       operationStep: 2,
     };
@@ -135,6 +138,9 @@ describe('GatewayRoutesService stable reservations', () => {
           environment: 'dev',
           revision: 'abc123',
           containerPort: 8080,
+          healthPath: '/health',
+          workloadSlot: 'a1b2c3d4e5f6',
+          activation: 'deploy',
         },
       }),
     });
@@ -171,11 +177,14 @@ describe('GatewayRoutesService stable reservations', () => {
       revision: 'abc123',
       projectSlug: 'customer-portal',
       containerPort: 8080,
+      healthPath: '/health',
+      workloadSlot: 'a1b2c3d4e5f6',
+      activation: 'deploy' as const,
     };
     await expect(service.queueReconcile(environment.id, request)).rejects.toThrow('preflighted');
 
     managedEnvironment.target.gatewayPreflightStatus = 'passed';
-    await expect(service.queueReconcile(environment.id, request)).rejects.toThrow('0.7.0');
+    await expect(service.queueReconcile(environment.id, request)).rejects.toThrow('0.8.0');
     expect(prisma.agentJob.create).not.toHaveBeenCalled();
   });
 

@@ -71,7 +71,7 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
     }, template)).toThrow('0.4.0');
   });
 
-  it('requires managed gateway preflight and Agent 0.7 before accepting the target', () => {
+  it('requires managed gateway preflight and Agent 0.8 before accepting the target', () => {
     Object.assign(config.artifactStore, {
       bucket: 'test-artifacts',
       accessKeyId: 'test-access',
@@ -88,7 +88,7 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
       routingMode: 'managed-gateway',
       gatewayAdapter: 'caddy',
       gatewayPreflightStatus: 'passed',
-      agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
+      agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
     }, template)).not.toThrow();
   });
 });

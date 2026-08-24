@@ -23,6 +23,10 @@ export interface CaddyRouteIntent {
   present: boolean;
 }
 
+export interface CaddyRouteSnapshot {
+  upstream: string;
+}
+
 function privateAddress(address: string): boolean {
   const normalized = address.toLowerCase();
   if (normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
@@ -89,6 +93,19 @@ export class CaddyAdminClient {
 
   async ready(signal: AbortSignal): Promise<void> {
     await this.readRoutes(signal);
+  }
+
+  async currentRoute(id: string, hostname: string, signal: AbortSignal): Promise<CaddyRouteSnapshot | null> {
+    const current = await this.readRoutes(signal);
+    const owned = current.routes.filter((route) => route['@id'] === id);
+    if (owned.length > 1) throw new Error('Caddy contains duplicate InitPad route identities');
+    if (!owned.length) return null;
+    if (routeHostname(owned[0]) !== hostname) {
+      throw new Error('Caddy route identity is already bound to another hostname');
+    }
+    const upstream = routeUpstream(owned[0]);
+    if (!upstream) throw new Error('Caddy owned route has an invalid upstream');
+    return { upstream };
   }
 
   async reconcileRoute(intent: CaddyRouteIntent, signal: AbortSignal): Promise<void> {

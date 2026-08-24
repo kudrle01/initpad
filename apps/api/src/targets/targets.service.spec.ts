@@ -190,7 +190,7 @@ describe('Agent-backed Docker target creation', () => {
     });
   });
 
-  it('marks a preflighted Agent 0.7 managed gateway target ready for the picker', async () => {
+  it('marks a preflighted Agent 0.8 managed gateway target ready for the picker', async () => {
     const savedStore = { ...config.artifactStore };
     Object.assign(config.artifactStore, {
       bucket: 'test-artifacts',
@@ -221,7 +221,7 @@ describe('Agent-backed Docker target creation', () => {
           ownerId: 'owner-1',
           workspaceId: 'workspace-1',
           createdAt: new Date(),
-          agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
         }]),
       },
       environment: { groupBy: jest.fn(async () => []) },

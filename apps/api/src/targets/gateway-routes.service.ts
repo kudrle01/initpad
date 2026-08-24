@@ -25,6 +25,9 @@ export interface GatewayRouteReconcileRequest {
   revision: string | null;
   projectSlug: string;
   containerPort: number;
+  healthPath: string;
+  workloadSlot: string | null;
+  activation: 'deploy' | 'start' | null;
   /** Internal workflow binding; both values must be supplied together. */
   deploymentOperationId?: string;
   operationStep?: number;
@@ -242,6 +245,9 @@ export class GatewayRoutesService {
               environment: binding.name,
               revision: request.revision,
               containerPort: request.containerPort,
+              healthPath: request.healthPath,
+              workloadSlot: request.workloadSlot,
+              activation: request.activation,
             },
             status: 'queued',
             progressStage: 'queued',
@@ -285,6 +291,9 @@ export class GatewayRoutesService {
     if (!Number.isInteger(request.containerPort) || request.containerPort < 1 || request.containerPort > 65_535) {
       throw new BadRequestException('Gateway route container port is invalid');
     }
+    if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$/.test(request.healthPath)) {
+      throw new BadRequestException('Gateway route health path is invalid');
+    }
     if (request.revision !== null && !REVISION.test(request.revision)) {
       throw new BadRequestException('Gateway route revision is invalid');
     }
@@ -293,6 +302,16 @@ export class GatewayRoutesService {
     }
     if (request.desiredState === 'absent' && request.revision !== null) {
       throw new BadRequestException('An absent gateway route cannot retain a desired revision');
+    }
+    if (request.desiredState === 'active') {
+      if (!request.workloadSlot || !/^[a-f0-9]{12}$/.test(request.workloadSlot)) {
+        throw new BadRequestException('An active gateway route requires a verified workload slot');
+      }
+      if (!['deploy', 'start'].includes(String(request.activation))) {
+        throw new BadRequestException('An active gateway route requires a bounded activation mode');
+      }
+    } else if (request.workloadSlot !== null || request.activation !== null) {
+      throw new BadRequestException('An inactive gateway route cannot activate a workload slot');
     }
     const hasOperation = request.deploymentOperationId !== undefined;
     const hasStep = request.operationStep !== undefined;

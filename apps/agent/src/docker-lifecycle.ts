@@ -63,6 +63,7 @@ export interface DockerWorkloadStatus {
   state: 'missing' | 'running' | 'stopped';
   revision?: string;
   hostPort?: number;
+  workloadSlot?: string;
 }
 
 export interface DockerLifecycleProgress {
@@ -84,6 +85,13 @@ interface ContainerInspect {
   NetworkSettings?: {
     Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
   };
+}
+
+interface ContainerListItem {
+  Id: string;
+  Names?: string[];
+  Image?: string;
+  Labels?: Record<string, string>;
 }
 
 interface ImageInspect {
@@ -231,6 +239,24 @@ export function workloadContainerName(payload: Pick<
   return boundedDockerName(
     `initpad-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`,
   );
+}
+
+export function managedWorkloadContainerName(
+  payload: Pick<DockerLifecyclePayload, 'namespace' | 'projectSlug' | 'environment'>,
+  slot: string,
+): string {
+  if (!/^[a-f0-9]{12}$/.test(slot)) throw new Error('Managed workload slot is invalid');
+  return boundedDockerName(`${workloadContainerName(payload)}-rev-${slot}`);
+}
+
+export function managedWorkloadSlot(payload: Pick<
+  DockerLifecyclePayload,
+  'revision' | 'imageRef' | 'configFingerprint'
+>): string {
+  return createHash('sha256')
+    .update(`${payload.revision}\0${payload.imageRef}\0${payload.configFingerprint ?? ''}`)
+    .digest('hex')
+    .slice(0, 12);
 }
 
 export function workloadNetworkName(payload: Pick<
@@ -452,7 +478,9 @@ export class DockerLifecycle {
     const desired = this.validatedPayload(payload);
     const baseName = this.containerName(desired);
     const candidateName = this.candidateName(desired);
-    const current = await this.ownedContainer(baseName, desired, signal);
+    const current = desired.routingMode === 'managed-gateway'
+      ? await this.desiredManagedContainer(desired, signal)
+      : await this.ownedContainer(baseName, desired, signal);
     if (current && this.matches(current, desired)) {
       if (!current.State?.Running) await this.start(desired, signal);
       if (!(await this.healthy(desired, signal))) throw new Error('Existing workload failed its health check');
@@ -543,7 +571,7 @@ export class DockerLifecycle {
 
   async stop(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
     const desired = this.validatedPayload(payload);
-    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    const container = await this.desiredContainer(desired, signal);
     if (!container || !container.State?.Running) return;
     await this.expect([204, 304], {
       method: 'POST', path: `/containers/${encodeURIComponent(container.Id)}/stop?t=10`, signal,
@@ -552,7 +580,7 @@ export class DockerLifecycle {
 
   async start(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
     const desired = this.validatedPayload(payload);
-    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    const container = await this.desiredContainer(desired, signal);
     if (!container) throw new Error('Workload does not exist');
     if (!container.State?.Running) {
       await this.expect([204, 304], {
@@ -564,7 +592,9 @@ export class DockerLifecycle {
 
   async remove(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
     const desired = this.validatedPayload(payload);
-    for (const name of [this.containerName(desired), this.candidateName(desired)]) {
+    const names = [this.containerName(desired), this.candidateName(desired)];
+    if (desired.routingMode === 'managed-gateway') names.push(workloadContainerName(desired));
+    for (const name of [...new Set(names)]) {
       const container = await this.ownedContainer(name, desired, signal);
       if (container) await this.removeContainer(container.Id, signal);
     }
@@ -572,26 +602,40 @@ export class DockerLifecycle {
 
   async removeProject(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
     const desired = this.validatedPayload(payload);
-    await this.remove(desired, signal);
-    await this.removeImage(desired.imageRef, signal);
+    const imageRefs = new Set([desired.imageRef]);
+    if (desired.routingMode === 'managed-gateway') {
+      const revisions = await this.ownedManagedRevisions(desired, signal);
+      for (const revision of revisions) {
+        await this.removeContainer(revision.Id, signal);
+        if (
+          typeof revision.Image === 'string'
+          && (PROJECT_IMAGE_REF_PATTERN.test(revision.Image) || IMAGE_REF_PATTERN.test(revision.Image))
+        ) {
+          imageRefs.add(revision.Image);
+        }
+      }
+    } else {
+      await this.remove(desired, signal);
+    }
+    for (const imageRef of imageRefs) await this.removeImage(imageRef, signal);
     await this.removeNetworkIfEmpty(desired, signal);
   }
 
   async status(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<DockerWorkloadStatus> {
     const desired = this.validatedPayload(payload);
-    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    const container = await this.desiredContainer(desired, signal);
     return container ? this.toStatus(container, desired) : { state: 'missing' };
   }
 
   async healthy(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<boolean> {
     const desired = this.validatedPayload(payload);
-    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    const container = await this.desiredContainer(desired, signal);
     return container ? this.waitHealthy(container, desired, signal) : false;
   }
 
   async logs(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<string> {
     const desired = this.validatedPayload(payload);
-    const container = await this.ownedContainer(this.containerName(desired), desired, signal);
+    const container = await this.desiredContainer(desired, signal);
     if (!container) return '';
     const response = await this.request({
       method: 'GET',
@@ -695,6 +739,48 @@ export class DockerLifecycle {
     return container;
   }
 
+  private async ownedManagedRevisions(
+    payload: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<ContainerListItem[]> {
+    const workloadKey = this.workloadKey(payload);
+    const filters = encodeURIComponent(JSON.stringify({ label: [
+      'com.initpad.managed=true',
+      `com.initpad.target=${this.targetId}`,
+      `com.initpad.allocation.id=${payload.allocationId}`,
+      `com.initpad.workload=${workloadKey}`,
+      'com.initpad.routing.mode=managed-gateway',
+    ] }));
+    const response = await this.request({
+      method: 'GET',
+      path: `/containers/json?all=1&filters=${filters}`,
+      signal,
+    });
+    const containers = responseJson<ContainerListItem[]>(response, 'list managed workload revisions');
+    if (!Array.isArray(containers) || containers.length > 256) {
+      throw new Error('Docker returned an invalid managed workload revision list');
+    }
+    for (const container of containers) {
+      const labels = container.Labels ?? {};
+      if (
+        !container.Id
+        || labels['com.initpad.managed'] !== 'true'
+        || labels['com.initpad.target'] !== this.targetId
+        || labels['com.initpad.allocation.id'] !== payload.allocationId
+        || labels['com.initpad.allocation.namespace'] !== payload.namespace
+        || labels['com.initpad.project'] !== payload.projectSlug
+        || labels['com.initpad.environment'] !== payload.environment
+        || labels['com.initpad.workload'] !== workloadKey
+        || labels['com.initpad.routing.mode'] !== 'managed-gateway'
+        || container.Names?.length !== 1
+        || !/^\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(container.Names[0])
+      ) {
+        throw new Error('Docker returned a workload outside the managed project allocation');
+      }
+    }
+    return containers;
+  }
+
   private async removeContainer(id: string, signal: AbortSignal): Promise<void> {
     await this.expect([204, 404], {
       method: 'DELETE', path: `/containers/${encodeURIComponent(id)}?force=true&v=true`, signal,
@@ -732,6 +818,12 @@ export class DockerLifecycle {
       state: container.State?.Running ? 'running' : 'stopped',
       revision: container.Config?.Labels?.['com.initpad.revision'],
       ...(Number.isInteger(hostPort) && hostPort > 0 ? { hostPort } : {}),
+      ...(payload.routingMode === 'managed-gateway'
+        ? {
+            workloadSlot: container.Config?.Labels?.['com.initpad.workload.slot']
+              ?? managedWorkloadSlot(payload),
+          }
+        : {}),
     };
   }
 
@@ -782,6 +874,9 @@ export class DockerLifecycle {
       'com.initpad.routing.mode': payload.routingMode,
       'com.initpad.workload': this.workloadKey(payload),
       'com.initpad.revision': payload.revision,
+      ...(payload.routingMode === 'managed-gateway'
+        ? { 'com.initpad.workload.slot': managedWorkloadSlot(payload) }
+        : {}),
       'com.initpad.job': jobId,
       ...(payload.configFingerprint
         ? { 'com.initpad.config-fingerprint': payload.configFingerprint }
@@ -804,7 +899,35 @@ export class DockerLifecycle {
   }
 
   private containerName(payload: DockerLifecyclePayload): string {
-    return workloadContainerName(payload);
+    return payload.routingMode === 'managed-gateway'
+      ? managedWorkloadContainerName(payload, managedWorkloadSlot(payload))
+      : workloadContainerName(payload);
+  }
+
+  private async desiredContainer(
+    payload: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<ContainerInspect | null> {
+    return payload.routingMode === 'managed-gateway'
+      ? this.desiredManagedContainer(payload, signal)
+      : this.ownedContainer(this.containerName(payload), payload, signal);
+  }
+
+  private async desiredManagedContainer(
+    payload: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<ContainerInspect | null> {
+    const desired = await this.ownedContainer(this.containerName(payload), payload, signal);
+    if (desired) {
+      if (!this.matches(desired, payload)) {
+        throw new Error('Managed workload slot collides with another immutable deployment');
+      }
+      return desired;
+    }
+    // Agent 0.7 used the unsuffixed name. Keep start/stop/remove compatible
+    // across an in-place Agent upgrade; the next successful deploy migrates it.
+    const legacy = await this.ownedContainer(workloadContainerName(payload), payload, signal);
+    return legacy && this.matches(legacy, payload) ? legacy : null;
   }
 
   private candidateName(payload: DockerLifecyclePayload): string {

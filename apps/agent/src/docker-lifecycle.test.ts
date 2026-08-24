@@ -97,6 +97,14 @@ function fakeEngine(initialImagePresent = false) {
       networkPresent = false;
       return response(204);
     }
+    if (input.method === 'GET' && decodedPath.startsWith('/containers/json?')) {
+      return response(200, [...containers.values()].map((container) => ({
+        Id: container.Id,
+        Names: [`/${container.name}`],
+        Image: container.Config.Image,
+        Labels: container.Config.Labels,
+      })));
+    }
     if (input.method === 'POST' && input.path.startsWith('/containers/create?name=')) {
       const name = decodeURIComponent(input.path.split('=')[1] ?? '');
       const body = JSON.parse(String(input.body)) as Record<string, unknown>;
@@ -400,4 +408,46 @@ test('isolates a managed-gateway workload network and keeps its health port on l
     (host.PortBindings as Record<string, unknown>)['80/tcp'],
     [{ HostIp: '127.0.0.1', HostPort: '' }],
   );
+});
+
+test('keeps the previous managed revision until the public route gate commits', async () => {
+  const engine = fakeEngine();
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+  const first = { ...PAYLOAD, revision: 'managed-a', routingMode: 'managed-gateway' as const };
+  const second = { ...PAYLOAD, revision: 'managed-b', routingMode: 'managed-gateway' as const };
+
+  const firstStatus = await lifecycle.deploy(first, 'job-managed-a', new AbortController().signal);
+  const secondStatus = await lifecycle.deploy(second, 'job-managed-b', new AbortController().signal);
+
+  assert.equal(engine.containers.size, 2);
+  assert.notEqual(firstStatus.workloadSlot, secondStatus.workloadSlot);
+  assert.ok([...engine.containers.values()].every((container) => container.State.Running));
+  assert.ok([...engine.containers.values()].every((container) => container.name.includes('-rev-')));
+});
+
+test('full managed project removal deletes every owned revision and its network', async () => {
+  const engine = fakeEngine();
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+  const first = { ...PAYLOAD, revision: 'managed-a', routingMode: 'managed-gateway' as const };
+  const second = { ...PAYLOAD, revision: 'managed-b', routingMode: 'managed-gateway' as const };
+
+  await lifecycle.deploy(first, 'job-managed-a', new AbortController().signal);
+  await lifecycle.deploy(second, 'job-managed-b', new AbortController().signal);
+  await lifecycle.removeProject(second, new AbortController().signal);
+
+  assert.equal(engine.containers.size, 0);
+  assert.equal(engine.networkPresent(), false);
+  assert.equal(engine.imagePresent(), false);
 });

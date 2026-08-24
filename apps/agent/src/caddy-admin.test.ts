@@ -128,6 +128,23 @@ test('treats Caddy canonical key ordering as an idempotent route', async () => {
   assert.equal(calls, 1);
 });
 
+test('captures the exact previous owned upstream for health-gated rollback', async () => {
+  const client = new CaddyAdminClient(
+    'http://gateway.internal:2019',
+    privateResolver,
+    async () => jsonResponse([{
+      '@id': route.id,
+      handle: [{ upstreams: [{ dial: route.upstream }], handler: 'reverse_proxy' }],
+      match: [{ host: [route.hostname] }],
+      terminal: true,
+    }]),
+  );
+  assert.deepEqual(
+    await client.currentRoute(route.id, route.hostname, signal()),
+    { upstream: route.upstream },
+  );
+});
+
 test('retries an ETag conflict without losing an unrelated Caddy route', async () => {
   const unrelated = { '@id': 'manual', handle: [{ handler: 'static_response', body: 'ok' }] };
   let request = 0;
