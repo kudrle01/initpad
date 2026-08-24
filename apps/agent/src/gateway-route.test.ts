@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import type { CaddyRouteIntent } from './caddy-admin.js';
 import {
@@ -58,6 +59,39 @@ test('retries the exact public HTTPS health path until it returns 2xx', async ()
     `https://${payload.hostname}/health`,
     `https://${payload.hostname}/health`,
   ]);
+});
+
+test('reports the final bounded HTTP failure after exhausting public health retries', async () => {
+  const health = new PublicGatewayHealth(async () => new Response(null, { status: 502 }), 2, 0);
+
+  await assert.rejects(
+    health.verify(payload, new AbortController().signal),
+    /Public HTTPS health check at \/health returned HTTP 502 after 2 attempts/,
+  );
+});
+
+test('classifies DNS failures without exposing an unbounded fetch error', async () => {
+  const health = new PublicGatewayHealth(async () => {
+    throw Object.assign(new TypeError('fetch failed for a sensitive internal URL'), {
+      cause: Object.assign(new Error('resolver details'), { code: 'ENOTFOUND' }),
+    });
+  }, 1, 0);
+
+  await assert.rejects(
+    health.verify(payload, new AbortController().signal),
+    /Public HTTPS health check at \/health failed because DNS lookup did not resolve after 1 attempt/,
+  );
+});
+
+test('keeps automatic HTTPS disabled on the lab gateway behind the TLS edge', async () => {
+  const config = JSON.parse(await readFile(
+    new URL('../../../deploy/agent-lab-caddy.json', import.meta.url),
+    'utf8',
+  )) as {
+    apps?: { http?: { servers?: { initpad?: { automatic_https?: { disable?: boolean } } } } };
+  };
+
+  assert.equal(config.apps?.http?.servers?.initpad?.automatic_https?.disable, true);
 });
 
 test('derives the owned Caddy route and upstream from workload identity', async () => {

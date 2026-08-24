@@ -81,6 +81,7 @@ export class PublicGatewayHealth implements PublicHealthAdapter {
 
   async verify(payload: GatewayRoutePayload, signal: AbortSignal): Promise<void> {
     const url = new URL(payload.healthPath, `https://${payload.hostname}`);
+    let lastFailure = 'did not complete';
     for (let attempt = 0; attempt < this.attempts; attempt += 1) {
       if (signal.aborted) throw new Error('Gateway public health verification was interrupted');
       try {
@@ -92,14 +93,38 @@ export class PublicGatewayHealth implements PublicHealthAdapter {
         });
         await response.body?.cancel().catch(() => undefined);
         if (response.status >= 200 && response.status < 300) return;
-      } catch {
-        // DNS, TLS, connection and non-2xx failures share one bounded public
-        // error; retry covers gateway route propagation and workload startup.
+        lastFailure = `returned HTTP ${response.status}`;
+      } catch (error) {
+        lastFailure = publicHealthFailure(error);
       }
       await sleep(this.retryMs, undefined, { signal }).catch(() => undefined);
     }
-    throw new Error(`Public HTTPS health check at ${payload.healthPath} did not return 2xx`);
+    const attemptLabel = `${this.attempts} ${this.attempts === 1 ? 'attempt' : 'attempts'}`;
+    throw new Error(
+      `Public HTTPS health check at ${payload.healthPath} ${lastFailure} after ${attemptLabel}`,
+    );
   }
+}
+
+function publicHealthFailure(error: unknown): string {
+  const record = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  const cause = record.cause && typeof record.cause === 'object'
+    ? record.cause as Record<string, unknown>
+    : {};
+  const code = typeof cause.code === 'string' ? cause.code : '';
+  if (['ENOTFOUND', 'EAI_AGAIN'].includes(code)) return 'failed because DNS lookup did not resolve';
+  if ([
+    'CERT_HAS_EXPIRED',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'ERR_TLS_CERT_ALTNAME_INVALID',
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  ].includes(code)) return `failed TLS verification (${code})`;
+  if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH'].includes(code)) {
+    return `failed to connect (${code})`;
+  }
+  if (record.name === 'TimeoutError' || code === 'ETIMEDOUT') return 'timed out';
+  return 'failed before receiving an HTTP response';
 }
 
 function required(value: unknown, name: string, pattern: RegExp): string {
