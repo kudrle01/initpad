@@ -108,6 +108,8 @@ describe('GatewayRoutesService stable reservations', () => {
       revision: 'abc123',
       projectSlug: 'customer-portal',
       containerPort: 8080,
+      deploymentOperationId: '323e4567-e89b-42d3-a456-426614174000',
+      operationStep: 2,
     };
 
     await expect(new GatewayRoutesService(prisma as never).queueReconcile(environment.id, request))
@@ -117,6 +119,8 @@ describe('GatewayRoutesService stable reservations', () => {
       data: expect.objectContaining({
         targetId: 'target-1',
         allocationId: 'allocation-1',
+        deploymentOperationId: request.deploymentOperationId,
+        operationStep: 2,
         gatewayRouteId: route.id,
         kind: 'gateway-route',
         payload: {

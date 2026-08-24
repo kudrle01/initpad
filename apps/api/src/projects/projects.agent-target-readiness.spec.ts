@@ -71,7 +71,7 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
     }, template)).toThrow('0.4.0');
   });
 
-  it('keeps managed gateway targets unavailable until preflight and reconcile exist', () => {
+  it('requires managed gateway preflight and Agent 0.7 before accepting the target', () => {
     Object.assign(config.artifactStore, {
       bucket: 'test-artifacts',
       accessKeyId: 'test-access',
@@ -81,6 +81,14 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
     expect(() => service.assertUsable({
       ...target,
       routingMode: 'managed-gateway',
-    }, template)).toThrow('gateway preflight and reconcile');
+    }, template)).toThrow('Caddy gateway preflight');
+
+    expect(() => service.assertUsable({
+      ...target,
+      routingMode: 'managed-gateway',
+      gatewayAdapter: 'caddy',
+      gatewayPreflightStatus: 'passed',
+      agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
+    }, template)).not.toThrow();
   });
 });

@@ -189,6 +189,59 @@ describe('Agent-backed Docker target creation', () => {
       agentReady: false,
     });
   });
+
+  it('marks a preflighted Agent 0.7 managed gateway target ready for the picker', async () => {
+    const savedStore = { ...config.artifactStore };
+    Object.assign(config.artifactStore, {
+      bucket: 'test-artifacts',
+      accessKeyId: 'test-access',
+      secretAccessKey: 'test-secret',
+    });
+    const prisma = {
+      target: {
+        findMany: jest.fn(async () => [{
+          id: 'managed-target',
+          name: 'Production gateway',
+          kind: 'docker',
+          scope: 'user',
+          capabilities: 'node',
+          host: null,
+          port: null,
+          username: null,
+          auth: null,
+          secret: null,
+          remotePath: null,
+          publicUrl: 'https://apps.example.test',
+          routingMode: 'managed-gateway',
+          gatewayAdapter: 'caddy',
+          gatewayPreflightStatus: 'passed',
+          gatewayPreflightAt: new Date(),
+          gatewayPreflightError: null,
+          verifiedAt: null,
+          ownerId: 'owner-1',
+          workspaceId: 'workspace-1',
+          createdAt: new Date(),
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
+        }]),
+      },
+      environment: { groupBy: jest.fn(async () => []) },
+    };
+    const workspaces = { resolve: jest.fn(async () => ({ id: 'workspace-1' })) };
+    const service = new TargetsService(prisma as never, {} as never, workspaces as never);
+
+    try {
+      await expect(service.listForUser('owner-1', 'workspace-1')).resolves.toEqual([
+        expect.objectContaining({
+          id: 'managed-target',
+          routingMode: 'managed-gateway',
+          agentReady: true,
+          gatewayPreflight: expect.objectContaining({ status: 'passed' }),
+        }),
+      ]);
+    } finally {
+      Object.assign(config.artifactStore, savedStore);
+    }
+  });
 });
 
 describe('target capability updates', () => {
@@ -242,6 +295,36 @@ describe('target capability updates', () => {
     await expect(
       service.update('target-1', 'u1', { capabilities: ['php'] }),
     ).rejects.toThrow('cannot remove runtime capabilities');
+  });
+
+  it('does not move a managed gateway DNS origin while environments hold stable routes', async () => {
+    const current: TargetRow = {
+      ...row,
+      kind: 'docker',
+      capabilities: 'node',
+      host: null,
+      port: null,
+      username: null,
+      auth: null,
+      secret: null,
+      remotePath: null,
+      publicUrl: 'https://apps.example.test',
+      routingMode: 'managed-gateway',
+      gatewayAdapter: 'caddy',
+      gatewayPreflightStatus: 'passed',
+      agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
+    };
+    const prisma = {
+      target: { findUnique: jest.fn(async () => current), update: jest.fn() },
+      environment: { count: jest.fn(async () => 1) },
+    };
+    const workspaces = { require: jest.fn(async () => 'maintainer') };
+    const service = new TargetsService(prisma as never, {} as never, workspaces as never);
+
+    await expect(service.update('target-1', 'u1', {
+      publicUrl: 'https://new-apps.example.test',
+    })).rejects.toThrow('cannot change its DNS origin');
+    expect(prisma.target.update).not.toHaveBeenCalled();
   });
 });
 

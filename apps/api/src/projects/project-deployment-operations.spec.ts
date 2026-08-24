@@ -81,8 +81,8 @@ describe('ProjectDeploymentOperations', () => {
     const prisma = {
       deploymentOperation: {
         findMany: jest.fn(async () => [
-          { id: 'running-1', status: 'running', agentJob: null },
-          { id: 'cancelled-1', status: 'cancelled', agentJob: null },
+          { id: 'running-1', status: 'running', agentJobs: [] },
+          { id: 'cancelled-1', status: 'cancelled', agentJobs: [] },
         ]),
         update: operationUpdate,
       },
@@ -125,7 +125,7 @@ describe('ProjectDeploymentOperations', () => {
     const operations = new ProjectDeploymentOperations({
       deploymentOperation: {
         findMany: jest.fn(async () => [
-          { id: 'agent-operation', status: 'running', agentJob: { id: 'job-1' } },
+          { id: 'agent-operation', status: 'running', agentJobs: [{ id: 'job-1' }] },
         ]),
         update: operationUpdate,
       },

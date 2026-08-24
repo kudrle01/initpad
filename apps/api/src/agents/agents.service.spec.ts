@@ -293,7 +293,7 @@ describe('AgentsService trust bootstrap', () => {
     });
     expect(prisma.target.findUnique).toHaveBeenCalled();
     expect(prisma.agentJob.updateMany).toHaveBeenCalledWith({
-      where: { targetId: 'target-1', status: { in: ['queued', 'leased'] } },
+      where: { targetId: 'target-1', status: { in: ['blocked', 'queued', 'leased'] } },
       data: expect.objectContaining({
         status: 'cancelled',
         finishedAt: NOW,

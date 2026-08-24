@@ -10,7 +10,11 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateTargetAllocationDto } from './dto/create-target-allocation.dto';
 import { UpdateTargetAllocationDto } from './dto/update-target-allocation.dto';
 import { allocationUsageDefaults } from './target-allocation-defaults';
-import { supportsProjectAgent } from '../agents/agent-version';
+import {
+  agentVersionAtLeast,
+  MIN_GATEWAY_ROUTE_AGENT_VERSION,
+  supportsProjectAgent,
+} from '../agents/agent-version';
 import { artifactStoreConfigured } from '../config';
 
 export interface TargetAllocationSummary {
@@ -77,11 +81,6 @@ export class TargetAllocationsService {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
     }
     if (target.scope === 'user' && target.kind === 'docker') {
-      if ((target.routingMode ?? 'direct-port') === 'managed-gateway') {
-        throw new BadRequestException(
-          'Managed gateway targets cannot be allocated until gateway preflight and reconcile are ready',
-        );
-      }
       if (
         !artifactStoreConfigured()
         || !target.agent?.credentialHash
@@ -91,6 +90,18 @@ export class TargetAllocationsService {
         throw new BadRequestException(
           'Enroll and enable InitPad Agent 0.4.0 or newer before allocating this Docker target',
         );
+      }
+      if ((target.routingMode ?? 'direct-port') === 'managed-gateway') {
+        if (
+          target.gatewayAdapter !== 'caddy'
+          || target.gatewayPreflightStatus !== 'passed'
+          || !target.publicUrl
+          || !agentVersionAtLeast(target.agent.version, MIN_GATEWAY_ROUTE_AGENT_VERSION)
+        ) {
+          throw new BadRequestException(
+            `Managed gateway allocation requires a passed Caddy preflight and InitPad Agent ${MIN_GATEWAY_ROUTE_AGENT_VERSION.join('.')} or newer`,
+          );
+        }
       }
     }
     if (await this.prisma.targetAllocation.findUnique({

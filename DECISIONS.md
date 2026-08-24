@@ -3129,6 +3129,26 @@ aplikační listener. To umožní v následujícím
 kroku otestovat skutečné Docker DNS a gateway připojování bez zpřístupnění
 Docker API nebo Caddy admin API hostiteli.
 
+**Stav implementace — dvoukrokový project lifecycle.** `DeploymentOperation`
+už není omezena na jediný `AgentJob`; obsahuje očíslované kroky s databázově
+unikátním pořadím. Pro deploy a start je krok 1 workload a krok 2 aktivace
+routy. Pro stop a remove je pořadí obrácené, aby se nejdřív zastavil veřejný
+provoz a teprve potom odpojil či odstranil workload. Navazující krok je uložen
+jako `blocked`, takže jej Agent nemůže claimnout předčasně. Úspěch prvního kroku
+jej atomicky uvolní nebo durable vytvoří route intent; po restartu API se
+terminální joby přehrají idempotentně. Selhání zruší dosud nezačaté kroky a
+uzavře původní operaci jako failed, místo aby environment zůstal navždy
+`deploying`.
+
+Managed target se nabídne projektu pouze s durable artifact store, aktivním
+Agentem 0.7+, explicitním Caddy adapterem, HTTPS gateway originem a úspěšným
+preflightem. Každý workload payload nese explicitní routing mode. Náhodný host
+port zůstává jen diagnostickým údajem Agenta; control plane po úspěšném druhém
+kroku uloží do environmentu rezervovanou `GatewayRoute.publicUrl`. Stop URL
+rezervuje, start obnoví stejnou adresu a remove veřejnou route odstraní před
+workloadem. Veřejný HTTPS health gate a zachování předchozí revision při chybě
+nové routy zůstávají samostatným následujícím krokem 8f.
+
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
 nakonfiguruje DNS. Dva workspace současně nasadí stejně pojmenovaný projekt;

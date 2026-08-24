@@ -213,7 +213,7 @@ export class AgentsService {
         },
       }),
       this.prisma.agentJob.updateMany({
-        where: { targetId, status: { in: ['queued', 'leased'] } },
+        where: { targetId, status: { in: ['blocked', 'queued', 'leased'] } },
         data: {
           status: 'cancelled',
           progressStage: 'cancelled',

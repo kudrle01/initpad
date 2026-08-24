@@ -160,6 +160,12 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
   });
 
   it('does not allocate managed gateway capacity before its preflight exists', async () => {
+    const savedStore = { ...config.artifactStore };
+    Object.assign(config.artifactStore, {
+      bucket: 'test-artifacts',
+      accessKeyId: 'test-access',
+      secretAccessKey: 'test-secret',
+    });
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
@@ -169,15 +175,20 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
           workspaceId: 'ws-1',
           capabilities: 'static,node',
           routingMode: 'managed-gateway',
-          agent: { credentialHash: 'hash', disabledAt: null, version: '0.4.0' },
+          publicUrl: 'https://apps.example.test',
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
         })),
       },
     };
     const service = makeService(prisma, 'owner');
 
-    await expect(
-      service.create('u1', { targetId: 'gateway-target' }, 'ws-1'),
-    ).rejects.toThrow('gateway preflight and reconcile');
+    try {
+      await expect(
+        service.create('u1', { targetId: 'gateway-target' }, 'ws-1'),
+      ).rejects.toThrow('passed Caddy preflight');
+    } finally {
+      Object.assign(config.artifactStore, savedStore);
+    }
   });
 
   it('hides an allocation in another workspace as 404 (not 403)', async () => {

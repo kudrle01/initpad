@@ -25,6 +25,9 @@ export interface GatewayRouteReconcileRequest {
   revision: string | null;
   projectSlug: string;
   containerPort: number;
+  /** Internal workflow binding; both values must be supplied together. */
+  deploymentOperationId?: string;
+  operationStep?: number;
 }
 
 export interface GatewayRouteReconcileJob {
@@ -221,6 +224,8 @@ export class GatewayRoutesService {
           data: {
             targetId: target.id,
             allocationId: allocation.id,
+            deploymentOperationId: request.deploymentOperationId,
+            operationStep: request.operationStep,
             gatewayRouteId: route.id,
             dedupeKey,
             kind: 'gateway-route',
@@ -288,6 +293,17 @@ export class GatewayRoutesService {
     }
     if (request.desiredState === 'absent' && request.revision !== null) {
       throw new BadRequestException('An absent gateway route cannot retain a desired revision');
+    }
+    const hasOperation = request.deploymentOperationId !== undefined;
+    const hasStep = request.operationStep !== undefined;
+    if (hasOperation !== hasStep) {
+      throw new BadRequestException('Gateway route workflow binding is incomplete');
+    }
+    if (hasOperation && !UUID.test(request.deploymentOperationId!)) {
+      throw new BadRequestException('Gateway route deployment operation id is invalid');
+    }
+    if (hasStep && (!Number.isInteger(request.operationStep) || request.operationStep! < 1)) {
+      throw new BadRequestException('Gateway route operation step is invalid');
     }
   }
 

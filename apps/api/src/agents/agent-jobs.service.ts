@@ -12,6 +12,7 @@ import { ARTIFACT_STORE, type ArtifactStore } from '../artifacts/artifact-store'
 import { decryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import { PrismaService } from '../prisma/prisma.service';
+import { GatewayRoutesService } from '../targets/gateway-routes.service';
 import { AgentsService, type AuthenticatedAgent } from './agents.service';
 import { agentConfigFingerprint } from './agent-config-fingerprint';
 import {
@@ -91,6 +92,7 @@ export class AgentJobsService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly agents: AgentsService,
     @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
+    private readonly gatewayRoutes: GatewayRoutesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -104,6 +106,7 @@ export class AgentJobsService implements OnModuleInit {
       select: { id: true },
     }).catch(() => []);
     for (const job of pendingOperations) {
+      await this.reconcileGatewayRoute(job.id).catch(() => undefined);
       await this.reconcileTerminalJob(job.id).catch(() => undefined);
     }
 
@@ -694,7 +697,12 @@ export class AgentJobsService implements OnModuleInit {
       include: {
         deploymentOperation: {
           include: {
-            environment: { include: { target: { select: { publicUrl: true } } } },
+            environment: {
+              include: {
+                target: { select: { publicUrl: true, routingMode: true } },
+                gatewayRoute: true,
+              },
+            },
           },
         },
       },
@@ -702,6 +710,10 @@ export class AgentJobsService implements OnModuleInit {
     const operation = job?.deploymentOperation;
     if (!job || !operation || !['succeeded', 'failed'].includes(job.status)) return;
     if (operation.status !== 'running' || operation.finishedAt) return;
+    if (operation.environment.target?.routingMode === 'managed-gateway') {
+      await this.reconcileManagedTerminalJob(job, operation);
+      return;
+    }
     const result = this.jobResult(job.result);
     const successfulDeploy =
       job.kind === 'deploy'
@@ -791,6 +803,243 @@ export class AgentJobsService implements OnModuleInit {
       this.prisma.deploymentOperation.updateMany({
         where: { id: operation.id, status: 'running', finishedAt: null },
         data: { status: 'failed', message: reason, finishedAt: now },
+      }),
+    ]);
+  }
+
+  private async reconcileManagedTerminalJob(
+    job: {
+      id: string;
+      kind: string;
+      status: string;
+      operationStep: number | null;
+      message: string | null;
+      payload: unknown;
+      result: unknown;
+    },
+    operation: {
+      id: string;
+      environmentId: string;
+      buildArtifactId: string | null;
+      kind: string;
+      version: string | null;
+      environment: {
+        gatewayRoute: {
+          publicUrl: string;
+          observedState: string;
+          observedRevision: string | null;
+          observedGeneration: number;
+        } | null;
+      };
+    },
+  ): Promise<void> {
+    if (job.status === 'failed') {
+      await this.failManagedOperation(operation, job.message || 'Agent operation failed');
+      return;
+    }
+    if (![1, 2].includes(job.operationStep ?? 0)) {
+      await this.failManagedOperation(operation, 'Agent returned an invalid managed gateway workflow step');
+      return;
+    }
+
+    if (job.operationStep === 1 && ['stop', 'remove'].includes(operation.kind)) {
+      if (job.kind !== 'gateway-route') {
+        await this.failManagedOperation(operation, 'Managed teardown did not remove its gateway route first');
+        return;
+      }
+      const next = await this.prisma.agentJob.updateMany({
+        where: {
+          deploymentOperationId: operation.id,
+          operationStep: 2,
+          status: 'blocked',
+        },
+        data: {
+          status: 'queued',
+          progressStage: 'queued',
+          message: 'Gateway route updated; waiting for Agent workload cleanup',
+        },
+      });
+      if (next.count === 0) {
+        const existing = await this.prisma.agentJob.findFirst({
+          where: { deploymentOperationId: operation.id, operationStep: 2 },
+          select: { id: true, status: true },
+        });
+        if (!existing || !['queued', 'leased', 'succeeded'].includes(existing.status)) {
+          await this.failManagedOperation(operation, 'Managed teardown workload step is missing');
+          return;
+        }
+        if (existing.status === 'succeeded') await this.reconcileTerminalJob(existing.id);
+        return;
+      }
+      await this.publishManagedProgress(
+        operation,
+        'Gateway route updated; waiting for Agent workload cleanup',
+      );
+      return;
+    }
+
+    if (job.operationStep === 1) {
+      const result = this.jobResult(job.result);
+      const payload = this.objectRecord(job.payload);
+      const projectSlug = payload?.projectSlug;
+      const containerPort = payload?.containerPort;
+      if (
+        !['deploy', 'start'].includes(job.kind)
+        || result?.state !== 'running'
+        || !operation.version
+        || result.revision !== operation.version
+        || typeof projectSlug !== 'string'
+        || !Number.isInteger(containerPort)
+      ) {
+        await this.failManagedOperation(operation, 'Agent returned an invalid managed workload result');
+        return;
+      }
+      try {
+        const routeJob = await this.gatewayRoutes.queueReconcile(operation.environmentId, {
+          requestId: operation.id,
+          desiredState: 'active',
+          revision: operation.version,
+          projectSlug,
+          containerPort: Number(containerPort),
+          deploymentOperationId: operation.id,
+          operationStep: 2,
+        });
+        await this.publishManagedProgress(operation, 'Workload is ready; waiting for gateway route');
+        if (routeJob.status === 'succeeded') {
+          await this.reconcileGatewayRoute(routeJob.jobId);
+          await this.reconcileTerminalJob(routeJob.jobId);
+        }
+      } catch (error) {
+        await this.failManagedOperation(
+          operation,
+          error instanceof Error ? error.message : 'Gateway route could not be queued',
+        );
+      }
+      return;
+    }
+
+    if (['stop', 'remove'].includes(operation.kind)) {
+      const result = this.jobResult(job.result);
+      const successfulStop =
+        operation.kind === 'stop'
+        && job.kind === 'stop'
+        && result?.state === 'stopped'
+        && result.revision === operation.version;
+      const successfulRemove =
+        operation.kind === 'remove'
+        && job.kind === 'remove'
+        && result?.state === 'missing';
+      if (successfulStop) {
+        await this.finishLifecycle(operation, job.message, {
+          status: 'stopped',
+          statusReason: null,
+        });
+        return;
+      }
+      if (successfulRemove) {
+        await this.finishLifecycle(operation, job.message, {
+          status: 'empty',
+          version: null,
+          buildArtifactId: null,
+          url: null,
+          statusReason: null,
+          allocatedPort: null,
+          deploymentRequired: false,
+        });
+        return;
+      }
+      await this.failManagedOperation(operation, 'Agent returned an invalid managed teardown result');
+      return;
+    }
+
+    const route = operation.environment.gatewayRoute;
+    const payload = this.objectRecord(job.payload);
+    const generation = payload?.generation;
+    if (
+      job.kind !== 'gateway-route'
+      || !route
+      || route.observedState !== 'active'
+      || route.observedRevision !== operation.version
+      || route.observedGeneration !== generation
+    ) {
+      await this.failManagedOperation(operation, 'Gateway did not publish the requested workload revision');
+      return;
+    }
+    if (operation.kind === 'start') {
+      await this.finishLifecycle(operation, job.message, {
+        status: 'running',
+        url: route.publicUrl,
+        statusReason: null,
+      });
+      return;
+    }
+    await this.prisma.$transaction([
+      this.prisma.environment.updateMany({
+        where: { id: operation.environmentId, activeOperationId: operation.id },
+        data: {
+          status: 'running',
+          version: operation.version,
+          buildArtifactId: operation.buildArtifactId,
+          url: route.publicUrl,
+          statusReason: null,
+          deploymentRequired: false,
+          activeOperationId: null,
+        },
+      }),
+      this.prisma.deploymentOperation.updateMany({
+        where: { id: operation.id, status: 'running', finishedAt: null },
+        data: { status: 'succeeded', message: job.message, finishedAt: new Date() },
+      }),
+    ]);
+  }
+
+  private async publishManagedProgress(
+    operation: { id: string; environmentId: string },
+    message: string,
+  ): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.deploymentOperation.updateMany({
+        where: { id: operation.id, status: 'running', finishedAt: null },
+        data: { message },
+      }),
+      this.prisma.environment.updateMany({
+        where: { id: operation.environmentId, activeOperationId: operation.id },
+        data: { statusReason: message },
+      }),
+    ]);
+  }
+
+  private async failManagedOperation(
+    operation: { id: string; environmentId: string },
+    reason: string,
+  ): Promise<void> {
+    const message = reason.slice(0, 500);
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.agentJob.updateMany({
+        where: {
+          deploymentOperationId: operation.id,
+          status: { in: ['blocked', 'queued'] },
+        },
+        data: {
+          status: 'cancelled',
+          progressStage: 'cancelled',
+          message: 'Cancelled because another workflow step failed',
+          finishedAt: now,
+        },
+      }),
+      this.prisma.environment.updateMany({
+        where: { id: operation.environmentId, activeOperationId: operation.id },
+        data: {
+          status: 'failed',
+          statusReason: message,
+          deploymentRequired: true,
+          activeOperationId: null,
+        },
+      }),
+      this.prisma.deploymentOperation.updateMany({
+        where: { id: operation.id, status: 'running', finishedAt: null },
+        data: { status: 'failed', message, finishedAt: now },
       }),
     ]);
   }

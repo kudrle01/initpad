@@ -117,11 +117,25 @@ function setup() {
     head: jest.fn(async () => ({ sizeBytes: 13 })),
     openRead: jest.fn(async () => Readable.from('archive-bytes')),
   };
+  const gatewayRoutes = {
+    queueReconcile: jest.fn(async () => ({
+      routeId: 'route-1',
+      jobId: 'route-job-1',
+      generation: 1,
+      status: 'queued',
+    })),
+  };
   return {
-    service: new AgentJobsService(prisma as never, agents as never, artifactStore as never),
+    service: new AgentJobsService(
+      prisma as never,
+      agents as never,
+      artifactStore as never,
+      gatewayRoutes as never,
+    ),
     prisma,
     agents,
     artifactStore,
+    gatewayRoutes,
   };
 }
 
@@ -808,6 +822,214 @@ describe('AgentJobsService durable lease protocol', () => {
         buildArtifactId: null,
         url: null,
         deploymentRequired: false,
+        activeOperationId: null,
+      }),
+    });
+  });
+
+  it('queues the stable route only after a managed deploy workload succeeds', async () => {
+    const { service, prisma, gatewayRoutes } = setup();
+    const terminal = job({
+      kind: 'deploy',
+      operationStep: 1,
+      payload: { projectSlug: 'acme-api', containerPort: 8080 },
+      status: 'succeeded',
+      result: { state: 'running', revision: 'a'.repeat(40), hostPort: 32780 },
+      message: 'Workload healthy',
+      deploymentOperationId: 'operation-1',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-1',
+        kind: 'redeploy',
+        status: 'running',
+        finishedAt: null,
+        version: 'a'.repeat(40),
+        environment: {
+          target: { publicUrl: 'https://apps.example.test', routingMode: 'managed-gateway' },
+          gatewayRoute: null,
+        },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Workload healthy',
+      resultCode: 'ok',
+      result: { state: 'running', revision: 'a'.repeat(40), hostPort: 32780 },
+    });
+
+    expect(gatewayRoutes.queueReconcile).toHaveBeenCalledWith('environment-1', {
+      requestId: 'operation-1',
+      desiredState: 'active',
+      revision: 'a'.repeat(40),
+      projectSlug: 'acme-api',
+      containerPort: 8080,
+      deploymentOperationId: 'operation-1',
+      operationStep: 2,
+    });
+    expect(prisma.environment.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ activeOperationId: null }),
+    }));
+  });
+
+  it('publishes the reserved HTTPS URL after managed route step 2 succeeds', async () => {
+    const { service, prisma } = setup();
+    const stableUrl = 'https://acme-api-dev-a1b2c3d4e5f6.apps.example.test';
+    const terminal = job({
+      kind: 'gateway-route',
+      operationStep: 2,
+      payload: {
+        generation: 3,
+        desiredState: 'active',
+        revision: 'a'.repeat(40),
+      },
+      status: 'succeeded',
+      result: null,
+      message: 'Route published',
+      gatewayRouteId: 'route-1',
+      deploymentOperationId: 'operation-1',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-1',
+        kind: 'redeploy',
+        status: 'running',
+        finishedAt: null,
+        version: 'a'.repeat(40),
+        environment: {
+          target: { publicUrl: 'https://apps.example.test', routingMode: 'managed-gateway' },
+          gatewayRoute: {
+            publicUrl: stableUrl,
+            observedState: 'active',
+            observedRevision: 'a'.repeat(40),
+            observedGeneration: 3,
+          },
+        },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Route published',
+      resultCode: 'ok',
+    });
+
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'environment-1', activeOperationId: 'operation-1' },
+      data: expect.objectContaining({
+        status: 'running',
+        url: stableUrl,
+        activeOperationId: null,
+      }),
+    });
+  });
+
+  it('unblocks managed stop workload only after route step 1 succeeds', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'gateway-route',
+      operationStep: 1,
+      payload: { generation: 2, desiredState: 'stopped', revision: 'a'.repeat(40) },
+      status: 'succeeded',
+      result: null,
+      message: 'Route stopped',
+      gatewayRouteId: 'route-1',
+      deploymentOperationId: 'operation-1',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-1',
+        kind: 'stop',
+        status: 'running',
+        finishedAt: null,
+        version: 'a'.repeat(40),
+        environment: {
+          target: { publicUrl: 'https://apps.example.test', routingMode: 'managed-gateway' },
+          gatewayRoute: {
+            publicUrl: 'https://acme-api-dev.apps.example.test',
+            observedState: 'stopped',
+            observedRevision: 'a'.repeat(40),
+            observedGeneration: 2,
+          },
+        },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Route stopped',
+      resultCode: 'ok',
+    });
+
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith({
+      where: {
+        deploymentOperationId: 'operation-1',
+        operationStep: 2,
+        status: 'blocked',
+      },
+      data: {
+        status: 'queued',
+        progressStage: 'queued',
+        message: 'Gateway route updated; waiting for Agent workload cleanup',
+      },
+    });
+  });
+
+  it('finishes managed remove only after workload step 2 reports missing', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'remove',
+      operationStep: 2,
+      status: 'succeeded',
+      result: { state: 'missing' },
+      message: 'Workload removed',
+      deploymentOperationId: 'operation-1',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-1',
+        kind: 'remove',
+        status: 'running',
+        finishedAt: null,
+        version: 'a'.repeat(40),
+        environment: {
+          target: { publicUrl: 'https://apps.example.test', routingMode: 'managed-gateway' },
+          gatewayRoute: {
+            publicUrl: 'https://acme-api-dev.apps.example.test',
+            observedState: 'absent',
+            observedRevision: null,
+            observedGeneration: 2,
+          },
+        },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Workload removed',
+      resultCode: 'ok',
+      result: { state: 'missing' },
+    });
+
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'environment-1', activeOperationId: 'operation-1' },
+      data: expect.objectContaining({
+        status: 'empty',
+        version: null,
+        url: null,
         activeOperationId: null,
       }),
     });

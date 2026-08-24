@@ -26,6 +26,7 @@ function operation(overrides: Record<string, unknown> = {}) {
         kind: 'docker',
         scope: 'user',
         workspaceId: 'workspace-1',
+        routingMode: 'direct-port',
         agent: {
           credentialHash: 'hash',
           disabledAt: null,
@@ -59,12 +60,19 @@ function setup(row = operation(), durable = true) {
         ...create,
         id: 'job-1',
       })),
+      updateMany: jest.fn(async () => ({ count: 1 })),
     },
     $transaction: jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
   };
+  const gatewayRoutes = { queueReconcile: jest.fn(async () => ({ status: 'queued' })) };
   return {
     prisma,
-    service: new ProjectAgentDelivery(prisma as never, { durable } as never),
+    gatewayRoutes,
+    service: new ProjectAgentDelivery(
+      prisma as never,
+      { durable } as never,
+      gatewayRoutes as never,
+    ),
   };
 }
 
@@ -88,6 +96,7 @@ describe('ProjectAgentDelivery', () => {
         targetId: 'target-1',
         allocationId: 'allocation-1',
         deploymentOperationId: 'operation-1',
+        operationStep: 1,
         kind: 'deploy',
         payload: {
           allocationId: 'allocation-1',
@@ -98,6 +107,7 @@ describe('ProjectAgentDelivery', () => {
           imageRef: `registry.test/alice/api:${'a'.repeat(40)}`,
           containerPort: 3000,
           healthPath: '/health',
+          routingMode: 'direct-port',
           configFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
         },
       }),
@@ -138,8 +148,10 @@ describe('ProjectAgentDelivery', () => {
       const create = prisma.agentJob.upsert.mock.calls[0][0].create as Record<string, unknown>;
       expect(create.kind).toBe(kind);
       expect(create.deploymentOperationId).toBe('operation-1');
+      expect(create.operationStep).toBe(1);
       expect(create.payload).toEqual(expect.objectContaining({
         imageRef: intent.imageRef,
+        routingMode: 'direct-port',
         configFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
       }));
       expect(JSON.stringify(create)).not.toContain('DATABASE_PASSWORD');
@@ -152,6 +164,62 @@ describe('ProjectAgentDelivery', () => {
         }),
       });
     }
+  });
+
+  it('orders managed stop as route step 1 followed by a blocked workload step', async () => {
+    const row = operation({
+      environment: {
+        ...operation().environment,
+        target: {
+          ...operation().environment.target,
+          routingMode: 'managed-gateway',
+          gatewayAdapter: 'caddy',
+          gatewayPreflightStatus: 'passed',
+          publicUrl: 'https://apps.example.test',
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
+        },
+      },
+    });
+    const prisma = {
+      deploymentOperation: {
+        findUnique: jest.fn(async () => row),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
+      agentJob: {
+        upsert: jest.fn(async ({ create }: { create: Record<string, unknown> }) => ({
+          ...create,
+          id: 'job-workload',
+        })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      $transaction: jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
+    };
+    const gatewayRoutes = { queueReconcile: jest.fn(async () => ({ status: 'queued' })) };
+    const service = new ProjectAgentDelivery(
+      prisma as never,
+      { durable: true } as never,
+      gatewayRoutes as never,
+    );
+
+    await service.queueLifecycle('operation-1', 'stop', intent);
+
+    expect(prisma.agentJob.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        operationStep: 2,
+        status: 'blocked',
+        progressStage: 'blocked',
+      }),
+    }));
+    expect(gatewayRoutes.queueReconcile).toHaveBeenCalledWith('environment-1', {
+      requestId: 'operation-1',
+      desiredState: 'stopped',
+      revision: 'a'.repeat(40),
+      projectSlug: intent.projectSlug,
+      containerPort: intent.containerPort,
+      deploymentOperationId: 'operation-1',
+      operationStep: 1,
+    });
   });
 
   it('rejects a cross-workspace allocation before queuing side effects', async () => {

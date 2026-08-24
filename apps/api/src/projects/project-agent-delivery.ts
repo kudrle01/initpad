@@ -1,8 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import { agentConfigFingerprint } from '../agents/agent-config-fingerprint';
-import { MIN_PROJECT_AGENT_VERSION, supportsProjectAgent } from '../agents/agent-version';
+import {
+  agentVersionAtLeast,
+  MIN_GATEWAY_ROUTE_AGENT_VERSION,
+  MIN_PROJECT_AGENT_VERSION,
+  supportsProjectAgent,
+} from '../agents/agent-version';
 import { ArtifactStore } from '../artifacts/artifact-store';
 import { PrismaService } from '../prisma/prisma.service';
+import { GatewayRoutesService } from '../targets/gateway-routes.service';
 
 export interface AgentDeploymentIntent {
   projectSlug: string;
@@ -18,6 +24,7 @@ export class ProjectAgentDelivery {
   constructor(
     private readonly prisma: PrismaService,
     private readonly artifactStore: ArtifactStore,
+    private readonly gatewayRoutes = new GatewayRoutesService(prisma),
   ) {}
 
   async queueDeployment(
@@ -49,6 +56,7 @@ export class ProjectAgentDelivery {
         targetId: target.id,
         allocationId: allocation.id,
         deploymentOperationId: operation.id,
+        operationStep: 1,
         dedupeKey: `deployment:${operation.id}`,
         kind: 'deploy',
         protocolVersion: 1,
@@ -61,6 +69,7 @@ export class ProjectAgentDelivery {
           imageRef: intent.imageRef,
           containerPort: intent.containerPort,
           healthPath: intent.healthPath,
+          routingMode: target.routingMode ?? 'direct-port',
           configFingerprint: agentConfigFingerprint(environment.configVars),
         },
         status: 'queued',
@@ -79,6 +88,9 @@ export class ProjectAgentDelivery {
   ): Promise<void> {
     const operation = await this.loadOperation(operationId);
     const { environment, target, allocation } = this.assertAgentBinding(operation);
+    const managedGateway = target.routingMode === 'managed-gateway';
+    const workloadStep = managedGateway && ['stop', 'remove'].includes(kind) ? 2 : 1;
+    const initialStatus = workloadStep === 2 ? 'blocked' : 'queued';
     const row = await this.prisma.agentJob.upsert({
       where: { dedupeKey: `${kind}:${operation.id}` },
       update: {},
@@ -86,6 +98,7 @@ export class ProjectAgentDelivery {
         targetId: target.id,
         allocationId: allocation.id,
         deploymentOperationId: operation.id,
+        operationStep: workloadStep,
         dedupeKey: `${kind}:${operation.id}`,
         kind,
         protocolVersion: 1,
@@ -98,14 +111,41 @@ export class ProjectAgentDelivery {
           imageRef: intent.imageRef,
           containerPort: intent.containerPort,
           healthPath: intent.healthPath,
+          routingMode: target.routingMode ?? 'direct-port',
           configFingerprint: agentConfigFingerprint(environment.configVars),
         },
-        status: 'queued',
-        progressStage: 'queued',
-        message: 'Waiting for Agent',
+        status: initialStatus,
+        progressStage: initialStatus,
+        message: initialStatus === 'blocked' ? 'Waiting for gateway route' : 'Waiting for Agent',
       },
     });
-    if (!['queued', 'leased'].includes(row.status)) return;
+    if (managedGateway && ['stop', 'remove'].includes(kind)) {
+      if (row.status !== 'blocked') return;
+      try {
+        await this.gatewayRoutes.queueReconcile(environment.id, {
+          requestId: operation.id,
+          desiredState: kind === 'stop' ? 'stopped' : 'absent',
+          revision: kind === 'stop' ? operation.version : null,
+          projectSlug: intent.projectSlug,
+          containerPort: intent.containerPort,
+          deploymentOperationId: operation.id,
+          operationStep: 1,
+        });
+      } catch (error) {
+        await this.prisma.agentJob.updateMany({
+          where: { id: row.id, status: 'blocked' },
+          data: {
+            status: 'cancelled',
+            progressStage: 'cancelled',
+            message: 'Gateway route could not be queued',
+            finishedAt: new Date(),
+          },
+        });
+        throw error;
+      }
+    } else if (!['queued', 'leased'].includes(row.status)) {
+      return;
+    }
     await this.publishQueued(operation.id, environment.id, allocation.id, kind === 'remove');
   }
 
@@ -178,6 +218,22 @@ export class ProjectAgentDelivery {
       throw new BadRequestException(
         `Project delivery requires InitPad Agent ${MIN_PROJECT_AGENT_VERSION.join('.')} or newer`,
       );
+    }
+    if (target.routingMode === 'managed-gateway') {
+      if (
+        target.gatewayAdapter !== 'caddy'
+        || target.gatewayPreflightStatus !== 'passed'
+        || !target.publicUrl
+      ) {
+        throw new BadRequestException(
+          'Managed gateway deployment requires a successful Caddy gateway preflight',
+        );
+      }
+      if (!agentVersionAtLeast(target.agent.version, MIN_GATEWAY_ROUTE_AGENT_VERSION)) {
+        throw new BadRequestException(
+          `Managed gateway delivery requires InitPad Agent ${MIN_GATEWAY_ROUTE_AGENT_VERSION.join('.')} or newer`,
+        );
+      }
     }
     return { environment, target, allocation };
   }

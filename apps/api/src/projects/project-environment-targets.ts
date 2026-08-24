@@ -12,7 +12,12 @@ import type {
 } from '../deployment/deployment-provider.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { artifactStoreConfigured, config } from '../config';
-import { MIN_PROJECT_AGENT_VERSION, supportsProjectAgent } from '../agents/agent-version';
+import {
+  agentVersionAtLeast,
+  MIN_GATEWAY_ROUTE_AGENT_VERSION,
+  MIN_PROJECT_AGENT_VERSION,
+  supportsProjectAgent,
+} from '../agents/agent-version';
 import { allocationUsageDefaults } from '../targets/target-allocation-defaults';
 import { BUILTIN_DOCKER, TargetRow, TargetsService } from '../targets/targets.service';
 
@@ -200,11 +205,6 @@ export class ProjectEnvironmentTargets {
 
   assertUsable(target: TargetRow, template: TemplateManifest): void {
     if (target.scope === 'user' && target.kind === 'docker') {
-      if ((target.routingMode ?? 'direct-port') === 'managed-gateway') {
-        throw new BadRequestException(
-          `Managed gateway target '${target.name}' is not deployable until its gateway preflight and reconcile are ready.`,
-        );
-      }
       if (!artifactStoreConfigured()) {
         throw new BadRequestException(
           `Agent-backed target '${target.name}' requires durable S3/MinIO artifact storage.`,
@@ -219,6 +219,22 @@ export class ProjectEnvironmentTargets {
         throw new BadRequestException(
           `Target '${target.name}' requires InitPad Agent ${MIN_PROJECT_AGENT_VERSION.join('.')} or newer.`,
         );
+      }
+      if ((target.routingMode ?? 'direct-port') === 'managed-gateway') {
+        if (
+          target.gatewayAdapter !== 'caddy'
+          || target.gatewayPreflightStatus !== 'passed'
+          || !target.publicUrl
+        ) {
+          throw new BadRequestException(
+            `Managed gateway target '${target.name}' must pass its Caddy gateway preflight before use.`,
+          );
+        }
+        if (!agentVersionAtLeast(target.agent.version, MIN_GATEWAY_ROUTE_AGENT_VERSION)) {
+          throw new BadRequestException(
+            `Managed gateway target '${target.name}' requires InitPad Agent ${MIN_GATEWAY_ROUTE_AGENT_VERSION.join('.')} or newer.`,
+          );
+        }
       }
     }
     const capabilities = this.targets.parseCaps(target.capabilities);

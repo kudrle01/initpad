@@ -23,7 +23,11 @@ import { normalizeManagedGatewayOrigin } from './managed-gateway';
 import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
 import { WorkspacesService } from '../workspaces/workspaces.service';
-import { supportsProjectAgent } from '../agents/agent-version';
+import {
+  agentVersionAtLeast,
+  MIN_GATEWAY_ROUTE_AGENT_VERSION,
+  supportsProjectAgent,
+} from '../agents/agent-version';
 
 // Stable ids for the seeded built-in targets (the simulated infrastructure).
 export const BUILTIN_DOCKER = 'builtin-docker';
@@ -280,6 +284,11 @@ export class TargetsService implements OnModuleInit {
     const capabilitiesRemoved = dto.capabilities !== undefined &&
       currentCapabilities.some((capability) => !dto.capabilities!.includes(capability));
     const routingChanged = routingMode !== (row.routingMode ?? 'direct-port');
+    const managedOriginChanged =
+      agentBacked
+      && routingMode === 'managed-gateway'
+      && dto.publicUrl !== undefined
+      && publicUrl !== row.publicUrl;
     // Adding a capability cannot invalidate an existing environment. Removing
     // one can, so only destructive capability changes are blocked while the
     // target is in use. This lets a shared host evolve from static-only to
@@ -297,6 +306,14 @@ export class TargetsService implements OnModuleInit {
       if (inUse > 0) {
         throw new BadRequestException(
           'A target in use cannot change routing mode. Remove or move its environments first.',
+        );
+      }
+    }
+    if (managedOriginChanged) {
+      const inUse = await this.prisma.environment.count({ where: { targetId: row.id } });
+      if (inUse > 0) {
+        throw new BadRequestException(
+          'A managed gateway target in use cannot change its DNS origin. Remove or move its environments first.',
         );
       }
     }
@@ -514,10 +531,17 @@ export class TargetsService implements OnModuleInit {
   }
 
   private toSummary(row: TargetRow, inUse: boolean): Target {
+    const routingMode = row.routingMode ?? 'direct-port';
+    const managedGatewayReady =
+      routingMode === 'managed-gateway'
+      && row.gatewayAdapter === 'caddy'
+      && row.gatewayPreflightStatus === 'passed'
+      && Boolean(row.publicUrl)
+      && agentVersionAtLeast(row.agent?.version, MIN_GATEWAY_ROUTE_AGENT_VERSION);
     const agentReady = row.scope === 'user' && row.kind === 'docker'
       ? Boolean(
           artifactStoreConfigured()
-          && (row.routingMode ?? 'direct-port') === 'direct-port'
+          && (routingMode === 'direct-port' || managedGatewayReady)
           && row.agent?.credentialHash
           && !row.agent.disabledAt
           && supportsProjectAgent(row.agent.version),
@@ -535,8 +559,8 @@ export class TargetsService implements OnModuleInit {
       auth: row.auth,
       remotePath: row.remotePath,
       publicUrl: row.publicUrl,
-      routingMode: (row.routingMode ?? 'direct-port') as TargetRoutingMode,
-      gatewayPreflight: (row.routingMode ?? 'direct-port') === 'managed-gateway'
+      routingMode: routingMode as TargetRoutingMode,
+      gatewayPreflight: routingMode === 'managed-gateway'
         ? {
             adapter: 'caddy',
             status: (row.gatewayPreflightStatus ?? 'not-run') as GatewayPreflightStatus,

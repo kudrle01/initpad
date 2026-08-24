@@ -339,11 +339,13 @@ nezobrazí falešný empty/error stav.
    nemá Docker socket a projekt nemůže zvolit kontejner ani síť. Lab provozuje
    Caddy uvnitř stejného izolovaného DinD daemonu, takže kontrakt není jen mock.
 
-   **TODO 8e-b — napojení project lifecycle.** Deploy/start/stop/remove zařadí
-   odpovídající route generation, předá explicitní routing mode a dokončí
-   operaci až po obou Agent jobech. Teprve tento krok zpřístupní
-   managed-gateway target v project pickeru a nahradí browserovou adresu s
-   náhodným portem uloženým stabilním hostname.
+   ✅ **8e-b — napojení project lifecycle.** Jedna `DeploymentOperation` nyní
+   nese očíslované durable Agent kroky. Deploy/start provede workload → route,
+   stop/remove route → workload; druhý krok je do splnění prvního neclaimovatelný
+   a restart API terminální stav bezpečně přehraje. Project picker přijme jen
+   preflighted Caddy target s durable artifact store a Agentem 0.7+. Úspěch se
+   publikuje až po obou krocích a browser URL je uložený stabilní HTTPS hostname,
+   nikoli diagnostický náhodný port.
 
    **TODO 8f — health-gated přepnutí a živý gate.** Deploy přepne route až po
    interním health checku, ověří veřejné HTTPS a při chybě zachová předchozí
@@ -391,10 +393,11 @@ automaticky odstraní. Dvou-workspace gate následně použil dvě target identi
 se dvěma credential volumes nad jedním fyzickým DinD daemonem. Současné
 workloady měly namespaces `team-alpha` a `it000`; Stop a Remove druhého ponechal
 první kontejner, síť i URL beze změny a dostupné s HTTP `200`. Produkční gateway
-je navazující podkrok 8; 8a–8d nyní pokrývají explicitní režim, trvalou
-rezervaci hostname, bezpečný preflight a generačně chráněný Caddy adapter.
-Napojení routy na skutečný project delivery/network a health-gated přepnutí
-zůstávají v 8e–8f; současný náhodný port je záměrně pouze local/lab cesta.
+je navazující podkrok 8; 8a–8e nyní pokrývají explicitní režim, trvalou
+rezervaci hostname, bezpečný preflight, generačně chráněný Caddy adapter,
+síťovou vazbu i dvoukrokový project lifecycle. Health-gated veřejné přepnutí a
+živý výpadkový/izolační gate zůstávají v 8f; současný náhodný port je záměrně
+pouze local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 

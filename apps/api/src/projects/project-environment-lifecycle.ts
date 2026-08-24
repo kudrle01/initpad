@@ -91,7 +91,7 @@ export class ProjectEnvironmentLifecycle {
     if (environment.activeOperationId) {
       const operation = await this.prisma.deploymentOperation.findUnique({
         where: { id: environment.activeOperationId },
-        include: { agentJob: true, buildArtifact: true },
+        include: { agentJobs: true, buildArtifact: true },
       });
       // A CI retry is only waiting for the SCM workflow. Finish it
       // synchronously so an eventual callback cannot revive this environment.
@@ -112,11 +112,14 @@ export class ProjectEnvironmentLifecycle {
         ]);
         return;
       }
-      if (operation?.agentJob && this.isAgentBacked(environment)) {
+      if (operation?.agentJobs.length && this.isAgentBacked(environment)) {
         const now = new Date();
         await this.prisma.$transaction([
           this.prisma.agentJob.updateMany({
-            where: { id: operation.agentJob.id, status: { in: ['queued', 'leased'] } },
+            where: {
+              deploymentOperationId: operation.id,
+              status: { in: ['blocked', 'queued', 'leased'] },
+            },
             data: {
               status: 'cancelled',
               message: 'Cancellation requested by user',

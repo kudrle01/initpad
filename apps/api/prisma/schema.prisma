@@ -535,7 +535,7 @@ model DeploymentOperation {
   createdAt        DateTime       @default(now())
   startedAt        DateTime       @default(now())
   finishedAt       DateTime?
-  agentJob         AgentJob?
+  agentJobs        AgentJob[]
 
   @@index([environmentId, createdAt])
   @@index([status])
@@ -553,7 +553,11 @@ model AgentJob {
   allocation            TargetAllocation?    @relation(fields: [allocationId], references: [id], onDelete: SetNull)
   allocationId          String?
   deploymentOperation   DeploymentOperation? @relation(fields: [deploymentOperationId], references: [id], onDelete: SetNull)
-  deploymentOperationId String?              @unique
+  deploymentOperationId String?
+  // Durable order inside a multi-step deployment workflow. Managed gateway
+  // operations use workload -> route for deploy/start and route -> workload
+  // for stop/remove; direct-port operations remain a single step.
+  operationStep          Int?
   gatewayRoute          GatewayRoute?        @relation(fields: [gatewayRouteId], references: [id], onDelete: SetNull)
   gatewayRouteId        String?
   leasedByAgent         Agent?               @relation("AgentJobLeaseOwner", fields: [leasedByAgentId], references: [id], onDelete: SetNull)
@@ -563,7 +567,7 @@ model AgentJob {
   kind            String // probe | lifecycle-test | gateway-preflight | gateway-route | deploy | start | stop | remove | status | logs | rollback
   protocolVersion Int    @default(1)
   payload         Json
-  status          String @default("queued") // queued | leased | succeeded | failed | cancelled
+  status          String @default("queued") // blocked | queued | leased | succeeded | failed | cancelled
   attempt         Int    @default(0)
 
   // Only the SHA-256 hash crosses the DB boundary. The plaintext lease token is
@@ -588,5 +592,7 @@ model AgentJob {
   @@index([targetId, status, createdAt])
   @@index([status, leaseExpiresAt])
   @@index([allocationId])
+  @@index([deploymentOperationId, status])
+  @@unique([deploymentOperationId, operationStep])
   @@index([gatewayRouteId])
 }
