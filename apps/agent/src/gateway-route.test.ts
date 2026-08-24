@@ -92,6 +92,16 @@ test('keeps automatic HTTPS disabled on the lab gateway behind the TLS edge', as
   };
 
   assert.equal(config.apps?.http?.servers?.initpad?.automatic_https?.disable, true);
+
+  const bootstrap = await readFile(
+    new URL('../../../deploy/agent-lab-gateway-bootstrap.sh', import.meta.url),
+    'utf8',
+  );
+  assert.match(bootstrap, /--volume "\$config_volume:\/config"/);
+  assert.match(bootstrap, /caddy run --resume/);
+  assert.match(bootstrap, /com\.initpad\.routing\.mode/);
+  assert.match(bootstrap, /volume_sha/);
+  assert.doesNotMatch(bootstrap, /--tmpfs \/config/);
 });
 
 test('derives the owned Caddy route and upstream from workload identity', async () => {

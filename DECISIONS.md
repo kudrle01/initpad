@@ -3186,6 +3186,15 @@ starého kontejneru, operace zůstane pravdivě úspěšná a job nese varován�
 všechny ownership-bounded revize. Kompatibilita start/stop/remove s
 nesuffixovaným workloadem Agenta 0.7 je zachována pro bezpečný in-place upgrade.
 
+**Stav implementace — restart gateway.** Lab gateway ukládá Caddy autosave do
+samostatného označeného volume a při startu použije `caddy run --resume`.
+Bootstrap nikdy nepřevezme cizí volume ani síť: migrovaný autosave je omezený
+na 1 MiB a musí obsahovat HTTP-only vnitřní listener; zpět se připojí pouze
+sítě označené současně `com.initpad.managed=true` a routing mode
+`managed-gateway`. Aktualizace runtime i obyčejný restart Caddy byly ověřeny
+nad běžícím projektem: route, workload network a stabilní HTTPS URL zůstaly
+zachované a po startu se health vrátil na HTTP 200.
+
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
 nakonfiguruje DNS. Dva workspace současně nasadí stejně pojmenovaný projekt;

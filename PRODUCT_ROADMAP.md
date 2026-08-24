@@ -368,6 +368,15 @@ nezobrazí falešný empty/error stav.
    s rollbackem, restart Agenta/API, výpadek gateway a souběžné nasazení dvou
    workspaces. Po každém scénáři se ověří route, kontejnery, image a sítě.
 
+   ✅ **8f-c1 — restart gateway.** První reálný HTTPS deploy prošel a Caddy
+   autosave je na označeném perzistentním volume. Bezpečný lab bootstrap při
+   aktualizaci přenese pouze omezenou HTTP-only konfiguraci a znovu připojí jen
+   sítě s ownership a `managed-gateway` labely. Runtime upgrade i následný
+   restart zachovaly stejnou route, workload i URL; po krátkém startovním `502`
+   se veřejný `/health` bez zásahu vrátil na `200`. Zbývá zdravý redeploy,
+   rollback při nedostupné veřejné cestě, restart Agenta/API a souběh dvou
+   workspaceů.
+
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
 údajů, vygeneroval jednorázový enrollment, po zavření dialogu už plaintext

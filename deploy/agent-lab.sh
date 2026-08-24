@@ -17,6 +17,7 @@ gateway_domain="${INITPAD_AGENT_LAB_GATEWAY_DOMAIN:-apps.initpad.test}"
 gateway_dns_port="${INITPAD_AGENT_LAB_DNS_PORT:-5533}"
 gateway_runtime_dir=".runtime/agent-lab"
 gateway_ca="$gateway_runtime_dir/root.crt"
+gateway_container="${INITPAD_AGENT_GATEWAY_CONTAINER:-initpad-agent-lab-gateway}"
 
 case "${1:-help}" in
   build)
@@ -76,6 +77,18 @@ EOF
     shift
     compose exec -T agent-lab-docker docker "$@"
     ;;
+  gateway-restart)
+    compose exec -T agent-lab-docker docker restart "$gateway_container"
+    echo "Gateway restarted. Existing managed routes should remain available."
+    ;;
+  gateway-stop)
+    compose exec -T agent-lab-docker docker stop "$gateway_container"
+    echo "Gateway stopped for an explicit outage test. Run gateway-start to restore it."
+    ;;
+  gateway-start)
+    compose exec -T agent-lab-docker docker start "$gateway_container"
+    echo "Gateway started. Previously persisted managed routes should be available again."
+    ;;
   stop)
     compose stop agent-lab agent-lab-secondary agent-lab-ports agent-lab-edge agent-lab-host-dns agent-lab-dns agent-lab-docker
     ;;
@@ -98,6 +111,9 @@ Usage: ./agent-lab.sh <command>
   status  Show the lab daemon, gateway bootstrap, port bridge and Agent identities
   logs    Follow structured Agent logs
   docker  Run a Docker CLI inspection inside the isolated target daemon
+  gateway-restart  Restart Caddy and preserve its autosaved managed routes
+  gateway-stop     Stop Caddy for an explicit outage/rollback test
+  gateway-start    Start Caddy and restore its autosaved managed routes
   stop    Stop only the Agent lab (the InitPad platform keeps running)
 
 Create a Docker (InitPad Agent) target in Infrastructure and generate its
