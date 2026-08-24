@@ -3149,6 +3149,18 @@ rezervuje, start obnoví stejnou adresu a remove veřejnou route odstraní před
 workloadem. Veřejný HTTPS health gate a zachování předchozí revision při chybě
 nové routy zůstávají samostatným následujícím krokem 8f.
 
+**Stav implementace — lokální DNS/TLS acceptance profil.** Produkční
+preflight lze reprodukovat bez koupené domény nad rezervovanou zónou
+`apps.initpad.test`. Agent lab obsahuje split-horizon CoreDNS: hostový pohled
+vrací loopback publikovaného TLS portu a Agentův pohled pevnou adresu edge
+uvnitř izolované sítě. Loopback-only Caddy TLS edge proxyuje
+do aplikačního listeneru gateway v DinD. Caddy admin socket i Docker API
+zůstávají nepublikované. Agent načítá dedikovanou CA read-only při startu a
+používá explicitní lab resolver; host resolver a trust store mění pouze
+administrátorem spuštěné příkazy vypsané `agent-lab.sh gateway-setup`.
+Vygenerovaná CA je v ignorované runtime cestě. Tento profil je testovací
+harness, nikoli automatizace veřejného DNS nebo produkční ingressu.
+
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
 nakonfiguruje DNS. Dva workspace současně nasadí stejně pojmenovaný projekt;

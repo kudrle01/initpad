@@ -65,6 +65,93 @@ services:
     pids_limit: 32
     restart: "no"
 
+  # Target-side wildcard DNS. Agent containers receive the edge's private
+  # address; this resolver is deliberately not published to the host.
+  agent-lab-dns:
+    image: coredns/coredns:1.14.6
+    profiles: ["agent-lab"]
+    command: ["-conf", "/etc/coredns/Corefile"]
+    environment:
+      INITPAD_AGENT_LAB_GATEWAY_DOMAIN: ${INITPAD_AGENT_LAB_GATEWAY_DOMAIN:-apps.initpad.test}
+      INITPAD_AGENT_LAB_EDGE_IP: ${INITPAD_AGENT_LAB_EDGE_IP:-172.31.251.10}
+    volumes:
+      - ./agent-lab.Corefile:/etc/coredns/Corefile:ro
+    networks:
+      agent-lab-edge:
+        ipv4_address: ${INITPAD_AGENT_LAB_DNS_IP:-172.31.251.53}
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 32m
+    cpus: 0.1
+    pids_limit: 32
+    restart: unless-stopped
+
+  # Host-side view of the same wildcard zone. macOS receives loopback because
+  # Docker publishes the TLS edge on 127.0.0.1; returning the private bridge
+  # address here would make browser behavior runtime-dependent.
+  agent-lab-host-dns:
+    image: coredns/coredns:1.14.6
+    profiles: ["agent-lab"]
+    command: ["-conf", "/etc/coredns/Corefile"]
+    environment:
+      INITPAD_AGENT_LAB_GATEWAY_DOMAIN: ${INITPAD_AGENT_LAB_GATEWAY_DOMAIN:-apps.initpad.test}
+      INITPAD_AGENT_LAB_EDGE_IP: 127.0.0.1
+    volumes:
+      - ./agent-lab.Corefile:/etc/coredns/Corefile:ro
+    ports:
+      - "127.0.0.1:${INITPAD_AGENT_LAB_DNS_PORT:-5533}:53/tcp"
+      - "127.0.0.1:${INITPAD_AGENT_LAB_DNS_PORT:-5533}:53/udp"
+    networks: [agent-lab-edge]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 32m
+    cpus: 0.1
+    pids_limit: 32
+    restart: unless-stopped
+
+  # Browser-facing local TLS edge. Caddy's internal CA is mounted read-only
+  # into the Agent, while the edge itself never receives the Docker socket or
+  # the private Caddy admin socket.
+  agent-lab-edge:
+    image: caddy:2.10-alpine
+    profiles: ["agent-lab"]
+    environment:
+      INITPAD_AGENT_LAB_GATEWAY_DOMAIN: ${INITPAD_AGENT_LAB_GATEWAY_DOMAIN:-apps.initpad.test}
+    volumes:
+      - ./agent-lab-edge.Caddyfile:/etc/caddy/Caddyfile:ro
+      - agent-lab-edge-data:/data
+    ports:
+      - "127.0.0.1:${INITPAD_AGENT_LAB_TLS_PORT:-443}:443"
+    depends_on:
+      agent-lab-docker: { condition: service_healthy }
+      agent-lab-dns: { condition: service_started }
+      agent-lab-host-dns: { condition: service_started }
+    networks:
+      agent-lab-target: {}
+      agent-lab-edge:
+        ipv4_address: ${INITPAD_AGENT_LAB_EDGE_IP:-172.31.251.10}
+    healthcheck:
+      test: ["CMD", "test", "-s", "/data/caddy/pki/authorities/local/root.crt"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 3s
+    read_only: true
+    tmpfs:
+      - /config:size=8m,mode=0700
+      - /tmp:size=4m,mode=1777
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    cpus: 0.15
+    pids_limit: 64
+    restart: unless-stopped
+
   agent-lab-ports:
     image: node:22-alpine
     profiles: ["agent-lab"]
@@ -108,21 +195,28 @@ services:
       # The diagnostic port exists only inside the private outer lab network;
       # the browser-facing endpoint is the fixed gateway listener above.
       INITPAD_AGENT_MANAGED_HEALTH_BIND: 0.0.0.0
+      # Node reads this CA at process start. The dependency below guarantees
+      # Caddy has generated it before either Agent identity starts.
+      NODE_EXTRA_CA_CERTS: /var/lib/initpad-edge/caddy/pki/authorities/local/root.crt
     volumes:
       - agent-lab-config:/var/lib/initpad-agent
       - agent-lab-gateway-admin:/run/initpad-gateway:ro
+      - agent-lab-edge-data:/var/lib/initpad-edge:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       agent-lab-docker: { condition: service_healthy }
       agent-lab-gateway-bootstrap: { condition: service_completed_successfully }
+      agent-lab-edge: { condition: service_healthy }
+    dns:
+      - ${INITPAD_AGENT_LAB_DNS_IP:-172.31.251.53}
     healthcheck:
       test: ["CMD", "node", "/app/dist/cli.js", "health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    networks: [agent-lab-target]
+    networks: [agent-lab-target, agent-lab-edge]
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -144,8 +238,15 @@ services:
 networks:
   agent-lab-target:
     name: initpad-agent-lab-target
+  agent-lab-edge:
+    name: initpad-agent-lab-edge
+    ipam:
+      config:
+        - subnet: ${INITPAD_AGENT_LAB_EDGE_SUBNET:-172.31.251.0/24}
+          gateway: ${INITPAD_AGENT_LAB_EDGE_GATEWAY:-172.31.251.1}
 volumes:
   agent-lab-config:
   agent-lab-secondary-config:
   agent-lab-docker-data:
   agent-lab-gateway-admin:
+  agent-lab-edge-data:

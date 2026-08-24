@@ -347,10 +347,18 @@ nezobrazí falešný empty/error stav.
    publikuje až po obou krocích a browser URL je uložený stabilní HTTPS hostname,
    nikoli diagnostický náhodný port.
 
-   **TODO 8f — health-gated přepnutí a živý gate.** Deploy přepne route až po
-   interním health checku, ověří veřejné HTTPS a při chybě zachová předchozí
-   revision. Musí projít souběh, restart, výpadek gateway, rollback a izolace
-   dvou workspaces.
+   ✅ **8f-a — lokální DNS/TLS acceptance profil.** Podporovaný Agent lab bez
+   koupené domény provozuje wildcard CoreDNS pro rezervovanou zónu
+   `apps.initpad.test`, split-horizon pohled pro host/Agent, loopback-only Caddy
+   TLS edge a samostatnou lokální CA. Agent dostane DNS a CA explicitně,
+   browser a macOS resolver se mění jen ručně vypsanými příkazy. DNS,
+   trusted TLS i HTTPS proxy cesta prošly živě;
+   profil neotevírá Docker API ani Caddy admin port a nenahrazuje produkční DNS.
+
+   **TODO 8f-b — health-gated přepnutí a živý gate.** Deploy přepne route až
+   po interním health checku, ověří veřejné HTTPS a při chybě zachová
+   předchozí revision. Musí projít souběh, restart, výpadek gateway, rollback
+   a izolace dvou workspaces.
 
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound

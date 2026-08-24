@@ -10,10 +10,12 @@ allocation-scoped Docker lifecycle engine. Agent 0.4 also executes real
 project deploy/start/stop/remove jobs from verified build artifacts. The wire
 protocol deliberately has no generic shell endpoint.
 
-Agent 0.5 added the read-only readiness gate for production Caddy routing.
-Agent 0.6 adds a durable, generation-fenced Caddy route reconciler. It still
-does not expose managed-gateway targets to projects until workload networking
-and health-gated delivery are integrated.
+Agent 0.5 added the read-only readiness gate for production Caddy routing,
+Agent 0.6 the durable generation-fenced route reconciler and Agent 0.7 the
+allocation-owned workload network. The control plane now orchestrates workload
+and route jobs in the safe order, so a preflighted managed-gateway target can
+be selected by a project. Public HTTPS verification and rollback of an already
+serving revision remain the next health-gated delivery step.
 
 The repository currently builds the Agent as an executable Node.js package and
 as a minimal container image. The local lab below is the supported acceptance
@@ -141,8 +143,8 @@ After the diagnostic tests above pass, verify the actual project path:
 
 ## Managed gateway preflight, route and network adapter (Agent 0.7)
 
-The positive preflight is intentionally an infrastructure acceptance test, not
-a localhost simulation. The target administrator prepares:
+A production preflight is an infrastructure acceptance test. The target
+administrator prepares:
 
 - the gateway origin itself, for example `apps.example.test`, resolving to the
   gateway and serving a certificate trusted by the Agent host on port 443;
@@ -156,6 +158,39 @@ The control plane never sends or stores that admin URL in a job. The bundled
 lab mounts a dedicated Unix socket between the Agent and Caddy. Caddy runs
 inside the same isolated daemon as workloads, has no Docker socket, and opens
 no admin TCP listener.
+
+### Local DNS/TLS acceptance on macOS
+
+The lab provides a faithful local equivalent without requiring a registered
+domain. It reserves `apps.initpad.test`, runs a split-horizon wildcard DNS view
+for the Agent and host, and terminates HTTPS on loopback port 443 with a
+dedicated Caddy CA. The host view on port 5533 returns `127.0.0.1`; the Agent
+view returns the edge address in its private Docker network. The lab does not
+modify macOS automatically or pretend to configure production DNS.
+
+1. From `deploy/`, start the edge and generate its CA:
+
+   ```sh
+   ./agent-lab.sh gateway-setup
+   ```
+
+2. Run the two macOS setup blocks printed by that command. The first creates
+   `/etc/resolver/apps.initpad.test`; the second trusts only the generated lab
+   CA. The CA copy is stored below ignored `deploy/.runtime/` and is never
+   committed.
+3. Create the target with **Managed gateway (production)** and application URL
+   `https://apps.initpad.test`. Enroll it and start the matching Agent identity
+   after the edge is ready.
+4. Choose **Manage Agent → Test gateway**. Wildcard DNS, trusted TLS and the
+   private Caddy admin socket must all pass. Opening
+   `https://apps.initpad.test` must not show a certificate warning.
+
+The resolver file affects only the reserved `.test` subzone. To undo the DNS
+part, remove `/etc/resolver/apps.initpad.test` and flush the macOS DNS cache.
+Remove the exact imported Caddy certificate through Keychain Access when the
+lab is no longer needed; do not delete certificates by a broad common-name
+match. A real server instead uses administrator-managed public or private DNS
+and a CA trusted by its clients.
 
 After rebuilding API, web and Agent 0.7, create a disposable Docker Agent
 target with **Managed gateway (production)** and the HTTPS gateway origin,
@@ -181,12 +216,10 @@ solely through the lab's private management network. The health port is never
 used as the managed browser URL.
 
 There is intentionally no manual UI button for a synthetic route: durable
-jobs are internal and will be triggered by project lifecycle once its
-two-stage orchestration is complete.
-
-Passing preflight therefore still does not make the target selectable for a
-project. That requires the control-plane lifecycle orchestration and
-health-gated cutover steps from ADR-073.
+route jobs are internal and are triggered by the two-stage project lifecycle.
+Passing preflight makes a compatible target selectable. The remaining
+health-gated cutover work will verify the public hostname before publishing a
+new revision and preserve the last serving revision on failure.
 
 ## Credential storage
 

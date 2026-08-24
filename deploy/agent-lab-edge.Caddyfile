@@ -1,0 +1,8 @@
+# Local acceptance TLS edge. This profile is deliberately limited to the
+# reserved .test zone and host loopback; production gateway TLS/DNS remains an
+# administrator-owned concern.
+
+{$INITPAD_AGENT_LAB_GATEWAY_DOMAIN}, *.{$INITPAD_AGENT_LAB_GATEWAY_DOMAIN} {
+	tls internal
+	reverse_proxy agent-lab-docker:4180
+}
