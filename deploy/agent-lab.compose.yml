@@ -5,37 +5,6 @@
 # links returned by the Agent can be opened from the local browser.
 
 services:
-  # Co-located production-gateway adapter simulation. Its admin API is visible
-  # only on an internal management network shared with the Agent, never on a
-  # host port, and the container receives no Docker socket.
-  agent-lab-gateway:
-    image: caddy:2.10-alpine
-    profiles: ["agent-lab"]
-    command: ["caddy", "run", "--config", "/etc/caddy/initpad.json"]
-    volumes:
-      - ./agent-lab-caddy.json:/etc/caddy/initpad.json:ro
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/apps/http/servers/initpad/routes"]
-      interval: 3s
-      timeout: 3s
-      retries: 30
-      start_period: 5s
-    networks: [agent-lab-gateway-admin]
-    read_only: true
-    tmpfs:
-      - /config:size=8m,mode=0700
-      - /data:size=16m,mode=0700
-      - /tmp:size=4m,mode=1777
-    cap_drop: [ALL]
-    # The official Caddy binary carries cap_net_bind_service. Retain only that
-    # bounded capability; without it Linux refuses to exec the file at all.
-    cap_add: [NET_BIND_SERVICE]
-    security_opt: ["no-new-privileges:true"]
-    mem_limit: 64m
-    cpus: 0.15
-    pids_limit: 64
-    restart: unless-stopped
-
   agent-lab-docker:
     image: docker:27.5.1-dind
     profiles: ["agent-lab"]
@@ -52,6 +21,11 @@ services:
       net.ipv4.ip_local_port_range: "${INITPAD_AGENT_LAB_PORT_START:-42000} ${INITPAD_AGENT_LAB_PORT_END:-42031}"
     volumes:
       - agent-lab-docker-data:/var/lib/docker
+      - agent-lab-gateway-admin:/var/lib/initpad-gateway-admin
+    ports:
+      # Fixed application-gateway listener only. The nested Docker API and
+      # Caddy admin API remain private to the outer agent-lab-target network.
+      - "${INITPAD_AGENT_LAB_BIND_ADDRESS:-127.0.0.1}:${INITPAD_AGENT_LAB_GATEWAY_PORT:-4180}:4180"
     healthcheck:
       test: ["CMD", "docker", "info"]
       interval: 3s
@@ -63,6 +37,33 @@ services:
     cpus: 1.0
     pids_limit: 384
     restart: unless-stopped
+
+  # One-shot lab provisioning. The actual Caddy gateway runs in the same
+  # isolated Docker daemon as project workloads, receives no Docker socket and
+  # is connected to a workload network only by the enrolled Agent.
+  agent-lab-gateway-bootstrap:
+    image: docker:27.5.1-cli
+    profiles: ["agent-lab"]
+    environment:
+      DOCKER_HOST: tcp://agent-lab-docker:2375
+      DOCKER_CONFIG: /tmp/docker
+      INITPAD_AGENT_GATEWAY_CONTAINER: initpad-agent-lab-gateway
+    command: ["sh", "/bootstrap/agent-lab-gateway-bootstrap.sh"]
+    volumes:
+      - ./agent-lab-gateway-bootstrap.sh:/bootstrap/agent-lab-gateway-bootstrap.sh:ro
+      - ./agent-lab-caddy.json:/bootstrap/agent-lab-caddy.json:ro
+    depends_on:
+      agent-lab-docker: { condition: service_healthy }
+    networks: [agent-lab-target]
+    read_only: true
+    tmpfs:
+      - /tmp:size=4m,mode=0700
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 48m
+    cpus: 0.1
+    pids_limit: 32
+    restart: "no"
 
   agent-lab-ports:
     image: node:22-alpine
@@ -98,21 +99,26 @@ services:
     environment:
       DOCKER_HOST: tcp://agent-lab-docker:2375
       INITPAD_AGENT_CONFIG: /var/lib/initpad-agent/agent.json
-      INITPAD_AGENT_GATEWAY_ADMIN_URL: http://agent-lab-gateway:2019
+      INITPAD_AGENT_GATEWAY_ADMIN_SOCKET: /run/initpad-gateway/admin.sock
+      INITPAD_AGENT_GATEWAY_CONTAINER: initpad-agent-lab-gateway
+      # The diagnostic port exists only inside the private outer lab network;
+      # the browser-facing endpoint is the fixed gateway listener above.
+      INITPAD_AGENT_MANAGED_HEALTH_BIND: 0.0.0.0
     volumes:
       - agent-lab-config:/var/lib/initpad-agent
+      - agent-lab-gateway-admin:/run/initpad-gateway:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       agent-lab-docker: { condition: service_healthy }
-      agent-lab-gateway: { condition: service_healthy }
+      agent-lab-gateway-bootstrap: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "node", "/app/dist/cli.js", "health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    networks: [agent-lab-target, agent-lab-gateway-admin]
+    networks: [agent-lab-target]
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -134,11 +140,8 @@ services:
 networks:
   agent-lab-target:
     name: initpad-agent-lab-target
-  agent-lab-gateway-admin:
-    name: initpad-agent-lab-gateway-admin
-    internal: true
-
 volumes:
   agent-lab-config:
   agent-lab-secondary-config:
   agent-lab-docker-data:
+  agent-lab-gateway-admin:

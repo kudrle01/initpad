@@ -1,5 +1,6 @@
 import { isIP } from 'node:net';
 import { CaddyAdminClient } from './caddy-admin.js';
+import { GatewayDockerNetwork } from './gateway-network.js';
 import { workloadContainerName } from './docker-lifecycle.js';
 
 const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -45,6 +46,11 @@ type ProgressReporter = (progress: GatewayRouteProgress) => Promise<void>;
 
 interface GatewayRouteAdapter {
   reconcileRoute(intent: Parameters<CaddyAdminClient['reconcileRoute']>[0], signal: AbortSignal): Promise<void>;
+}
+
+interface GatewayNetworkAdapter {
+  connect(payload: GatewayRoutePayload, signal: AbortSignal): Promise<void>;
+  disconnect(payload: GatewayRoutePayload, signal: AbortSignal): Promise<void>;
 }
 
 function required(value: unknown, name: string, pattern: RegExp): string {
@@ -101,19 +107,32 @@ export function parseGatewayRoutePayload(value: unknown): GatewayRoutePayload {
 }
 
 export class GatewayRouteReconciler {
-  constructor(private readonly caddy: GatewayRouteAdapter = new CaddyAdminClient()) {}
+  constructor(
+    targetId: string,
+    dockerHost = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock',
+    private readonly caddy: GatewayRouteAdapter = new CaddyAdminClient(),
+    private readonly network: GatewayNetworkAdapter = new GatewayDockerNetwork(targetId, dockerHost),
+  ) {}
 
   async run(rawPayload: unknown, signal: AbortSignal, report: ProgressReporter): Promise<void> {
     const payload = parseGatewayRoutePayload(rawPayload);
     const container = workloadContainerName(payload);
     await report({ percent: 20, stage: 'working', message: 'Validated bounded gateway route intent' });
-    await report({ percent: 60, stage: 'working', message: 'Applying atomic Caddy route update' });
+    if (payload.desiredState === 'active') {
+      await report({ percent: 40, stage: 'working', message: 'Connecting gateway to the owned workload network' });
+      await this.network.connect(payload, signal);
+    }
+    await report({ percent: 65, stage: 'working', message: 'Applying atomic Caddy route update' });
     await this.caddy.reconcileRoute({
       id: `initpad_route_${payload.routeId.replaceAll('-', '')}`,
       hostname: payload.hostname,
       upstream: `${container}:${payload.containerPort}`,
       present: payload.desiredState === 'active',
     }, signal);
+    if (payload.desiredState !== 'active') {
+      await report({ percent: 82, stage: 'working', message: 'Disconnecting gateway from the workload network' });
+      await this.network.disconnect(payload, signal);
+    }
     await report({ percent: 95, stage: 'verifying', message: 'Verified the fenced Caddy route generation' });
   }
 }

@@ -26,6 +26,7 @@ const LIFECYCLE_PAYLOAD_FIELDS = new Set([
   'imageRef',
   'containerPort',
   'healthPath',
+  'routingMode',
 ]);
 const PROJECT_PAYLOAD_FIELDS = new Set([
   ...LIFECYCLE_PAYLOAD_FIELDS,
@@ -45,6 +46,7 @@ export interface DockerLifecyclePayload {
   imageRef: string;
   containerPort: number;
   healthPath: string;
+  routingMode: 'direct-port' | 'managed-gateway';
   configFingerprint?: string;
 }
 
@@ -142,6 +144,11 @@ function parseWorkloadPayload(
     ),
     containerPort,
     healthPath: requiredSafeString(input.healthPath, 'health path', HEALTH_PATH_PATTERN),
+    routingMode: input.routingMode === undefined
+      ? 'direct-port'
+      : input.routingMode === 'direct-port' || input.routingMode === 'managed-gateway'
+        ? input.routingMode
+        : (() => { throw new Error('Lifecycle payload contains an invalid routing mode'); })(),
     ...(projectDelivery
       ? {
           configFingerprint: requiredSafeString(
@@ -224,6 +231,16 @@ export function workloadContainerName(payload: Pick<
   return boundedDockerName(
     `initpad-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`,
   );
+}
+
+export function workloadNetworkName(payload: Pick<
+  DockerLifecyclePayload,
+  'namespace' | 'projectSlug' | 'environment' | 'routingMode'
+>): string {
+  const suffix = payload.routingMode === 'managed-gateway'
+    ? `${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`
+    : `${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.environment)}`;
+  return boundedDockerName(`net-${suffix}`);
 }
 
 function publishedHost(dockerHost: string): string {
@@ -466,7 +483,14 @@ export class DockerLifecycle {
           ExposedPorts: { [portKey]: {} },
           HostConfig: {
             NetworkMode: this.networkName(desired),
-            PortBindings: { [portKey]: [{ HostIp: '0.0.0.0', HostPort: '' }] },
+            PortBindings: {
+              [portKey]: [{
+                HostIp: desired.routingMode === 'managed-gateway'
+                  ? process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND?.trim() || '127.0.0.1'
+                  : '0.0.0.0',
+                HostPort: '',
+              }],
+            },
             Memory: Math.round(memoryMb * 1024 * 1024),
             MemorySwap: Math.round(memoryMb * 1024 * 1024),
             NanoCpus: Math.round(cpu * 1_000_000_000),
@@ -625,6 +649,8 @@ export class DockerLifecycle {
           'com.initpad.allocation.id': payload.allocationId,
           'com.initpad.allocation.namespace': payload.namespace,
           'com.initpad.environment': payload.environment,
+          'com.initpad.project': payload.projectSlug,
+          'com.initpad.routing.mode': payload.routingMode,
         },
       }),
       signal,
@@ -732,6 +758,14 @@ export class DockerLifecycle {
       || labels['com.initpad.allocation.id'] !== payload.allocationId
       || labels['com.initpad.allocation.namespace'] !== payload.namespace
       || labels['com.initpad.environment'] !== payload.environment
+      || (payload.routingMode === 'managed-gateway'
+        && (
+          labels['com.initpad.project'] !== payload.projectSlug
+          || labels['com.initpad.routing.mode'] !== 'managed-gateway'
+        ))
+      || (payload.routingMode === 'direct-port'
+        && labels['com.initpad.routing.mode'] !== undefined
+        && labels['com.initpad.routing.mode'] !== 'direct-port')
     ) {
       throw new Error(`Docker network name collision outside allocation '${payload.allocationId}'`);
     }
@@ -745,6 +779,7 @@ export class DockerLifecycle {
       'com.initpad.allocation.namespace': payload.namespace,
       'com.initpad.project': payload.projectSlug,
       'com.initpad.environment': payload.environment,
+      'com.initpad.routing.mode': payload.routingMode,
       'com.initpad.workload': this.workloadKey(payload),
       'com.initpad.revision': payload.revision,
       'com.initpad.job': jobId,
@@ -765,7 +800,7 @@ export class DockerLifecycle {
   }
 
   private networkName(payload: DockerLifecyclePayload): string {
-    return boundedDockerName(`net-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.environment)}`);
+    return workloadNetworkName(payload);
   }
 
   private containerName(payload: DockerLifecyclePayload): string {

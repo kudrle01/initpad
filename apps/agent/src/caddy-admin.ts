@@ -1,11 +1,20 @@
 import { lookup } from 'node:dns/promises';
+import http from 'node:http';
 
 const ROUTES_PATH = '/config/apps/http/servers/initpad/routes';
 const MAX_ROUTE_COUNT = 10_000;
 const MAX_RECONCILE_ATTEMPTS = 5;
+const MAX_ADMIN_RESPONSE_BYTES = 1024 * 1024;
+const ADMIN_SOCKET = /^\/(?:var\/)?run\/[A-Za-z0-9._/-]+\.sock$/;
 
 type Resolver = (hostname: string) => Promise<Array<{ address: string; family: number }>>;
 type CaddyRoute = Record<string, unknown>;
+type UnixRequest = (
+  socketPath: string,
+  path: string,
+  init: RequestInit,
+  signal: AbortSignal,
+) => Promise<Response>;
 
 export interface CaddyRouteIntent {
   id: string;
@@ -68,11 +77,14 @@ function managedRoute(intent: CaddyRouteIntent): CaddyRoute {
 
 export class CaddyAdminClient {
   private origin?: URL;
+  private socket?: string;
 
   constructor(
     private readonly adminUrl = process.env.INITPAD_AGENT_GATEWAY_ADMIN_URL ?? '',
     private readonly resolve: Resolver = (hostname) => lookup(hostname, { all: true }),
     private readonly request: typeof fetch = fetch,
+    private readonly adminSocket = process.env.INITPAD_AGENT_GATEWAY_ADMIN_SOCKET ?? '',
+    private readonly unixRequest?: UnixRequest,
   ) {}
 
   async ready(signal: AbortSignal): Promise<void> {
@@ -144,11 +156,84 @@ export class CaddyAdminClient {
   }
 
   private async fetch(path: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+    const socket = this.privateSocket();
+    if (socket) {
+      return this.unixRequest
+        ? this.unixRequest(socket, path, init, signal)
+        : this.fetchSocket(socket, path, init, signal);
+    }
     const origin = await this.privateOrigin();
     return this.request(new URL(path, origin), {
       ...init,
       redirect: 'error',
       signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    });
+  }
+
+  private privateSocket(): string | null {
+    if (this.socket) return this.socket;
+    const socket = this.adminSocket.trim();
+    if (!socket) return null;
+    if (this.adminUrl.trim()) {
+      throw new Error('Configure either the Caddy admin Unix socket or URL, not both');
+    }
+    if (!ADMIN_SOCKET.test(socket) || socket.includes('/../') || socket.includes('//')) {
+      throw new Error('Caddy adapter socket must be a bounded path below /run');
+    }
+    this.socket = socket;
+    return socket;
+  }
+
+  private fetchSocket(
+    socketPath: string,
+    path: string,
+    init: RequestInit,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    if (init.body !== undefined && typeof init.body !== 'string') {
+      throw new Error('Caddy adapter Unix request body is invalid');
+    }
+    const headers = Object.fromEntries(new Headers(init.headers).entries());
+    return new Promise((resolve, reject) => {
+      const request = http.request({
+        socketPath,
+        path,
+        method: init.method ?? 'GET',
+        headers: { host: 'localhost', ...headers },
+      }, (response) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        response.on('data', (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > MAX_ADMIN_RESPONSE_BYTES) {
+            request.destroy(new Error('Caddy adapter response is too large'));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on('end', () => {
+          const responseHeaders = new Headers();
+          for (const [name, value] of Object.entries(response.headers)) {
+            if (Array.isArray(value)) value.forEach((item) => responseHeaders.append(name, item));
+            else if (value !== undefined) responseHeaders.set(name, value);
+          }
+          resolve(new Response(Buffer.concat(chunks), {
+            status: response.statusCode ?? 500,
+            headers: responseHeaders,
+          }));
+        });
+      });
+      const abort = () => request.destroy(new Error('Caddy adapter request aborted'));
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      request.setTimeout(10_000, () => request.destroy(new Error('Caddy adapter request timed out')));
+      request.on('error', reject);
+      request.on('close', () => signal.removeEventListener('abort', abort));
+      if (typeof init.body === 'string') request.write(init.body);
+      request.end();
     });
   }
 

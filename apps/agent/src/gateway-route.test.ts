@@ -40,9 +40,16 @@ test('accepts only a bounded declarative route intent', () => {
 test('derives the owned Caddy route and upstream from workload identity', async () => {
   let intent: CaddyRouteIntent | undefined;
   const progress: number[] = [];
-  const reconciler = new GatewayRouteReconciler({
-    reconcileRoute: async (value) => { intent = value; },
-  });
+  const actions: string[] = [];
+  const reconciler = new GatewayRouteReconciler(
+    'target-1',
+    'unix:///var/run/docker.sock',
+    { reconcileRoute: async (value) => { intent = value; actions.push('route'); } },
+    {
+      connect: async () => { actions.push('connect'); },
+      disconnect: async () => { actions.push('disconnect'); },
+    },
+  );
 
   await reconciler.run(payload, new AbortController().signal, async (item) => {
     progress.push(item.percent);
@@ -54,15 +61,24 @@ test('derives the owned Caddy route and upstream from workload identity', async 
     upstream: 'initpad-team-alpha-customer-portal-dev:8080',
     present: true,
   });
-  assert.deepEqual(progress, [20, 60, 95]);
+  assert.deepEqual(actions, ['connect', 'route']);
+  assert.deepEqual(progress, [20, 40, 65, 95]);
 });
 
 test('stopped and absent desired states remove the owned route', async () => {
   const intents: CaddyRouteIntent[] = [];
-  const reconciler = new GatewayRouteReconciler({
-    reconcileRoute: async (value) => { intents.push(value); },
-  });
+  const actions: string[] = [];
+  const reconciler = new GatewayRouteReconciler(
+    'target-1',
+    'unix:///var/run/docker.sock',
+    { reconcileRoute: async (value) => { intents.push(value); actions.push('route'); } },
+    {
+      connect: async () => { actions.push('connect'); },
+      disconnect: async () => { actions.push('disconnect'); },
+    },
+  );
   await reconciler.run({ ...payload, desiredState: 'stopped' }, new AbortController().signal, async () => undefined);
   await reconciler.run({ ...payload, desiredState: 'absent', revision: null }, new AbortController().signal, async () => undefined);
   assert.deepEqual(intents.map((intent) => intent.present), [false, false]);
+  assert.deepEqual(actions, ['route', 'disconnect', 'route', 'disconnect']);
 });

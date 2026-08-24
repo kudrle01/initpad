@@ -3096,13 +3096,38 @@ retryuje bez ztráty cizích rout a kolizi vlastního route ID s jiným hostname
 odmítne.
 
 Control plane před zařazením vyžaduje úspěšný preflight, aktivní allocation a
-enrolled Agent 0.6+. Každý intent inkrementuje `GatewayRoute.generation`, ruší
+enrolled Agent s podporovaným route kontraktem. Každý intent inkrementuje `GatewayRoute.generation`, ruší
 ještě nezačaté starší joby a ukládá aktuální `reconcileJobId`. Terminal result
 se promítne jen při shodě route ID, generation a job fence; failure zachová
 poslední známý observed state/revision. Restart API přehrává pouze právě
 referencované joby, ne neomezenou historii. Tento základ ještě není napojený
 na project deploy/start/stop/remove a gateway zatím není připojována do
 allocation sítě; to je následující samostatný krok před aktivací targetu.
+
+**Stav implementace — síťová vazba gateway.** Agent 0.7 rozlišuje v lifecycle
+payloadu zpětně kompatibilní `direct-port` a explicitní `managed-gateway`.
+Produkční režim používá samostatnou síť odvozenou z allocation namespace,
+projektu a prostředí; síť nese target/allocation/project/environment labels a
+jakákoliv neshoda se považuje za kolizi bez mutace. Náhodný diagnostický port
+se výchozím způsobem váže pouze na `127.0.0.1`, není zdrojem browser URL a lab
+jej může explicitně omezit na svou privátní DinD management síť.
+
+Gateway kontejner vybírá výhradně lokální konfigurace
+`INITPAD_AGENT_GATEWAY_CONTAINER`; musí běžet a nést label
+`com.initpad.gateway=true`. Projektový job nemůže dodat jeho jméno ani Docker
+endpoint. Pro aktivní route Agent nejdřív připojí gateway k ověřené workload
+síti a potom atomicky přidá Caddy route. Pro stopped/absent nejdřív route
+odebere a až potom gateway odpojí. Operace jsou idempotentní a po každém Docker
+connect/disconnect znovu ověří skutečné členství. Caddy nadále nemá Docker
+socket. Agent route job proto nově vyžaduje verzi 0.7+.
+
+Lokální Agent lab už nemá Caddy v odděleném outer Compose daemonu. Jednorázový,
+označený bootstrap jej vytvoří uvnitř stejného izolovaného DinD daemonu jako
+workloady; Agent a Caddy sdílejí pouze permissioned Unix admin socket a žádný
+admin TCP port neexistuje. Na host je loopbackem publikován jen pevný
+aplikační listener. To umožní v následujícím
+kroku otestovat skutečné Docker DNS a gateway připojování bez zpřístupnění
+Docker API nebo Caddy admin API hostiteli.
 
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem

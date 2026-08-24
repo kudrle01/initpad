@@ -46,6 +46,38 @@ test('reads only the dedicated private Caddy route collection', async () => {
   assert.equal(requested, 'http://gateway.internal:2019/config/apps/http/servers/initpad/routes');
 });
 
+test('reads the admin API through a permissionable Unix socket without a TCP origin', async () => {
+  let requested: { socket: string; path: string } | undefined;
+  const client = new CaddyAdminClient(
+    '',
+    privateResolver,
+    fetch,
+    '/run/initpad-gateway/admin.sock',
+    async (socket, path) => {
+      requested = { socket, path };
+      return jsonResponse([]);
+    },
+  );
+  await client.ready(signal());
+  assert.deepEqual(requested, {
+    socket: '/run/initpad-gateway/admin.sock',
+    path: '/config/apps/http/servers/initpad/routes',
+  });
+});
+
+test('refuses ambiguous or unbounded Caddy admin socket configuration', async () => {
+  await assert.rejects(
+    new CaddyAdminClient(
+      'http://gateway.internal:2019', privateResolver, fetch, '/run/initpad/admin.sock',
+    ).ready(signal()),
+    /either the Caddy admin Unix socket or URL/,
+  );
+  await assert.rejects(
+    new CaddyAdminClient('', privateResolver, fetch, '/tmp/admin.sock').ready(signal()),
+    /bounded path below \/run/,
+  );
+});
+
 test('atomically adds and verifies a fixed reverse-proxy route with an ETag fence', async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const client = new CaddyAdminClient(

@@ -1,6 +1,6 @@
 {
   "admin": {
-    "listen": "0.0.0.0:2019"
+    "listen": "unix//run/initpad-gateway/admin.sock|0200"
   },
   "apps": {
     "http": {

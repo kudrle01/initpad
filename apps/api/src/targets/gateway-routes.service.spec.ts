@@ -74,7 +74,7 @@ describe('GatewayRoutesService stable reservations', () => {
         agent: {
           credentialHash: 'hash',
           disabledAt: null,
-          version: '0.6.0',
+          version: '0.7.0',
         },
       },
       allocation: { ...environment.allocation, namespace: 'team-alpha' },
@@ -171,7 +171,7 @@ describe('GatewayRoutesService stable reservations', () => {
     await expect(service.queueReconcile(environment.id, request)).rejects.toThrow('preflighted');
 
     managedEnvironment.target.gatewayPreflightStatus = 'passed';
-    await expect(service.queueReconcile(environment.id, request)).rejects.toThrow('0.6.0');
+    await expect(service.queueReconcile(environment.id, request)).rejects.toThrow('0.7.0');
     expect(prisma.agentJob.create).not.toHaveBeenCalled();
   });
 

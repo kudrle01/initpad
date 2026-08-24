@@ -139,7 +139,7 @@ After the diagnostic tests above pass, verify the actual project path:
    shared multi-workspace Agent target requires a future platform-admin sharing
    model.
 
-## Managed gateway preflight and route adapter (Agent 0.6)
+## Managed gateway preflight, route and network adapter (Agent 0.7)
 
 The positive preflight is intentionally an infrastructure acceptance test, not
 a localhost simulation. The target administrator prepares:
@@ -148,14 +148,16 @@ a localhost simulation. The target administrator prepares:
   gateway and serving a certificate trusted by the Agent host on port 443;
 - wildcard DNS so `initpad-preflight.apps.example.test` resolves to the same
   gateway path used by application hostnames;
-- the Agent-local `INITPAD_AGENT_GATEWAY_ADMIN_URL`, pointing to Caddy's admin
-  API over a loopback or private management network.
+- preferably the Agent-local `INITPAD_AGENT_GATEWAY_ADMIN_SOCKET`, pointing to
+  a permissioned socket below `/run`; `INITPAD_AGENT_GATEWAY_ADMIN_URL` remains
+  available for an explicitly isolated loopback or private management network.
 
 The control plane never sends or stores that admin URL in a job. The bundled
-lab sets it to `http://agent-lab-gateway:2019`; the Caddy container has no
-Docker socket and its management network has no host-facing port.
+lab mounts a dedicated Unix socket between the Agent and Caddy. Caddy runs
+inside the same isolated daemon as workloads, has no Docker socket, and opens
+no admin TCP listener.
 
-After rebuilding API, web and Agent 0.6, create a disposable Docker Agent
+After rebuilding API, web and Agent 0.7, create a disposable Docker Agent
 target with **Managed gateway (production)** and the HTTPS gateway origin,
 enroll/start it, then choose **Manage Agent → Test gateway**. The job must
 advance through wildcard DNS, trusted TLS and private Caddy readiness and end
@@ -166,13 +168,25 @@ Changing the target origin resets the previous result to `not-run`.
 The same private adapter can now reconcile only control-plane-owned routes in
 the dedicated Caddy `initpad` server. It uses ETags to avoid overwriting a
 concurrent change and never accepts Caddy JSON, an admin URL or an upstream
-from a project. There is intentionally no manual UI button for a synthetic
-route: durable jobs are internal and will be triggered by project lifecycle
-once the allocation-network integration is complete.
+from a project. Before an active route is installed, the Agent connects the
+locally configured `INITPAD_AGENT_GATEWAY_CONTAINER` to the exact labeled
+project/environment network. Stopped or absent routes are removed before the
+gateway is disconnected. The gateway must be a running container labeled
+`com.initpad.gateway=true`; project payloads cannot choose it.
+
+Managed workloads use a per-project network and bind their Agent-only health
+port to host loopback by default. A containerized remote-daemon lab may set
+`INITPAD_AGENT_MANAGED_HEALTH_BIND=0.0.0.0` only when that daemon is reachable
+solely through the lab's private management network. The health port is never
+used as the managed browser URL.
+
+There is intentionally no manual UI button for a synthetic route: durable
+jobs are internal and will be triggered by project lifecycle once its
+two-stage orchestration is complete.
 
 Passing preflight therefore still does not make the target selectable for a
-project. That requires the workload-network and health-gated cutover steps from
-ADR-073.
+project. That requires the control-plane lifecycle orchestration and
+health-gated cutover steps from ADR-073.
 
 ## Credential storage
 

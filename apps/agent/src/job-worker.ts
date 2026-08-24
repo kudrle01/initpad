@@ -269,7 +269,7 @@ export async function executeClaimedJob(
       });
       return;
     }
-    const gatewayRoute = options.gatewayRoute ?? new GatewayRouteReconciler();
+    const gatewayRoute = options.gatewayRoute ?? new GatewayRouteReconciler(job.targetId, options.dockerHost);
     const localController = new AbortController();
     const combinedSignal = AbortSignal.any([signal, localController.signal]);
     let renewalError: unknown;

@@ -331,10 +331,19 @@ nezobrazí falešný empty/error stav.
    odpověď ani starší dokončení proto nepřepíší novější stav. Projekt nemůže
    dodat Caddy JSON, admin URL ani vlastní upstream.
 
-   **TODO 8e — delivery a síťová integrace.** Deploy/start/stop/remove zařadí
-   odpovídající route generation a Agent připojí gateway pouze k allocation
-   síti aktivního workloadu. Teprve tento krok zpřístupní managed-gateway target
-   v project pickeru a nahradí náhodný veřejný port stabilním hostname.
+   ✅ **8e-a — bezpečná síťová vazba gateway.** Agent 0.7 vytváří pro
+   `managed-gateway` workload samostatnou project/environment síť, diagnostický
+   host port váže výchozím způsobem jen na loopback a route job připojí pouze
+   lokálně nakonfigurovaný, označený gateway kontejner k přesně vlastněné síti.
+   Aktivace má pořadí connect → route; stop/remove route → disconnect. Gateway
+   nemá Docker socket a projekt nemůže zvolit kontejner ani síť. Lab provozuje
+   Caddy uvnitř stejného izolovaného DinD daemonu, takže kontrakt není jen mock.
+
+   **TODO 8e-b — napojení project lifecycle.** Deploy/start/stop/remove zařadí
+   odpovídající route generation, předá explicitní routing mode a dokončí
+   operaci až po obou Agent jobech. Teprve tento krok zpřístupní
+   managed-gateway target v project pickeru a nahradí browserovou adresu s
+   náhodným portem uloženým stabilním hostname.
 
    **TODO 8f — health-gated přepnutí a živý gate.** Deploy přepne route až po
    interním health checku, ověří veřejné HTTPS a při chybě zachová předchozí

@@ -19,6 +19,7 @@ const PAYLOAD = {
   imageRef: IMAGE_REF,
   containerPort: 80,
   healthPath: '/',
+  routingMode: 'direct-port' as const,
 };
 
 function response(statusCode: number, body: unknown = ''): DockerHttpResponse {
@@ -179,6 +180,12 @@ test('rejects untrusted lifecycle fields before contacting Docker', () => {
     () => parseLifecyclePayload({ ...PAYLOAD, command: ['sh', '-c', 'id'] }),
     /invalid|contains/i,
   );
+  assert.throws(
+    () => parseLifecyclePayload({ ...PAYLOAD, routingMode: 'host-network' }),
+    /routing mode/,
+  );
+  const { routingMode: _routingMode, ...legacyPayload } = PAYLOAD;
+  assert.equal(parseLifecyclePayload(legacyPayload).routingMode, 'direct-port');
 });
 
 test('validates project artifact metadata and transient config independently', () => {
@@ -361,6 +368,10 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.equal(host.Privileged, undefined);
   assert.equal(host.Binds, undefined);
   assert.equal(host.NetworkMode, 'net-team-alpha-diagnostic');
+  assert.deepEqual(
+    (host.PortBindings as Record<string, unknown>)['80/tcp'],
+    [{ HostIp: '0.0.0.0', HostPort: '' }],
+  );
   assert.deepEqual(host.CapDrop, ['ALL']);
   assert.deepEqual(host.CapAdd, ['CHOWN', 'DAC_OVERRIDE', 'SETGID', 'SETUID', 'NET_BIND_SERVICE']);
   assert.deepEqual(host.SecurityOpt, ['no-new-privileges']);
@@ -368,4 +379,25 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.ok(engine.requests.some((item) => item.path.endsWith('/update')));
   assert.equal((first.Labels as Record<string, string>)['com.initpad.allocation.id'], PAYLOAD.allocationId);
   assert.equal((first.Labels as Record<string, string>)['com.initpad.target'], 'target-1');
+});
+
+test('isolates a managed-gateway workload network and keeps its health port on loopback', async () => {
+  const engine = fakeEngine();
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+  const managed = { ...PAYLOAD, routingMode: 'managed-gateway' as const };
+
+  await lifecycle.deploy(managed, 'job-managed', new AbortController().signal);
+
+  const host = engine.createdBodies[0].HostConfig as Record<string, unknown>;
+  assert.equal(host.NetworkMode, 'net-team-alpha-agent-lifecycle-check-diagnostic');
+  assert.deepEqual(
+    (host.PortBindings as Record<string, unknown>)['80/tcp'],
+    [{ HostIp: '127.0.0.1', HostPort: '' }],
+  );
 });
