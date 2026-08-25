@@ -141,6 +141,20 @@ After the diagnostic tests above pass, verify the actual project path:
    shared multi-workspace Agent target requires a future platform-admin sharing
    model.
 
+   When two managed identities are needed while an existing direct-port lab
+   target must stay online, the lab also offers an optional third credential
+   slot with the same isolation contract:
+
+   ```sh
+   ./agent-lab.sh enroll-tertiary
+   ./agent-lab.sh start-tertiary
+   ./agent-lab.sh logs-tertiary
+   ```
+
+   It is not a production topology or a shared credential: each process still
+   represents one independently enrolled target and stores only that target's
+   credential.
+
 ## Managed gateway preflight and health-gated routing (Agent 0.8)
 
 A production preflight is an infrastructure acceptance test. The target

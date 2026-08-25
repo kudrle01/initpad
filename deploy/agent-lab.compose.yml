@@ -179,9 +179,9 @@ services:
     restart: unless-stopped
 
   agent-lab:
-    # Both lab identities deliberately use the same versioned development
-    # image. Without an explicit tag Compose builds the extended secondary
-    # service under a separate name, which can silently remain outdated.
+    # All lab identities deliberately use the same versioned development
+    # image. Without an explicit tag Compose builds an extended identity under
+    # a separate name, which can silently remain outdated.
     image: initpad-agent-lab:dev
     build:
       context: ..
@@ -235,6 +235,16 @@ services:
     volumes:
       - agent-lab-secondary-config:/var/lib/initpad-agent
 
+  # Optional third identity keeps an existing direct-port target online while
+  # the primary and secondary identities exercise two-workspace managed
+  # gateway concurrency. Like the others it has only its own credential volume
+  # and no broader access to the shared lab daemon.
+  agent-lab-tertiary:
+    extends:
+      service: agent-lab
+    volumes:
+      - agent-lab-tertiary-config:/var/lib/initpad-agent
+
 networks:
   agent-lab-target:
     name: initpad-agent-lab-target
@@ -247,6 +257,7 @@ networks:
 volumes:
   agent-lab-config:
   agent-lab-secondary-config:
+  agent-lab-tertiary-config:
   agent-lab-docker-data:
   agent-lab-gateway-admin:
   agent-lab-edge-data:

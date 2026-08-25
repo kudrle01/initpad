@@ -299,7 +299,7 @@ nezobrazí falešný empty/error stav.
 7. ✅ **Živý a bezpečnostní gate.** Otestuje se instalace, revoke/re-enroll,
    offline/reconnect, ztracená odpověď, lease expiry, duplicitní job a izolace
    dvou workspaces; následuje audit enrollmentu a idempotence.
-8. **Produkční gateway routing.** Po uzavření bezpečnostního gate se vedle
+8. ✅ **Produkční gateway routing.** Po uzavření bezpečnostního gate se vedle
    `direct-port` local/lab režimu přidá `managed-gateway`: stabilní uložený
    hostname, explicitní HTTPS `publicUrl`, DNS/TLS preflight, Caddy adapter bez
    Docker socketu, deklarativní reconcile a health-gated atomické přepnutí
@@ -363,7 +363,7 @@ nezobrazí falešný empty/error stav.
    odstraní; control plane ponechá poslední potvrzenou revision `running`.
    Úplný remove je ownership-bounded a uklidí i případné starší revize.
 
-   **TODO 8f-c — živý odolnostní gate.** Na skutečném Agent labu musí
+   ✅ **8f-c — živý odolnostní gate.** Na skutečném Agent labu musí
    projít první deploy, zdravý redeploy, záměrně rozbitý veřejný health
    s rollbackem, restart Agenta/API, výpadek gateway a souběžné nasazení dvou
    workspaces. Po každém scénáři se ověří route, kontejnery, image a sítě.
@@ -390,7 +390,16 @@ nezobrazí falešný empty/error stav.
    ověřování. Po expiraci fencing lease převzal tentýž job jako `attempt 2` a
    idempotentně jej dokončil. Zůstala jediná dev instance, stejný hostname,
    desired/observed generace `6/6 active` a dev/test HTTPS health `200`.
-   Zbývá souběžný managed-gateway deploy dvou workspaceů.
+
+   ✅ **8f-c4 — souběh dvou workspaceů.** Workspace `team-alpha` a `it000`
+   uložily své deploymenty s offline Agenty současně jako dva queued joby;
+   obě identity 0.8.1 se pak spustily společně nad stejným DinD daemonem a
+   Caddy gateway. Obě dvoukrokové operace dokončily `attempt 1`. Každá route
+   má jiný collision-safe hostname, vlastní namespace/project síť obsahuje jen
+   příslušný workload a označenou gateway a všechny tři dev/test HTTPS health
+   URL vracejí `200`. Pro zachování již existujícího direct-port targetu přidal
+   lab volitelnou třetí oddělenou credential identitu; nejde o sdílený target
+   ani produkční topologii. Živý gateway gate 8f-c je tím uzavřen.
 
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
@@ -438,8 +447,10 @@ rezervaci hostname, bezpečný preflight, generačně chráněný Caddy adapter,
 síťovou vazbu, dvoukrokový lifecycle i health-gated veřejné přepnutí se
 zachováním poslední potvrzené revize, restart gateway, idempotentní redeploy a
 rollback při výpadku veřejné TLS cesty i převzetí leased jobu po restartu
-Agenta/API. Zbývá souběžný managed-gateway deploy dvou workspaceů; současný
-náhodný port je záměrně pouze `direct-port` local/lab cesta.
+Agenta/API. Souběžný managed deployment workspaceů `team-alpha` a `it000`
+navíc potvrdil oddělené hostname, sítě a workload identity nad společnou
+gateway. Fáze 5 je tím uživatelsky i provozně uzavřená; současný náhodný port
+zůstává záměrně pouze `direct-port` local/lab cestou.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -544,9 +555,10 @@ nezměnil první. Stabilní HTTPS routing podle ADR-073 má hotový lokální
 DNS/TLS profil i automatizovaný dual-revision cutover Agenta 0.8. Živě prošel
 restart gateway se zachováním routy, idempotentní zdravý redeploy a rollback
 při nedostupné veřejné TLS cestě i restart API a Agenta během rozpracované
-operace s fencing převzetím druhého pokusu. Poslední část gate 8f-c tvoří
-souběh dvou managed workspaceů. Tyto dílčí výsledky nenahrazují závěrečný
-školní E2E scénář s
+operace s fencing převzetím druhého pokusu. Souběžný start queued deploymentů
+`team-alpha` a `it000` dokončil obě operace napoprvé a ověřil odlišné hostname,
+project-scoped sítě i HTTP `200`; gate 8f-c a Fáze 5 jsou tím uzavřené. Tyto
+dílčí výsledky nenahrazují závěrečný školní E2E scénář s
 nezávislým týmem.
 
 ## Vyhodnocení pro diplomovou práci

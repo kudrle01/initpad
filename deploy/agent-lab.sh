@@ -21,8 +21,8 @@ gateway_container="${INITPAD_AGENT_GATEWAY_CONTAINER:-initpad-agent-lab-gateway}
 
 case "${1:-help}" in
   build)
-    # The secondary service inherits this exact image tag, so one build keeps
-    # every lab identity on the same Agent protocol version.
+    # Extended services inherit this exact image tag, so one build keeps every
+    # lab identity on the same Agent protocol version.
     compose build agent-lab
     ;;
   gateway-setup)
@@ -55,23 +55,33 @@ EOF
     compose run --rm -it agent-lab-secondary \
       enroll --url "$control_plane_url" --allow-insecure-http
     ;;
+  enroll-tertiary)
+    compose run --rm -it agent-lab-tertiary \
+      enroll --url "$control_plane_url" --allow-insecure-http
+    ;;
   start)
     compose up -d agent-lab-docker agent-lab-ports agent-lab
     ;;
   start-secondary)
     compose up -d agent-lab-docker agent-lab-ports agent-lab-secondary
     ;;
+  start-tertiary)
+    compose up -d agent-lab-docker agent-lab-ports agent-lab-tertiary
+    ;;
   once)
     compose run --rm agent-lab once
     ;;
   status)
-    compose ps --all agent-lab agent-lab-secondary agent-lab-docker agent-lab-gateway-bootstrap agent-lab-dns agent-lab-host-dns agent-lab-edge agent-lab-ports
+    compose ps --all agent-lab agent-lab-secondary agent-lab-tertiary agent-lab-docker agent-lab-gateway-bootstrap agent-lab-dns agent-lab-host-dns agent-lab-edge agent-lab-ports
     ;;
   logs)
     compose logs --tail=100 -f agent-lab
     ;;
   logs-secondary)
     compose logs --tail=100 -f agent-lab-secondary
+    ;;
+  logs-tertiary)
+    compose logs --tail=100 -f agent-lab-tertiary
     ;;
   docker)
     shift
@@ -90,10 +100,13 @@ EOF
     echo "Gateway started. Previously persisted managed routes should be available again."
     ;;
   stop)
-    compose stop agent-lab agent-lab-secondary agent-lab-ports agent-lab-edge agent-lab-host-dns agent-lab-dns agent-lab-docker
+    compose stop agent-lab agent-lab-secondary agent-lab-tertiary agent-lab-ports agent-lab-edge agent-lab-host-dns agent-lab-dns agent-lab-docker
     ;;
   stop-secondary)
     compose stop agent-lab-secondary
+    ;;
+  stop-tertiary)
+    compose stop agent-lab-tertiary
     ;;
   *)
     cat <<'USAGE'
@@ -107,6 +120,10 @@ Usage: ./agent-lab.sh <command>
   start-secondary   Start the second identity against the same Docker daemon
   logs-secondary    Follow structured logs for the second identity
   stop-secondary    Stop only the second identity
+  enroll-tertiary   Enroll an optional third target identity
+  start-tertiary    Start the third identity against the same Docker daemon
+  logs-tertiary     Follow structured logs for the third identity
+  stop-tertiary     Stop only the third identity
   once    Send one heartbeat and exit
   status  Show the lab daemon, gateway bootstrap, port bridge and Agent identities
   logs    Follow structured Agent logs

@@ -3221,8 +3221,23 @@ veřejného HTTPS ověřování. Po expiraci třicetisekundového fencing lease 
 job převzal jako `attempt 2`, idempotentně dokončil generaci a původní operaci
 uzavřel `succeeded`. Dev route skončila desired/observed `6/6 active`, zůstal
 jediný dev workload a dev i test health vracely `200` na původních hostnamech.
-Tím je živě ověřena obnova queued i leased části dvoukrokové operace; samostatně
-ještě zbývá souběh dvou workspace rout nad společnou gateway.
+Tím je živě ověřena obnova queued i leased části dvoukrokové operace. Souběh
+dvou workspace rout nad společnou gateway ověřuje následující scénář.
+
+**Stav implementace — souběh a tenant isolation.** Dva workspace-owned
+managed targety `team-alpha` a `it000` používají samostatné Agent credentials,
+ale v acceptance labu stejný izolovaný DinD daemon a stejnou Caddy gateway.
+Jejich deploymenty byly nejprve oba durable queued a obě Agent identity 0.8.1
+se spustily současně. Oba workload i route kroky skončily `succeeded` na
+`attempt 1`. Každý environment dostal jiný databázově rezervovaný hostname a
+vlastní project-scoped network; síť obsahovala pouze příslušný workload a
+označenou gateway, nikdy workload druhého workspace. Dev routy obou workspaceů
+i existující test route odpověděly přes HTTPS `/health` stavem `200`.
+
+Acceptance Compose profil může provozovat třetí samostatnou credential volume,
+aby během tohoto scénáře zůstal spravovatelný i dřívější direct-port target.
+Tato pomůcka nemění produktový trust model: každý proces je stále 1:1 s jedním
+Targetem a centrálně sdílený multi-workspace credential se nezavádí.
 
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
