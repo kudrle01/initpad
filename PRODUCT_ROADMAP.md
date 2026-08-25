@@ -382,8 +382,15 @@ nezobrazí falešný empty/error stav.
    gate; Agent obnovil předchozí Caddy upstream, projekt ponechal poslední
    revizi `running` a po návratu edge byly dev i test znovu dostupné bez
    zásahu do routy. Selhaná platformní publikace se nyní zobrazuje jako
-   `deploy failed`, nikoli nepravdivé `awaiting CI`. Zbývá restart Agenta/API
-   během operace a souběžný managed-gateway deploy dvou workspaceů.
+   `deploy failed`, nikoli nepravdivé `awaiting CI`.
+
+   ✅ **8f-c3 — restart API a Agenta během operace.** Deployment zůstal po
+   restartu API durable ve frontě. Po připojení Agenta dokončil workload krok;
+   Agent byl následně ukončen až nad leased route jobem ve fázi veřejného
+   ověřování. Po expiraci fencing lease převzal tentýž job jako `attempt 2` a
+   idempotentně jej dokončil. Zůstala jediná dev instance, stejný hostname,
+   desired/observed generace `6/6 active` a dev/test HTTPS health `200`.
+   Zbývá souběžný managed-gateway deploy dvou workspaceů.
 
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
@@ -430,9 +437,9 @@ je navazující podkrok 8; 8a–8f-c2 nyní pokrývají explicitní režim, trva
 rezervaci hostname, bezpečný preflight, generačně chráněný Caddy adapter,
 síťovou vazbu, dvoukrokový lifecycle i health-gated veřejné přepnutí se
 zachováním poslední potvrzené revize, restart gateway, idempotentní redeploy a
-rollback při výpadku veřejné TLS cesty. Zbývá restart Agenta/API během operace
-a souběžný managed-gateway deploy dvou workspaceů; současný náhodný port je
-záměrně pouze `direct-port` local/lab cesta.
+rollback při výpadku veřejné TLS cesty i převzetí leased jobu po restartu
+Agenta/API. Zbývá souběžný managed-gateway deploy dvou workspaceů; současný
+náhodný port je záměrně pouze `direct-port` local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -536,9 +543,10 @@ současně namespaces `team-alpha` a `it000`; Stop/Remove druhého workloadu
 nezměnil první. Stabilní HTTPS routing podle ADR-073 má hotový lokální
 DNS/TLS profil i automatizovaný dual-revision cutover Agenta 0.8. Živě prošel
 restart gateway se zachováním routy, idempotentní zdravý redeploy a rollback
-při nedostupné veřejné TLS cestě; poslední část gate 8f-c tvoří restart
-Agenta/API během operace a souběh dvou managed workspaceů. Tyto dílčí výsledky
-nenahrazují závěrečný školní E2E scénář s
+při nedostupné veřejné TLS cestě i restart API a Agenta během rozpracované
+operace s fencing převzetím druhého pokusu. Poslední část gate 8f-c tvoří
+souběh dvou managed workspaceů. Tyto dílčí výsledky nenahrazují závěrečný
+školní E2E scénář s
 nezávislým týmem.
 
 ## Vyhodnocení pro diplomovou práci

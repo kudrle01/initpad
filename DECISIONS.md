@@ -3213,6 +3213,17 @@ vrátily na `200` bez nové routy nebo CI runu. Deployment audit zůstal failed 
 commit projection jej odděleně ukazuje jako `deploy failed`; ověřený SCM build
 zůstává dostupný pro retry.
 
+**Stav implementace — restart control plane a Agenta.** Redeploy byl nejdřív
+uložen s offline Agentem a API se restartovalo nad queued workload krokem.
+Operace po restartu zůstala `running` a první připojení Agenta ji nezduplikovalo.
+V druhém průchodu byl Agent ukončen až nad leased `gateway-route` jobem ve fázi
+veřejného HTTPS ověřování. Po expiraci třicetisekundového fencing lease stejný
+job převzal jako `attempt 2`, idempotentně dokončil generaci a původní operaci
+uzavřel `succeeded`. Dev route skončila desired/observed `6/6 active`, zůstal
+jediný dev workload a dev i test health vracely `200` na původních hostnamech.
+Tím je živě ověřena obnova queued i leased části dvoukrokové operace; samostatně
+ještě zbývá souběh dvou workspace rout nad společnou gateway.
+
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem
 nakonfiguruje DNS. Dva workspace současně nasadí stejně pojmenovaný projekt;
