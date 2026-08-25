@@ -373,9 +373,17 @@ nezobrazí falešný empty/error stav.
    aktualizaci přenese pouze omezenou HTTP-only konfiguraci a znovu připojí jen
    sítě s ownership a `managed-gateway` labely. Runtime upgrade i následný
    restart zachovaly stejnou route, workload i URL; po krátkém startovním `502`
-   se veřejný `/health` bez zásahu vrátil na `200`. Zbývá zdravý redeploy,
-   rollback při nedostupné veřejné cestě, restart Agenta/API a souběh dvou
-   workspaceů.
+   se veřejný `/health` bez zásahu vrátil na `200`.
+
+   ✅ **8f-c2 — zdravý redeploy a výpadek veřejné cesty.** Opakovaný deploy
+   stejného ověřeného artifactu skončil idempotentně na jediném workloadu,
+   ponechal stejné dev/test hostname a obě HTTPS `/health` odpovědi `200`.
+   Následné vypnutí pouze vnější TLS edge vyvolalo timeout veřejného health
+   gate; Agent obnovil předchozí Caddy upstream, projekt ponechal poslední
+   revizi `running` a po návratu edge byly dev i test znovu dostupné bez
+   zásahu do routy. Selhaná platformní publikace se nyní zobrazuje jako
+   `deploy failed`, nikoli nepravdivé `awaiting CI`. Zbývá restart Agenta/API
+   během operace a souběžný managed-gateway deploy dvou workspaceů.
 
 Podkrok 1 je bezpečnostní backendový základ a samostatně nemá smysluplný
 browser test. Podkrok 2 prošel živě: owner vytvořil Docker target bez inbound
@@ -418,11 +426,13 @@ automaticky odstraní. Dvou-workspace gate následně použil dvě target identi
 se dvěma credential volumes nad jedním fyzickým DinD daemonem. Současné
 workloady měly namespaces `team-alpha` a `it000`; Stop a Remove druhého ponechal
 první kontejner, síť i URL beze změny a dostupné s HTTP `200`. Produkční gateway
-je navazující podkrok 8; 8a–8f-b nyní pokrývají explicitní režim, trvalou
+je navazující podkrok 8; 8a–8f-c2 nyní pokrývají explicitní režim, trvalou
 rezervaci hostname, bezpečný preflight, generačně chráněný Caddy adapter,
 síťovou vazbu, dvoukrokový lifecycle i health-gated veřejné přepnutí se
-zachováním poslední potvrzené revize. Zbývá živý výpadkový a izolační gate
-8f-c; současný náhodný port je záměrně pouze `direct-port` local/lab cesta.
+zachováním poslední potvrzené revize, restart gateway, idempotentní redeploy a
+rollback při výpadku veřejné TLS cesty. Zbývá restart Agenta/API během operace
+a souběžný managed-gateway deploy dvou workspaceů; současný náhodný port je
+záměrně pouze `direct-port` local/lab cesta.
 
 ### Fáze 6 — jednotný delivery tok
 
@@ -524,9 +534,11 @@ zásahu do běžící aplikace a nový enrollment obnovil Agent jako generaci 2.
 Dvě oddělené target identity nad jedním izolovaným daemonem poté nasadily
 současně namespaces `team-alpha` a `it000`; Stop/Remove druhého workloadu
 nezměnil první. Stabilní HTTPS routing podle ADR-073 má hotový lokální
-DNS/TLS profil i automatizovaný dual-revision cutover Agenta 0.8; živý
-rollback, výpadek gateway a souběh dvou workspaceů je poslední gate 8f-c. Tyto
-dílčí výsledky nenahrazují závěrečný školní E2E scénář s
+DNS/TLS profil i automatizovaný dual-revision cutover Agenta 0.8. Živě prošel
+restart gateway se zachováním routy, idempotentní zdravý redeploy a rollback
+při nedostupné veřejné TLS cestě; poslední část gate 8f-c tvoří restart
+Agenta/API během operace a souběh dvou managed workspaceů. Tyto dílčí výsledky
+nenahrazují závěrečný školní E2E scénář s
 nezávislým týmem.
 
 ## Vyhodnocení pro diplomovou práci

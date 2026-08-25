@@ -103,6 +103,18 @@ export function withDeploymentState(
   let status: StageStatus | null = null;
   if (environment) {
     if (environment.status === 'deploying') status = 'running';
+    // A managed-gateway rollback can keep the previous revision online while
+    // the attempted publication itself fails. `deploymentRequired` remains
+    // true so the user can retry, but that must not be projected as an
+    // indeterminate pending/CI state: the latest platform audit record is
+    // terminal and failed.
+    else if (
+      environment.deploymentRequired &&
+      operation?.buildArtifact &&
+      operation.status === 'failed'
+    ) {
+      status = 'failed';
+    }
     else if (environment.deploymentRequired) {
       status = environment.status === 'failed' ? 'failed' : 'pending';
     } else if (environment.status === 'running' || environment.status === 'stopped') {

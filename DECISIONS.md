@@ -2165,6 +2165,14 @@ viditelné úspěšné publikování; to je přesnější než přepsat historii
 uživatel chtěl znovu spustit celý CI run, musí jít o samostatnou explicitní
 akci, nikoli implicitní vedlejší efekt redeploye hotového artifactu.
 
+Agregovaný badge tuto hranici také zachovává. Nehotové SCM stages používají
+`awaiting CI` nebo `CI running`, zatímco samostatná platformní stage používá
+`deploy required`, `deploying` nebo `deploy failed`. Selhaný redeploy poslední
+ověřený SCM výsledek nikdy nevrátí do stavu čekání na runner. Pokud rollback
+ponechá předchozí revizi online a poslední `DeploymentOperation` je terminal
+`failed`, stage `publish` je failed i tehdy, když Environment zůstává pravdivě
+`running` s `deploymentRequired=true` pro bezpečný retry.
+
 **Uživatelské testování.** Otevřít commit, jehož GitHub `deploy` job selhal,
 ale následný `Deploy verified build` na ESO uspěl. Commit musí ukázat failed
 `deploy` s odkazem na přesně tento failed job a vedle něj success `publish`.
@@ -3194,6 +3202,16 @@ sítě označené současně `com.initpad.managed=true` a routing mode
 `managed-gateway`. Aktualizace runtime i obyčejný restart Caddy byly ověřeny
 nad běžícím projektem: route, workload network a stabilní HTTPS URL zůstaly
 zachované a po startu se health vrátil na HTTP 200.
+
+**Stav implementace — živý redeploy a rollback veřejné cesty.** Opakovaný
+deploy stejného ověřeného artifactu byl idempotentní: dev/test hostname se
+nezměnil, v targetu zůstal jediný workload pro každé prostředí a obě veřejné
+HTTPS health URL vracely `200`. Při řízeném vypnutí pouze vnější TLS edge
+veřejný health gate po dvaceti pokusech selhal. Agent obnovil původní upstream,
+control plane zachoval poslední revizi `running` a po návratu edge se obě URL
+vrátily na `200` bez nové routy nebo CI runu. Deployment audit zůstal failed a
+commit projection jej odděleně ukazuje jako `deploy failed`; ověřený SCM build
+zůstává dostupný pro retry.
 
 **Uživatelské testování.** Administrátor založí Agent target v režimu
 `managed-gateway`, nastaví explicitní `https://apps.example.cz` a předem

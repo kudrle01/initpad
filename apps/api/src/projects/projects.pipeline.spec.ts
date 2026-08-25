@@ -164,6 +164,32 @@ describe('ProjectsService deployment pipeline projection', () => {
     ).toBe('running');
   });
 
+  it('shows a failed publication when rollback kept the previous revision online', async () => {
+    const rolledBack = make(
+      {
+        name: 'dev', status: 'running', version: sha, deploymentRequired: true,
+        statusReason: 'Deployment failed; the previous revision remains online',
+        artifact: { id: 'artifact-1', provider: 'github-actions', digest: 'd'.repeat(64), runId: '77' },
+      },
+      {
+        version: sha, status: 'failed', createdAt: new Date(),
+        buildArtifact: { providerRunId: '77' },
+      },
+      [
+        { context: 'build', status: 'success', targetUrl: 'https://x/build' },
+        { context: 'test', status: 'success', targetUrl: 'https://x/test' },
+        { context: 'docker build', status: 'success', targetUrl: 'https://x/docker' },
+        { context: 'deploy', status: 'success', targetUrl: 'https://x/deploy' },
+      ],
+    );
+
+    expect(
+      (await rolledBack.service.getCommits(project.id))[0]?.pipeline.find(
+        (stage) => stage.name === 'publish',
+      )?.status,
+    ).toBe('failed');
+  });
+
   it('returns provider-neutral deployment activity with its artifact run binding', async () => {
     const startedAt = new Date('2026-07-20T20:11:33.000Z');
     const finishedAt = new Date('2026-07-20T20:11:37.000Z');

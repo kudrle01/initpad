@@ -6,12 +6,36 @@ import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { cn, scmLink } from '@/lib/utils';
 import type { Commit } from '@/types';
 
-// Aggregated commit state derived from its pipeline stages.
-function commitStatus(pipeline: { status: string }[]): { label: string; dot: string } {
-  if (pipeline.some((s) => s.status === 'failed')) return { label: 'failed', dot: 'failed' };
-  if (pipeline.length > 0 && pipeline.every((s) => s.status === 'success'))
+// SCM verification and InitPad publication are separate state machines. Keep
+// their labels explicit so a failed/pending redeploy is never described as CI
+// waiting and a verified commit does not appear to require another runner.
+function commitStatus(
+  pipeline: { status: string; source?: 'scm' | 'platform' }[],
+): { label: string; dot: string } {
+  const scmStages = pipeline.filter((stage) => stage.source !== 'platform');
+  const platformStage = pipeline.find((stage) => stage.source === 'platform');
+
+  if (scmStages.some((stage) => stage.status === 'failed')) {
+    return { label: 'CI failed', dot: 'failed' };
+  }
+  if (scmStages.some((stage) => stage.status === 'running')) {
+    return { label: 'CI running', dot: 'running' };
+  }
+  if (scmStages.some((stage) => stage.status === 'pending')) {
+    return { label: 'awaiting CI', dot: 'pending' };
+  }
+  if (platformStage?.status === 'failed') {
+    return { label: 'deploy failed', dot: 'failed' };
+  }
+  if (platformStage?.status === 'running') {
+    return { label: 'deploying', dot: 'running' };
+  }
+  if (platformStage?.status === 'pending') {
+    return { label: 'deploy required', dot: 'pending' };
+  }
+  if (scmStages.length > 0 && scmStages.every((stage) => stage.status === 'success')) {
     return { label: 'passed', dot: 'success' };
-  if (pipeline.some((s) => s.status === 'running')) return { label: 'running', dot: 'running' };
+  }
   return { label: 'awaiting CI', dot: 'pending' };
 }
 
@@ -83,7 +107,7 @@ export function CommitList({
                 <span className="shrink-0 font-mono text-xs text-muted-foreground">{c.sha.slice(0, 7)}</span>
               )}
               <span className="flex-1 truncate text-sm">{c.message}</span>
-              <span className="sm:hidden" title={ci.label} aria-label={`CI ${ci.label}`}>
+              <span className="sm:hidden" title={ci.label} aria-label={ci.label}>
                 <StatusDot status={ci.dot} kind="ci" />
               </span>
               <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{c.author}</span>
@@ -139,6 +163,22 @@ export function CommitList({
                     return (
                       <p className="mt-2.5 text-xs text-muted-foreground">
                         Waiting for the {scmProvider === 'github' ? 'GitHub Actions' : 'Gitea Actions'} runner to pick up this commit.
+                      </p>
+                    );
+                  }
+                  if (ci.label === 'deploy required') {
+                    return (
+                      <p className="mt-2.5 text-xs text-muted-foreground">
+                        CI has verified this commit. Deploy the existing build through InitPad;
+                        another runner is not required.
+                      </p>
+                    );
+                  }
+                  if (ci.label === 'deploy failed') {
+                    return (
+                      <p className="mt-2.5 text-xs text-muted-foreground">
+                        CI has verified this commit, but its latest InitPad deployment failed.
+                        The verified build remains available for retry.
                       </p>
                     );
                   }
