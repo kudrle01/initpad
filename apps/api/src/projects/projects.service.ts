@@ -1660,7 +1660,12 @@ export class ProjectsService implements OnModuleInit {
     const repository = repositoryRef(row);
     await this.prisma.deploymentOperation.updateMany({
       where: { environment: { projectId: row.id }, finishedAt: null },
-      data: { status: 'cancelled', message: 'Project deletion requested', finishedAt: new Date() },
+      data: {
+        status: 'cancelled',
+        phase: 'cancelled',
+        message: 'Project deletion requested',
+        finishedAt: new Date(),
+      },
     });
     const slug = deploymentSlug(repository);
     for (const env of row.environments) {

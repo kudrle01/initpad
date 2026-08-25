@@ -2,6 +2,15 @@ import { ExternalLink } from 'lucide-react';
 import { StatusDot } from '@/components/atoms/StatusDot';
 import type { DeploymentOperation } from '@/types';
 
+function phaseClass(phase: string): string {
+  if (phase === 'succeeded') return 'bg-success/10 text-success';
+  if (phase === 'failed' || phase === 'unhealthy') {
+    return 'bg-destructive/10 text-destructive';
+  }
+  if (phase === 'cancelled') return 'bg-secondary text-muted-foreground';
+  return 'bg-warning/10 text-warning';
+}
+
 function elapsed(operation: DeploymentOperation): string {
   const start = new Date(operation.startedAt).getTime();
   const end = operation.finishedAt ? new Date(operation.finishedAt).getTime() : Date.now();
@@ -58,11 +67,13 @@ export function DeploymentActivity({ operations, repoUrl, scmProvider, limit }: 
         <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
           {visibleOperations.map((operation, index) => {
             const visualStatus =
-              operation.status === 'succeeded'
+              operation.phase === 'succeeded'
                 ? 'success'
-                : operation.status === 'cancelled'
+                : operation.phase === 'failed' || operation.phase === 'unhealthy'
+                  ? 'failed'
+                  : operation.phase === 'cancelled' || operation.phase === 'queued'
                   ? 'pending'
-                  : operation.status;
+                  : 'running';
             return (
               <div
                 key={operation.id}
@@ -76,6 +87,11 @@ export function DeploymentActivity({ operations, repoUrl, scmProvider, limit }: 
                       <span className="font-medium uppercase">{operation.environment}</span>
                       <span>{operation.kind.replaceAll('-', ' ')}</span>
                       <span className="text-muted-foreground">→ {operation.target}</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${phaseClass(operation.phase)}`}
+                      >
+                        {operation.phase}
+                      </span>
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {operation.message ?? (operation.status === 'succeeded' ? 'Deployment completed' : operation.status)}

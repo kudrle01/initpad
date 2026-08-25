@@ -85,10 +85,12 @@ function make(overrides: {
       deploymentRequired: false,
     })),
   };
-  const operations = overrides.operations ?? {
+  const operations = {
+    advancePhase: jest.fn(async () => undefined),
     reportProgress: jest.fn(),
     cancelled: jest.fn(async () => false),
     complete: jest.fn(async () => undefined),
+    ...overrides.operations,
   };
   const artifacts = overrides.artifacts ?? {
     ensureImageAvailable: jest.fn(async () => true),
@@ -137,6 +139,19 @@ describe('ProjectDeploymentExecutor', () => {
     await expect(
       ctx.executor.execute('project-1', 'dev', VERSION, true, 'operation-1'),
     ).resolves.toBe(true);
+
+    expect((ctx.operations as any).advancePhase).toHaveBeenNthCalledWith(
+      1,
+      'operation-1',
+      'assigned',
+      'Assigned to control plane',
+    );
+    expect((ctx.operations as any).advancePhase).toHaveBeenNthCalledWith(
+      2,
+      'operation-1',
+      'running',
+      'Preparing deployment',
+    );
 
     expect((ctx.deployment as any).deploy).toHaveBeenCalledWith(
       'docker',

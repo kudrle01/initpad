@@ -525,6 +525,9 @@ model DeploymentOperation {
   buildArtifactId  String?
   kind             String // deploy | promote | redeploy | start
   status           String // running | succeeded | failed | cancelled
+  // Provider-neutral, durable delivery state. `status` remains the coarse
+  // active/terminal lock while phase explains where an active operation is.
+  phase            String         @default("queued") // queued | assigned | running | verifying | succeeded | failed | unhealthy | cancelled
   version          String?
   message          String?
   // Immutable deployment destination snapshot. Environment.target may change

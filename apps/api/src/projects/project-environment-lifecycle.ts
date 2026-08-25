@@ -101,6 +101,7 @@ export class ProjectEnvironmentLifecycle {
             where: { id: operation.id },
             data: {
               status: 'cancelled',
+              phase: 'cancelled',
               message: 'Cancellation requested by user',
               finishedAt: new Date(),
             },
@@ -131,6 +132,7 @@ export class ProjectEnvironmentLifecycle {
             where: { id: operation.id },
             data: {
               status: 'cancelled',
+              phase: 'cancelled',
               message: 'Cancellation requested by user',
               finishedAt: now,
             },
@@ -172,7 +174,11 @@ export class ProjectEnvironmentLifecycle {
       await this.prisma.$transaction([
         this.prisma.deploymentOperation.update({
           where: { id: environment.activeOperationId },
-          data: { status: 'cancelled', message: 'Cancellation requested by user' },
+          data: {
+            status: 'cancelled',
+            phase: 'cancelled',
+            message: 'Cancellation requested by user',
+          },
         }),
         this.prisma.environment.update({
           where: { id: environment.id },

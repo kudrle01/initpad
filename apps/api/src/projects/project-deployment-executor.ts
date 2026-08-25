@@ -35,6 +35,11 @@ export class ProjectDeploymentExecutor {
     useRegistry: boolean,
     operationId: string,
   ): Promise<boolean> {
+    await this.operations.advancePhase(
+      operationId,
+      'assigned',
+      'Assigned to control plane',
+    );
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
     const repository = repositoryRef(project);
     const template = this.templates.get(project.templateId);
@@ -104,6 +109,7 @@ export class ProjectDeploymentExecutor {
         ...(allocationId ? { allocationId } : {}),
       },
     });
+    await this.operations.advancePhase(operationId, 'running', 'Preparing deployment');
 
     if (agentBacked) {
       if (!useRegistry || !testedImageRef || !operation?.buildArtifactId) {

@@ -170,6 +170,7 @@ export interface DeploymentOperationSummary {
   target: string;
   kind: string;
   status: string;
+  phase: string;
   version: string | null;
   message: string | null;
   startedAt: string;

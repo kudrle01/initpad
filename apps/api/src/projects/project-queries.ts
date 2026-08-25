@@ -124,6 +124,7 @@ export class ProjectQueries {
       target: operation.targetName,
       kind: operation.kind,
       status: operation.status,
+      phase: operation.phase,
       version: operation.version,
       message: operation.message,
       startedAt: operation.startedAt.toISOString(),

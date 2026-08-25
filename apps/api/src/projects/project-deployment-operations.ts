@@ -1,8 +1,12 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  activeDeploymentPhasePredecessors,
+  ActiveDeploymentPhase,
+  DeploymentOperationResult,
+  terminalDeploymentPhase,
+} from '../domain/deployment-operation-state';
 import { EnvName } from '../domain/types';
 import { PrismaService } from '../prisma/prisma.service';
-
-export type DeploymentOperationResult = 'succeeded' | 'failed' | 'cancelled';
 
 /**
  * Owns the durable operation lock shared by CI, deployment and environment
@@ -30,6 +34,7 @@ export class ProjectDeploymentOperations {
             where: { id: operation.id },
             data: {
               status: cancelled ? 'cancelled' : 'failed',
+              phase: cancelled ? 'cancelled' : 'failed',
               message: cancelled
                 ? 'Cancellation completed during API restart'
                 : 'Interrupted by API restart',
@@ -79,6 +84,7 @@ export class ProjectDeploymentOperations {
         environmentId: environment.id,
         kind,
         status: 'running',
+        phase: 'queued',
         version,
         buildArtifactId: buildArtifactId ?? null,
         message: kind === 'ci-retry' ? 'Waiting for GitHub Actions build' : 'Preparing deployment',
@@ -108,6 +114,7 @@ export class ProjectDeploymentOperations {
       where: { id: operation.id },
       data: {
         status: 'cancelled',
+        phase: 'cancelled',
         message: 'Another operation is already active',
         finishedAt: new Date(),
       },
@@ -123,12 +130,33 @@ export class ProjectDeploymentOperations {
     await this.prisma.deploymentOperation
       .update({
         where: { id: operationId },
-        data: { status, message, finishedAt: new Date() },
+        data: {
+          status,
+          phase: terminalDeploymentPhase(status, message),
+          message,
+          finishedAt: new Date(),
+        },
       })
       .catch(() => undefined);
     await this.prisma.environment.updateMany({
       where: { activeOperationId: operationId },
       data: { activeOperationId: null },
+    });
+  }
+
+  async advancePhase(
+    operationId: string,
+    phase: ActiveDeploymentPhase,
+    message?: string,
+  ): Promise<void> {
+    await this.prisma.deploymentOperation.updateMany({
+      where: {
+        id: operationId,
+        status: 'running',
+        finishedAt: null,
+        phase: { in: activeDeploymentPhasePredecessors(phase) },
+      },
+      data: { phase, ...(message ? { message } : {}) },
     });
   }
 
@@ -146,11 +174,13 @@ export class ProjectDeploymentOperations {
     envName: EnvName,
     message: string,
   ): void {
+    const phase = /verifying deployment/i.test(message) ? 'verifying' : 'running';
     void Promise.all([
       this.prisma.deploymentOperation.updateMany({
         where: { id: operationId, status: 'running' },
         data: { message },
       }),
+      this.advancePhase(operationId, phase),
       this.prisma.environment.updateMany({
         where: { projectId, name: envName, activeOperationId: operationId },
         data: { statusReason: message },

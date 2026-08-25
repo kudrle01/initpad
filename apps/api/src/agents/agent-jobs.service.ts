@@ -11,6 +11,11 @@ import type { Readable } from 'stream';
 import { ARTIFACT_STORE, type ArtifactStore } from '../artifacts/artifact-store';
 import { decryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
+import {
+  activeDeploymentPhasePredecessors,
+  ActiveDeploymentPhase,
+  terminalDeploymentPhase,
+} from '../domain/deployment-operation-state';
 import { PrismaService } from '../prisma/prisma.service';
 import { GatewayRoutesService } from '../targets/gateway-routes.service';
 import { AgentsService, type AuthenticatedAgent } from './agents.service';
@@ -411,6 +416,11 @@ export class AgentJobsService implements OnModuleInit {
       });
       if (claimed.count !== 1) continue;
       const row = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: candidate.id } });
+      await this.advanceDeploymentPhase(
+        row.deploymentOperationId,
+        'assigned',
+        'Claimed by Agent',
+      );
       let delivery: AgentJobDelivery | undefined;
       if (['deploy', 'rollback'].includes(row.kind)) {
         try {
@@ -513,12 +523,12 @@ export class AgentJobsService implements OnModuleInit {
       ) {
         throw this.lostLease();
       }
-      await this.mirrorDeploymentProgress(jobId, dto.message);
+      await this.mirrorDeploymentProgress(jobId, dto.stage, dto.message);
       await this.mirrorGatewayPreflightProgress(jobId);
       return this.summary(current as JobRow);
     }
     const current = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } });
-    await this.mirrorDeploymentProgress(jobId, dto.message);
+    await this.mirrorDeploymentProgress(jobId, dto.stage, dto.message);
     await this.mirrorGatewayPreflightProgress(jobId);
     return this.summary(current as JobRow);
   }
@@ -575,22 +585,57 @@ export class AgentJobsService implements OnModuleInit {
     return this.summary(await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } }) as JobRow);
   }
 
-  private async mirrorDeploymentProgress(jobId: string, message: string): Promise<void> {
+  private async mirrorDeploymentProgress(
+    jobId: string,
+    stage: string,
+    message: string,
+  ): Promise<void> {
     const job = await this.prisma.agentJob.findUnique({
       where: { id: jobId },
       select: { deploymentOperationId: true },
     });
     if (!job?.deploymentOperationId) return;
+    const phase: ActiveDeploymentPhase = stage === 'verifying'
+      ? 'verifying'
+      : stage === 'working'
+        ? 'running'
+        : 'assigned';
     await this.prisma.$transaction([
       this.prisma.deploymentOperation.updateMany({
         where: { id: job.deploymentOperationId, status: 'running' },
         data: { message },
+      }),
+      this.prisma.deploymentOperation.updateMany({
+        where: {
+          id: job.deploymentOperationId,
+          status: 'running',
+          finishedAt: null,
+          phase: { in: activeDeploymentPhasePredecessors(phase) },
+        },
+        data: { phase },
       }),
       this.prisma.environment.updateMany({
         where: { activeOperationId: job.deploymentOperationId },
         data: { statusReason: message },
       }),
     ]);
+  }
+
+  private async advanceDeploymentPhase(
+    operationId: string | null,
+    phase: ActiveDeploymentPhase,
+    message: string,
+  ): Promise<void> {
+    if (!operationId) return;
+    await this.prisma.deploymentOperation.updateMany({
+      where: {
+        id: operationId,
+        status: 'running',
+        finishedAt: null,
+        phase: { in: activeDeploymentPhasePredecessors(phase) },
+      },
+      data: { phase, message },
+    });
   }
 
   private async mirrorGatewayPreflightProgress(jobId: string): Promise<void> {
@@ -755,7 +800,12 @@ export class AgentJobsService implements OnModuleInit {
         }),
         this.prisma.deploymentOperation.updateMany({
           where: { id: operation.id, status: 'running', finishedAt: null },
-          data: { status: 'succeeded', message: job.message, finishedAt: now },
+          data: {
+            status: 'succeeded',
+            phase: 'succeeded',
+            message: job.message,
+            finishedAt: now,
+          },
         }),
       ]);
       return;
@@ -803,7 +853,12 @@ export class AgentJobsService implements OnModuleInit {
       }),
       this.prisma.deploymentOperation.updateMany({
         where: { id: operation.id, status: 'running', finishedAt: null },
-        data: { status: 'failed', message: reason, finishedAt: now },
+        data: {
+          status: 'failed',
+          phase: terminalDeploymentPhase('failed', reason),
+          message: reason,
+          finishedAt: now,
+        },
       }),
     ]);
   }
@@ -1009,7 +1064,12 @@ export class AgentJobsService implements OnModuleInit {
       }),
       this.prisma.deploymentOperation.updateMany({
         where: { id: operation.id, status: 'running', finishedAt: null },
-        data: { status: 'succeeded', message: job.message, finishedAt: new Date() },
+        data: {
+          status: 'succeeded',
+          phase: 'succeeded',
+          message: job.message,
+          finishedAt: new Date(),
+        },
       }),
     ]);
   }
@@ -1021,7 +1081,7 @@ export class AgentJobsService implements OnModuleInit {
     await this.prisma.$transaction([
       this.prisma.deploymentOperation.updateMany({
         where: { id: operation.id, status: 'running', finishedAt: null },
-        data: { message },
+        data: { phase: 'verifying', message },
       }),
       this.prisma.environment.updateMany({
         where: { id: operation.environmentId, activeOperationId: operation.id },
@@ -1113,7 +1173,12 @@ export class AgentJobsService implements OnModuleInit {
       }),
       this.prisma.deploymentOperation.updateMany({
         where: { id: operation.id, status: 'running', finishedAt: null },
-        data: { status: 'failed', message: preservedMessage, finishedAt: now },
+        data: {
+          status: 'failed',
+          phase: terminalDeploymentPhase('failed', preservedMessage),
+          message: preservedMessage,
+          finishedAt: now,
+        },
       }),
     ]);
   }
@@ -1133,7 +1198,7 @@ export class AgentJobsService implements OnModuleInit {
       }),
       this.prisma.deploymentOperation.updateMany({
         where: { id: operation.id, status: 'running', finishedAt: null },
-        data: { status: 'succeeded', message, finishedAt: new Date() },
+        data: { status: 'succeeded', phase: 'succeeded', message, finishedAt: new Date() },
       }),
     ]);
   }

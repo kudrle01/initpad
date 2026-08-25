@@ -3253,3 +3253,33 @@ Reference:
 [Caddy — automatic HTTPS](https://caddyserver.com/docs/automatic-https),
 [Caddy — wildcard certificate pattern](https://caddyserver.com/docs/caddyfile/patterns),
 [Caddy — reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
+
+---
+
+## ADR-074 — Detailní deployment phase je oddělená od transakčního statusu
+
+**Kontext.** `AgentJob` už rozlišoval frontu, claim, práci a ověření, ale
+uživatelská `DeploymentOperation` byla po celou dobu pouze `running`. Historie
+proto neuměla po restartu vysvětlit, zda se čeká na CI/Agenta, publikuje nebo
+ověřuje health. Použít přímo `AgentJob.progressStage` by navíc svázalo
+projektové API s Agent providerem a u dvoukrokové gateway operace by nebylo
+jasné, který job reprezentuje celý deployment.
+
+**Možnosti.** (a) Odvozovat fázi jen z aktuální zprávy. (b) Rozšířit existující
+`status` o všechny mezistavy. (c) Zachovat `status` jako hrubý zámek a přidat
+samostatnou trvalou `phase`.
+
+**Rozhodnutí.** (c). `status=running` nadále označuje aktivní operaci a chrání
+stávající souběžnost/recovery. `phase` je provider-neutral stavový automat
+`queued → assigned → running → verifying → succeeded`; terminální větve jsou
+`failed`, `unhealthy` a `cancelled`. Aktivní fáze se smějí posouvat jen dopředu.
+Direct providery je publikují přes `ProjectDeploymentOperations`, Agent cesta
+jen po úspěšném fenced claimu, progressu nebo terminálním reconcile. Health
+failure je samostatná `unhealthy` fáze, i když hrubý status zůstává `failed`.
+
+**Důsledky.** API a UI mohou zobrazit pravdivou fázi bez provider-specific
+podmínek. Restart neztratí poslední pozorovaný krok a pozdní zpráva staršího
+kroku nemůže vrátit operaci z `verifying` do `running`. Stávající kód, který
+testuje `status=running`, se nemusí přepisovat a nadále brání souběhu. Cena je
+nutnost při každé terminální změně zapsat obě pole; tuto invariantnost kryjí
+doménové a Agent regresní testy.

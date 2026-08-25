@@ -196,7 +196,7 @@ describe('ProjectsService deployment pipeline projection', () => {
     const prisma = {
       deploymentOperation: {
         findMany: jest.fn(async () => [{
-          id: 'operation-1', kind: 'redeploy', status: 'succeeded', version: sha,
+          id: 'operation-1', kind: 'redeploy', status: 'succeeded', phase: 'succeeded', version: sha,
           message: 'Verifying deployment', startedAt, finishedAt,
           targetName: 'ESO school server', environment: { name: 'dev' },
           buildArtifact: { providerRunId: '77' },
@@ -211,7 +211,7 @@ describe('ProjectsService deployment pipeline projection', () => {
 
     await expect(service.deploymentHistory(project.id, 7)).resolves.toEqual([{
       id: 'operation-1', environment: 'dev', target: 'ESO school server',
-      kind: 'redeploy', status: 'succeeded', version: sha,
+      kind: 'redeploy', status: 'succeeded', phase: 'succeeded', version: sha,
       message: 'Verifying deployment',
       startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(),
       artifactRunId: '77',

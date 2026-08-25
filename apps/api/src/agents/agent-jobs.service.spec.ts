@@ -559,6 +559,15 @@ describe('AgentJobsService durable lease protocol', () => {
     expect((result.job?.payload as Record<string, unknown>)).not.toHaveProperty('envVars');
     expect(JSON.stringify(prisma.agentJob.updateMany.mock.calls)).not.toContain('db-secret');
     expect(artifactStore.head).toHaveBeenCalledWith('artifacts/ws/project/artifact/a.tar');
+    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'operation-1',
+        status: 'running',
+        finishedAt: null,
+        phase: { in: ['queued'] },
+      },
+      data: { phase: 'assigned', message: 'Claimed by Agent' },
+    });
   });
 
   it('fails a claimed deploy instead of delivering config changed after queueing', async () => {
@@ -694,6 +703,15 @@ describe('AgentJobsService durable lease protocol', () => {
     expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
       where: { id: 'operation-1', status: 'running' },
       data: { message: 'Loading verified image' },
+    });
+    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'operation-1',
+        status: 'running',
+        finishedAt: null,
+        phase: { in: ['queued', 'assigned'] },
+      },
+      data: { phase: 'running' },
     });
     expect(prisma.environment.updateMany).toHaveBeenCalledWith({
       where: { activeOperationId: 'operation-1' },

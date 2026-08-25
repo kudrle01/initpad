@@ -54,7 +54,7 @@ export class ProjectArtifactIngestion {
               version: artifact.commitSha,
               status: 'running',
             },
-            data: { status: 'failed', message: reason, finishedAt: new Date() },
+            data: { status: 'failed', phase: 'failed', message: reason, finishedAt: new Date() },
           }),
           this.prisma.environment.updateMany({
             where: {
@@ -86,6 +86,7 @@ export class ProjectArtifactIngestion {
         where: { id: operationId },
         data: { buildArtifactId: accepted.id },
       });
+      await this.operations.advancePhase(operationId, 'assigned', 'Build artifact accepted');
     } catch (error) {
       const message = `Could not record build artifact: ${(error as Error).message}`;
       await this.prisma.environment
@@ -116,6 +117,11 @@ export class ProjectArtifactIngestion {
       data: { status: 'ingesting', error: null },
     });
     if (claimed.count !== 1) return;
+    await this.operations.advancePhase(
+      operationId,
+      'running',
+      'Downloading and verifying tested image',
+    );
     await this.prisma.environment.updateMany({
       where: { projectId, name: 'dev', activeOperationId: operationId },
       data: { statusReason: 'Downloading and verifying tested image' },

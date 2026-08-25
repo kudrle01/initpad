@@ -452,7 +452,7 @@ navíc potvrdil oddělené hostname, sítě a workload identity nad společnou
 gateway. Fáze 5 je tím uživatelsky i provozně uzavřená; současný náhodný port
 zůstává záměrně pouze `direct-port` local/lab cestou.
 
-### Fáze 6 — jednotný delivery tok
+### Fáze 6 — jednotný delivery tok — probíhá
 
 - CI produkuje OCI image nebo archiv a jeho digest/SHA.
 - Automatický deploy do dev, ruční promotion do testu a approval do prod.
@@ -477,6 +477,23 @@ zůstává záměrně pouze `direct-port` local/lab cestou.
   vyžádaného rollbacku.
 - Agent vrací omezený tail aplikačních logů, exit code a výsledek health checku;
   platformní timeline zůstává oddělená od aplikačních logů.
+
+**Stav implementace.** Build-once artifact, automatické dev nasazení, ruční
+promotion stejného artifactu, bezpečný SFTP/PHP layout a retryovatelný cleanup
+plán byly dodány v předchozích milnících a zůstávají součástí Fáze 6.
+
+- ✅ **6a — trvalý stavový automat deploymentu.** `DeploymentOperation` má
+  vedle hrubého transakčního `status` samostatnou provider-neutral `phase`:
+  `queued → assigned → running → verifying → succeeded`. Agent ji
+  posouvá jen přes fenced claim/progress/terminal výsledek, přímé providery přes
+  stejné doménové rozhraní. Selhání health checku je `unhealthy`, ostatní
+  chyby `failed`; cancellation je `cancelled`. Fáze je monotónní a po restartu
+  zůstává v databázi. API i deployment history ukazují skutečnou fázi.
+- TODO **6b — ruční rollback.** Vybrat předchozí úspěšný artifact pro
+  stejné prostředí, zobrazit dopad a publikovat jej bez nového buildu.
+- TODO **6c — diagnostika workloadu.** Napojit allocation-scoped Agent `logs`
+  job na projekt, uložit pouze omezený tail, exit code a health výsledek a v UI
+  jej držet odděleně od platformní deployment timeline.
 
 ### Fáze 7 — organizační provoz a školní vyhodnocení
 

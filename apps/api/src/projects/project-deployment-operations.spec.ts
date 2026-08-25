@@ -26,6 +26,7 @@ describe('ProjectDeploymentOperations', () => {
     expect(prisma.deploymentOperation.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         environmentId: 'env-1',
+        phase: 'queued',
         targetIdSnapshot: 'target-1',
         targetName: 'ESO',
         providerSnapshot: 'sftp',
@@ -158,6 +159,44 @@ describe('ProjectDeploymentOperations', () => {
     });
   });
 
+  it('records health-check failures as an unhealthy terminal phase', async () => {
+    const operationUpdate = jest.fn(async () => undefined);
+    const operations = new ProjectDeploymentOperations({
+      deploymentOperation: { update: operationUpdate },
+      environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
+    } as never);
+
+    await operations.complete(
+      'operation-1',
+      'failed',
+      'Health check at /health did not return 2xx',
+    );
+
+    expect(operationUpdate).toHaveBeenCalledWith({
+      where: { id: 'operation-1' },
+      data: expect.objectContaining({ status: 'failed', phase: 'unhealthy' }),
+    });
+  });
+
+  it('advances active phases only from an earlier phase', async () => {
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    const operations = new ProjectDeploymentOperations({
+      deploymentOperation: { updateMany },
+    } as never);
+
+    await operations.advancePhase('operation-1', 'verifying', 'Verifying deployment');
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'operation-1',
+        status: 'running',
+        finishedAt: null,
+        phase: { in: ['queued', 'assigned', 'running'] },
+      },
+      data: { phase: 'verifying', message: 'Verifying deployment' },
+    });
+  });
+
   it.each([
     [null, true],
     [{ status: 'cancelled' }, true],
@@ -185,6 +224,15 @@ describe('ProjectDeploymentOperations', () => {
     expect(operationUpdate).toHaveBeenCalledWith({
       where: { id: 'operation-1', status: 'running' },
       data: { message: 'Uploading 5/10 files' },
+    });
+    expect(operationUpdate).toHaveBeenCalledWith({
+      where: {
+        id: 'operation-1',
+        status: 'running',
+        finishedAt: null,
+        phase: { in: ['queued', 'assigned'] },
+      },
+      data: { phase: 'running' },
     });
     expect(environmentUpdate).toHaveBeenCalledWith({
       where: {
