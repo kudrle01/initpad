@@ -94,6 +94,10 @@ function setup() {
     environment: {
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
+    workloadDiagnostic: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
     target: {
       findMany: jest.fn(async (): Promise<Array<{ gatewayPreflightJobId: string | null }>> => []),
       update: jest.fn(async () => ({ id: 'target-1' })),
@@ -468,6 +472,57 @@ describe('AgentJobsService durable lease protocol', () => {
     expect(update.data).not.toHaveProperty('observedState');
     expect(update.data).not.toHaveProperty('observedRevision');
     expect(update.data).not.toHaveProperty('observedGeneration');
+  });
+
+  it('atomically projects only bounded output from a successful logs job', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'logs',
+      status: 'succeeded',
+      message: 'Workload is stopped and not-running',
+      resultCode: 'ok',
+      result: { state: 'stopped', revision: 'a'.repeat(40) },
+      leaseExpiresAt: null,
+      finishedAt: NOW,
+    });
+    prisma.agentJob.findUnique
+      .mockResolvedValueOnce({ kind: 'logs' })
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce({ ...terminal, deploymentOperation: null });
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: terminal.message,
+      resultCode: 'ok',
+      result: { state: 'stopped', revision: 'a'.repeat(40) },
+      diagnostic: {
+        exitCode: 137,
+        health: 'not-running',
+        logs: 'last 200 lines only',
+      },
+    });
+
+    expect(prisma.workloadDiagnostic.updateMany).toHaveBeenCalledWith({
+      where: { currentJobId: 'job-1', status: { in: ['queued', 'running'] } },
+      data: {
+        status: 'succeeded',
+        runtimeState: 'stopped',
+        revision: 'a'.repeat(40),
+        exitCode: 137,
+        health: 'not-running',
+        logs: 'last 200 lines only',
+        message: terminal.message,
+        observedAt: NOW,
+        finishedAt: NOW,
+      },
+    });
+    const jobUpdate = (prisma.agentJob.updateMany.mock.calls as unknown as Array<[
+      { data: Record<string, unknown> },
+    ]>)[0][0];
+    expect(JSON.stringify(jobUpdate.data)).not.toContain('last 200 lines only');
   });
 
   it('atomically claims only a compatible job on the authenticated target', async () => {

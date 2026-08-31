@@ -58,6 +58,7 @@ export function useProjectDetail() {
   const [rollbackPreview, setRollbackPreview] = useState<RollbackPreview | null>(null);
   const [targetEnv, setTargetEnv] = useState<EnvName | null>(null);
   const [configEnv, setConfigEnv] = useState<EnvName | null>(null);
+  const [diagnosticEnv, setDiagnosticEnv] = useState<EnvName | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const pollInFlight = useRef(false);
 
@@ -373,6 +374,7 @@ export function useProjectDetail() {
     rollbackPreview,
     targetEnv,
     configEnv,
+    diagnosticEnv,
     targets,
     readOnly,
     canMaintain,
@@ -380,6 +382,7 @@ export function useProjectDetail() {
     setRollbackPreview,
     setTargetEnv,
     setConfigEnv,
+    setDiagnosticEnv,
     retryLoad,
     toggleCommit: (sha: string) =>
       setOpenSha((current) => (current === sha ? null : sha)),

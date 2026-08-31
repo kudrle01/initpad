@@ -247,6 +247,69 @@ test('runs only the explicit Docker lifecycle acceptance interface', async () =>
   assert.deepEqual(completions, ['succeeded:ok']);
 });
 
+test('collects project diagnostics through the fixed bounded Agent interface', async () => {
+  const payload = {
+    allocationId: '123e4567-e89b-42d3-a456-426614174000',
+    namespace: 'team-alpha',
+    projectSlug: 'alice-api',
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    containerPort: 3000,
+    healthPath: '/health',
+    routingMode: 'managed-gateway' as const,
+  };
+  const completions: Array<Record<string, unknown>> = [];
+  const progress: number[] = [];
+  const client: AgentJobClient = {
+    renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+    progress: async (_jobId, input) => {
+      progress.push(input.percent);
+      return summary({ sequence: input.sequence, percent: input.percent });
+    },
+    complete: async (_jobId, input) => {
+      completions.push(input as unknown as Record<string, unknown>);
+      return summary({ status: input.status, percent: 100 });
+    },
+  };
+
+  await executeClaimedJob(
+    claim({ kind: 'logs', payload }),
+    new AbortController().signal,
+    client,
+    {
+      lifecycle: {
+        acceptance: async () => undefined,
+        diagnostics: async () => ({
+          state: 'stopped',
+          revision: payload.revision,
+          workloadSlot: 'a1b2c3d4e5f6',
+          exitCode: 137,
+          health: 'not-running',
+          logs: 'bounded application tail',
+        }),
+      },
+    },
+  );
+
+  assert.deepEqual(progress, [20, 90]);
+  assert.deepEqual(completions, [{
+    leaseToken: LEASE,
+    status: 'succeeded',
+    message: 'Workload is stopped and not-running',
+    resultCode: 'ok',
+    result: {
+      state: 'stopped',
+      revision: payload.revision,
+      workloadSlot: 'a1b2c3d4e5f6',
+    },
+    diagnostic: {
+      exitCode: 137,
+      health: 'not-running',
+      logs: 'bounded application tail',
+    },
+  }]);
+});
+
 test('downloads and runs a project artifact without exposing config to progress or completion', async () => {
   const bytes = Buffer.from('archive');
   const digest = 'd'.repeat(64);

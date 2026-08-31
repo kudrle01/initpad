@@ -51,6 +51,9 @@ function setup(role: string | null = 'owner') {
     agentJob: {
       updateMany: jest.fn(async () => ({ count: 0 })),
     },
+    workloadDiagnostic: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
     $transaction: jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
   };
   const workspaces = {
@@ -296,6 +299,16 @@ describe('AgentsService trust bootstrap', () => {
       where: { targetId: 'target-1', status: { in: ['blocked', 'queued', 'leased'] } },
       data: expect.objectContaining({
         status: 'cancelled',
+        finishedAt: NOW,
+      }),
+    });
+    expect(prisma.workloadDiagnostic.updateMany).toHaveBeenCalledWith({
+      where: {
+        status: { in: ['queued', 'running'] },
+        currentJob: { is: { targetId: 'target-1' } },
+      },
+      data: expect.objectContaining({
+        status: 'failed',
         finishedAt: NOW,
       }),
     });

@@ -311,3 +311,31 @@ export interface RollbackPreview {
   sourceDeployedAt: string;
   stateToken: string;
 }
+
+export type WorkloadDiagnosticStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed';
+export type WorkloadHealth = 'healthy' | 'unhealthy' | 'not-running' | 'missing';
+
+// One explicitly requested, bounded snapshot of an Agent-managed workload.
+// It is deliberately separate from deployment history: refreshing diagnostics
+// never deploys, restarts or mutates the application.
+export interface WorkloadDiagnostic {
+  environment: EnvName;
+  target: string;
+  status: WorkloadDiagnosticStatus;
+  agentOnline: boolean;
+  progressPercent: number;
+  message: string | null;
+  runtimeState: 'running' | 'stopped' | 'missing' | null;
+  revision: string | null;
+  exitCode: number | null;
+  health: WorkloadHealth | null;
+  logs: string;
+  requestedAt: string | null;
+  observedAt: string | null;
+  finishedAt: string | null;
+}

@@ -12,7 +12,7 @@ import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
 
 const ENROLLMENT_TTL_MS = 15 * 60_000;
-const ONLINE_AFTER_HEARTBEAT_MS = 90_000;
+export const ONLINE_AFTER_HEARTBEAT_MS = 90_000;
 const ENROLLMENT_PREFIX = 'initpad_enroll_';
 const CREDENTIAL_PREFIX = 'initpad_agent_';
 const HEARTBEAT_INTERVAL_SECONDS = 30;
@@ -56,6 +56,13 @@ export interface AgentSummary {
   enrolledAt: string | null;
   lastSeenAt: string | null;
   disabledAt: string | null;
+}
+
+export function agentHeartbeatIsFresh(
+  lastSeenAt: Date | null | undefined,
+  now = Date.now(),
+): boolean {
+  return !!lastSeenAt && now - lastSeenAt.getTime() <= ONLINE_AFTER_HEARTBEAT_MS;
 }
 
 /**
@@ -212,6 +219,17 @@ export class AgentsService {
           credentialHash: null,
         },
       }),
+      this.prisma.workloadDiagnostic.updateMany({
+        where: {
+          status: { in: ['queued', 'running'] },
+          currentJob: { is: { targetId } },
+        },
+        data: {
+          status: 'failed',
+          message: 'Agent disabled by a workspace administrator',
+          finishedAt: now,
+        },
+      }),
       this.prisma.agentJob.updateMany({
         where: { targetId, status: { in: ['blocked', 'queued', 'leased'] } },
         data: {
@@ -269,8 +287,7 @@ export class AgentsService {
   }
 
   private summary(agent: AgentRow): AgentSummary {
-    const heartbeatFresh =
-      !!agent.lastSeenAt && Date.now() - agent.lastSeenAt.getTime() <= ONLINE_AFTER_HEARTBEAT_MS;
+    const heartbeatFresh = agentHeartbeatIsFresh(agent.lastSeenAt);
     return {
       id: agent.id,
       targetId: agent.targetId,

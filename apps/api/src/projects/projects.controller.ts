@@ -16,6 +16,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { SetTargetDto } from './dto/set-target.dto';
 import { DeleteProjectDto } from './dto/delete-project.dto';
 import { RollbackProjectDto } from './dto/rollback-project.dto';
+import { RequestWorkloadDiagnosticDto } from './dto/request-workload-diagnostic.dto';
 import { EnvName } from '../domain/types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -123,6 +124,30 @@ export class ProjectsController {
   ) {
     await this.projects.assertAccess(id, userId, 'maintain');
     return this.projects.rollback(id, env, dto.candidateOperationId, dto.stateToken);
+  }
+
+  // Application logs may contain sensitive business data even after secrets
+  // are masked elsewhere. Viewer/read access is therefore intentionally not
+  // sufficient for either reading or refreshing workload diagnostics.
+  @Get(':id/diagnostics/:env')
+  async workloadDiagnostic(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertAccess(id, userId, 'write');
+    return this.projects.workloadDiagnostic(id, env);
+  }
+
+  @Post(':id/diagnostics/:env')
+  async requestWorkloadDiagnostic(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @Body() dto: RequestWorkloadDiagnosticDto,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertAccess(id, userId, 'write');
+    return this.projects.requestWorkloadDiagnostic(id, env, userId, dto.requestId);
   }
 
   @Post(':id/run-again')

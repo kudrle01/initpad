@@ -11,6 +11,7 @@ import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog'
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
 import { RollbackDialog } from '@/components/organisms/RollbackDialog';
 import { EnvVarsDialog } from '@/components/organisms/EnvVarsDialog';
+import { WorkloadDiagnosticsDialog } from '@/components/organisms/WorkloadDiagnosticsDialog';
 import { ProjectHistory } from '@/components/organisms/ProjectHistory';
 import { ProjectRepository } from '@/components/organisms/ProjectRepository';
 import { ProjectSummary } from '@/components/organisms/ProjectSummary';
@@ -33,6 +34,7 @@ export default function ProjectDetail() {
     rollbackPreview,
     targetEnv,
     configEnv,
+    diagnosticEnv,
     targets,
     readOnly,
     canMaintain,
@@ -40,6 +42,7 @@ export default function ProjectDetail() {
     setRollbackPreview,
     setTargetEnv,
     setConfigEnv,
+    setDiagnosticEnv,
     retryLoad,
     toggleCommit,
     promote,
@@ -111,6 +114,7 @@ export default function ProjectDetail() {
           onStart={startEnvironment}
           onRemoveEnv={removeEnvironment}
           onConfigureTarget={setTargetEnv}
+          onDiagnostics={setDiagnosticEnv}
           readOnly={readOnly}
           canRollback={canMaintain}
         />
@@ -175,6 +179,14 @@ export default function ProjectDetail() {
         env={configEnv}
         canManage={canMaintain}
         onOpenChange={(o) => !o && setConfigEnv(null)}
+      />
+
+      <WorkloadDiagnosticsDialog
+        projectId={project.id}
+        environment={project.environments.find(
+          (environment) => environment.name === diagnosticEnv,
+        ) ?? null}
+        onOpenChange={(open) => !open && setDiagnosticEnv(null)}
       />
     </div>
   );

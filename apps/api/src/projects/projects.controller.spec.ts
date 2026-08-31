@@ -61,4 +61,31 @@ describe('ProjectsController project deletion', () => {
       dto.stateToken,
     );
   });
+
+  it('requires write access before exposing or refreshing sensitive workload logs', async () => {
+    const projects = {
+      assertAccess: jest.fn().mockResolvedValue(undefined),
+      workloadDiagnostic: jest.fn().mockResolvedValue(null),
+      requestWorkloadDiagnostic: jest.fn().mockResolvedValue({ status: 'queued' }),
+    };
+    const controller = new ProjectsController(projects as never);
+    const requestId = '123e4567-e89b-42d3-a456-426614174000';
+
+    await expect(controller.workloadDiagnostic('project-1', 'dev', 'user-1'))
+      .resolves.toBeNull();
+    await expect(controller.requestWorkloadDiagnostic(
+      'project-1',
+      'dev',
+      { requestId },
+      'user-1',
+    )).resolves.toEqual({ status: 'queued' });
+    expect(projects.assertAccess).toHaveBeenNthCalledWith(1, 'project-1', 'user-1', 'write');
+    expect(projects.assertAccess).toHaveBeenNthCalledWith(2, 'project-1', 'user-1', 'write');
+    expect(projects.requestWorkloadDiagnostic).toHaveBeenCalledWith(
+      'project-1',
+      'dev',
+      'user-1',
+      requestId,
+    );
+  });
 });

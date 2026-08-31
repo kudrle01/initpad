@@ -499,9 +499,18 @@ plán byly dodány v předchozích milnících a zůstávají součástí Fáze 
   nespouští CI ani nový build a stále musí projít health gate cílového
   provideru. Retention chrání aktuální a jeden nejnovější odlišný artifact pro každé prostředí;
   starší objekty mohou podle nastavené lhůty bezpečně expirovat.
-- TODO **6c — diagnostika workloadu.** Napojit allocation-scoped Agent `logs`
-  job na projekt, uložit pouze omezený tail, exit code a health výsledek a v UI
-  jej držet odděleně od platformní deployment timeline.
+- ✅ **6c — diagnostika workloadu (implementace).** Projektový detail nabízí
+  `Workload diagnostics` pouze pro nasazené workspace Docker/Agent targety.
+  Agent 0.9 dostává allocation-scoped allow-listed `logs` job bez commandu,
+  image instrukce, configu nebo secretů a vrací stav kontejneru, exit code,
+  health výsledek a nejvýše posledních 200 řádků / 32 KiB výstupu. Control plane
+  drží právě jeden přepisovaný snapshot pro každé prostředí; logy nevkládá do
+  `AgentJob` ani deployment historie. Refresh je fenced, selhání zachová poslední
+  úspěšné pozorování, offline Agent je výrazně vidět a request bezpečně čeká ve
+  frontě. Aplikační logy smějí číst jen role s project-write oprávněním. Při
+  deaktivaci Agenta nebo mazání projektu se čekající diagnostika zruší. Zbývá
+  živý acceptance s Agentem 0.9; do jeho potvrzení zůstává Fáze 6 označena jako
+  probíhající.
 
 ### Fáze 7 — organizační provoz a školní vyhodnocení
 
@@ -547,7 +556,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 5 — import repa/SCM | částečně | Self-hosted: stávající Gitea projekty beze změny URL projdou detail/import/deploy/delete. SaaS se živou App: New project nabídne osobní/organizační instalace aktivního workspace, založí soukromé GitHub repo a import vypíše repa všech grantů; cizí workspace installation ID musí vrátit 400. Import bez Dockerfile nebo nového artifact callbacku je zablokovaný. Ověřit commity/check runs, artifact ID/digest, dev deploy stejného SHA, retry a delete/detach. Durable object-store ingestion je hotová; plný cloudový workload provoz čeká na Agenta. |
 | 6 — target allocations | ano | Podle `deploy/SELF_HOSTED_ACCEPTANCE.md` dva workspace nasadí na jeden Docker target; sítě/jména se nepřekrývají, role/cizí data jsou izolované a disabled/quota policy je vynucená. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, **Test protocol** a **Test Docker**; lifecycle ověří digest-pinned image, health, bounded logy, replace/rollback/stop/start a úplný cleanup. Potom vytvořit skutečný projekt s Agent targetem pro dev, ověřit stejný artifact digest, Deploy → Stop → Start → Remove a prázdný cleanup. Po vypnutí Agent přejde offline a nový deploy zůstane ve frontě; po reconnectu se dokončí právě jednou. Druhý workspace nesmí vidět ani měnit první workload. Produkční routing navíc ověří dvě současně alokované stabilní HTTPS URL, zachování URL při redeploy/rename/stop-start, rollback při výpadku gateway a nepřístupný gateway admin endpoint i Docker API. |
-| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. |
+| 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. U Agent targetu otevřít `Workload diagnostics`: běžící workload vrátí current revision, health a bounded output; po Stop vrátí `stopped`, exit code a `not running`. Viewer akci ani logy neuvidí, offline request zůstane viditelně queued a dokončí se po reconnectu. Deployment timeline se přitom nezmění. |
 | 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
 
 ## Aktuální stav ověření

@@ -16,6 +16,7 @@ import {
   Square,
   Trash2,
   AlertTriangle,
+  Activity,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -62,6 +63,7 @@ interface Props {
   onStart: (env: EnvName) => void;
   onRemoveEnv: (env: EnvName) => void;
   onConfigureTarget: (env: EnvName) => void;
+  onDiagnostics: (env: EnvName) => void;
   readOnly?: boolean;
   canRollback?: boolean;
 }
@@ -79,6 +81,7 @@ export function EnvironmentPipeline({
   onStart,
   onRemoveEnv,
   onConfigureTarget,
+  onDiagnostics,
   readOnly = false,
   canRollback = false,
 }: Props) {
@@ -136,6 +139,11 @@ export function EnvironmentPipeline({
           !targetNeedsDeploy;
         // Any environment can be pointed at a different target.
         const canTarget = true;
+        const canInspectWorkload =
+          hasDeployment &&
+          env.provider === 'docker' &&
+          env.target?.kind === 'docker' &&
+          env.target.scope === 'user';
 
         return (
           <Fragment key={env.name}>
@@ -209,6 +217,11 @@ export function EnvironmentPipeline({
                         {hasDeployment && canRollback && !targetNeedsDeploy && (
                           <DropdownMenuItem onSelect={() => onRollback(env.name)}>
                             <Undo2 className="h-4 w-4" /> Roll back to previous version…
+                          </DropdownMenuItem>
+                        )}
+                        {canInspectWorkload && (
+                          <DropdownMenuItem onSelect={() => onDiagnostics(env.name)}>
+                            <Activity className="h-4 w-4" /> Workload diagnostics…
                           </DropdownMenuItem>
                         )}
                         {hasDeployment &&

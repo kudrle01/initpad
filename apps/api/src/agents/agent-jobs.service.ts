@@ -416,6 +416,12 @@ export class AgentJobsService implements OnModuleInit {
       });
       if (claimed.count !== 1) continue;
       const row = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: candidate.id } });
+      if (row.kind === 'logs') {
+        await this.prisma.workloadDiagnostic.updateMany({
+          where: { currentJobId: row.id, status: { in: ['queued', 'running'] } },
+          data: { status: 'running', message: 'Claimed by Agent' },
+        });
+      }
       await this.advanceDeploymentPhase(
         row.deploymentOperationId,
         'assigned',
@@ -525,12 +531,21 @@ export class AgentJobsService implements OnModuleInit {
       }
       await this.mirrorDeploymentProgress(jobId, dto.stage, dto.message);
       await this.mirrorGatewayPreflightProgress(jobId);
+      await this.mirrorWorkloadDiagnosticProgress(jobId, dto.message);
       return this.summary(current as JobRow);
     }
     const current = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } });
     await this.mirrorDeploymentProgress(jobId, dto.stage, dto.message);
     await this.mirrorGatewayPreflightProgress(jobId);
+    await this.mirrorWorkloadDiagnosticProgress(jobId, dto.message);
     return this.summary(current as JobRow);
+  }
+
+  private async mirrorWorkloadDiagnosticProgress(jobId: string, message: string): Promise<void> {
+    await this.prisma.workloadDiagnostic.updateMany({
+      where: { currentJobId: jobId, status: { in: ['queued', 'running'] } },
+      data: { status: 'running', message },
+    });
   }
 
   async complete(
@@ -541,25 +556,71 @@ export class AgentJobsService implements OnModuleInit {
     const agent = await this.agents.authenticateCredential(authorization);
     const now = new Date();
     const leaseTokenHash = hashToken(dto.leaseToken);
-    const completed = await this.prisma.agentJob.updateMany({
-      where: this.activeLeaseWhere(agent, jobId, dto.leaseToken, now),
-      data: {
-        status: dto.status,
-        progressPercent: dto.status === 'succeeded' ? 100 : undefined,
-        progressStage: dto.status,
-        message: dto.message,
-        resultCode: dto.resultCode ?? null,
-        result: dto.result
-          ? {
-              state: dto.result.state,
-              ...(dto.result.revision ? { revision: dto.result.revision } : {}),
-              ...(dto.result.hostPort ? { hostPort: dto.result.hostPort } : {}),
-              ...(dto.result.workloadSlot ? { workloadSlot: dto.result.workloadSlot } : {}),
-            }
-          : Prisma.DbNull,
-        leaseExpiresAt: null,
-        finishedAt: now,
-      },
+    const binding = await this.prisma.agentJob.findUnique({
+      where: { id: jobId },
+      select: { kind: true },
+    });
+    const diagnosticJob = binding?.kind === 'logs';
+    if (dto.diagnostic && !diagnosticJob) {
+      throw new BadRequestException('Diagnostic output is accepted only for a logs job');
+    }
+    if (diagnosticJob && dto.status === 'succeeded' && (!dto.result || !dto.diagnostic)) {
+      throw new BadRequestException('A successful logs job requires runtime and diagnostic output');
+    }
+    if (diagnosticJob && dto.result && dto.diagnostic) {
+      const validHealth =
+        (dto.result.state === 'running'
+          && ['healthy', 'unhealthy'].includes(dto.diagnostic.health))
+        || (dto.result.state === 'stopped' && dto.diagnostic.health === 'not-running')
+        || (dto.result.state === 'missing' && dto.diagnostic.health === 'missing');
+      if (!validHealth) {
+        throw new BadRequestException('Diagnostic health does not match the workload state');
+      }
+    }
+    const completed = await this.prisma.$transaction(async (transaction) => {
+      const result = await transaction.agentJob.updateMany({
+        where: this.activeLeaseWhere(agent, jobId, dto.leaseToken, now),
+        data: {
+          status: dto.status,
+          progressPercent: dto.status === 'succeeded' ? 100 : undefined,
+          progressStage: dto.status,
+          message: dto.message,
+          resultCode: dto.resultCode ?? null,
+          result: dto.result
+            ? {
+                state: dto.result.state,
+                ...(dto.result.revision ? { revision: dto.result.revision } : {}),
+                ...(dto.result.hostPort ? { hostPort: dto.result.hostPort } : {}),
+                ...(dto.result.workloadSlot ? { workloadSlot: dto.result.workloadSlot } : {}),
+              }
+            : Prisma.DbNull,
+          leaseExpiresAt: null,
+          finishedAt: now,
+        },
+      });
+      if (result.count === 1 && diagnosticJob) {
+        await transaction.workloadDiagnostic.updateMany({
+          where: { currentJobId: jobId, status: { in: ['queued', 'running'] } },
+          data: dto.status === 'succeeded' && dto.result && dto.diagnostic
+            ? {
+                status: 'succeeded',
+                runtimeState: dto.result.state,
+                revision: dto.result.revision ?? null,
+                exitCode: dto.diagnostic.exitCode ?? null,
+                health: dto.diagnostic.health,
+                logs: dto.diagnostic.logs,
+                message: dto.message,
+                observedAt: now,
+                finishedAt: now,
+              }
+            : {
+                status: 'failed',
+                message: dto.message,
+                finishedAt: now,
+              },
+        });
+      }
+      return result;
     });
     if (completed.count !== 1) {
       const current = await this.prisma.agentJob.findUnique({ where: { id: jobId } });
@@ -569,8 +630,9 @@ export class AgentJobsService implements OnModuleInit {
         current.leaseTokenHash !== leaseTokenHash ||
         current.status !== dto.status ||
         current.message !== dto.message ||
-        current.resultCode !== (dto.resultCode ?? null)
-        || !this.sameResult(current.result, dto.result)
+        current.resultCode !== (dto.resultCode ?? null) ||
+        !this.sameResult(current.result, dto.result) ||
+        (diagnosticJob && !(await this.sameDiagnostic(jobId, dto)))
       ) {
         throw this.lostLease();
       }
@@ -1245,6 +1307,20 @@ export class AgentJobsService implements OnModuleInit {
       && parsed.hostPort === received.hostPort
       && parsed.workloadSlot === received.workloadSlot
     );
+  }
+
+  private async sameDiagnostic(jobId: string, dto: AgentJobCompleteDto): Promise<boolean> {
+    const stored = await this.prisma.workloadDiagnostic.findUnique({
+      where: { currentJobId: jobId },
+    });
+    if (!stored || stored.status !== dto.status || stored.message !== dto.message) return false;
+    if (dto.status === 'failed') return true;
+    if (!dto.result || !dto.diagnostic) return false;
+    return stored.runtimeState === dto.result.state
+      && stored.revision === (dto.result.revision ?? null)
+      && stored.exitCode === (dto.diagnostic.exitCode ?? null)
+      && stored.health === dto.diagnostic.health
+      && stored.logs === dto.diagnostic.logs;
   }
 
   private activeAgentFilter(agent: AuthenticatedAgent) {

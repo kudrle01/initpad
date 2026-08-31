@@ -3327,3 +3327,65 @@ boundary modelu jako běžný deploy. Garantován je jeden okamžitý návratov�
 nikoli neomezený artifact archiv. Pokud se změnil target nebo stav prostředí,
 uživatel musí dopad znovu zkontrolovat; nedostupný artifact se v nabídce
 nezobrazí.
+
+---
+
+## ADR-076 — Diagnostika workloadu je omezený přepisovaný snapshot, ne logovací služba
+
+**Kontext.** Deployment timeline popisuje činnost platformy, nikoli výstup
+aplikace uvnitř kontejneru. Při chybě workloadu potřebuje maintainer zjistit,
+zda kontejner běží, jak skončil, zda odpovídá health endpoint a co vypsal.
+Přímý Docker přístup, obecný vzdálený shell nebo neomezený centralizovaný archiv
+logů by ale rozšířily trust boundary Agenta, retention povinnosti i riziko úniku
+aplikačních dat daleko za potřeby platformy a diplomkového MVP.
+
+**Možnosti.** (a) Vložit logy do trvalé historie `AgentJob` nebo
+`DeploymentOperation`. (b) Streamovat je z Agenta do browseru. (c) Na explicitní
+žádost pořídit malý strukturovaný snapshot a pro každé prostředí držet jen
+nejnovější výsledek.
+
+**Rozhodnutí.** (c).
+
+1. Diagnostiku lze vyžádat jen pro nasazené prostředí na workspace-owned
+   Docker targetu s aktivní allocation, immutable revision, bez souběžné
+   deployment operace a Agentem 0.9+. Číst i spouštět ji smí project-write role;
+   viewer nestačí, protože aplikace může vypsat citlivá business data.
+2. Durable `AgentJob(kind=logs)` obsahuje přesný allow-list target/allocation,
+   namespace, projekt, environment, očekávanou revision, container port,
+   relativní health path a routing mode. Neobsahuje image delivery, environment
+   config, secret, command, entrypoint, bind mount ani libovolný Docker dotaz.
+3. Agent ověří target/allocation/project/environment ownership labels a smí
+   pouze inspectovat přesně vlastněný workload, provést jeho pevný HTTP health
+   probe a načíst Docker `stdout/stderr` s `tail=200` a limitem 32 KiB. Výsledek
+   obsahuje jen `running|stopped|missing`, skutečnou revision, volitelný exit
+   code, `healthy|unhealthy|not-running|missing` a omezený text.
+4. `AgentJob.result` uchovává pouze strukturovaný runtime stav; aplikační výstup
+   se do jobu ani deployment timeline nezapisuje. Samostatný
+   `WorkloadDiagnostic`, nejvýše jeden na environment, se aktualizuje ve stejné
+   transakci jako fenced completion. `currentJobId` zabrání pozdnímu výsledku
+   přepsat novější refresh. Neúspěšný refresh ponechá předchozí logs a
+   `observedAt`, ale viditelně nese nový failed stav a zprávu.
+5. Nový refresh přepisuje předchozí uložený výstup, takže control plane neroste
+   s počtem požadavků. Offline stav se počítá z heartbeat a job bezpečně čeká ve
+   frontě. Deaktivace Agenta i smazání projektu zruší aktivní diagnostickou
+   lease; Agent po reconnectu nemůže číst identitu smazaného a znovu vytvořeného
+   projektu.
+6. UI je samostatný dialog `Workload diagnostics`. Zobrazuje čas snapshotu,
+   stav/health/exit code/revision, bounded output, průběh fronty a výrazný offline
+   stav. Otevření ani refresh nemění workload a nevytváří deployment operaci.
+
+**Důsledky.** InitPad poskytne dost informací pro první diagnostiku kontejneru,
+ale nestává se log aggregation produktem. Historie deploymentů zůstává malá a
+auditně pravdivá; uživatel si nesplete běh Agenta s výstupem aplikace. Cena je,
+že starší výstup po dalším úspěšném refreshi není dostupný a dlouhodobé
+vyhledávání/retenci musí řešit externí observability systém. Role s přístupem
+k logům musí nadále počítat s tím, že aplikace může omylem zalogovat secret.
+
+**Testování.** API testy kryjí project-write autorizaci, odmítnutí starého
+Agenta a souběžného refreshu, bezpečný payload, zachování posledního snapshotu,
+atomickou projekci výsledku a zrušení jobu při mazání. Agent testy kryjí
+odmítnutí shell-like polí, allocation ownership, running/stopped/missing,
+health, exit code a limit Docker log requestu. Web build a browser kontrola
+ověřují samostatnou akci, prázdný/error/offline stav a dialog bez horizontálního
+overflow na šířce 390 px. Živý acceptance navíc provede Run → Stop → Refresh →
+offline queue → reconnect a ověří, že deployment timeline zůstala beze změny.

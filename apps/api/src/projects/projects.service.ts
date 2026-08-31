@@ -16,6 +16,7 @@ import {
   Project,
   ProviderKind,
   RollbackPreview,
+  WorkloadDiagnostic,
 } from '../domain/types';
 import { templateRuntime } from '../domain/capability';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -63,6 +64,7 @@ import {
 } from './project-deployment-identity';
 import { mapWithConcurrency } from '../common/concurrency';
 import { ProjectRollback } from './project-rollback';
+import { ProjectWorkloadDiagnostics } from './project-workload-diagnostics';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
@@ -88,6 +90,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly artifactIngestion: ProjectArtifactIngestion;
   private readonly ci: ProjectCiOrchestrator;
   private readonly rollbackFlow: ProjectRollback;
+  private readonly workloadDiagnostics: ProjectWorkloadDiagnostics;
   private readonly repositoryReconcileAfter = new Map<string, number>();
   private readonly repositoryReconcileInFlight = new Set<string>();
   private readonly projectScmReconcileAfter = new Map<string, number>();
@@ -166,6 +169,7 @@ export class ProjectsService implements OnModuleInit {
           buildArtifactId,
         ),
     );
+    this.workloadDiagnostics = new ProjectWorkloadDiagnostics(prisma, templates);
   }
 
   async onModuleInit(): Promise<void> {
@@ -1393,6 +1397,19 @@ export class ProjectsService implements OnModuleInit {
     return this.get(id);
   }
 
+  workloadDiagnostic(id: string, envName: EnvName): Promise<WorkloadDiagnostic | null> {
+    return this.workloadDiagnostics.get(id, envName);
+  }
+
+  requestWorkloadDiagnostic(
+    id: string,
+    envName: EnvName,
+    userId: string,
+    requestId: string,
+  ): Promise<WorkloadDiagnostic> {
+    return this.workloadDiagnostics.request(id, envName, userId, requestId);
+  }
+
   // Deploys dev after a cancelled/failed attempt or an explicit removal. If
   // CI already produced an immutable artifact, reuse only that deployment.
   // Otherwise queue CI for the latest main commit through a temporary tag and
@@ -1696,6 +1713,7 @@ export class ProjectsService implements OnModuleInit {
         finishedAt: new Date(),
       },
     });
+    await this.cancelProjectDiagnosticJobs(row.id);
     const slug = deploymentSlug(repository);
     for (const env of row.environments) {
       let teardownWarning: string | null = null;
@@ -1781,6 +1799,49 @@ export class ProjectsService implements OnModuleInit {
     }
     rmSync(row.repoPath, { recursive: true, force: true });
     await this.prisma.project.delete({ where: { id: row.id } });
+  }
+
+  /**
+   * A diagnostic lease is target-scoped and therefore does not cascade with a
+   * Project row. Fence it explicitly before teardown so an offline Agent
+   * cannot reconnect later and inspect a deleted/re-created project identity.
+   */
+  private async cancelProjectDiagnosticJobs(projectId: string): Promise<void> {
+    const diagnostics = await this.prisma.workloadDiagnostic.findMany({
+      where: { environment: { projectId } },
+      select: { currentJobId: true },
+    });
+    const jobIds = diagnostics.flatMap(({ currentJobId }) => currentJobId ? [currentJobId] : []);
+    if (jobIds.length === 0) return;
+    const now = new Date();
+    await this.prisma.agentJob.updateMany({
+      where: {
+        id: { in: jobIds },
+        status: { in: ['queued', 'leased'] },
+      },
+      data: {
+        status: 'cancelled',
+        progressStage: 'cancelled',
+        message: 'Project deletion requested',
+        resultCode: 'project_deleted',
+        leaseTokenHash: null,
+        leaseExpiresAt: null,
+        leasedByAgentId: null,
+        finishedAt: now,
+      },
+    });
+    await this.prisma.workloadDiagnostic.updateMany({
+      where: {
+        environment: { projectId },
+        status: { in: ['queued', 'running'] },
+      },
+      data: {
+        currentJobId: null,
+        status: 'failed',
+        message: 'Cancelled because project deletion was requested',
+        finishedAt: now,
+      },
+    });
   }
 
   // Retention GC (ADR-059 §7): drops the durable objects of verified artifacts

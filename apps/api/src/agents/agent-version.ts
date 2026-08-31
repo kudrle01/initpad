@@ -2,6 +2,7 @@ export const MIN_LIFECYCLE_AGENT_VERSION = [0, 3, 0] as const;
 export const MIN_PROJECT_AGENT_VERSION = [0, 4, 0] as const;
 export const MIN_GATEWAY_AGENT_VERSION = [0, 5, 0] as const;
 export const MIN_GATEWAY_ROUTE_AGENT_VERSION = [0, 8, 0] as const;
+export const MIN_WORKLOAD_DIAGNOSTICS_AGENT_VERSION = [0, 9, 0] as const;
 
 export function agentVersionAtLeast(
   version: string | null | undefined,

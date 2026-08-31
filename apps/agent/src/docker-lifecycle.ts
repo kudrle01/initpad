@@ -32,6 +32,16 @@ const PROJECT_PAYLOAD_FIELDS = new Set([
   ...LIFECYCLE_PAYLOAD_FIELDS,
   'configFingerprint',
 ]);
+const DIAGNOSTIC_PAYLOAD_FIELDS = new Set([
+  'allocationId',
+  'namespace',
+  'projectSlug',
+  'environment',
+  'revision',
+  'containerPort',
+  'healthPath',
+  'routingMode',
+]);
 const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
 const MAX_ENV_VARS = 128;
 const MAX_ENV_VALUE_BYTES = 8 * 1024;
@@ -59,11 +69,28 @@ export interface DockerProjectDelivery {
   envVars: Record<string, string>;
 }
 
+export interface DockerDiagnosticPayload {
+  allocationId: string;
+  namespace: string;
+  projectSlug: string;
+  environment: string;
+  revision: string;
+  containerPort: number;
+  healthPath: string;
+  routingMode: 'direct-port' | 'managed-gateway';
+}
+
 export interface DockerWorkloadStatus {
   state: 'missing' | 'running' | 'stopped';
   revision?: string;
   hostPort?: number;
   workloadSlot?: string;
+}
+
+export interface DockerWorkloadDiagnostic extends DockerWorkloadStatus {
+  exitCode?: number;
+  health: 'healthy' | 'unhealthy' | 'not-running' | 'missing';
+  logs: string;
 }
 
 export interface DockerLifecycleProgress {
@@ -81,7 +108,7 @@ interface ContainerInspect {
     Image?: string;
     Labels?: Record<string, string>;
   };
-  State?: { Running?: boolean };
+  State?: { Running?: boolean; ExitCode?: number };
   NetworkSettings?: {
     Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
   };
@@ -121,6 +148,32 @@ export function parseProjectPayload(value: unknown): DockerLifecyclePayload & {
   const parsed = parseWorkloadPayload(value, true);
   if (!parsed.configFingerprint) throw new Error('Project payload has no config fingerprint');
   return parsed as DockerLifecyclePayload & { configFingerprint: string };
+}
+
+export function parseDiagnosticPayload(value: unknown): DockerDiagnosticPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Diagnostic payload is invalid');
+  }
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).some((field) => !DIAGNOSTIC_PAYLOAD_FIELDS.has(field))) {
+    throw new Error('Diagnostic payload contains unsupported fields');
+  }
+  const containerPort = Number(input.containerPort);
+  if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65_535) {
+    throw new Error('Diagnostic payload contains an invalid container port');
+  }
+  return {
+    allocationId: requiredSafeString(input.allocationId, 'allocation id'),
+    namespace: requiredSafeString(input.namespace, 'namespace', SAFE_NAMESPACE_PATTERN),
+    projectSlug: requiredSafeString(input.projectSlug, 'project slug'),
+    environment: requiredSafeString(input.environment, 'environment'),
+    revision: requiredSafeString(input.revision, 'revision'),
+    containerPort,
+    healthPath: requiredSafeString(input.healthPath, 'health path', HEALTH_PATH_PATTERN),
+    routingMode: input.routingMode === 'direct-port' || input.routingMode === 'managed-gateway'
+      ? input.routingMode
+      : (() => { throw new Error('Diagnostic payload contains an invalid routing mode'); })(),
+  };
 }
 
 function parseWorkloadPayload(
@@ -308,7 +361,15 @@ function demuxLogs(body: Buffer): string {
     output += body.subarray(offset + 8, offset + 8 + length).toString('utf8');
     offset += 8 + length;
   }
-  return (output || body.toString('utf8')).replace(/\u0000/g, '').trim().slice(-MAX_LOG_BYTES);
+  // Keep terminal control sequences out of the persisted/browser-rendered
+  // snapshot. Newlines, carriage returns and tabs remain useful log content;
+  // ANSI CSI/OSC and other C0 controls are display state, not application text.
+  return (output || body.toString('utf8'))
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, '')
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .trim()
+    .slice(-MAX_LOG_BYTES);
 }
 
 /**
@@ -637,9 +698,50 @@ export class DockerLifecycle {
     const desired = this.validatedPayload(payload);
     const container = await this.desiredContainer(desired, signal);
     if (!container) return '';
+    return this.containerLogs(container.Id, signal);
+  }
+
+  async diagnostics(rawPayload: unknown, signal: AbortSignal): Promise<DockerWorkloadDiagnostic> {
+    const payload = parseDiagnosticPayload(rawPayload);
+    let container: ContainerInspect | null;
+    if (payload.routingMode === 'managed-gateway') {
+      const revisions = await this.ownedManagedRevisions(payload, signal);
+      const matching = revisions.filter(
+        (revision) => revision.Labels?.['com.initpad.revision'] === payload.revision,
+      );
+      if (matching.length > 1) {
+        throw new Error('Agent found multiple workload revisions for this diagnostic snapshot');
+      }
+      container = matching[0]
+        ? await this.ownedContainer(matching[0].Id, payload, signal)
+        : null;
+    } else {
+      container = await this.ownedContainer(workloadContainerName(payload), payload, signal);
+    }
+    if (!container) return { state: 'missing', health: 'missing', logs: '' };
+
+    const status = this.toStatus(container, payload);
+    const logs = await this.containerLogs(container.Id, signal);
+    const exitCode = Number(container.State?.ExitCode);
+    if (status.state !== 'running') {
+      return {
+        ...status,
+        ...(Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255 ? { exitCode } : {}),
+        health: 'not-running',
+        logs,
+      };
+    }
+    return {
+      ...status,
+      health: await this.waitHealthy(container, payload, signal) ? 'healthy' : 'unhealthy',
+      logs,
+    };
+  }
+
+  private async containerLogs(containerId: string, signal: AbortSignal): Promise<string> {
     const response = await this.request({
       method: 'GET',
-      path: `/containers/${encodeURIComponent(container.Id)}/logs?stdout=1&stderr=1&tail=200`,
+      path: `/containers/${encodeURIComponent(containerId)}/logs?stdout=1&stderr=1&tail=200`,
       maxResponseBytes: MAX_LOG_BYTES + 8 * 200,
       signal,
     });
@@ -729,7 +831,7 @@ export class DockerLifecycle {
 
   private async ownedContainer(
     name: string,
-    payload: DockerLifecyclePayload,
+    payload: DockerLifecyclePayload | DockerDiagnosticPayload,
     signal: AbortSignal,
   ): Promise<ContainerInspect | null> {
     const container = await this.inspectContainer(name, signal);
@@ -740,7 +842,7 @@ export class DockerLifecycle {
   }
 
   private async ownedManagedRevisions(
-    payload: DockerLifecyclePayload,
+    payload: DockerLifecyclePayload | DockerDiagnosticPayload,
     signal: AbortSignal,
   ): Promise<ContainerListItem[]> {
     const workloadKey = this.workloadKey(payload);
@@ -789,7 +891,7 @@ export class DockerLifecycle {
 
   private async waitHealthy(
     container: ContainerInspect,
-    payload: DockerLifecyclePayload,
+    payload: Pick<DockerLifecyclePayload, 'containerPort' | 'healthPath'>,
     signal: AbortSignal,
   ): Promise<boolean> {
     if (!container.State?.Running) return false;
@@ -811,18 +913,21 @@ export class DockerLifecycle {
     return false;
   }
 
-  private toStatus(container: ContainerInspect, payload: DockerLifecyclePayload): DockerWorkloadStatus {
+  private toStatus(
+    container: ContainerInspect,
+    payload: DockerLifecyclePayload | DockerDiagnosticPayload,
+  ): DockerWorkloadStatus {
     const mapping = container.NetworkSettings?.Ports?.[`${payload.containerPort}/tcp`];
     const hostPort = Number(mapping?.[0]?.HostPort);
+    const workloadSlot = container.Config?.Labels?.['com.initpad.workload.slot']
+      ?? ('imageRef' in payload ? managedWorkloadSlot(payload) : undefined);
     return {
       state: container.State?.Running ? 'running' : 'stopped',
       revision: container.Config?.Labels?.['com.initpad.revision'],
       ...(Number.isInteger(hostPort) && hostPort > 0 ? { hostPort } : {}),
       ...(payload.routingMode === 'managed-gateway'
-        ? {
-            workloadSlot: container.Config?.Labels?.['com.initpad.workload.slot']
-              ?? managedWorkloadSlot(payload),
-          }
+        && workloadSlot
+        ? { workloadSlot }
         : {}),
     };
   }
@@ -835,7 +940,10 @@ export class DockerLifecycle {
       && container.Config?.Image === payload.imageRef;
   }
 
-  private belongsToWorkload(container: ContainerInspect, payload: DockerLifecyclePayload): boolean {
+  private belongsToWorkload(
+    container: ContainerInspect,
+    payload: Pick<DockerLifecyclePayload, 'allocationId' | 'projectSlug' | 'environment'>,
+  ): boolean {
     const labels = container.Config?.Labels ?? {};
     return labels['com.initpad.target'] === this.targetId
       && labels['com.initpad.allocation.id'] === payload.allocationId
@@ -890,7 +998,9 @@ export class DockerLifecycle {
       : parseLifecyclePayload(payload);
   }
 
-  private workloadKey(payload: DockerLifecyclePayload): string {
+  private workloadKey(
+    payload: Pick<DockerLifecyclePayload, 'allocationId' | 'projectSlug' | 'environment'>,
+  ): string {
     return `${payload.allocationId}:${payload.projectSlug}:${payload.environment}`;
   }
 

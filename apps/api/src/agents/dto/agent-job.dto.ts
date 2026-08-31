@@ -96,6 +96,24 @@ export class AgentJobResultDto {
   workloadSlot?: string;
 }
 
+export class AgentJobDiagnosticDto {
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(255)
+  exitCode?: number;
+
+  @IsString()
+  @IsIn(['healthy', 'unhealthy', 'not-running', 'missing'])
+  health!: 'healthy' | 'unhealthy' | 'not-running' | 'missing';
+
+  // The Agent already limits Docker to tail=200 and 32 KiB. This second
+  // boundary rejects an oversized or compromised client at the API edge.
+  @IsString()
+  @MaxLength(32 * 1024)
+  logs!: string;
+}
+
 // Keep the nested class above the decorated reference. With
 // emitDecoratorMetadata, TypeScript emits a direct runtime reference for the
 // property type; placing it below this class causes a temporal-dead-zone crash
@@ -119,4 +137,9 @@ export class AgentJobCompleteDto extends AgentLeaseDto {
   @ValidateNested()
   @Type(() => AgentJobResultDto)
   result?: AgentJobResultDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentJobDiagnosticDto)
+  diagnostic?: AgentJobDiagnosticDto;
 }

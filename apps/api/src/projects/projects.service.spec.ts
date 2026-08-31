@@ -136,6 +136,11 @@ describe('ProjectsService project deletion', () => {
         delete: jest.fn().mockResolvedValue(undefined),
       },
       deploymentOperation: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      agentJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      workloadDiagnostic: {
+        findMany: jest.fn().mockResolvedValue([{ currentJobId: 'diagnostic-job-1' }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       environment: { update: jest.fn().mockResolvedValue(environment) },
       buildArtifact: { findMany: jest.fn().mockResolvedValue([]) },
     };
@@ -182,6 +187,10 @@ describe('ProjectsService project deletion', () => {
       }),
     ).resolves.toBeUndefined();
     expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'project-1' } });
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: { in: ['diagnostic-job-1'] } }),
+      data: expect.objectContaining({ status: 'cancelled', resultCode: 'project_deleted' }),
+    }));
   });
 
   it('preserves the source repository when durable artifact cleanup fails', async () => {
@@ -200,6 +209,11 @@ describe('ProjectsService project deletion', () => {
         delete: jest.fn().mockResolvedValue(undefined),
       },
       deploymentOperation: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      agentJob: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      workloadDiagnostic: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       buildArtifact: {
         findMany: jest.fn().mockResolvedValue([
           { storageRef: 'artifacts/team/project-1/image.tar' },

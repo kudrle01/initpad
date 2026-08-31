@@ -20,6 +20,7 @@ import type {
   AgentStatus,
   AgentEnrollment,
   AgentJobSummary,
+  WorkloadDiagnostic,
 } from '@/types';
 
 export interface EnvConfig {
@@ -204,6 +205,13 @@ export const api = {
     http<Project>(`/projects/${id}/rollback/${env}`, {
       method: 'POST',
       body: JSON.stringify({ candidateOperationId, stateToken }),
+    }),
+  getWorkloadDiagnostic: (id: string, env: EnvName) =>
+    http<WorkloadDiagnostic | null>(`/projects/${id}/diagnostics/${env}`),
+  requestWorkloadDiagnostic: (id: string, env: EnvName, requestId: string) =>
+    http<WorkloadDiagnostic>(`/projects/${id}/diagnostics/${env}`, {
+      method: 'POST',
+      body: JSON.stringify({ requestId }),
     }),
   runAgain: (id: string) =>
     http<Project>(`/projects/${id}/run-again`, { method: 'POST' }),

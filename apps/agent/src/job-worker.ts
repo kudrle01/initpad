@@ -1,12 +1,18 @@
 import { ControlPlaneError } from './control-plane.js';
 import {
   DockerLifecycle,
+  parseDiagnosticPayload,
   parseLifecyclePayload,
   parseProjectDelivery,
   parseProjectPayload,
 } from './docker-lifecycle.js';
 import type { DockerLifecyclePayload, DockerLifecycleProgress } from './docker-lifecycle.js';
-import type { AgentJobClaim, AgentJobResult, AgentJobSummary } from './types.js';
+import type {
+  AgentJobClaim,
+  AgentJobDiagnostic,
+  AgentJobResult,
+  AgentJobSummary,
+} from './types.js';
 import {
   GatewayPreflight,
   parseGatewayPreflightPayload,
@@ -36,6 +42,7 @@ export interface AgentJobClient {
     message: string;
     resultCode?: string;
     result?: AgentJobResult;
+    diagnostic?: AgentJobDiagnostic;
   }): Promise<AgentJobSummary>;
   downloadArtifact?(
     jobId: string,
@@ -95,6 +102,7 @@ export interface LifecycleRunner {
   stop?(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void>;
   removeProject?(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void>;
   status?(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<AgentJobResult>;
+  diagnostics?(payload: unknown, signal: AbortSignal): Promise<AgentJobResult & AgentJobDiagnostic>;
 }
 
 export interface GatewayPreflightRunner {
@@ -172,7 +180,7 @@ export async function executeClaimedJob(
 
   if (
     job.protocolVersion !== 1
-    || !['probe', 'lifecycle-test', 'gateway-preflight', 'gateway-route', 'deploy', 'start', 'stop', 'remove'].includes(job.kind)
+    || !['probe', 'lifecycle-test', 'gateway-preflight', 'gateway-route', 'deploy', 'start', 'stop', 'remove', 'logs'].includes(job.kind)
   ) {
     await complete({
       leaseToken: job.leaseToken,
@@ -252,6 +260,94 @@ export async function executeClaimedJob(
       status: 'succeeded',
       message: 'Gateway DNS, TLS and Caddy adapter preflight passed',
       resultCode: 'ok',
+    });
+    return;
+  }
+
+  if (job.kind === 'logs') {
+    try {
+      parseDiagnosticPayload(job.payload);
+    } catch (error) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Workload diagnostic payload is invalid',
+        resultCode: 'invalid_payload',
+      });
+      return;
+    }
+    const lifecycle = options.lifecycle ?? new DockerLifecycle(job.targetId, options.dockerHost);
+    if (!lifecycle.diagnostics) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: 'Agent does not support bounded workload diagnostics',
+        resultCode: 'unsupported_job',
+      });
+      return;
+    }
+    let result: (AgentJobResult & AgentJobDiagnostic) | undefined;
+    let diagnosticError: unknown;
+    try {
+      await retryProtocolCall(
+        () => client.progress(job.id, {
+          leaseToken: job.leaseToken,
+          sequence: 1,
+          percent: 20,
+          stage: 'working',
+          message: 'Inspecting allocation-scoped workload',
+        }),
+        () => leaseDeadline,
+        signal,
+        timing,
+      );
+      result = await lifecycle.diagnostics(job.payload, signal);
+      await retryProtocolCall(
+        () => client.progress(job.id, {
+          leaseToken: job.leaseToken,
+          sequence: 2,
+          percent: 90,
+          stage: 'verifying',
+          message: 'Recording bounded logs and health result',
+        }),
+        () => leaseDeadline,
+        signal,
+        timing,
+      );
+    } catch (error) {
+      diagnosticError = error;
+    }
+    if (signal.aborted) return;
+    if (diagnosticError instanceof ControlPlaneError) throw diagnosticError;
+    if (diagnosticError || !result) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: (diagnosticError instanceof Error
+          ? diagnosticError.message
+          : 'Workload diagnostics failed').slice(0, 240),
+        resultCode: 'diagnostics_failed',
+      });
+      return;
+    }
+    await complete({
+      leaseToken: job.leaseToken,
+      status: 'succeeded',
+      message: result.state === 'missing'
+        ? 'Workload is missing'
+        : `Workload is ${result.state} and ${result.health}`,
+      resultCode: 'ok',
+      result: {
+        state: result.state,
+        ...(result.revision ? { revision: result.revision } : {}),
+        ...(result.hostPort ? { hostPort: result.hostPort } : {}),
+        ...(result.workloadSlot ? { workloadSlot: result.workloadSlot } : {}),
+      },
+      diagnostic: {
+        ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+        health: result.health,
+        logs: result.logs,
+      },
     });
     return;
   }

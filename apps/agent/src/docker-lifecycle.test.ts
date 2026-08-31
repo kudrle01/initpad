@@ -3,6 +3,7 @@ import test from 'node:test';
 import { createHash } from 'node:crypto';
 import {
   DockerLifecycle,
+  parseDiagnosticPayload,
   parseLifecyclePayload,
   parseProjectDelivery,
   parseProjectPayload,
@@ -34,7 +35,7 @@ interface FakeContainer {
   Id: string;
   name: string;
   Config: { Image: string; Labels: Record<string, string> };
-  State: { Running: boolean };
+  State: { Running: boolean; ExitCode: number };
   NetworkSettings: { Ports: Record<string, Array<{ HostPort: string }>> };
 }
 
@@ -118,7 +119,7 @@ function fakeEngine(initialImagePresent = false) {
           Image: String(body.Image),
           Labels: body.Labels as Record<string, string>,
         },
-        State: { Running: false },
+        State: { Running: false, ExitCode: 0 },
         NetworkSettings: { Ports: { [portKey]: [{ HostPort: String(32_000 + nextId) }] } },
       };
       containers.set(container.Id, container);
@@ -143,7 +144,9 @@ function fakeEngine(initialImagePresent = false) {
         return response(204);
       }
       if (input.method === 'POST' && action === '/update') return response(200, {});
-      if (input.method === 'GET' && action === '/logs') return response(200, 'bounded log');
+      if (input.method === 'GET' && action === '/logs') {
+        return response(200, '\u001b[31mbounded\u001b[0m\u0000 log');
+      }
       if (input.method === 'DELETE') {
         containers.delete(container.Id);
         return response(204);
@@ -164,7 +167,7 @@ function fakeEngine(initialImagePresent = false) {
         Id: 'foreign-1',
         name,
         Config: { Image: IMAGE_REF, Labels: {} },
-        State: { Running: true },
+        State: { Running: true, ExitCode: 0 },
         NetworkSettings: { Ports: { '80/tcp': [{ HostPort: '32000' }] } },
       });
     },
@@ -220,6 +223,24 @@ test('validates project artifact metadata and transient config independently', (
       envVars: { PORT: '9999' },
     }),
     /invalid variable/,
+  );
+});
+
+test('accepts only the bounded allocation-scoped diagnostic payload', () => {
+  const { imageRef: _imageRef, configFingerprint: _fingerprint, ...diagnostic } = {
+    ...PAYLOAD,
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    configFingerprint: 'b'.repeat(64),
+  };
+  assert.deepEqual(parseDiagnosticPayload(diagnostic), diagnostic);
+  assert.throws(
+    () => parseDiagnosticPayload({ ...diagnostic, command: ['sh', '-c', 'env'] }),
+    /unsupported fields/,
+  );
+  assert.throws(
+    () => parseDiagnosticPayload({ ...diagnostic, healthPath: 'https://attacker.test/' }),
+    /health path/,
   );
 });
 
@@ -307,6 +328,69 @@ test('rejects a corrupt project archive without publishing a workload', async ()
   );
   assert.equal(engine.containers.size, 0);
   assert.equal(engine.imagePresent(), false);
+});
+
+test('returns only bounded logs, runtime state, exit code and health for an owned workload', async () => {
+  const bytes = Buffer.from('verified-image-archive');
+  const payload = {
+    ...PAYLOAD,
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    imageRef: `registry.test/acme/api:${'a'.repeat(40)}`,
+    configFingerprint: 'b'.repeat(64),
+  };
+  const diagnostic = {
+    allocationId: payload.allocationId,
+    namespace: payload.namespace,
+    projectSlug: payload.projectSlug,
+    environment: payload.environment,
+    revision: payload.revision,
+    containerPort: payload.containerPort,
+    healthPath: payload.healthPath,
+    routingMode: payload.routingMode,
+  };
+  const engine = fakeEngine();
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+  await lifecycle.deployProject(
+    payload,
+    {
+      artifact: {
+        path: '/api/agent/jobs/job-1/artifact',
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        sizeBytes: bytes.length,
+      },
+      envVars: {},
+    },
+    (async function* () { yield bytes; })(),
+    'job-1',
+    new AbortController().signal,
+    async () => undefined,
+  );
+
+  const running = await lifecycle.diagnostics(diagnostic, new AbortController().signal);
+  assert.equal(running.state, 'running');
+  assert.equal(running.revision, payload.revision);
+  assert.equal(running.health, 'healthy');
+  assert.equal(running.logs, 'bounded log');
+  await lifecycle.stop(payload, new AbortController().signal);
+  const stopped = await lifecycle.diagnostics(diagnostic, new AbortController().signal);
+  assert.equal(stopped.state, 'stopped');
+  assert.equal(stopped.exitCode, 0);
+  assert.equal(stopped.health, 'not-running');
+  assert.equal(stopped.logs, 'bounded log');
+  assert.equal(
+    engine.requests.some((request) =>
+      request.method === 'GET'
+      && request.path.includes('/logs?stdout=1&stderr=1&tail=200')
+      && request.maxResponseBytes === 32 * 1024 + 8 * 200),
+    true,
+  );
 });
 
 test('preserves an immutable diagnostic image that was already cached', async () => {

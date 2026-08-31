@@ -199,3 +199,23 @@ export interface RollbackPreview {
   sourceDeployedAt: string;
   stateToken: string;
 }
+
+export type WorkloadDiagnosticStatus = 'idle' | 'queued' | 'running' | 'succeeded' | 'failed';
+export type WorkloadHealth = 'healthy' | 'unhealthy' | 'not-running' | 'missing';
+
+export interface WorkloadDiagnostic {
+  environment: EnvName;
+  target: string;
+  status: WorkloadDiagnosticStatus;
+  agentOnline: boolean;
+  progressPercent: number;
+  message: string | null;
+  runtimeState: 'running' | 'stopped' | 'missing' | null;
+  revision: string | null;
+  exitCode: number | null;
+  health: WorkloadHealth | null;
+  logs: string;
+  requestedAt: string | null;
+  observedAt: string | null;
+  finishedAt: string | null;
+}
