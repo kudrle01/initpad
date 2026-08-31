@@ -11,6 +11,7 @@ import {
   MoreVertical,
   Play,
   RefreshCw,
+  Undo2,
   Server,
   Square,
   Trash2,
@@ -54,6 +55,7 @@ interface Props {
   commitsBySha: Record<string, Commit>;
   onPromote: (target: EnvName) => void;
   onRedeploy: (env: EnvName) => void;
+  onRollback: (env: EnvName) => void;
   onRunAgain: () => void;
   onRerunFailedJobs: () => void;
   onStop: (env: EnvName) => void;
@@ -61,6 +63,7 @@ interface Props {
   onRemoveEnv: (env: EnvName) => void;
   onConfigureTarget: (env: EnvName) => void;
   readOnly?: boolean;
+  canRollback?: boolean;
 }
 
 export function EnvironmentPipeline({
@@ -69,6 +72,7 @@ export function EnvironmentPipeline({
   commitsBySha,
   onPromote,
   onRedeploy,
+  onRollback,
   onRunAgain,
   onRerunFailedJobs,
   onStop,
@@ -76,6 +80,7 @@ export function EnvironmentPipeline({
   onRemoveEnv,
   onConfigureTarget,
   readOnly = false,
+  canRollback = false,
 }: Props) {
   const byEnv = Object.fromEntries(project.environments.map((e) => [e.name, e])) as Record<
     EnvName,
@@ -199,6 +204,11 @@ export function EnvironmentPipeline({
                         {hasDeployment && !targetNeedsDeploy && (
                           <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
                             <RefreshCw className="h-4 w-4" /> Redeploy verified build
+                          </DropdownMenuItem>
+                        )}
+                        {hasDeployment && canRollback && !targetNeedsDeploy && (
+                          <DropdownMenuItem onSelect={() => onRollback(env.name)}>
+                            <Undo2 className="h-4 w-4" /> Roll back to previous version…
                           </DropdownMenuItem>
                         )}
                         {hasDeployment &&

@@ -10,6 +10,7 @@ import { config } from '../config';
 import { DeploymentService } from '../deployment/deployment.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScmRepositoryRef } from '../scm/scm-provider';
+import { DEPLOYMENT_PUBLICATION_KINDS } from './deployment-publications';
 import { artifactImageRef, registryImageRef } from './project-deployment-identity';
 
 /**
@@ -209,8 +210,9 @@ export class ProjectArtifactLifecycle {
     return failures;
   }
 
-  // ADR-059 §7: remove expired durable objects only when no live environment
-  // or unfinished operation still refers to the immutable artifact.
+  // ADR-059 §7 and ADR-075: remove expired durable objects only when no live
+  // environment, unfinished operation or bounded rollback point still refers
+  // to the immutable artifact.
   async runRetention(now: Date = new Date()): Promise<{ removed: number; kept: number }> {
     const cutoff = new Date(now.getTime() - config.artifactStore.retentionDays * 86_400_000);
     const stale = await this.prisma.buildArtifact.findMany({
@@ -283,7 +285,44 @@ export class ProjectArtifactLifecycle {
     const unfinishedOperations = await this.prisma.deploymentOperation.count({
       where: { buildArtifactId, finishedAt: null },
     });
-    return unfinishedOperations > 0;
+    if (unfinishedOperations > 0) return true;
+
+    // Preserve only the newest successful publication artifact which differs
+    // from each environment's current artifact. This makes manual rollback
+    // dependable without turning operation history into unbounded blob
+    // retention. An empty environment keeps its latest published artifact so
+    // it can still be restored without another CI build.
+    const publishedTo = await this.prisma.deploymentOperation.findMany({
+      where: {
+        buildArtifactId,
+        status: 'succeeded',
+        kind: { in: [...DEPLOYMENT_PUBLICATION_KINDS] },
+      },
+      select: { environmentId: true },
+      distinct: ['environmentId'],
+    });
+    for (const publication of publishedTo) {
+      const environment = await this.prisma.environment.findUnique({
+        where: { id: publication.environmentId },
+        select: { buildArtifactId: true },
+      });
+      if (!environment) continue;
+      const newestRollbackPoint = await this.prisma.deploymentOperation.findFirst({
+        where: {
+          environmentId: publication.environmentId,
+          status: 'succeeded',
+          kind: { in: [...DEPLOYMENT_PUBLICATION_KINDS] },
+          buildArtifactId: { not: null },
+          ...(environment.buildArtifactId
+            ? { NOT: { buildArtifactId: environment.buildArtifactId } }
+            : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { buildArtifactId: true },
+      });
+      if (newestRollbackPoint?.buildArtifactId === buildArtifactId) return true;
+    }
+    return false;
   }
 
   private fileSha256(filePath: string): Promise<string> {

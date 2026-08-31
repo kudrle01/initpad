@@ -177,3 +177,25 @@ export interface DeploymentOperationSummary {
   finishedAt: string | null;
   artifactRunId: string | null;
 }
+
+export interface RollbackPreview {
+  candidateOperationId: string;
+  environment: EnvName;
+  target: string;
+  currentVersion: string | null;
+  rollbackVersion: string;
+  currentArtifact: {
+    id: string;
+    provider: string;
+    digest: string;
+    runId: string;
+  } | null;
+  rollbackArtifact: {
+    id: string;
+    provider: string;
+    digest: string;
+    runId: string;
+  } | null;
+  sourceDeployedAt: string;
+  stateToken: string;
+}

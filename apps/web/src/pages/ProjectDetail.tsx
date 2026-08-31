@@ -9,6 +9,7 @@ import { DetailSection } from '@/components/molecules/DetailSection';
 import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
+import { RollbackDialog } from '@/components/organisms/RollbackDialog';
 import { EnvVarsDialog } from '@/components/organisms/EnvVarsDialog';
 import { ProjectHistory } from '@/components/organisms/ProjectHistory';
 import { ProjectRepository } from '@/components/organisms/ProjectRepository';
@@ -29,18 +30,22 @@ export default function ProjectDetail() {
     loading,
     deleting,
     confirmOpen,
+    rollbackPreview,
     targetEnv,
     configEnv,
     targets,
     readOnly,
     canMaintain,
     setConfirmOpen,
+    setRollbackPreview,
     setTargetEnv,
     setConfigEnv,
     retryLoad,
     toggleCommit,
     promote,
     redeploy,
+    requestRollback,
+    confirmRollback,
     runAgain,
     rerunFailedJobs,
     stopEnvironment,
@@ -99,6 +104,7 @@ export default function ProjectDetail() {
           commitsBySha={commitsBySha}
           onPromote={promote}
           onRedeploy={redeploy}
+          onRollback={requestRollback}
           onRunAgain={runAgain}
           onRerunFailedJobs={rerunFailedJobs}
           onStop={stopEnvironment}
@@ -106,6 +112,7 @@ export default function ProjectDetail() {
           onRemoveEnv={removeEnvironment}
           onConfigureTarget={setTargetEnv}
           readOnly={readOnly}
+          canRollback={canMaintain}
         />
       </DetailSection>
 
@@ -144,6 +151,13 @@ export default function ProjectDetail() {
         hasRepository={!!project.repoUrl}
         deleting={deleting}
         onConfirm={deleteProject}
+      />
+
+      <RollbackDialog
+        preview={rollbackPreview}
+        busy={busy === `rollback-${rollbackPreview?.environment}`}
+        onOpenChange={(open) => !open && setRollbackPreview(null)}
+        onConfirm={confirmRollback}
       />
 
       <TargetPickerDialog

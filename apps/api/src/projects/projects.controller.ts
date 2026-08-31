@@ -15,6 +15,7 @@ import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { SetTargetDto } from './dto/set-target.dto';
 import { DeleteProjectDto } from './dto/delete-project.dto';
+import { RollbackProjectDto } from './dto/rollback-project.dto';
 import { EnvName } from '../domain/types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -101,6 +102,27 @@ export class ProjectsController {
   ) {
     await this.projects.assertAccess(id, userId, 'write');
     return this.projects.redeploy(id, env);
+  }
+
+  @Get(':id/rollback/:env')
+  async rollbackPreview(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertAccess(id, userId, 'maintain');
+    return this.projects.rollbackPreview(id, env);
+  }
+
+  @Post(':id/rollback/:env')
+  async rollback(
+    @Param('id') id: string,
+    @Param('env') env: EnvName,
+    @Body() dto: RollbackProjectDto,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertAccess(id, userId, 'maintain');
+    return this.projects.rollback(id, env, dto.candidateOperationId, dto.stateToken);
   }
 
   @Post(':id/run-again')

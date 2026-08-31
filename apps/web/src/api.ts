@@ -15,6 +15,7 @@ import type {
   ImportableRepo,
   ImportPreflight,
   ProvisioningStatus,
+  RollbackPreview,
   DeploymentOperation,
   AgentStatus,
   AgentEnrollment,
@@ -197,6 +198,13 @@ export const api = {
     http<Project>(`/projects/${id}/promote/${env}`, { method: 'POST' }),
   redeploy: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/redeploy/${env}`, { method: 'POST' }),
+  getRollbackPreview: (id: string, env: EnvName) =>
+    http<RollbackPreview | null>(`/projects/${id}/rollback/${env}`),
+  rollback: (id: string, env: EnvName, candidateOperationId: string, stateToken: string) =>
+    http<Project>(`/projects/${id}/rollback/${env}`, {
+      method: 'POST',
+      body: JSON.stringify({ candidateOperationId, stateToken }),
+    }),
   runAgain: (id: string) =>
     http<Project>(`/projects/${id}/run-again`, { method: 'POST' }),
   rerunFailedJobs: (id: string) =>

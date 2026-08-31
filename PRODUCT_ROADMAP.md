@@ -489,8 +489,16 @@ plán byly dodány v předchozích milnících a zůstávají součástí Fáze 
   stejné doménové rozhraní. Selhání health checku je `unhealthy`, ostatní
   chyby `failed`; cancellation je `cancelled`. Fáze je monotónní a po restartu
   zůstává v databázi. API i deployment history ukazují skutečnou fázi.
-- TODO **6b — ruční rollback.** Vybrat předchozí úspěšný artifact pro
-  stejné prostředí, zobrazit dopad a publikovat jej bez nového buildu.
+- ✅ **6b — ruční rollback ověřeného artifactu.** Maintainer/owner/admin může
+  pro konkrétní prostředí vyžádat nejnovější předchozí úspěšnou immutable
+  publikaci. Potvrzovací dialog ukazuje target, současnou i návratovou verzi,
+  digest a provozní dopad. API váže potvrzení na přesný operation ID a otisk
+  stavu prostředí; změna targetu, verze, konfigurace nebo souběžná operace
+  vyžaduje nové potvrzení. Aktuální environment variables a secrets se nevrací
+  do historického stavu. Rollback vytváří auditovanou operaci `rollback`, ale
+  nespouští CI ani nový build a stále musí projít health gate cílového
+  provideru. Retention chrání aktuální a jeden nejnovější odlišný artifact pro každé prostředí;
+  starší objekty mohou podle nastavené lhůty bezpečně expirovat.
 - TODO **6c — diagnostika workloadu.** Napojit allocation-scoped Agent `logs`
   job na projekt, uložit pouze omezený tail, exit code a health výsledek a v UI
   jej držet odděleně od platformní deployment timeline.

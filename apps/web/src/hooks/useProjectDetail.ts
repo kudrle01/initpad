@@ -15,6 +15,7 @@ import type {
   EnvName,
   Project,
   ProvisioningStatus,
+  RollbackPreview,
   Target,
   TemplateManifest,
 } from '@/types';
@@ -54,6 +55,7 @@ export function useProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [rollbackPreview, setRollbackPreview] = useState<RollbackPreview | null>(null);
   const [targetEnv, setTargetEnv] = useState<EnvName | null>(null);
   const [configEnv, setConfigEnv] = useState<EnvName | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
@@ -117,6 +119,7 @@ export function useProjectDetail() {
     setOpenSha(null);
     setError(null);
     setNotFound(false);
+    setRollbackPreview(null);
     setLoading(true);
     void load();
   }, [load]);
@@ -197,6 +200,44 @@ export function useProjectDetail() {
           ? `Deploying the verified build to ${environment} through InitPad — no new GitHub runner is required.`
           : `Redeploying ${environment}`,
       );
+    } catch (actionError) {
+      toast.error((actionError as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function requestRollback(environment: EnvName) {
+    if (!id) return;
+    setBusy(`rollback-preview-${environment}`);
+    try {
+      const preview = await api.getRollbackPreview(id, environment);
+      if (!preview) {
+        toast.warning(`No previous verified ${environment} deployment is available to roll back.`);
+        return;
+      }
+      setRollbackPreview(preview);
+    } catch (actionError) {
+      toast.error((actionError as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function confirmRollback() {
+    if (!id || !rollbackPreview) return;
+    setBusy(`rollback-${rollbackPreview.environment}`);
+    try {
+      setProject(await api.rollback(
+        id,
+        rollbackPreview.environment,
+        rollbackPreview.candidateOperationId,
+        rollbackPreview.stateToken,
+      ));
+      toast.success(
+        `Rolling back ${rollbackPreview.environment} to ${rollbackPreview.rollbackVersion.slice(0, 7)} without a new CI build.`,
+      );
+      setRollbackPreview(null);
     } catch (actionError) {
       toast.error((actionError as Error).message);
     } finally {
@@ -329,12 +370,14 @@ export function useProjectDetail() {
     loading,
     deleting,
     confirmOpen,
+    rollbackPreview,
     targetEnv,
     configEnv,
     targets,
     readOnly,
     canMaintain,
     setConfirmOpen,
+    setRollbackPreview,
     setTargetEnv,
     setConfigEnv,
     retryLoad,
@@ -342,6 +385,8 @@ export function useProjectDetail() {
       setOpenSha((current) => (current === sha ? null : sha)),
     promote,
     redeploy,
+    requestRollback,
+    confirmRollback,
     runAgain,
     rerunFailedJobs,
     stopEnvironment,

@@ -15,6 +15,7 @@ import {
   EnvName,
   Project,
   ProviderKind,
+  RollbackPreview,
 } from '../domain/types';
 import { templateRuntime } from '../domain/capability';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -61,6 +62,7 @@ import {
   imageRepository,
 } from './project-deployment-identity';
 import { mapWithConcurrency } from '../common/concurrency';
+import { ProjectRollback } from './project-rollback';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
@@ -85,6 +87,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly deploymentExecutor: ProjectDeploymentExecutor;
   private readonly artifactIngestion: ProjectArtifactIngestion;
   private readonly ci: ProjectCiOrchestrator;
+  private readonly rollbackFlow: ProjectRollback;
   private readonly repositoryReconcileAfter = new Map<string, number>();
   private readonly repositoryReconcileInFlight = new Set<string>();
   private readonly projectScmReconcileAfter = new Map<string, number>();
@@ -150,6 +153,18 @@ export class ProjectsService implements OnModuleInit {
         this.deployEnvInBackground(projectId, 'dev', version, true, operationId),
       (projectId, version, kind) =>
         this.scheduleDeployment(projectId, 'dev', version, true, kind),
+    );
+    this.rollbackFlow = new ProjectRollback(
+      prisma,
+      (projectId, environment, version, buildArtifactId) =>
+        this.scheduleDeployment(
+          projectId,
+          environment,
+          version,
+          true,
+          'rollback',
+          buildArtifactId,
+        ),
     );
   }
 
@@ -1361,6 +1376,20 @@ export class ProjectsService implements OnModuleInit {
       'redeploy',
       env.buildArtifactId,
     );
+    return this.get(id);
+  }
+
+  rollbackPreview(id: string, envName: EnvName): Promise<RollbackPreview | null> {
+    return this.rollbackFlow.preview(id, envName);
+  }
+
+  async rollback(
+    id: string,
+    envName: EnvName,
+    candidateOperationId: string,
+    stateToken: string,
+  ): Promise<Project> {
+    await this.rollbackFlow.execute(id, envName, candidateOperationId, stateToken);
     return this.get(id);
   }
 

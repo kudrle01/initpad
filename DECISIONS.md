@@ -3283,3 +3283,47 @@ kroku nemůže vrátit operaci z `verifying` do `running`. Stávající kód, kt
 testuje `status=running`, se nemusí přepisovat a nadále brání souběhu. Cena je
 nutnost při každé terminální změně zapsat obě pole; tuto invariantnost kryjí
 doménové a Agent regresní testy.
+
+---
+
+## ADR-075 — Ruční rollback znovu publikuje ověřený artifact bez nového buildu
+
+**Kontext.** Automatický health-gated cutover umí při neúspěchu zachovat
+poslední funkční workload, ale uživatel dosud nemohl vědomě vrátit již
+publikovanou starší verzi. Opakovat CI by porušilo build-once princip: nový běh
+nemusí vytvořit stejné bajty a může být nedostupný právě během incidentu.
+Pouhé zadání commit SHA by navíc u GitHubu neidentifikovalo konkrétní ověřený
+výstup workflow.
+
+**Možnosti.** (a) Spustit nový CI build starého commitu. (b) Dovolit zadat
+libovolný tag nebo SHA. (c) Nabídnout pouze předchozí úspěšnou publikaci z
+auditované historie a znovu použít její immutable verzi a `BuildArtifact`.
+
+**Rozhodnutí.** (c). Preview vybírá nejnovější úspěšnou publikační operaci pro
+stejné prostředí, která se liší od aktuálního artifactu nebo verze. Verze musí
+být plný čtyřicetiznakový commit SHA. GitHub a vzdálený Docker Agent vyžadují
+dostupný object-store artifact; přímá Gitea cesta může použít immutable OCI tag.
+Rollback smějí spustit pouze role s oprávněním `maintain`. Dialog ukazuje
+prostředí, současnou a návratovou verzi, target, digest a dopad na workload.
+Potvrzení posílá ID přesně zobrazené zdrojové operace a SHA-256 otisk aktuálního
+targetu, verze, artifactu, stavu, revizí konfigurace a operation locku. API před
+plánováním preview znovu vyhodnotí; zastaralé nebo změněné potvrzení odmítne.
+Rollback mění aplikaci, nikoli konfiguraci: aktuální environment variables a
+secrets se znovu použijí a jejich historické hodnoty se neobnovují. Nová
+`DeploymentOperation(kind=rollback)` používá běžný providerový delivery a
+health gate, ale vždy s registry/artifact cestou bez build fallbacku a bez CI.
+
+**Retention.** Historie operací zůstává zachovaná, ale binární objekty se
+neuchovávají bez omezení. GC chrání artifact přímo svázaný s prostředím,
+artifact rozpracované operace a právě jeden nejnovější úspěšný odlišný artifact
+pro každé prostředí. Prázdné prostředí si ponechá poslední publikovaný artifact.
+Starší objekty mohou po nakonfigurované lhůtě expirovat; jejich historické řádky
+pak zůstanou pravdivě označené jako nedostupné.
+
+**Důsledky.** Incident lze vrátit bez závislosti na CI; managed gateway a jiné
+stable-routing targety přitom zachovají URL, direct-port target může přidělit
+nový port. Rollback je auditovatelný a podléhá stejnému health, fencing a tenant
+boundary modelu jako běžný deploy. Garantován je jeden okamžitý návratový bod,
+nikoli neomezený artifact archiv. Pokud se změnil target nebo stav prostředí,
+uživatel musí dopad znovu zkontrolovat; nedostupný artifact se v nabídce
+nezobrazí.

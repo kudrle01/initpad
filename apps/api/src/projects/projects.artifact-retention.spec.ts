@@ -13,7 +13,10 @@ describe('ProjectArtifactLifecycle.runRetention', () => {
         updateMany,
       },
       environment: { count: jest.fn(async () => 0) },
-      deploymentOperation: { count: jest.fn(async () => 0) },
+      deploymentOperation: {
+        count: jest.fn(async () => 0),
+        findMany: jest.fn(async () => []),
+      },
     };
     const del = jest.fn(async () => undefined);
     const service = make(prisma, { delete: del });
@@ -68,7 +71,10 @@ describe('ProjectArtifactLifecycle.runRetention', () => {
         updateMany: jest.fn(),
       },
       environment: { count: jest.fn(async () => 0) },
-      deploymentOperation: { count: jest.fn(async () => 0) },
+      deploymentOperation: {
+        count: jest.fn(async () => 0),
+        findMany: jest.fn(async () => []),
+      },
     };
     const del = jest.fn(async () => {
       throw new Error('storage offline');
@@ -94,6 +100,65 @@ describe('ProjectArtifactLifecycle.runRetention', () => {
     const arg = (findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }])[0];
     expect(arg.where).toMatchObject({ storageKind: 'object-store' });
     expect(arg.where).toHaveProperty('createdAt');
+  });
+
+  it('protects exactly the newest previous successful artifact for rollback', async () => {
+    const prisma = {
+      buildArtifact: {
+        findMany: jest.fn(async () => [{ id: 'previous', storageRef: 'previous.tar' }]),
+        updateMany: jest.fn(),
+      },
+      environment: {
+        count: jest.fn(async () => 0),
+        findUnique: jest.fn(async () => ({ buildArtifactId: 'current' })),
+      },
+      deploymentOperation: {
+        count: jest.fn(async () => 0),
+        findMany: jest.fn(async () => [{ environmentId: 'dev' }]),
+        findFirst: jest.fn(async () => ({ buildArtifactId: 'previous' })),
+      },
+    };
+    const del = jest.fn();
+    const service = make(prisma, { delete: del });
+
+    await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
+    expect(del).not.toHaveBeenCalled();
+    expect(prisma.deploymentOperation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          environmentId: 'dev',
+          NOT: { buildArtifactId: 'current' },
+        }),
+        orderBy: { createdAt: 'desc' },
+      }),
+    );
+  });
+
+  it('expires older successful artifacts beyond the single rollback point', async () => {
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    const prisma = {
+      buildArtifact: {
+        findMany: jest.fn(async () => [{ id: 'older', storageRef: 'older.tar' }]),
+        updateMany,
+      },
+      environment: {
+        count: jest.fn(async () => 0),
+        findUnique: jest.fn(async () => ({ buildArtifactId: 'current' })),
+      },
+      deploymentOperation: {
+        count: jest.fn(async () => 0),
+        findMany: jest.fn(async () => [{ environmentId: 'dev' }]),
+        findFirst: jest.fn(async () => ({ buildArtifactId: 'previous' })),
+      },
+    };
+    const del = jest.fn(async () => undefined);
+    const service = make(prisma, { delete: del });
+
+    await expect(service.runRetention()).resolves.toEqual({ removed: 1, kept: 0 });
+    expect(del).toHaveBeenCalledWith('older.tar');
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'older' } }),
+    );
   });
 
   it('purges every durable object belonging to a deleted project', async () => {
