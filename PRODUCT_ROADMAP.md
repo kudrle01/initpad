@@ -452,7 +452,7 @@ navíc potvrdil oddělené hostname, sítě a workload identity nad společnou
 gateway. Fáze 5 je tím uživatelsky i provozně uzavřená; současný náhodný port
 zůstává záměrně pouze `direct-port` local/lab cestou.
 
-### Fáze 6 — jednotný delivery tok — probíhá
+### Fáze 6 — jednotný delivery tok — ✅ dokončeno
 
 - CI produkuje OCI image nebo archiv a jeho digest/SHA.
 - Automatický deploy do dev, ruční promotion do testu a approval do prod.
@@ -499,7 +499,7 @@ plán byly dodány v předchozích milnících a zůstávají součástí Fáze 
   nespouští CI ani nový build a stále musí projít health gate cílového
   provideru. Retention chrání aktuální a jeden nejnovější odlišný artifact pro každé prostředí;
   starší objekty mohou podle nastavené lhůty bezpečně expirovat.
-- ✅ **6c — diagnostika workloadu (implementace).** Projektový detail nabízí
+- ✅ **6c — diagnostika workloadu.** Projektový detail nabízí
   `Workload diagnostics` pouze pro nasazené workspace Docker/Agent targety.
   Agent 0.9 dostává allocation-scoped allow-listed `logs` job bez commandu,
   image instrukce, configu nebo secretů a vrací stav kontejneru, exit code,
@@ -508,17 +508,47 @@ plán byly dodány v předchozích milnících a zůstávají součástí Fáze 
   `AgentJob` ani deployment historie. Refresh je fenced, selhání zachová poslední
   úspěšné pozorování, offline Agent je výrazně vidět a request bezpečně čeká ve
   frontě. Aplikační logy smějí číst jen role s project-write oprávněním. Při
-  deaktivaci Agenta nebo mazání projektu se čekající diagnostika zruší. Zbývá
-  živý acceptance s Agentem 0.9; do jeho potvrzení zůstává Fáze 6 označena jako
-  probíhající.
+  deaktivaci Agenta nebo mazání projektu se čekající diagnostika zruší. Živý
+  acceptance s Agentem 0.9 byl potvrzen 1. září 2026 nad skutečným React
+  workloadem; po aktualizaci správné target identity se diagnostický snapshot
+  i navazující prostředí chovaly podle očekávání.
 
-### Fáze 7 — organizační provoz a školní vyhodnocení
+### Fáze 7 — organizační provoz a školní vyhodnocení — následuje
 
-- Portfolio workspaceů: týmy, projekty, CI, aktivní allocations a poslední deploy.
-- Approval pravidla, termíny, kvóty CPU/RAM/disk a automatický teardown.
-- Audit log registrace, změn členství, target assignmentů, promotion a mazání.
-- Volitelný export workspace metrik pro firmu nebo vyhodnocení výuky bez
-  zavedení druhé autorizační domény.
+Fáze nepřidává `Course`, zvláštní školní účty ani druhý tenancy model. Stejné
+workspace, role a projekty obslouží školu, malý tým i firmu; školní využití je
+jen konkrétní provozní a vyhodnocovací scénář.
+
+1. TODO **7a — append-only audit události.** Zavést jednotný workspace-scoped
+   záznam aktéra, akce, resource identity, výsledku a času bez ukládání secretů.
+   Napojit nejdřív bezpečnostně důležité změny: členství/role, projekt
+   create/import/delete, target a allocation, environment target, promotion,
+   rollback, diagnostiku a Agent enrollment/disable. UI nabídne filtrovaný,
+   stránkovaný audit oprávněným rolím. **Uživatelský test:** dvě role provedou
+   několik změn; owner vidí správné pořadí a aktéry, běžný member pouze povolený
+   workspace a cizí workspace vrací 404.
+2. TODO **7b — skutečný prod approval workflow.** Oddělit žádost o produkční
+   nasazení od schválení, uložit přesný artifact/target/config state token a
+   podle workspace policy případně zakázat self-approval. Změna vstupů starou
+   žádost zneplatní. **Uživatelský test:** member/maintainer požádá, oprávněný
+   druhý člověk schválí a prod použije přesně zobrazený digest; zamítnutá,
+   zastaralá ani dvakrát potvrzená žádost nic nenasadí.
+3. TODO **7c — provozní policy a lifecycle.** Rozšířit allocation policy o
+   smysluplné CPU/RAM/PID limity, maximální počet prostředí a volitelné TTL pro
+   dev/test. Automatický teardown musí být auditovaný, upozornit před expirací a
+   nikdy bez explicitní policy neodstranit prod ani zdrojový repozitář.
+   **Uživatelský test:** překročení kvóty je odmítnuto před jobem, expirující dev
+   je vidět dopředu a po TTL zmizí jen workload; prod zůstane nedotčený.
+4. TODO **7d — organizační portfolio.** Workspace dashboard shrne projekty,
+   poslední CI/deploy, health, aktivní allocations, čekající approvals a cleanup
+   dluh bez N+1 SCM/Docker dotazů. **Uživatelský test:** owner pozná problémový
+   projekt a přejde na konkrétní akci; viewer vidí read-only stav a prázdný list
+   se během načítání falešně nezobrazí.
+5. TODO **7e — vyhodnocovací export.** Nabídnout privacy-bounded CSV/JSON export
+   workspace metrik (lead time, úspěšnost deploymentů, rollbacky, čas do zdravého
+   dev) pro firmu nebo výuku. Export nesmí obsahovat logy, secrets ani druhou
+   autorizační doménu. **Uživatelský test:** owner exportuje období a hodnoty
+   odpovídají auditovaným operacím; member bez oprávnění export nezíská.
 
 ### Fáze 8 — hardening a vyhodnocení
 

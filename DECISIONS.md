@@ -3389,3 +3389,11 @@ health, exit code a limit Docker log requestu. Web build a browser kontrola
 ověřují samostatnou akci, prázdný/error/offline stav a dialog bez horizontálního
 overflow na šířce 390 px. Živý acceptance navíc provede Run → Stop → Refresh →
 offline queue → reconnect a ověří, že deployment timeline zůstala beze změny.
+
+**Živý výsledek.** Dne 1. září 2026 uživatel potvrdil funkční projektový tok
+nad skutečným React workloadem. První pokus správně odmítl Agent 0.8.1; kontrola
+odhalila, že projekt používá samostatnou tertiary target identitu, nikoli hlavní
+lab identitu. Po in-place aktualizaci pouze správného Agenta na 0.9.0, bez
+restartu Docker daemonu nebo workloadu, se heartbeat přepsal na novou verzi a
+diagnostika prošla. Tím je současně ověřeno, že version gate selže bezpečně a
+upgrade jedné Agent identity nezasáhne ostatní targety.
