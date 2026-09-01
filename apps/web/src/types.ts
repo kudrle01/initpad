@@ -46,6 +46,29 @@ export interface WorkspaceMember {
   createdAt: string;
 }
 
+export interface AuditEvent {
+  id: string;
+  actor: {
+    userId: string | null;
+    username: string;
+    displayName: string | null;
+  };
+  action: string;
+  outcome: 'succeeded' | 'failed';
+  resource: {
+    type: string;
+    id: string | null;
+    name: string | null;
+  };
+  details: Record<string, string | number | boolean> | null;
+  createdAt: string;
+}
+
+export interface AuditEventPage {
+  items: AuditEvent[];
+  nextCursor: string | null;
+}
+
 export type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
 
 // A repository the user can import (existing-repo import).

@@ -116,7 +116,8 @@ describe('WorkspacesService tenant isolation', () => {
       collaboratorUsername: jest.fn(async () => 'bob'),
       provider: jest.fn(() => gitea),
     };
-    const service = new WorkspacesService(prisma as never, workspaceScm as never);
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = new WorkspacesService(prisma as never, workspaceScm as never, audit as never);
     jest.spyOn(service, 'require').mockResolvedValue('admin');
 
     await service.addMember('admin', 'team', { identity: 'bob', role: 'viewer' });
@@ -130,6 +131,15 @@ describe('WorkspacesService tenant isolation', () => {
     );
     expect(prisma.workspaceMember.create).toHaveBeenCalledWith({
       data: { workspaceId: 'team', userId: 'u2', role: 'viewer' },
+    });
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'team',
+      actorUserId: 'admin',
+      action: 'workspace.member_added',
+      resourceType: 'member',
+      resourceId: 'u2',
+      resourceName: 'bob',
+      details: { role: 'viewer' },
     });
   });
 

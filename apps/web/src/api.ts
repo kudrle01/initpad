@@ -21,6 +21,7 @@ import type {
   AgentEnrollment,
   AgentJobSummary,
   WorkloadDiagnostic,
+  AuditEventPage,
 } from '@/types';
 
 export interface EnvConfig {
@@ -80,6 +81,14 @@ export interface DeleteProjectOptions {
   deleteRepository: boolean;
   confirmProduction: boolean;
   confirmCleanupDebt: boolean;
+}
+
+export interface AuditEventFilters {
+  action?: string;
+  resourceType?: string;
+  outcome?: 'succeeded' | 'failed';
+  cursor?: string;
+  limit?: number;
 }
 
 export interface GitHubStatus {
@@ -174,6 +183,15 @@ export const api = {
     http<void>(`/provisioning/${id}/cleanup`, { method: 'POST' }),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
   getActivity: () => http<ActivityEvent[]>('/activity'),
+  getAuditEvents: (filters: AuditEventFilters = {}) => {
+    const query = new URLSearchParams();
+    if (filters.action) query.set('action', filters.action);
+    if (filters.resourceType) query.set('resourceType', filters.resourceType);
+    if (filters.outcome) query.set('outcome', filters.outcome);
+    if (filters.cursor) query.set('cursor', filters.cursor);
+    query.set('limit', String(filters.limit ?? 30));
+    return http<AuditEventPage>(`/audit-events?${query.toString()}`);
+  },
   createProject: (
     name: string,
     templateId: string,

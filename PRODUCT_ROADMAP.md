@@ -527,6 +527,23 @@ jen konkrétní provozní a vyhodnocovací scénář.
    stránkovaný audit oprávněným rolím. **Uživatelský test:** dvě role provedou
    několik změn; owner vidí správné pořadí a aktéry, běžný member pouze povolený
    workspace a cizí workspace vrací 404.
+   - ✅ **7a.1 — společný základ, členství a projekty.** `AuditEvent` ukládá
+     snapshot aktéra a resource, stabilní akci, výsledek, čas a pouze malá
+     kontrolovaná metadata. API má filtry, limit 100, stabilní cursor a cizí
+     workspace skrývá jako 404. Responzivní `Audit log` nepoužívá aplikační
+     logy ani tajné hodnoty a umí postupně načítat další stránku. Napojeny jsou
+     workspace create/update, členství/role, projekt create/import/delete,
+     environment target, promotion request, rollback request a diagnostic request.
+   - TODO **7a.2 — infrastruktura a Agent.** Doplnit target create/update/delete,
+     allocation create/update/delete a Agent enrollment/disable včetně
+     bezpečných snapshotů před destruktivní operací.
+   - TODO **7a.3 — výsledky a provozní vazby.** U dlouhých asynchronních akcí
+     jednoznačně odlišit přijetí požadavku od skutečného výsledku a propojit
+     audit event s již autoritativní `DeploymentOperation`/`ProvisioningOperation`
+     bez kopírování logů nebo secretů.
+   - TODO **7a.4 — živý acceptance.** Ověřit dvě role, stránkování a filtry,
+     přepnutí workspace, 404 cizího workspace a zachování snapshotu po změně
+     role/jména.
 2. TODO **7b — skutečný prod approval workflow.** Oddělit žádost o produkční
    nasazení od schválení, uložit přesný artifact/target/config state token a
    podle workspace policy případně zakázat self-approval. Změna vstupů starou

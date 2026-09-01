@@ -5,6 +5,7 @@ import {
   Get,
   Headers,
   HttpCode,
+  Inject,
   Param,
   Post,
   Put,
@@ -20,6 +21,8 @@ import { RequestWorkloadDiagnosticDto } from './dto/request-workload-diagnostic.
 import { EnvName } from '../domain/types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { AuditEventsService, type AuditDetailValue } from '../audit/audit-events.service';
+import type { Project } from '../domain/types';
 
 function historyLimit(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
@@ -33,7 +36,13 @@ function historyLimit(raw: string | undefined, fallback: number): number {
 @Controller('projects')
 @UseGuards(JwtAuthGuard)
 export class ProjectsController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(
+    private readonly projects: ProjectsService,
+    @Inject(AuditEventsService)
+    private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
+      record: async () => undefined,
+    },
+  ) {}
 
   @Get()
   list(@CurrentUser() userId: string, @Headers('x-workspace-id') workspaceId?: string) {
@@ -77,12 +86,17 @@ export class ProjectsController {
   }
 
   @Post()
-  create(
+  async create(
     @Body() dto: CreateProjectDto,
     @CurrentUser() userId: string,
     @Headers('x-workspace-id') workspaceId?: string,
   ) {
-    return this.projects.create(dto, userId, workspaceId);
+    const project = await this.projects.create(dto, userId, workspaceId);
+    await this.recordProject(project, userId, 'project.created', {
+      template: project.templateId,
+      provider: project.scm.provider,
+    });
+    return project;
   }
 
   @Post(':id/promote/:env')
@@ -92,7 +106,11 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    return this.projects.promote(id, env);
+    const project = await this.projects.promote(id, env);
+    await this.recordProject(project, userId, 'environment.promotion_requested', {
+      environment: env,
+    });
+    return project;
   }
 
   @Post(':id/redeploy/:env')
@@ -123,7 +141,12 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'maintain');
-    return this.projects.rollback(id, env, dto.candidateOperationId, dto.stateToken);
+    const project = await this.projects.rollback(id, env, dto.candidateOperationId, dto.stateToken);
+    await this.recordProject(project, userId, 'environment.rollback_requested', {
+      environment: env,
+      candidateOperationId: dto.candidateOperationId,
+    });
+    return project;
   }
 
   // Application logs may contain sensitive business data even after secrets
@@ -147,7 +170,12 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    return this.projects.requestWorkloadDiagnostic(id, env, userId, dto.requestId);
+    const diagnostic = await this.projects.requestWorkloadDiagnostic(id, env, userId, dto.requestId);
+    const project = await this.projects.get(id);
+    await this.recordProject(project, userId, 'environment.diagnostic_requested', {
+      environment: env,
+    });
+    return diagnostic;
   }
 
   @Post(':id/run-again')
@@ -202,7 +230,12 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    return this.projects.bindTarget(id, env, dto.targetId);
+    const project = await this.projects.bindTarget(id, env, dto.targetId);
+    await this.recordProject(project, userId, 'environment.target_changed', {
+      environment: env,
+      targetId: dto.targetId,
+    });
+    return project;
   }
 
   @Delete(':id')
@@ -213,10 +246,31 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'maintain');
-    return this.projects.remove(id, {
+    const project = await this.projects.get(id);
+    await this.projects.remove(id, {
       deleteRemoteRepo: dto?.deleteRepository === true,
       confirmProduction: dto?.confirmProduction === true,
       confirmCleanupDebt: dto?.confirmCleanupDebt === true,
+    });
+    await this.recordProject(project, userId, 'project.deleted', {
+      repositoryDeleted: dto?.deleteRepository === true,
+    });
+  }
+
+  private recordProject(
+    project: Project,
+    actorUserId: string,
+    action: string,
+    details?: Record<string, AuditDetailValue>,
+  ) {
+    return this.auditEvents.record({
+      workspaceId: project.workspaceId,
+      actorUserId,
+      action,
+      resourceType: 'project',
+      resourceId: project.id,
+      resourceName: project.name,
+      details,
     });
   }
 }

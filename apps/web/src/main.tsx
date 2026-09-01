@@ -18,6 +18,7 @@ const Projects = lazy(() => import('@/pages/Projects'));
 const Templates = lazy(() => import('@/pages/Templates'));
 const Environments = lazy(() => import('@/pages/Environments'));
 const Activity = lazy(() => import('@/pages/Activity'));
+const AuditLog = lazy(() => import('@/pages/AuditLog'));
 const Infrastructure = lazy(() => import('@/pages/Infrastructure'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Admin = lazy(() => import('@/pages/Admin'));
@@ -52,6 +53,7 @@ const router = createBrowserRouter([
       { path: 'templates', element: page(Templates) },
       { path: 'environments', element: page(Environments) },
       { path: 'activity', element: page(Activity) },
+      { path: 'audit', element: page(AuditLog) },
       { path: 'infrastructure', element: page(Infrastructure) },
       { path: 'settings', element: page(Settings) },
       { path: 'admin', element: page(Admin) },

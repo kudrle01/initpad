@@ -42,6 +42,7 @@ model User {
   externalIdentities         ExternalIdentity[]
   githubInstallationAccesses GitHubInstallationAccess[] @relation("GitHubInstallationAuthorizedBy")
   githubInstallationSetups   GitHubInstallationSetup[]
+  auditEvents                AuditEvent[]                @relation("AuditEventActor")
 }
 
 // A GitHub App installation on a user or organization account (ADR-030). It is
@@ -163,6 +164,7 @@ model Workspace {
   targetAllocations          TargetAllocation[]
   githubInstallationAccesses GitHubInstallationAccess[]
   githubInstallationSetups   GitHubInstallationSetup[]
+  auditEvents                AuditEvent[]
 }
 
 model WorkspaceMember {
@@ -175,6 +177,32 @@ model WorkspaceMember {
 
   @@id([workspaceId, userId])
   @@index([userId])
+}
+
+// Immutable workspace activity used for security review and organizational
+// reporting (ADR-077). Mutable names are copied as snapshots, while actorUserId
+// may become null if an account is removed. Details are deliberately small and
+// non-secret; application logs, credentials and configuration values belong in
+// their dedicated bounded stores, never in this timeline.
+model AuditEvent {
+  id               String    @id @default(uuid())
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId      String
+  actor             User?     @relation("AuditEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorUserId       String?
+  actorUsername     String
+  actorDisplayName  String?
+  action            String
+  outcome           String    @default("succeeded") // succeeded | failed
+  resourceType      String
+  resourceId        String?
+  resourceName      String?
+  details           Json?
+  createdAt         DateTime  @default(now())
+
+  @@index([workspaceId, createdAt, id])
+  @@index([workspaceId, action, createdAt])
+  @@index([workspaceId, resourceType, resourceId, createdAt])
 }
 
 // A first-class deployment target: a place an environment can deploy to.

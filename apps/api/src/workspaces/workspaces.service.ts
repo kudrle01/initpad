@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.d
 import { AddWorkspaceMemberDto, AssignableRole, UpdateWorkspaceMemberDto } from './dto/member.dto';
 import { repositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
+import { AuditEventsService } from '../audit/audit-events.service';
 
 const REPOSITORY_SELECT = {
   scmProvider: true,
@@ -37,6 +39,10 @@ export class WorkspacesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspaceScm: WorkspaceScmService,
+    @Inject(AuditEventsService)
+    private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
+      record: async () => undefined,
+    },
   ) {}
 
   async list(userId: string) {
@@ -132,17 +138,40 @@ export class WorkspacesService {
         members: { create: { userId, role: 'owner' } },
       },
     });
+    await this.auditEvents.record({
+      workspaceId: workspace.id,
+      actorUserId: userId,
+      action: 'workspace.created',
+      resourceType: 'workspace',
+      resourceId: workspace.id,
+      resourceName: workspace.name,
+      details: { type: workspace.type },
+    });
     return { ...workspace, role: 'owner' as const, createdAt: workspace.createdAt.toISOString() };
   }
 
   async update(userId: string, workspaceId: string, dto: UpdateWorkspaceDto) {
     await this.require(userId, workspaceId, 'admin');
+    const previous = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { name: true },
+    });
+    if (!previous) throw new NotFoundException('Workspace not found');
     const workspace = await this.prisma.workspace.update({
       where: { id: workspaceId },
       data: { name: dto.name.trim() },
     });
     const membership = await this.prisma.workspaceMember.findUniqueOrThrow({
       where: { workspaceId_userId: { workspaceId, userId } },
+    });
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'workspace.updated',
+      resourceType: 'workspace',
+      resourceId: workspace.id,
+      resourceName: workspace.name,
+      details: { previousName: previous.name, name: workspace.name },
     });
     return { ...workspace, role: membership.role as WorkspaceRole, createdAt: workspace.createdAt.toISOString() };
   }
@@ -199,6 +228,15 @@ export class WorkspacesService {
     });
     if (existing) throw new ConflictException('User is already a workspace member');
     await this.attachMember(workspaceId, member.id, dto.role);
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'workspace.member_added',
+      resourceType: 'member',
+      resourceId: member.id,
+      resourceName: member.username,
+      details: { role: dto.role },
+    });
     return this.members(userId, workspaceId);
   }
 
@@ -251,6 +289,15 @@ export class WorkspacesService {
       await this.syncRepositoryAccess(workspaceId, memberId, member.role).catch(() => undefined);
       throw error;
     }
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'workspace.member_role_changed',
+      resourceType: 'member',
+      resourceId: memberId,
+      resourceName: member.user.username,
+      details: { previousRole: member.role, role: dto.role },
+    });
     return this.members(userId, workspaceId);
   }
 
@@ -267,11 +314,21 @@ export class WorkspacesService {
       await this.syncRepositoryAccess(workspaceId, memberId, member.role).catch(() => undefined);
       throw error;
     }
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'workspace.member_removed',
+      resourceType: 'member',
+      resourceId: memberId,
+      resourceName: member.user.username,
+      details: { previousRole: member.role },
+    });
   }
 
   private async memberOrThrow(workspaceId: string, userId: string) {
     const member = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
+      include: { user: { select: { username: true } } },
     });
     if (!member) throw new NotFoundException('Workspace member not found');
     return member;

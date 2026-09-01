@@ -15,6 +15,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  ScrollText,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/auth';
@@ -55,6 +56,7 @@ const NAV: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
 const PLATFORM_NAV: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/environments', label: 'Environments', icon: Server },
   { to: '/activity', label: 'Activity', icon: Activity },
+  { to: '/audit', label: 'Audit log', icon: ScrollText },
   { to: '/infrastructure', label: 'Infrastructure', icon: Network },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];

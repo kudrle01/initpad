@@ -1,0 +1,229 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ScrollText, ShieldCheck, UserRound } from 'lucide-react';
+import { api, type AuditEventFilters } from '@/api';
+import { useAuth } from '@/auth';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { EmptyState } from '@/components/molecules/EmptyState';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
+import { PageHeader } from '@/components/molecules/PageHeader';
+import { useLoadable } from '@/hooks/useLoadable';
+import type { AuditEvent, AuditEventPage } from '@/types';
+
+const EMPTY_PAGE: AuditEventPage = { items: [], nextCursor: null };
+
+const ACTION_LABELS: Record<string, string> = {
+  'workspace.created': 'Workspace created',
+  'workspace.updated': 'Workspace updated',
+  'workspace.member_added': 'Member added',
+  'workspace.member_role_changed': 'Member role changed',
+  'workspace.member_removed': 'Member removed',
+  'project.created': 'Project created',
+  'project.imported': 'Project imported',
+  'project.deleted': 'Project deleted',
+  'environment.target_changed': 'Environment target changed',
+  'environment.promotion_requested': 'Promotion requested',
+  'environment.rollback_requested': 'Rollback requested',
+  'environment.diagnostic_requested': 'Diagnostics requested',
+};
+
+function label(value: string): string {
+  return value
+    .replace(/[._-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function eventLabel(action: string): string {
+  return ACTION_LABELS[action] ?? label(action);
+}
+
+function relativeTime(iso: string): string {
+  const milliseconds = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(milliseconds)) return '';
+  const minutes = Math.max(0, Math.floor(milliseconds / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days < 30 ? `${days}d ago` : new Date(iso).toLocaleDateString('en-GB');
+}
+
+function EventCard({ event }: { event: AuditEvent }) {
+  const exactTime = new Date(event.createdAt).toLocaleString();
+  const details = Object.entries(event.details ?? {});
+
+  return (
+    <article className="rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
+          <ShieldCheck className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold">{eventLabel(event.action)}</h2>
+            <Badge
+              variant="outline"
+              className={event.outcome === 'succeeded'
+                ? 'border-success/30 bg-success/10 text-success'
+                : 'border-destructive/30 bg-destructive/10 text-destructive'}
+            >
+              {event.outcome}
+            </Badge>
+            <time
+              dateTime={event.createdAt}
+              title={exactTime}
+              className="text-xs text-muted-foreground sm:ml-auto"
+            >
+              {relativeTime(event.createdAt)}
+            </time>
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <UserRound className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {event.actor.displayName || event.actor.username} (@{event.actor.username})
+              </span>
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="break-all">
+              {label(event.resource.type)}: {event.resource.name || event.resource.id || 'unknown'}
+            </span>
+          </div>
+          {details.length > 0 && (
+            <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 rounded-md bg-secondary/50 px-3 py-2 text-xs">
+              {details.map(([key, value]) => (
+                <div key={key} className="flex min-w-0 gap-1">
+                  <dt className="text-muted-foreground">{label(key)}:</dt>
+                  <dd className="break-all font-medium">{String(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+export default function AuditLog() {
+  const { activeWorkspace } = useAuth();
+  const [action, setAction] = useState('');
+  const [resourceType, setResourceType] = useState('');
+  const [outcome, setOutcome] = useState<'' | 'succeeded' | 'failed'>('');
+  const [additionalItems, setAdditionalItems] = useState<AuditEvent[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const loadMoreSequence = useRef(0);
+
+  const filters: AuditEventFilters = {
+    ...(action ? { action } : {}),
+    ...(resourceType ? { resourceType } : {}),
+    ...(outcome ? { outcome } : {}),
+    limit: 30,
+  };
+  const loadFirstPage = useCallback(
+    () => api.getAuditEvents(filters),
+    [activeWorkspace?.id, action, resourceType, outcome],
+  );
+  const { data, loading, error, reload } = useLoadable(loadFirstPage, EMPTY_PAGE);
+
+  useEffect(() => {
+    loadMoreSequence.current += 1;
+    setAdditionalItems([]);
+    setNextCursor(data.nextCursor);
+    setMoreError(null);
+  }, [data]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    const request = ++loadMoreSequence.current;
+    setLoadingMore(true);
+    setMoreError(null);
+    try {
+      const page = await api.getAuditEvents({ ...filters, cursor: nextCursor });
+      if (request !== loadMoreSequence.current) return;
+      setAdditionalItems((current) => [...current, ...page.items]);
+      setNextCursor(page.nextCursor);
+    } catch (cause) {
+      if (request === loadMoreSequence.current) setMoreError((cause as Error).message);
+    } finally {
+      if (request === loadMoreSequence.current) setLoadingMore(false);
+    }
+  }
+
+  const items = [...data.items, ...additionalItems];
+  const filtered = Boolean(action || resourceType || outcome);
+
+  return (
+    <div>
+      <PageHeader
+        title="Audit log"
+        subtitle="Workspace changes with immutable actor and resource snapshots. Secrets, configuration values and application logs are never stored here."
+      />
+
+      <div className="mb-5 grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-3">
+        <Select value={action} onChange={(event) => setAction(event.target.value)} aria-label="Filter by action">
+          <option value="">All actions</option>
+          {Object.entries(ACTION_LABELS).map(([value, text]) => (
+            <option key={value} value={value}>{text}</option>
+          ))}
+        </Select>
+        <Select value={resourceType} onChange={(event) => setResourceType(event.target.value)} aria-label="Filter by resource">
+          <option value="">All resources</option>
+          <option value="workspace">Workspace</option>
+          <option value="member">Member</option>
+          <option value="project">Project</option>
+        </Select>
+        <Select
+          value={outcome}
+          onChange={(event) => setOutcome(event.target.value as typeof outcome)}
+          aria-label="Filter by outcome"
+        >
+          <option value="">All outcomes</option>
+          <option value="succeeded">Succeeded</option>
+          <option value="failed">Failed</option>
+        </Select>
+      </div>
+
+      {error ? (
+        <LoadErrorState message={error} onRetry={reload} />
+      ) : loading ? (
+        <ContentLoading label="Loading audit log" />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={ScrollText}
+          title={filtered ? 'No matching events' : 'No audit events yet'}
+          description={filtered
+            ? 'Change or clear the filters to see other workspace events.'
+            : 'Security-relevant workspace changes will appear here.'}
+          action={filtered ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setAction('');
+                setResourceType('');
+                setOutcome('');
+              }}
+            >
+              Clear filters
+            </Button>
+          ) : undefined}
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {items.map((event) => <EventCard key={event.id} event={event} />)}
+          {moreError && <p role="alert" className="text-sm text-destructive">{moreError}</p>}
+          {nextCursor && (
+            <Button variant="secondary" className="self-center" disabled={loadingMore} onClick={() => void loadMore()}>
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

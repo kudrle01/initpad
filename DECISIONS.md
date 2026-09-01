@@ -3397,3 +3397,52 @@ lab identitu. Po in-place aktualizaci pouze správného Agenta na 0.9.0, bez
 restartu Docker daemonu nebo workloadu, se heartbeat přepsal na novou verzi a
 diagnostika prošla. Tím je současně ověřeno, že version gate selže bezpečně a
 upgrade jedné Agent identity nezasáhne ostatní targety.
+
+---
+
+## ADR-077 — Audit změn je append-only workspace timeline se snapshoty identit
+
+**Kontext.** `ProvisioningOperation`, `DeploymentOperation`, SCM workflow a
+`AgentJob` už pravdivě popisují vlastní technické procesy, ale neodpovídají
+jednotně na organizační otázku kdo změnil roli, projekt nebo infrastrukturu.
+Skládat jeden audit zpětně z mutabilních tabulek by po přejmenování nebo
+smazání zdroje měnilo historický význam. Kopírovat do něj celé requesty,
+konfiguraci či logy by naopak vytvořilo nový archiv tajných a osobních dat.
+
+**Rozhodnutí.** Jednotný `AuditEvent` patří právě jednomu workspace. Ukládá
+immutable ID aktéra, jeho username/display-name snapshot, stabilní název akce,
+`succeeded|failed`, typ/ID/název resource snapshot, malá metadata a serverový
+čas. Vazba na uživatele je `SET NULL`, takže odstranění účtu nezničí jméno
+historického aktéra. Resource záměrně nemá cizí klíč: událost smazání
+projektu nebo targetu musí přežít jeho řádek. Při explicitním smazání celého
+team workspace se smaže i jeho timeline; audit je append-only po dobu existence
+tenant boundary, nikoli skrytý globální archiv po odvolání souhlasu.
+
+Aplikační rozhraní poskytuje pouze `record` a list; update ani delete endpoint
+neexistuje. Akce a resource používají omezené strojové identifikátory. Metadata
+smí obsahovat nejvýše 20 plochých scalarů, 4 KiB celkem a 256 znaků na text;
+klíče naznačující password, secret, token, credential, private key,
+config value nebo log jsou odmítnuty ještě před zápisem. Hodnoty se vybírají
+explicitně na integračním místě, nikdy serializací celého DTO. Audit tak
+neobsahuje target credentials, enrollment token, `stateToken`, environment
+variables, aplikační log ani provider response.
+
+Každý člen smí číst nesenzitivní audit workspace, jehož je členem; cizí
+workspace vrací 404 ještě před dotazem na události. Výsledek je seřazen podle
+`createdAt DESC, id DESC`, limitován na 100 a stránkován opaque UUID cursorem,
+který se před použitím ověří ve stejném workspace. Filtry jsou exact-match
+pro akci, resource type a outcome. UI rozlišuje tento organizační audit od
+existujícího `Activity` feedu commitů a CI.
+
+**Důsledky.** Přejmenování ani smazání resource zpětně nepřepíše identitu
+události a dva workspace nemohou sdílet cursor nebo timeline. První krok
+zapisuje úspěšně dokončené změny workspace, členství a projektů. Technický
+průběh create/import/deploy nadále autoritativně zůstává v existujících
+operation tabulkách; další podkrok audit bezpečně prováže s jejich výsledkem,
+místo aby kopíroval jejich zprávy. Cena snapshotů je vědomá denormalizace a
+omezená osobní data; jejich retence musí být součástí budoucí privacy policy.
+
+**Testování.** Jednotkové testy kryjí snapshot aktéra/resource, odmítnutí
+citlivého detail key, stabilní filtrovanou cursor stránku, neplatný cursor a
+404 izolaci před čtením eventů. API a web production build musí projít po
+vygenerování Prisma klienta; živý acceptance následuje po aplikaci migrace.
