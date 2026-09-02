@@ -7,9 +7,10 @@ import { AgentEnrollmentController } from './agent-enrollment.controller';
 import { AgentJobsService } from './agent-jobs.service';
 import { AgentManagementController } from './agent-management.controller';
 import { AgentsService } from './agents.service';
+import { AuditEventsModule } from '../audit/audit-events.module';
 
 @Module({
-  imports: [AuthModule, WorkspacesModule, ArtifactsModule, TargetsModule],
+  imports: [AuthModule, WorkspacesModule, ArtifactsModule, TargetsModule, AuditEventsModule],
   controllers: [AgentEnrollmentController, AgentManagementController],
   providers: [AgentsService, AgentJobsService],
   exports: [AgentsService, AgentJobsService],

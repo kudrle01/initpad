@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -16,6 +17,39 @@ import {
   supportsProjectAgent,
 } from '../agents/agent-version';
 import { artifactStoreConfigured } from '../config';
+import { AuditEventsService } from '../audit/audit-events.service';
+
+function changedAllocationFields(
+  dto: UpdateTargetAllocationDto,
+  row: {
+    capabilities: string;
+    publicUrl: string | null;
+    status: string;
+    maxEnvironments: number;
+  },
+  capabilities: string | undefined,
+): string {
+  const labels: Partial<Record<keyof UpdateTargetAllocationDto, string>> = {
+    capabilities: 'capabilities',
+    publicUrl: 'publicUrl',
+    status: 'status',
+    maxEnvironments: 'maxEnvironments',
+  };
+  const isChanged = (key: keyof UpdateTargetAllocationDto): boolean => {
+    switch (key) {
+      case 'capabilities': return capabilities !== row.capabilities;
+      case 'publicUrl': return dto.publicUrl !== row.publicUrl;
+      case 'status': return dto.status !== row.status;
+      case 'maxEnvironments': return dto.maxEnvironments !== row.maxEnvironments;
+    }
+  };
+  return (Object.keys(dto) as (keyof UpdateTargetAllocationDto)[])
+    .filter(isChanged)
+    .map((key) => labels[key as keyof UpdateTargetAllocationDto])
+    .filter((key): key is string => key !== undefined)
+    .sort()
+    .join(',');
+}
 
 export interface TargetAllocationSummary {
   id: string;
@@ -44,6 +78,10 @@ export class TargetAllocationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspaces: WorkspacesService,
+    @Inject(AuditEventsService)
+    private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
+      record: async () => undefined,
+    },
   ) {}
 
   async list(userId: string, requestedWorkspaceId?: string): Promise<TargetAllocationSummary[]> {
@@ -128,6 +166,19 @@ export class TargetAllocationsService {
       },
       include: { target: { select: { name: true } }, _count: { select: { environments: true } } },
     });
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'allocation.created',
+      resourceType: 'allocation',
+      resourceId: row.id,
+      resourceName: row.target.name,
+      details: {
+        targetId: row.targetId,
+        capabilities: row.capabilities,
+        maxEnvironments: row.maxEnvironments,
+      },
+    });
     return this.toSummary(row);
   }
 
@@ -151,6 +202,18 @@ export class TargetAllocationsService {
       },
       include: { target: { select: { name: true } }, _count: { select: { environments: true } } },
     });
+    const changedFields = changedAllocationFields(dto, row, capabilities);
+    if (changedFields) {
+      await this.auditEvents.record({
+        workspaceId: row.workspaceId,
+        actorUserId: userId,
+        action: 'allocation.updated',
+        resourceType: 'allocation',
+        resourceId: updated.id,
+        resourceName: updated.target.name,
+        details: { changedFields },
+      });
+    }
     return this.toSummary(updated);
   }
 
@@ -163,6 +226,15 @@ export class TargetAllocationsService {
       );
     }
     await this.prisma.targetAllocation.delete({ where: { id: row.id } });
+    await this.auditEvents.record({
+      workspaceId: row.workspaceId,
+      actorUserId: userId,
+      action: 'allocation.deleted',
+      resourceType: 'allocation',
+      resourceId: row.id,
+      resourceName: row.target.name,
+      details: { targetId: row.targetId },
+    });
   }
 
   // Loads an allocation and enforces tenant + role rules. A missing allocation

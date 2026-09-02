@@ -116,14 +116,16 @@ describe('Agent-backed Docker target creation', () => {
       resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })),
       require: jest.fn(async () => 'owner'),
     };
+    const audit = { record: jest.fn(async () => undefined) };
     return {
-      service: new TargetsService(prisma as never, {} as never, workspaces as never),
+      service: new TargetsService(prisma as never, {} as never, workspaces as never, audit as never),
       create,
+      audit,
     };
   }
 
   it('creates an outbound-only Docker target without inbound credentials', async () => {
-    const { service, create } = setup();
+    const { service, create, audit } = setup();
 
     await expect(service.create('owner-1', {
       name: 'Office Docker',
@@ -150,6 +152,20 @@ describe('Agent-backed Docker target creation', () => {
         workspaceId: 'workspace-1',
       }),
     });
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      actorUserId: 'owner-1',
+      action: 'target.created',
+      resourceType: 'target',
+      resourceId: 'target-agent',
+      resourceName: 'Office Docker',
+      details: {
+        kind: 'docker',
+        routingMode: 'direct-port',
+        capabilities: 'node,php,python,static',
+      },
+    });
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain('publicUrl');
   });
 
   it('rejects inbound credentials on an Agent-backed Docker target', async () => {
@@ -270,23 +286,77 @@ describe('target capability updates', () => {
       target: {
         findUnique: jest.fn(async () => current),
         update: jest.fn(async ({ data }: { data: Partial<TargetRow> }) => ({ ...current, ...data })),
+        delete: jest.fn(async () => current),
       },
       environment: { count: jest.fn(async () => 2), updateMany: jest.fn() },
     };
     const workspaces = { require: jest.fn(async () => 'maintainer') };
+    const audit = { record: jest.fn(async () => undefined) };
     return {
-      service: new TargetsService(prisma as never, {} as never, workspaces as never),
+      service: new TargetsService(prisma as never, {} as never, workspaces as never, audit as never),
       prisma,
+      audit,
     };
   }
 
   it('allows adding PHP to a static target that already hosts environments', async () => {
-    const { service, prisma } = serviceWithTarget();
+    const { service, prisma, audit } = serviceWithTarget();
 
     await expect(
       service.update('target-1', 'u1', { capabilities: ['static', 'php'] }),
     ).resolves.toMatchObject({ capabilities: ['php', 'static'], verifiedAt: null });
     expect(prisma.environment.count).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'w1',
+      actorUserId: 'u1',
+      action: 'target.updated',
+      resourceType: 'target',
+      resourceId: 'target-1',
+      resourceName: 'ESO',
+      details: { changedFields: 'capabilities' },
+    });
+  });
+
+  it('records a credential rotation without persisting the credential value in audit details', async () => {
+    const { service, audit } = serviceWithTarget();
+
+    await service.update('target-1', 'u1', {
+      auth: 'password',
+      secret: 'rotated-password',
+      publicUrl: row.publicUrl!,
+    });
+
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'target.updated',
+      details: { changedFields: 'authenticationCredentials' },
+    }));
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain('rotated-password');
+  });
+
+  it('does not create an audit event when submitted values are unchanged', async () => {
+    const { service, audit } = serviceWithTarget();
+
+    await service.update('target-1', 'u1', { name: row.name, capabilities: ['static'] });
+
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('keeps the target snapshot when a target is deleted', async () => {
+    const { service, prisma, audit } = serviceWithTarget();
+    prisma.environment.count.mockResolvedValue(0);
+
+    await service.remove('target-1', 'u1');
+
+    expect(prisma.target.delete).toHaveBeenCalledWith({ where: { id: 'target-1' } });
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'w1',
+      actorUserId: 'u1',
+      action: 'target.deleted',
+      resourceType: 'target',
+      resourceId: 'target-1',
+      resourceName: 'ESO',
+      details: { kind: 'sftp' },
+    });
   });
 
   it('blocks removing a capability from a target that is in use', async () => {

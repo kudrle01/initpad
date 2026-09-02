@@ -534,9 +534,11 @@ jen konkrétní provozní a vyhodnocovací scénář.
      logy ani tajné hodnoty a umí postupně načítat další stránku. Napojeny jsou
      workspace create/update, členství/role, projekt create/import/delete,
      environment target, promotion request, rollback request a diagnostic request.
-   - TODO **7a.2 — infrastruktura a Agent.** Doplnit target create/update/delete,
-     allocation create/update/delete a Agent enrollment/disable včetně
-     bezpečných snapshotů před destruktivní operací.
+   - ✅ **7a.2 — infrastruktura a Agent.** Target create/update/delete,
+     allocation create/update/delete a Agent enrollment/disable zapisují
+     workspace, aktéra a neměnný název resource. Update uvádí pouze skutečně
+     změněná pole, destruktivní akce zachovají snapshot před smazáním a audit
+     nikdy nepřebírá target host/URL/path, credentials ani enrollment token.
    - TODO **7a.3 — výsledky a provozní vazby.** U dlouhých asynchronních akcí
      jednoznačně odlišit přijetí požadavku od skutečného výsledku a propojit
      audit event s již autoritativní `DeploymentOperation`/`ProvisioningOperation`

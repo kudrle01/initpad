@@ -3435,14 +3435,20 @@ pro akci, resource type a outcome. UI rozlišuje tento organizační audit od
 existujícího `Activity` feedu commitů a CI.
 
 **Důsledky.** Přejmenování ani smazání resource zpětně nepřepíše identitu
-události a dva workspace nemohou sdílet cursor nebo timeline. První krok
-zapisuje úspěšně dokončené změny workspace, členství a projektů. Technický
-průběh create/import/deploy nadále autoritativně zůstává v existujících
-operation tabulkách; další podkrok audit bezpečně prováže s jejich výsledkem,
-místo aby kopíroval jejich zprávy. Cena snapshotů je vědomá denormalizace a
-omezená osobní data; jejich retence musí být součástí budoucí privacy policy.
+události a dva workspace nemohou sdílet cursor nebo timeline. Timeline zapisuje
+úspěšně dokončené změny workspace, členství, projektů, targetů, allocations a
+identity Agenta. Target update zaznamená jen názvy skutečně změněných polí;
+host, veřejná URL, vzdálená cesta, credentials ani jednorázový enrollment token
+se do auditu nekopírují. Před smazáním infrastruktury se vezme snapshot názvu,
+který tak přežije odstranění původního řádku. Technický průběh
+create/import/deploy nadále autoritativně zůstává v existujících operation
+tabulkách; další podkrok audit bezpečně prováže s jejich výsledkem, místo aby
+kopíroval jejich zprávy. Cena snapshotů je vědomá denormalizace a omezená osobní
+data; jejich retence musí být součástí budoucí privacy policy.
 
 **Testování.** Jednotkové testy kryjí snapshot aktéra/resource, odmítnutí
 citlivého detail key, stabilní filtrovanou cursor stránku, neplatný cursor a
-404 izolaci před čtením eventů. API a web production build musí projít po
-vygenerování Prisma klienta; živý acceptance následuje po aplikaci migrace.
+404 izolaci před čtením eventů. Integrační testy infrastruktury ověřují create,
+update, delete, no-op update, Agent enrollment/disable a nepřítomnost plaintext
+credential/enrollment tokenu v auditu. API a web production build musí projít
+po vygenerování Prisma klienta; živý acceptance následuje po aplikaci migrace.

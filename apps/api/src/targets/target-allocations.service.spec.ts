@@ -16,8 +16,12 @@ function workspacesWithRole(role: string | null): WorkspacesService {
   return new WorkspacesService(prisma as never, {} as never);
 }
 
-function makeService(prisma: Record<string, unknown>, role: string | null) {
-  return new TargetAllocationsService(prisma as never, workspacesWithRole(role));
+function makeService(
+  prisma: Record<string, unknown>,
+  role: string | null,
+  audit = { record: jest.fn(async () => undefined) },
+) {
+  return new TargetAllocationsService(prisma as never, workspacesWithRole(role), audit as never);
 }
 
 const allocationRow = {
@@ -47,7 +51,8 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
       targetAllocation: { findUnique: jest.fn(async () => null), create },
       workspace: { findUniqueOrThrow: jest.fn(async () => ({ slug: 'acme' })) },
     };
-    const service = makeService(prisma, 'admin');
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = makeService(prisma, 'admin', audit);
 
     const res = await service.create('u1', { targetId: 'tgt-1', capabilities: ['static'] }, 'ws-1');
 
@@ -62,6 +67,19 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
         }),
       }),
     );
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      actorUserId: 'u1',
+      action: 'allocation.created',
+      resourceType: 'allocation',
+      resourceId: 'alloc-1',
+      resourceName: 'Company static host',
+      details: {
+        targetId: 'tgt-1',
+        capabilities: 'static',
+        maxEnvironments: 50,
+      },
+    });
   });
 
   it('forbids a member (403) from creating an allocation', async () => {
@@ -224,5 +242,70 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
 
     await expect(service.remove('alloc-1', 'u1')).rejects.toThrow(/used by 2 environment/);
     expect(prisma.targetAllocation.delete).not.toHaveBeenCalled();
+  });
+
+  it('records only fields whose allocation values actually changed', async () => {
+    const prisma = {
+      targetAllocation: {
+        findUnique: jest.fn(async () => ({ ...allocationRow })),
+        update: jest.fn(async () => ({ ...allocationRow, status: 'disabled' })),
+      },
+    };
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = makeService(prisma, 'admin', audit);
+
+    await service.update('alloc-1', 'u1', {
+      status: 'disabled',
+      maxEnvironments: allocationRow.maxEnvironments,
+    });
+
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      actorUserId: 'u1',
+      action: 'allocation.updated',
+      resourceType: 'allocation',
+      resourceId: 'alloc-1',
+      resourceName: 'Company static host',
+      details: { changedFields: 'status' },
+    });
+  });
+
+  it('does not create an allocation audit event for a no-op update', async () => {
+    const prisma = {
+      targetAllocation: {
+        findUnique: jest.fn(async () => ({ ...allocationRow })),
+        update: jest.fn(async () => ({ ...allocationRow })),
+      },
+    };
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = makeService(prisma, 'admin', audit);
+
+    await service.update('alloc-1', 'u1', { status: 'active' });
+
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('keeps the allocation snapshot after a successful delete', async () => {
+    const prisma = {
+      targetAllocation: {
+        findUnique: jest.fn(async () => ({ ...allocationRow })),
+        delete: jest.fn(async () => allocationRow),
+      },
+      environment: { count: jest.fn(async () => 0) },
+    };
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = makeService(prisma, 'owner', audit);
+
+    await service.remove('alloc-1', 'u1');
+
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      actorUserId: 'u1',
+      action: 'allocation.deleted',
+      resourceType: 'allocation',
+      resourceId: 'alloc-1',
+      resourceName: 'Company static host',
+      details: { targetId: 'tgt-1' },
+    });
   });
 });

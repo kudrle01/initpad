@@ -27,6 +27,14 @@ const ACTION_LABELS: Record<string, string> = {
   'environment.promotion_requested': 'Promotion requested',
   'environment.rollback_requested': 'Rollback requested',
   'environment.diagnostic_requested': 'Diagnostics requested',
+  'target.created': 'Target created',
+  'target.updated': 'Target updated',
+  'target.deleted': 'Target deleted',
+  'allocation.created': 'Allocation created',
+  'allocation.updated': 'Allocation updated',
+  'allocation.deleted': 'Allocation deleted',
+  'agent.enrollment_issued': 'Agent enrollment issued',
+  'agent.disabled': 'Agent disabled',
 };
 
 function label(value: string): string {
@@ -177,6 +185,9 @@ export default function AuditLog() {
           <option value="workspace">Workspace</option>
           <option value="member">Member</option>
           <option value="project">Project</option>
+          <option value="target">Target</option>
+          <option value="allocation">Allocation</option>
+          <option value="agent">Agent</option>
         </Select>
         <Select
           value={outcome}

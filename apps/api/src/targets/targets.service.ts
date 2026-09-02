@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -28,6 +29,50 @@ import {
   MIN_GATEWAY_ROUTE_AGENT_VERSION,
   supportsProjectAgent,
 } from '../agents/agent-version';
+import { AuditEventsService } from '../audit/audit-events.service';
+
+const TARGET_FIELD_LABELS: Partial<Record<keyof UpdateTargetDto, string>> = {
+  name: 'name',
+  capabilities: 'capabilities',
+  host: 'host',
+  port: 'port',
+  username: 'username',
+  auth: 'authenticationMethod',
+  secret: 'authenticationCredentials',
+  remotePath: 'remotePath',
+  publicUrl: 'publicUrl',
+  routingMode: 'routingMode',
+};
+
+function changedTargetFields(
+  dto: UpdateTargetDto,
+  row: TargetRow,
+  publicUrl: string,
+  routingMode: TargetRoutingMode,
+): string {
+  const changed = (key: keyof UpdateTargetDto): boolean => {
+    switch (key) {
+      case 'name': return dto.name !== row.name;
+      case 'capabilities':
+        return [...new Set(dto.capabilities)].sort().join(',') !== row.capabilities;
+      case 'host': return dto.host !== row.host;
+      case 'port': return dto.port !== row.port;
+      case 'username': return dto.username !== row.username;
+      case 'auth': return dto.auth !== row.auth;
+      case 'secret': return Boolean(dto.secret);
+      case 'remotePath': return dto.remotePath !== row.remotePath;
+      case 'publicUrl': return publicUrl !== row.publicUrl;
+      case 'routingMode': return routingMode !== (row.routingMode ?? 'direct-port');
+      case 'kind': return false;
+    }
+  };
+  return (Object.keys(dto) as (keyof UpdateTargetDto)[])
+    .filter(changed)
+    .map((key) => TARGET_FIELD_LABELS[key])
+    .filter((label): label is string => label !== undefined)
+    .sort()
+    .join(',');
+}
 
 // Stable ids for the seeded built-in targets (the simulated infrastructure).
 export const BUILTIN_DOCKER = 'builtin-docker';
@@ -79,6 +124,10 @@ export class TargetsService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly deployment: DeploymentService,
     private readonly workspaces: WorkspacesService,
+    @Inject(AuditEventsService)
+    private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
+      record: async () => undefined,
+    },
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -249,6 +298,19 @@ export class TargetsService implements OnModuleInit {
         workspaceId,
       },
     })) as TargetRow;
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'target.created',
+      resourceType: 'target',
+      resourceId: row.id,
+      resourceName: row.name,
+      details: {
+        kind: row.kind,
+        routingMode: row.routingMode ?? 'direct-port',
+        capabilities: row.capabilities,
+      },
+    });
     return this.toSummary(row, false);
   }
 
@@ -355,6 +417,18 @@ export class TargetsService implements OnModuleInit {
         ...(connectionChanged ? { verifiedAt: null } : {}),
       },
     })) as TargetRow;
+    const changedFields = changedTargetFields(dto, row, publicUrl, routingMode);
+    if (changedFields) {
+      await this.auditEvents.record({
+        workspaceId: row.workspaceId!,
+        actorUserId: ownerId,
+        action: 'target.updated',
+        resourceType: 'target',
+        resourceId: updated.id,
+        resourceName: updated.name,
+        details: { changedFields },
+      });
+    }
     return this.toSummary(updated, false);
   }
 
@@ -367,6 +441,15 @@ export class TargetsService implements OnModuleInit {
       );
     }
     await this.prisma.target.delete({ where: { id: row.id } });
+    await this.auditEvents.record({
+      workspaceId: row.workspaceId!,
+      actorUserId: ownerId,
+      action: 'target.deleted',
+      resourceType: 'target',
+      resourceId: row.id,
+      resourceName: row.name,
+      details: { kind: row.kind },
+    });
   }
 
   // Runs a live connection test and stamps verifiedAt on success.

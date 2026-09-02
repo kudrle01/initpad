@@ -164,15 +164,17 @@ export class WorkspacesService {
     const membership = await this.prisma.workspaceMember.findUniqueOrThrow({
       where: { workspaceId_userId: { workspaceId, userId } },
     });
-    await this.auditEvents.record({
-      workspaceId,
-      actorUserId: userId,
-      action: 'workspace.updated',
-      resourceType: 'workspace',
-      resourceId: workspace.id,
-      resourceName: workspace.name,
-      details: { previousName: previous.name, name: workspace.name },
-    });
+    if (previous.name !== workspace.name) {
+      await this.auditEvents.record({
+        workspaceId,
+        actorUserId: userId,
+        action: 'workspace.updated',
+        resourceType: 'workspace',
+        resourceId: workspace.id,
+        resourceName: workspace.name,
+        details: { previousName: previous.name, name: workspace.name },
+      });
+    }
     return { ...workspace, role: membership.role as WorkspaceRole, createdAt: workspace.createdAt.toISOString() };
   }
 

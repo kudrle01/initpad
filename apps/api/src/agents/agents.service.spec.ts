@@ -32,6 +32,7 @@ function setup(role: string | null = 'owner') {
   const prisma = {
     target: {
       findUnique: jest.fn(async () => ({
+        name: 'Remote Docker',
         kind: 'docker',
         scope: 'user',
         workspaceId: 'workspace-1',
@@ -62,10 +63,12 @@ function setup(role: string | null = 'owner') {
       permission === 'admin' && ['owner', 'admin'].includes(current),
     ),
   };
+  const audit = { record: jest.fn(async () => undefined) };
   return {
-    service: new AgentsService(prisma as never, workspaces as never),
+    service: new AgentsService(prisma as never, workspaces as never, audit as never),
     prisma,
     workspaces,
+    audit,
   };
 }
 
@@ -79,7 +82,7 @@ describe('AgentsService trust bootstrap', () => {
   });
 
   it('issues a short-lived enrollment secret but persists only its hash', async () => {
-    const { service, prisma } = setup();
+    const { service, prisma, audit } = setup();
 
     const result = await service.issueEnrollment('target-1', 'owner-1');
 
@@ -91,6 +94,20 @@ describe('AgentsService trust bootstrap', () => {
     expect(call.create.enrollmentExpiresAt).toEqual(
       new Date(NOW.getTime() + 15 * 60_000),
     );
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      actorUserId: 'owner-1',
+      action: 'agent.enrollment_issued',
+      resourceType: 'agent',
+      resourceId: 'agent-1',
+      resourceName: 'Remote Docker',
+      details: {
+        targetId: 'target-1',
+        generation: 0,
+        expiresInMinutes: 15,
+      },
+    });
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain(result.enrollmentToken);
   });
 
   it('does not let a non-admin issue physical Agent credentials', async () => {
@@ -280,7 +297,7 @@ describe('AgentsService trust bootstrap', () => {
   });
 
   it('disables the identity without deleting the physical target', async () => {
-    const { service, prisma } = setup();
+    const { service, prisma, audit } = setup();
     prisma.agent.findUnique.mockResolvedValue(agentRow({ credentialHash: hashToken('credential') }));
 
     await service.disable('target-1', 'owner-1');
@@ -311,6 +328,15 @@ describe('AgentsService trust bootstrap', () => {
         status: 'failed',
         finishedAt: NOW,
       }),
+    });
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      actorUserId: 'owner-1',
+      action: 'agent.disabled',
+      resourceType: 'agent',
+      resourceId: 'agent-1',
+      resourceName: 'Remote Docker',
+      details: { targetId: 'target-1' },
     });
   });
 });

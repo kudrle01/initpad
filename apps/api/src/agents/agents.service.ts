@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -10,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
+import { AuditEventsService } from '../audit/audit-events.service';
 
 const ENROLLMENT_TTL_MS = 15 * 60_000;
 export const ONLINE_AFTER_HEARTBEAT_MS = 90_000;
@@ -75,6 +77,10 @@ export class AgentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspaces: WorkspacesService,
+    @Inject(AuditEventsService)
+    private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
+      record: async () => undefined,
+    },
   ) {}
 
   async getForTarget(targetId: string, userId: string): Promise<AgentSummary | null> {
@@ -87,7 +93,7 @@ export class AgentsService {
     targetId: string,
     userId: string,
   ): Promise<AgentSummary & { enrollmentToken: string }> {
-    await this.requireTargetAccess(targetId, userId, 'admin');
+    const target = await this.requireTargetAccess(targetId, userId, 'admin');
     const now = new Date();
     const enrollmentToken = `${ENROLLMENT_PREFIX}${generateToken()}`;
     const enrollmentExpiresAt = new Date(now.getTime() + ENROLLMENT_TTL_MS);
@@ -106,6 +112,19 @@ export class AgentsService {
         disabledAt: null,
       },
     })) as AgentRow;
+    await this.auditEvents.record({
+      workspaceId: target.workspaceId,
+      actorUserId: userId,
+      action: 'agent.enrollment_issued',
+      resourceType: 'agent',
+      resourceId: agent.id,
+      resourceName: target.name,
+      details: {
+        targetId,
+        generation: agent.credentialGeneration,
+        expiresInMinutes: ENROLLMENT_TTL_MS / 60_000,
+      },
+    });
     return { ...this.summary(agent), enrollmentToken };
   }
 
@@ -205,7 +224,7 @@ export class AgentsService {
   }
 
   async disable(targetId: string, userId: string): Promise<void> {
-    await this.requireTargetAccess(targetId, userId, 'admin');
+    const target = await this.requireTargetAccess(targetId, userId, 'admin');
     const agent = await this.prisma.agent.findUnique({ where: { targetId } });
     if (!agent) throw new NotFoundException(`Agent for target '${targetId}' not found`);
     const now = new Date();
@@ -241,6 +260,15 @@ export class AgentsService {
         },
       }),
     ]);
+    await this.auditEvents.record({
+      workspaceId: target.workspaceId,
+      actorUserId: userId,
+      action: 'agent.disabled',
+      resourceType: 'agent',
+      resourceId: agent.id,
+      resourceName: target.name,
+      details: { targetId },
+    });
   }
 
   async authenticateCredential(
@@ -268,10 +296,10 @@ export class AgentsService {
     targetId: string,
     userId: string,
     permission: 'read' | 'admin',
-  ): Promise<void> {
+  ): Promise<{ workspaceId: string; name: string }> {
     const target = await this.prisma.target.findUnique({
       where: { id: targetId },
-      select: { kind: true, scope: true, workspaceId: true },
+      select: { kind: true, scope: true, workspaceId: true, name: true },
     });
     if (!target || target.scope === 'builtin' || !target.workspaceId) {
       throw new NotFoundException(`Target '${targetId}' not found`);
@@ -284,6 +312,7 @@ export class AgentsService {
     if (target.kind !== 'docker') {
       throw new BadRequestException('InitPad Agent can only be bound to a Docker target');
     }
+    return { workspaceId: target.workspaceId, name: target.name };
   }
 
   private summary(agent: AgentRow): AgentSummary {

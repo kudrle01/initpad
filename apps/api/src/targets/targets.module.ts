@@ -7,9 +7,10 @@ import { DeploymentModule } from '../deployment/deployment.module';
 import { AuthModule } from '../auth/auth.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { GatewayRoutesService } from './gateway-routes.service';
+import { AuditEventsModule } from '../audit/audit-events.module';
 
 @Module({
-  imports: [DeploymentModule, AuthModule, WorkspacesModule],
+  imports: [DeploymentModule, AuthModule, WorkspacesModule, AuditEventsModule],
   providers: [TargetsService, TargetAllocationsService, GatewayRoutesService],
   controllers: [TargetsController, TargetAllocationsController],
   exports: [TargetsService, TargetAllocationsService, GatewayRoutesService],
