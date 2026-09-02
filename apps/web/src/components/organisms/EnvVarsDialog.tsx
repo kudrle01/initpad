@@ -13,6 +13,7 @@ import { Spinner } from '@/components/atoms/Spinner';
 import { api, type ConfigVar } from '@/api';
 import { useToast } from '@/toast';
 import type { EnvName } from '@/types';
+import { useConfirmation } from '@/confirmation';
 
 interface Props {
   projectId: string;
@@ -30,7 +31,9 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
   const [value, setValue] = useState('');
   const [isSecret, setIsSecret] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const toast = useToast();
+  const confirmAction = useConfirmation();
 
   const load = useCallback(() => {
     if (!env) return;
@@ -48,10 +51,25 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
 
   async function save() {
     if (!env) return;
+    const normalizedKey = key.trim();
+    const existing = vars.find((variable) => variable.key === normalizedKey);
+    if (existing) {
+      const confirmed = await confirmAction({
+        title: `Replace ${normalizedKey} in ${env}?`,
+        description: 'The current value cannot be recovered from InitPad after it is overwritten.',
+        confirmLabel: existing.isSecret ? 'Replace secret' : 'Replace variable',
+        tone: 'warning',
+        consequences: [
+          existing.isSecret ? 'The stored secret value is replaced.' : 'The stored configuration value is replaced.',
+          'The running workload is unchanged until the environment is redeployed.',
+        ],
+      });
+      if (!confirmed) return;
+    }
     setSaving(true);
     try {
-      await api.upsertConfigVar(projectId, env, key.trim(), { value, isSecret });
-      toast.success(`Saved ${key.trim()}`);
+      await api.upsertConfigVar(projectId, env, normalizedKey, { value, isSecret });
+      toast.success(`Saved ${normalizedKey}`);
       setKey('');
       setValue('');
       setIsSecret(false);
@@ -65,11 +83,28 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
 
   async function remove(k: string) {
     if (!env) return;
+    const variable = vars.find((candidate) => candidate.key === k);
+    const confirmed = await confirmAction({
+      title: `Delete ${k} from ${env}?`,
+      description: variable?.isSecret
+        ? 'The encrypted secret value cannot be recovered after deletion.'
+        : 'The configuration value cannot be recovered after deletion.',
+      confirmLabel: variable?.isSecret ? 'Delete secret' : 'Delete variable',
+      tone: 'danger',
+      consequences: [
+        'The variable is removed from the next deployment configuration.',
+        'The currently running workload is unchanged until the environment is redeployed.',
+      ],
+    });
+    if (!confirmed) return;
+    setDeletingKey(k);
     try {
       await api.deleteConfigVar(projectId, env, k);
       load();
     } catch (e) {
       toast.error((e as Error).message);
+    } finally {
+      setDeletingKey(null);
     }
   }
 
@@ -108,7 +143,8 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
                     size="icon-sm"
                     aria-label={`Delete ${v.key}`}
                     className="ml-auto"
-                    onClick={() => remove(v.key)}
+                    disabled={deletingKey === v.key}
+                    onClick={() => void remove(v.key)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -142,7 +178,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
                     />
                     Secret (encrypted, hidden)
                   </label>
-                  <Button size="sm" className="self-end sm:self-auto" disabled={!validKey || saving} onClick={save}>
+                  <Button size="sm" className="self-end sm:self-auto" disabled={!validKey || saving} onClick={() => void save()}>
                     {saving ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Save
                   </Button>
                 </div>

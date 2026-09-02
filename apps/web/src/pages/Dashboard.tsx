@@ -11,11 +11,13 @@ import { ProjectRow } from '@/components/molecules/ProjectRow';
 import { EmptyState } from '@/components/molecules/EmptyState';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import type { Project, ProvisioningStatus, TemplateManifest } from '@/types';
+import { useConfirmation } from '@/confirmation';
 
 const RECENT_LIMIT = 6;
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const confirmAction = useConfirmation();
   const { activeWorkspace } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [provisioning, setProvisioning] = useState<ProvisioningStatus[]>([]);
@@ -86,6 +88,22 @@ export default function Dashboard() {
   }
 
   async function retryCleanup(id: string) {
+    const operation = provisioning.find((candidate) => candidate.id === id);
+    const confirmed = await confirmAction({
+      title: `Retry cleanup for ${operation?.projectName ?? 'incomplete project'}?`,
+      description: 'Cleanup reconciles resources left behind by an interrupted or failed setup.',
+      confirmLabel: 'Retry cleanup',
+      tone: 'warning',
+      details: operation ? [
+        { label: 'Operation', value: operation.kind },
+        { label: 'Attempt', value: operation.attempt },
+      ] : undefined,
+      consequences: [
+        'InitPad may delete the partial repository, generated files or project record owned by this failed setup.',
+        'Successfully provisioned unrelated resources are not touched.',
+      ],
+    });
+    if (!confirmed) return;
     setOperationBusy(id);
     setActionError(null);
     try {

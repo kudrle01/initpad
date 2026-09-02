@@ -56,6 +56,7 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
 
   const options = template ? targets.filter((t) => usable(t, template)) : [];
   const verifiedOptions = options.filter(targetIsReady);
+  const selectedTarget = options.find((target) => target.id === selected) ?? null;
   const missingCapability = template
     ? targets.filter(
         (target) =>
@@ -141,6 +142,16 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
               .
             </p>
           )}
+          {selectedTarget && selectedTarget.id !== current?.id && (
+            <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Confirm target change</p>
+              <p className="mt-1">
+                {current
+                  ? `${current.name} will be replaced by ${selectedTarget.name}. A live deployment is removed from the old target and must be deployed to the new one.`
+                  : `${selectedTarget.name} will become the deployment target for this environment.`}
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="items-stretch sm:items-center">
@@ -158,7 +169,7 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
             onClick={() => env && selected && onPick(env, selected)}
           >
             {busy && <Spinner className="h-4 w-4" />}
-            Use target
+            {current ? 'Change target' : 'Use target'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -13,10 +13,43 @@ import { TargetFormDialog } from '@/components/organisms/TargetDialog';
 import { Button } from '@/components/ui/button';
 import { useInfrastructure } from '@/hooks/useInfrastructure';
 import { useAgentProtocol } from '@/hooks/useAgentProtocol';
+import { useConfirmation } from '@/confirmation';
 import type { AgentEnrollment, Target } from '@/types';
+
+function sameCapabilities(left: string[], right: string[]): boolean {
+  return [...left].sort().join(',') === [...right].sort().join(',');
+}
+
+function changedTargetSettings(target: Target, values: TargetInput): string[] {
+  const fields: string[] = [];
+  if (!sameCapabilities(target.capabilities, values.capabilities)) fields.push('runtime capabilities');
+  if (target.publicUrl !== values.publicUrl) fields.push('public URL');
+  if ((target.routingMode ?? 'direct-port') !== (values.routingMode ?? 'direct-port')) fields.push('routing mode');
+  if (target.kind !== 'docker') {
+    if ((target.host ?? '') !== (values.host ?? '')) fields.push('host');
+    if ((target.port ?? 22) !== (values.port ?? 22)) fields.push('port');
+    if ((target.username ?? '') !== (values.username ?? '')) fields.push('username');
+    if ((target.auth ?? 'password') !== (values.auth ?? 'password')) fields.push('authentication method');
+    if (values.secret) fields.push('authentication credentials');
+    if ((target.remotePath ?? '') !== (values.remotePath ?? '')) fields.push('remote path');
+  }
+  return fields;
+}
+
+function changedAllocationSettings(
+  allocation: TargetAllocation,
+  values: TargetAllocationInput,
+): string[] {
+  const fields: string[] = [];
+  if (!sameCapabilities(allocation.capabilities, values.capabilities)) fields.push('runtime capabilities');
+  if (values.publicUrl !== undefined && allocation.publicUrl !== values.publicUrl) fields.push('public URL');
+  if (allocation.maxEnvironments !== values.maxEnvironments) fields.push('environment quota');
+  return fields;
+}
 
 export default function Infrastructure() {
   const { activeWorkspace, user } = useAuth();
+  const confirmAction = useConfirmation();
   const infrastructure = useInfrastructure(activeWorkspace?.id);
   const [targetDialogOpen, setTargetDialogOpen] = useState(false);
   const [editingTarget, setEditingTarget] = useState<Target | null>(null);
@@ -95,6 +128,25 @@ export default function Infrastructure() {
 
   async function submitTarget(values: TargetInput) {
     const wasNew = !editingTarget;
+    if (editingTarget) {
+      const changedSettings = changedTargetSettings(editingTarget, values);
+      if (changedSettings.length > 0) {
+        const confirmed = await confirmAction({
+          title: `Save changes to ${editingTarget.name}?`,
+          description: 'Target settings control where and how future deployments are published.',
+          confirmLabel: 'Save target changes',
+          tone: 'warning',
+          details: [{ label: 'Changed settings', value: changedSettings.join(', ') }],
+          consequences: [
+            'Existing running deployments are not moved automatically.',
+            editingTarget.kind === 'docker'
+              ? 'Routing changes reset gateway readiness and require a new preflight.'
+              : 'Connection or runtime changes clear the previous verification and must be tested again.',
+          ],
+        });
+        if (!confirmed) return;
+      }
+    }
     const saved = await infrastructure.saveTarget(editingTarget, values);
     if (saved) {
       setTargetDialogOpen(false);
@@ -107,10 +159,83 @@ export default function Infrastructure() {
   }
 
   async function submitAllocation(values: TargetAllocationInput) {
+    if (editingAllocation) {
+      const changedSettings = changedAllocationSettings(editingAllocation, values);
+      if (changedSettings.length > 0) {
+        const confirmed = await confirmAction({
+          title: `Save allocation changes for ${editingAllocation.targetName}?`,
+          description: 'This allocation limits how the current workspace may use the physical target.',
+          confirmLabel: 'Save allocation changes',
+          tone: 'warning',
+          details: [
+            { label: 'Namespace', value: editingAllocation.namespace },
+            { label: 'Changed settings', value: changedSettings.join(', ') },
+          ],
+          consequences: [
+            'New deployments immediately use the updated capabilities, quota and URL.',
+            'Existing running workloads are not restarted by this change.',
+          ],
+        });
+        if (!confirmed) return;
+      }
+    }
     if (await infrastructure.saveAllocation(editingAllocation, values)) {
       setAllocationDialogOpen(false);
       setEditingAllocation(null);
     }
+  }
+
+  async function deleteTarget(target: Target) {
+    const confirmed = await confirmAction({
+      title: `Delete target ${target.name}?`,
+      description: 'InitPad will forget this server connection. The physical server itself is never deleted.',
+      confirmLabel: 'Delete target',
+      tone: 'danger',
+      details: [
+        { label: 'Target', value: target.name },
+        { label: 'Type', value: target.kind.toUpperCase() },
+      ],
+      consequences: [
+        'Stored connection settings and any Agent identity for this target are permanently removed.',
+        'You must add and verify or enroll the target again before reusing it.',
+      ],
+    });
+    if (confirmed) await infrastructure.deleteTarget(target);
+  }
+
+  async function toggleAllocation(allocation: TargetAllocation) {
+    if (allocation.status === 'active') {
+      const confirmed = await confirmAction({
+        title: `Disable allocation of ${allocation.targetName}?`,
+        description: `The ${allocation.namespace} workspace namespace will stop accepting deployments on this target.`,
+        confirmLabel: 'Disable allocation',
+        tone: 'warning',
+        consequences: [
+          'Existing running workloads remain untouched.',
+          'New deploys to this allocation are blocked until it is enabled again.',
+        ],
+      });
+      if (!confirmed) return;
+    }
+    await infrastructure.toggleAllocation(allocation);
+  }
+
+  async function deleteAllocation(allocation: TargetAllocation) {
+    const confirmed = await confirmAction({
+      title: `Remove allocation of ${allocation.targetName}?`,
+      description: 'This removes the workspace-to-target assignment, not the physical target.',
+      confirmLabel: 'Remove allocation',
+      tone: 'danger',
+      details: [
+        { label: 'Namespace', value: allocation.namespace },
+        { label: 'Target', value: allocation.targetName },
+      ],
+      consequences: [
+        'The workspace loses this namespace, quota and target capabilities.',
+        'The allocation must be created again before the workspace can use this target.',
+      ],
+    });
+    if (confirmed) await infrastructure.deleteAllocation(allocation);
   }
 
   return (
@@ -148,7 +273,7 @@ export default function Infrastructure() {
               setAgentEnrollment(null);
               setAgentTarget(target);
             }}
-            onDelete={infrastructure.deleteTarget}
+            onDelete={(target) => void deleteTarget(target)}
           />
           <AllocationSection
             allocations={infrastructure.allocations}
@@ -160,8 +285,8 @@ export default function Infrastructure() {
               setEditingAllocation(allocation);
               setAllocationDialogOpen(true);
             }}
-            onToggle={infrastructure.toggleAllocation}
-            onDelete={infrastructure.deleteAllocation}
+            onToggle={(allocation) => void toggleAllocation(allocation)}
+            onDelete={(allocation) => void deleteAllocation(allocation)}
           />
         </div>
       )}

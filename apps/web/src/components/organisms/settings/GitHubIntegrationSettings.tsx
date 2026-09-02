@@ -6,6 +6,7 @@ import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/toast';
 import type { LinkedIdentity } from '@/types';
+import { useConfirmation } from '@/confirmation';
 
 function openGithubWindow(url?: string): Window | null {
   const width = 760;
@@ -29,8 +30,10 @@ function openGithubWindow(url?: string): Window | null {
 export function GitHubIntegrationSettings() {
   const { activeWorkspace } = useAuth();
   const toast = useToast();
+  const confirmAction = useConfirmation();
   const [enabled, setEnabled] = useState(false);
   const [setupBusy, setSetupBusy] = useState(false);
+  const [unlinkingProvider, setUnlinkingProvider] = useState<string | null>(null);
   const [identities, setIdentities] = useState<LinkedIdentity[]>([]);
   const [status, setStatus] = useState<GitHubStatus | null>(null);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
@@ -140,14 +143,27 @@ export function GitHubIntegrationSettings() {
     }
   }
 
-  async function unlinkGithub(provider: string) {
-    if (!window.confirm('Unlink this GitHub account from InitPad?')) return;
+  async function unlinkGithub(identity: LinkedIdentity) {
+    const confirmed = await confirmAction({
+      title: `Unlink ${identity.username ? `@${identity.username}` : 'GitHub'}?`,
+      description: 'This removes the GitHub identity from your InitPad account.',
+      confirmLabel: 'Unlink GitHub',
+      tone: 'danger',
+      consequences: [
+        'GitHub sign-in through this identity stops working.',
+        'Existing projects and GitHub App installations are not deleted.',
+      ],
+    });
+    if (!confirmed) return;
+    setUnlinkingProvider(identity.provider);
     try {
-      await api.unlinkIdentity(provider);
-      setIdentities((rows) => rows.filter((identity) => identity.provider !== provider));
+      await api.unlinkIdentity(identity.provider);
+      setIdentities((rows) => rows.filter((row) => row.provider !== identity.provider));
       toast.success('GitHub account unlinked');
     } catch (error) {
       toast.error((error as Error).message);
+    } finally {
+      setUnlinkingProvider(null);
     }
   }
 
@@ -204,9 +220,9 @@ export function GitHubIntegrationSettings() {
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={!identity.canUnlink}
+                disabled={!identity.canUnlink || unlinkingProvider === identity.provider}
                 title={identity.canUnlink ? undefined : 'This is your only sign-in method'}
-                onClick={() => unlinkGithub(identity.provider)}
+                onClick={() => void unlinkGithub(identity)}
               >
                 {identity.canUnlink ? 'Unlink' : 'Required for sign-in'}
               </Button>

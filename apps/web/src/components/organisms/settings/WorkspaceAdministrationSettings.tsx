@@ -5,11 +5,14 @@ import { useAuth } from '@/auth';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/toast';
+import { useConfirmation } from '@/confirmation';
 
 export function WorkspaceAdministrationSettings() {
   const { activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
+  const confirmAction = useConfirmation();
   const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
 
   useEffect(() => {
@@ -22,17 +25,33 @@ export function WorkspaceAdministrationSettings() {
   const workspaceName = workspace.name;
 
   async function saveName() {
+    setBusy(true);
     try {
       await api.updateWorkspace(workspaceId, name.trim());
       await refreshWorkspaces();
       toast.success('Workspace renamed');
     } catch (error) {
       toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function deleteWorkspace() {
-    if (!window.confirm(`Delete empty workspace ${workspaceName}?`)) return;
+    const confirmed = await confirmAction({
+      title: `Delete workspace ${workspaceName}?`,
+      description: 'A team workspace is the tenant boundary for its members, resources and audit timeline.',
+      confirmLabel: 'Delete workspace',
+      tone: 'danger',
+      requireText: workspaceName,
+      consequences: [
+        'Membership and the workspace audit timeline are permanently removed.',
+        'Deletion succeeds only after all projects, targets and allocations have been removed.',
+        'The workspace name and slug can then be reused.',
+      ],
+    });
+    if (!confirmed) return;
+    setBusy(true);
     try {
       await api.deleteWorkspace(workspaceId);
       localStorage.removeItem('initpad.workspace');
@@ -41,6 +60,7 @@ export function WorkspaceAdministrationSettings() {
       window.location.assign('/');
     } catch (error) {
       toast.error((error as Error).message);
+      setBusy(false);
     }
   }
 
@@ -60,12 +80,12 @@ export function WorkspaceAdministrationSettings() {
         <Button
           variant="secondary"
           onClick={saveName}
-          disabled={name.trim().length < 2 || name.trim() === workspaceName}
+          disabled={busy || name.trim().length < 2 || name.trim() === workspaceName}
         >
           Rename
         </Button>
         {workspace.role === 'owner' && (
-          <Button variant="destructive" onClick={deleteWorkspace}>
+          <Button variant="destructive" disabled={busy} onClick={() => void deleteWorkspace()}>
             Delete empty workspace
           </Button>
         )}

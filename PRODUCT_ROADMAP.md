@@ -519,6 +519,14 @@ Fáze nepřidává `Course`, zvláštní školní účty ani druhý tenancy mode
 workspace, role a projekty obslouží školu, malý tým i firmu; školní využití je
 jen konkrétní provozní a vyhodnocovací scénář.
 
+- ✅ **Průřezový safety-confirmation pass.** Jednotný přístupný aplikační dialog
+  nahrazuje systémové browser confirmy a před spuštěním ukazuje resource,
+  skutečný dopad a jasně pojmenované potvrzení. Kryté jsou nevratné mazání,
+  environment teardown/stop, produkční publish, změny infrastruktury a rolí,
+  reset/deaktivace účtu, Agent credential, GitHub unlink a přepsání configu.
+  Rutinní vratné akce zůstávají bez nadbytečného potvrzování; celý projekt nebo
+  workspace navíc vyžadují opsání názvu.
+
 1. TODO **7a — append-only audit události.** Zavést jednotný workspace-scoped
    záznam aktéra, akce, resource identity, výsledku a času bez ukládání secretů.
    Napojit nejdřív bezpečnostně důležité změny: členství/role, projekt

@@ -6,6 +6,7 @@ import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/toast';
+import { useConfirmation } from '@/confirmation';
 import type { WorkspaceMember, WorkspaceRole } from '@/types';
 
 type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
@@ -19,12 +20,15 @@ const ASSIGNABLE_ROLES: Array<{ value: AssignableRole; label: string }> = [
 export function WorkspaceMembersSettings() {
   const { activeWorkspace } = useAuth();
   const toast = useToast();
+  const confirmAction = useConfirmation();
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [identity, setIdentity] = useState('');
   const [role, setRole] = useState<AssignableRole>('member');
+  const [adding, setAdding] = useState(false);
+  const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
   const canManage = canAdmin && activeWorkspace?.type !== 'personal';
 
@@ -51,36 +55,83 @@ export function WorkspaceMembersSettings() {
 
   async function addMember() {
     if (!activeWorkspace) return;
+    if (role === 'admin') {
+      const confirmed = await confirmAction({
+        title: `Add ${identity.trim()} as workspace admin?`,
+        description: `Administrators can manage members and infrastructure in ${activeWorkspace.name}.`,
+        confirmLabel: 'Add workspace admin',
+        tone: 'warning',
+        consequences: [
+          'This account receives elevated workspace permissions immediately.',
+          'The workspace owner can later change or remove the role.',
+        ],
+      });
+      if (!confirmed) return;
+    }
+    setAdding(true);
     try {
       setMembers(await api.addWorkspaceMember(activeWorkspace.id, identity.trim(), role));
       setIdentity('');
       toast.success('Workspace member added');
     } catch (error) {
       toast.error((error as Error).message);
+    } finally {
+      setAdding(false);
     }
   }
 
   async function changeRole(member: WorkspaceMember, nextRole: AssignableRole) {
-    if (!activeWorkspace) return;
+    if (!activeWorkspace || nextRole === member.role) return;
+    const confirmed = await confirmAction({
+      title: `Change @${member.username}'s role?`,
+      description: 'Workspace role changes take effect immediately across projects and infrastructure.',
+      confirmLabel: `Change role to ${nextRole}`,
+      tone: 'warning',
+      details: [
+        { label: 'Current role', value: member.role },
+        { label: 'New role', value: nextRole },
+      ],
+      consequences: [
+        nextRole === 'admin'
+          ? 'The member gains permission to manage workspace membership and infrastructure.'
+          : 'The member may immediately lose access to actions allowed by the current role.',
+        'Private repository access is reconciled to the new role.',
+      ],
+    });
+    if (!confirmed) return;
+    setBusyMemberId(member.userId);
     try {
       setMembers(await api.updateWorkspaceMember(activeWorkspace.id, member.userId, nextRole));
       toast.success(`Updated @${member.username}`);
     } catch (error) {
       toast.error((error as Error).message);
+    } finally {
+      setBusyMemberId(null);
     }
   }
 
   async function removeMember(member: WorkspaceMember) {
-    if (
-      !activeWorkspace ||
-      !window.confirm(`Remove @${member.username} from ${activeWorkspace.name}?`)
-    ) return;
+    if (!activeWorkspace) return;
+    const confirmed = await confirmAction({
+      title: `Remove @${member.username} from ${activeWorkspace.name}?`,
+      description: 'The user account remains active, but its access to this team workspace is revoked.',
+      confirmLabel: 'Remove member',
+      tone: 'danger',
+      consequences: [
+        'Workspace projects, infrastructure and audit events are no longer visible to this member.',
+        'Private repository access is removed during reconciliation.',
+      ],
+    });
+    if (!confirmed) return;
+    setBusyMemberId(member.userId);
     try {
       await api.removeWorkspaceMember(activeWorkspace.id, member.userId);
       setMembers((rows) => rows.filter((row) => row.userId !== member.userId));
       toast.success(`Removed @${member.username}`);
     } catch (error) {
       toast.error((error as Error).message);
+    } finally {
+      setBusyMemberId(null);
     }
   }
 
@@ -109,7 +160,7 @@ export function WorkspaceMembersSettings() {
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
-          <Button onClick={addMember} disabled={!identity.trim()}>
+          <Button onClick={() => void addMember()} disabled={adding || !identity.trim()}>
             <Plus className="h-4 w-4" /> Add
           </Button>
         </div>
@@ -149,7 +200,8 @@ export function WorkspaceMembersSettings() {
                   className="h-11 rounded-md border border-input bg-card px-2 text-xs sm:h-8"
                   aria-label={`Role for ${member.username}`}
                   value={member.role}
-                  onChange={(event) => changeRole(member, event.target.value as AssignableRole)}
+                  disabled={busyMemberId === member.userId}
+                  onChange={(event) => void changeRole(member, event.target.value as AssignableRole)}
                 >
                   {ASSIGNABLE_ROLES.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -159,7 +211,8 @@ export function WorkspaceMembersSettings() {
                   variant="ghost"
                   size="icon"
                   aria-label={`Remove ${member.username}`}
-                  onClick={() => removeMember(member)}
+                  disabled={busyMemberId === member.userId}
+                  onClick={() => void removeMember(member)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

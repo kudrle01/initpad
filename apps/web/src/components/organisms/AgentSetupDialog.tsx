@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Activity, Bot, Container, Globe2, ShieldAlert, WifiOff } from 'lucide-react';
 import type { AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
 import { CopyField } from '@/components/molecules/CopyField';
@@ -13,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useConfirmation } from '@/confirmation';
 
 interface Props {
   open: boolean;
@@ -65,16 +65,46 @@ export function AgentSetupDialog({
   onTestLifecycle,
   onTestGateway,
 }: Props) {
-  const [confirmDisable, setConfirmDisable] = useState(false);
-  useEffect(() => {
-    if (!open) setConfirmDisable(false);
-  }, [open]);
+  const confirmAction = useConfirmation();
 
   if (!target) return null;
+  const currentTarget = target;
   const state = agent?.state ?? 'not-enrolled';
   const canQueueProbe = state === 'online' || state === 'offline';
   const insecureFlag = window.location.protocol === 'http:' ? ' --allow-insecure-http' : '';
   const installCommand = `sudo initpad-agent enroll --url '${window.location.origin}'${insecureFlag}`;
+
+  async function issueEnrollment() {
+    if (enrollment || agent?.enrollmentPending) {
+      const confirmed = await confirmAction({
+        title: 'Replace the pending enrollment token?',
+        description: 'Only one unused enrollment token can be valid for this target.',
+        confirmLabel: 'Generate a new token',
+        tone: 'warning',
+        consequences: [
+          'The previously generated token stops working immediately.',
+          'A currently enrolled Agent remains connected until the new token is redeemed.',
+        ],
+      });
+      if (!confirmed) return;
+    }
+    onIssueEnrollment();
+  }
+
+  async function disableAgent() {
+    const confirmed = await confirmAction({
+      title: `Disable the Agent for ${currentTarget.name}?`,
+      description: 'This revokes the server identity used to receive work from InitPad.',
+      confirmLabel: 'Disable Agent',
+      tone: 'danger',
+      consequences: [
+        'Queued work is cancelled and the server cannot receive further jobs.',
+        'Running applications stay untouched.',
+        'Restoring the connection requires a new enrollment.',
+      ],
+    });
+    if (confirmed) onDisable();
+  }
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
@@ -317,27 +347,15 @@ export function AgentSetupDialog({
             )}
           </div>
 
-          {confirmDisable && (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
-              Disable this credential? Running applications stay untouched, but the server cannot
-              receive further jobs until a new enrollment succeeds.
-            </div>
-          )}
         </div>
 
         <DialogFooter>
           {agent && agent.state !== 'disabled' && agent.state !== 'not-enrolled' && (
-            confirmDisable ? (
-              <Button variant="destructive" disabled={busy} onClick={onDisable}>
-                {busy && <Spinner className="h-4 w-4" />} Confirm disable
-              </Button>
-            ) : (
-              <Button variant="ghost" disabled={busy} onClick={() => setConfirmDisable(true)}>
-                Disable Agent
-              </Button>
-            )
+            <Button variant="ghost" disabled={busy} onClick={() => void disableAgent()}>
+              Disable Agent
+            </Button>
           )}
-          <Button disabled={busy} onClick={onIssueEnrollment}>
+          <Button disabled={busy} onClick={() => void issueEnrollment()}>
             {busy && <Spinner className="h-4 w-4" />}
             {enrollment || agent?.enrollmentPending ? 'Generate a new token' : 'Generate enrollment'}
           </Button>

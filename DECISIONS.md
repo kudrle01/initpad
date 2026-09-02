@@ -3452,3 +3452,44 @@ citlivého detail key, stabilní filtrovanou cursor stránku, neplatný cursor a
 update, delete, no-op update, Agent enrollment/disable a nepřítomnost plaintext
 credential/enrollment tokenu v auditu. API a web production build musí projít
 po vygenerování Prisma klienta; živý acceptance následuje po aplikaci migrace.
+
+---
+
+## ADR-078 — Potvrzení se řídí dopadem akce, ne HTTP metodou
+
+**Kontext.** Část nevratných akcí se ve webu spouštěla přímo, část používala
+nepřizpůsobitelný `window.confirm` a několik provozních změn nemělo před
+odesláním shrnutý dopad. Přidat stejné „Are you sure?“ ke každému `POST` nebo
+`PUT` by ale vytvořilo confirmation fatigue: uživatel by dialogy přestal číst a
+kritické potvrzení by ztratilo význam.
+
+**Rozhodnutí.** Web používá jeden globální Radix dialog s jednotným focus trapem,
+Escape/cancel chováním, mobilním layoutem, konkrétním názvem akce a popisem
+následků. Druh potvrzení určuje uživatelský dopad:
+
+1. rutinní, snadno vratná a již explicitní akce (rename, start, vytvoření přes
+   formulář, dev/test deploy) nepotřebuje druhý dialog;
+2. provozní nebo bezpečnostní změna (target/allocation konfigurace, role, stop,
+   credential rotation) dostane varovný review dialog;
+3. nevratná akce, odebrání přístupu, produkční publish nebo teardown dostane
+   výrazný destructive dialog; smazání celého projektu/workspace navíc vyžaduje
+   opsání názvu.
+
+Samostatné bohaté dialogy pro project delete a rollback zůstávají autoritativní,
+protože zobrazují serverový cleanup plán nebo immutable rollback artifact.
+Target picker je sám review dialog a před potvrzením explicitně ukazuje starý a
+nový target. První enrollment je záměrný krok uvnitř Agent setup dialogu; teprve
+nahrazení dosud platného tokenu vyžaduje další potvrzení.
+
+**Důsledky.** Target/allocation delete, environment remove/cancel, config delete,
+workspace/member/GitHub odebrání a account reset/deaktivace už nelze spustit
+jedním neoznačeným kliknutím. Produkční promotion/redeploy a zastavení workloadu
+ukazují target a dopad. Běžný vývoj v dev/test přitom nezpomaluje série
+bezobsažných potvrzení. Potvrzení je UX ochrana proti omylu, nikoli autorizační
+hranice; API musí nadále vynucovat RBAC, state tokeny, in-use blokace a
+idempotenci.
+
+**Testování.** Zdrojový audit nesmí najít žádný `window.confirm`. Production web
+build ověří všechna typovaná integrační místa. Browser acceptance na desktopu a
+šířce 390 px ověří focus, Cancel/Escape bez mutace, typed confirmation, vnoření
+nad existujícím target/Agent/config dialogem a disabled stav během requestu.

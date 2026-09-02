@@ -12,6 +12,7 @@ import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { Spinner } from '@/components/atoms/Spinner';
 import type { AdminUser } from '@/types';
+import { useConfirmation } from '@/confirmation';
 
 // One-time credentials surfaced after create/reset. Shown once; there is no way
 // to retrieve them again. Either a temporary password (admin reads it out) or an
@@ -25,6 +26,7 @@ interface OneTime {
 export default function Admin() {
   const { user } = useAuth();
   const toast = useToast();
+  const confirmAction = useConfirmation();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export default function Admin() {
   const [role, setRole] = useState<'admin' | 'user'>('user');
   const [creating, setCreating] = useState(false);
   const [oneTime, setOneTime] = useState<OneTime | null>(null);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     if (!user || user.edition !== 'self-hosted' || user.platformRole !== 'admin') {
@@ -66,6 +69,19 @@ export default function Admin() {
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
+    if (role === 'admin') {
+      const confirmed = await confirmAction({
+        title: `Create @${username.trim()} as platform administrator?`,
+        description: 'Platform administrators manage every account in this self-hosted InitPad instance.',
+        confirmLabel: 'Create administrator',
+        tone: 'warning',
+        consequences: [
+          'The new account receives instance-wide user administration permissions.',
+          'A one-time activation link and temporary password will be displayed after creation.',
+        ],
+      });
+      if (!confirmed) return;
+    }
     setCreating(true);
     try {
       const { user: created, temporaryPassword, activationUrl } = await api.adminCreateUser({
@@ -89,6 +105,21 @@ export default function Admin() {
   }
 
   async function setActive(target: AdminUser, active: boolean) {
+    if (!active) {
+      const confirmed = await confirmAction({
+        title: `Deactivate @${target.username}?`,
+        description: 'The account will be blocked at both InitPad and its private Gitea SCM.',
+        confirmLabel: 'Deactivate account',
+        tone: 'danger',
+        consequences: [
+          'All current InitPad sessions are revoked immediately.',
+          'The user cannot sign in or access private repositories until reactivated.',
+          'Projects, memberships and audit history are preserved.',
+        ],
+      });
+      if (!confirmed) return;
+    }
+    setBusyUserId(target.id);
     try {
       const updated = active
         ? await api.adminActivateUser(target.id)
@@ -97,11 +128,25 @@ export default function Admin() {
       toast.success(`${active ? 'Activated' : 'Deactivated'} @${target.username}`);
     } catch (err) {
       toast.error((err as Error).message);
+    } finally {
+      setBusyUserId(null);
     }
   }
 
   async function resetPassword(target: AdminUser) {
-    if (!window.confirm(`Reset the password for @${target.username}? This signs them out everywhere.`)) return;
+    const confirmed = await confirmAction({
+      title: `Reset @${target.username}'s password?`,
+      description: 'A random temporary password will replace the current password.',
+      confirmLabel: 'Reset password',
+      tone: 'danger',
+      consequences: [
+        'Every current session for this account is revoked.',
+        'The user must change the one-time password at their next sign-in.',
+        'The temporary password is shown only once.',
+      ],
+    });
+    if (!confirmed) return;
+    setBusyUserId(target.id);
     try {
       const { temporaryPassword } = await api.adminResetPassword(target.id);
       setOneTime({ username: target.username, password: temporaryPassword });
@@ -109,16 +154,32 @@ export default function Admin() {
       toast.success(`Reset password for @${target.username}`);
     } catch (err) {
       toast.error((err as Error).message);
+    } finally {
+      setBusyUserId(null);
     }
   }
 
   async function activationLink(target: AdminUser) {
+    const confirmed = await confirmAction({
+      title: `Create a new activation link for @${target.username}?`,
+      description: 'Activation links are single-use credentials that let the user choose a password.',
+      confirmLabel: 'Create new link',
+      tone: 'warning',
+      consequences: [
+        'Any earlier unused activation link for this account becomes invalid.',
+        'The new link is shown only once and must be shared securely.',
+      ],
+    });
+    if (!confirmed) return;
+    setBusyUserId(target.id);
     try {
       const { activationUrl } = await api.adminCreateActivationLink(target.id);
       setOneTime({ username: target.username, activationUrl });
       toast.success(`Activation link created for @${target.username}`);
     } catch (err) {
       toast.error((err as Error).message);
+    } finally {
+      setBusyUserId(null);
     }
   }
 
@@ -218,12 +279,12 @@ export default function Admin() {
                   {!u.emailVerified && <Badge tone="muted">E-mail unverified</Badge>}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <Button variant="ghost" size="sm" onClick={() => activationLink(u)}>Activation link</Button>
-                  <Button variant="ghost" size="sm" onClick={() => resetPassword(u)}>Reset password</Button>
+                  <Button variant="ghost" size="sm" disabled={busyUserId === u.id} onClick={() => void activationLink(u)}>Activation link</Button>
+                  <Button variant="ghost" size="sm" disabled={busyUserId === u.id} onClick={() => void resetPassword(u)}>Reset password</Button>
                   {u.id !== user?.id && (
                     u.active
-                      ? <Button variant="ghost" size="sm" onClick={() => setActive(u, false)}>Deactivate</Button>
-                      : <Button variant="ghost" size="sm" onClick={() => setActive(u, true)}>Activate</Button>
+                      ? <Button variant="destructive" size="sm" disabled={busyUserId === u.id} onClick={() => void setActive(u, false)}>Deactivate</Button>
+                      : <Button variant="ghost" size="sm" disabled={busyUserId === u.id} onClick={() => void setActive(u, true)}>Activate</Button>
                   )}
                 </span>
               </div>

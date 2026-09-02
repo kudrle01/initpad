@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from '@/auth';
 import { ToastProvider } from '@/toast';
+import { ConfirmationProvider } from '@/confirmation';
 import App from '@/App';
 import RouteError from '@/pages/RouteError';
 import { RouteLoading } from '@/components/molecules/RouteLoading';
@@ -70,9 +71,11 @@ const router = createBrowserRouter([
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ToastProvider>
-      <AuthProvider>
-        <RouterProvider router={router} />
-      </AuthProvider>
+      <ConfirmationProvider>
+        <AuthProvider>
+          <RouterProvider router={router} />
+        </AuthProvider>
+      </ConfirmationProvider>
     </ToastProvider>
   </React.StrictMode>,
 );

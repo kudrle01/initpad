@@ -16,8 +16,11 @@ import { ProjectHistory } from '@/components/organisms/ProjectHistory';
 import { ProjectRepository } from '@/components/organisms/ProjectRepository';
 import { ProjectSummary } from '@/components/organisms/ProjectSummary';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
+import { useConfirmation } from '@/confirmation';
+import type { EnvName } from '@/types';
 
 export default function ProjectDetail() {
+  const confirmAction = useConfirmation();
   const {
     project,
     template,
@@ -83,7 +86,103 @@ export default function ProjectDetail() {
   }
   if (!project) return <ContentLoading label="Loading project" variant="detail" />;
 
+  const currentProject = project;
   const commitsBySha = Object.fromEntries(commits.map((c) => [c.sha, c] as const));
+
+  async function promoteWithConfirmation(target: EnvName) {
+    if (target === 'prod') {
+      const source = currentProject.environments.find((environment) => environment.name === 'test');
+      const confirmed = await confirmAction({
+        title: 'Deploy the test build to production?',
+        description: 'This publishes the currently verified test artifact to the production target.',
+        confirmLabel: 'Deploy to production',
+        tone: 'danger',
+        details: [
+          { label: 'Project', value: currentProject.name },
+          { label: 'Version', value: source?.version?.slice(0, 7) ?? 'not available' },
+          { label: 'Target', value: currentProject.environments.find((environment) => environment.name === 'prod')?.target?.name ?? 'production' },
+        ],
+        consequences: [
+          'The production workload is replaced after target health checks pass.',
+          'Production keeps its own current environment variables and secrets.',
+        ],
+      });
+      if (!confirmed) return;
+    }
+    await promote(target);
+  }
+
+  async function redeployWithConfirmation(environment: EnvName) {
+    if (environment === 'prod') {
+      const current = currentProject.environments.find((candidate) => candidate.name === environment);
+      const confirmed = await confirmAction({
+        title: 'Redeploy the verified production build?',
+        description: 'InitPad will publish the same immutable artifact again without rebuilding it.',
+        confirmLabel: 'Redeploy production',
+        tone: 'danger',
+        details: [
+          { label: 'Project', value: currentProject.name },
+          { label: 'Version', value: current?.version?.slice(0, 7) ?? 'not available' },
+          { label: 'Target', value: current?.target?.name ?? 'production' },
+        ],
+        consequences: [
+          'The production target runs its deployment and health-check sequence again.',
+          'A direct-port target may publish a new port; stable gateway routing keeps its hostname.',
+        ],
+      });
+      if (!confirmed) return;
+    }
+    await redeploy(environment);
+  }
+
+  async function stopWithConfirmation(environment: EnvName) {
+    const current = currentProject.environments.find((candidate) => candidate.name === environment);
+    const confirmed = await confirmAction({
+      title: `Stop the ${environment} environment?`,
+      description: 'The deployment record is preserved, but the application will stop serving traffic.',
+      confirmLabel: `Stop ${environment}`,
+      tone: environment === 'prod' ? 'danger' : 'warning',
+      details: [
+        { label: 'Project', value: currentProject.name },
+        { label: 'Target', value: current?.target?.name ?? current?.provider ?? 'unknown' },
+      ],
+      consequences: [
+        'The environment becomes unavailable until it is started again.',
+        'The deployed version and configuration remain recorded.',
+      ],
+    });
+    if (confirmed) await stopEnvironment(environment);
+  }
+
+  async function removeWithConfirmation(environment: EnvName) {
+    const current = currentProject.environments.find((candidate) => candidate.name === environment);
+    const cancelling = current?.status === 'deploying';
+    const cleanupPending = current?.status === 'empty' && Boolean(current.statusReason);
+    const confirmed = await confirmAction({
+      title: cancelling
+        ? `Cancel the ${environment} deployment?`
+        : cleanupPending
+          ? `Retry cleanup for ${environment}?`
+          : `Remove the ${environment} deployment?`,
+      description: cancelling
+        ? 'InitPad will cancel the active operation and clean up any managed partial workload.'
+        : 'InitPad will remove the managed workload from its assigned target.',
+      confirmLabel: cancelling ? 'Cancel deployment' : cleanupPending ? 'Retry cleanup' : 'Remove deployment',
+      tone: 'danger',
+      details: [
+        { label: 'Environment', value: environment.toUpperCase() },
+        { label: 'Target', value: current?.target?.name ?? current?.provider ?? 'unknown' },
+      ],
+      consequences: [
+        'The public application for this environment becomes unavailable.',
+        cancelling
+          ? 'Any earlier verified builds remain in project history and can be deployed again.'
+          : 'The verified build remains in project history and can be deployed again.',
+        'InitPad never deletes unrelated files or the physical target.',
+      ],
+    });
+    if (confirmed) await removeEnvironment(environment);
+  }
 
   return (
     <div>
@@ -105,14 +204,14 @@ export default function ProjectDetail() {
           project={project}
           busy={busy}
           commitsBySha={commitsBySha}
-          onPromote={promote}
-          onRedeploy={redeploy}
+          onPromote={(target) => void promoteWithConfirmation(target)}
+          onRedeploy={(environment) => void redeployWithConfirmation(environment)}
           onRollback={requestRollback}
           onRunAgain={runAgain}
           onRerunFailedJobs={rerunFailedJobs}
-          onStop={stopEnvironment}
+          onStop={(environment) => void stopWithConfirmation(environment)}
           onStart={startEnvironment}
-          onRemoveEnv={removeEnvironment}
+          onRemoveEnv={(environment) => void removeWithConfirmation(environment)}
           onConfigureTarget={setTargetEnv}
           onDiagnostics={setDiagnosticEnv}
           readOnly={readOnly}
