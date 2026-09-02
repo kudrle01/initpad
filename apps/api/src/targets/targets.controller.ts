@@ -53,6 +53,24 @@ export class TargetsController {
     return this.targets.remove(id, userId);
   }
 
+  @Post(':id/disconnect')
+  @HttpCode(204)
+  disconnect(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.targets.disconnect(id, userId);
+  }
+
+  @Post(':id/retire')
+  @HttpCode(204)
+  retire(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.targets.retire(id, userId);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(204)
+  restore(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.targets.restore(id, userId);
+  }
+
   // Live connection test ("Test connection"). Stamps the target as verified.
   @Post(':id/verify')
   verify(

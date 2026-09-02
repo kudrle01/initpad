@@ -12,6 +12,7 @@ export type TargetScope = 'builtin' | 'user';
 
 export type TargetRoutingMode = 'direct-port' | 'managed-gateway';
 export type GatewayPreflightStatus = 'not-run' | 'queued' | 'running' | 'passed' | 'failed';
+export type TargetManagementState = 'active' | 'disconnected' | 'retired';
 
 export type EnvName = 'dev' | 'test' | 'prod';
 
@@ -66,6 +67,9 @@ export interface Target {
   auth: string | null; // 'password' | 'key'
   remotePath: string | null;
   publicUrl: string | null;
+  managementState: TargetManagementState;
+  managementStateChangedAt: string | null;
+  credentialConfigured?: boolean;
   routingMode: TargetRoutingMode;
   gatewayPreflight?: {
     adapter: 'caddy';
@@ -81,6 +85,15 @@ export interface Target {
   // True when at least one environment currently references this target
   // (blocks deletion). Optional — only populated by the targets listing.
   inUse?: boolean;
+  usage?: TargetUsage[];
+}
+
+export interface TargetUsage {
+  projectId: string;
+  projectName: string;
+  environment: EnvName;
+  status: DeployStatus;
+  url: string | null;
 }
 
 // Compact reference to the target an environment is bound to (shown in the UI).
@@ -90,6 +103,7 @@ export interface EnvTarget {
   kind: ProviderKind;
   scope: TargetScope;
   host: string | null;
+  managementState: TargetManagementState;
 }
 
 export interface Environment {

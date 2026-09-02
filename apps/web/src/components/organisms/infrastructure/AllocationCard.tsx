@@ -2,6 +2,7 @@ import { Layers, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
 import type { TargetAllocation } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { TargetUsageList } from '@/components/molecules/TargetUsageList';
 
 interface Props {
   allocation: TargetAllocation;
@@ -21,6 +22,9 @@ export function AllocationCard({
   onDelete,
 }: Props) {
   const disabled = allocation.status === 'disabled';
+  const targetManagementState = allocation.targetManagementState ?? 'active';
+  const targetUnavailable = targetManagementState !== 'active';
+  const usage = allocation.usage ?? [];
 
   return (
     <Card className="flex min-w-0 flex-col gap-3 p-5">
@@ -41,7 +45,7 @@ export function AllocationCard({
             disabled ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success'
           }`}
         >
-          {disabled ? 'disabled' : 'active'}
+          {targetUnavailable ? `target ${targetManagementState}` : disabled ? 'disabled' : 'active'}
         </span>
       </div>
 
@@ -61,6 +65,15 @@ export function AllocationCard({
         {allocation.publicUrl && <div className="truncate">{allocation.publicUrl}</div>}
       </div>
 
+      {targetUnavailable && (
+        <p className="rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs text-muted-foreground">
+          Existing workloads are preserved, but this allocation cannot accept management commands
+          until the target is reconnected.
+        </p>
+      )}
+
+      <TargetUsageList usage={usage} />
+
       {canManage && (
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
           <Button
@@ -72,7 +85,13 @@ export function AllocationCard({
           >
             <Pencil className="h-4 w-4" />
           </Button>
-          <Button variant="secondary" size="sm" disabled={busy} onClick={onToggle}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy || (disabled && targetUnavailable)}
+            title={disabled && targetUnavailable ? 'Reconnect the target before enabling this allocation' : undefined}
+            onClick={onToggle}
+          >
             {disabled ? <Power className="h-4 w-4" /> : <PowerOff className="h-4 w-4" />}
             {disabled ? 'Enable' : 'Disable'}
           </Button>
@@ -80,8 +99,10 @@ export function AllocationCard({
             variant="ghost"
             size="icon-sm"
             aria-label="Delete allocation"
-            disabled={busy || allocation.inUse > 0}
-            title={allocation.inUse > 0 ? 'In use by an environment' : 'Delete allocation'}
+            disabled={busy || usage.length > 0}
+            title={usage.length > 0
+              ? `Used by ${usage.length} environment${usage.length === 1 ? '' : 's'}`
+              : 'Delete allocation'}
             onClick={onDelete}
           >
             <Trash2 className="h-4 w-4" />

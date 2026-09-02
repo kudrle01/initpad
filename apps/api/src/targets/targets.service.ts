@@ -16,8 +16,10 @@ import {
   ProviderKind,
   RuntimeKind,
   Target,
+  TargetManagementState,
   TargetRoutingMode,
   TargetScope,
+  TargetUsage,
 } from '../domain/types';
 import type { ProviderConnection, VerifyResult } from '../deployment/deployment-provider.interface';
 import { normalizeManagedGatewayOrigin } from './managed-gateway';
@@ -93,6 +95,8 @@ export interface TargetRow {
   secret: string | null;
   remotePath: string | null;
   publicUrl: string | null;
+  managementState?: string;
+  managementStateChangedAt?: Date | null;
   routingMode?: string;
   gatewayAdapter?: string | null;
   gatewayPreflightStatus?: string;
@@ -222,8 +226,8 @@ export class TargetsService implements OnModuleInit {
     }
   }
 
-  // Built-ins + the user's own targets, as API summaries (no secret), with an
-  // inUse flag so the UI can block deletion of targets in use.
+  // Built-ins + the user's own targets, as API summaries (no secret), with the
+  // workspace-scoped bindings that explain why deletion is currently blocked.
   async listForUser(userId: string, requestedWorkspaceId?: string): Promise<Target[]> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const rows = (await this.prisma.target.findMany({
@@ -239,13 +243,37 @@ export class TargetsService implements OnModuleInit {
       },
     })) as TargetRow[];
 
-    const counts = await this.prisma.environment.groupBy({
-      by: ['targetId'],
-      where: { targetId: { in: rows.map((r) => r.id) } },
-      _count: { targetId: true },
+    const bindings = await this.prisma.environment.findMany({
+      where: {
+        targetId: { in: rows.map((r) => r.id) },
+        project: { workspaceId },
+      },
+      select: {
+        targetId: true,
+        name: true,
+        status: true,
+        url: true,
+        project: { select: { id: true, name: true } },
+      },
+      orderBy: [{ project: { name: 'asc' } }, { order: 'asc' }],
     });
-    const used = new Set(counts.map((c) => c.targetId));
-    return rows.map((r) => this.toSummary(r, used.has(r.id)));
+    const usage = new Map<string, TargetUsage[]>();
+    for (const binding of bindings) {
+      if (!binding.targetId) continue;
+      const entries = usage.get(binding.targetId) ?? [];
+      entries.push({
+        projectId: binding.project.id,
+        projectName: binding.project.name,
+        environment: binding.name as TargetUsage['environment'],
+        status: binding.status as TargetUsage['status'],
+        url: binding.url,
+      });
+      usage.set(binding.targetId, entries);
+    }
+    return rows.map((row) => {
+      const targetUsage = usage.get(row.id) ?? [];
+      return this.toSummary(row, targetUsage.length > 0, targetUsage);
+    });
   }
 
   // Raw rows (with secrets) for internal use by ProjectsService (default
@@ -316,6 +344,9 @@ export class TargetsService implements OnModuleInit {
 
   async update(id: string, ownerId: string, dto: UpdateTargetDto): Promise<Target> {
     const row = await this.getUserTarget(id, ownerId, 'maintain');
+    if (this.managementState(row) === 'retired') {
+      throw new BadRequestException('Restore this retired target before editing it');
+    }
     if (dto.kind !== undefined && dto.kind !== row.kind) {
       throw new BadRequestException('Target type cannot be changed; create a new target instead');
     }
@@ -452,9 +483,50 @@ export class TargetsService implements OnModuleInit {
     });
   }
 
+  async disconnect(id: string, userId: string): Promise<void> {
+    const row = await this.getUserTarget(id, userId, 'admin');
+    if (this.managementState(row) === 'retired') {
+      throw new BadRequestException('Restore this retired target before disconnecting it');
+    }
+    await this.makeUnavailable(row, userId, 'disconnected');
+  }
+
+  async retire(id: string, userId: string): Promise<void> {
+    const row = await this.getUserTarget(id, userId, 'admin');
+    await this.makeUnavailable(row, userId, 'retired');
+  }
+
+  async restore(id: string, userId: string): Promise<void> {
+    const row = await this.getUserTarget(id, userId, 'admin');
+    if (this.managementState(row) !== 'retired') {
+      throw new BadRequestException('Only a retired target can be restored');
+    }
+    const changedAt = new Date();
+    await this.prisma.target.update({
+      where: { id: row.id },
+      data: {
+        managementState: 'disconnected',
+        managementStateChangedAt: changedAt,
+        verifiedAt: null,
+      },
+    });
+    await this.auditEvents.record({
+      workspaceId: row.workspaceId!,
+      actorUserId: userId,
+      action: 'target.restored',
+      resourceType: 'target',
+      resourceId: row.id,
+      resourceName: row.name,
+      details: { kind: row.kind, state: 'disconnected' },
+    });
+  }
+
   // Runs a live connection test and stamps verifiedAt on success.
   async verify(id: string, userId: string, requestedWorkspaceId?: string): Promise<VerifyResult> {
     const row = await this.getVisibleTarget(id, userId, 'maintain');
+    if (this.managementState(row) === 'retired') {
+      throw new BadRequestException('Restore this retired target before verifying its connection');
+    }
     if (row.scope === 'user' && row.kind === 'docker') {
       throw new BadRequestException(
         'Agent-backed Docker targets are verified by Agent heartbeat, not an inbound connection test',
@@ -466,13 +538,29 @@ export class TargetsService implements OnModuleInit {
     }
     const result = await this.deployment.verify(
       row.kind as ProviderKind,
-      this.connectionForTarget(row),
+      this.connectionForTarget(row, { allowDisconnected: true }),
     );
     if (result.ok && row.scope === 'user') {
+      const reconnecting = this.managementState(row) !== 'active';
       await this.prisma.target.update({
         where: { id: row.id },
-        data: { verifiedAt: new Date() },
+        data: {
+          verifiedAt: new Date(),
+          managementState: 'active',
+          ...(reconnecting ? { managementStateChangedAt: new Date() } : {}),
+        },
       });
+      if (reconnecting) {
+        await this.auditEvents.record({
+          workspaceId: row.workspaceId!,
+          actorUserId: userId,
+          action: 'target.connected',
+          resourceType: 'target',
+          resourceId: row.id,
+          resourceName: row.name,
+          details: { kind: row.kind },
+        });
+      }
     }
     return result;
   }
@@ -481,7 +569,7 @@ export class TargetsService implements OnModuleInit {
   async getVisibleTarget(
     id: string,
     userId: string,
-    permission: 'read' | 'write' | 'maintain' = 'read',
+    permission: 'read' | 'write' | 'maintain' | 'admin' = 'read',
   ): Promise<TargetRow> {
     const row = (await this.prisma.target.findUnique({ where: { id } })) as TargetRow | null;
     if (!row) throw new NotFoundException(`Target '${id}' not found`);
@@ -495,7 +583,7 @@ export class TargetsService implements OnModuleInit {
   private async getUserTarget(
     id: string,
     userId: string,
-    permission: 'read' | 'write' | 'maintain',
+    permission: 'read' | 'write' | 'maintain' | 'admin',
   ): Promise<TargetRow> {
     const row = await this.getVisibleTarget(id, userId, permission);
     if (row.scope === 'builtin') {
@@ -506,8 +594,23 @@ export class TargetsService implements OnModuleInit {
 
   // Live connection for a target, or undefined for a built-in (built-ins deploy
   // through the config demo path, keeping their behaviour unchanged).
-  connectionForTarget(target: TargetRow): ProviderConnection | undefined {
+  connectionForTarget(
+    target: TargetRow,
+    options: { allowDisconnected?: boolean } = {},
+  ): ProviderConnection | undefined {
+    if (
+      target.scope === 'user'
+      && this.managementState(target) !== 'active'
+      && !options.allowDisconnected
+    ) {
+      throw new BadRequestException(
+        `Target '${target.name}' is ${this.managementState(target)} and cannot receive management commands`,
+      );
+    }
     if (target.scope !== 'user' || !target.host) return undefined;
+    if (!target.secret) {
+      throw new BadRequestException(`Target '${target.name}' has no management credential`);
+    }
     const secret = target.secret ? decryptSecret(target.secret) : '';
     const isKey = target.auth === 'key';
     return {
@@ -519,6 +622,103 @@ export class TargetsService implements OnModuleInit {
       remoteRoot: target.remotePath ?? '',
       publicUrl: target.publicUrl ?? '',
     };
+  }
+
+  private managementState(target: TargetRow): TargetManagementState {
+    return (target.managementState ?? 'active') as TargetManagementState;
+  }
+
+  private async makeUnavailable(
+    row: TargetRow,
+    userId: string,
+    nextState: Exclude<TargetManagementState, 'active'>,
+  ): Promise<void> {
+    if (this.managementState(row) === nextState) return;
+    const activeOperations = await this.prisma.environment.count({
+      where: { targetId: row.id, activeOperationId: { not: null } },
+    });
+    if (activeOperations > 0) {
+      throw new BadRequestException(
+        `This target has ${activeOperations} environment operation(s) in progress. Wait for them to finish or cancel them before changing target management.`,
+      );
+    }
+    const now = new Date();
+    const agent = row.kind === 'docker'
+      ? await this.prisma.agent.findUnique({ where: { targetId: row.id }, select: { id: true } })
+      : null;
+    const bindings = await this.prisma.environment.count({ where: { targetId: row.id } });
+    const message = nextState === 'retired'
+      ? 'Target retired by a workspace administrator'
+      : 'Target disconnected by a workspace administrator';
+
+    await this.prisma.$transaction([
+      this.prisma.target.update({
+        where: { id: row.id },
+        data: {
+          managementState: nextState,
+          managementStateChangedAt: now,
+          verifiedAt: null,
+          // Remote credentials are intentionally unrecoverable after
+          // disconnect. Docker targets do not store an inbound credential.
+          ...(row.kind === 'docker' ? {} : { secret: null }),
+          ...(row.kind === 'docker'
+            ? {
+                gatewayPreflightStatus: 'not-run',
+                gatewayPreflightJobId: null,
+                gatewayPreflightAt: null,
+                gatewayPreflightError: null,
+              }
+            : {}),
+        },
+      }),
+      this.prisma.agent.updateMany({
+        where: { targetId: row.id },
+        data: {
+          disabledAt: now,
+          enrollmentTokenHash: null,
+          enrollmentExpiresAt: null,
+          credentialHash: null,
+        },
+      }),
+      this.prisma.workloadDiagnostic.updateMany({
+        where: {
+          status: { in: ['queued', 'running'] },
+          currentJob: { is: { targetId: row.id } },
+        },
+        data: { status: 'failed', message, finishedAt: now },
+      }),
+      this.prisma.agentJob.updateMany({
+        where: { targetId: row.id, status: { in: ['blocked', 'queued', 'leased'] } },
+        data: {
+          status: 'cancelled',
+          progressStage: 'cancelled',
+          message,
+          leaseExpiresAt: null,
+          finishedAt: now,
+        },
+      }),
+    ]);
+
+    await this.auditEvents.record({
+      workspaceId: row.workspaceId!,
+      actorUserId: userId,
+      action: `target.${nextState}`,
+      resourceType: 'target',
+      resourceId: row.id,
+      resourceName: row.name,
+      details: { kind: row.kind, boundEnvironments: bindings },
+    });
+    if (agent) {
+      await this.auditEvents.record({
+        workspaceId: row.workspaceId!,
+        actorUserId: userId,
+        action: 'agent.disabled',
+        resourceType: 'agent',
+        resourceId: agent.id,
+        resourceName: row.name,
+        details: { targetId: row.id },
+      });
+    }
   }
 
   parseCaps(csv: string): RuntimeKind[] {
@@ -613,8 +813,9 @@ export class TargetsService implements OnModuleInit {
     }
   }
 
-  private toSummary(row: TargetRow, inUse: boolean): Target {
+  private toSummary(row: TargetRow, inUse: boolean, usage: TargetUsage[] = []): Target {
     const routingMode = row.routingMode ?? 'direct-port';
+    const managementState = this.managementState(row);
     const managedGatewayReady =
       routingMode === 'managed-gateway'
       && row.gatewayAdapter === 'caddy'
@@ -624,6 +825,7 @@ export class TargetsService implements OnModuleInit {
     const agentReady = row.scope === 'user' && row.kind === 'docker'
       ? Boolean(
           artifactStoreConfigured()
+          && managementState === 'active'
           && (routingMode === 'direct-port' || managedGatewayReady)
           && row.agent?.credentialHash
           && !row.agent.disabledAt
@@ -642,6 +844,11 @@ export class TargetsService implements OnModuleInit {
       auth: row.auth,
       remotePath: row.remotePath,
       publicUrl: row.publicUrl,
+      managementState,
+      managementStateChangedAt: row.managementStateChangedAt?.toISOString() ?? null,
+      ...(row.scope === 'user' && row.kind !== 'docker'
+        ? { credentialConfigured: Boolean(row.secret) }
+        : {}),
       routingMode: routingMode as TargetRoutingMode,
       gatewayPreflight: routingMode === 'managed-gateway'
         ? {
@@ -656,6 +863,7 @@ export class TargetsService implements OnModuleInit {
         ? { agentReady, agentVersion: row.agent?.version ?? null }
         : {}),
       inUse,
+      usage,
     };
   }
 }

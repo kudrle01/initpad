@@ -29,14 +29,16 @@ function agentRow(overrides: Record<string, unknown> = {}) {
 }
 
 function setup(role: string | null = 'owner') {
-  const prisma = {
+  const prisma: Record<string, any> = {
     target: {
       findUnique: jest.fn(async () => ({
         name: 'Remote Docker',
         kind: 'docker',
         scope: 'user',
         workspaceId: 'workspace-1',
+        managementState: 'active',
       })),
+      updateMany: jest.fn(async () => ({ count: 1 })),
     },
     agent: {
       findUnique: jest.fn(),
@@ -55,19 +57,24 @@ function setup(role: string | null = 'owner') {
     workloadDiagnostic: {
       updateMany: jest.fn(async () => ({ count: 0 })),
     },
-    $transaction: jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
   };
+  prisma.$transaction = jest.fn(async (work: unknown): Promise<unknown> =>
+    typeof work === 'function'
+      ? (work as (transaction: typeof prisma) => Promise<unknown>)(prisma)
+      : Promise.all(work as Promise<unknown>[]));
   const workspaces = {
     roleFor: jest.fn(async () => role),
     can: jest.fn((current: string, permission: string) =>
       permission === 'admin' && ['owner', 'admin'].includes(current),
     ),
   };
+  const targets = { disconnect: jest.fn(async () => undefined) };
   const audit = { record: jest.fn(async () => undefined) };
   return {
-    service: new AgentsService(prisma as never, workspaces as never, audit as never),
+    service: new AgentsService(prisma as never, workspaces as never, targets as never, audit as never),
     prisma,
     workspaces,
+    targets,
     audit,
   };
 }
@@ -297,46 +304,12 @@ describe('AgentsService trust bootstrap', () => {
   });
 
   it('disables the identity without deleting the physical target', async () => {
-    const { service, prisma, audit } = setup();
+    const { service, prisma, targets } = setup();
     prisma.agent.findUnique.mockResolvedValue(agentRow({ credentialHash: hashToken('credential') }));
 
     await service.disable('target-1', 'owner-1');
 
-    expect(prisma.agent.update).toHaveBeenCalledWith({
-      where: { targetId: 'target-1' },
-      data: expect.objectContaining({
-        disabledAt: NOW,
-        enrollmentTokenHash: null,
-        enrollmentExpiresAt: null,
-        credentialHash: null,
-      }),
-    });
     expect(prisma.target.findUnique).toHaveBeenCalled();
-    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith({
-      where: { targetId: 'target-1', status: { in: ['blocked', 'queued', 'leased'] } },
-      data: expect.objectContaining({
-        status: 'cancelled',
-        finishedAt: NOW,
-      }),
-    });
-    expect(prisma.workloadDiagnostic.updateMany).toHaveBeenCalledWith({
-      where: {
-        status: { in: ['queued', 'running'] },
-        currentJob: { is: { targetId: 'target-1' } },
-      },
-      data: expect.objectContaining({
-        status: 'failed',
-        finishedAt: NOW,
-      }),
-    });
-    expect(audit.record).toHaveBeenCalledWith({
-      workspaceId: 'workspace-1',
-      actorUserId: 'owner-1',
-      action: 'agent.disabled',
-      resourceType: 'agent',
-      resourceId: 'agent-1',
-      resourceName: 'Remote Docker',
-      details: { targetId: 'target-1' },
-    });
+    expect(targets.disconnect).toHaveBeenCalledWith('target-1', 'owner-1');
   });
 });

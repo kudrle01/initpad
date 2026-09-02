@@ -526,6 +526,13 @@ jen konkrétní provozní a vyhodnocovací scénář.
   reset/deaktivace účtu, Agent credential, GitHub unlink a přepsání configu.
   Rutinní vratné akce zůstávají bez nadbytečného potvrzování; celý projekt nebo
   workspace navíc vyžadují opsání názvu.
+- ✅ **Průřezový lifecycle správy targetu.** `Disconnect` a `Retire` ruší
+  Agent/SSH/SFTP důvěru bez teardownu běžících workloadů; `Restore` vyžaduje
+  nový enrollment nebo credential a ověření. Neaktivní target nepřijímá žádné
+  management operace ani nové allocation, zatímco projektové vazby, URL a
+  historie zůstávají pravdivě viditelné. Infrastructure vypisuje přesné
+  projekty a prostředí blokující tvrdé smazání. Rozpracovaná environment
+  operace změnu lifecycle stavu zablokuje.
 
 1. TODO **7a — append-only audit události.** Zavést jednotný workspace-scoped
    záznam aktéra, akce, resource identity, výsledku a času bez ukládání secretů.
@@ -543,7 +550,8 @@ jen konkrétní provozní a vyhodnocovací scénář.
      workspace create/update, členství/role, projekt create/import/delete,
      environment target, promotion request, rollback request a diagnostic request.
    - ✅ **7a.2 — infrastruktura a Agent.** Target create/update/delete,
-     allocation create/update/delete a Agent enrollment/disable zapisují
+     disconnect/retire/restore/reconnect, allocation create/update/delete a
+     Agent enrollment/disable zapisují
      workspace, aktéra a neměnný název resource. Update uvádí pouze skutečně
      změněná pole, destruktivní akce zachovají snapshot před smazáním a audit
      nikdy nepřebírá target host/URL/path, credentials ani enrollment token.

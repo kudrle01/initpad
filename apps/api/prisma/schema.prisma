@@ -232,6 +232,10 @@ model Target {
   secret                 String? // encrypted password or PEM private key (user targets)
   remotePath             String? // writable root on the remote
   publicUrl              String? // public address the deployed app/site is reachable at
+  // Lifecycle of the control-plane relationship. Disconnecting or retiring a
+  // target never tears down workloads; it only revokes management access.
+  managementState        String             @default("active") // active | disconnected | retired
+  managementStateChangedAt DateTime?
   // Docker application exposure: random published ports for local/lab, or a
   // stable HTTPS hostname reconciled through a trusted gateway (ADR-073).
   routingMode            String             @default("direct-port") // direct-port | managed-gateway
@@ -259,6 +263,7 @@ model Target {
   // A workspace cannot have two user targets with the same name. Built-ins
   // have null workspaceId and stable ids (Postgres permits multiple NULLs).
   @@unique([workspaceId, name])
+  @@index([workspaceId, managementState])
   @@index([gatewayPreflightStatus])
 }
 

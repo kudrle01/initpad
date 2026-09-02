@@ -4,6 +4,7 @@ import {
   EnvName,
   Project,
   ProviderKind,
+  TargetManagementState,
   TargetScope,
 } from '../domain/types';
 import { ScmKind } from '../scm/scm-provider';
@@ -64,6 +65,7 @@ export function projectView(row: ProjectRow, publicHost: string): Project {
               kind: environment.target.kind as ProviderKind,
               scope: environment.target.scope as TargetScope,
               host: environment.target.host,
+              managementState: (environment.target.managementState ?? 'active') as TargetManagementState,
             }
           : null,
       })),

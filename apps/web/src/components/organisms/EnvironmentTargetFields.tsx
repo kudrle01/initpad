@@ -17,6 +17,7 @@ export function targetSupports(target: Target, template: TemplateManifest): bool
 }
 
 export function targetIsReady(target: Target): boolean {
+  if (target.scope === 'user' && (target.managementState ?? 'active') !== 'active') return false;
   if (target.scope === 'user' && target.kind === 'docker') return target.agentReady === true;
   return target.scope === 'builtin' || Boolean(target.verifiedAt);
 }
@@ -81,7 +82,11 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
                 <option key={target.id} value={target.id} disabled={!targetIsReady(target)}>
                   {target.name} · {target.kind}
                   {!targetIsReady(target)
-                    ? target.scope === 'user' && target.kind === 'docker'
+                    ? target.scope === 'user' && target.managementState === 'retired'
+                      ? ' · retired'
+                      : target.scope === 'user' && target.managementState === 'disconnected'
+                        ? ' · reconnect first'
+                        : target.scope === 'user' && target.kind === 'docker'
                       ? ` · ${target.agentVersion ? 'update or enable Agent' : 'enroll Agent'}`
                       : ' · verify first'
                     : ''}
@@ -96,8 +101,8 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
         <p role="alert" className="flex max-w-3xl items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-muted-foreground">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
-            No verified target can run <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
-            <Link to="/infrastructure" className="text-link font-medium">Add or verify a server</Link>
+            No connected and verified target can run <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
+            <Link to="/infrastructure" className="text-link font-medium">Add or reconnect a server</Link>
             {' '}before creating the project.
           </span>
         </p>

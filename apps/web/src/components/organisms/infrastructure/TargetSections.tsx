@@ -8,24 +8,32 @@ interface Props {
   targets: Target[];
   readOnly: boolean;
   canManageAgent: boolean;
+  canManageLifecycle: boolean;
   busyTargetId: string | null;
   onAdd: () => void;
   onEdit: (target: Target) => void;
   onVerify: (target: Target) => void;
   onManageAgent: (target: Target) => void;
   onDelete: (target: Target) => void;
+  onDisconnect: (target: Target) => void;
+  onRetire: (target: Target) => void;
+  onRestore: (target: Target) => void;
 }
 
 export function TargetSections({
   targets,
   readOnly,
   canManageAgent,
+  canManageLifecycle,
   busyTargetId,
   onAdd,
   onEdit,
   onVerify,
   onManageAgent,
   onDelete,
+  onDisconnect,
+  onRetire,
+  onRestore,
 }: Props) {
   const builtins = targets.filter((target) => target.scope === 'builtin');
   const userTargets = targets.filter((target) => target.scope === 'user');
@@ -45,10 +53,14 @@ export function TargetSections({
                 busy={busyTargetId === target.id}
                 readOnly={readOnly}
                 canManageAgent={false}
+                canManageLifecycle={false}
                 onVerify={() => onVerify(target)}
                 onManageAgent={() => undefined}
                 onEdit={() => undefined}
                 onDelete={() => undefined}
+                onDisconnect={() => undefined}
+                onRetire={() => undefined}
+                onRestore={() => undefined}
               />
             ))}
           </div>
@@ -79,10 +91,14 @@ export function TargetSections({
                 busy={busyTargetId === target.id}
                 readOnly={readOnly}
                 canManageAgent={canManageAgent}
+                canManageLifecycle={canManageLifecycle}
                 onVerify={() => onVerify(target)}
                 onManageAgent={() => onManageAgent(target)}
                 onEdit={() => onEdit(target)}
                 onDelete={() => onDelete(target)}
+                onDisconnect={() => onDisconnect(target)}
+                onRetire={() => onRetire(target)}
+                onRestore={() => onRestore(target)}
               />
             ))}
           </div>

@@ -17,6 +17,7 @@ import {
   Trash2,
   AlertTriangle,
   Activity,
+  Link2Off,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -101,7 +102,12 @@ export function EnvironmentPipeline({
           target.status === 'running' &&
           target.version === env.version &&
           (env.artifact ? target.artifact?.id === env.artifact.id : !target.artifact);
-        const canPromote = !readOnly && busy === null && env.status === 'running' && !synced;
+        const canPromote = !readOnly
+          && busy === null
+          && env.status === 'running'
+          && !synced
+          && !(target?.target?.scope === 'user'
+            && (target.target.managementState ?? 'active') !== 'active');
         const deploying = busy === next || target?.status === 'deploying';
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
         const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
@@ -130,16 +136,23 @@ export function EnvironmentPipeline({
         const cleanupPending = env.status === 'empty' && !!env.statusReason;
         const targetNeedsDeploy =
           env.deploymentRequired && ['empty', 'failed'].includes(env.status);
+        const targetUnavailable = Boolean(
+          env.target?.scope === 'user'
+          && (env.target.managementState ?? 'active') !== 'active',
+        );
+        const targetAcceptsManagement = !targetUnavailable;
         const canDeployToTarget =
-          targetNeedsDeploy && (!!env.version || env.name === 'dev');
+          targetAcceptsManagement && targetNeedsDeploy && (!!env.version || env.name === 'dev');
         const canRunAgain =
+          targetAcceptsManagement &&
           env.name === 'dev' &&
           !env.version &&
           (env.status === 'empty' || env.status === 'failed') &&
           !targetNeedsDeploy;
         // Any environment can be pointed at a different target.
-        const canTarget = true;
+        const canTarget = targetAcceptsManagement || env.status === 'empty';
         const canInspectWorkload =
+          targetAcceptsManagement &&
           hasDeployment &&
           env.provider === 'docker' &&
           env.target?.kind === 'docker' &&
@@ -179,7 +192,7 @@ export function EnvironmentPipeline({
                       kind={waitingForRunner ? 'ci' : 'deploy'}
                     />
                   )}
-                  {!readOnly && (hasDeployment || canTarget) && (
+                  {!readOnly && (targetAcceptsManagement ? (hasDeployment || canTarget) : canTarget) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -192,7 +205,7 @@ export function EnvironmentPipeline({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        {hasFailedGitHubJobs && (
+                        {hasFailedGitHubJobs && targetAcceptsManagement && (
                           <DropdownMenuItem onSelect={onRerunFailedJobs}>
                             <RefreshCw className="h-4 w-4" /> Re-run failed GitHub jobs
                           </DropdownMenuItem>
@@ -209,12 +222,12 @@ export function EnvironmentPipeline({
                             <Play className="h-4 w-4" /> Deploy
                           </DropdownMenuItem>
                         )}
-                        {hasDeployment && !targetNeedsDeploy && (
+                        {hasDeployment && targetAcceptsManagement && !targetNeedsDeploy && (
                           <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
                             <RefreshCw className="h-4 w-4" /> Redeploy verified build
                           </DropdownMenuItem>
                         )}
-                        {hasDeployment && canRollback && !targetNeedsDeploy && (
+                        {hasDeployment && targetAcceptsManagement && canRollback && !targetNeedsDeploy && (
                           <DropdownMenuItem onSelect={() => onRollback(env.name)}>
                             <Undo2 className="h-4 w-4" /> Roll back to previous version…
                           </DropdownMenuItem>
@@ -225,6 +238,7 @@ export function EnvironmentPipeline({
                           </DropdownMenuItem>
                         )}
                         {hasDeployment &&
+                          targetAcceptsManagement &&
                           canStopStart &&
                           (env.status === 'stopped' ? (
                             <DropdownMenuItem onSelect={() => onStart(env.name)}>
@@ -243,7 +257,8 @@ export function EnvironmentPipeline({
                             <Server className="h-4 w-4" /> Change target
                           </DropdownMenuItem>
                         )}
-                        {(hasDeployment || env.status === 'deploying' || cleanupPending) && (
+                        {targetAcceptsManagement
+                          && (hasDeployment || env.status === 'deploying' || cleanupPending) && (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem destructive onSelect={() => onRemoveEnv(env.name)}>
@@ -290,6 +305,20 @@ export function EnvironmentPipeline({
                   </span>
                 )}
               </div>
+
+              {targetUnavailable && (
+                <div className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-muted-foreground">
+                  <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                  <span>
+                    Target is {env.target!.managementState ?? 'disconnected'}. The URL may remain online, but InitPad
+                    management is unavailable.{' '}
+                    <Link to="/infrastructure" className="text-link font-medium">
+                      Reconnect target
+                    </Link>
+                    .
+                  </span>
+                </div>
+              )}
 
               {targetNeedsDeploy && (
                 <div className="mt-2 flex items-start gap-1 text-xs text-primary">

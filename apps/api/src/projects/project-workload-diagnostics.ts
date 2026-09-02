@@ -61,6 +61,11 @@ export class ProjectWorkloadDiagnostics {
     const target = environment.target;
     const allocation = environment.allocation;
     const agent = target?.agent;
+    if (target?.scope === 'user' && (target.managementState ?? 'active') !== 'active') {
+      throw new BadRequestException(
+        `Target '${target.name}' is ${target.managementState ?? 'disconnected'}; reconnect it before requesting diagnostics`,
+      );
+    }
     if (
       environment.provider !== 'docker'
       || !target

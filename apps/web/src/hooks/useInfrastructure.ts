@@ -105,7 +105,52 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       await api.disableAgent(target.id);
-      toast.success('Agent disabled');
+      toast.success('Agent disconnected; running workloads were left untouched');
+      await refresh();
+      return true;
+    } catch (cause) {
+      toast.error((cause as Error).message);
+      return false;
+    } finally {
+      setBusyTargetId(null);
+    }
+  }
+
+  async function disconnectTarget(target: Target) {
+    setBusyTargetId(target.id);
+    try {
+      await api.disconnectTarget(target.id);
+      toast.success(`${target.name} disconnected; running workloads were left untouched`);
+      await refresh();
+      return true;
+    } catch (cause) {
+      toast.error((cause as Error).message);
+      return false;
+    } finally {
+      setBusyTargetId(null);
+    }
+  }
+
+  async function retireTarget(target: Target) {
+    setBusyTargetId(target.id);
+    try {
+      await api.retireTarget(target.id);
+      toast.success(`${target.name} is now retained as unmanaged infrastructure`);
+      await refresh();
+      return true;
+    } catch (cause) {
+      toast.error((cause as Error).message);
+      return false;
+    } finally {
+      setBusyTargetId(null);
+    }
+  }
+
+  async function restoreTarget(target: Target) {
+    setBusyTargetId(target.id);
+    try {
+      await api.restoreTarget(target.id);
+      toast.success(`${target.name} restored; reconnect its credentials to resume management`);
       await refresh();
       return true;
     } catch (cause) {
@@ -213,6 +258,9 @@ export function useInfrastructure(workspaceId?: string) {
     deleteTarget,
     issueAgentEnrollment,
     disableAgent,
+    disconnectTarget,
+    retireTarget,
+    restoreTarget,
     saveAllocation,
     toggleAllocation,
     deleteAllocation,

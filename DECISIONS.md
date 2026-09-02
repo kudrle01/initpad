@@ -3493,3 +3493,53 @@ idempotenci.
 build ověří všechna typovaná integrační místa. Browser acceptance na desktopu a
 šířce 390 px ověří focus, Cancel/Escape bez mutace, typed confirmation, vnoření
 nad existujícím target/Agent/config dialogem a disabled stav během requestu.
+
+---
+
+## ADR-079 — Odpojení správy targetu nesmí být skrytý teardown
+
+**Kontext.** Fyzický server, Agent identita, allocation a workload mají odlišný
+životní cyklus. Zakázat smazání targetu používaného prostředím chrání před
+osiřelými záznamy, ale samo o sobě neřeší legitimní požadavek firmy: ponechat
+běžící aplikace na serveru a současně zrušit důvěru nebo správu z InitPadu.
+Vynutit nejdřív teardown by mohlo odstranit produkci; povolit tvrdé smazání by
+naopak skrylo existující workload a ztratilo auditní vazbu.
+
+**Rozhodnutí.** Workspace-owned target má explicitní stav
+`active | disconnected | retired`:
+
+1. `Disconnect` okamžitě revokuje Agent credential a jednorázový enrollment,
+   nebo nevratně odstraní uložený SSH/SFTP secret. Neodesílá na target žádný
+   stop, remove ani cleanup příkaz a nemění řádky prostředí.
+2. `Retire` provede stejné zrušení důvěry a označí target jako vědomě
+   nespravovaný. Jeho vazby, URL a historie zůstanou viditelné.
+3. `Restore` vrátí retired target pouze do `disconnected`. Správa se obnoví až
+   úspěšným novým Agent enrollmentem nebo uložením nového vzdáleného credentialu
+   a úspěšným connection testem; starý secret ani credential nelze obnovit.
+4. Deploy, promotion, rollback, start, stop, remove a workload diagnostics jsou
+   na neaktivním user targetu odmítnuty také serverem. Aktivace allocation je
+   zakázaná, dokud target není znovu aktivní.
+5. Změna management stavu je admin operace a neproběhne během aktivní
+   environment operation. Tvrdé smazání targetu i allocation zůstává blokované,
+   dokud na ně odkazuje alespoň jedno prostředí.
+
+Infrastructure UI zobrazuje konkrétní projekty a prostředí, která target nebo
+allocation používají, místo nevysvětleného disabled tlačítka. Neaktivní target
+je viditelně odlišen a projektový detail říká, že veřejná URL může stále běžet,
+ale InitPad ji už nedokáže spravovat.
+
+**Důsledky.** Administrátor může bezpečně přerušit trust boundary bez výpadku
+aplikací a bez předstírání, že fyzický workload zmizel. Cena je vědomý
+`unmanaged` stav: dokud se target znovu nepřipojí a workload neodstraní nebo
+nepřesune, nelze jeho záznam tvrdě smazat. To je žádoucí ochrana před tichými
+orphan workloady, nikoli omezení Dockeru. Události
+`target.disconnected|retired|restored|connected` zachovají organizační audit;
+neobsahují credential ani hostitelské detaily.
+
+**Testování.** Regresní test ověřuje, že disconnect vymaže credential, ale
+nevolá update/delete prostředí, že rozpracovaná operace změnu stavu zablokuje,
+že neaktivní target odmítne management command a že restore neobnoví důvěru
+automaticky. Uživatelsky: na targetu s běžící aplikací zvolit Disconnect,
+potvrdit stále funkční URL a disabled provozní akce, potom provést nový
+credential/enrollment a ověřit návrat správy. Retire navíc vyžaduje opsání
+názvu targetu.

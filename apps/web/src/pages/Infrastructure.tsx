@@ -71,6 +71,7 @@ export default function Infrastructure() {
   const availableAllocationTargets = infrastructure.targets.filter(
     (target) =>
       !allocatedTargetIds.has(target.id) &&
+      (target.managementState ?? 'active') === 'active' &&
       (target.scope !== 'user' || target.kind !== 'docker' || target.agentReady === true),
   );
 
@@ -203,6 +204,50 @@ export default function Infrastructure() {
     if (confirmed) await infrastructure.deleteTarget(target);
   }
 
+  async function disconnectTarget(target: Target) {
+    const usage = target.usage ?? [];
+    const confirmed = await confirmAction({
+      title: `Disconnect ${target.name} from InitPad?`,
+      description: 'Management access is revoked without sending a teardown command to the server.',
+      confirmLabel: 'Disconnect target',
+      tone: 'danger',
+      details: [
+        { label: 'Target', value: target.name },
+        { label: 'Bound environments', value: usage.length },
+      ],
+      consequences: [
+        'Existing applications and their public URLs are left untouched.',
+        target.kind === 'docker'
+          ? 'The Agent credential and unused enrollment token are revoked.'
+          : 'The stored SSH/SFTP credential is permanently removed.',
+        'Deploy, start, stop, diagnostics and cleanup remain unavailable until this target is reconnected.',
+      ],
+    });
+    if (confirmed) await infrastructure.disconnectTarget(target);
+  }
+
+  async function retireTarget(target: Target) {
+    const usage = target.usage ?? [];
+    const confirmed = await confirmAction({
+      title: `Retire ${target.name} as unmanaged?`,
+      description: 'Use this when the server and its applications should remain, but InitPad must stop managing them.',
+      confirmLabel: 'Retire target',
+      tone: 'danger',
+      requireText: target.name,
+      details: [{ label: 'Environments retained', value: usage.length }],
+      consequences: [
+        'All management credentials are revoked and cannot be recovered.',
+        'Existing workload records, URLs and deployment history remain visible as unmanaged.',
+        'Restore the target and provide a new credential or Agent enrollment to manage it again.',
+      ],
+    });
+    if (confirmed) await infrastructure.retireTarget(target);
+  }
+
+  async function restoreTarget(target: Target) {
+    await infrastructure.restoreTarget(target);
+  }
+
   async function toggleAllocation(allocation: TargetAllocation) {
     if (allocation.status === 'active') {
       const confirmed = await confirmAction({
@@ -262,6 +307,7 @@ export default function Infrastructure() {
             targets={infrastructure.targets}
             readOnly={readOnly}
             canManageAgent={canManageAgent}
+            canManageLifecycle={canManageAllocations}
             busyTargetId={infrastructure.busyTargetId}
             onAdd={openNewTarget}
             onEdit={(target) => {
@@ -274,6 +320,9 @@ export default function Infrastructure() {
               setAgentTarget(target);
             }}
             onDelete={(target) => void deleteTarget(target)}
+            onDisconnect={(target) => void disconnectTarget(target)}
+            onRetire={(target) => void retireTarget(target)}
+            onRestore={(target) => void restoreTarget(target)}
           />
           <AllocationSection
             allocations={infrastructure.allocations}

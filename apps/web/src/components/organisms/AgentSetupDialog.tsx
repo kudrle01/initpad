@@ -93,9 +93,9 @@ export function AgentSetupDialog({
 
   async function disableAgent() {
     const confirmed = await confirmAction({
-      title: `Disable the Agent for ${currentTarget.name}?`,
-      description: 'This revokes the server identity used to receive work from InitPad.',
-      confirmLabel: 'Disable Agent',
+      title: `Disconnect the Agent for ${currentTarget.name}?`,
+      description: 'This revokes the server identity used to receive work from InitPad without stopping its workloads.',
+      confirmLabel: 'Disconnect Agent',
       tone: 'danger',
       consequences: [
         'Queued work is cancelled and the server cannot receive further jobs.',
@@ -352,7 +352,7 @@ export function AgentSetupDialog({
         <DialogFooter>
           {agent && agent.state !== 'disabled' && agent.state !== 'not-enrolled' && (
             <Button variant="ghost" disabled={busy} onClick={() => void disableAgent()}>
-              Disable Agent
+              Disconnect Agent
             </Button>
           )}
           <Button disabled={busy} onClick={() => void issueEnrollment()}>

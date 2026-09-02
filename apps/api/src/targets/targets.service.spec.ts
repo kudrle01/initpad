@@ -240,7 +240,7 @@ describe('Agent-backed Docker target creation', () => {
           agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
         }]),
       },
-      environment: { groupBy: jest.fn(async () => []) },
+      environment: { findMany: jest.fn(async () => []) },
     };
     const workspaces = { resolve: jest.fn(async () => ({ id: 'workspace-1' })) };
     const service = new TargetsService(prisma as never, {} as never, workspaces as never);
@@ -398,6 +398,119 @@ describe('target capability updates', () => {
   });
 });
 
+describe('target management lifecycle', () => {
+  const remote: TargetRow = {
+    id: 'target-1',
+    name: 'Retained server',
+    kind: 'sftp',
+    scope: 'user',
+    capabilities: 'static,php',
+    host: 'deploy.example.test',
+    port: 22,
+    username: 'deploy',
+    auth: 'password',
+    secret: encryptSecret('secret'),
+    remotePath: '/srv/apps',
+    publicUrl: 'https://apps.example.test',
+    managementState: 'active',
+    managementStateChangedAt: null,
+    verifiedAt: new Date(),
+    ownerId: 'owner-1',
+    workspaceId: 'workspace-1',
+    createdAt: new Date(),
+  };
+
+  function setup(activeOperations = 0, current: TargetRow = remote) {
+    const targetUpdate = jest.fn(async () => current);
+    const prisma: Record<string, any> = {
+      target: {
+        findUnique: jest.fn(async () => current),
+        update: targetUpdate,
+      },
+      environment: {
+        count: jest.fn()
+          .mockResolvedValueOnce(activeOperations)
+          .mockResolvedValueOnce(2),
+      },
+      agent: {
+        findUnique: jest.fn(async () => null),
+        updateMany: jest.fn(async () => ({ count: 0 })),
+      },
+      workloadDiagnostic: { updateMany: jest.fn(async () => ({ count: 0 })) },
+      agentJob: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    };
+    prisma.$transaction = jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries));
+    const workspaces = { require: jest.fn(async () => 'admin') };
+    const audit = { record: jest.fn(async () => undefined) };
+    return {
+      service: new TargetsService(prisma as never, {} as never, workspaces as never, audit as never),
+      prisma,
+      targetUpdate,
+      audit,
+    };
+  }
+
+  it('disconnects management and erases the credential without deleting environment bindings', async () => {
+    const { service, prisma, targetUpdate, audit } = setup();
+
+    await service.disconnect(remote.id, 'owner-1');
+
+    expect(targetUpdate).toHaveBeenCalledWith({
+      where: { id: remote.id },
+      data: expect.objectContaining({
+        managementState: 'disconnected',
+        verifiedAt: null,
+        secret: null,
+      }),
+    });
+    expect(prisma.environment.deleteMany).toBeUndefined();
+    expect(prisma.environment.updateMany).toBeUndefined();
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'target.disconnected',
+      details: { kind: 'sftp', boundEnvironments: 2 },
+    }));
+  });
+
+  it('does not revoke management while an environment operation is in progress', async () => {
+    const { service, targetUpdate } = setup(1);
+
+    await expect(service.retire(remote.id, 'owner-1')).rejects.toThrow(
+      'operation(s) in progress',
+    );
+    expect(targetUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects management commands after a target is disconnected', () => {
+    const { service } = setup();
+    expect(() => service.connectionForTarget({
+      ...remote,
+      managementState: 'disconnected',
+    })).toThrow('cannot receive management commands');
+  });
+
+  it('restores a retired target as disconnected so fresh trust is still required', async () => {
+    const { service, targetUpdate, audit } = setup(0, {
+      ...remote,
+      managementState: 'retired',
+      secret: null,
+    });
+
+    await service.restore(remote.id, 'owner-1');
+
+    expect(targetUpdate).toHaveBeenCalledWith({
+      where: { id: remote.id },
+      data: expect.objectContaining({
+        managementState: 'disconnected',
+        verifiedAt: null,
+      }),
+    });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'target.restored',
+      details: { kind: 'sftp', state: 'disconnected' },
+    }));
+  });
+});
+
 describe('edition-aware target visibility', () => {
   const savedEdition = config.edition;
   afterEach(() => { config.edition = savedEdition; });
@@ -406,7 +519,7 @@ describe('edition-aware target visibility', () => {
     config.edition = 'saas';
     const prisma = {
       target: { findMany: jest.fn(async () => []) },
-      environment: { groupBy: jest.fn(async () => []) },
+      environment: { findMany: jest.fn(async () => []) },
     };
     const workspaces = { resolve: jest.fn(async () => ({ id: 'workspace-1' })) };
     const service = new TargetsService(prisma as never, {} as never, workspaces as never);

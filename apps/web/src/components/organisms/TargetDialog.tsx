@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Server } from 'lucide-react';
+import { AlertTriangle, Server } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -70,6 +70,12 @@ function validManagedGatewayOrigin(value: string): boolean {
 // platform can deploy to). Built-in targets are read-only and never edited here.
 export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }: Props) {
   const editing = !!target;
+  const reconnectingRemote = Boolean(
+    target
+    && target.kind !== 'docker'
+    && target.managementState !== 'active',
+  );
+  const requiresReconnectCredential = reconnectingRemote && !target?.credentialConfigured;
   const [name, setName] = useState('');
   const [kind, setKind] = useState<ProviderKind>('docker');
   const [routingMode, setRoutingMode] = useState<TargetRoutingMode>('direct-port');
@@ -116,7 +122,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
       host.trim() &&
       username.trim() &&
       remotePath.trim() &&
-      (editing || secret.trim())
+      ((editing && !requiresReconnectCredential) || secret.trim())
     ));
 
   function submit() {
@@ -152,6 +158,18 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
         </DialogHeader>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {requiresReconnectCredential && (
+            <div className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm sm:col-span-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <div>
+                <p className="font-medium">A new credential is required</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  The previous credential was permanently removed. Save a replacement, then run
+                  Test connection to resume InitPad management.
+                </p>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="t-name">Name</Label>
             <Input id="t-name" value={name} placeholder="ESO school server" onChange={(e) => setName(e.target.value)} />
@@ -247,7 +265,9 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                     id="t-secret"
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
-                    placeholder={editing ? 'Leave blank to keep the existing key' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
+                    placeholder={requiresReconnectCredential
+                      ? '-----BEGIN OPENSSH PRIVATE KEY-----'
+                      : editing ? 'Leave blank to keep the existing key' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
                     className="min-h-[84px] w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   />
                 ) : (
@@ -256,7 +276,9 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                     type="password"
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
-                    placeholder={editing ? 'Leave blank to keep the existing password' : ''}
+                    placeholder={requiresReconnectCredential
+                      ? 'Enter a new password'
+                      : editing ? 'Leave blank to keep the existing password' : ''}
                   />
                 )}
               </div>
@@ -302,7 +324,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           </Button>
           <Button disabled={busy || !valid} onClick={submit}>
             {busy && <Spinner className="h-4 w-4" />}
-            {editing ? 'Save target' : 'Add target'}
+            {reconnectingRemote ? 'Save connection' : editing ? 'Save target' : 'Add target'}
           </Button>
         </DialogFooter>
       </DialogContent>

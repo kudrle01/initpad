@@ -120,7 +120,13 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
                     {isCurrent && <span className="text-[11px] text-muted-foreground">current</span>}
                     {!targetIsReady(t) && (
                       <span className="text-[11px] text-warning">
-                        {t.kind === 'docker' && t.scope === 'user' ? 'Agent not ready' : 'verify first'}
+                        {t.scope === 'user' && t.managementState === 'retired'
+                          ? 'retired'
+                          : t.scope === 'user' && t.managementState === 'disconnected'
+                            ? 'reconnect first'
+                            : t.kind === 'docker' && t.scope === 'user'
+                              ? 'Agent not ready'
+                              : 'verify first'}
                       </span>
                     )}
                   </div>

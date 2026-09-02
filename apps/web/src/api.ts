@@ -22,6 +22,7 @@ import type {
   AgentJobSummary,
   WorkloadDiagnostic,
   AuditEventPage,
+  TargetUsage,
 } from '@/types';
 
 export interface EnvConfig {
@@ -50,6 +51,7 @@ export interface TargetAllocation {
   id: string;
   targetId: string;
   targetName: string;
+  targetManagementState: 'active' | 'disconnected' | 'retired';
   namespace: string;
   rootPath: string | null;
   publicUrl: string | null;
@@ -57,6 +59,7 @@ export interface TargetAllocation {
   status: 'active' | 'disabled';
   maxEnvironments: number;
   inUse: number;
+  usage: TargetUsage[];
 }
 
 export interface TargetAllocationInput {
@@ -254,6 +257,12 @@ export const api = {
   updateTarget: (id: string, body: Partial<TargetInput>) =>
     http<Target>(`/targets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteTarget: (id: string) => http<void>(`/targets/${id}`, { method: 'DELETE' }),
+  disconnectTarget: (id: string) =>
+    http<void>(`/targets/${id}/disconnect`, { method: 'POST' }),
+  retireTarget: (id: string) =>
+    http<void>(`/targets/${id}/retire`, { method: 'POST' }),
+  restoreTarget: (id: string) =>
+    http<void>(`/targets/${id}/restore`, { method: 'POST' }),
   verifyTarget: (id: string) =>
     http<{ ok: boolean; message: string }>(`/targets/${id}/verify`, { method: 'POST' }),
   getTargetAgent: (id: string) => http<AgentStatus | null>(`/targets/${id}/agent`),

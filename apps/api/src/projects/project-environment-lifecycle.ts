@@ -69,7 +69,9 @@ export class ProjectEnvironmentLifecycle {
   async start(projectId: string, envName: EnvName): Promise<void> {
     const environment = await this.prisma.environment.findUniqueOrThrow({
       where: { projectId_name: { projectId, name: envName } },
+      include: { target: true },
     });
+    this.assertManaged(environment);
     if (!environment.version) {
       throw new BadRequestException(`Environment '${envName}' has nothing to start`);
     }
@@ -348,6 +350,7 @@ export class ProjectEnvironmentLifecycle {
       where: { projectId_name: { projectId, name: envName } },
       include: { target: true, allocation: true, buildArtifact: true },
     });
+    this.assertManaged(environment);
     return {
       project,
       template,
@@ -358,6 +361,17 @@ export class ProjectEnvironmentLifecycle {
 
   private isAgentBacked(environment: { provider: string; target?: { scope: string } | null }): boolean {
     return environment.provider === 'docker' && environment.target?.scope === 'user';
+  }
+
+  private assertManaged(environment: {
+    target?: { scope: string; name: string; managementState?: string } | null;
+  }): void {
+    const state = environment.target?.managementState ?? 'active';
+    if (environment.target?.scope === 'user' && state !== 'active') {
+      throw new BadRequestException(
+        `Target '${environment.target.name}' is ${state}; reconnect it before managing this environment.`,
+      );
+    }
   }
 
   private async queueAgentLifecycle(

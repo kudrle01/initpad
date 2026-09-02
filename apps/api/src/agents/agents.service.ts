@@ -12,6 +12,7 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
 import { AuditEventsService } from '../audit/audit-events.service';
+import { TargetsService } from '../targets/targets.service';
 
 const ENROLLMENT_TTL_MS = 15 * 60_000;
 export const ONLINE_AFTER_HEARTBEAT_MS = 90_000;
@@ -77,6 +78,7 @@ export class AgentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspaces: WorkspacesService,
+    private readonly targets: TargetsService,
     @Inject(AuditEventsService)
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
       record: async () => undefined,
@@ -94,6 +96,9 @@ export class AgentsService {
     userId: string,
   ): Promise<AgentSummary & { enrollmentToken: string }> {
     const target = await this.requireTargetAccess(targetId, userId, 'admin');
+    if (target.managementState === 'retired') {
+      throw new BadRequestException('Restore this retired target before enrolling an Agent');
+    }
     const now = new Date();
     const enrollmentToken = `${ENROLLMENT_PREFIX}${generateToken()}`;
     const enrollmentExpiresAt = new Date(now.getTime() + ENROLLMENT_TTL_MS);
@@ -153,23 +158,34 @@ export class AgentsService {
     const credentialGeneration = agent.credentialGeneration + 1;
     // Compare-and-set makes the token strictly single-use even when two Agent
     // processes race to redeem the same copied command.
-    const claimed = await this.prisma.agent.updateMany({
-      where: {
-        id: agent.id,
-        enrollmentTokenHash,
-        enrollmentExpiresAt: { gt: now },
-        disabledAt: null,
-      },
-      data: {
-        enrollmentTokenHash: null,
-        enrollmentExpiresAt: null,
-        credentialHash: hashToken(credential),
-        credentialGeneration,
-        protocolVersion: dto.protocolVersion,
-        version: dto.version,
-        enrolledAt: now,
-        lastSeenAt: null,
-      },
+    const claimed = await this.prisma.$transaction(async (transaction) => {
+      const result = await transaction.agent.updateMany({
+        where: {
+          id: agent.id,
+          enrollmentTokenHash,
+          enrollmentExpiresAt: { gt: now },
+          disabledAt: null,
+        },
+        data: {
+          enrollmentTokenHash: null,
+          enrollmentExpiresAt: null,
+          credentialHash: hashToken(credential),
+          credentialGeneration,
+          protocolVersion: dto.protocolVersion,
+          version: dto.version,
+          enrolledAt: now,
+          lastSeenAt: null,
+        },
+      });
+      if (result.count !== 1) return result;
+      const activated = await transaction.target.updateMany({
+        where: { id: agent.targetId, managementState: { not: 'retired' } },
+        data: { managementState: 'active', managementStateChangedAt: now },
+      });
+      if (activated.count !== 1) {
+        throw new UnauthorizedException('Target is no longer available for Agent enrollment');
+      }
+      return result;
     });
     if (claimed.count !== 1) {
       throw new UnauthorizedException('Invalid or expired Agent enrollment token');
@@ -224,51 +240,10 @@ export class AgentsService {
   }
 
   async disable(targetId: string, userId: string): Promise<void> {
-    const target = await this.requireTargetAccess(targetId, userId, 'admin');
-    const agent = await this.prisma.agent.findUnique({ where: { targetId } });
+    await this.requireTargetAccess(targetId, userId, 'admin');
+    const agent = await this.prisma.agent.findUnique({ where: { targetId }, select: { id: true } });
     if (!agent) throw new NotFoundException(`Agent for target '${targetId}' not found`);
-    const now = new Date();
-    await this.prisma.$transaction([
-      this.prisma.agent.update({
-        where: { targetId },
-        data: {
-          disabledAt: now,
-          enrollmentTokenHash: null,
-          enrollmentExpiresAt: null,
-          credentialHash: null,
-        },
-      }),
-      this.prisma.workloadDiagnostic.updateMany({
-        where: {
-          status: { in: ['queued', 'running'] },
-          currentJob: { is: { targetId } },
-        },
-        data: {
-          status: 'failed',
-          message: 'Agent disabled by a workspace administrator',
-          finishedAt: now,
-        },
-      }),
-      this.prisma.agentJob.updateMany({
-        where: { targetId, status: { in: ['blocked', 'queued', 'leased'] } },
-        data: {
-          status: 'cancelled',
-          progressStage: 'cancelled',
-          message: 'Agent disabled by a workspace administrator',
-          leaseExpiresAt: null,
-          finishedAt: now,
-        },
-      }),
-    ]);
-    await this.auditEvents.record({
-      workspaceId: target.workspaceId,
-      actorUserId: userId,
-      action: 'agent.disabled',
-      resourceType: 'agent',
-      resourceId: agent.id,
-      resourceName: target.name,
-      details: { targetId },
-    });
+    await this.targets.disconnect(targetId, userId);
   }
 
   async authenticateCredential(
@@ -296,10 +271,10 @@ export class AgentsService {
     targetId: string,
     userId: string,
     permission: 'read' | 'admin',
-  ): Promise<{ workspaceId: string; name: string }> {
+  ): Promise<{ workspaceId: string; name: string; managementState: string }> {
     const target = await this.prisma.target.findUnique({
       where: { id: targetId },
-      select: { kind: true, scope: true, workspaceId: true, name: true },
+      select: { kind: true, scope: true, workspaceId: true, name: true, managementState: true },
     });
     if (!target || target.scope === 'builtin' || !target.workspaceId) {
       throw new NotFoundException(`Target '${targetId}' not found`);
@@ -312,7 +287,11 @@ export class AgentsService {
     if (target.kind !== 'docker') {
       throw new BadRequestException('InitPad Agent can only be bound to a Docker target');
     }
-    return { workspaceId: target.workspaceId, name: target.name };
+    return {
+      workspaceId: target.workspaceId,
+      name: target.name,
+      managementState: target.managementState,
+    };
   }
 
   private summary(agent: AgentRow): AgentSummary {

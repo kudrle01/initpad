@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
@@ -18,6 +19,28 @@ import {
 } from '../agents/agent-version';
 import { artifactStoreConfigured } from '../config';
 import { AuditEventsService } from '../audit/audit-events.service';
+import type { TargetUsage } from '../domain/types';
+
+const ALLOCATION_INCLUDE = {
+  target: {
+    select: {
+      name: true,
+      capabilities: true,
+      scope: true,
+      managementState: true,
+    },
+  },
+  environments: {
+    select: {
+      name: true,
+      status: true,
+      url: true,
+      project: { select: { id: true, name: true } },
+    },
+    orderBy: [{ project: { name: 'asc' as const } }, { order: 'asc' as const }],
+  },
+  _count: { select: { environments: true } },
+} satisfies Prisma.TargetAllocationInclude;
 
 function changedAllocationFields(
   dto: UpdateTargetAllocationDto,
@@ -55,6 +78,7 @@ export interface TargetAllocationSummary {
   id: string;
   targetId: string;
   targetName: string;
+  targetManagementState: 'active' | 'disconnected' | 'retired';
   workspaceId: string;
   namespace: string;
   rootPath: string | null;
@@ -63,6 +87,7 @@ export interface TargetAllocationSummary {
   status: string;
   maxEnvironments: number;
   inUse: number;
+  usage: TargetUsage[];
 }
 
 /**
@@ -89,7 +114,7 @@ export class TargetAllocationsService {
     const rows = await this.prisma.targetAllocation.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'asc' },
-      include: { target: { select: { name: true } }, _count: { select: { environments: true } } },
+      include: ALLOCATION_INCLUDE,
     });
     return rows.map((row) => this.toSummary(row));
   }
@@ -117,6 +142,11 @@ export class TargetAllocationsService {
     });
     if (!target || (target.scope !== 'builtin' && target.workspaceId !== workspaceId)) {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
+    }
+    if (target.scope === 'user' && (target.managementState ?? 'active') !== 'active') {
+      throw new BadRequestException(
+        `Target '${target.name}' is ${target.managementState}; restore and reconnect it before allocating it`,
+      );
     }
     if (target.scope === 'user' && target.kind === 'docker') {
       if (
@@ -164,7 +194,7 @@ export class TargetAllocationsService {
         capabilities,
         maxEnvironments: dto.maxEnvironments ?? 50,
       },
-      include: { target: { select: { name: true } }, _count: { select: { environments: true } } },
+      include: ALLOCATION_INCLUDE,
     });
     await this.auditEvents.record({
       workspaceId,
@@ -192,6 +222,15 @@ export class TargetAllocationsService {
       dto.capabilities !== undefined
         ? this.resolveCapabilities(dto.capabilities, row.target.capabilities)
         : undefined;
+    if (
+      dto.status === 'active'
+      && row.target.scope === 'user'
+      && (row.target.managementState ?? 'active') !== 'active'
+    ) {
+      throw new BadRequestException(
+        `Reconnect target '${row.target.name}' before enabling this allocation`,
+      );
+    }
     const updated = await this.prisma.targetAllocation.update({
       where: { id: row.id },
       data: {
@@ -200,7 +239,7 @@ export class TargetAllocationsService {
         ...(dto.status !== undefined ? { status: dto.status } : {}),
         ...(dto.maxEnvironments !== undefined ? { maxEnvironments: dto.maxEnvironments } : {}),
       },
-      include: { target: { select: { name: true } }, _count: { select: { environments: true } } },
+      include: ALLOCATION_INCLUDE,
     });
     const changedFields = changedAllocationFields(dto, row, capabilities);
     if (changedFields) {
@@ -243,7 +282,7 @@ export class TargetAllocationsService {
   private async authorize(id: string, userId: string, need: 'read' | 'manage') {
     const row = await this.prisma.targetAllocation.findUnique({
       where: { id },
-      include: { target: { select: { name: true, capabilities: true } }, _count: { select: { environments: true } } },
+      include: ALLOCATION_INCLUDE,
     });
     if (!row) throw new NotFoundException(`Allocation '${id}' not found`);
     const role = await this.workspaces.roleFor(userId, row.workspaceId);
@@ -293,13 +332,20 @@ export class TargetAllocationsService {
     capabilities: string;
     status: string;
     maxEnvironments: number;
-    target: { name: string };
+    target: { name: string; capabilities?: string; scope?: string; managementState?: string };
+    environments?: Array<{
+      name: string;
+      status: string;
+      url: string | null;
+      project: { id: string; name: string };
+    }>;
     _count: { environments: number };
   }): TargetAllocationSummary {
     return {
       id: row.id,
       targetId: row.targetId,
       targetName: row.target.name,
+      targetManagementState: (row.target.managementState ?? 'active') as TargetAllocationSummary['targetManagementState'],
       workspaceId: row.workspaceId,
       namespace: row.namespace,
       rootPath: row.rootPath,
@@ -308,6 +354,13 @@ export class TargetAllocationsService {
       status: row.status,
       maxEnvironments: row.maxEnvironments,
       inUse: row._count.environments,
+      usage: (row.environments ?? []).map((environment) => ({
+        projectId: environment.project.id,
+        projectName: environment.project.name,
+        environment: environment.name as TargetUsage['environment'],
+        status: environment.status as TargetUsage['status'],
+        url: environment.url,
+      })),
     };
   }
 }

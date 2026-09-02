@@ -138,6 +138,7 @@ export type ProviderKind = 'docker' | 'sftp' | 'ssh';
 export type RuntimeKind = 'static' | 'node' | 'php' | 'python';
 export type TargetScope = 'builtin' | 'user';
 export type TargetRoutingMode = 'direct-port' | 'managed-gateway';
+export type TargetManagementState = 'active' | 'disconnected' | 'retired';
 export type GatewayPreflightStatus = 'not-run' | 'queued' | 'running' | 'passed' | 'failed';
 export type EnvName = 'dev' | 'test' | 'prod';
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
@@ -214,6 +215,9 @@ export interface Target {
   auth: string | null; // 'password' | 'key'
   remotePath: string | null;
   publicUrl: string | null;
+  managementState: TargetManagementState;
+  managementStateChangedAt: string | null;
+  credentialConfigured?: boolean;
   routingMode: TargetRoutingMode;
   gatewayPreflight?: {
     adapter: 'caddy';
@@ -225,8 +229,17 @@ export interface Target {
   agentReady?: boolean;
   agentVersion?: string | null;
   inUse?: boolean;
+  usage?: TargetUsage[];
   // Loaded alongside workspace-owned Docker targets by Infrastructure.
   agent?: AgentStatus | null;
+}
+
+export interface TargetUsage {
+  projectId: string;
+  projectName: string;
+  environment: EnvName;
+  status: DeployStatus;
+  url: string | null;
 }
 
 // Compact reference to the target an environment is bound to.
@@ -236,6 +249,7 @@ export interface EnvTarget {
   kind: ProviderKind;
   scope: TargetScope;
   host: string | null;
+  managementState: TargetManagementState;
 }
 
 export interface Environment {

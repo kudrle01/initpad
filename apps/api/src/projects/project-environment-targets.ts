@@ -179,9 +179,17 @@ export class ProjectEnvironmentTargets {
   ): Promise<void> {
     const allocation = await this.prisma.targetAllocation.findUnique({
       where: { id: allocationId },
-      include: { _count: { select: { environments: true } } },
+      include: {
+        target: { select: { name: true, scope: true, managementState: true } },
+        _count: { select: { environments: true } },
+      },
     });
     if (!allocation) return;
+    if (allocation.target?.scope === 'user' && allocation.target.managementState !== 'active') {
+      throw new BadRequestException(
+        `Target '${allocation.target.name}' is ${allocation.target.managementState}; reconnect it before deploying.`,
+      );
+    }
     if (allocation.status !== 'active') {
       throw new BadRequestException(
         'This target allocation is disabled; new deployments are paused.',
@@ -204,6 +212,12 @@ export class ProjectEnvironmentTargets {
   }
 
   assertUsable(target: TargetRow, template: TemplateManifest): void {
+    const managementState = target.managementState ?? 'active';
+    if (target.scope === 'user' && managementState !== 'active') {
+      throw new BadRequestException(
+        `Target '${target.name}' is ${managementState}; reconnect it before assigning an environment.`,
+      );
+    }
     if (target.scope === 'user' && target.kind === 'docker') {
       if (!artifactStoreConfigured()) {
         throw new BadRequestException(
@@ -282,7 +296,11 @@ export class ProjectEnvironmentTargets {
       );
       const natural =
         candidates.find((candidate) => candidate.scope === 'builtin') ??
-        candidates.find((candidate) => candidate.scope === 'user' && candidate.verifiedAt);
+        candidates.find((candidate) =>
+          candidate.scope === 'user'
+          && (candidate.managementState ?? 'active') === 'active'
+          && candidate.verifiedAt
+        );
       if (natural) return natural;
     }
     const docker = entities.find((candidate) => candidate.id === BUILTIN_DOCKER);
