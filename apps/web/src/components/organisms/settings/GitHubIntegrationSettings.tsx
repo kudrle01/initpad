@@ -171,7 +171,20 @@ export function GitHubIntegrationSettings() {
     <SettingsSection
       icon={Github}
       title="GitHub account"
-      description="Link GitHub to sign in and use an installed GitHub App to create or import repositories."
+      help={[
+        {
+          title: 'Account',
+          description: 'Links your GitHub identity as a sign-in method.',
+        },
+        {
+          title: 'GitHub App',
+          description: 'Gives InitPad access to create or import selected repositories.',
+        },
+        {
+          title: 'Permissions',
+          description: 'Job retry needs Actions read and write. No organization or account permission is required.',
+        },
+      ]}
     >
       {githubIdentities.length === 0 ? (
         <Button variant="secondary" onClick={linkGithub}>
@@ -242,11 +255,6 @@ export function GitHubIntegrationSettings() {
               </span>
             </div>
           ))}
-          <div className="bg-secondary/20 px-3 py-2 text-xs text-muted-foreground">
-            Failed-job retry requires GitHub repository permission{' '}
-            <strong className="font-medium text-foreground">Actions: Read and write</strong>.
-            No organization or account permission is required.
-          </div>
         </div>
       )}
 

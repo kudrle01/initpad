@@ -148,10 +148,7 @@ export default function NewProject() {
 
   return (
     <div>
-      <PageHeader
-        title="New project"
-        subtitle="Pick a golden path and the platform prepares source code, a Git repository and a deployment pipeline."
-      />
+      <PageHeader title="New project" />
 
       <Link to="/import" className="text-link mb-4 inline-flex items-center gap-1 text-sm font-medium">
         <DownloadCloud className="h-4 w-4" /> Import an existing repository instead
@@ -181,10 +178,19 @@ export default function NewProject() {
           <div className="flex max-w-md flex-col gap-1.5">
             <div className="flex items-center gap-1">
               <Label htmlFor="repository-owner">GitHub repository owner</Label>
-              <InfoTip label="About the repository owner">
-                InitPad creates a private repository in the selected account. Only GitHub App
-                installations authorized for {activeWorkspace?.name ?? 'this workspace'} appear here.
-              </InfoTip>
+              <InfoTip
+                label="About the repository owner"
+                items={[
+                  {
+                    title: 'Repository',
+                    description: 'InitPad creates a private repository in the selected account.',
+                  },
+                  {
+                    title: 'Available owners',
+                    description: `Only GitHub App installations authorized for ${activeWorkspace?.name ?? 'this workspace'} appear here.`,
+                  },
+                ]}
+              />
             </div>
             {ghStatus?.linked && ghStatus.installations.length > 0 ? (
               <>

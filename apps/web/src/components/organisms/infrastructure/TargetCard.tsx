@@ -191,10 +191,19 @@ export function TargetCard({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-1">
             <h3 className="text-sm font-semibold">Workspace access</h3>
-            <InfoTip label="About workspace access">
-              Isolates {workspaceName}{' '}on this server with its own namespace, allowed runtimes
-              and environment quota.
-            </InfoTip>
+            <InfoTip
+              label="About workspace access"
+              items={[
+                {
+                  title: 'Isolation',
+                  description: `${workspaceName} receives a separate namespace on this server.`,
+                },
+                {
+                  title: 'Policy',
+                  description: 'Allowed runtimes and the environment quota apply only to this workspace.',
+                },
+              ]}
+            />
           </div>
           {allocation && (
             <span className={cn(

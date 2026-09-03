@@ -46,12 +46,16 @@ export function GitAccessSettings() {
     <SettingsSection
       icon={GitBranch}
       title="Connect Git"
-      description={
-        <>
-          Link your machine to the platform’s Git server <strong className="font-medium text-foreground">once</strong>.
-          {' '}After that, cloning, pulling and pushing private repositories works without password prompts.
-        </>
-      }
+      help={[
+        {
+          title: 'Connection',
+          description: 'Link this machine to the platform Git server once.',
+        },
+        {
+          title: 'Authentication',
+          description: 'Future clone, pull and push commands work without a password prompt.',
+        },
+      ]}
     >
       {!access && (
         <Button onClick={reveal} disabled={loading}>

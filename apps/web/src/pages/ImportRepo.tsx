@@ -134,7 +134,16 @@ export default function ImportRepo() {
     <div>
       <PageHeader
         title="Import existing repository"
-        subtitle="Connect a repository you already have. Import never changes your code — it records the project, wires CI and prepares environments."
+        help={[
+          {
+            title: 'Import',
+            description: 'Records the project, connects CI and prepares its environments.',
+          },
+          {
+            title: 'Source code',
+            description: 'Your repository contents are validated, never rewritten.',
+          },
+        ]}
       />
 
       <Link to="/new" className="text-link mb-4 inline-flex items-center gap-1 text-sm font-medium">

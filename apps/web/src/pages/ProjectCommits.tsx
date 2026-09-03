@@ -96,7 +96,16 @@ export default function ProjectCommits() {
 
       <PageHeader
         title={project ? `${project.name} · commits` : 'Commit history'}
-        subtitle={`The ${HISTORY_LIMIT} most recent commits with their current CI/CD stage state and exact runner links.`}
+        help={[
+          {
+            title: 'History',
+            description: `The ${HISTORY_LIMIT} most recent commits.`,
+          },
+          {
+            title: 'Pipeline status',
+            description: 'Stages update from CI/CD and link to their exact runner jobs.',
+          },
+        ]}
       />
 
       {error && (

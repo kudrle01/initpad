@@ -3584,6 +3584,13 @@ hodnoty patří do jednotné info nápovědy dostupné na hover, focus i kliknut
 Tím se rozhraní nezahltí dokumentačními odstavci, ale kontext zůstane dostupný
 také z klávesnice a na dotykovém zařízení.
 
+Obecné podnadpisy, které pouze zopakují název stránky nebo viditelný obsah,
+se nezobrazují. Pokud stránka potřebuje doplnit její rozsah, soukromí nebo
+technickou souvislost, dostane nápovědu vedle názvu. Delší nápověda je členěná
+do krátkých pojmenovaných bodů s tučným názvem; nemá podobu souvislého odstavce.
+Stejný vzor používají technická pole a nastavení. Varování, aktuální stav,
+bezpečnostní dopad a pokyn nutný k dokončení úlohy zůstávají přímo viditelné.
+
 **Testování.** API test ověřuje, že vytvoření serveru zapíše výchozí access se
 správným workspace namespace ve stejné nested write a vytvoří oba auditní
 záznamy. Samostatný access lze založit před online Agentem, ale deployment

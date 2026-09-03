@@ -139,7 +139,6 @@ export function WorkspaceMembersSettings() {
     <SettingsSection
       icon={Users}
       title="Workspace members"
-      description={`${activeWorkspace?.name ?? 'Current workspace'} · your role: ${activeWorkspace?.role ?? '—'}`}
     >
       {canManage && (
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_auto]">

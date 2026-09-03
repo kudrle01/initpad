@@ -108,10 +108,19 @@ export function AllocationDialog({
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-1">
               <Label htmlFor="allocation-target">Server</Label>
-              <InfoTip label="About the workspace namespace">
-                InitPad derives an isolated namespace from the workspace. Server credentials
-                remain separate and are never copied into the workspace.
-              </InfoTip>
+              <InfoTip
+                label="About the workspace namespace"
+                items={[
+                  {
+                    title: 'Namespace',
+                    description: 'InitPad derives an isolated namespace from the workspace.',
+                  },
+                  {
+                    title: 'Credentials',
+                    description: 'Server credentials stay separate and are never copied into the workspace.',
+                  },
+                ]}
+              />
             </div>
             <select
               id="allocation-target"

@@ -35,30 +35,27 @@ export function DeploymentActivity({ operations, repoUrl, scmProvider, limit }: 
 
   return (
     <div>
-      <div className="mb-3 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-        CI builds and tests an immutable artifact once. Deploy and redeploy publish that verified
-        artifact through InitPad, so they do not start another {scmProvider === 'github' ? 'GitHub' : 'Gitea'} runner.
-        This list is the current deployment activity.
-        {scmProvider === 'github' && repoUrl && sourceBuilds.length > 0 && (
-          <span className="ml-1 inline-flex flex-wrap items-center gap-x-2">
-            <span>Source CI {sourceBuilds.length === 1 ? 'build:' : 'builds:'}</span>
-            {visibleSourceBuilds.map((runId) => (
-              <a
-                key={runId}
-                href={`${repoUrl}/actions/runs/${runId}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-link inline-flex items-center gap-1 font-medium"
-              >
-                run {runId} <ExternalLink className="h-3 w-3" />
-              </a>
-            ))}
-            {sourceBuilds.length > visibleSourceBuilds.length && (
-              <span>+{sourceBuilds.length - visibleSourceBuilds.length} more</span>
-            )}
+      {scmProvider === 'github' && repoUrl && sourceBuilds.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">
+            Source CI {sourceBuilds.length === 1 ? 'build' : 'builds'}
           </span>
-        )}
-      </div>
+          {visibleSourceBuilds.map((runId) => (
+            <a
+              key={runId}
+              href={`${repoUrl}/actions/runs/${runId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-link inline-flex items-center gap-1 font-medium"
+            >
+              run {runId} <ExternalLink className="h-3 w-3" />
+            </a>
+          ))}
+          {sourceBuilds.length > visibleSourceBuilds.length && (
+            <span>+{sourceBuilds.length - visibleSourceBuilds.length} more</span>
+          )}
+        </div>
+      )}
       {operations.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           No deployment activity yet.

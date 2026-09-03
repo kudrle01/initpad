@@ -103,10 +103,7 @@ export default function Environments() {
 
   return (
     <div>
-      <PageHeader
-        title="Environments"
-        subtitle="Every project environment and the target it runs on — grouped by project."
-      />
+      <PageHeader title="Environments" />
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />

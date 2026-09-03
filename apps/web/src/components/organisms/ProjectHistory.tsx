@@ -22,7 +22,19 @@ export function ProjectHistory({
 }: Props) {
   return (
     <>
-      <DetailSection title="Deployment activity">
+      <DetailSection
+        title="Deployment activity"
+        help={[
+          {
+            title: 'Source build',
+            description: 'CI builds and tests one immutable artifact.',
+          },
+          {
+            title: 'Deploy and redeploy',
+            description: 'Publish that verified artifact without starting another CI runner.',
+          },
+        ]}
+      >
         <DeploymentActivity
           operations={deployments}
           repoUrl={project.repoUrl}

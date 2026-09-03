@@ -1,6 +1,7 @@
 import { Activity, Bot, Container, Globe2, ShieldAlert, WifiOff } from 'lucide-react';
 import type { AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
 import { CopyField } from '@/components/molecules/CopyField';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
 import { Button } from '@/components/ui/button';
@@ -208,13 +209,26 @@ export function AgentSetupDialog({
           <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="flex items-center gap-1.5 text-sm font-medium">
-                  <Activity className="h-4 w-4 text-primary" /> Durable job protocol
-                </p>
+                <div className="flex items-center gap-1">
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <Activity className="h-4 w-4 text-primary" /> Durable job protocol
+                  </p>
+                  <InfoTip
+                    label="About the Agent protocol test"
+                    items={[
+                      {
+                        title: 'Checks',
+                        description: 'Claim, progress reporting, lease renewal and completion over 35 seconds.',
+                      },
+                      {
+                        title: 'Impact',
+                        description: 'Does not run a shell command or create a workload. Offline jobs wait safely in the queue.',
+                      },
+                    ]}
+                  />
+                </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  A safe 35-second probe exercises claim, progress, lease renewal and completion.
-                  It does not run a shell command or create a workload. When the Agent is offline,
-                  the probe safely waits in the queue.
+                  Checks Agent queue and lease handling without creating a workload.
                 </p>
               </div>
               <Button
@@ -231,14 +245,30 @@ export function AgentSetupDialog({
 
             <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border pt-3">
               <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-1.5 text-sm font-medium">
-                  <Container className="h-4 w-4 text-primary" /> Restricted Docker lifecycle
-                </p>
+                <div className="flex items-center gap-1">
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <Container className="h-4 w-4 text-primary" /> Restricted Docker lifecycle
+                  </p>
+                  <InfoTip
+                    label="About the Docker lifecycle test"
+                    items={[
+                      {
+                        title: 'Checks',
+                        description: 'Deploy, health, bounded logs, replacement, rollback, stop and restart.',
+                      },
+                      {
+                        title: 'Cleanup',
+                        description: 'Removes the temporary container, diagnostic image and empty network afterwards.',
+                      },
+                      {
+                        title: 'Restrictions',
+                        description: 'No shell command, host mount or deployment secret is sent to the Agent.',
+                      },
+                    ]}
+                  />
+                </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Pulls one digest-pinned diagnostic image, then verifies deploy, health, bounded
-                  logs, replacement, rollback, stop and restart. The temporary container, image and
-                  empty diagnostic network are removed afterwards. No shell command, host mount or
-                  deployment secret is sent to the Agent.
+                  Runs a temporary isolated workload and removes it after the test.
                 </p>
               </div>
               <Button
@@ -256,12 +286,26 @@ export function AgentSetupDialog({
             {target.routingMode === 'managed-gateway' && (
               <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border pt-3">
                 <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-1.5 text-sm font-medium">
-                    <Globe2 className="h-4 w-4 text-primary" /> Production gateway preflight
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <p className="flex items-center gap-1.5 text-sm font-medium">
+                      <Globe2 className="h-4 w-4 text-primary" /> Production gateway preflight
+                    </p>
+                    <InfoTip
+                      label="About the gateway preflight"
+                      items={[
+                        {
+                          title: 'Checks',
+                          description: 'The configured DNS zone, trusted TLS on port 443 and the private Caddy adapter.',
+                        },
+                        {
+                          title: 'Impact',
+                          description: 'Read-only: no route is created and gateway configuration is not changed.',
+                        },
+                      ]}
+                    />
+                  </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Read-only check of the configured DNS zone, trusted TLS on port 443 and the
-                    private Caddy adapter. It does not create a route or modify gateway config.
+                    Checks DNS, TLS and the private gateway without changing routes.
                   </p>
                   {target.gatewayPreflight && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">

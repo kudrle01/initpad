@@ -68,7 +68,16 @@ export function WorkspaceAdministrationSettings() {
     <SettingsSection
       icon={Building2}
       title="Current team workspace"
-      description="Rename this workspace or delete it after all of its projects and targets are removed."
+      help={[
+        {
+          title: 'Rename',
+          description: 'Changes the workspace display name.',
+        },
+        {
+          title: 'Delete',
+          description: 'Available only after its projects and servers have been removed.',
+        },
+      ]}
     >
       <div className="flex flex-col gap-2 sm:flex-row">
         <input

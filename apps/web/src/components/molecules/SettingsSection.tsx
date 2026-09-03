@@ -1,11 +1,14 @@
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import { InfoTip, type InfoTipItem } from '@/components/molecules/InfoTip';
 import { cn } from '@/lib/utils';
 
 interface Props {
   icon: LucideIcon;
   title: string;
-  description: ReactNode;
+  description?: ReactNode;
+  help?: InfoTipItem[];
+  helpLabel?: string;
   children?: ReactNode;
   tone?: 'default' | 'warning';
 }
@@ -15,6 +18,8 @@ export function SettingsSection({
   icon: Icon,
   title,
   description,
+  help,
+  helpLabel,
   children,
   tone = 'default',
 }: Props) {
@@ -39,8 +44,11 @@ export function SettingsSection({
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold">{title}</h2>
-          <div className="mt-1 text-sm text-muted-foreground">{description}</div>
+          <div className="flex items-center gap-1">
+            <h2 className="text-[15px] font-semibold">{title}</h2>
+            {help && <InfoTip label={helpLabel ?? `About ${title}`} items={help} />}
+          </div>
+          {description && <div className="mt-1 text-sm text-muted-foreground">{description}</div>}
         </div>
       </div>
       {children && <div className="mt-5">{children}</div>}

@@ -137,7 +137,6 @@ export default function Dashboard() {
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle="Overview of your projects and their environments."
         actions={
           <Button asChild>
             <Link to="/new">

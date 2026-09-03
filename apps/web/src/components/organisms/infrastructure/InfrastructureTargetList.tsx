@@ -61,11 +61,23 @@ export function InfrastructureTargetList({
     <section className="space-y-4">
       <div className="flex items-center gap-1">
         <h2 className="text-sm font-semibold text-foreground">Deployment servers</h2>
-        <InfoTip label="How infrastructure is organized">
-          A server is the machine or hosting endpoint. Workspace access gives {workspaceName}
-          {' '}its own namespace, limits and allowed runtimes. Environments are the applications
-          deployed through that access.
-        </InfoTip>
+        <InfoTip
+          label="How infrastructure is organized"
+          items={[
+            {
+              title: 'Server',
+              description: 'The machine or hosting endpoint that receives deployments.',
+            },
+            {
+              title: 'Workspace access',
+              description: `The isolated namespace, allowed runtimes and quota for ${workspaceName}.`,
+            },
+            {
+              title: 'Environment',
+              description: 'A project’s dev, test or prod application deployed through that access.',
+            },
+          ]}
+        />
       </div>
 
       {targets.length === 0 ? (

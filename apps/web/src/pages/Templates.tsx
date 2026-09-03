@@ -23,7 +23,16 @@ export default function Templates() {
     <div>
       <PageHeader
         title="Templates"
-        subtitle="Catalog of project templates. Each one ships with code, a Dockerfile and a CI/CD pipeline, so a new project is ready to build and deploy."
+        help={[
+          {
+            title: 'Template',
+            description: 'A maintained starting point for a language and runtime.',
+          },
+          {
+            title: 'Included',
+            description: 'Starter code, a Dockerfile and a CI/CD workflow.',
+          },
+        ]}
         actions={
           <Button asChild>
             <Link to="/new">

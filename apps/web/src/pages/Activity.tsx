@@ -32,10 +32,7 @@ export default function Activity() {
 
   return (
     <div>
-      <PageHeader
-        title="Activity"
-        subtitle="Recent commits and their CI / deploy pipeline across all your projects."
-      />
+      <PageHeader title="Activity" />
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />

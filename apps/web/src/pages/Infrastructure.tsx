@@ -288,7 +288,6 @@ export default function Infrastructure() {
     <div>
       <PageHeader
         title="Infrastructure"
-        subtitle={`Servers available to ${activeWorkspace?.name ?? 'this workspace'}.`}
         actions={!readOnly ? (
           <Button onClick={openNewTarget}>
             <Plus className="h-4 w-4" /> Add server

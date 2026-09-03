@@ -62,7 +62,16 @@ export default function ProjectDeployments() {
 
       <PageHeader
         title={project ? `${project.name} · deployments` : 'Deployment history'}
-        subtitle={`The ${HISTORY_LIMIT} most recent deployment operations. CI build links are grouped by source artifact because multiple deployments can reuse the same verified build.`}
+        help={[
+          {
+            title: 'History',
+            description: `The ${HISTORY_LIMIT} most recent deployment operations.`,
+          },
+          {
+            title: 'Build reuse',
+            description: 'Several deployments can publish the same verified source artifact.',
+          },
+        ]}
       />
 
       {error && (

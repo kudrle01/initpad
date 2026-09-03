@@ -174,7 +174,16 @@ export default function AuditLog() {
     <div>
       <PageHeader
         title="Audit log"
-        subtitle="Workspace changes with immutable actor and resource snapshots. Secrets, configuration values and application logs are never stored here."
+        help={[
+          {
+            title: 'Records',
+            description: 'Workspace changes with immutable actor and resource snapshots.',
+          },
+          {
+            title: 'Privacy',
+            description: 'Secrets, configuration values and application logs are never stored here.',
+          },
+        ]}
       />
 
       <div className="mb-5 grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-3">

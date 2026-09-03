@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
-import { CloudCog, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import type { EnvName, RuntimeKind, Target, TemplateManifest } from '@/types';
@@ -64,7 +65,35 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
 
   return (
     <div className="flex flex-col gap-2">
-      <Label>Environments &amp; targets</Label>
+      <div className="flex items-center gap-1">
+        <Label>Environments &amp; targets</Label>
+        <InfoTip
+          label="About environment targets"
+          items={hosted ? [
+            {
+              title: 'Selection',
+              description: 'Choose a deployment server for each environment. One server may host several environments.',
+            },
+            {
+              title: 'Isolation',
+              description: 'InitPad keeps dev, test and prod workloads separate.',
+            },
+            {
+              title: 'Private servers',
+              description: 'Local or private Docker servers connect outbound through InitPad Agent.',
+            },
+          ] : [
+            {
+              title: 'Defaults',
+              description: 'Self-hosted deployment targets are selected automatically when compatible.',
+            },
+            {
+              title: 'Changes',
+              description: 'Each environment can use a different target, now or from the project detail later.',
+            },
+          ]}
+        />
+      </div>
       <div className="grid max-w-3xl gap-2 md:grid-cols-3">
         {ENV_NAMES.map((environment) => (
           <div key={environment} className="rounded-lg border border-border bg-card p-3">
@@ -113,12 +142,6 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
           <Link to="/infrastructure" className="text-link font-medium">Infrastructure</Link>.
         </p>
       )}
-      <p className="flex max-w-3xl items-start gap-1.5 text-xs text-muted-foreground">
-        <CloudCog className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-        {hosted
-          ? 'Choose a workspace target for every environment. You may reuse one server; InitPad keeps dev, test and prod paths separate. Private or local Docker servers connect outbound through InitPad Agent.'
-          : 'Every environment can use a different target. The self-hosted defaults are preselected and can be changed now or later from the project detail.'}
-      </p>
     </div>
   );
 }
