@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/atoms/Spinner';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { cn } from '@/lib/utils';
 import type { TargetInput } from '@/api';
 import type { ProviderKind, RuntimeKind, Target, TargetRoutingMode } from '@/types';
@@ -209,7 +210,16 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           )}
 
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label>Can run</Label>
+            <div className="flex items-center gap-1">
+              <Label>Can run</Label>
+              <InfoTip label="About supported runtimes">
+                {kind === 'sftp'
+                  ? 'PHP enables Nette, Laravel and Symfony. PHP deployment also needs shell access through the same account.'
+                  : kind === 'docker'
+                    ? 'The Agent confirms Docker support after enrollment. Deployment stays disabled until the delivery path is ready.'
+                    : 'Choose only runtimes installed on this server. Test connection reports the detected command-line runtimes.'}
+              </InfoTip>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {ALL_CAPS.map((c) => {
                 const on = caps.includes(c.id);
@@ -232,13 +242,6 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground">
-              {kind === 'sftp'
-                ? 'Enable PHP for Nette, Laravel and Symfony. PHP deployment also requires shell commands over the same SSH account; static-only SFTP does not.'
-                : kind === 'docker'
-                  ? 'The Agent will confirm Docker capabilities after enrollment. Deployment remains disabled until the Agent delivery path is ready.'
-                  : 'Select only runtimes installed on this server. Test connection reports detected command-line runtimes.'}
-            </p>
           </div>
 
           {kind !== 'docker' && (
@@ -289,11 +292,20 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             </>
           )}
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="t-url">
-              {kind === 'docker' && routingMode === 'managed-gateway'
-                ? 'Gateway base URL'
-                : kind === 'docker' ? 'Application base URL' : 'Public URL'}
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="t-url">
+                {kind === 'docker' && routingMode === 'managed-gateway'
+                  ? 'Gateway base URL'
+                  : kind === 'docker' ? 'Application base URL' : 'Public URL'}
+              </Label>
+              {kind === 'docker' && (
+                <InfoTip label="About the application address">
+                  {routingMode === 'managed-gateway'
+                    ? 'Use an HTTPS DNS origin for stable application hostnames. Run gateway preflight before the first deployment.'
+                    : 'Use the browser-reachable address of this server. Each local or lab application receives its own published port.'}
+                </InfoTip>
+              )}
+            </div>
             <Input
               id="t-url"
               value={publicUrl}
@@ -308,13 +320,6 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                 && publicUrl.length > 0
                 && !validManagedGatewayOrigin(publicUrl.trim())}
             />
-            {kind === 'docker' && (
-              <p className="text-xs text-muted-foreground">
-                {routingMode === 'managed-gateway'
-                  ? 'HTTPS DNS origin for stable application hostnames. Deployment stays unavailable until preflight passes and managed route reconciliation is ready.'
-                  : 'Browser-reachable host of this server. Agent-managed applications receive their own published port; use this only for local or lab targets.'}
-              </p>
-            )}
           </div>
         </div>
 

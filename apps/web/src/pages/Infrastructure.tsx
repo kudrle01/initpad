@@ -47,7 +47,7 @@ function changedAllocationSettings(
 }
 
 export default function Infrastructure() {
-  const { activeWorkspace, user } = useAuth();
+  const { activeWorkspace } = useAuth();
   const confirmAction = useConfirmation();
   const infrastructure = useInfrastructure(activeWorkspace?.id);
   const [targetDialogOpen, setTargetDialogOpen] = useState(false);
@@ -288,9 +288,7 @@ export default function Infrastructure() {
     <div>
       <PageHeader
         title="Infrastructure"
-        subtitle={user?.edition === 'saas'
-          ? 'Deployment servers and the isolated access this workspace has on each one. Private Docker servers connect through InitPad Agent.'
-          : 'Deployment servers and the isolated access this workspace has on each one. Built-in servers simulate company infrastructure.'}
+        subtitle={`Servers available to ${activeWorkspace?.name ?? 'this workspace'}.`}
         actions={!readOnly ? (
           <Button onClick={openNewTarget}>
             <Plus className="h-4 w-4" /> Add server

@@ -1,6 +1,7 @@
-import { ArrowDown, Boxes, Plus, Server, Users } from 'lucide-react';
+import { Plus, Server } from 'lucide-react';
 import type { TargetAllocation } from '@/api';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { Button } from '@/components/ui/button';
 import type { Target } from '@/types';
 import { TargetCard } from './TargetCard';
@@ -58,29 +59,13 @@ export function InfrastructureTargetList({
 
   return (
     <section className="space-y-4">
-      <div>
+      <div className="flex items-center gap-1">
         <h2 className="text-sm font-semibold text-foreground">Deployment servers</h2>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Each server appears once. Its workspace access defines how {workspaceName} may use it;
-          environments are the applications currently assigned to that access.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-2 rounded-lg border border-border bg-secondary/20 p-3 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-center">
-        <div className="flex items-center gap-2">
-          <Server className="h-4 w-4 shrink-0 text-primary" />
-          <span><b className="font-medium text-foreground">Server</b> — connection and capacity</span>
-        </div>
-        <ArrowDown className="ml-1 h-3.5 w-3.5 sm:rotate-[-90deg]" />
-        <div className="flex items-center gap-2">
-          <Users className="h-4 w-4 shrink-0 text-primary" />
-          <span><b className="font-medium text-foreground">Workspace access</b> — namespace and quota</span>
-        </div>
-        <ArrowDown className="ml-1 h-3.5 w-3.5 sm:rotate-[-90deg]" />
-        <div className="flex items-center gap-2">
-          <Boxes className="h-4 w-4 shrink-0 text-primary" />
-          <span><b className="font-medium text-foreground">Environments</b> — deployed applications</span>
-        </div>
+        <InfoTip label="How infrastructure is organized">
+          A server is the machine or hosting endpoint. Workspace access gives {workspaceName}
+          {' '}its own namespace, limits and allowed runtimes. Environments are the applications
+          deployed through that access.
+        </InfoTip>
       </div>
 
       {targets.length === 0 ? (

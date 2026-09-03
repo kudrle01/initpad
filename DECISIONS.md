@@ -3578,6 +3578,12 @@ multi-tenant izolaci, capabilities subset i quota policy. Cena je složitější
 kompozitní karta a dvojí názvosloví mezi veřejným API/kódem a produktovým UI;
 to je záměrně levnější než rizikové sloučení entit.
 
+Trvale viditelný text se používá pro stav, následek akce, chybu a informaci
+potřebnou k rozhodnutí. Doplňkové vysvětlení pojmu nebo automaticky odvozené
+hodnoty patří do jednotné info nápovědy dostupné na hover, focus i kliknutí.
+Tím se rozhraní nezahltí dokumentačními odstavci, ale kontext zůstane dostupný
+také z klávesnice a na dotykovém zařízení.
+
 **Testování.** API test ověřuje, že vytvoření serveru zapíše výchozí access se
 správným workspace namespace ve stejné nested write a vytvoří oba auditní
 záznamy. Samostatný access lze založit před online Agentem, ale deployment

@@ -20,6 +20,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { TargetAllocation } from '@/api';
 import { Spinner } from '@/components/atoms/Spinner';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { TargetUsageList } from '@/components/molecules/TargetUsageList';
 import { Button } from '@/components/ui/button';
@@ -128,7 +129,7 @@ export function TargetCard({
 
   return (
     <Card className={cn(
-      'min-w-0 overflow-hidden p-0',
+      'min-w-0 p-0',
       ((isAgentTarget && agentState === 'offline') || managementState === 'disconnected')
         && 'border-warning/60',
       managementState === 'retired' && 'border-muted-foreground/30',
@@ -188,11 +189,12 @@ export function TargetCard({
 
       <div className="border-t border-border bg-secondary/20 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="flex items-center gap-1">
             <h3 className="text-sm font-semibold">Workspace access</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              How {workspaceName} may use this server.
-            </p>
+            <InfoTip label="About workspace access">
+              Isolates {workspaceName}{' '}on this server with its own namespace, allowed runtimes
+              and environment quota.
+            </InfoTip>
           </div>
           {allocation && (
             <span className={cn(
@@ -281,7 +283,7 @@ export function TargetCard({
             <div>
               <p className="text-sm font-medium text-foreground">Not enabled for this workspace</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Create an isolated namespace and quota before assigning environments to this server.
+                Enable access before assigning environments to this server.
               </p>
             </div>
             {canManageAccess && (

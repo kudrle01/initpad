@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { FormField } from '@/components/molecules/FormField';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
@@ -178,7 +179,13 @@ export default function NewProject() {
 
         {hosted && (
           <div className="flex max-w-md flex-col gap-1.5">
-            <Label htmlFor="repository-owner">GitHub repository owner</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="repository-owner">GitHub repository owner</Label>
+              <InfoTip label="About the repository owner">
+                InitPad creates a private repository in the selected account. Only GitHub App
+                installations authorized for {activeWorkspace?.name ?? 'this workspace'} appear here.
+              </InfoTip>
+            </div>
             {ghStatus?.linked && ghStatus.installations.length > 0 ? (
               <>
                 <Select
@@ -200,10 +207,6 @@ export default function NewProject() {
                     </option>
                   ))}
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  InitPad creates a private repository in this GitHub account. Only installations
-                  authorized for {activeWorkspace?.name ?? 'this workspace'} are shown.
-                </p>
               </>
             ) : (
               <div className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">

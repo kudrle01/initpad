@@ -4,6 +4,7 @@ import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { useToast } from '@/toast';
 import { Spinner } from '@/components/atoms/Spinner';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -96,7 +97,13 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="workspace-slug">Workspace slug</Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="workspace-slug">Workspace slug</Label>
+                <InfoTip label="About the workspace slug">
+                  A stable identifier used in namespaces and URLs. Use lowercase letters,
+                  numbers and hyphens.
+                </InfoTip>
+              </div>
               <Input
                 id="workspace-slug"
                 maxLength={40}
@@ -110,9 +117,6 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
                   setSlug(event.target.value.toLowerCase());
                 }}
               />
-              <p className="text-xs text-muted-foreground">
-                Lowercase letters, numbers and hyphens; used as the stable workspace identifier.
-              </p>
               {slug.length > 0 && !slugValid && (
                 <p className="text-xs text-destructive">
                   Use 2–40 characters, start with a letter and avoid the reserved personal- prefix.

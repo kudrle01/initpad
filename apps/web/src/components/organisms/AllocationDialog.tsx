@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Users } from 'lucide-react';
 import type { TargetAllocation, TargetAllocationInput } from '@/api';
 import { Spinner } from '@/components/atoms/Spinner';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -99,14 +100,19 @@ export function AllocationDialog({
             {editing ? 'Edit workspace access' : 'Enable workspace access'}
           </DialogTitle>
           <DialogDescription>
-            Give this workspace an isolated namespace and quota on a deployment server. Server
-            credentials remain separate and are never copied into the workspace.
+            Set this workspace’s deployment limits on the server.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="allocation-target">Server</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="allocation-target">Server</Label>
+              <InfoTip label="About the workspace namespace">
+                InitPad derives an isolated namespace from the workspace. Server credentials
+                remain separate and are never copied into the workspace.
+              </InfoTip>
+            </div>
             <select
               id="allocation-target"
               className={selectCls}
@@ -120,13 +126,15 @@ export function AllocationDialog({
                 </option>
               ))}
             </select>
-            <p className="text-xs text-muted-foreground">
-              The workspace namespace is derived server-side and cannot be changed here.
-            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Allowed runtimes</Label>
+            <div className="flex items-center gap-1">
+              <Label>Allowed runtimes</Label>
+              <InfoTip label="About allowed runtimes">
+                Access can use all or only some of the runtimes supported by this server.
+              </InfoTip>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {(selectedTarget?.capabilities ?? []).map((capability) => {
                 const selected = capabilities.includes(capability);
@@ -149,9 +157,6 @@ export function AllocationDialog({
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground">
-              This can only narrow the runtimes supported by the server.
-            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -167,16 +172,19 @@ export function AllocationDialog({
               />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <Label htmlFor="allocation-url">Public URL override (optional)</Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="allocation-url">Public URL override (optional)</Label>
+                <InfoTip label="About the public URL override">
+                  Leave this blank to inherit the server address. Shared platform servers add
+                  the workspace namespace automatically.
+                </InfoTip>
+              </div>
               <Input
                 id="allocation-url"
                 value={publicUrl}
                 placeholder={selectedTarget?.publicUrl ?? 'Derived from the server'}
                 onChange={(event) => setPublicUrl(event.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
-                Shared platform servers automatically receive the workspace namespace in their URL.
-              </p>
             </div>
           </div>
         </div>

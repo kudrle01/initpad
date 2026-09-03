@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { InfoTip } from '@/components/molecules/InfoTip';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { Spinner } from '@/components/atoms/Spinner';
@@ -192,15 +193,18 @@ export default function ImportRepo() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label>Runtime template</Label>
+          <div className="flex items-center gap-1">
+            <Label>Runtime template</Label>
+            <InfoTip label="About the runtime template">
+              Choose the runtime contract this repository already follows. Import validates the
+              repository but never rewrites its code.
+            </InfoTip>
+          </div>
           <Select value={templateId} aria-label="Template" onChange={(e) => setTemplateId(e.target.value)}>
             {templates.map((t) => (
               <option key={t.id} value={t.id}>{t.name} · {t.language}</option>
             ))}
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Pick the runtime contract the repository follows. Import checks it, but never rewrites your code.
-          </p>
         </div>
 
         <EnvironmentTargetFields
