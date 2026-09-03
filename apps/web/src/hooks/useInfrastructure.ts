@@ -75,7 +75,7 @@ export function useInfrastructure(workspaceId?: string) {
       const saved = target
         ? await api.updateTarget(target.id, values)
         : await api.createTarget(values);
-      toast.success(target ? 'Target saved' : 'Target added');
+      toast.success(target ? 'Server saved' : 'Server added with workspace access');
       await refresh();
       return saved;
     } catch (cause) {
@@ -179,7 +179,7 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       await api.deleteTarget(target.id);
-      toast.success(`Removed ${target.name}`);
+      toast.success(`Removed server ${target.name}`);
       await refresh();
     } catch (cause) {
       toast.error((cause as Error).message);
@@ -200,10 +200,10 @@ export function useInfrastructure(workspaceId?: string) {
           ...(values.publicUrl ? { publicUrl: values.publicUrl } : {}),
           maxEnvironments: values.maxEnvironments,
         });
-        toast.success('Allocation saved');
+        toast.success('Workspace access saved');
       } else {
         await api.createAllocation(values);
-        toast.success('Target allocated to this workspace');
+        toast.success('Workspace access enabled');
       }
       await refresh();
       return true;
@@ -221,7 +221,7 @@ export function useInfrastructure(workspaceId?: string) {
       await api.updateAllocation(allocation.id, {
         status: allocation.status === 'active' ? 'disabled' : 'active',
       });
-      toast.success(allocation.status === 'active' ? 'Allocation disabled' : 'Allocation enabled');
+      toast.success(allocation.status === 'active' ? 'Workspace access paused' : 'Workspace access resumed');
       await refresh();
     } catch (cause) {
       toast.error((cause as Error).message);
@@ -234,7 +234,7 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyAllocationId(allocation.id);
     try {
       await api.deleteAllocation(allocation.id);
-      toast.success(`Removed allocation of ${allocation.targetName}`);
+      toast.success(`Removed workspace access to ${allocation.targetName}`);
       await refresh();
     } catch (cause) {
       toast.error((cause as Error).message);

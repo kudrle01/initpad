@@ -66,8 +66,8 @@ function validManagedGatewayOrigin(value: string): boolean {
   }
 }
 
-// Register or edit one of the user's own deployment targets (a server the
-// platform can deploy to). Built-in targets are read-only and never edited here.
+// Register or edit one of the user's own deployment servers. Built-in servers
+// are read-only and never edited here.
 export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }: Props) {
   const editing = !!target;
   const reconnectingRemote = Boolean(
@@ -148,7 +148,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            <Server className="h-[18px] w-[18px]" /> {editing ? 'Edit target' : 'Add a target'}
+            <Server className="h-[18px] w-[18px]" /> {editing ? 'Edit server' : 'Add deployment server'}
           </DialogTitle>
           <DialogDescription>
             {kind === 'docker'
@@ -324,7 +324,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           </Button>
           <Button disabled={busy || !valid} onClick={submit}>
             {busy && <Spinner className="h-4 w-4" />}
-            {reconnectingRemote ? 'Save connection' : editing ? 'Save target' : 'Add target'}
+            {reconnectingRemote ? 'Save connection' : editing ? 'Save server' : 'Add server'}
           </Button>
         </DialogFooter>
       </DialogContent>

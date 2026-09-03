@@ -211,7 +211,7 @@ contract a firemní blueprint repozitáře zůstávají následným rozšířen�
 
 **Stav (ADR-060):** model + aditivní migrace, idempotentní legacy backfill,
 providerové routování root/URL, workspace-scoped Docker síť i jméno kontejneru,
-CRUD API a create/edit UI `/allocations`, role/cross-tenant 404 a policy při
+CRUD API, role/cross-tenant 404 a policy při
 create/import, změně targetu i deploy — implementováno a automaticky testováno.
 Nové built-in allocations dostávají workspace prefix; legacy URL a ESO cesty
 zůstanou beze změny. Živý test na VM prokázal dva workspaces s oddělenými
@@ -222,6 +222,14 @@ je provozně konfigurovatelný (ADR-064). SCM údržba u listu/detailu je mimo
 synchronní read path, polling stahuje průběžně jen hlavičku historie a celý
 vnořený CI prostor má souhrnný CPU/RAM/PID limit (ADR-065); živý dvouprojektový
 gate prošel bez blokování navigace.
+
+Infrastructure UI podle ADR-080 skládá technický model do jednoho hierarchického
+seznamu: každý deployment server se zobrazí právě jednou a uvnitř nese
+`Workspace access` s namespace, kvótou, runtime policy a použitými prostředími.
+Při přidání workspace-owned serveru vznikne jeho výchozí access atomicky;
+samostatné enable slouží hlavně pro sdílený built-in server nebo po dřívějším
+odebrání přístupu. Připravenost Agenta/gateway je deployment podmínka, nikoli
+podmínka pro předběžnou konfiguraci access policy.
 
 **Uživatelské ověření Fáze 4 (TargetAllocation):** dva workspace nasadí na stejný
 built-in target — každý má vlastní namespace, běží současně bez kolize a na cizí
@@ -533,6 +541,12 @@ jen konkrétní provozní a vyhodnocovací scénář.
   historie zůstávají pravdivě viditelné. Infrastructure vypisuje přesné
   projekty a prostředí blokující tvrdé smazání. Rozpracovaná environment
   operace změnu lifecycle stavu zablokuje.
+- ✅ **Průřezová hierarchie infrastruktury.** Doménové `Target` a
+  `TargetAllocation` zůstávají oddělené kvůli multi-tenant izolaci, UI je ale
+  neprezentuje jako dva repetitivní seznamy. Jeden server obsahuje přístup
+  aktivního workspace, kvótu, namespace a používaná prostředí; technické
+  připojení a lifecycle akce jsou v rozbalovacím detailu. Uživatelský termín je
+  `Workspace access`, zatímco `allocation` zůstává přesným interním názvem.
 
 1. TODO **7a — append-only audit události.** Zavést jednotný workspace-scoped
    záznam aktéra, akce, resource identity, výsledku a času bez ukládání secretů.

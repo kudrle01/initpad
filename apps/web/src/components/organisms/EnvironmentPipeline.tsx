@@ -310,10 +310,10 @@ export function EnvironmentPipeline({
                 <div className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-muted-foreground">
                   <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                   <span>
-                    Target is {env.target!.managementState ?? 'disconnected'}. The URL may remain online, but InitPad
+                    Server is {env.target!.managementState ?? 'disconnected'}. The URL may remain online, but InitPad
                     management is unavailable.{' '}
                     <Link to="/infrastructure" className="text-link font-medium">
-                      Reconnect target
+                      Reconnect server
                     </Link>
                     .
                   </span>

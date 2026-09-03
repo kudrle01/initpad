@@ -83,7 +83,7 @@ export class GatewayRoutesService {
       || allocation.status !== 'active'
     ) {
       throw new BadRequestException(
-        'Gateway route requires an active managed-gateway target allocation in the same workspace',
+        'Gateway route requires active workspace access to the managed-gateway server',
       );
     }
 

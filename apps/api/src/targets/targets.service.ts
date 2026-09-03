@@ -32,6 +32,7 @@ import {
   supportsProjectAgent,
 } from '../agents/agent-version';
 import { AuditEventsService } from '../audit/audit-events.service';
+import { allocationUsageDefaults } from './target-allocation-defaults';
 
 const TARGET_FIELD_LABELS: Partial<Record<keyof UpdateTargetDto, string>> = {
   name: 'name',
@@ -307,25 +308,55 @@ export class TargetsService implements OnModuleInit {
     if (await this.prisma.target.findFirst({ where: { workspaceId, name: dto.name } })) {
       throw new BadRequestException(`This workspace already has a target named '${dto.name}'`);
     }
-    const row = (await this.prisma.target.create({
+    const workspace = await this.prisma.workspace.findUniqueOrThrow({
+      where: { id: workspaceId },
+      select: { slug: true },
+    });
+    const capabilities = this.toCsv(dto.capabilities);
+    const remotePath = agentBacked ? null : dto.remotePath!;
+    const usage = allocationUsageDefaults({
+      scope: 'user',
+      remotePath,
+      publicUrl,
+    }, workspace.slug);
+    // A workspace-owned server has one natural consumer at creation time: the
+    // workspace that registered it. Create its access policy in the same
+    // nested write so the UI never exposes a half-created server that still
+    // needs a second technical "allocation" step.
+    const row = await this.prisma.target.create({
       data: {
         name: dto.name,
         kind: dto.kind,
         scope: 'user',
-        capabilities: this.toCsv(dto.capabilities),
+        capabilities,
         host: agentBacked ? null : dto.host!,
         port: agentBacked ? null : dto.port!,
         username: agentBacked ? null : dto.username!,
         auth: agentBacked ? null : dto.auth!,
         secret: agentBacked ? null : encryptSecret(dto.secret!),
-        remotePath: agentBacked ? null : dto.remotePath!,
+        remotePath,
         publicUrl,
         routingMode,
         gatewayAdapter: routingMode === 'managed-gateway' ? 'caddy' : null,
         ownerId: userId,
         workspaceId,
+        allocations: {
+          create: {
+            workspaceId,
+            namespace: workspace.slug,
+            rootPath: usage.rootPath,
+            publicUrl: usage.publicUrl,
+            capabilities,
+          },
+        },
       },
-    })) as TargetRow;
+      include: {
+        allocations: {
+          select: { id: true, capabilities: true, maxEnvironments: true },
+        },
+      },
+    });
+    const allocation = row.allocations[0];
     await this.auditEvents.record({
       workspaceId,
       actorUserId: userId,
@@ -337,6 +368,20 @@ export class TargetsService implements OnModuleInit {
         kind: row.kind,
         routingMode: row.routingMode ?? 'direct-port',
         capabilities: row.capabilities,
+      },
+    });
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'allocation.created',
+      resourceType: 'allocation',
+      resourceId: allocation.id,
+      resourceName: row.name,
+      details: {
+        targetId: row.id,
+        capabilities: allocation.capabilities,
+        maxEnvironments: allocation.maxEnvironments,
+        source: 'target-default',
       },
     });
     return this.toSummary(row, false);

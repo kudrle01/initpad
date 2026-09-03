@@ -3543,3 +3543,44 @@ automaticky. Uživatelsky: na targetu s běžící aplikací zvolit Disconnect,
 potvrdit stále funkční URL a disabled provozní akce, potom provést nový
 credential/enrollment a ověřit návrat správy. Retire navíc vyžaduje opsání
 názvu targetu.
+
+---
+
+## ADR-080 — Target a allocation jsou oddělené v doméně, spojené v uživatelském modelu
+
+**Kontext.** `Target` představuje skutečný deployment server a jeho připojení,
+zatímco `TargetAllocation` představuje izolovaný přístup jednoho workspace:
+namespace/root path, veřejnou URL, povolené runtime a kvótu. Toto rozdělení je
+nutné pro sdílenou školní nebo firemní infrastrukturu. Dva samostatné seznamy
+v Infrastructure ale zobrazovaly tentýž server dvakrát, nutily uživatele
+pochopit interní termín allocation a skrývaly vztah k nasazeným prostředím.
+
+**Rozhodnutí.** Databázová, autorizační a providerová hranice zůstává beze
+změny. UI používá jeden hierarchický seznam `Deployment servers`: každý server
+je právě jedna karta a obsahuje sekci `Workspace access` s namespace, kvótou,
+runtime policy a prostředími aktivního workspace. Technické připojení,
+ověření, Agent a lifecycle serveru jsou sekundární rozbalovací detail. Termín
+`allocation` zůstává v API a kódu; v uživatelském textu se používá srozumitelné
+`Workspace access`.
+
+Nový workspace-owned server vytvoří svůj výchozí `TargetAllocation` ve stejné
+databázové operaci. Server tak po úspěšném vytvoření nezůstane v mezistavu,
+kdy jej musí uživatel ještě ručně alokovat. Samostatné enable/edit/pause/remove
+access operace zůstávají pro sdílené built-in servery a správu policy.
+Workspace access lze připravit ještě před enrollmentem Agenta nebo gateway
+preflightem; skutečná runtime připravenost se nadále autoritativně kontroluje
+při přiřazení prostředí a deploymentu.
+
+**Důsledky.** Uživatel rozlišuje server od oprávnění workspace bez duplicitních
+karet a rychle vidí vztah server → přístup → prostředí. Odebrání access nemaže
+server a smazání serveru nemaže fyzický stroj. Backend si zachová potřebnou
+multi-tenant izolaci, capabilities subset i quota policy. Cena je složitější
+kompozitní karta a dvojí názvosloví mezi veřejným API/kódem a produktovým UI;
+to je záměrně levnější než rizikové sloučení entit.
+
+**Testování.** API test ověřuje, že vytvoření serveru zapíše výchozí access se
+správným workspace namespace ve stejné nested write a vytvoří oba auditní
+záznamy. Samostatný access lze založit před online Agentem, ale deployment
+readiness gate zůstává. Web production build a browser acceptance ověří, že se
+server objeví jednou, access akce mají potvrzení, používaná prostředí blokují
+remove/delete a rozbalovací detail i dialogy fungují na desktopu a 390 px.

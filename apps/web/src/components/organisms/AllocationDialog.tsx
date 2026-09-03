@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Layers } from 'lucide-react';
+import { Users } from 'lucide-react';
 import type { TargetAllocation, TargetAllocationInput } from '@/api';
 import { Spinner } from '@/components/atoms/Spinner';
 import { Button } from '@/components/ui/button';
@@ -95,18 +95,18 @@ export function AllocationDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            <Layers className="h-[18px] w-[18px]" />
-            {editing ? 'Edit allocation' : 'Allocate a target'}
+            <Users className="h-[18px] w-[18px]" />
+            {editing ? 'Edit workspace access' : 'Enable workspace access'}
           </DialogTitle>
           <DialogDescription>
-            Give this workspace an isolated namespace and quota on a physical target. Server
-            credentials stay on the target and are never copied into the workspace.
+            Give this workspace an isolated namespace and quota on a deployment server. Server
+            credentials remain separate and are never copied into the workspace.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="allocation-target">Target</Label>
+            <Label htmlFor="allocation-target">Server</Label>
             <select
               id="allocation-target"
               className={selectCls}
@@ -150,7 +150,7 @@ export function AllocationDialog({
               })}
             </div>
             <p className="text-xs text-muted-foreground">
-              This can only narrow the capabilities offered by the target.
+              This can only narrow the runtimes supported by the server.
             </p>
           </div>
 
@@ -171,11 +171,11 @@ export function AllocationDialog({
               <Input
                 id="allocation-url"
                 value={publicUrl}
-                placeholder={selectedTarget?.publicUrl ?? 'Derived from the target'}
+                placeholder={selectedTarget?.publicUrl ?? 'Derived from the server'}
                 onChange={(event) => setPublicUrl(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Shared built-in targets automatically receive the workspace namespace in their URL.
+                Shared platform servers automatically receive the workspace namespace in their URL.
               </p>
             </div>
           </div>
@@ -197,7 +197,7 @@ export function AllocationDialog({
             }
           >
             {busy && <Spinner className="h-4 w-4" />}
-            {editing ? 'Save allocation' : 'Allocate target'}
+            {editing ? 'Save access' : 'Enable access'}
           </Button>
         </DialogFooter>
       </DialogContent>

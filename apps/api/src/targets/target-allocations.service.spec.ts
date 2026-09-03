@@ -114,7 +114,17 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     ).rejects.toThrow(/not offered by the target/);
   });
 
-  it('does not allocate a Docker target before its compatible Agent is ready', async () => {
+  it('can reserve workspace access before a Docker Agent is ready', async () => {
+    const create = jest.fn(async () => ({
+      ...allocationRow,
+      targetId: 'agent-target',
+      target: {
+        name: 'Remote Docker',
+        capabilities: 'static,node,php,python',
+        scope: 'user',
+        managementState: 'active',
+      },
+    }));
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
@@ -126,15 +136,15 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
           agent: null,
         })),
       },
-      targetAllocation: { findUnique: jest.fn(), create: jest.fn() },
-      workspace: { findUniqueOrThrow: jest.fn() },
+      targetAllocation: { findUnique: jest.fn(async () => null), create },
+      workspace: { findUniqueOrThrow: jest.fn(async () => ({ slug: 'acme' })) },
     };
     const service = makeService(prisma, 'owner');
 
     await expect(
       service.create('u1', { targetId: 'agent-target' }, 'ws-1'),
-    ).rejects.toThrow('Enroll and enable InitPad Agent 0.4.0');
-    expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ targetId: 'agent-target' });
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   it('allocates a Docker target backed by a compatible enrolled Agent', async () => {
@@ -177,13 +187,17 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     }
   });
 
-  it('does not allocate managed gateway capacity before its preflight exists', async () => {
-    const savedStore = { ...config.artifactStore };
-    Object.assign(config.artifactStore, {
-      bucket: 'test-artifacts',
-      accessKeyId: 'test-access',
-      secretAccessKey: 'test-secret',
-    });
+  it('can configure managed-gateway workspace access before its runtime preflight', async () => {
+    const create = jest.fn(async () => ({
+      ...allocationRow,
+      targetId: 'gateway-target',
+      target: {
+        name: 'Gateway Docker',
+        capabilities: 'static,node',
+        scope: 'user',
+        managementState: 'active',
+      },
+    }));
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
@@ -197,16 +211,15 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
           agent: { credentialHash: 'hash', disabledAt: null, version: '0.7.0' },
         })),
       },
+      targetAllocation: { findUnique: jest.fn(async () => null), create },
+      workspace: { findUniqueOrThrow: jest.fn(async () => ({ slug: 'acme' })) },
     };
     const service = makeService(prisma, 'owner');
 
-    try {
-      await expect(
-        service.create('u1', { targetId: 'gateway-target' }, 'ws-1'),
-      ).rejects.toThrow('passed Caddy preflight');
-    } finally {
-      Object.assign(config.artifactStore, savedStore);
-    }
+    await expect(
+      service.create('u1', { targetId: 'gateway-target' }, 'ws-1'),
+    ).resolves.toMatchObject({ targetId: 'gateway-target' });
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   it('hides an allocation in another workspace as 404 (not 403)', async () => {

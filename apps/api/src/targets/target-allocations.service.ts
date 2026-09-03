@@ -12,12 +12,6 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateTargetAllocationDto } from './dto/create-target-allocation.dto';
 import { UpdateTargetAllocationDto } from './dto/update-target-allocation.dto';
 import { allocationUsageDefaults } from './target-allocation-defaults';
-import {
-  agentVersionAtLeast,
-  MIN_GATEWAY_ROUTE_AGENT_VERSION,
-  supportsProjectAgent,
-} from '../agents/agent-version';
-import { artifactStoreConfigured } from '../config';
 import { AuditEventsService } from '../audit/audit-events.service';
 import type { TargetUsage } from '../domain/types';
 
@@ -136,46 +130,19 @@ export class TargetAllocationsService {
     // workspace owns. A target owned by another workspace is treated as absent.
     const target = await this.prisma.target.findUnique({
       where: { id: dto.targetId },
-      include: {
-        agent: { select: { credentialHash: true, disabledAt: true, version: true } },
-      },
     });
     if (!target || (target.scope !== 'builtin' && target.workspaceId !== workspaceId)) {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
     }
     if (target.scope === 'user' && (target.managementState ?? 'active') !== 'active') {
       throw new BadRequestException(
-        `Target '${target.name}' is ${target.managementState}; restore and reconnect it before allocating it`,
+        `Server '${target.name}' is ${target.managementState}; restore and reconnect it before enabling workspace access`,
       );
-    }
-    if (target.scope === 'user' && target.kind === 'docker') {
-      if (
-        !artifactStoreConfigured()
-        || !target.agent?.credentialHash
-        || target.agent.disabledAt
-        || !supportsProjectAgent(target.agent.version)
-      ) {
-        throw new BadRequestException(
-          'Enroll and enable InitPad Agent 0.4.0 or newer before allocating this Docker target',
-        );
-      }
-      if ((target.routingMode ?? 'direct-port') === 'managed-gateway') {
-        if (
-          target.gatewayAdapter !== 'caddy'
-          || target.gatewayPreflightStatus !== 'passed'
-          || !target.publicUrl
-          || !agentVersionAtLeast(target.agent.version, MIN_GATEWAY_ROUTE_AGENT_VERSION)
-        ) {
-          throw new BadRequestException(
-            `Managed gateway allocation requires a passed Caddy preflight and InitPad Agent ${MIN_GATEWAY_ROUTE_AGENT_VERSION.join('.')} or newer`,
-          );
-        }
-      }
     }
     if (await this.prisma.targetAllocation.findUnique({
       where: { workspaceId_targetId: { workspaceId, targetId: dto.targetId } },
     })) {
-      throw new BadRequestException('This workspace already has an allocation for that target');
+      throw new BadRequestException('This workspace already has access to that server');
     }
 
     const capabilities = this.resolveCapabilities(dto.capabilities, target.capabilities);
@@ -228,7 +195,7 @@ export class TargetAllocationsService {
       && (row.target.managementState ?? 'active') !== 'active'
     ) {
       throw new BadRequestException(
-        `Reconnect target '${row.target.name}' before enabling this allocation`,
+        `Reconnect server '${row.target.name}' before resuming workspace access`,
       );
     }
     const updated = await this.prisma.targetAllocation.update({
@@ -261,7 +228,7 @@ export class TargetAllocationsService {
     const inUse = await this.prisma.environment.count({ where: { allocationId: row.id } });
     if (inUse > 0) {
       throw new BadRequestException(
-        `This allocation is used by ${inUse} environment(s). Move them first.`,
+        `Workspace access is used by ${inUse} environment(s). Move them first.`,
       );
     }
     await this.prisma.targetAllocation.delete({ where: { id: row.id } });

@@ -7,8 +7,7 @@ import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { AllocationDialog } from '@/components/organisms/AllocationDialog';
 import { AgentSetupDialog } from '@/components/organisms/AgentSetupDialog';
-import { AllocationSection } from '@/components/organisms/infrastructure/AllocationSection';
-import { TargetSections } from '@/components/organisms/infrastructure/TargetSections';
+import { InfrastructureTargetList } from '@/components/organisms/infrastructure/InfrastructureTargetList';
 import { TargetFormDialog } from '@/components/organisms/TargetDialog';
 import { Button } from '@/components/ui/button';
 import { useInfrastructure } from '@/hooks/useInfrastructure';
@@ -55,6 +54,7 @@ export default function Infrastructure() {
   const [editingTarget, setEditingTarget] = useState<Target | null>(null);
   const [allocationDialogOpen, setAllocationDialogOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<TargetAllocation | null>(null);
+  const [allocationTarget, setAllocationTarget] = useState<Target | null>(null);
   const [agentTarget, setAgentTarget] = useState<Target | null>(null);
   const [agentEnrollment, setAgentEnrollment] = useState<AgentEnrollment | null>(null);
   const agentProtocol = useAgentProtocol(agentTarget);
@@ -71,8 +71,7 @@ export default function Infrastructure() {
   const availableAllocationTargets = infrastructure.targets.filter(
     (target) =>
       !allocatedTargetIds.has(target.id) &&
-      (target.managementState ?? 'active') === 'active' &&
-      (target.scope !== 'user' || target.kind !== 'docker' || target.agentReady === true),
+      (target.managementState ?? 'active') === 'active',
   );
 
   useEffect(() => {
@@ -122,8 +121,9 @@ export default function Infrastructure() {
     setTargetDialogOpen(true);
   }
 
-  function openNewAllocation() {
+  function openNewAllocation(target: Target) {
     setEditingAllocation(null);
+    setAllocationTarget(target);
     setAllocationDialogOpen(true);
   }
 
@@ -135,7 +135,7 @@ export default function Infrastructure() {
         const confirmed = await confirmAction({
           title: `Save changes to ${editingTarget.name}?`,
           description: 'Target settings control where and how future deployments are published.',
-          confirmLabel: 'Save target changes',
+          confirmLabel: 'Save server changes',
           tone: 'warning',
           details: [{ label: 'Changed settings', value: changedSettings.join(', ') }],
           consequences: [
@@ -164,9 +164,9 @@ export default function Infrastructure() {
       const changedSettings = changedAllocationSettings(editingAllocation, values);
       if (changedSettings.length > 0) {
         const confirmed = await confirmAction({
-          title: `Save allocation changes for ${editingAllocation.targetName}?`,
-          description: 'This allocation limits how the current workspace may use the physical target.',
-          confirmLabel: 'Save allocation changes',
+          title: `Save workspace access changes for ${editingAllocation.targetName}?`,
+          description: 'Workspace access controls how this workspace may use the deployment server.',
+          confirmLabel: 'Save access changes',
           tone: 'warning',
           details: [
             { label: 'Namespace', value: editingAllocation.namespace },
@@ -183,22 +183,23 @@ export default function Infrastructure() {
     if (await infrastructure.saveAllocation(editingAllocation, values)) {
       setAllocationDialogOpen(false);
       setEditingAllocation(null);
+      setAllocationTarget(null);
     }
   }
 
   async function deleteTarget(target: Target) {
     const confirmed = await confirmAction({
-      title: `Delete target ${target.name}?`,
+      title: `Delete server ${target.name}?`,
       description: 'InitPad will forget this server connection. The physical server itself is never deleted.',
-      confirmLabel: 'Delete target',
+      confirmLabel: 'Delete server',
       tone: 'danger',
       details: [
-        { label: 'Target', value: target.name },
+        { label: 'Server', value: target.name },
         { label: 'Type', value: target.kind.toUpperCase() },
       ],
       consequences: [
-        'Stored connection settings and any Agent identity for this target are permanently removed.',
-        'You must add and verify or enroll the target again before reusing it.',
+        'Stored connection settings, workspace access and any Agent identity are permanently removed from InitPad.',
+        'You must add and verify or enroll the server again before reusing it.',
       ],
     });
     if (confirmed) await infrastructure.deleteTarget(target);
@@ -209,10 +210,10 @@ export default function Infrastructure() {
     const confirmed = await confirmAction({
       title: `Disconnect ${target.name} from InitPad?`,
       description: 'Management access is revoked without sending a teardown command to the server.',
-      confirmLabel: 'Disconnect target',
+      confirmLabel: 'Disconnect server',
       tone: 'danger',
       details: [
-        { label: 'Target', value: target.name },
+        { label: 'Server', value: target.name },
         { label: 'Bound environments', value: usage.length },
       ],
       consequences: [
@@ -220,7 +221,7 @@ export default function Infrastructure() {
         target.kind === 'docker'
           ? 'The Agent credential and unused enrollment token are revoked.'
           : 'The stored SSH/SFTP credential is permanently removed.',
-        'Deploy, start, stop, diagnostics and cleanup remain unavailable until this target is reconnected.',
+        'Deploy, start, stop, diagnostics and cleanup remain unavailable until this server is reconnected.',
       ],
     });
     if (confirmed) await infrastructure.disconnectTarget(target);
@@ -231,14 +232,14 @@ export default function Infrastructure() {
     const confirmed = await confirmAction({
       title: `Retire ${target.name} as unmanaged?`,
       description: 'Use this when the server and its applications should remain, but InitPad must stop managing them.',
-      confirmLabel: 'Retire target',
+      confirmLabel: 'Retire server',
       tone: 'danger',
       requireText: target.name,
       details: [{ label: 'Environments retained', value: usage.length }],
       consequences: [
         'All management credentials are revoked and cannot be recovered.',
         'Existing workload records, URLs and deployment history remain visible as unmanaged.',
-        'Restore the target and provide a new credential or Agent enrollment to manage it again.',
+        'Restore the server and provide a new credential or Agent enrollment to manage it again.',
       ],
     });
     if (confirmed) await infrastructure.retireTarget(target);
@@ -251,13 +252,13 @@ export default function Infrastructure() {
   async function toggleAllocation(allocation: TargetAllocation) {
     if (allocation.status === 'active') {
       const confirmed = await confirmAction({
-        title: `Disable allocation of ${allocation.targetName}?`,
-        description: `The ${allocation.namespace} workspace namespace will stop accepting deployments on this target.`,
-        confirmLabel: 'Disable allocation',
+        title: `Pause workspace access to ${allocation.targetName}?`,
+        description: `The ${allocation.namespace} workspace namespace will stop accepting deployments on this server.`,
+        confirmLabel: 'Pause access',
         tone: 'warning',
         consequences: [
           'Existing running workloads remain untouched.',
-          'New deploys to this allocation are blocked until it is enabled again.',
+          'New deploys through this workspace access are blocked until it is resumed.',
         ],
       });
       if (!confirmed) return;
@@ -267,17 +268,17 @@ export default function Infrastructure() {
 
   async function deleteAllocation(allocation: TargetAllocation) {
     const confirmed = await confirmAction({
-      title: `Remove allocation of ${allocation.targetName}?`,
-      description: 'This removes the workspace-to-target assignment, not the physical target.',
-      confirmLabel: 'Remove allocation',
+      title: `Remove workspace access to ${allocation.targetName}?`,
+      description: 'This removes the workspace namespace and quota, not the physical server.',
+      confirmLabel: 'Remove access',
       tone: 'danger',
       details: [
         { label: 'Namespace', value: allocation.namespace },
-        { label: 'Target', value: allocation.targetName },
+        { label: 'Server', value: allocation.targetName },
       ],
       consequences: [
-        'The workspace loses this namespace, quota and target capabilities.',
-        'The allocation must be created again before the workspace can use this target.',
+        'The workspace loses this namespace, quota and its allowed runtimes on the server.',
+        'Workspace access must be enabled again before deploying to this server.',
       ],
     });
     if (confirmed) await infrastructure.deleteAllocation(allocation);
@@ -288,11 +289,11 @@ export default function Infrastructure() {
       <PageHeader
         title="Infrastructure"
         subtitle={user?.edition === 'saas'
-          ? 'Workspace servers for dev, test and production. Local/private Docker servers will connect through InitPad Agent.'
-          : 'Where projects deploy. Built-in targets are the simulated company infra; add your own servers for any environment.'}
+          ? 'Deployment servers and the isolated access this workspace has on each one. Private Docker servers connect through InitPad Agent.'
+          : 'Deployment servers and the isolated access this workspace has on each one. Built-in servers simulate company infrastructure.'}
         actions={!readOnly ? (
           <Button onClick={openNewTarget}>
-            <Plus className="h-4 w-4" /> Add target
+            <Plus className="h-4 w-4" /> Add server
           </Button>
         ) : undefined}
       />
@@ -302,42 +303,39 @@ export default function Infrastructure() {
       ) : infrastructure.loading ? (
         <ContentLoading label="Loading infrastructure" variant="cards" />
       ) : (
-        <div className="flex flex-col gap-8">
-          <TargetSections
-            targets={infrastructure.targets}
-            readOnly={readOnly}
-            canManageAgent={canManageAgent}
-            canManageLifecycle={canManageAllocations}
-            busyTargetId={infrastructure.busyTargetId}
-            onAdd={openNewTarget}
-            onEdit={(target) => {
-              setEditingTarget(target);
-              setTargetDialogOpen(true);
-            }}
-            onVerify={infrastructure.verifyTarget}
-            onManageAgent={(target) => {
-              setAgentEnrollment(null);
-              setAgentTarget(target);
-            }}
-            onDelete={(target) => void deleteTarget(target)}
-            onDisconnect={(target) => void disconnectTarget(target)}
-            onRetire={(target) => void retireTarget(target)}
-            onRestore={(target) => void restoreTarget(target)}
-          />
-          <AllocationSection
-            allocations={infrastructure.allocations}
-            canManage={canManageAllocations}
-            canAdd={availableAllocationTargets.length > 0}
-            busyAllocationId={infrastructure.busyAllocationId}
-            onAdd={openNewAllocation}
-            onEdit={(allocation) => {
-              setEditingAllocation(allocation);
-              setAllocationDialogOpen(true);
-            }}
-            onToggle={(allocation) => void toggleAllocation(allocation)}
-            onDelete={(allocation) => void deleteAllocation(allocation)}
-          />
-        </div>
+        <InfrastructureTargetList
+          targets={infrastructure.targets}
+          allocations={infrastructure.allocations}
+          workspaceName={activeWorkspace?.name ?? 'this workspace'}
+          readOnly={readOnly}
+          canManageAgent={canManageAgent}
+          canManageLifecycle={canManageAllocations}
+          canManageAccess={canManageAllocations}
+          busyTargetId={infrastructure.busyTargetId}
+          busyAllocationId={infrastructure.busyAllocationId}
+          onAdd={openNewTarget}
+          onEdit={(target) => {
+            setEditingTarget(target);
+            setTargetDialogOpen(true);
+          }}
+          onVerify={infrastructure.verifyTarget}
+          onManageAgent={(target) => {
+            setAgentEnrollment(null);
+            setAgentTarget(target);
+          }}
+          onDelete={(target) => void deleteTarget(target)}
+          onDisconnect={(target) => void disconnectTarget(target)}
+          onRetire={(target) => void retireTarget(target)}
+          onRestore={(target) => void restoreTarget(target)}
+          onEnableAccess={openNewAllocation}
+          onEditAccess={(allocation) => {
+            setEditingAllocation(allocation);
+            setAllocationTarget(null);
+            setAllocationDialogOpen(true);
+          }}
+          onToggleAccess={(allocation) => void toggleAllocation(allocation)}
+          onRemoveAccess={(allocation) => void deleteAllocation(allocation)}
+        />
       )}
 
       <TargetFormDialog
@@ -355,11 +353,14 @@ export default function Infrastructure() {
         allocation={editingAllocation}
         targets={editingAllocation
           ? infrastructure.targets.filter((target) => target.id === editingAllocation.targetId)
-          : availableAllocationTargets}
+          : allocationTarget ? [allocationTarget] : availableAllocationTargets}
         busy={infrastructure.savingAllocation}
         onOpenChange={(open) => {
           setAllocationDialogOpen(open);
-          if (!open) setEditingAllocation(null);
+          if (!open) {
+            setEditingAllocation(null);
+            setAllocationTarget(null);
+          }
         }}
         onSubmit={submitAllocation}
       />

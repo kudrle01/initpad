@@ -28,7 +28,7 @@ export function TargetUsageList({ usage }: { usage: TargetUsage[] }) {
         ))}
       </ul>
       <p className="mt-2 text-[11px] text-muted-foreground">
-        Change these environments to another target before deleting this resource.
+        Move or remove these environments before removing workspace access or deleting the server.
       </p>
     </details>
   );

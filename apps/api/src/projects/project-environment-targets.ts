@@ -144,13 +144,13 @@ export class ProjectEnvironmentTargets {
       const allocation = await this.ensureAllocation(workspaceId, targetId);
       if (allocation.status !== 'active') {
         throw new BadRequestException(
-          `Target allocation for '${planned[0].target.name}' is disabled.`,
+          `Workspace access to '${planned[0].target.name}' is paused.`,
         );
       }
       const capabilities = this.targets.parseCaps(allocation.capabilities);
       if (!capabilities.includes(requiredRuntime)) {
         throw new BadRequestException(
-          `Target allocation for '${planned[0].target.name}' does not allow ${requiredRuntime} applications.`,
+          `Workspace access to '${planned[0].target.name}' does not allow ${requiredRuntime} applications.`,
         );
       }
       const currentCount = await this.prisma.environment.count({
@@ -158,7 +158,7 @@ export class ProjectEnvironmentTargets {
       });
       if (currentCount + planned.length > allocation.maxEnvironments) {
         throw new BadRequestException(
-          `Target allocation quota for '${planned[0].target.name}' would be exceeded ` +
+          `Workspace access quota for '${planned[0].target.name}' would be exceeded ` +
             `(using ${currentCount} of ${allocation.maxEnvironments}, project needs ${planned.length}).`,
         );
       }
@@ -187,18 +187,18 @@ export class ProjectEnvironmentTargets {
     if (!allocation) return;
     if (allocation.target?.scope === 'user' && allocation.target.managementState !== 'active') {
       throw new BadRequestException(
-        `Target '${allocation.target.name}' is ${allocation.target.managementState}; reconnect it before deploying.`,
+        `Server '${allocation.target.name}' is ${allocation.target.managementState}; reconnect it before deploying.`,
       );
     }
     if (allocation.status !== 'active') {
       throw new BadRequestException(
-        'This target allocation is disabled; new deployments are paused.',
+        'Workspace access to this server is paused; new deployments are disabled.',
       );
     }
     const capabilities = this.targets.parseCaps(allocation.capabilities);
     if (requiredRuntime && !capabilities.includes(requiredRuntime)) {
       throw new BadRequestException(
-        `This target allocation does not allow ${requiredRuntime} applications.`,
+        `Workspace access to this server does not allow ${requiredRuntime} applications.`,
       );
     }
     const alreadyBound = await this.prisma.environment.count({
@@ -206,7 +206,7 @@ export class ProjectEnvironmentTargets {
     });
     if (!alreadyBound && allocation._count.environments >= allocation.maxEnvironments) {
       throw new BadRequestException(
-        `Target allocation quota reached (max ${allocation.maxEnvironments} environments).`,
+        `Workspace access quota reached (max ${allocation.maxEnvironments} environments).`,
       );
     }
   }

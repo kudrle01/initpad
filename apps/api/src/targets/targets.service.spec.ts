@@ -103,14 +103,23 @@ describe('target authorization', () => {
 
 describe('Agent-backed Docker target creation', () => {
   function setup() {
-    const create = jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
-      id: 'target-agent',
-      verifiedAt: null,
-      createdAt: new Date(),
-      ...data,
-    }));
+    const create = jest.fn(async ({ data }: { data: Record<string, any> }) => {
+      const { allocations: _allocations, ...targetData } = data;
+      return {
+        id: 'target-agent',
+        verifiedAt: null,
+        createdAt: new Date(),
+        ...targetData,
+        allocations: [{
+          id: 'allocation-default',
+          capabilities: targetData.capabilities,
+          maxEnvironments: 50,
+        }],
+      };
+    });
     const prisma = {
       target: { findFirst: jest.fn(async () => null), create },
+      workspace: { findUniqueOrThrow: jest.fn(async () => ({ slug: 'team-alpha' })) },
     };
     const workspaces = {
       resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })),
@@ -140,7 +149,7 @@ describe('Agent-backed Docker target creation', () => {
       verifiedAt: null,
     });
 
-    expect(create).toHaveBeenCalledWith({
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         kind: 'docker',
         host: null,
@@ -150,8 +159,15 @@ describe('Agent-backed Docker target creation', () => {
         secret: null,
         remotePath: null,
         workspaceId: 'workspace-1',
+        allocations: {
+          create: expect.objectContaining({
+            workspaceId: 'workspace-1',
+            namespace: 'team-alpha',
+            capabilities: 'node,php,python,static',
+          }),
+        },
       }),
-    });
+    }));
     expect(audit.record).toHaveBeenCalledWith({
       workspaceId: 'workspace-1',
       actorUserId: 'owner-1',
@@ -163,6 +179,20 @@ describe('Agent-backed Docker target creation', () => {
         kind: 'docker',
         routingMode: 'direct-port',
         capabilities: 'node,php,python,static',
+      },
+    });
+    expect(audit.record).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      actorUserId: 'owner-1',
+      action: 'allocation.created',
+      resourceType: 'allocation',
+      resourceId: 'allocation-default',
+      resourceName: 'Office Docker',
+      details: {
+        targetId: 'target-agent',
+        capabilities: 'node,php,python,static',
+        maxEnvironments: 50,
+        source: 'target-default',
       },
     });
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain('publicUrl');
