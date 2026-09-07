@@ -34,6 +34,11 @@ const allocationRow = {
   capabilities: 'static',
   status: 'active',
   maxEnvironments: 50,
+  cpuLimitMillicores: 1000,
+  memoryLimitMb: 512,
+  pidsLimit: 256,
+  devTtlHours: null,
+  testTtlHours: null,
   target: { name: 'Company static host', capabilities: 'static,php' },
   _count: { environments: 0 },
 };
@@ -78,6 +83,11 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
         targetId: 'tgt-1',
         capabilities: 'static',
         maxEnvironments: 50,
+        cpuLimitMillicores: 1000,
+        memoryLimitMb: 512,
+        pidsLimit: 256,
+        devTtlHours: 'disabled',
+        testTtlHours: 'disabled',
       },
     });
   });

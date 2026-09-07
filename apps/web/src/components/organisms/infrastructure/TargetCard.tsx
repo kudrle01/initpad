@@ -248,6 +248,13 @@ export function TargetCard({
               </div>
             )}
 
+            <div className="mt-3 text-xs text-muted-foreground">
+              {allocation.cpuLimitMillicores / 1000} CPU · {allocation.memoryLimitMb} MB · {allocation.pidsLimit} processes
+              {(allocation.devTtlHours || allocation.testTtlHours) && (
+                <span> · cleanup {allocation.devTtlHours ? `dev ${allocation.devTtlHours}h` : ''}{allocation.devTtlHours && allocation.testTtlHours ? ', ' : ''}{allocation.testTtlHours ? `test ${allocation.testTtlHours}h` : ''}</span>
+              )}
+            </div>
+
             {unavailable && (
               <p className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs text-muted-foreground">
                 Access settings are preserved, but management remains unavailable until the server is reconnected.

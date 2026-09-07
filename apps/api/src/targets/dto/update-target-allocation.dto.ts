@@ -35,4 +35,35 @@ export class UpdateTargetAllocationDto {
   @Min(1)
   @Max(1000)
   maxEnvironments?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  @Max(64000)
+  cpuLimitMillicores?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(64)
+  @Max(65536)
+  memoryLimitMb?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(32)
+  @Max(32768)
+  pidsLimit?: number;
+
+  // Null explicitly disables a previously configured TTL.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8760)
+  devTtlHours?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8760)
+  testTtlHours?: number | null;
 }

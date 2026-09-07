@@ -49,6 +49,11 @@ export function AllocationDialog({
   const [capabilities, setCapabilities] = useState<RuntimeKind[]>([]);
   const [maxEnvironments, setMaxEnvironments] = useState('50');
   const [publicUrl, setPublicUrl] = useState('');
+  const [cpuLimitMillicores, setCpuLimitMillicores] = useState('1000');
+  const [memoryLimitMb, setMemoryLimitMb] = useState('512');
+  const [pidsLimit, setPidsLimit] = useState('256');
+  const [devTtlHours, setDevTtlHours] = useState('');
+  const [testTtlHours, setTestTtlHours] = useState('');
 
   const selectedTarget = useMemo(
     () => targets.find((target) => target.id === targetId) ?? null,
@@ -65,6 +70,11 @@ export function AllocationDialog({
     setCapabilities(allocation?.capabilities ?? initialTarget?.capabilities ?? []);
     setMaxEnvironments(String(allocation?.maxEnvironments ?? 50));
     setPublicUrl(allocation?.publicUrl ?? '');
+    setCpuLimitMillicores(String(allocation?.cpuLimitMillicores ?? 1000));
+    setMemoryLimitMb(String(allocation?.memoryLimitMb ?? 512));
+    setPidsLimit(String(allocation?.pidsLimit ?? 256));
+    setDevTtlHours(allocation?.devTtlHours ? String(allocation.devTtlHours) : '');
+    setTestTtlHours(allocation?.testTtlHours ? String(allocation.testTtlHours) : '');
   }, [allocation, open, targets]);
 
   function selectTarget(nextId: string) {
@@ -83,12 +93,21 @@ export function AllocationDialog({
   }
 
   const quota = Number(maxEnvironments);
+  const cpu = Number(cpuLimitMillicores);
+  const memory = Number(memoryLimitMb);
+  const pids = Number(pidsLimit);
+  const validOptionalHours = (value: string) =>
+    value === '' || (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 8760);
   const valid =
     targetId.length > 0 &&
     capabilities.length > 0 &&
     Number.isInteger(quota) &&
     quota >= 1 &&
     quota <= 1000 &&
+    Number.isInteger(cpu) && cpu >= 100 && cpu <= 64000 &&
+    Number.isInteger(memory) && memory >= 64 && memory <= 65536 &&
+    Number.isInteger(pids) && pids >= 32 && pids <= 32768 &&
+    validOptionalHours(devTtlHours) && validOptionalHours(testTtlHours) &&
     (!publicUrl.trim() || /^https?:\/\//i.test(publicUrl.trim()));
 
   return (
@@ -180,6 +199,29 @@ export function AllocationDialog({
                 onChange={(event) => setMaxEnvironments(event.target.value)}
               />
             </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="allocation-cpu">CPU per environment (millicores)</Label>
+              <Input id="allocation-cpu" type="number" min={100} max={64000} value={cpuLimitMillicores} onChange={(event) => setCpuLimitMillicores(event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="allocation-memory">Memory per environment (MB)</Label>
+              <Input id="allocation-memory" type="number" min={64} max={65536} value={memoryLimitMb} onChange={(event) => setMemoryLimitMb(event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="allocation-pids">Process limit</Label>
+              <Input id="allocation-pids" type="number" min={32} max={32768} value={pidsLimit} onChange={(event) => setPidsLimit(event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-1">
+                <Label htmlFor="allocation-dev-ttl">Dev lifetime (hours, optional)</Label>
+                <InfoTip label="About automatic cleanup">Expired dev/test workloads are removed automatically. Repositories and production are never affected.</InfoTip>
+              </div>
+              <Input id="allocation-dev-ttl" type="number" min={1} max={8760} value={devTtlHours} placeholder="Keep until removed" onChange={(event) => setDevTtlHours(event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="allocation-test-ttl">Test lifetime (hours, optional)</Label>
+              <Input id="allocation-test-ttl" type="number" min={1} max={8760} value={testTtlHours} placeholder="Keep until removed" onChange={(event) => setTestTtlHours(event.target.value)} />
+            </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <div className="flex items-center gap-1">
                 <Label htmlFor="allocation-url">Public URL override (optional)</Label>
@@ -209,6 +251,11 @@ export function AllocationDialog({
                 targetId,
                 capabilities,
                 maxEnvironments: quota,
+                cpuLimitMillicores: cpu,
+                memoryLimitMb: memory,
+                pidsLimit: pids,
+                ...(editing || devTtlHours ? { devTtlHours: devTtlHours ? Number(devTtlHours) : null } : {}),
+                ...(editing || testTtlHours ? { testTtlHours: testTtlHours ? Number(testTtlHours) : null } : {}),
                 ...(publicUrl.trim() ? { publicUrl: publicUrl.trim() } : {}),
               })
             }

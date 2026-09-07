@@ -12,6 +12,7 @@ import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectDeploymentPreparation } from './project-deployment-preparation';
 import { ProjectEnvironmentLifecycle } from './project-environment-lifecycle';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
+import { environmentExpiry } from './environment-expiry';
 
 /** Executes one already-claimed deployment operation and publishes its result. */
 export class ProjectDeploymentExecutor {
@@ -193,6 +194,7 @@ export class ProjectDeploymentExecutor {
           url: result.url,
           statusReason: null,
           deploymentRequired: false,
+          ...environmentExpiry(envName, environment.allocation),
         },
       });
       return published.count === 1;

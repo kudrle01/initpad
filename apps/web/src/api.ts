@@ -59,6 +59,11 @@ export interface TargetAllocation {
   capabilities: RuntimeKind[];
   status: 'active' | 'disabled';
   maxEnvironments: number;
+  cpuLimitMillicores: number;
+  memoryLimitMb: number;
+  pidsLimit: number;
+  devTtlHours: number | null;
+  testTtlHours: number | null;
   inUse: number;
   usage: TargetUsage[];
 }
@@ -68,6 +73,11 @@ export interface TargetAllocationInput {
   capabilities: RuntimeKind[];
   publicUrl?: string;
   maxEnvironments: number;
+  cpuLimitMillicores: number;
+  memoryLimitMb: number;
+  pidsLimit: number;
+  devTtlHours?: number | null;
+  testTtlHours?: number | null;
 }
 
 // One application config variable for an environment (ADR-061). Secret values
@@ -326,7 +336,7 @@ export const api = {
     http<TargetAllocation>('/allocations', { method: 'POST', body: JSON.stringify(body) }),
   updateAllocation: (
     id: string,
-    body: Partial<{ status: 'active' | 'disabled'; maxEnvironments: number; capabilities: RuntimeKind[]; publicUrl: string }>,
+    body: Partial<Omit<TargetAllocationInput, 'targetId'>> & { status?: 'active' | 'disabled' },
   ) => http<TargetAllocation>(`/allocations/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteAllocation: (id: string) => http<void>(`/allocations/${id}`, { method: 'DELETE' }),
   // Per-environment application config & secrets (ADR-061). Secret values are

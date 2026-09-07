@@ -578,9 +578,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
      nekopíruje provider message, logy, config ani secrety. Odkaz v UI vede na
      projekt nebo jeho deployment historii a zachová ID i po odstranění
      autoritativního řádku.
-   - TODO **7a.4 — živý acceptance.** Ověřit dvě role, stránkování a filtry,
-     přepnutí workspace, 404 cizího workspace a zachování snapshotu po změně
-     role/jména.
+   - ◐ **7a.4 — živý acceptance.** Prošlo filtrování, prázdný výsledek,
+     přepnutí workspace a vizuální oddělení jeho událostí. Zbývá ověřit
+     druhý reálný účet/roli, přímý 404 pokus, stránkování a zachování
+     snapshotu po změně role/jména.
 2. ◐ **7b — skutečný prod approval workflow.** Produkční promotion,
    redeploy i rollback již nelze spustit přímo. Žádost ukládá immutable build,
    digest, target/allocation identity a revision i číslo revize konfigurace; samotné
@@ -592,15 +593,21 @@ jen konkrétní provozní a vyhodnocovací scénář.
    Workspace admin může policy změnit po potvrzení a změna platí i pro dosud
    čekající žádost. API, responzivní UI, audit a automatické regresní testy jsou
    hotové (ADR-082).
-   - TODO **7b acceptance:** member/maintainer požádá, oprávněný druhý člověk
+   - ◐ **7b acceptance:** owner v team workspace živě vytvořil immutable
+     request, UI správně zakázalo self-approval a zrušení prošlo potvrzovacím
+     dialogem bez spuštění produkce. Zbývá, aby member/maintainer požádal a oprávněný druhý člověk
      schválí a prod použije přesně zobrazený digest. Samostatně ověřit reject,
      cancel, dvojité schválení a zneplatnění po změně produkční proměnné
      nebo targetu. V Audit logu musí být oddělené request, review a deployment
      outcome události.
-3. TODO **7c — provozní policy a lifecycle.** Rozšířit allocation policy o
-   smysluplné CPU/RAM/PID limity, maximální počet prostředí a volitelné TTL pro
-   dev/test. Automatický teardown musí být auditovaný, upozornit před expirací a
-   nikdy bez explicitní policy neodstranit prod ani zdrojový repozitář.
+3. ◐ **7c — provozní policy a lifecycle.** Allocation nese validované
+   CPU/RAM/PID limity, stávající maximální počet prostředí a volitelné TTL pro
+   dev/test. Vestavěný Docker i vzdálený Agent vynucují stejný resource snapshot.
+   Úspěšný deploy ukládá expiry a předstih varování; periodický
+   compare-and-set sweep auditovaně odstraní pouze workload a při chybě jej
+   bezpečně naplánuje znovu. Produkce je vyloučena dotazem i guardem a repository
+   není součástí lifecycle akce (ADR-083). Automatické testy jsou hotové; zbývá
+   živý test po aplikaci migrace.
    **Uživatelský test:** překročení kvóty je odmítnuto před jobem, expirující dev
    je vidět dopředu a po TTL zmizí jen workload; prod zůstane nedotčený.
 4. TODO **7d — organizační portfolio.** Workspace dashboard shrne projekty,

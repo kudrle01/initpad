@@ -199,6 +199,11 @@ export function useInfrastructure(workspaceId?: string) {
           capabilities: values.capabilities,
           ...(values.publicUrl ? { publicUrl: values.publicUrl } : {}),
           maxEnvironments: values.maxEnvironments,
+          cpuLimitMillicores: values.cpuLimitMillicores,
+          memoryLimitMb: values.memoryLimitMb,
+          pidsLimit: values.pidsLimit,
+          devTtlHours: values.devTtlHours ?? null,
+          testTtlHours: values.testTtlHours ?? null,
         });
         toast.success('Workspace access saved');
       } else {

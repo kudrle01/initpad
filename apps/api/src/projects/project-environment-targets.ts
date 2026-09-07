@@ -91,6 +91,11 @@ export class ProjectEnvironmentTargets {
       capabilities: true,
       status: true,
       maxEnvironments: true,
+      cpuLimitMillicores: true,
+      memoryLimitMb: true,
+      pidsLimit: true,
+      devTtlHours: true,
+      testTtlHours: true,
     } as const;
     const existing = await this.prisma.targetAllocation.findUnique({
       where: { workspaceId_targetId: { workspaceId, targetId } },

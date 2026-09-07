@@ -21,6 +21,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GatewayRoutesService } from '../targets/gateway-routes.service';
 import { AgentsService, type AuthenticatedAgent } from './agents.service';
 import { agentConfigFingerprint } from './agent-config-fingerprint';
+import { environmentExpiry } from '../projects/environment-expiry';
 import {
   agentVersionAtLeast,
   MIN_GATEWAY_AGENT_VERSION,
@@ -828,6 +829,7 @@ export class AgentJobsService implements OnModuleInit {
               include: {
                 target: { select: { publicUrl: true, routingMode: true } },
                 gatewayRoute: true,
+                allocation: { select: { devTtlHours: true, testTtlHours: true } },
               },
             },
           },
@@ -877,6 +879,7 @@ export class AgentJobsService implements OnModuleInit {
             statusReason: null,
             deploymentRequired: false,
             activeOperationId: null,
+            ...environmentExpiry(operation.environment.name, operation.environment.allocation),
           },
         }),
         this.prisma.deploymentOperation.updateMany({
@@ -916,6 +919,8 @@ export class AgentJobsService implements OnModuleInit {
         statusReason: null,
         allocatedPort: null,
         deploymentRequired: false,
+        expiresAt: null,
+        expiryWarningAt: null,
       });
       return;
     }
@@ -961,8 +966,10 @@ export class AgentJobsService implements OnModuleInit {
       kind: string;
       version: string | null;
       environment: {
+        name: string;
         version: string | null;
         url: string | null;
+        allocation: { devTtlHours: number | null; testTtlHours: number | null } | null;
         gatewayRoute: {
           publicUrl: string;
           observedState: string;
@@ -1098,6 +1105,8 @@ export class AgentJobsService implements OnModuleInit {
           statusReason: null,
           allocatedPort: null,
           deploymentRequired: false,
+          expiresAt: null,
+          expiryWarningAt: null,
         });
         return;
       }
@@ -1141,6 +1150,7 @@ export class AgentJobsService implements OnModuleInit {
           statusReason: null,
           deploymentRequired: false,
           activeOperationId: null,
+          ...environmentExpiry(operation.environment.name, operation.environment.allocation),
         },
       }),
       this.prisma.deploymentOperation.updateMany({

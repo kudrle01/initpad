@@ -43,6 +43,11 @@ function changedAllocationSettings(
   if (!sameCapabilities(allocation.capabilities, values.capabilities)) fields.push('runtime capabilities');
   if (values.publicUrl !== undefined && allocation.publicUrl !== values.publicUrl) fields.push('public URL');
   if (allocation.maxEnvironments !== values.maxEnvironments) fields.push('environment quota');
+  if (allocation.cpuLimitMillicores !== values.cpuLimitMillicores) fields.push('CPU limit');
+  if (allocation.memoryLimitMb !== values.memoryLimitMb) fields.push('memory limit');
+  if (allocation.pidsLimit !== values.pidsLimit) fields.push('process limit');
+  if (allocation.devTtlHours !== (values.devTtlHours ?? null)) fields.push('dev lifetime');
+  if (allocation.testTtlHours !== (values.testTtlHours ?? null)) fields.push('test lifetime');
   return fields;
 }
 

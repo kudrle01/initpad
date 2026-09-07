@@ -574,10 +574,16 @@ export class DockerProvider implements DeploymentProvider {
         PortBindings: {
           [portKey]: [{ HostIp: config.deployment.bindAddress, HostPort: '' }],
         },
-        Memory: config.deployment.memoryBytes,
-        MemorySwap: config.deployment.memoryBytes,
-        NanoCpus: config.deployment.nanoCpus,
-        PidsLimit: config.deployment.pidsLimit,
+        Memory: allocation
+          ? allocation.memoryLimitMb * 1024 * 1024
+          : config.deployment.memoryBytes,
+        MemorySwap: allocation
+          ? allocation.memoryLimitMb * 1024 * 1024
+          : config.deployment.memoryBytes,
+        NanoCpus: allocation
+          ? allocation.cpuLimitMillicores * 1_000_000
+          : config.deployment.nanoCpus,
+        PidsLimit: allocation?.pidsLimit ?? config.deployment.pidsLimit,
         CapDrop: ['ALL'],
         CapAdd: port < 1024 ? ['CHOWN', 'SETGID', 'SETUID', 'NET_BIND_SERVICE'] : [],
         SecurityOpt: ['no-new-privileges'],

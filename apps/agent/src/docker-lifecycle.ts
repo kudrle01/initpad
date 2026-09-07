@@ -27,6 +27,9 @@ const LIFECYCLE_PAYLOAD_FIELDS = new Set([
   'containerPort',
   'healthPath',
   'routingMode',
+  'cpuLimitMillicores',
+  'memoryLimitMb',
+  'pidsLimit',
 ]);
 const PROJECT_PAYLOAD_FIELDS = new Set([
   ...LIFECYCLE_PAYLOAD_FIELDS,
@@ -58,6 +61,9 @@ export interface DockerLifecyclePayload {
   healthPath: string;
   routingMode: 'direct-port' | 'managed-gateway';
   configFingerprint?: string;
+  cpuLimitMillicores?: number;
+  memoryLimitMb?: number;
+  pidsLimit?: number;
 }
 
 export interface DockerProjectDelivery {
@@ -138,6 +144,15 @@ function requiredSafeString(value: unknown, label: string, pattern = SAFE_ID_PAT
   return value;
 }
 
+function boundedInteger(value: unknown, min: number, max: number, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error('Lifecycle payload contains an invalid resource limit');
+  }
+  return parsed;
+}
+
 export function parseLifecyclePayload(value: unknown): DockerLifecyclePayload {
   return parseWorkloadPayload(value, false);
 }
@@ -192,6 +207,9 @@ function parseWorkloadPayload(
   if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65_535) {
     throw new Error('Lifecycle payload contains an invalid container port');
   }
+  const cpuLimitMillicores = boundedInteger(input.cpuLimitMillicores, 100, 64_000, 1_000);
+  const memoryLimitMb = boundedInteger(input.memoryLimitMb, 64, 65_536, 512);
+  const pidsLimit = boundedInteger(input.pidsLimit, 32, 32_768, 256);
   return {
     allocationId: requiredSafeString(input.allocationId, 'allocation id'),
     namespace: requiredSafeString(input.namespace, 'namespace', SAFE_NAMESPACE_PATTERN),
@@ -210,6 +228,9 @@ function parseWorkloadPayload(
       : input.routingMode === 'direct-port' || input.routingMode === 'managed-gateway'
         ? input.routingMode
         : (() => { throw new Error('Lifecycle payload contains an invalid routing mode'); })(),
+    cpuLimitMillicores,
+    memoryLimitMb,
+    pidsLimit,
     ...(projectDelivery
       ? {
           configFingerprint: requiredSafeString(
@@ -329,16 +350,6 @@ function publishedHost(dockerHost: string): string {
     return new URL(dockerHost.replace(/^tcp:/, 'http:')).hostname;
   }
   return '127.0.0.1';
-}
-
-function resourceNumber(name: string, fallback: number, min: number, max: number): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-    throw new Error(`${name} must be between ${min} and ${max}`);
-  }
-  return parsed;
 }
 
 function responseJson<T>(response: DockerHttpResponse, action: string): T {
@@ -556,9 +567,9 @@ export class DockerLifecycle {
     let candidate = await this.inspectContainer(candidateName, signal);
     if (!candidate) {
       const portKey = `${desired.containerPort}/tcp`;
-      const memoryMb = resourceNumber('INITPAD_AGENT_WORKLOAD_MEMORY_MB', 512, 64, 65_536);
-      const cpu = resourceNumber('INITPAD_AGENT_WORKLOAD_CPU', 1, 0.1, 64);
-      const pids = resourceNumber('INITPAD_AGENT_WORKLOAD_PIDS', 256, 32, 32_768);
+      const memoryMb = desired.memoryLimitMb!;
+      const cpu = desired.cpuLimitMillicores! / 1_000;
+      const pids = desired.pidsLimit!;
       const created = responseJson<{ Id: string }>(await this.request({
         method: 'POST',
         path: `/containers/create?name=${encodeURIComponent(candidateName)}`,

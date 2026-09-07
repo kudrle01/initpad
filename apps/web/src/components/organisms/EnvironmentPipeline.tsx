@@ -157,6 +157,11 @@ export function EnvironmentPipeline({
           env.provider === 'docker' &&
           env.target?.kind === 'docker' &&
           env.target.scope === 'user';
+        const expiryWarning = Boolean(
+          env.expiresAt
+          && env.expiryWarningAt
+          && Date.now() >= new Date(env.expiryWarningAt).getTime(),
+        );
 
         return (
           <Fragment key={env.name}>
@@ -398,6 +403,15 @@ export function EnvironmentPipeline({
                   <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
                   <History className="h-3 w-3 shrink-0" />
                 </Link>
+              )}
+
+              {expiryWarning && env.expiresAt && (
+                <div className="mt-2 flex items-start gap-1 text-xs text-warning">
+                  <Clock3 className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>
+                    Scheduled cleanup {new Date(env.expiresAt).toLocaleString()}. Redeploy to renew.
+                  </span>
+                </div>
               )}
 
               {cleanupPending && (

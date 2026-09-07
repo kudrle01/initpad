@@ -114,6 +114,8 @@ export interface Environment {
   url: string | null;
   statusReason: string | null;
   deploymentRequired: boolean;
+  expiresAt?: string | null;
+  expiryWarningAt?: string | null;
   artifact: {
     id: string;
     provider: string;

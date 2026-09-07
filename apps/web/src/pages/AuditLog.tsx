@@ -43,6 +43,7 @@ const ACTION_LABELS: Record<string, string> = {
   'environment.teardown_requested': 'Removal requested',
   'environment.teardown_completed': 'Removal completed',
   'environment.diagnostic_requested': 'Diagnostics requested',
+  'environment.expired': 'Environment lifetime expired',
   'production.requested': 'Production requested',
   'production.request_approved': 'Production request approved',
   'production.approval_accepted': 'Production approval accepted',

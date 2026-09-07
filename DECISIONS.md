@@ -3696,3 +3696,36 @@ zamknutí targetu/allocation, přesné předání buildu a dvojité schválení 
 druhé operace. Živě se ve dvou účtech ověří request -> approve -> stejný
 digest v produkci; dále reject, cancel, stale po změně configu/targetu a
 auditní vazba na deployment historii.
+
+---
+
+## ADR-083 — Provozní limity a expirace patří workspace allocation
+
+**Kontext.** Host-wide Docker limity neumožňují odlišit malý studentský
+workspace od firemního týmu a vzdálený Agent by mohl použít jinou policy než
+vestavěný runtime. Neomezená dev/test prostředí navíc dlouhodobě spotřebovávají
+disk a paměť, ale automatické mazání produkce nebo zdrojů je nepřijatelné.
+
+**Rozhodnutí.** `TargetAllocation` je jediný zdroj CPU, RAM, PID a environment
+kvóty. Deployment předá validovaný snapshot limitů jak lokálnímu provideru,
+tak deklarativnímu Agent jobu; Agent nepřijímá příkaz ani nečte policy z
+nedůvěryhodného repozitáře. Změna limitů platí od dalšího deploye.
+
+Dev a test mohou mít explicitní TTL v hodinách. Po úspěšném deployi control
+plane uloží `expiresAt` a `expiryWarningAt`; redeploy dobu obnoví. Periodický
+sweep vybere jen `dev|test`, jen running/stopped a jen záznam bez aktivní
+operace. Atomické vynulování expiry slouží jako lease mezi replikami. Selhání
+vrátí krátký retry a audit failure. Produkce nemá TTL ani při chybném vstupu:
+je vyloučena z výpočtu i sweepu. Teardown používá existující lifecycle,
+takže odstraní workload a route, nikoli projekt nebo repository.
+
+**Důsledky.** Admin vidí policy na server access kartě a expiry warning přímo
+u prostředí. Vypnutí TTL zruší naplánovanou expiraci; zapnutí ji nastaví i již
+běžícím dev/test prostředím. Odpojený server nemůže být nepravdivě označen
+za uklizený: teardown selže, událost je auditovaná a pokus se zopakuje.
+
+**Testování.** Unit testy ověřují výpočet warning/expiry a absolutní
+vyloučení produkce. Agent test kontroluje konkrétní Docker `NanoCpus`, memory,
+swap a `PidsLimit`; DTO hranice odmítají nebezpečné hodnoty. Živě se nastaví
+krátká policy na testovací allocation, ověří warning, automatický remove,
+audit a nedotčená produkce/repository.

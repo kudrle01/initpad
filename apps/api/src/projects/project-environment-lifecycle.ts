@@ -428,6 +428,8 @@ export class ProjectEnvironmentLifecycle {
       allocatedPort: null,
       activeOperationId: null,
       deploymentRequired: false,
+      expiresAt: null,
+      expiryWarningAt: null,
     } as const;
   }
 }

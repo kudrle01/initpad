@@ -50,6 +50,8 @@ export function projectView(row: ProjectRow, publicHost: string): Project {
             : environment.url,
         statusReason: environment.statusReason,
         deploymentRequired: environment.deploymentRequired,
+        expiresAt: environment.expiresAt?.toISOString() ?? null,
+        expiryWarningAt: environment.expiryWarningAt?.toISOString() ?? null,
         artifact: environment.buildArtifact
           ? {
               id: environment.buildArtifact.id,

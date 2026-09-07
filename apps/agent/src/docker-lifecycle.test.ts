@@ -21,6 +21,9 @@ const PAYLOAD = {
   containerPort: 80,
   healthPath: '/',
   routingMode: 'direct-port' as const,
+  cpuLimitMillicores: 750,
+  memoryLimitMb: 384,
+  pidsLimit: 128,
 };
 
 function response(statusCode: number, body: unknown = ''): DockerHttpResponse {
@@ -227,7 +230,14 @@ test('validates project artifact metadata and transient config independently', (
 });
 
 test('accepts only the bounded allocation-scoped diagnostic payload', () => {
-  const { imageRef: _imageRef, configFingerprint: _fingerprint, ...diagnostic } = {
+  const {
+    imageRef: _imageRef,
+    configFingerprint: _fingerprint,
+    cpuLimitMillicores: _cpu,
+    memoryLimitMb: _memory,
+    pidsLimit: _pids,
+    ...diagnostic
+  } = {
     ...PAYLOAD,
     environment: 'dev',
     revision: 'a'.repeat(40),
@@ -468,6 +478,10 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.deepEqual(host.CapAdd, ['CHOWN', 'DAC_OVERRIDE', 'SETGID', 'SETUID', 'NET_BIND_SERVICE']);
   assert.deepEqual(host.SecurityOpt, ['no-new-privileges']);
   assert.deepEqual(host.RestartPolicy, { Name: 'no' });
+  assert.equal(host.NanoCpus, 750_000_000);
+  assert.equal(host.Memory, 384 * 1024 * 1024);
+  assert.equal(host.MemorySwap, 384 * 1024 * 1024);
+  assert.equal(host.PidsLimit, 128);
   assert.ok(engine.requests.some((item) => item.path.endsWith('/update')));
   assert.equal((first.Labels as Record<string, string>)['com.initpad.allocation.id'], PAYLOAD.allocationId);
   assert.equal((first.Labels as Record<string, string>)['com.initpad.target'], 'target-1');

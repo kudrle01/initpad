@@ -25,6 +25,11 @@ export interface DeploymentAllocation {
   namespace: string;
   rootPath: string | null;
   publicUrl: string | null;
+  cpuLimitMillicores: number;
+  memoryLimitMb: number;
+  pidsLimit: number;
+  devTtlHours: number | null;
+  testTtlHours: number | null;
 }
 
 export interface DeployInput {

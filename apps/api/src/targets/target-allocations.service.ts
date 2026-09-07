@@ -14,6 +14,7 @@ import { UpdateTargetAllocationDto } from './dto/update-target-allocation.dto';
 import { allocationUsageDefaults } from './target-allocation-defaults';
 import { AuditEventsService } from '../audit/audit-events.service';
 import type { TargetUsage } from '../domain/types';
+import { environmentExpiry } from '../projects/environment-expiry';
 
 const ALLOCATION_INCLUDE = {
   target: {
@@ -43,6 +44,11 @@ function changedAllocationFields(
     publicUrl: string | null;
     status: string;
     maxEnvironments: number;
+    cpuLimitMillicores: number;
+    memoryLimitMb: number;
+    pidsLimit: number;
+    devTtlHours: number | null;
+    testTtlHours: number | null;
   },
   capabilities: string | undefined,
 ): string {
@@ -51,6 +57,11 @@ function changedAllocationFields(
     publicUrl: 'publicUrl',
     status: 'status',
     maxEnvironments: 'maxEnvironments',
+    cpuLimitMillicores: 'cpuLimitMillicores',
+    memoryLimitMb: 'memoryLimitMb',
+    pidsLimit: 'pidsLimit',
+    devTtlHours: 'devTtlHours',
+    testTtlHours: 'testTtlHours',
   };
   const isChanged = (key: keyof UpdateTargetAllocationDto): boolean => {
     switch (key) {
@@ -58,6 +69,11 @@ function changedAllocationFields(
       case 'publicUrl': return dto.publicUrl !== row.publicUrl;
       case 'status': return dto.status !== row.status;
       case 'maxEnvironments': return dto.maxEnvironments !== row.maxEnvironments;
+      case 'cpuLimitMillicores': return dto.cpuLimitMillicores !== row.cpuLimitMillicores;
+      case 'memoryLimitMb': return dto.memoryLimitMb !== row.memoryLimitMb;
+      case 'pidsLimit': return dto.pidsLimit !== row.pidsLimit;
+      case 'devTtlHours': return dto.devTtlHours !== row.devTtlHours;
+      case 'testTtlHours': return dto.testTtlHours !== row.testTtlHours;
     }
   };
   return (Object.keys(dto) as (keyof UpdateTargetAllocationDto)[])
@@ -80,6 +96,11 @@ export interface TargetAllocationSummary {
   capabilities: string[];
   status: string;
   maxEnvironments: number;
+  cpuLimitMillicores: number;
+  memoryLimitMb: number;
+  pidsLimit: number;
+  devTtlHours: number | null;
+  testTtlHours: number | null;
   inUse: number;
   usage: TargetUsage[];
 }
@@ -160,6 +181,11 @@ export class TargetAllocationsService {
         publicUrl: dto.publicUrl ?? usage.publicUrl,
         capabilities,
         maxEnvironments: dto.maxEnvironments ?? 50,
+        cpuLimitMillicores: dto.cpuLimitMillicores ?? 1000,
+        memoryLimitMb: dto.memoryLimitMb ?? 512,
+        pidsLimit: dto.pidsLimit ?? 256,
+        devTtlHours: dto.devTtlHours ?? null,
+        testTtlHours: dto.testTtlHours ?? null,
       },
       include: ALLOCATION_INCLUDE,
     });
@@ -174,6 +200,11 @@ export class TargetAllocationsService {
         targetId: row.targetId,
         capabilities: row.capabilities,
         maxEnvironments: row.maxEnvironments,
+        cpuLimitMillicores: row.cpuLimitMillicores,
+        memoryLimitMb: row.memoryLimitMb,
+        pidsLimit: row.pidsLimit,
+        devTtlHours: row.devTtlHours ?? 'disabled',
+        testTtlHours: row.testTtlHours ?? 'disabled',
       },
     });
     return this.toSummary(row);
@@ -213,9 +244,33 @@ export class TargetAllocationsService {
         ...(dto.publicUrl !== undefined ? { publicUrl: dto.publicUrl } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
         ...(dto.maxEnvironments !== undefined ? { maxEnvironments: dto.maxEnvironments } : {}),
+        ...(dto.cpuLimitMillicores !== undefined ? { cpuLimitMillicores: dto.cpuLimitMillicores } : {}),
+        ...(dto.memoryLimitMb !== undefined ? { memoryLimitMb: dto.memoryLimitMb } : {}),
+        ...(dto.pidsLimit !== undefined ? { pidsLimit: dto.pidsLimit } : {}),
+        ...(dto.devTtlHours !== undefined ? { devTtlHours: dto.devTtlHours } : {}),
+        ...(dto.testTtlHours !== undefined ? { testTtlHours: dto.testTtlHours } : {}),
       },
       include: ALLOCATION_INCLUDE,
     });
+    if (dto.devTtlHours !== undefined || dto.testTtlHours !== undefined) {
+      const bound = await this.prisma.environment.findMany({
+        where: {
+          allocationId: updated.id,
+          name: { in: ['dev', 'test'] },
+          status: { in: ['running', 'stopped'] },
+        },
+        select: { id: true, name: true },
+      });
+      const now = new Date();
+      if (bound.length) {
+        await this.prisma.$transaction(bound.map((environment) =>
+          this.prisma.environment.update({
+            where: { id: environment.id },
+            data: environmentExpiry(environment.name, updated, now),
+          }),
+        ));
+      }
+    }
     const changedFields = changedAllocationFields(dto, row, capabilities);
     if (changedFields) {
       await this.auditEvents.record({
@@ -307,6 +362,11 @@ export class TargetAllocationsService {
     capabilities: string;
     status: string;
     maxEnvironments: number;
+    cpuLimitMillicores: number;
+    memoryLimitMb: number;
+    pidsLimit: number;
+    devTtlHours: number | null;
+    testTtlHours: number | null;
     target: { name: string; capabilities?: string; scope?: string; managementState?: string };
     environments?: Array<{
       name: string;
@@ -328,6 +388,11 @@ export class TargetAllocationsService {
       capabilities: this.parse(row.capabilities),
       status: row.status,
       maxEnvironments: row.maxEnvironments,
+      cpuLimitMillicores: row.cpuLimitMillicores,
+      memoryLimitMb: row.memoryLimitMb,
+      pidsLimit: row.pidsLimit,
+      devTtlHours: row.devTtlHours,
+      testTtlHours: row.testTtlHours,
       inUse: row._count.environments,
       usage: (row.environments ?? []).map((environment) => ({
         projectId: environment.project.id,

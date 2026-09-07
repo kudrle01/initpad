@@ -76,6 +76,7 @@ const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
 const PROJECT_SCM_RECONCILE_INTERVAL_MS = 15_000;
 const SCM_READ_CONCURRENCY = 4;
+const ENVIRONMENT_EXPIRY_SWEEP_MS = 60_000;
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
 /**
@@ -114,7 +115,7 @@ export class ProjectsService implements OnModuleInit {
     private readonly provisioning: ProvisioningService,
     @Inject(ARTIFACT_STORE) artifactStore: ArtifactStore,
     @Inject(AuditEventsService)
-    auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
+    private readonly auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
   ) {
     this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
@@ -212,6 +213,87 @@ export class ProjectsService implements OnModuleInit {
     await this.runArtifactRetention().catch((error) =>
       this.logger.warn(`Artifact retention sweep skipped: ${(error as Error).message}`),
     );
+    await this.runEnvironmentExpiry().catch((error) =>
+      this.logger.warn(`Environment expiry sweep skipped: ${(error as Error).message}`),
+    );
+    const expiryTimer = setInterval(() => {
+      void this.runEnvironmentExpiry().catch((error) =>
+        this.logger.warn(`Environment expiry sweep skipped: ${(error as Error).message}`),
+      );
+    }, ENVIRONMENT_EXPIRY_SWEEP_MS);
+    expiryTimer.unref();
+  }
+
+  /**
+   * Claims and removes expired dev/test workloads. Clearing expiresAt is the
+   * cross-process lease: only one API replica may perform the teardown. A
+   * failed attempt is rescheduled, while production is excluded twice (query
+   * and guard) so a malformed policy can never remove it.
+   */
+  async runEnvironmentExpiry(now = new Date()): Promise<number> {
+    const candidates = await this.prisma.environment.findMany({
+      where: {
+        name: { in: ['dev', 'test'] },
+        status: { in: ['running', 'stopped'] },
+        activeOperationId: null,
+        expiresAt: { lte: now },
+      },
+      select: {
+        id: true,
+        name: true,
+        projectId: true,
+        expiresAt: true,
+        project: { select: { name: true, workspaceId: true } },
+      },
+      orderBy: { expiresAt: 'asc' },
+      take: 25,
+    });
+    let claimedCount = 0;
+    for (const environment of candidates) {
+      if (environment.name === 'prod' || !environment.expiresAt) continue;
+      const claimed = await this.prisma.environment.updateMany({
+        where: {
+          id: environment.id,
+          name: { in: ['dev', 'test'] },
+          activeOperationId: null,
+          expiresAt: environment.expiresAt,
+        },
+        data: { expiresAt: null, expiryWarningAt: null },
+      });
+      if (claimed.count !== 1) continue;
+      claimedCount += 1;
+      try {
+        await this.auditEvents?.record({
+          workspaceId: environment.project.workspaceId,
+          action: 'environment.expired',
+          outcome: 'accepted',
+          resourceType: 'project',
+          resourceId: environment.projectId,
+          resourceName: environment.project.name,
+          details: { environment: environment.name, expiredAt: environment.expiresAt.toISOString() },
+        });
+        await this.environmentLifecycle.remove(
+          environment.projectId,
+          environment.name as EnvName,
+        );
+      } catch (error) {
+        const retryAt = new Date(now.getTime() + 5 * 60_000);
+        await this.prisma.environment.updateMany({
+          where: { id: environment.id, expiresAt: null },
+          data: { expiresAt: retryAt, expiryWarningAt: now },
+        });
+        await this.auditEvents?.record({
+          workspaceId: environment.project.workspaceId,
+          action: 'environment.expired',
+          outcome: 'failed',
+          resourceType: 'project',
+          resourceId: environment.projectId,
+          resourceName: environment.project.name,
+          details: { environment: environment.name, retryAt: retryAt.toISOString() },
+        }).catch(() => undefined);
+      }
+    }
+    return claimedCount;
   }
 
   // The SQL migration can safely backfill provider + owner/name without

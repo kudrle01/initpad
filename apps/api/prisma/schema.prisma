@@ -330,6 +330,16 @@ model TargetAllocation {
   status          String         @default("active") // active | disabled
   // Basic quota: how many environments may bind to this allocation.
   maxEnvironments Int            @default(50)
+  // Per-workload Docker limits. They are copied into each deployment intent so
+  // both the built-in runtime and a remote Agent enforce the same workspace
+  // policy instead of relying on host-wide defaults.
+  cpuLimitMillicores Int          @default(1000)
+  memoryLimitMb       Int          @default(512)
+  pidsLimit           Int          @default(256)
+  // Optional lifetime for non-production workloads. Null keeps the environment
+  // until a user removes it; production is never eligible for TTL cleanup.
+  devTtlHours         Int?
+  testTtlHours        Int?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   environments    Environment[]
@@ -453,6 +463,11 @@ model Environment {
   // Incremented atomically with every config mutation. Approval and deployment
   // locks compare this scalar instead of reading or hashing secret values.
   configRevision    Int                   @default(0)
+  // Set only for dev/test after a successful deployment when their allocation
+  // defines a TTL. The warning timestamp supports a deterministic UI warning;
+  // no background task ever expires production.
+  expiresAt          DateTime?
+  expiryWarningAt    DateTime?
 
   configVars         AppConfigVar[]
   gatewayRoute       GatewayRoute?
@@ -462,6 +477,7 @@ model Environment {
   @@unique([projectId, name])
   @@index([buildArtifactId])
   @@index([allocationId])
+  @@index([expiresAt])
 }
 
 // Stable, control-plane-owned route reservation for managed-gateway targets
