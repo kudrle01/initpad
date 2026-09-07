@@ -129,17 +129,20 @@ function setup() {
       status: 'queued',
     })),
   };
+  const audit = { recordOperationResult: jest.fn(async () => undefined) };
   return {
     service: new AgentJobsService(
       prisma as never,
       agents as never,
       artifactStore as never,
       gatewayRoutes as never,
+      audit,
     ),
     prisma,
     agents,
     artifactStore,
     gatewayRoutes,
+    audit,
   };
 }
 
@@ -775,7 +778,7 @@ describe('AgentJobsService durable lease protocol', () => {
   });
 
   it('publishes a successful Agent deploy from its durable structured result', async () => {
-    const { service, prisma } = setup();
+    const { service, prisma, audit } = setup();
     const terminal = job({
       kind: 'deploy',
       status: 'succeeded',
@@ -820,6 +823,7 @@ describe('AgentJobsService durable lease protocol', () => {
       where: { id: 'operation-1', status: 'running', finishedAt: null },
       data: expect.objectContaining({ status: 'succeeded', message: 'Deployment healthy' }),
     });
+    expect(audit.recordOperationResult).toHaveBeenCalledWith('deployment', 'operation-1');
   });
 
   it('fails the project operation when Agent completion has no valid deploy result', async () => {

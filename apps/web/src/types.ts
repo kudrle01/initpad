@@ -54,12 +54,20 @@ export interface AuditEvent {
     displayName: string | null;
   };
   action: string;
-  outcome: 'succeeded' | 'failed';
+  outcome: 'accepted' | 'succeeded' | 'failed' | 'cancelled';
   resource: {
     type: string;
     id: string | null;
     name: string | null;
   };
+  operation: {
+    type: 'deployment' | 'provisioning';
+    id: string;
+    kind: string;
+    status: string;
+    phase: string | null;
+    projectId: string | null;
+  } | null;
   details: Record<string, string | number | boolean> | null;
   createdAt: string;
 }

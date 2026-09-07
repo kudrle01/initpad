@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollText, ShieldCheck, UserRound } from 'lucide-react';
+import { Ban, CheckCircle2, CircleX, Clock3, ScrollText, UserRound } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api, type AuditEventFilters } from '@/api';
 import { useAuth } from '@/auth';
 import { Badge } from '@/components/ui/badge';
@@ -22,10 +23,24 @@ const ACTION_LABELS: Record<string, string> = {
   'workspace.member_removed': 'Member removed',
   'project.created': 'Project created',
   'project.imported': 'Project imported',
+  'project.creation_requested': 'Project creation requested',
+  'project.creation_completed': 'Project creation completed',
+  'project.import_requested': 'Project import requested',
+  'project.import_completed': 'Project import completed',
   'project.deleted': 'Project deleted',
   'environment.target_changed': 'Environment target changed',
   'environment.promotion_requested': 'Promotion requested',
+  'environment.promotion_completed': 'Promotion completed',
   'environment.rollback_requested': 'Rollback requested',
+  'environment.rollback_completed': 'Rollback completed',
+  'environment.deployment_requested': 'Deployment requested',
+  'environment.deployment_completed': 'Deployment completed',
+  'environment.start_requested': 'Start requested',
+  'environment.start_completed': 'Start completed',
+  'environment.stop_requested': 'Stop requested',
+  'environment.stop_completed': 'Stop completed',
+  'environment.teardown_requested': 'Removal requested',
+  'environment.teardown_completed': 'Removal completed',
   'environment.diagnostic_requested': 'Diagnostics requested',
   'target.created': 'Target created',
   'target.updated': 'Target updated',
@@ -63,24 +78,49 @@ function relativeTime(iso: string): string {
   return days < 30 ? `${days}d ago` : new Date(iso).toLocaleDateString('en-GB');
 }
 
+const OUTCOME_STYLES: Record<AuditEvent['outcome'], string> = {
+  accepted: 'border-warning/40 bg-warning/10 text-warning',
+  succeeded: 'border-success/30 bg-success/10 text-success',
+  failed: 'border-destructive/30 bg-destructive/10 text-destructive',
+  cancelled: 'border-border bg-secondary text-muted-foreground',
+};
+
+const OUTCOME_ICONS = {
+  accepted: Clock3,
+  succeeded: CheckCircle2,
+  failed: CircleX,
+  cancelled: Ban,
+} satisfies Record<AuditEvent['outcome'], typeof Clock3>;
+
 function EventCard({ event }: { event: AuditEvent }) {
   const exactTime = new Date(event.createdAt).toLocaleString();
   const details = Object.entries(event.details ?? {});
+  const OutcomeIcon = OUTCOME_ICONS[event.outcome];
+  const operationLink = event.operation?.projectId
+    ? event.operation.type === 'deployment'
+      ? `/projects/${event.operation.projectId}/deployments`
+      : `/projects/${event.operation.projectId}`
+    : null;
+  const operationSummary = event.operation
+    ? `${label(event.operation.type)} · ${label(event.operation.status)}${
+        event.operation.phase && event.operation.phase !== event.operation.status
+          ? ` · ${label(event.operation.phase)}`
+          : ''
+      }`
+    : '';
 
   return (
     <article className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
-          <ShieldCheck className="h-4 w-4" />
+          <OutcomeIcon className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">{eventLabel(event.action)}</h2>
             <Badge
               variant="outline"
-              className={event.outcome === 'succeeded'
-                ? 'border-success/30 bg-success/10 text-success'
-                : 'border-destructive/30 bg-destructive/10 text-destructive'}
+              className={OUTCOME_STYLES[event.outcome]}
             >
               {event.outcome}
             </Badge>
@@ -96,7 +136,9 @@ function EventCard({ event }: { event: AuditEvent }) {
             <span className="inline-flex min-w-0 items-center gap-1">
               <UserRound className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">
-                {event.actor.displayName || event.actor.username} (@{event.actor.username})
+                {event.actor.userId
+                  ? `${event.actor.displayName || event.actor.username} (@${event.actor.username})`
+                  : event.actor.displayName || 'InitPad system'}
               </span>
             </span>
             <span aria-hidden="true">·</span>
@@ -104,6 +146,25 @@ function EventCard({ event }: { event: AuditEvent }) {
               {label(event.resource.type)}: {event.resource.name || event.resource.id || 'unknown'}
             </span>
           </div>
+          {event.operation && (
+            <div className="mt-2 text-xs">
+              {operationLink ? (
+                <Link
+                  to={operationLink}
+                  className="text-link inline-flex min-w-0 items-center gap-1 font-medium"
+                >
+                  <span>{operationSummary}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {event.operation.id.slice(0, 8)}
+                  </span>
+                </Link>
+              ) : (
+                <span className="text-muted-foreground">
+                  {operationSummary} · {event.operation.id.slice(0, 8)}
+                </span>
+              )}
+            </div>
+          )}
           {details.length > 0 && (
             <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 rounded-md bg-secondary/50 px-3 py-2 text-xs">
               {details.map(([key, value]) => (
@@ -124,7 +185,7 @@ export default function AuditLog() {
   const { activeWorkspace } = useAuth();
   const [action, setAction] = useState('');
   const [resourceType, setResourceType] = useState('');
-  const [outcome, setOutcome] = useState<'' | 'succeeded' | 'failed'>('');
+  const [outcome, setOutcome] = useState<'' | AuditEvent['outcome']>('');
   const [additionalItems, setAdditionalItems] = useState<AuditEvent[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -208,8 +269,10 @@ export default function AuditLog() {
           aria-label="Filter by outcome"
         >
           <option value="">All outcomes</option>
+          <option value="accepted">Accepted</option>
           <option value="succeeded">Succeeded</option>
           <option value="failed">Failed</option>
+          <option value="cancelled">Cancelled</option>
         </Select>
       </div>
 

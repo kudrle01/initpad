@@ -30,7 +30,7 @@ export class ProjectEnvironmentLifecycle {
     private readonly agentDelivery: ProjectAgentDelivery,
   ) {}
 
-  async stop(projectId: string, envName: EnvName): Promise<void> {
+  async stop(projectId: string, envName: EnvName, actorUserId?: string): Promise<void> {
     const { project, template, environment, slug } = await this.context(projectId, envName);
     if (environment.activeOperationId) {
       throw new BadRequestException(`Environment '${envName}' has an active operation`);
@@ -45,6 +45,7 @@ export class ProjectEnvironmentLifecycle {
         'stop',
         environment.version,
         environment.buildArtifactId,
+        actorUserId,
       );
       try {
         await this.queueAgentLifecycle(project, template, environment, slug, 'stop', operationId);
@@ -66,7 +67,7 @@ export class ProjectEnvironmentLifecycle {
     });
   }
 
-  async start(projectId: string, envName: EnvName): Promise<void> {
+  async start(projectId: string, envName: EnvName, actorUserId?: string): Promise<void> {
     const environment = await this.prisma.environment.findUniqueOrThrow({
       where: { projectId_name: { projectId, name: envName } },
       include: { target: true },
@@ -83,11 +84,13 @@ export class ProjectEnvironmentLifecycle {
       envName,
       'start',
       environment.version,
+      undefined,
+      actorUserId,
     );
     void this.startInBackground(projectId, envName, operationId);
   }
 
-  async remove(projectId: string, envName: EnvName): Promise<void> {
+  async remove(projectId: string, envName: EnvName, actorUserId?: string): Promise<void> {
     const { project, template, environment, slug } = await this.context(projectId, envName);
     const repository = repositoryRef(project);
     if (environment.activeOperationId) {
@@ -113,6 +116,7 @@ export class ProjectEnvironmentLifecycle {
             data: this.emptyState(),
           }),
         ]);
+        await this.operations.complete(operation.id, 'cancelled', 'Cancellation requested by user');
         return;
       }
       if (operation?.agentJobs.length && this.isAgentBacked(environment)) {
@@ -144,6 +148,7 @@ export class ProjectEnvironmentLifecycle {
             data: { activeOperationId: null, statusReason: 'Cancellation requested — cleaning up' },
           }),
         ]);
+        await this.operations.complete(operation.id, 'cancelled', 'Cancellation requested by user');
         const cleanupVersion = operation.version ?? environment.version;
         if (!cleanupVersion) throw new BadRequestException('Cancelled Agent deployment has no revision to clean up');
         const cleanupOperationId = await this.operations.begin(
@@ -152,6 +157,7 @@ export class ProjectEnvironmentLifecycle {
           'remove',
           cleanupVersion,
           operation.buildArtifactId ?? environment.buildArtifactId,
+          actorUserId,
         );
         const cleanupEnvironment = {
           ...environment,
@@ -203,6 +209,7 @@ export class ProjectEnvironmentLifecycle {
         'remove',
         environment.version,
         environment.buildArtifactId,
+        actorUserId,
       );
       try {
         await this.queueAgentLifecycle(project, template, environment, slug, 'remove', operationId);

@@ -1,11 +1,17 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import {
+  AuditEventsService,
+  auditOperationAction,
+} from '../audit/audit-events.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type ProvisioningKind = 'create' | 'import';
@@ -103,8 +109,13 @@ type Row = ProvisioningRecord & {
 @Injectable()
 export class ProvisioningService implements OnModuleInit {
   private readonly instanceId = randomUUID();
+  private readonly logger = new Logger(ProvisioningService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(AuditEventsService)
+    private readonly auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.reconcileStale();
@@ -133,25 +144,52 @@ export class ProvisioningService implements OnModuleInit {
           }
         : {}),
     };
+    let operationId: string;
     if (!options?.retryOfId) {
-      return (
+      operationId = (
         await this.prisma.provisioningOperation.create({ data, select: { id: true } })
       ).id;
+    } else {
+      operationId = await this.prisma.$transaction(async (tx) => {
+        const op = await tx.provisioningOperation.create({ data, select: { id: true } });
+        const previous = await tx.provisioningOperation.updateMany({
+          where: { id: options.retryOfId, status: 'retrying', leaseOwner: this.instanceId },
+          data: {
+            status: 'retried',
+            message: 'A newer attempt has been started',
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          },
+        });
+        if (previous.count !== 1) throw new ConflictException('Retry ownership was lost');
+        return op.id;
+      });
     }
-    return this.prisma.$transaction(async (tx) => {
-      const op = await tx.provisioningOperation.create({ data, select: { id: true } });
-      const previous = await tx.provisioningOperation.updateMany({
-        where: { id: options.retryOfId, status: 'retrying', leaseOwner: this.instanceId },
+    try {
+      await this.auditEvents?.record({
+        workspaceId,
+        actorUserId: options?.requestedById,
+        action: auditOperationAction.provisioning(kind, 'requested'),
+        outcome: 'accepted',
+        resourceType: 'project',
+        resourceName: projectName,
+        operation: { type: 'provisioning', id: operationId },
+        details: { kind, attempt: options?.attempt ?? 1 },
+      });
+    } catch (error) {
+      await this.prisma.provisioningOperation.update({
+        where: { id: operationId },
         data: {
-          status: 'retried',
-          message: 'A newer attempt has been started',
+          status: 'failed',
+          message: 'Provisioning could not be recorded in the audit log',
+          finishedAt: new Date(),
           leaseOwner: null,
           leaseExpiresAt: null,
         },
-      });
-      if (previous.count !== 1) throw new ConflictException('Retry ownership was lost');
-      return op.id;
-    });
+      }).catch(() => undefined);
+      throw error;
+    }
+    return operationId;
   }
 
   async bindProject(id: string, projectId: string): Promise<void> {
@@ -241,7 +279,7 @@ export class ProvisioningService implements OnModuleInit {
   }
 
   async succeed(id: string, projectId?: string): Promise<void> {
-    await this.prisma.provisioningOperation
+    const updated = await this.prisma.provisioningOperation
       .update({
         where: { id },
         data: {
@@ -253,11 +291,13 @@ export class ProvisioningService implements OnModuleInit {
           ...(projectId ? { projectId } : {}),
         },
       })
-      .catch(() => undefined);
+      .then(() => true)
+      .catch(() => false);
+    if (updated) await this.recordResultSafely(id);
   }
 
   async fail(id: string, message: string): Promise<void> {
-    await this.prisma.provisioningOperation
+    const updated = await this.prisma.provisioningOperation
       .update({
         where: { id },
         data: {
@@ -268,7 +308,9 @@ export class ProvisioningService implements OnModuleInit {
           leaseExpiresAt: null,
         },
       })
-      .catch(() => undefined);
+      .then(() => true)
+      .catch(() => false);
+    if (updated) await this.recordResultSafely(id);
   }
 
   async latestForProject(projectId: string): Promise<ProvisioningView | null> {
@@ -426,6 +468,7 @@ export class ProvisioningService implements OnModuleInit {
           error: 'The process stopped while this external effect may have been applied',
         },
       });
+      await this.recordResultSafely(operation.id);
     }
     return recovered;
   }
@@ -440,6 +483,16 @@ export class ProvisioningService implements OnModuleInit {
 
   private leaseExpiry(): Date {
     return new Date(Date.now() + LEASE_MS);
+  }
+
+  private async recordResultSafely(operationId: string): Promise<void> {
+    try {
+      await this.auditEvents?.recordOperationResult('provisioning', operationId);
+    } catch (error) {
+      this.logger.warn(
+        `Provisioning audit projection failed for ${operationId}: ${(error as Error).message}`,
+      );
+    }
   }
 
   private toView(op: Row, currentUserId: string | null): ProvisioningView {

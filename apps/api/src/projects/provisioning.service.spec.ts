@@ -17,6 +17,35 @@ describe('ProvisioningService', () => {
     expect(createArgs?.data).toMatchObject({ workspaceId: 'ws1', projectName: 'api', kind: 'import', status: 'running', step: 'validate' });
   });
 
+  it('audits request acceptance and the authoritative terminal result', async () => {
+    const operationId = '123e4567-e89b-42d3-a456-426614174000';
+    const audit = {
+      record: jest.fn(async () => undefined),
+      recordOperationResult: jest.fn(async () => undefined),
+    };
+    const prisma = {
+      provisioningOperation: {
+        create: jest.fn(async () => ({ id: operationId })),
+        update: jest.fn(async () => ({})),
+      },
+    };
+    const service = new ProvisioningService(prisma as never, audit);
+
+    await service.start('ws1', 'api', 'create', {
+      requestedById: 'user-1',
+      request: { name: 'api' },
+    });
+    await service.succeed(operationId, 'project-1');
+
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      actorUserId: 'user-1',
+      action: 'project.creation_requested',
+      outcome: 'accepted',
+      operation: { type: 'provisioning', id: operationId },
+    }));
+    expect(audit.recordOperationResult).toHaveBeenCalledWith('provisioning', operationId);
+  });
+
   it('records success with the project id and marks it done', async () => {
     let updateArgs: { data?: Record<string, unknown> } | undefined;
     const prisma = {

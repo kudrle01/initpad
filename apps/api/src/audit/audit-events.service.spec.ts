@@ -15,6 +15,8 @@ function row(id: string, minute: number) {
     resourceType: 'member',
     resourceId: `member-${id}`,
     resourceName: `user-${id}`,
+    operationType: null,
+    operationId: null,
     details: { role: 'member' },
     createdAt: at(minute),
   };
@@ -49,9 +51,143 @@ describe('AuditEventsService', () => {
         resourceType: 'member',
         resourceId: 'user-2',
         resourceName: 'bob',
+        operationType: null,
+        operationId: null,
         details: { role: 'maintainer' },
       },
     });
+  });
+
+  it('records accepted and terminal operation events without copying runtime messages', async () => {
+    const operationId = '123e4567-e89b-42d3-a456-426614174000';
+    const create = jest.fn(async () => ({}));
+    const prisma = {
+      user: { findUnique: jest.fn(async () => ({ username: 'alice', name: 'Alice' })) },
+      auditEvent: {
+        create,
+        findFirst: jest.fn(async () => ({
+          actorUserId: 'user-1',
+          actorUsername: 'alice',
+          actorDisplayName: 'Alice',
+        })),
+      },
+      deploymentOperation: {
+        findUnique: jest.fn(async () => ({
+          id: operationId,
+          kind: 'promote',
+          status: 'failed',
+          message: 'sensitive provider output',
+          environment: {
+            name: 'test',
+            project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
+          },
+        })),
+      },
+    };
+    const service = new AuditEventsService(prisma as never);
+
+    await service.record({
+      workspaceId: 'workspace-1',
+      actorUserId: 'user-1',
+      action: 'environment.promotion_requested',
+      outcome: 'accepted',
+      resourceType: 'project',
+      resourceId: 'project-1',
+      resourceName: 'api',
+      operation: { type: 'deployment', id: operationId },
+      details: { environment: 'test', kind: 'promote' },
+    });
+    await service.recordOperationResult('deployment', operationId);
+
+    expect(create).toHaveBeenNthCalledWith(1, {
+      data: expect.objectContaining({
+        action: 'environment.promotion_requested',
+        outcome: 'accepted',
+        operationType: 'deployment',
+        operationId,
+      }),
+    });
+    expect(create).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({
+        actorUserId: 'user-1',
+        action: 'environment.promotion_completed',
+        outcome: 'failed',
+        operationType: 'deployment',
+        operationId,
+        details: { environment: 'test', kind: 'promote' },
+      }),
+    });
+    expect(JSON.stringify(create.mock.calls)).not.toContain('sensitive provider output');
+  });
+
+  it('enriches audit rows from the authoritative operation instead of copied status', async () => {
+    const operationId = '123e4567-e89b-42d3-a456-426614174000';
+    const operationRow = {
+      ...row('3', 3),
+      operationType: 'deployment',
+      operationId,
+    };
+    const prisma = {
+      workspaceMember: {
+        findUnique: jest.fn(async () => ({ workspaceId: 'workspace-1' })),
+      },
+      auditEvent: { findMany: jest.fn(async () => [operationRow]) },
+      deploymentOperation: {
+        findMany: jest.fn(async () => [{
+          id: operationId,
+          kind: 'deploy',
+          status: 'succeeded',
+          phase: 'succeeded',
+          environment: { projectId: 'project-1' },
+        }]),
+      },
+      provisioningOperation: { findMany: jest.fn() },
+    };
+
+    const page = await new AuditEventsService(prisma as never).list(
+      'user-1',
+      'workspace-1',
+      { limit: 30 },
+    );
+
+    expect(page.items[0].operation).toEqual({
+      type: 'deployment',
+      id: operationId,
+      kind: 'deploy',
+      status: 'succeeded',
+      phase: 'succeeded',
+      projectId: 'project-1',
+    });
+  });
+
+  it('treats a replayed terminal callback as idempotent', async () => {
+    const operationId = '123e4567-e89b-42d3-a456-426614174000';
+    const prisma = {
+      auditEvent: {
+        findFirst: jest.fn(async () => null),
+        create: jest.fn(async () => {
+          throw { code: 'P2002' };
+        }),
+      },
+      provisioningOperation: {
+        findUnique: jest.fn(async () => ({
+          id: operationId,
+          workspaceId: 'workspace-1',
+          projectId: 'project-1',
+          projectName: 'api',
+          kind: 'create',
+          status: 'succeeded',
+          attempt: 1,
+        })),
+      },
+    };
+
+    await expect(
+      new AuditEventsService(prisma as never).recordOperationResult(
+        'provisioning',
+        operationId,
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it('rejects detail fields that could persist secrets or logs', async () => {

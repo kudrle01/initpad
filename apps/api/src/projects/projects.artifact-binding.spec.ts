@@ -63,6 +63,7 @@ describe('ProjectsService immutable artifact binding', () => {
       true,
       'promote',
       'artifact-1',
+      undefined,
     );
   });
 
@@ -103,7 +104,7 @@ describe('ProjectsService immutable artifact binding', () => {
     // Reuses the derived Docker ref directly; the store is never touched.
     expect(deployment.hasImage).toHaveBeenCalledWith(`ghcr.io/acme/api:${sha}-run-1`);
     expect(schedule).toHaveBeenCalledWith(
-      'project-1', 'dev', sha, true, 'retry', 'artifact-1',
+      'project-1', 'dev', sha, true, 'retry', 'artifact-1', undefined,
     );
   });
 
@@ -152,7 +153,7 @@ describe('ProjectsService immutable artifact binding', () => {
       orderBy: { createdAt: 'desc' },
     });
     expect(schedule).toHaveBeenCalledWith(
-      'project-1', 'dev', sha, true, 'redeploy', 'artifact-1',
+      'project-1', 'dev', sha, true, 'redeploy', 'artifact-1', undefined,
     );
   });
 
@@ -198,7 +199,9 @@ describe('ProjectsService immutable artifact binding', () => {
       `ghcr.io/acme/api:${sha}-run-1`,
       'd'.repeat(64),
     );
-    expect(schedule).toHaveBeenCalledWith('project-1', 'dev', sha, true, 'retry', 'artifact-1');
+    expect(schedule).toHaveBeenCalledWith(
+      'project-1', 'dev', sha, true, 'retry', 'artifact-1', undefined,
+    );
   });
 
   it('recovers an existing tested GitHub artifact instead of starting CI again', async () => {

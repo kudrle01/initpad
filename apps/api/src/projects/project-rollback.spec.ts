@@ -156,6 +156,7 @@ describe('ProjectRollback', () => {
       'test',
       PREVIOUS,
       'artifact-previous',
+      undefined,
     );
 
     await expect(

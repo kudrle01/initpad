@@ -6,6 +6,10 @@ import {
   terminalDeploymentPhase,
 } from '../domain/deployment-operation-state';
 import { EnvName } from '../domain/types';
+import {
+  AuditEventsService,
+  auditOperationAction,
+} from '../audit/audit-events.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -16,7 +20,10 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ProjectDeploymentOperations {
   private readonly logger = new Logger('ProjectDeploymentOperations');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
+  ) {}
 
   async recoverInterrupted(): Promise<void> {
     try {
@@ -61,6 +68,7 @@ export class ProjectDeploymentOperations {
             },
           }),
         ]);
+        await this.recordResultSafely(operation.id);
       }
     } catch (error) {
       this.logger.warn(`Deployment operation recovery skipped: ${(error as Error).message}`);
@@ -73,10 +81,14 @@ export class ProjectDeploymentOperations {
     kind: string,
     version: string | null,
     buildArtifactId?: string | null,
+    actorUserId?: string,
   ): Promise<string> {
     const environment = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId, name: envName } },
-      include: { target: { select: { name: true } } },
+      include: {
+        target: { select: { name: true } },
+        project: { select: { id: true, name: true, workspaceId: true } },
+      },
     });
     if (!environment) throw new NotFoundException(`Environment '${envName}' not found`);
     const operation = await this.prisma.deploymentOperation.create({
@@ -109,7 +121,44 @@ export class ProjectDeploymentOperations {
         ...(!['start', 'stop', 'remove'].includes(kind) ? { deploymentRequired: true } : {}),
       },
     });
-    if (claimed.count === 1) return operation.id;
+    if (claimed.count === 1) {
+      try {
+        await this.auditEvents?.record({
+          workspaceId: environment.project.workspaceId,
+          actorUserId,
+          action: auditOperationAction.deployment(kind, 'requested'),
+          outcome: 'accepted',
+          resourceType: 'project',
+          resourceId: environment.project.id,
+          resourceName: environment.project.name,
+          operation: { type: 'deployment', id: operation.id },
+          details: { environment: envName, kind },
+        });
+      } catch (error) {
+        await this.prisma.$transaction([
+          this.prisma.deploymentOperation.update({
+            where: { id: operation.id },
+            data: {
+              status: 'cancelled',
+              phase: 'cancelled',
+              message: 'Deployment could not be recorded in the audit log',
+              finishedAt: new Date(),
+            },
+          }),
+          this.prisma.environment.updateMany({
+            where: { id: environment.id, activeOperationId: operation.id },
+            data: {
+              activeOperationId: null,
+              status: environment.status,
+              statusReason: environment.statusReason,
+              deploymentRequired: environment.deploymentRequired,
+            },
+          }),
+        ]);
+        throw error;
+      }
+      return operation.id;
+    }
     await this.prisma.deploymentOperation.update({
       where: { id: operation.id },
       data: {
@@ -127,7 +176,7 @@ export class ProjectDeploymentOperations {
     status: DeploymentOperationResult,
     message?: string,
   ): Promise<void> {
-    await this.prisma.deploymentOperation
+    const updated = await this.prisma.deploymentOperation
       .update({
         where: { id: operationId },
         data: {
@@ -137,11 +186,13 @@ export class ProjectDeploymentOperations {
           finishedAt: new Date(),
         },
       })
-      .catch(() => undefined);
+      .then(() => true)
+      .catch(() => false);
     await this.prisma.environment.updateMany({
       where: { activeOperationId: operationId },
       data: { activeOperationId: null },
     });
+    if (updated) await this.recordResultSafely(operationId);
   }
 
   async advancePhase(
@@ -186,5 +237,15 @@ export class ProjectDeploymentOperations {
         data: { statusReason: message },
       }),
     ]).catch(() => undefined);
+  }
+
+  private async recordResultSafely(operationId: string): Promise<void> {
+    try {
+      await this.auditEvents?.recordOperationResult('deployment', operationId);
+    } catch (error) {
+      this.logger.warn(
+        `Deployment audit projection failed for ${operationId}: ${(error as Error).message}`,
+      );
+    }
   }
 }

@@ -11,6 +11,7 @@ type ScheduleRollback = (
   environment: EnvName,
   version: string,
   buildArtifactId: string | null,
+  actorUserId?: string,
 ) => Promise<void>;
 
 /** Selects and executes a previously verified publication without invoking CI. */
@@ -119,6 +120,7 @@ export class ProjectRollback {
     environmentName: EnvName,
     candidateOperationId: string,
     stateToken: string,
+    actorUserId?: string,
   ): Promise<void> {
     const preview = await this.preview(projectId, environmentName);
     if (!preview) {
@@ -139,6 +141,7 @@ export class ProjectRollback {
       environmentName,
       preview.rollbackVersion,
       preview.rollbackArtifact?.id ?? null,
+      actorUserId,
     );
   }
 

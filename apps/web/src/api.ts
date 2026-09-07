@@ -89,7 +89,7 @@ export interface DeleteProjectOptions {
 export interface AuditEventFilters {
   action?: string;
   resourceType?: string;
-  outcome?: 'succeeded' | 'failed';
+  outcome?: 'accepted' | 'succeeded' | 'failed' | 'cancelled';
   cursor?: string;
   limit?: number;
 }

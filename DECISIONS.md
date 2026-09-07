@@ -3597,3 +3597,50 @@ záznamy. Samostatný access lze založit před online Agentem, ale deployment
 readiness gate zůstává. Web production build a browser acceptance ověří, že se
 server objeví jednou, access akce mají potvrzení, používaná prostředí blokují
 remove/delete a rozbalovací detail i dialogy fungují na desktopu a 390 px.
+
+---
+
+## ADR-081 — Audit asynchronní akce odděluje přijetí od autoritativního výsledku
+
+**Kontext.** HTTP odpověď na create/import, deploy, promotion, rollback, start,
+stop nebo remove potvrzuje pouze to, že control plane požadavek přijal. Skutečný
+výsledek vzniká později v provisioning state machine, provideru nebo po Agent
+callbacku. Jediná událost označená jako úspěšná by proto mohla tvrdit, že se změna
+provedla, i když pouze vstoupila do fronty. Kopírování operation message nebo
+logu do auditu by navíc vytvořilo druhý zdroj pravdy a riziko úniku citlivých dat.
+
+**Rozhodnutí.** Dlouhá akce vytváří dvojici append-only událostí. První má
+outcome `accepted` a vznikne až po atomickém získání operation locku; zachytí
+aktéra, resource snapshot a polymorfní reference
+`deployment|provisioning + operationId`. Druhá vzniká pouze v autoritativním
+terminálním přechodu a má outcome `succeeded`, `failed` nebo `cancelled`.
+Přebírá immutable actor snapshot z přijaté události, takže background worker
+ani Agent nejsou mylně vydáváni za původního uživatele. Interní CI akce bez
+uživatelského requestu jsou viditelně označeny jako `InitPad system`.
+
+Reference záměrně není databázový foreign key. Deployment history může při
+smazání projektu kaskádově zmizet, zatímco audit musí zachovat původní ID a
+snapshot. Při listu API v jednom batch dotazu doplní aktuální operation
+`kind/status/phase` a project ID; chybějící řádek označí jako `removed`.
+Unikátnost `(operationType, operationId, action)` dělá terminální projekci
+idempotentní při duplicitním webhooku, Agent callbacku nebo startup replay.
+
+Audit ukládá jen allow-listed scalar metadata, například environment, kind a
+attempt. Provider message, error detail, runtime log, environment config ani
+secret se do něj nekopírují. Ty zůstávají pouze v bounded provozní historii,
+která je jejich autoritativním zdrojem.
+
+**Důsledky.** Owner rozliší, kdo operaci vyžádal, zda byla pouze přijata a jak
+skutečně skončila. Odkaz vede na aktuální projekt/deployment historii, ale audit
+zůstane čitelný i po smazání projektu. Zápis accepted události je součástí
+bezpečného zahájení: pokud selže, operation lock se vrátí a externí mutace se
+nespustí. Selhání sekundární terminální projekce naopak nesmí přepsat již
+pravdivý výsledek ani nutit Agenta opakovat workload; replay ji může bezpečně
+doplnit.
+
+**Testování.** Jednotkové testy ověřují oddělený accepted/terminal zápis,
+převzetí aktéra, batch enrichment z operation tabulek, absenci provider message
+a idempotentní opakování. Provisioning, lokální deployment i Agent terminal
+projekce volají stejnou auditní hranici. Živě se vytvoří nebo nasadí projekt,
+v Audit logu se ověří dvojice událostí, jejich shodné krátké operation ID,
+správný aktér, filtr outcome a odkaz na deployment historii.

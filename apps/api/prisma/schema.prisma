@@ -193,16 +193,20 @@ model AuditEvent {
   actorUsername     String
   actorDisplayName  String?
   action            String
-  outcome           String    @default("succeeded") // succeeded | failed
+  outcome           String    @default("succeeded") // accepted | succeeded | failed | cancelled
   resourceType      String
   resourceId        String?
   resourceName      String?
+  operationType     String?   // deployment | provisioning
+  operationId       String?
   details           Json?
   createdAt         DateTime  @default(now())
 
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, action, createdAt])
   @@index([workspaceId, resourceType, resourceId, createdAt])
+  @@index([operationType, operationId])
+  @@unique([operationType, operationId, action])
 }
 
 // A first-class deployment target: a place an environment can deploy to.

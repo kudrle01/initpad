@@ -43,6 +43,45 @@ describe('ProjectDeploymentOperations', () => {
     });
   });
 
+  it('audits the accepted user request and terminal deployment projection', async () => {
+    const operationId = '123e4567-e89b-42d3-a456-426614174000';
+    const audit = {
+      record: jest.fn(async () => undefined),
+      recordOperationResult: jest.fn(async () => undefined),
+    };
+    const prisma = {
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1',
+          targetId: null,
+          target: null,
+          provider: 'docker',
+          status: 'running',
+          statusReason: null,
+          deploymentRequired: false,
+          project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
+        })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      deploymentOperation: {
+        create: jest.fn(async () => ({ id: operationId })),
+        update: jest.fn(async () => ({})),
+      },
+    };
+    const operations = new ProjectDeploymentOperations(prisma as never, audit);
+
+    await operations.begin('project-1', 'test', 'promote', 'abc123', null, 'user-1');
+    await operations.complete(operationId, 'succeeded');
+
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      actorUserId: 'user-1',
+      action: 'environment.promotion_requested',
+      outcome: 'accepted',
+      operation: { type: 'deployment', id: operationId },
+    }));
+    expect(audit.recordOperationResult).toHaveBeenCalledWith('deployment', operationId);
+  });
+
   it('cancels the losing operation when two requests race for one environment', async () => {
     const update = jest.fn(async () => undefined);
     const prisma = {

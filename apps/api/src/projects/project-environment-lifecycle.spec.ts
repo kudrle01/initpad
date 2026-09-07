@@ -104,7 +104,7 @@ describe('ProjectEnvironmentLifecycle', () => {
     await lifecycle.stop('project-1', 'dev');
 
     expect(operations.begin).toHaveBeenCalledWith(
-      'project-1', 'dev', 'stop', 'a'.repeat(40), 'artifact-1',
+      'project-1', 'dev', 'stop', 'a'.repeat(40), 'artifact-1', undefined,
     );
     expect(agentDelivery.queueLifecycle).toHaveBeenCalledWith(
       'operation-1',
@@ -209,7 +209,11 @@ describe('ProjectEnvironmentLifecycle', () => {
       $transaction: transaction,
     };
     const deployment = { teardown: jest.fn() };
-    const lifecycle = make(prisma, deployment);
+    const lifecycle = make(
+      prisma,
+      deployment,
+      { complete: jest.fn(async () => undefined) },
+    );
 
     await lifecycle.remove('project-1', 'dev');
 

@@ -65,6 +65,7 @@ import {
 import { mapWithConcurrency } from '../common/concurrency';
 import { ProjectRollback } from './project-rollback';
 import { ProjectWorkloadDiagnostics } from './project-workload-diagnostics';
+import { AuditEventsService } from '../audit/audit-events.service';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
@@ -106,11 +107,13 @@ export class ProjectsService implements OnModuleInit {
     private readonly workspaces: WorkspacesService,
     private readonly provisioning: ProvisioningService,
     @Inject(ARTIFACT_STORE) artifactStore: ArtifactStore,
+    @Inject(AuditEventsService)
+    auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
   ) {
     this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
-    this.operations = new ProjectDeploymentOperations(prisma);
+    this.operations = new ProjectDeploymentOperations(prisma, auditEvents);
     const agentDelivery = new ProjectAgentDelivery(prisma, artifactStore);
     this.environmentLifecycle = new ProjectEnvironmentLifecycle(
       prisma,
@@ -159,7 +162,7 @@ export class ProjectsService implements OnModuleInit {
     );
     this.rollbackFlow = new ProjectRollback(
       prisma,
-      (projectId, environment, version, buildArtifactId) =>
+      (projectId, environment, version, buildArtifactId, actorUserId) =>
         this.scheduleDeployment(
           projectId,
           environment,
@@ -167,6 +170,7 @@ export class ProjectsService implements OnModuleInit {
           true,
           'rollback',
           buildArtifactId,
+          actorUserId,
         ),
     );
     this.workloadDiagnostics = new ProjectWorkloadDiagnostics(prisma, templates);
@@ -290,6 +294,7 @@ export class ProjectsService implements OnModuleInit {
     useRegistry: boolean,
     kind: string,
     buildArtifactId?: string | null,
+    actorUserId?: string,
   ): Promise<void> {
     const operationId = await this.operations.begin(
       projectId,
@@ -297,6 +302,7 @@ export class ProjectsService implements OnModuleInit {
       kind,
       version,
       buildArtifactId,
+      actorUserId,
     );
     void this.deployEnvInBackground(projectId, envName, version, useRegistry, operationId);
   }
@@ -1329,7 +1335,7 @@ export class ProjectsService implements OnModuleInit {
     return this.ci.deployFromCi(repo, sha, ref, token, artifactInput);
   }
 
-  async promote(id: string, target: EnvName): Promise<Project> {
+  async promote(id: string, target: EnvName, actorUserId?: string): Promise<Project> {
     const project = await this.get(id);
     const idx = ENV_ORDER.indexOf(target);
     if (idx <= 0) {
@@ -1357,6 +1363,7 @@ export class ProjectsService implements OnModuleInit {
       true,
       'promote',
       sourceEntity.buildArtifactId,
+      actorUserId,
     );
     return this.get(id);
   }
@@ -1364,7 +1371,7 @@ export class ProjectsService implements OnModuleInit {
   // Re-deploys the environment at its current version. A hash version comes
   // from the registry (build once); a bootstrap version (0.1.0) rebuilds
   // from the repository.
-  async redeploy(id: string, envName: EnvName): Promise<Project> {
+  async redeploy(id: string, envName: EnvName, actorUserId?: string): Promise<Project> {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
     });
@@ -1379,6 +1386,7 @@ export class ProjectsService implements OnModuleInit {
       useRegistry,
       'redeploy',
       env.buildArtifactId,
+      actorUserId,
     );
     return this.get(id);
   }
@@ -1392,8 +1400,9 @@ export class ProjectsService implements OnModuleInit {
     envName: EnvName,
     candidateOperationId: string,
     stateToken: string,
+    actorUserId?: string,
   ): Promise<Project> {
-    await this.rollbackFlow.execute(id, envName, candidateOperationId, stateToken);
+    await this.rollbackFlow.execute(id, envName, candidateOperationId, stateToken, actorUserId);
     return this.get(id);
   }
 
@@ -1414,7 +1423,7 @@ export class ProjectsService implements OnModuleInit {
   // CI already produced an immutable artifact, reuse only that deployment.
   // Otherwise queue CI for the latest main commit through a temporary tag and
   // track the wait as an operation so Cancel also invalidates a late callback.
-  async runAgain(id: string): Promise<Project> {
+  async runAgain(id: string, actorUserId?: string): Promise<Project> {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: 'dev' } },
       include: { target: true },
@@ -1465,6 +1474,7 @@ export class ProjectsService implements OnModuleInit {
           useRegistry,
           reusableOperation.status === 'succeeded' ? 'redeploy' : 'retry',
           reusableOperation.buildArtifactId,
+          actorUserId,
         );
         return this.get(id);
       }
@@ -1493,6 +1503,8 @@ export class ProjectsService implements OnModuleInit {
           'dev',
           'artifact-recovery',
           sha,
+          undefined,
+          actorUserId,
         );
         await this.prisma.environment.updateMany({
           where: { id: env.id, activeOperationId: operationId },
@@ -1506,7 +1518,14 @@ export class ProjectsService implements OnModuleInit {
       this.assertGitHubCiCallback(repository);
     }
 
-    const operationId = await this.operations.begin(id, 'dev', 'ci-retry', sha);
+    const operationId = await this.operations.begin(
+      id,
+      'dev',
+      'ci-retry',
+      sha,
+      undefined,
+      actorUserId,
+    );
     await this.prisma.environment.updateMany({
       where: { id: env.id, activeOperationId: operationId },
       data: {
@@ -1580,23 +1599,23 @@ export class ProjectsService implements OnModuleInit {
 
   // Suspends a running environment (stops the container/process). The version
   // is kept so it remains visible what is deployed; Start resumes it.
-  async stopEnv(id: string, envName: EnvName): Promise<Project> {
-    await this.environmentLifecycle.stop(id, envName);
+  async stopEnv(id: string, envName: EnvName, actorUserId?: string): Promise<Project> {
+    await this.environmentLifecycle.stop(id, envName, actorUserId);
     return this.get(id);
   }
 
   // Re-starts a stopped environment at the same version (in the background;
   // the UI shows "deploying" and then the outcome).
-  async startEnv(id: string, envName: EnvName): Promise<Project> {
-    await this.environmentLifecycle.start(id, envName);
+  async startEnv(id: string, envName: EnvName, actorUserId?: string): Promise<Project> {
+    await this.environmentLifecycle.start(id, envName, actorUserId);
     return this.get(id);
   }
 
   // Removes the environment's deployment (container/process teardown). The
   // environment becomes "empty" and can be deployed again (redeploy/promote).
   // The repository and the project itself are untouched.
-  async removeEnv(id: string, envName: EnvName): Promise<Project> {
-    await this.environmentLifecycle.remove(id, envName);
+  async removeEnv(id: string, envName: EnvName, actorUserId?: string): Promise<Project> {
+    await this.environmentLifecycle.remove(id, envName, actorUserId);
     return this.get(id);
   }
 
@@ -1704,15 +1723,13 @@ export class ProjectsService implements OnModuleInit {
       );
     }
     const repository = repositoryRef(row);
-    await this.prisma.deploymentOperation.updateMany({
+    const unfinishedOperations = await this.prisma.deploymentOperation.findMany({
       where: { environment: { projectId: row.id }, finishedAt: null },
-      data: {
-        status: 'cancelled',
-        phase: 'cancelled',
-        message: 'Project deletion requested',
-        finishedAt: new Date(),
-      },
+      select: { id: true },
     });
+    for (const operation of unfinishedOperations) {
+      await this.operations.complete(operation.id, 'cancelled', 'Project deletion requested');
+    }
     await this.cancelProjectDiagnosticJobs(row.id);
     const slug = deploymentSlug(repository);
     for (const env of row.environments) {

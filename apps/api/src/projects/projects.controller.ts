@@ -91,12 +91,7 @@ export class ProjectsController {
     @CurrentUser() userId: string,
     @Headers('x-workspace-id') workspaceId?: string,
   ) {
-    const project = await this.projects.create(dto, userId, workspaceId);
-    await this.recordProject(project, userId, 'project.created', {
-      template: project.templateId,
-      provider: project.scm.provider,
-    });
-    return project;
+    return this.projects.create(dto, userId, workspaceId);
   }
 
   @Post(':id/promote/:env')
@@ -106,11 +101,7 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    const project = await this.projects.promote(id, env);
-    await this.recordProject(project, userId, 'environment.promotion_requested', {
-      environment: env,
-    });
-    return project;
+    return this.projects.promote(id, env, userId);
   }
 
   @Post(':id/redeploy/:env')
@@ -120,7 +111,7 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    return this.projects.redeploy(id, env);
+    return this.projects.redeploy(id, env, userId);
   }
 
   @Get(':id/rollback/:env')
@@ -141,12 +132,13 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'maintain');
-    const project = await this.projects.rollback(id, env, dto.candidateOperationId, dto.stateToken);
-    await this.recordProject(project, userId, 'environment.rollback_requested', {
-      environment: env,
-      candidateOperationId: dto.candidateOperationId,
-    });
-    return project;
+    return this.projects.rollback(
+      id,
+      env,
+      dto.candidateOperationId,
+      dto.stateToken,
+      userId,
+    );
   }
 
   // Application logs may contain sensitive business data even after secrets
@@ -181,7 +173,7 @@ export class ProjectsController {
   @Post(':id/run-again')
   async runAgain(@Param('id') id: string, @CurrentUser() userId: string) {
     await this.projects.assertAccess(id, userId, 'write');
-    return this.projects.runAgain(id);
+    return this.projects.runAgain(id, userId);
   }
 
   @Post(':id/rerun-failed-jobs')
@@ -197,7 +189,7 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    return this.projects.stopEnv(id, env);
+    return this.projects.stopEnv(id, env, userId);
   }
 
   @Post(':id/start/:env')
@@ -207,7 +199,7 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    return this.projects.startEnv(id, env);
+    return this.projects.startEnv(id, env, userId);
   }
 
   @Post(':id/teardown/:env')
@@ -217,7 +209,7 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    return this.projects.removeEnv(id, env);
+    return this.projects.removeEnv(id, env, userId);
   }
 
   // Point the environment at a target (built-in infra or the user's own

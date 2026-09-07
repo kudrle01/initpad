@@ -26,6 +26,6 @@ export class ListAuditEventsDto {
   resourceType?: string;
 
   @IsOptional()
-  @IsIn(['succeeded', 'failed'])
-  outcome?: 'succeeded' | 'failed';
+  @IsIn(['accepted', 'succeeded', 'failed', 'cancelled'])
+  outcome?: 'accepted' | 'succeeded' | 'failed' | 'cancelled';
 }

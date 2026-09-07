@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import type { Readable } from 'stream';
 import { ARTIFACT_STORE, type ArtifactStore } from '../artifacts/artifact-store';
+import { AuditEventsService } from '../audit/audit-events.service';
 import { decryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import {
@@ -98,6 +99,8 @@ export class AgentJobsService implements OnModuleInit {
     private readonly agents: AgentsService,
     @Inject(ARTIFACT_STORE) private readonly artifactStore: ArtifactStore,
     private readonly gatewayRoutes: GatewayRoutesService,
+    @Inject(AuditEventsService)
+    private readonly auditEvents?: Pick<AuditEventsService, 'recordOperationResult'>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -800,6 +803,22 @@ export class AgentJobsService implements OnModuleInit {
   }
 
   private async reconcileTerminalJob(jobId: string): Promise<void> {
+    await this.reconcileTerminalJobProjection(jobId);
+    try {
+      const job = await this.prisma.agentJob.findUnique({
+        where: { id: jobId },
+        select: { deploymentOperationId: true },
+      });
+      if (job?.deploymentOperationId) {
+        await this.auditEvents?.recordOperationResult('deployment', job.deploymentOperationId);
+      }
+    } catch {
+      // The Agent callback is authoritative and replayable. An audit projection
+      // outage must not make the Agent repeat an already-completed workload job.
+    }
+  }
+
+  private async reconcileTerminalJobProjection(jobId: string): Promise<void> {
     const job = await this.prisma.agentJob.findUnique({
       where: { id: jobId },
       include: {

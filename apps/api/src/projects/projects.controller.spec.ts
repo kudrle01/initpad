@@ -77,19 +77,9 @@ describe('ProjectsController project deletion', () => {
       'prod',
       dto.candidateOperationId,
       dto.stateToken,
+      'user-1',
     );
-    expect(audit.record).toHaveBeenCalledWith({
-      workspaceId: 'workspace-1',
-      actorUserId: 'user-1',
-      action: 'environment.rollback_requested',
-      resourceType: 'project',
-      resourceId: 'project-1',
-      resourceName: 'app',
-      details: {
-        environment: 'prod',
-        candidateOperationId: dto.candidateOperationId,
-      },
-    });
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('requires write access before exposing or refreshing sensitive workload logs', async () => {

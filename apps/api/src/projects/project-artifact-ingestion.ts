@@ -43,18 +43,18 @@ export class ProjectArtifactIngestion {
       });
       for (const artifact of interrupted) {
         const reason = 'Artifact ingestion was interrupted by a control-plane restart; run CI again';
+        const operations = await this.prisma.deploymentOperation.findMany({
+          where: {
+            environment: { projectId: artifact.projectId, name: 'dev' },
+            version: artifact.commitSha,
+            status: 'running',
+          },
+          select: { id: true },
+        });
         await this.prisma.$transaction([
           this.prisma.buildArtifact.update({
             where: { id: artifact.id },
             data: { status: 'failed', error: reason, storageKind: null, storageRef: null },
-          }),
-          this.prisma.deploymentOperation.updateMany({
-            where: {
-              environment: { projectId: artifact.projectId, name: 'dev' },
-              version: artifact.commitSha,
-              status: 'running',
-            },
-            data: { status: 'failed', phase: 'failed', message: reason, finishedAt: new Date() },
           }),
           this.prisma.environment.updateMany({
             where: {
@@ -65,6 +65,9 @@ export class ProjectArtifactIngestion {
             data: { status: 'failed', statusReason: reason, activeOperationId: null },
           }),
         ]);
+        for (const operation of operations) {
+          await this.operations.complete(operation.id, 'failed', reason);
+        }
       }
       if (interrupted.length > 0) {
         this.logger.warn(`Recovered ${interrupted.length} interrupted build artifact ingestion(s)`);

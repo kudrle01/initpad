@@ -569,10 +569,15 @@ jen konkrétní provozní a vyhodnocovací scénář.
      workspace, aktéra a neměnný název resource. Update uvádí pouze skutečně
      změněná pole, destruktivní akce zachovají snapshot před smazáním a audit
      nikdy nepřebírá target host/URL/path, credentials ani enrollment token.
-   - TODO **7a.3 — výsledky a provozní vazby.** U dlouhých asynchronních akcí
-     jednoznačně odlišit přijetí požadavku od skutečného výsledku a propojit
-     audit event s již autoritativní `DeploymentOperation`/`ProvisioningOperation`
-     bez kopírování logů nebo secretů.
+   - ✅ **7a.3 — výsledky a provozní vazby.** Dlouhé create/import a
+     deployment lifecycle akce zapisují zvlášť přijetí (`accepted`) a
+     autoritativní terminální výsledek (`succeeded`, `failed`, `cancelled`).
+     Událost nese pouze typ a immutable ID `DeploymentOperation` nebo
+     `ProvisioningOperation`; aktuální status/phase se při čtení doplní z
+     operation tabulky. Replay Agent callbacku je idempotentní a audit
+     nekopíruje provider message, logy, config ani secrety. Odkaz v UI vede na
+     projekt nebo jeho deployment historii a zachová ID i po odstranění
+     autoritativního řádku.
    - TODO **7a.4 — živý acceptance.** Ověřit dvě role, stránkování a filtry,
      přepnutí workspace, 404 cizího workspace a zachování snapshotu po změně
      role/jména.
