@@ -1,7 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.dto';
+import {
+  CreateWorkspaceDto,
+  UpdateProductionApprovalPolicyDto,
+  UpdateWorkspaceDto,
+} from './dto/create-workspace.dto';
 import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto } from './dto/member.dto';
 import { WorkspacesService } from './workspaces.service';
 
@@ -27,6 +31,15 @@ export class WorkspacesController {
     @Body() dto: UpdateWorkspaceDto,
   ) {
     return this.workspaces.update(userId, id, dto);
+  }
+
+  @Put(':id/production-approval-policy')
+  updateProductionApprovalPolicy(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateProductionApprovalPolicyDto,
+  ) {
+    return this.workspaces.updateProductionApprovalPolicy(userId, id, dto.policy);
   }
 
   @Delete(':id')

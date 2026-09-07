@@ -185,6 +185,14 @@ export class TargetAllocationsService {
     dto: UpdateTargetAllocationDto,
   ): Promise<TargetAllocationSummary> {
     const { row } = await this.authorize(id, userId, 'manage');
+    const activeOperations = await this.prisma.environment.count({
+      where: { allocationId: row.id, activeOperationId: { not: null } },
+    });
+    if (activeOperations > 0) {
+      throw new BadRequestException(
+        `Workspace access has ${activeOperations} deployment operation(s) in progress. Wait for them before editing it.`,
+      );
+    }
     const capabilities =
       dto.capabilities !== undefined
         ? this.resolveCapabilities(dto.capabilities, row.target.capabilities)

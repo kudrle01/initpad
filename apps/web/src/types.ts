@@ -34,6 +34,7 @@ export interface Workspace {
   name: string;
   type: WorkspaceType;
   role: WorkspaceRole;
+  productionApprovalPolicy: 'self-review' | 'separate-reviewer';
   createdAt: string;
 }
 
@@ -355,6 +356,31 @@ export interface RollbackPreview {
   } | null;
   sourceDeployedAt: string;
   stateToken: string;
+}
+
+export interface ProductionDeploymentRequest {
+  id: string;
+  kind: 'promote' | 'redeploy' | 'rollback';
+  status: 'pending' | 'approving' | 'approved' | 'rejected' | 'stale' | 'failed' | 'cancelled';
+  sourceEnvironment: string;
+  version: string;
+  artifact: { id: string; digest: string | null } | null;
+  target: { id: string | null; name: string; provider: string };
+  policy: 'self-review' | 'separate-reviewer';
+  requester: { userId: string | null; username: string; displayName: string | null };
+  reviewer: { userId: string | null; username: string; displayName: string | null } | null;
+  reviewNote: string | null;
+  deployment: {
+    id: string;
+    status: string;
+    phase: string;
+    message: string | null;
+  } | null;
+  canApprove: boolean;
+  canReject: boolean;
+  canCancel: boolean;
+  createdAt: string;
+  reviewedAt: string | null;
 }
 
 export type WorkloadDiagnosticStatus =

@@ -66,6 +66,11 @@ import { mapWithConcurrency } from '../common/concurrency';
 import { ProjectRollback } from './project-rollback';
 import { ProjectWorkloadDiagnostics } from './project-workload-diagnostics';
 import { AuditEventsService } from '../audit/audit-events.service';
+import {
+  ExpectedProductionState,
+  ProjectProductionApprovals,
+  ProductionRequestKind,
+} from './project-production-approvals';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
@@ -92,6 +97,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly ci: ProjectCiOrchestrator;
   private readonly rollbackFlow: ProjectRollback;
   private readonly workloadDiagnostics: ProjectWorkloadDiagnostics;
+  private readonly productionApprovals: ProjectProductionApprovals;
   private readonly repositoryReconcileAfter = new Map<string, number>();
   private readonly repositoryReconcileInFlight = new Set<string>();
   private readonly projectScmReconcileAfter = new Map<string, number>();
@@ -157,13 +163,14 @@ export class ProjectsService implements OnModuleInit {
       (projectId) => this.actorForProject(projectId),
       (projectId, version, operationId) =>
         this.deployEnvInBackground(projectId, 'dev', version, true, operationId),
-      (projectId, version, kind) =>
-        this.scheduleDeployment(projectId, 'dev', version, true, kind),
+      async (projectId, version, kind) => {
+        await this.scheduleDeployment(projectId, 'dev', version, true, kind);
+      },
     );
     this.rollbackFlow = new ProjectRollback(
       prisma,
-      (projectId, environment, version, buildArtifactId, actorUserId) =>
-        this.scheduleDeployment(
+      async (projectId, environment, version, buildArtifactId, actorUserId) => {
+        await this.scheduleDeployment(
           projectId,
           environment,
           version,
@@ -171,7 +178,25 @@ export class ProjectsService implements OnModuleInit {
           'rollback',
           buildArtifactId,
           actorUserId,
+        );
+      },
+    );
+    this.productionApprovals = new ProjectProductionApprovals(
+      prisma,
+      workspaces,
+      auditEvents,
+      (projectId, version, kind, buildArtifactId, actorUserId, expected) =>
+        this.scheduleDeployment(
+          projectId,
+          'prod',
+          version,
+          true,
+          kind,
+          buildArtifactId,
+          actorUserId,
+          expected,
         ),
+      (projectId) => this.rollbackFlow.preview(projectId, 'prod'),
     );
     this.workloadDiagnostics = new ProjectWorkloadDiagnostics(prisma, templates);
   }
@@ -295,7 +320,8 @@ export class ProjectsService implements OnModuleInit {
     kind: string,
     buildArtifactId?: string | null,
     actorUserId?: string,
-  ): Promise<void> {
+    expectedProductionState?: ExpectedProductionState,
+  ): Promise<string> {
     const operationId = await this.operations.begin(
       projectId,
       envName,
@@ -303,8 +329,10 @@ export class ProjectsService implements OnModuleInit {
       version,
       buildArtifactId,
       actorUserId,
+      expectedProductionState,
     );
     void this.deployEnvInBackground(projectId, envName, version, useRegistry, operationId);
+    return operationId;
   }
 
   // Projects created before repository-specific CI credentials used a single
@@ -1336,6 +1364,9 @@ export class ProjectsService implements OnModuleInit {
   }
 
   async promote(id: string, target: EnvName, actorUserId?: string): Promise<Project> {
+    if (target === 'prod') {
+      throw new BadRequestException('Production deployments must be requested and approved');
+    }
     const project = await this.get(id);
     const idx = ENV_ORDER.indexOf(target);
     if (idx <= 0) {
@@ -1372,6 +1403,9 @@ export class ProjectsService implements OnModuleInit {
   // from the registry (build once); a bootstrap version (0.1.0) rebuilds
   // from the repository.
   async redeploy(id: string, envName: EnvName, actorUserId?: string): Promise<Project> {
+    if (envName === 'prod') {
+      throw new BadRequestException('Production redeployments must be requested and approved');
+    }
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
     });
@@ -1402,8 +1436,39 @@ export class ProjectsService implements OnModuleInit {
     stateToken: string,
     actorUserId?: string,
   ): Promise<Project> {
+    if (envName === 'prod') {
+      throw new BadRequestException('Production rollbacks must be requested and approved');
+    }
     await this.rollbackFlow.execute(id, envName, candidateOperationId, stateToken, actorUserId);
     return this.get(id);
+  }
+
+  latestProductionRequest(id: string, userId: string) {
+    return this.productionApprovals.latest(id, userId);
+  }
+
+  requestProductionDeployment(
+    id: string,
+    userId: string,
+    input: {
+      kind: ProductionRequestKind;
+      candidateOperationId?: string;
+      stateToken?: string;
+    },
+  ) {
+    return this.productionApprovals.create(id, userId, input);
+  }
+
+  approveProductionDeployment(id: string, requestId: string, userId: string, note?: string) {
+    return this.productionApprovals.approve(id, requestId, userId, note);
+  }
+
+  rejectProductionDeployment(id: string, requestId: string, userId: string, note?: string) {
+    return this.productionApprovals.reject(id, requestId, userId, note);
+  }
+
+  cancelProductionDeployment(id: string, requestId: string, userId: string) {
+    return this.productionApprovals.cancel(id, requestId, userId);
   }
 
   workloadDiagnostic(id: string, envName: EnvName): Promise<WorkloadDiagnostic | null> {

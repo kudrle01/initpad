@@ -318,7 +318,11 @@ describe('target capability updates', () => {
         update: jest.fn(async ({ data }: { data: Partial<TargetRow> }) => ({ ...current, ...data })),
         delete: jest.fn(async () => current),
       },
-      environment: { count: jest.fn(async () => 2), updateMany: jest.fn() },
+      environment: {
+        count: jest.fn(async ({ where }: { where: { activeOperationId?: unknown } }) =>
+          where.activeOperationId ? 0 : 2),
+        updateMany: jest.fn(),
+      },
     };
     const workspaces = { require: jest.fn(async () => 'maintainer') };
     const audit = { record: jest.fn(async () => undefined) };
@@ -335,7 +339,9 @@ describe('target capability updates', () => {
     await expect(
       service.update('target-1', 'u1', { capabilities: ['static', 'php'] }),
     ).resolves.toMatchObject({ capabilities: ['php', 'static'], verifiedAt: null });
-    expect(prisma.environment.count).not.toHaveBeenCalled();
+    expect(prisma.environment.count).toHaveBeenCalledWith({
+      where: { targetId: 'target-1', activeOperationId: { not: null } },
+    });
     expect(audit.record).toHaveBeenCalledWith({
       workspaceId: 'w1',
       actorUserId: 'u1',
@@ -416,7 +422,11 @@ describe('target capability updates', () => {
     };
     const prisma = {
       target: { findUnique: jest.fn(async () => current), update: jest.fn() },
-      environment: { count: jest.fn(async () => 1) },
+      environment: {
+        count: jest.fn()
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(1),
+      },
     };
     const workspaces = { require: jest.fn(async () => 'maintainer') };
     const service = new TargetsService(prisma as never, {} as never, workspaces as never);

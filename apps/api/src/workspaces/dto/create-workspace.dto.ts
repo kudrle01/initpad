@@ -1,4 +1,4 @@
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class CreateWorkspaceDto {
   @IsString()
@@ -17,4 +17,9 @@ export class UpdateWorkspaceDto {
   @MinLength(2)
   @MaxLength(80)
   name!: string;
+}
+
+export class UpdateProductionApprovalPolicyDto {
+  @IsIn(['self-review', 'separate-reviewer'])
+  policy!: 'self-review' | 'separate-reviewer';
 }

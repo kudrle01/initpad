@@ -263,6 +263,7 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
         findUnique: jest.fn(async () => ({ ...allocationRow })),
         update: jest.fn(async () => ({ ...allocationRow, status: 'disabled' })),
       },
+      environment: { count: jest.fn(async () => 0) },
     };
     const audit = { record: jest.fn(async () => undefined) };
     const service = makeService(prisma, 'admin', audit);
@@ -289,6 +290,7 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
         findUnique: jest.fn(async () => ({ ...allocationRow })),
         update: jest.fn(async () => ({ ...allocationRow })),
       },
+      environment: { count: jest.fn(async () => 0) },
     };
     const audit = { record: jest.fn(async () => undefined) };
     const service = makeService(prisma, 'admin', audit);
@@ -296,6 +298,21 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     await service.update('alloc-1', 'u1', { status: 'active' });
 
     expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('blocks allocation edits while a bound environment operation is active', async () => {
+    const prisma = {
+      targetAllocation: {
+        findUnique: jest.fn(async () => ({ ...allocationRow })),
+        update: jest.fn(),
+      },
+      environment: { count: jest.fn(async () => 1) },
+    };
+    const service = makeService(prisma, 'admin');
+
+    await expect(service.update('alloc-1', 'u1', { status: 'disabled' }))
+      .rejects.toThrow('deployment operation(s) in progress');
+    expect(prisma.targetAllocation.update).not.toHaveBeenCalled();
   });
 
   it('keeps the allocation snapshot after a successful delete', async () => {

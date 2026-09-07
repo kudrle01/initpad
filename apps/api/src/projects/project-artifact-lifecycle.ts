@@ -210,9 +210,9 @@ export class ProjectArtifactLifecycle {
     return failures;
   }
 
-  // ADR-059 §7 and ADR-075: remove expired durable objects only when no live
-  // environment, unfinished operation or bounded rollback point still refers
-  // to the immutable artifact.
+  // ADR-059 §7, ADR-075 and ADR-082: remove expired durable objects only
+  // when no live environment, pending production request, unfinished operation
+  // or bounded rollback point still refers to the immutable artifact.
   async runRetention(now: Date = new Date()): Promise<{ removed: number; kept: number }> {
     const cutoff = new Date(now.getTime() - config.artifactStore.retentionDays * 86_400_000);
     const stale = await this.prisma.buildArtifact.findMany({
@@ -282,6 +282,10 @@ export class ProjectArtifactLifecycle {
       where: { buildArtifactId },
     });
     if (environmentReferences > 0) return true;
+    const productionRequestReferences = await this.prisma.productionDeploymentRequest.count({
+      where: { buildArtifactId, status: { in: ['pending', 'approving'] } },
+    });
+    if (productionRequestReferences > 0) return true;
     const unfinishedOperations = await this.prisma.deploymentOperation.count({
       where: { buildArtifactId, finishedAt: null },
     });

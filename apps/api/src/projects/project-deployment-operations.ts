@@ -1,4 +1,4 @@
-import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import {
   activeDeploymentPhasePredecessors,
   ActiveDeploymentPhase,
@@ -11,6 +11,7 @@ import {
   auditOperationAction,
 } from '../audit/audit-events.service';
 import { PrismaService } from '../prisma/prisma.service';
+import type { ExpectedProductionState } from './project-production-approvals';
 
 /**
  * Owns the durable operation lock shared by CI, deployment and environment
@@ -82,15 +83,22 @@ export class ProjectDeploymentOperations {
     version: string | null,
     buildArtifactId?: string | null,
     actorUserId?: string,
+    expectedProductionState?: ExpectedProductionState,
   ): Promise<string> {
     const environment = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId, name: envName } },
       include: {
-        target: { select: { name: true } },
+        target: { select: { name: true, updatedAt: true } },
+        allocation: { select: { updatedAt: true } },
         project: { select: { id: true, name: true, workspaceId: true } },
       },
     });
     if (!environment) throw new NotFoundException(`Environment '${envName}' not found`);
+    if (expectedProductionState && !this.matchesExpectedState(environment, expectedProductionState)) {
+      throw new ConflictException(
+        'Artifact, target, or production configuration changed. Create a new production request.',
+      );
+    }
     const operation = await this.prisma.deploymentOperation.create({
       data: {
         environmentId: environment.id,
@@ -106,7 +114,17 @@ export class ProjectDeploymentOperations {
       },
     });
     const claimed = await this.prisma.environment.updateMany({
-      where: { id: environment.id, activeOperationId: null },
+      where: {
+        id: environment.id,
+        activeOperationId: null,
+        ...(expectedProductionState
+          ? {
+              targetId: expectedProductionState.targetId,
+              allocationId: expectedProductionState.allocationId,
+              configRevision: expectedProductionState.configRevision,
+            }
+          : {}),
+      },
       data: {
         activeOperationId: operation.id,
         status: 'deploying',
@@ -122,6 +140,21 @@ export class ProjectDeploymentOperations {
       },
     });
     if (claimed.count === 1) {
+      if (expectedProductionState) {
+        const claimedState = await this.prisma.environment.findUnique({
+          where: { id: environment.id },
+          include: {
+            target: { select: { updatedAt: true } },
+            allocation: { select: { updatedAt: true } },
+          },
+        });
+        if (!claimedState || !this.matchesExpectedState(claimedState, expectedProductionState)) {
+          await this.cancelUnstarted(operation.id, environment);
+          throw new ConflictException(
+            'Production target changed while approval was being applied. Create a new request.',
+          );
+        }
+      }
       try {
         await this.auditEvents?.record({
           workspaceId: environment.project.workspaceId,
@@ -247,5 +280,55 @@ export class ProjectDeploymentOperations {
         `Deployment audit projection failed for ${operationId}: ${(error as Error).message}`,
       );
     }
+  }
+
+  private matchesExpectedState(
+    environment: {
+      targetId: string | null;
+      allocationId: string | null;
+      configRevision: number;
+      target: { updatedAt: Date } | null;
+      allocation: { updatedAt: Date } | null;
+    },
+    expected: ExpectedProductionState,
+  ): boolean {
+    return environment.targetId === expected.targetId
+      && environment.allocationId === expected.allocationId
+      && environment.configRevision === expected.configRevision
+      && (environment.target?.updatedAt.toISOString() ?? null)
+        === (expected.targetRevision?.toISOString() ?? null)
+      && (environment.allocation?.updatedAt.toISOString() ?? null)
+        === (expected.allocationRevision?.toISOString() ?? null);
+  }
+
+  private async cancelUnstarted(
+    operationId: string,
+    environment: {
+      id: string;
+      status: string;
+      statusReason: string | null;
+      deploymentRequired: boolean;
+    },
+  ): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.deploymentOperation.update({
+        where: { id: operationId },
+        data: {
+          status: 'cancelled',
+          phase: 'cancelled',
+          message: 'Approved production state changed before deployment started',
+          finishedAt: new Date(),
+        },
+      }),
+      this.prisma.environment.updateMany({
+        where: { id: environment.id, activeOperationId: operationId },
+        data: {
+          activeOperationId: null,
+          status: environment.status,
+          statusReason: environment.statusReason,
+          deploymentRequired: environment.deploymentRequired,
+        },
+      }),
+    ]);
   }
 }

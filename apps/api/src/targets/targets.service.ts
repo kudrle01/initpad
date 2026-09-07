@@ -395,6 +395,14 @@ export class TargetsService implements OnModuleInit {
     if (dto.kind !== undefined && dto.kind !== row.kind) {
       throw new BadRequestException('Target type cannot be changed; create a new target instead');
     }
+    const activeOperations = await this.prisma.environment.count({
+      where: { targetId: row.id, activeOperationId: { not: null } },
+    });
+    if (activeOperations > 0) {
+      throw new BadRequestException(
+        `This target has ${activeOperations} deployment operation(s) in progress. Wait for them before editing the target.`,
+      );
+    }
     const agentBacked = row.kind === 'docker';
     const routingMode = (dto.routingMode ?? row.routingMode ?? 'direct-port') as TargetRoutingMode;
     let publicUrl = dto.publicUrl ?? row.publicUrl ?? '';

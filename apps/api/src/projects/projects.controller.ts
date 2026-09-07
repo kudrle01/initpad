@@ -23,6 +23,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuditEventsService, type AuditDetailValue } from '../audit/audit-events.service';
 import type { Project } from '../domain/types';
+import {
+  CreateProductionDeploymentRequestDto,
+  ReviewProductionDeploymentRequestDto,
+} from './dto/production-deployment-request.dto';
 
 function historyLimit(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
@@ -83,6 +87,49 @@ export class ProjectsController {
   async provisioning(@Param('id') id: string, @CurrentUser() userId: string) {
     await this.projects.assertAccess(id, userId, 'read');
     return this.projects.latestProvisioning(id);
+  }
+
+  @Get(':id/production-request')
+  productionRequest(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.projects.latestProductionRequest(id, userId);
+  }
+
+  @Post(':id/production-request')
+  createProductionRequest(
+    @Param('id') id: string,
+    @Body() dto: CreateProductionDeploymentRequestDto,
+    @CurrentUser() userId: string,
+  ) {
+    return this.projects.requestProductionDeployment(id, userId, dto);
+  }
+
+  @Post(':id/production-request/:requestId/approve')
+  approveProductionRequest(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @Body() dto: ReviewProductionDeploymentRequestDto,
+    @CurrentUser() userId: string,
+  ) {
+    return this.projects.approveProductionDeployment(id, requestId, userId, dto.note);
+  }
+
+  @Post(':id/production-request/:requestId/reject')
+  rejectProductionRequest(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @Body() dto: ReviewProductionDeploymentRequestDto,
+    @CurrentUser() userId: string,
+  ) {
+    return this.projects.rejectProductionDeployment(id, requestId, userId, dto.note);
+  }
+
+  @Post(':id/production-request/:requestId/cancel')
+  cancelProductionRequest(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @CurrentUser() userId: string,
+  ) {
+    return this.projects.cancelProductionDeployment(id, requestId, userId);
   }
 
   @Post()

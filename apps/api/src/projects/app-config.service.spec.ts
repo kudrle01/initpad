@@ -4,8 +4,15 @@ import { AppConfigService } from './app-config.service';
 import { decryptSecret, encryptSecret } from '../common/secret';
 
 function make(prisma: Record<string, unknown>, requireProject = jest.fn(async () => ({}))) {
+  const client = prisma as Record<string, any>;
+  client.environment = {
+    ...client.environment,
+    updateMany: client.environment?.updateMany ?? jest.fn(async () => ({ count: 1 })),
+  };
+  client.$transaction = client.$transaction
+    ?? jest.fn(async (callback: (tx: Record<string, any>) => Promise<unknown>) => callback(client));
   const workspaces = { requireProject } as never;
-  return { service: new AppConfigService(prisma as never, workspaces), requireProject };
+  return { service: new AppConfigService(client as never, workspaces), requireProject };
 }
 
 const envLookup = { findUnique: jest.fn(async () => ({ id: 'env-1' })) };
@@ -79,6 +86,7 @@ describe('AppConfigService (ADR-061 FC.3)', () => {
     const prisma = {
       environment: {
         findUnique: jest.fn(async () => ({ id: 'env-1', activeOperationId: 'operation-1' })),
+        updateMany: jest.fn(async () => ({ count: 0 })),
       },
       appConfigVar: { upsert: jest.fn(), deleteMany: jest.fn() },
     };

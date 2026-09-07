@@ -16,6 +16,7 @@ import type {
   ImportPreflight,
   ProvisioningStatus,
   RollbackPreview,
+  ProductionDeploymentRequest,
   DeploymentOperation,
   AgentStatus,
   AgentEnrollment,
@@ -154,6 +155,13 @@ export const api = {
     http<Workspace>('/workspaces', { method: 'POST', body: JSON.stringify({ name, slug }) }),
   updateWorkspace: (workspaceId: string, name: string) =>
     http<Workspace>(`/workspaces/${workspaceId}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  updateProductionApprovalPolicy: (
+    workspaceId: string,
+    policy: Workspace['productionApprovalPolicy'],
+  ) => http<Workspace>(`/workspaces/${workspaceId}/production-approval-policy`, {
+    method: 'PUT',
+    body: JSON.stringify({ policy }),
+  }),
   deleteWorkspace: (workspaceId: string) =>
     http<void>(`/workspaces/${workspaceId}`, { method: 'DELETE' }),
   listWorkspaceMembers: (workspaceId: string) =>
@@ -226,6 +234,33 @@ export const api = {
     http<Project>(`/projects/${id}/rollback/${env}`, {
       method: 'POST',
       body: JSON.stringify({ candidateOperationId, stateToken }),
+    }),
+  getProductionRequest: (id: string) =>
+    http<ProductionDeploymentRequest | null>(`/projects/${id}/production-request`),
+  requestProductionDeployment: (
+    id: string,
+    input: {
+      kind: 'promote' | 'redeploy' | 'rollback';
+      candidateOperationId?: string;
+      stateToken?: string;
+    },
+  ) => http<ProductionDeploymentRequest>(`/projects/${id}/production-request`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
+  approveProductionDeployment: (id: string, requestId: string, note?: string) =>
+    http<ProductionDeploymentRequest>(`/projects/${id}/production-request/${requestId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+  rejectProductionDeployment: (id: string, requestId: string, note?: string) =>
+    http<ProductionDeploymentRequest>(`/projects/${id}/production-request/${requestId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+  cancelProductionDeployment: (id: string, requestId: string) =>
+    http<ProductionDeploymentRequest | null>(`/projects/${id}/production-request/${requestId}/cancel`, {
+      method: 'POST',
     }),
   getWorkloadDiagnostic: (id: string, env: EnvName) =>
     http<WorkloadDiagnostic | null>(`/projects/${id}/diagnostics/${env}`),

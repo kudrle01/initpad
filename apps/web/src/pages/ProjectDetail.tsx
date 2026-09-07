@@ -15,6 +15,7 @@ import { WorkloadDiagnosticsDialog } from '@/components/organisms/WorkloadDiagno
 import { ProjectHistory } from '@/components/organisms/ProjectHistory';
 import { ProjectRepository } from '@/components/organisms/ProjectRepository';
 import { ProjectSummary } from '@/components/organisms/ProjectSummary';
+import { ProductionApprovalCard } from '@/components/organisms/ProductionApprovalCard';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useConfirmation } from '@/confirmation';
 import type { EnvName } from '@/types';
@@ -27,6 +28,7 @@ export default function ProjectDetail() {
     commits,
     deployments,
     provisioning,
+    productionRequest,
     openSha,
     error,
     notFound,
@@ -52,6 +54,10 @@ export default function ProjectDetail() {
     redeploy,
     requestRollback,
     confirmRollback,
+    requestProduction,
+    approveProduction,
+    rejectProduction,
+    cancelProduction,
     runAgain,
     rerunFailedJobs,
     stopEnvironment,
@@ -93,21 +99,22 @@ export default function ProjectDetail() {
     if (target === 'prod') {
       const source = currentProject.environments.find((environment) => environment.name === 'test');
       const confirmed = await confirmAction({
-        title: 'Deploy the test build to production?',
-        description: 'This publishes the currently verified test artifact to the production target.',
-        confirmLabel: 'Deploy to production',
-        tone: 'danger',
+        title: 'Request production deployment?',
+        description: 'The exact verified test build, target and production configuration revision will be locked for review.',
+        confirmLabel: 'Create request',
+        tone: 'warning',
         details: [
           { label: 'Project', value: currentProject.name },
           { label: 'Version', value: source?.version?.slice(0, 7) ?? 'not available' },
           { label: 'Target', value: currentProject.environments.find((environment) => environment.name === 'prod')?.target?.name ?? 'production' },
         ],
         consequences: [
-          'The production workload is replaced after target health checks pass.',
-          'Production keeps its own current environment variables and secrets.',
+          'No production workload changes until an authorized reviewer approves.',
+          'Changing the build, target or production variables invalidates this request.',
         ],
       });
-      if (!confirmed) return;
+      if (confirmed) await requestProduction('promote');
+      return;
     }
     await promote(target);
   }
@@ -116,23 +123,64 @@ export default function ProjectDetail() {
     if (environment === 'prod') {
       const current = currentProject.environments.find((candidate) => candidate.name === environment);
       const confirmed = await confirmAction({
-        title: 'Redeploy the verified production build?',
-        description: 'InitPad will publish the same immutable artifact again without rebuilding it.',
-        confirmLabel: 'Redeploy production',
-        tone: 'danger',
+        title: 'Request production redeploy?',
+        description: 'The current verified production build and configuration revision will be submitted for review.',
+        confirmLabel: 'Create request',
+        tone: 'warning',
         details: [
           { label: 'Project', value: currentProject.name },
           { label: 'Version', value: current?.version?.slice(0, 7) ?? 'not available' },
           { label: 'Target', value: current?.target?.name ?? 'production' },
         ],
         consequences: [
-          'The production target runs its deployment and health-check sequence again.',
-          'A direct-port target may publish a new port; stable gateway routing keeps its hostname.',
+          'No production workload changes until an authorized reviewer approves.',
+          'Changing the target or production variables invalidates this request.',
         ],
       });
-      if (!confirmed) return;
+      if (confirmed) await requestProduction('redeploy');
+      return;
     }
     await redeploy(environment);
+  }
+
+  async function approveProductionWithConfirmation() {
+    if (!productionRequest) return;
+    const confirmed = await confirmAction({
+      title: 'Approve and deploy to production?',
+      description: 'Approval starts deployment of the exact reviewed build to the recorded production target.',
+      confirmLabel: 'Approve and deploy',
+      tone: 'danger',
+      details: [
+        { label: 'Project', value: currentProject.name },
+        { label: 'Version', value: productionRequest.version.slice(0, 12) },
+        { label: 'Target', value: productionRequest.target.name },
+      ],
+      consequences: [
+        'Production is changed only if the reviewed target and configuration revision still match.',
+        'The action and resulting deployment are recorded separately in the audit log.',
+      ],
+    });
+    if (confirmed) await approveProduction();
+  }
+
+  async function rejectProductionWithConfirmation() {
+    const confirmed = await confirmAction({
+      title: 'Reject production request?',
+      description: 'The reviewed build will not be deployed by this request.',
+      confirmLabel: 'Reject request',
+      tone: 'warning',
+    });
+    if (confirmed) await rejectProduction();
+  }
+
+  async function cancelProductionWithConfirmation() {
+    const confirmed = await confirmAction({
+      title: 'Cancel production request?',
+      description: 'The pending request will no longer be available for approval.',
+      confirmLabel: 'Cancel request',
+      tone: 'warning',
+    });
+    if (confirmed) await cancelProduction();
   }
 
   async function stopWithConfirmation(environment: EnvName) {
@@ -217,6 +265,16 @@ export default function ProjectDetail() {
           readOnly={readOnly}
           canRollback={canMaintain}
         />
+        {productionRequest && (
+          <ProductionApprovalCard
+            request={productionRequest}
+            projectId={currentProject.id}
+            busy={busy !== null}
+            onApprove={() => void approveProductionWithConfirmation()}
+            onReject={() => void rejectProductionWithConfirmation()}
+            onCancel={() => void cancelProductionWithConfirmation()}
+          />
+        )}
       </DetailSection>
 
       <DetailSection title="Configuration">

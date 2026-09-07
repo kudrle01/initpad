@@ -2,6 +2,29 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { WorkspacesService } from './workspaces.service';
 
 describe('WorkspacesService tenant isolation', () => {
+  it('returns the production approval policy with workspace navigation data', async () => {
+    const prisma = {
+      workspaceMember: {
+        findMany: jest.fn(async () => [{
+          role: 'owner',
+          workspace: {
+            id: 'w1',
+            slug: 'team',
+            name: 'Team',
+            type: 'team',
+            productionApprovalPolicy: 'separate-reviewer',
+            createdAt: new Date('2026-09-07T10:00:00.000Z'),
+          },
+        }]),
+      },
+    };
+    const service = new WorkspacesService(prisma as never, {} as never);
+
+    await expect(service.list('u1')).resolves.toEqual([
+      expect.objectContaining({ productionApprovalPolicy: 'separate-reviewer' }),
+    ]);
+  });
+
   it('resolves only a workspace the user belongs to', async () => {
     const prisma = {
       workspaceMember: {
@@ -153,5 +176,53 @@ describe('WorkspacesService tenant isolation', () => {
     await expect(
       service.addMember('owner', 'personal', { identity: 'bob', role: 'member' }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('lets a team admin change production review policy and audits only the policy names', async () => {
+    const previous = {
+      id: 'team',
+      name: 'Team',
+      slug: 'team',
+      type: 'team',
+      productionApprovalPolicy: 'separate-reviewer',
+      createdAt: new Date('2026-09-07T10:00:00.000Z'),
+    };
+    const prisma = {
+      workspace: {
+        findUnique: jest.fn(async () => previous),
+        update: jest.fn(async () => ({ ...previous, productionApprovalPolicy: 'self-review' })),
+      },
+      workspaceMember: {
+        findUniqueOrThrow: jest.fn(async () => ({ role: 'admin' })),
+      },
+    };
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = new WorkspacesService(prisma as never, {} as never, audit);
+    jest.spyOn(service, 'require').mockResolvedValue('admin');
+
+    await expect(service.updateProductionApprovalPolicy('admin', 'team', 'self-review'))
+      .resolves.toMatchObject({ productionApprovalPolicy: 'self-review', role: 'admin' });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'workspace.production_policy_changed',
+      details: {
+        previousPolicy: 'separate-reviewer',
+        policy: 'self-review',
+      },
+    }));
+  });
+
+  it('does not allow changing the fixed self-review policy of a personal workspace', async () => {
+    const prisma = {
+      workspace: {
+        findUnique: jest.fn(async () => ({ type: 'personal', productionApprovalPolicy: 'self-review' })),
+        update: jest.fn(),
+      },
+    };
+    const service = new WorkspacesService(prisma as never, {} as never);
+    jest.spyOn(service, 'require').mockResolvedValue('owner');
+
+    await expect(service.updateProductionApprovalPolicy('owner', 'personal', 'separate-reviewer'))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.workspace.update).not.toHaveBeenCalled();
   });
 });

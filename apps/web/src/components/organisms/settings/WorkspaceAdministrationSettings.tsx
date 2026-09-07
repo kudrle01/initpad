@@ -4,6 +4,7 @@ import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { useToast } from '@/toast';
 import { useConfirmation } from '@/confirmation';
 
@@ -13,16 +14,23 @@ export function WorkspaceAdministrationSettings() {
   const confirmAction = useConfirmation();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [approvalPolicy, setApprovalPolicy] = useState<'self-review' | 'separate-reviewer'>('separate-reviewer');
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
 
   useEffect(() => {
     setName(activeWorkspace?.name ?? '');
-  }, [activeWorkspace?.id, activeWorkspace?.name]);
+    setApprovalPolicy(activeWorkspace?.productionApprovalPolicy ?? 'separate-reviewer');
+  }, [
+    activeWorkspace?.id,
+    activeWorkspace?.name,
+    activeWorkspace?.productionApprovalPolicy,
+  ]);
 
   const workspace = activeWorkspace;
   if (!workspace || workspace.type === 'personal' || !canAdmin) return null;
   const workspaceId = workspace.id;
   const workspaceName = workspace.name;
+  const workspaceApprovalPolicy = workspace.productionApprovalPolicy;
 
   async function saveName() {
     setBusy(true);
@@ -64,6 +72,36 @@ export function WorkspaceAdministrationSettings() {
     }
   }
 
+  async function saveApprovalPolicy() {
+    if (approvalPolicy === 'self-review') {
+      const confirmed = await confirmAction({
+        title: 'Allow production self-approval?',
+        description: 'A requester with workspace admin rights will be able to approve their own production request.',
+        confirmLabel: 'Allow self-approval',
+        tone: 'warning',
+        consequences: [
+          'Every production deployment still requires a separate request and approval action.',
+          'The two-person review requirement will no longer be enforced for this workspace.',
+        ],
+      });
+      if (!confirmed) {
+        setApprovalPolicy(workspaceApprovalPolicy);
+        return;
+      }
+    }
+    setBusy(true);
+    try {
+      await api.updateProductionApprovalPolicy(workspaceId, approvalPolicy);
+      await refreshWorkspaces();
+      toast.success('Production approval policy updated');
+    } catch (error) {
+      setApprovalPolicy(workspaceApprovalPolicy);
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <SettingsSection
       icon={Building2}
@@ -98,6 +136,29 @@ export function WorkspaceAdministrationSettings() {
             Delete empty workspace
           </Button>
         )}
+      </div>
+      <div className="mt-4 max-w-xl border-t border-border pt-4">
+        <label htmlFor="production-approval-policy" className="text-sm font-medium">
+          Production approval
+        </label>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          <Select
+            id="production-approval-policy"
+            value={approvalPolicy}
+            disabled={busy}
+            onChange={(event) => setApprovalPolicy(event.target.value as typeof approvalPolicy)}
+          >
+            <option value="separate-reviewer">Require a different reviewer</option>
+            <option value="self-review">Allow self-approval</option>
+          </Select>
+          <Button
+            variant="secondary"
+            disabled={busy || approvalPolicy === workspaceApprovalPolicy}
+            onClick={() => void saveApprovalPolicy()}
+          >
+            Update policy
+          </Button>
+        </div>
       </div>
     </SettingsSection>
   );

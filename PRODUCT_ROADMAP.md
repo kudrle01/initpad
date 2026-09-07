@@ -521,7 +521,7 @@ plán byly dodány v předchozích milnících a zůstávají součástí Fáze 
   workloadem; po aktualizaci správné target identity se diagnostický snapshot
   i navazující prostředí chovaly podle očekávání.
 
-### Fáze 7 — organizační provoz a školní vyhodnocení — následuje
+### Fáze 7 — organizační provoz a školní vyhodnocení — rozpracováno
 
 Fáze nepřidává `Course`, zvláštní školní účty ani druhý tenancy model. Stejné
 workspace, role a projekty obslouží školu, malý tým i firmu; školní využití je
@@ -581,12 +581,22 @@ jen konkrétní provozní a vyhodnocovací scénář.
    - TODO **7a.4 — živý acceptance.** Ověřit dvě role, stránkování a filtry,
      přepnutí workspace, 404 cizího workspace a zachování snapshotu po změně
      role/jména.
-2. TODO **7b — skutečný prod approval workflow.** Oddělit žádost o produkční
-   nasazení od schválení, uložit přesný artifact/target/config state token a
-   podle workspace policy případně zakázat self-approval. Změna vstupů starou
-   žádost zneplatní. **Uživatelský test:** member/maintainer požádá, oprávněný
-   druhý člověk schválí a prod použije přesně zobrazený digest; zamítnutá,
-   zastaralá ani dvakrát potvrzená žádost nic nenasadí.
+2. ◐ **7b — skutečný prod approval workflow.** Produkční promotion,
+   redeploy i rollback již nelze spustit přímo. Žádost ukládá immutable build,
+   digest, target/allocation identity a revision i číslo revize konfigurace; samotné
+   hodnoty configu a secretů neukládá. Team workspace ve výchozím stavu vyžaduje
+   jiného ownera/admina, personal workspace dovoluje explicitní self-review. Schválení
+   znovu ověří celý snapshot, atomicky zamkne prostředí a teprve potom založí
+   autoritativní deployment operation. Souběžná, dvojitá, zamítnutá nebo
+   zastaralá žádost nespustí druhé nasazení; pending artifact chrání retention.
+   Workspace admin může policy změnit po potvrzení a změna platí i pro dosud
+   čekající žádost. API, responzivní UI, audit a automatické regresní testy jsou
+   hotové (ADR-082).
+   - TODO **7b acceptance:** member/maintainer požádá, oprávněný druhý člověk
+     schválí a prod použije přesně zobrazený digest. Samostatně ověřit reject,
+     cancel, dvojité schválení a zneplatnění po změně produkční proměnné
+     nebo targetu. V Audit logu musí být oddělené request, review a deployment
+     outcome události.
 3. TODO **7c — provozní policy a lifecycle.** Rozšířit allocation policy o
    smysluplné CPU/RAM/PID limity, maximální počet prostředí a volitelné TTL pro
    dev/test. Automatický teardown musí být auditovaný, upozornit před expirací a

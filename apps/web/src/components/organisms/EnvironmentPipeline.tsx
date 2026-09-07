@@ -224,12 +224,18 @@ export function EnvironmentPipeline({
                         )}
                         {hasDeployment && targetAcceptsManagement && !targetNeedsDeploy && (
                           <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
-                            <RefreshCw className="h-4 w-4" /> Redeploy verified build
+                            <RefreshCw className="h-4 w-4" />
+                            {env.name === 'prod'
+                              ? 'Request production redeploy'
+                              : 'Redeploy verified build'}
                           </DropdownMenuItem>
                         )}
                         {hasDeployment && targetAcceptsManagement && canRollback && !targetNeedsDeploy && (
                           <DropdownMenuItem onSelect={() => onRollback(env.name)}>
-                            <Undo2 className="h-4 w-4" /> Roll back to previous version…
+                            <Undo2 className="h-4 w-4" />
+                            {env.name === 'prod'
+                              ? 'Request production rollback…'
+                              : 'Roll back to previous version…'}
                           </DropdownMenuItem>
                         )}
                         {canInspectWorkload && (
@@ -426,7 +432,9 @@ export function EnvironmentPipeline({
                       onClick={() => onPromote(next)}
                       title={
                         canPromote
-                          ? `Deploy v${env.version} from ${env.name} to ${next}`
+                          ? next === 'prod'
+                            ? `Request v${env.version} from ${env.name} for production`
+                            : `Deploy v${env.version} from ${env.name} to ${next}`
                           : `Deploy to ${env.name} first`
                       }
                       className={cn(
@@ -440,7 +448,7 @@ export function EnvironmentPipeline({
                       <ArrowRight className="h-4 w-4" />
                     </button>
                     <span className="text-[11px] text-muted-foreground">
-                      {canPromote ? `Deploy to ${next}` : next}
+                      {canPromote ? next === 'prod' ? 'Request prod' : `Deploy to ${next}` : next}
                     </span>
                   </>
                 )}

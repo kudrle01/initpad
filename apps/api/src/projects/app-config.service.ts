@@ -62,21 +62,43 @@ export class AppConfigService {
     if (typeof dto.value !== 'string' || dto.value.length > MAX_VALUE_LENGTH) {
       throw new BadRequestException(`Value must be a string up to ${MAX_VALUE_LENGTH} characters`);
     }
-    const environmentId = await this.editableEnvironmentId(projectId, envName);
+    const environmentId = await this.environmentId(projectId, envName);
     const isSecret = dto.isSecret === true;
     const stored = isSecret ? encryptSecret(dto.value) : dto.value;
-    const row = await this.prisma.appConfigVar.upsert({
-      where: { environmentId_key: { environmentId, key: normalizedKey } },
-      create: { environmentId, key: normalizedKey, value: stored, isSecret },
-      update: { value: stored, isSecret },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.environment.updateMany({
+        where: { id: environmentId, activeOperationId: null },
+        data: { configRevision: { increment: 1 } },
+      });
+      if (locked.count !== 1) {
+        throw new BadRequestException(
+          `Environment '${envName}' is busy. Wait for or cancel its operation before changing config.`,
+        );
+      }
+      return tx.appConfigVar.upsert({
+        where: { environmentId_key: { environmentId, key: normalizedKey } },
+        create: { environmentId, key: normalizedKey, value: stored, isSecret },
+        update: { value: stored, isSecret },
+      });
     });
     return this.toSummary(row);
   }
 
   async remove(userId: string, projectId: string, envName: string, key: string): Promise<void> {
     await this.workspaces.requireProject(userId, projectId, 'write');
-    const environmentId = await this.editableEnvironmentId(projectId, envName);
-    await this.prisma.appConfigVar.deleteMany({ where: { environmentId, key } });
+    const environmentId = await this.environmentId(projectId, envName);
+    await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.environment.updateMany({
+        where: { id: environmentId, activeOperationId: null },
+        data: { configRevision: { increment: 1 } },
+      });
+      if (locked.count !== 1) {
+        throw new BadRequestException(
+          `Environment '${envName}' is busy. Wait for or cancel its operation before changing config.`,
+        );
+      }
+      await tx.appConfigVar.deleteMany({ where: { environmentId, key } });
+    });
   }
 
   // Decrypted KEY=VALUE map for injecting into a deployment (ADR-061 §3). Secrets
@@ -96,20 +118,6 @@ export class AppConfigService {
       select: { id: true },
     });
     if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
-    return env.id;
-  }
-
-  private async editableEnvironmentId(projectId: string, envName: string): Promise<string> {
-    const env = await this.prisma.environment.findUnique({
-      where: { projectId_name: { projectId, name: envName } },
-      select: { id: true, activeOperationId: true },
-    });
-    if (!env) throw new NotFoundException(`Environment '${envName}' not found`);
-    if (env.activeOperationId) {
-      throw new BadRequestException(
-        `Environment '${envName}' is busy. Wait for or cancel its operation before changing config.`,
-      );
-    }
     return env.id;
   }
 

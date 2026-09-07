@@ -1,7 +1,10 @@
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 
 function make(prisma: Record<string, unknown>, artifactStore: Record<string, unknown>) {
-  return new ProjectArtifactLifecycle(prisma as never, artifactStore as never, {} as never);
+  return new ProjectArtifactLifecycle({
+    productionDeploymentRequest: { count: jest.fn(async () => 0) },
+    ...prisma,
+  } as never, artifactStore as never, {} as never);
 }
 
 describe('ProjectArtifactLifecycle.runRetention', () => {
@@ -61,6 +64,27 @@ describe('ProjectArtifactLifecycle.runRetention', () => {
     const service = make(prisma, { delete: del });
 
     await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it('protects an artifact referenced by a pending production request', async () => {
+    const requestCount = jest.fn(async () => 1);
+    const prisma = {
+      buildArtifact: {
+        findMany: jest.fn(async () => [{ id: 'a1', storageRef: 'k' }]),
+        updateMany: jest.fn(),
+      },
+      environment: { count: jest.fn(async () => 0) },
+      productionDeploymentRequest: { count: requestCount },
+      deploymentOperation: { count: jest.fn(async () => 0) },
+    };
+    const del = jest.fn();
+    const service = make(prisma, { delete: del });
+
+    await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
+    expect(requestCount).toHaveBeenCalledWith({
+      where: { buildArtifactId: 'a1', status: { in: ['pending', 'approving'] } },
+    });
     expect(del).not.toHaveBeenCalled();
   });
 

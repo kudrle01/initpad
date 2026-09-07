@@ -3644,3 +3644,55 @@ a idempotentní opakování. Provisioning, lokální deployment i Agent terminal
 projekce volají stejnou auditní hranici. Živě se vytvoří nebo nasadí projekt,
 v Audit logu se ověří dvojice událostí, jejich shodné krátké operation ID,
 správný aktér, filtr outcome a odkaz na deployment historii.
+
+---
+
+## ADR-082 — Produkce je schválení neměnného záměru, ne druhé kliknutí na deploy
+
+**Kontext.** Potvrzovací dialog chrání proti omylu, ale není approval workflow:
+stejný uživatel stále může produkci okamžitě změnit a mezi zobrazením dialogu a
+zahájením deploye se může změnit build, target, allocation nebo konfigurace.
+Pro tým, školu i malou firmu musí být dohledatelné, kdo o konkrétní publikaci
+požádal, co přesně bylo schváleno a kdo ji povolil. Současně nesmí být druhý
+člověk povinný v osobním workspace, kde neexistuje.
+
+**Rozhodnutí.** Promotion, redeploy a rollback do `prod` nejprve vytvoří
+`ProductionDeploymentRequest`. Žádost obsahuje immutable identitu verze a
+`BuildArtifact`, digest, zdrojové prostředí, produkční environment ID,
+target/allocation ID a jejich revize, provider a monotónní `configRevision`.
+Z těchto identifikátorů vzniká SHA-256 state token; hodnoty proměnných, secretů,
+credentials ani logů se do žádosti nebo auditu nekopírují.
+
+Team workspace má výchozí policy `separate-reviewer`: žádat může role s
+project-write oprávněním (rollback vyžaduje maintain), ale schválit může pouze
+owner/admin odlišný od žadatele. Personal workspace má pevný `self-review`.
+Team admin smí policy vědomě změnit po varovném potvrzení; rozhoduje aktuální
+policy, zatímco snapshot původní policy zůstává pro audit.
+
+Před schválením se snapshot znovu sestaví. Jakákoli změna jej označí jako
+`stale`. Claim `pending -> approving` je compare-and-set a databázový partial
+unique index dovolí nejvýše jednu živou žádost pro produkční prostředí. Při
+zahájení deployment operation se target, allocation a config revision ověří
+znovu před i po získání environment locku. Editace konfigurace inkrementuje
+revizi ve stejné transakci jako zápis hodnoty; target a allocation nelze editovat,
+dokud je na nich aktivní environment operation. Přímé staré produkční endpointy
+server odmítá, takže UI nelze obejít ručním requestem.
+
+Request, přijetí approval, jeho selhání a skutečné spuštění deploymentu jsou
+samostatné auditní události. Schválená žádost se spojí s autoritativní
+`DeploymentOperation`; její výsledek se nekopíruje. Artifact odkazovaný čekající
+nebo právě schvalovanou žádostí je chráněn před retention GC.
+
+**Důsledky.** Produkční změna je kontrolovatelná a reprodukovatelná bez ukládání
+citlivé konfigurace. Novější žádost záměrně zneplatní starou, aby reviewer
+nemusel vybírat mezi dvěma souběžnými kandidáty. Approval není obecnou workflow
+platformou ani release trainem; je to malý pevný state machine pro bezpečnou
+publikaci do produkce. Review note je volitelná a omezená, aby audit nezískal
+neřízený logovací kanál.
+
+**Testování.** Automatické testy kryjí immutable snapshot bez secretů, ochranu
+artifactu, zákaz self-approval, aktuální workspace policy, změnu config revision,
+zamknutí targetu/allocation, přesné předání buildu a dvojité schválení bez
+druhé operace. Živě se ve dvou účtech ověří request -> approve -> stejný
+digest v produkci; dále reject, cancel, stale po změně configu/targetu a
+auditní vazba na deployment historii.

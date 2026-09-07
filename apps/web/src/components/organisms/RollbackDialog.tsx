@@ -35,11 +35,13 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
           <>
             <DialogHeader>
               <DialogTitle>
-                <History className="h-[18px] w-[18px] text-warning" /> Roll back {preview.environment}
+                <History className="h-[18px] w-[18px] text-warning" />{' '}
+                {preview.environment === 'prod' ? 'Request production rollback' : `Roll back ${preview.environment}`}
               </DialogTitle>
               <DialogDescription>
-                Publish the previous verified version to the currently assigned target. InitPad
-                will not run CI or build new application code.
+                {preview.environment === 'prod'
+                  ? 'Create a reviewable request for the previous verified version. Nothing is published until an authorized reviewer approves the unchanged request.'
+                  : 'Publish the previous verified version to the currently assigned target. InitPad will not run CI or build new application code.'}
               </DialogDescription>
             </DialogHeader>
 
@@ -102,7 +104,7 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
                 onClick={onConfirm}
               >
                 {busy ? <Spinner className="h-4 w-4" /> : <History className="h-4 w-4" />}
-                Roll back {preview.environment}
+                {preview.environment === 'prod' ? 'Submit rollback request' : `Roll back ${preview.environment}`}
               </Button>
             </DialogFooter>
           </>

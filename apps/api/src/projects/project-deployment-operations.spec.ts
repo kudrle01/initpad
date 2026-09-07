@@ -1,5 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
+
+const targetRevision = new Date('2026-09-07T10:00:00.000Z');
+const allocationRevision = new Date('2026-09-07T10:05:00.000Z');
 
 describe('ProjectDeploymentOperations', () => {
   it('claims an idle environment and records an immutable target snapshot', async () => {
@@ -112,6 +115,44 @@ describe('ProjectDeploymentOperations', () => {
         finishedAt: expect.any(Date),
       }),
     });
+  });
+
+  it('refuses an approved production snapshot after its config revision changes', async () => {
+    const create = jest.fn();
+    const operations = new ProjectDeploymentOperations({
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'prod-env',
+          targetId: 'target-1',
+          allocationId: 'allocation-1',
+          configRevision: 8,
+          target: { name: 'Production', updatedAt: targetRevision },
+          allocation: { updatedAt: allocationRevision },
+          provider: 'docker',
+          project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
+        })),
+        updateMany: jest.fn(),
+      },
+      deploymentOperation: { create },
+    } as never);
+
+    await expect(operations.begin(
+      'project-1',
+      'prod',
+      'promote',
+      'abc123',
+      'artifact-1',
+      'reviewer-1',
+      {
+        stateToken: 'token',
+        targetId: 'target-1',
+        allocationId: 'allocation-1',
+        configRevision: 7,
+        targetRevision,
+        allocationRevision,
+      },
+    )).rejects.toBeInstanceOf(ConflictException);
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('recovers running and user-cancelled operations after an API restart', async () => {

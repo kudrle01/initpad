@@ -57,6 +57,7 @@ export class WorkspacesService {
       name: m.workspace.name,
       type: m.workspace.type,
       role: m.role as WorkspaceRole,
+      productionApprovalPolicy: m.workspace.productionApprovalPolicy,
       createdAt: m.workspace.createdAt.toISOString(),
     }));
   }
@@ -176,6 +177,53 @@ export class WorkspacesService {
       });
     }
     return { ...workspace, role: membership.role as WorkspaceRole, createdAt: workspace.createdAt.toISOString() };
+  }
+
+  async updateProductionApprovalPolicy(
+    userId: string,
+    workspaceId: string,
+    policy: 'self-review' | 'separate-reviewer',
+  ) {
+    await this.require(userId, workspaceId, 'admin');
+    const previous = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
+    if (!previous) throw new NotFoundException('Workspace not found');
+    if (previous.type === 'personal') {
+      throw new BadRequestException('Personal workspaces always use self-review');
+    }
+    if (previous.productionApprovalPolicy === policy) {
+      const membership = await this.prisma.workspaceMember.findUniqueOrThrow({
+        where: { workspaceId_userId: { workspaceId, userId } },
+      });
+      return {
+        ...previous,
+        role: membership.role as WorkspaceRole,
+        createdAt: previous.createdAt.toISOString(),
+      };
+    }
+    const workspace = await this.prisma.workspace.update({
+      where: { id: workspaceId },
+      data: { productionApprovalPolicy: policy },
+    });
+    const membership = await this.prisma.workspaceMember.findUniqueOrThrow({
+      where: { workspaceId_userId: { workspaceId, userId } },
+    });
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'workspace.production_policy_changed',
+      resourceType: 'workspace',
+      resourceId: workspaceId,
+      resourceName: workspace.name,
+      details: {
+        previousPolicy: previous.productionApprovalPolicy,
+        policy,
+      },
+    });
+    return {
+      ...workspace,
+      role: membership.role as WorkspaceRole,
+      createdAt: workspace.createdAt.toISOString(),
+    };
   }
 
   async remove(userId: string, workspaceId: string): Promise<void> {
