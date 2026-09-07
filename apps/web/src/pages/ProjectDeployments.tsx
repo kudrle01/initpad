@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { api } from '@/api';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
@@ -12,10 +12,17 @@ const HISTORY_LIMIT = 100;
 
 export default function ProjectDeployments() {
   const { id } = useParams();
+  const location = useLocation();
   const [project, setProject] = useState<Project | null>(null);
   const [operations, setOperations] = useState<DeploymentOperation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const openedFromAudit = (
+    location.state as { deploymentHistoryOrigin?: unknown } | null
+  )?.deploymentHistoryOrigin === 'audit';
+  const backLink = openedFromAudit
+    ? { to: '/audit', label: 'Back to audit log' }
+    : { to: id ? `/projects/${id}` : '/projects', label: 'Back to project' };
 
   const load = useCallback(async (showLoading = false) => {
     if (!id) return;
@@ -54,10 +61,10 @@ export default function ProjectDeployments() {
   return (
     <div>
       <Link
-        to={id ? `/projects/${id}` : '/projects'}
+        to={backLink.to}
         className="text-link mb-4 inline-flex items-center gap-1 text-sm font-medium"
       >
-        <ArrowLeft className="h-4 w-4" /> Back to project
+        <ArrowLeft className="h-4 w-4" /> {backLink.label}
       </Link>
 
       <PageHeader

@@ -151,6 +151,7 @@ function EventCard({ event }: { event: AuditEvent }) {
               {operationLink ? (
                 <Link
                   to={operationLink}
+                  state={{ deploymentHistoryOrigin: 'audit' }}
                   className="text-link inline-flex min-w-0 items-center gap-1 font-medium"
                 >
                   <span>{operationSummary}</span>
