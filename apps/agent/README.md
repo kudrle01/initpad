@@ -17,11 +17,21 @@ health gate. The control plane orchestrates workload and route jobs in a safe
 order and publishes a managed deployment only after its stable browser URL
 returns 2xx. A failed cutover restores the previously serving revision.
 
-The repository currently builds the Agent as an executable Node.js package and
-as a minimal container image. The local lab below is the supported acceptance
-path during development. Publishing a signed/versioned release image and its
-production installer belongs to the final Agent release gate; the UI command is
-the post-install enrollment command, not an implicit remote installer.
+The repository builds the Agent as an executable Node.js package and a minimal
+container image. A reviewed Linux installer is served by the control plane and
+shown in the enrollment dialog once the instance administrator configures an
+immutable `INITPAD_AGENT_IMAGE` digest. It installs and enrolls without cloning
+this repository, preserves the root-only identity across updates and restores
+the previous container when the replacement cannot heartbeat. Publishing and
+signing the real multi-architecture release image remains a release gate; the
+local lab below stays the supported source-build acceptance path.
+
+The production installer itself is `apps/agent/install.sh`. It requires Docker
+Engine on Linux, uses host networking only for the Agent process, mounts the
+local Docker socket and stores identity in `/var/lib/initpad-agent`. Run
+`install.sh --help` for optional direct-port hostname, private Caddy socket and
+private CA parameters. Those local gateway details deliberately do not come
+from a control-plane job.
 
 ## Local acceptance without a VM
 

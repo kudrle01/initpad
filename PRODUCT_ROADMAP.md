@@ -713,10 +713,27 @@ jen konkrétní provozní a vyhodnocovací scénář.
      pro review, ne automatický důvod k abstrakci.
    - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
      připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
-   - TODO **8e-d — finální předání.** Podle skutečného release kandidáta se
-     aktualizuje architektura, diagramy, provozní dokumentace a implementační
-     kapitola diplomky. Součástí je verzovaný Agent balíček/installer a seznam
-     vědomých omezení.
+   - ◐ **8e-d — finální předání.**
+     - ✅ **8e-d-a — instalační a distribuční kontrakt Agenta.** Běžící
+       instance zveřejní kontrolní součet auditovaného Linux instalátoru a
+       nabídne jej v enrollment dialogu. Instalátor vyžaduje digestem připnutý
+       OCI image, token čte jen skrytě z terminálu, zachovává `0600`
+       identitu, instaluje omezený restartovatelný kontejner a při chybné
+       aktualizaci obnoví předchozí verzi (ADR-092). Bez
+       `INITPAD_AGENT_IMAGE` se produkční instalace v UI záměrně neaktivuje.
+     - TODO **8e-d-b — skutečné vydání.** Publikovat podepsaný multi-arch
+       `amd64/arm64` image, SBOM a checksums do veřejného registry/release;
+       image digest nastavit do release kandidáta a provést čistou instalaci,
+       update i rollback na samostatném Linux hostu.
+     - TODO **8e-d-c — provider a informační architektura.** Dokončit
+       `Agent-first` UX, ponechat SFTP jako viditelně označenou kompatibilní
+       cestu pro shared PHP/static hosting, přesunout přímé Docker ovládání
+       pouze do self-hosted profilu a deprecovat zdrojový SSH runtime provider.
+       Navigaci sjednotit na Overview, Projects, Deployments, Servers a Manage;
+       account, workspace a instance nastavení nemíchat na jedné obrazovce.
+     - TODO **8e-d-d — dokumentace release kandidáta.** Podle skutečného
+       kandidáta aktualizovat architekturu, diagramy, provozní dokumentaci,
+       implementační kapitolu diplomky a seznam vědomých omezení.
 
 ## Akceptační kritéria
 

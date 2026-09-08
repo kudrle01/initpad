@@ -124,6 +124,9 @@ services:
       INITPAD_SCM_WEBHOOK_URL: http://api:3000
       INITPAD_REGISTRATION_MODE: ${INITPAD_REGISTRATION_MODE:-open}
       INITPAD_EDITION: ${INITPAD_EDITION:-self-hosted}
+      # Enables the public, checksum-bound Agent installer UX only when it is
+      # an immutable digest reference. The enrollment token is never embedded.
+      INITPAD_AGENT_IMAGE: ${INITPAD_AGENT_IMAGE:-}
       # GitHub App (hosted edition, optional; inert when unset).
       INITPAD_GITHUB_APP_ID: ${INITPAD_GITHUB_APP_ID:-}
       INITPAD_GITHUB_CLIENT_ID: ${INITPAD_GITHUB_CLIENT_ID:-}

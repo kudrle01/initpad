@@ -20,7 +20,8 @@ srozumitelném a samostatně nasaditelném systému.
 - povýšení stejného buildu do testu a produ;
 - Docker, SSH a SFTP targety včetně PHP hostingu;
 - outbound enrollment, heartbeat a durable job protokol vzdáleného Docker
-  targetu přes InitPad Agent včetně izolovaného Docker lifecycle testu;
+  targetu přes InitPad Agent včetně izolovaného Docker lifecycle testu a
+  checksum-bound Linux instalátoru bez klonování repozitáře;
 - historii commitů, CI jobů a deployment operací;
 - bezpečné odstranění deploymentu i celého projektu.
 
@@ -31,7 +32,8 @@ není hotový produkční profil. InitPad Agent už umí bezpečný outbound enr
 heartbeat, obnovitelné joby, diagnostiku a celý Docker lifecycle nad ověřeným
 artefaktem bez obecného shellu. Produkční gateway režim navíc poskytuje stabilní
 HTTPS adresu a health-gated přepnutí s rollbackem. Před veřejným provozem zbývá
-vydat podepsaný Agent balíček/installer a ověřit celý SaaS profil se živou GitHub App.
+publikovat a podepsat multi-arch Agent image, jeho digest zapnout v release
+kandidátu a ověřit celý SaaS profil se živou GitHub App.
 
 ## Rychlé spuštění
 

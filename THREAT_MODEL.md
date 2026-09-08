@@ -92,11 +92,12 @@ verified artifact and secret-safe configuration contract are attached to it.
   self-hosted control plane's provider credentials and Docker trust boundary.
   Do not expose this profile as a hostile public SaaS.
 - Agent access to a Docker daemon is root-equivalent on that target. A stolen
-  Agent credential is target-scoped and revocable, and individual claims now
-  use short-lived fencing tokens. Allocation enforcement and a non-shell Docker
-  allow-list now exist; production delivery still needs verified artifact
-  authorization, secret-safe config delivery, installer signing and an
-  independent security review.
+  Agent credential is target-scoped and revocable, and individual claims use
+  short-lived fencing tokens. Allocation enforcement, verified artifact
+  authorization, secret-safe config delivery and a non-shell Docker allow-list
+  exist. The release still needs a signed multi-arch image/SBOM and an
+  independent security review; read-only filesystems and dropped capabilities
+  do not reduce the authority conveyed by the mounted Docker socket.
 - Gitea collaborator synchronization spans two systems and therefore uses
   compensation rather than a distributed transaction. Reconciliation and an
   audit log are required before hosted production use.

@@ -29,6 +29,8 @@ COPY apps/api/scripts apps/api/scripts
 RUN npm ci --omit=dev --workspace @initpad/api --include-workspace-root=false \
     && npm cache clean --force
 COPY --from=build /repo/apps/api/dist apps/api/dist
+COPY apps/agent/install.sh apps/agent/install.sh
+COPY apps/agent/package.json apps/agent/package.json
 WORKDIR /repo/apps/api
 EXPOSE 3000
 # Apply versioned, reviewable migrations before accepting traffic. Unlike

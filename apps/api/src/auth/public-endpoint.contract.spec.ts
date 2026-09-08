@@ -1,4 +1,5 @@
 import { AgentEnrollmentController } from '../agents/agent-enrollment.controller';
+import { AgentDistributionController } from '../agents/agent-distribution.controller';
 import { HealthController } from '../health/health.controller';
 import { OidcController } from '../oauth/oidc.controller';
 import { CiController } from '../projects/ci.controller';
@@ -27,6 +28,7 @@ describe('public HTTP boundary contract', () => {
     [ScmWebhookController, 'scm-signature'],
     [GitHubWebhookController, 'scm-signature'],
     [AgentEnrollmentController, 'agent-credential'],
+    [AgentDistributionController, 'public-catalog'],
     [OidcController, 'oidc-protocol'],
     [GitHubAuthController, 'authentication'],
   ] as const)('documents the non-session boundary of %s', (controller, reason) => {

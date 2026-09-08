@@ -1,5 +1,7 @@
-import { Activity, Bot, Container, Globe2, ShieldAlert, WifiOff } from 'lucide-react';
-import type { AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
+import { useEffect, useState } from 'react';
+import { Activity, Bot, Container, Download, Globe2, ShieldAlert, WifiOff } from 'lucide-react';
+import type { AgentDistribution, AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
+import { api } from '@/api';
 import { CopyField } from '@/components/molecules/CopyField';
 import { InfoTip } from '@/components/molecules/InfoTip';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
@@ -67,13 +69,40 @@ export function AgentSetupDialog({
   onTestGateway,
 }: Props) {
   const confirmAction = useConfirmation();
+  const [distribution, setDistribution] = useState<AgentDistribution | null>(null);
+  const [distributionError, setDistributionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    setDistributionError(null);
+    void api.getAgentDistribution()
+      .then((release) => {
+        if (current) setDistribution(release);
+      })
+      .catch((cause: unknown) => {
+        if (current) setDistributionError((cause as Error).message);
+      });
+    return () => {
+      current = false;
+    };
+  }, [open]);
 
   if (!target) return null;
   const currentTarget = target;
   const state = agent?.state ?? 'not-enrolled';
   const canQueueProbe = state === 'online' || state === 'offline';
   const insecureFlag = window.location.protocol === 'http:' ? ' --allow-insecure-http' : '';
-  const installCommand = `sudo initpad-agent enroll --url '${window.location.origin}'${insecureFlag}`;
+  const enrollCommand = `sudo initpad-agent enroll --url '${window.location.origin}'${insecureFlag}`;
+  const installerUrl = distribution
+    ? new URL(distribution.installer.path, window.location.origin).toString()
+    : null;
+  const publishedHost = currentTarget.routingMode === 'direct-port' && currentTarget.publicUrl
+    ? new URL(currentTarget.publicUrl).hostname
+    : null;
+  const installCommand = distribution?.available && distribution.image && installerUrl
+    ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${distribution.image}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
+    : null;
 
   async function issueEnrollment() {
     if (enrollment || agent?.enrollmentPending) {
@@ -185,12 +214,31 @@ export function AgentSetupDialog({
                 <CopyField command={enrollment.enrollmentToken} />
               </div>
               <div className="min-w-0">
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Run on the Docker server</p>
-                <CopyField command={installCommand} />
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {installCommand ? 'Install and enroll on the Docker server' : 'Enroll on the Docker server'}
+                  </p>
+                  {installerUrl && (
+                    <Button asChild variant="ghost" size="sm">
+                      <a href={installerUrl} download="initpad-agent-install.sh">
+                        <Download className="h-3.5 w-3.5" /> Download installer
+                      </a>
+                    </Button>
+                  )}
+                </div>
+                <CopyField command={installCommand ?? enrollCommand} />
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  After installing the Agent package, run this command. It prompts for the token,
-                  so the secret does not enter shell history.
+                  {installCommand
+                    ? `The checksum and immutable Agent ${distribution?.version} image are verified before installation.`
+                    : (distribution?.unavailableReason ?? distributionError ?? 'Loading Agent release information…')}
+                  {' '}The token is requested through a hidden prompt and never enters shell history.
                 </p>
+                {currentTarget.routingMode === 'managed-gateway' && installCommand && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Managed gateway installations also need the target-local Caddy socket,
+                    gateway container and optional private CA flags shown by the installer help.
+                  </p>
+                )}
               </div>
             </div>
           ) : (

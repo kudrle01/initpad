@@ -4029,3 +4029,48 @@ aplikační importní grafy bez osiřelého produkčního modulu. Následný onl
 audit odhalil transitivní zranitelnost `qs`; kompatibilní aktualizace ji odstranila
 a opakovaný audit vrací nula známých produkčních zranitelností. Konečný gate
 musí dále projít buildem a kompletními API/Agent testy.
+
+---
+
+## ADR-092 — Agent je výchozí správa Docker targetu, nikoli jediný konektor
+
+**Kontext.** Enrollment dialog dosud ukazoval pouze příkaz
+`initpad-agent enroll`, ačkoli binár na novém serveru nebyl nainstalovaný.
+Veřejný nebo privátně distribuovaný InitPad nemůže předpokládat, že správce
+nejdřív klonuje zdrojový repozitář. Současně ale ne každý cíl dovoluje
+instalaci Agenta: typickým příkladem je školní nebo levný shared hosting,
+který poskytuje jen SFTP a omezený shell.
+
+**Rozhodnutí.** Docker servery jsou `Agent-first`. Control plane nabízí veřejný,
+secret-free distribuční endpoint s verzí, cestou instalátoru a SHA-256
+skutečných bajtů. Produkční instalace se v UI aktivuje jen tehdy, když
+správce nastavil `INITPAD_AGENT_IMAGE` jako přesný OCI digest. Instalátor
+odmítne pohyblivý tag, vyžaduje Linux Docker Engine a HTTPS (HTTP jen s
+explicitním lokálním flagem), token přečte interaktivně a nikdy jej nepřijme
+v argumentu. Identita zůstá v root-only bind mountu, proces nemá obecný shell
+protokol a kontejner dostává read-only filesystem, resource limity a restart
+policy. Při update se starý kontejner odstraní až po úspěšném heartbeat nového;
+chybná verze obnoví předchozí kontejner.
+
+SFTP se neruší: zůstá kompatibilním konektorem pro PHP/static shared hosting,
+kde Agent spustit nelze. Přímé ovládání host Docker socketu patří pouze do
+self-hosted single-instance profilu a nesmí být SaaS cestou. Stávající SSH
+runtime provider, který nahrává zdroj, instaluje závislosti na cíli a proces
+spravuje přes `nohup`/PID, se považuje za legacy kandidáta k odstranění po
+kontrole migrace. Budoucí Connector Agent může z firemní/školní VM provádět
+omezené SFTP operace odchozí cestou; Agent se nemusí instalovat přímo na ESO.
+
+**Důsledky.** Uživatel nepotřebuje zdrojový repozitář, ale vydavatel musí
+publikovat důvěryhodný multi-arch image a jeho digest. Samotný checksum
+instalátoru doručený stejným HTTPS originem chrání integritu přenosu a spojuje
+UI s konkrétními bajty, nenahrazuje však podpis release. Docker socket dává
+Agentu na daném targetu root-equivalentní autoritu; container hardening tuto
+hranici nezruší. Bez publikovaného digestu zůstá vývojový source/lab postup a
+UI nesmí předstírat hotovou produkční distribuci.
+
+**Testování.** Repository gate kontroluje POSIX syntaxi, executable bit a shodu
+verze package/Dockerfile/runtime. API test sváže metadata se SHA-256 vráceného
+instalátoru a kontroluje absenci credentialů. Release acceptance na čistém
+Linux hostu musí ověřit první enrollment, autostart po rebootu, update na nový
+digest, automatický rollback nefunkčního obrazu a zachování workloadů při
+odpojení Agenta.

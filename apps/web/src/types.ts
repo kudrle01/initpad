@@ -181,6 +181,17 @@ export interface AgentEnrollment extends AgentStatus {
   enrollmentToken: string;
 }
 
+export interface AgentDistribution {
+  available: boolean;
+  version: string;
+  image: string | null;
+  unavailableReason: string | null;
+  installer: {
+    path: string;
+    sha256: string;
+  };
+}
+
 export interface AgentJobSummary {
   id: string;
   kind: string;

@@ -20,6 +20,7 @@ import type {
   DeploymentOperation,
   AgentStatus,
   AgentEnrollment,
+  AgentDistribution,
   AgentJobSummary,
   WorkloadDiagnostic,
   AuditEventPage,
@@ -381,6 +382,7 @@ export const api = {
   getTargetAgent: (id: string) => http<AgentStatus | null>(`/targets/${id}/agent`),
   issueAgentEnrollment: (id: string) =>
     http<AgentEnrollment>(`/targets/${id}/agent/enrollment`, { method: 'POST' }),
+  getAgentDistribution: () => http<AgentDistribution>('/agent/distribution'),
   disableAgent: (id: string) => http<void>(`/targets/${id}/agent`, { method: 'DELETE' }),
   listAgentJobs: (id: string) => http<AgentJobSummary[]>(`/targets/${id}/agent/jobs`),
   createAgentProbeJob: (id: string, requestId: string, durationSeconds = 35) =>

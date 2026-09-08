@@ -65,6 +65,7 @@ const executableOperations = [
   'deploy/cleanup.sh',
   'deploy/reset.sh',
   'deploy/agent-lab.sh',
+  'apps/agent/install.sh',
 ];
 const indexModes = new Map(
   git(['ls-files', '-s', '--', ...executableOperations])
@@ -190,6 +191,14 @@ for (const group of sourceGroups) {
         .map(({ path, lines }) => `${path.slice(group.root.length + 1)} (${lines})`)
         .join(', ')}`,
     );
+  }
+}
+
+execFileSync('sh', ['-n', 'apps/agent/install.sh'], { cwd: root });
+const agentPackage = JSON.parse(readFileSync(resolve(root, 'apps/agent/package.json'), 'utf8'));
+for (const path of ['apps/agent/src/types.ts', 'apps/agent/Dockerfile']) {
+  if (!(textFiles.get(path) ?? '').includes(agentPackage.version)) {
+    failures.push(`${path}: does not carry Agent version ${agentPackage.version}`);
   }
 }
 

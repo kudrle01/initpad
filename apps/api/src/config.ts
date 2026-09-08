@@ -56,6 +56,18 @@ export const config = {
     process.env.INITPAD_TEMPLATES_DIR || resolve(process.cwd(), '../../templates'),
   workspaceDir:
     process.env.INITPAD_WORKSPACE_DIR || resolve(process.cwd(), '../../.workspace'),
+  agentDistribution: {
+    // The control plane serves a generic installer, while the administrator
+    // chooses the release image. Production images must be immutable: tags
+    // alone could silently change the code granted access to Docker.
+    image: (process.env.INITPAD_AGENT_IMAGE || '').trim(),
+    installerPath:
+      process.env.INITPAD_AGENT_INSTALLER_PATH ||
+      resolve(process.cwd(), '../../apps/agent/install.sh'),
+    packagePath:
+      process.env.INITPAD_AGENT_PACKAGE_PATH ||
+      resolve(process.cwd(), '../../apps/agent/package.json'),
+  },
   gitea: {
     // Browser-facing URL (repository links shown to users, OAuth redirects).
     url: process.env.INITPAD_GITEA_URL || '',
@@ -271,6 +283,14 @@ export function validateConfig(): void {
   }
   if (!['127.0.0.1', '0.0.0.0', '::1', '::'].includes(config.deployment.bindAddress)) {
     throw new Error('INITPAD_DEPLOY_BIND_ADDRESS must be a local or wildcard IP address');
+  }
+  if (
+    config.agentDistribution.image &&
+    !/^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$/.test(config.agentDistribution.image)
+  ) {
+    throw new Error(
+      'INITPAD_AGENT_IMAGE must be an immutable OCI reference ending in @sha256:<64 lowercase hex characters>',
+    );
   }
   if (
     !Number.isFinite(config.deployment.memoryBytes) ||
