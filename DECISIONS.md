@@ -3837,3 +3837,40 @@ Samostatný acceptance runner vytváří pouze po explicitním opt-in dva dočas
 skutečný HTTP guard/controller/service řetězec. Kontroluje cizí 404, viewer 403,
 povolené 200 a nulový vedlejší efekt zamítnutých mutací; `finally` odstraní
 všechny fixtures i při neúspěchu testu.
+
+---
+
+## ADR-087 — Autorita Agenta je průnik credentialu, targetu a lease
+
+**Kontext.** Agent endpointy nejsou chráněné uživatelskou session. Držitel
+odcizeného Agent credentialu proto nesmí rozšířit svou autoritu znalostí cizího
+`jobId` nebo lease tokenu. Samotná kontrola tokenu na začátku požadavku také
+neuzavírá závod, kdy administrátor Agenta odpojí nebo znovu enrolluje mezi
+autentizací a databázovým zápisem. Síť navíc může doručit starý progress nebo
+zopakovat completion po ztracené HTTP odpovědi.
+
+**Rozhodnutí.** Claim, artifact download, renew, progress i completion podmiňují
+databázový read/compare-and-set současnou shodou `targetId`, `agentId`, aktuálního
+`credentialHash`, stavu Agenta, `leasedByAgentId`, hashovaného lease tokenu a tam,
+kde job ještě běží, také nevypršelého lease. Nejde o postupné aplikační
+kontroly nad již načteným cizím řádkem; hranice je součástí Prisma dotazu.
+Proto revokace nebo nová credential generace zneplatní i požadavek, který už
+autentizací prošel, ale ještě nezískal databázový fence.
+
+Completion lze zopakovat jen se stejným vlastníkem, targetem, lease tokenem,
+stavem, zprávou a strukturovaným výsledkem. Jiný replay končí jednotným
+`409 Agent job lease is no longer valid`; stejnou odpověď dostane cizí `jobId`,
+aniž se prozradí jeho druh. Duplicitní nebo opožděný progress smí vrátit už
+uložený stav, ale nesmí propsat starší message/stage do projektové operace.
+
+**Důsledky.** Kompromitace jednoho Agenta zůstává omezena na jeho fyzický target
+a aktivní lease. Odpojení je okamžitý kill switch pro nové i rozpracované
+protokolové zápisy; běžící workload se bez samostatné teardown akce nemaže.
+Idempotence toleruje ztracenou odpověď, nikoli změnu výsledku nebo převzetí
+autoritou jiného Agenta.
+
+**Testování.** Adversarial unit matice simuluje cizí target pro artifact, renew,
+progress a completion, revoke mezi autentizací a claim/complete CAS, starý
+credential po rotaci, reassigned fencing token, identický i pozměněný completion
+replay a opožděný progress. Kontroluje nejen odmítnutí, ale i absenci následné
+infrastrukturní mutace a neotevření artifact streamu.

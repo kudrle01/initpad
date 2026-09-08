@@ -508,7 +508,6 @@ export class AgentJobsService implements OnModuleInit {
   ): Promise<AgentJobSummary> {
     const agent = await this.agents.authenticateCredential(authorization);
     const now = new Date();
-    const leaseTokenHash = hashToken(dto.leaseToken);
     const advanced = await this.prisma.agentJob.updateMany({
       where: {
         ...this.activeLeaseWhere(agent, jobId, dto.leaseToken, now),
@@ -522,20 +521,16 @@ export class AgentJobsService implements OnModuleInit {
       },
     });
     if (advanced.count !== 1) {
-      const current = await this.prisma.agentJob.findUnique({ where: { id: jobId } });
-      if (
-        !current ||
-        current.targetId !== agent.targetId ||
-        current.status !== 'leased' ||
-        current.leaseTokenHash !== leaseTokenHash ||
-        !current.leaseExpiresAt ||
-        current.leaseExpiresAt <= now
-      ) {
-        throw this.lostLease();
-      }
-      await this.mirrorDeploymentProgress(jobId, dto.stage, dto.message);
+      const current = await this.prisma.agentJob.findFirst({
+        where: this.activeLeaseWhere(agent, jobId, dto.leaseToken, now),
+      });
+      if (!current) throw this.lostLease();
+      // A duplicate or out-of-order report must not regress the user-visible
+      // operation with stale text after a newer sequence has already won.
+      const currentMessage = current.message ?? dto.message;
+      await this.mirrorDeploymentProgress(jobId, current.progressStage, currentMessage);
       await this.mirrorGatewayPreflightProgress(jobId);
-      await this.mirrorWorkloadDiagnosticProgress(jobId, dto.message);
+      await this.mirrorWorkloadDiagnosticProgress(jobId, currentMessage);
       return this.summary(current as JobRow);
     }
     const current = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } });
@@ -560,10 +555,17 @@ export class AgentJobsService implements OnModuleInit {
     const agent = await this.agents.authenticateCredential(authorization);
     const now = new Date();
     const leaseTokenHash = hashToken(dto.leaseToken);
-    const binding = await this.prisma.agentJob.findUnique({
-      where: { id: jobId },
+    const binding = await this.prisma.agentJob.findFirst({
+      where: {
+        id: jobId,
+        targetId: agent.targetId,
+        leasedByAgentId: agent.id,
+        leaseTokenHash,
+        ...this.activeAgentFilter(agent),
+      },
       select: { kind: true },
     });
+    if (!binding) throw this.lostLease();
     const diagnosticJob = binding?.kind === 'logs';
     if (dto.diagnostic && !diagnosticJob) {
       throw new BadRequestException('Diagnostic output is accepted only for a logs job');
@@ -627,11 +629,17 @@ export class AgentJobsService implements OnModuleInit {
       return result;
     });
     if (completed.count !== 1) {
-      const current = await this.prisma.agentJob.findUnique({ where: { id: jobId } });
+      const current = await this.prisma.agentJob.findFirst({
+        where: {
+          id: jobId,
+          targetId: agent.targetId,
+          leasedByAgentId: agent.id,
+          leaseTokenHash,
+          ...this.activeAgentFilter(agent),
+        },
+      });
       if (
         !current ||
-        current.targetId !== agent.targetId ||
-        current.leaseTokenHash !== leaseTokenHash ||
         current.status !== dto.status ||
         current.message !== dto.message ||
         current.resultCode !== (dto.resultCode ?? null) ||

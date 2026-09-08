@@ -650,9 +650,18 @@ jen konkrétní provozní a vyhodnocovací scénář.
    prošlo a závěrečný databázový invariant i odstranění fixtures byly čisté.
    **Uživatelský test:** Alice zkusí přímé URL/ID zdrojů Team Beta a dostane
    404; Bob jako viewer Team Alpha stav přečte, ale každá změna skončí 403.
-3. TODO **8c — Agent adversarial testy.** Kompromitovaný Agent nesmí claimnout,
-   obnovit lease, stáhnout artifact ani dokončit job jiného targetu; ověří se
-   revoke race, starý credential, starý lease a duplicitní delivery.
+3. ✅ **8c — Agent adversarial testy.** Každá job operace je současně
+   svázaná s aktivní credential identitou, targetem, vlastníkem lease,
+   hashovaným fencing tokenem a expirací. Automatizovaná matice ověřuje, že
+   kompromitovaný Agent neclaimne, neobnoví, neposune, nestáhne ani nedokončí
+   job jiného targetu. Pokrývá revoke mezi autentizací a CAS zápisem, starou
+   generaci credentialu, reassigned lease, změněný completion replay a pozdní
+   progress delivery bez regrese viditelného stavu (ADR-087). Cizí `jobId`
+   vrací jednotný konflikt ještě před čtením jeho druhu nebo artifactu.
+   **Uživatelský test:** na dvou Agent targetech se spustí dva probe joby;
+   odpojení/re-enrollment prvního okamžitě odmítne jeho starý credential,
+   druhý job i workload zůstanou beze změny a platný Agent dokončí každý job
+   nejvýše jednou.
 4. TODO **8d — failure injection a recovery drill.** Agent offline uprostřed
    deploye, registry/object store nedostupný, disk full, okamžitý exit,
    health timeout, ztracená odpověď po úspěchu a restore ze zálohy — bez

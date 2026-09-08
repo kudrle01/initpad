@@ -276,6 +276,32 @@ describe('AgentsService trust bootstrap', () => {
     })).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('invalidates the previous credential when a new credential generation is enrolled', async () => {
+    const previousCredential = `initpad_agent_${'e'.repeat(43)}`;
+    const currentCredential = `initpad_agent_${'f'.repeat(43)}`;
+
+    const previous = setup();
+    previous.prisma.agent.findUnique.mockResolvedValue(null);
+    await expect(previous.service.authenticateCredential(`Bearer ${previousCredential}`))
+      .rejects.toBeInstanceOf(UnauthorizedException);
+    expect(previous.prisma.agent.findUnique).toHaveBeenCalledWith({
+      where: { credentialHash: hashToken(previousCredential) },
+    });
+
+    const current = setup();
+    current.prisma.agent.findUnique.mockResolvedValue(agentRow({
+      credentialHash: hashToken(currentCredential),
+      credentialGeneration: 4,
+    }));
+    await expect(current.service.authenticateCredential(`Bearer ${currentCredential}`))
+      .resolves.toMatchObject({
+        id: 'agent-1',
+        targetId: 'target-1',
+        credentialHash: hashToken(currentCredential),
+        credentialGeneration: 4,
+      });
+  });
+
   it('rejects expired and concurrently consumed enrollment tokens', async () => {
     const token = `initpad_enroll_${'b'.repeat(43)}`;
     const expired = setup();
