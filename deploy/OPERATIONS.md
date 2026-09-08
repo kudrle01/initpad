@@ -67,7 +67,9 @@ Obnovení z konkrétní zálohy (DESTRUKTIVNÍ — přepíše aktuální data):
 ```
 
 Skript ověří kontrolní součty, zastaví zapisovatele, obnoví DB a volumes a stack
-znovu nastartuje včetně CI runneru a nakonfigurovaného HTTPS profilu. Za
+znovu nastartuje včetně CI runneru a nakonfigurovaného HTTPS profilu. Po načtení
+dumpu nejprve aplikuje verzované migrace aktuální instalace, takže podporuje i
+kontrolovanou obnovu staršího checkpointu. Za
 dokončený restore jej označí až po ověření zdraví Gitey, API, vnitřního
 Docker daemonu a běhu runneru. Součástí obnovy je zálohovaný `.env`, protože
 obsahuje šifrovací klíč a identity služeb;
@@ -80,6 +82,39 @@ Datový backup není snapshot fyzických targetů. Restore proto odstraní pouze
 lokální kontejnery označené `com.initpad.managed=true` a obnovená nasazení
 označí `deploy required`; cizí host kontejnery ani vzdálené workloady nemaže.
 Po obnově zkontroluj target a z UI znovu nasaď zachovaný testovaný artifact.
+Rozpracované Agent joby se zruší a přijdou o lease, aby příkaz ze staré
+časové osy po reconnectu nezměnil target. Stejně se zneplatní observed stav
+gateway a poslední diagnostika; stabilní rezervace hostname zůstane zachována.
+
+## Recovery drill
+
+Drill spouštěj jen na jednorázové acceptance VM a bez aktivního buildu nebo
+deploymentu. Výpadkové režimy aktivní práci nejprve samy zkontrolují:
+
+```bash
+./recovery-drill.sh artifact-store-outage
+./recovery-drill.sh registry-outage
+```
+
+První test musí během odstávky MinIO vidět API jako `503 not-ready` s
+`artifactStore: unavailable` a po navrácení opět `200`. Druhý bezpečně zastaví
+a obnoví vestavěnou Giteu/OCI registry a čeká na její health check.
+
+Po kontrolovaném `backup.sh` + `restore.sh` spusť okamžitě, ještě před novým
+deploymentem:
+
+```bash
+./recovery-drill.sh verify-restore
+```
+
+Kontrola je read-only: ověří readiness, privátní bucket, absenci starých
+lease/aktivních operací, zneplatnění runtime projekcí a absenci lokálních
+InitPad-managed workloadů. Samotný SQL kontrakt lze kdykoli bezpečně ověřit
+nad dočasnými tabulkami:
+
+```bash
+./test-restore-reconcile.sh
+```
 
 ## Úklid disku
 

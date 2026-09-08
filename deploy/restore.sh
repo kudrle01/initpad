@@ -10,6 +10,7 @@ cd "$(dirname "$0")"
 
 say()  { printf '\033[1;32m›\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+[ -f ./restore-reconcile.sql ] || fail "deploy/restore-reconcile.sql is missing."
 restore_started=0
 restore_failure() {
   local status=$?
@@ -121,43 +122,18 @@ printf "%s\n" "ALTER ROLE initpad PASSWORD :'restore_password';" | \
     'psql -v ON_ERROR_STOP=1 -U initpad -d postgres --set=restore_password="$INITPAD_RESTORE_DB_PASSWORD"' \
     >/dev/null
 
+# A checkpoint may come from an older installed release. Upgrade its restored
+# schema before the current recovery contract addresses newer durable tables.
+say "Applying versioned database migrations to the restored checkpoint"
+"${COMPOSE[@]}" run --rm --no-deps api node scripts/migrate.js >/dev/null
+
 # Runtime targets are not part of a control-plane data backup. A workload may
 # have been created, removed or redeployed after the checkpoint, so claiming
 # its restored database status is still current would be unsafe. Preserve the
 # artifact/version for deterministic redeploy, but require reconciliation.
 say "Marking restored deployments for target reconciliation"
 "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U initpad -d initpad \
-  >/dev/null <<'SQL'
-UPDATE "Environment"
-SET "status" = 'failed',
-    "statusReason" = 'Control plane restored; verify the target state and deploy again.',
-    "deploymentRequired" = true,
-    "activeOperationId" = NULL,
-    "url" = CASE WHEN "provider" = 'docker' THEN NULL ELSE "url" END
-WHERE "status" <> 'empty'
-   OR "version" IS NOT NULL
-   OR "url" IS NOT NULL
-   OR "activeOperationId" IS NOT NULL;
-
-UPDATE "DeploymentOperation"
-SET "status" = 'failed',
-    "message" = 'Interrupted by control-plane restore; target reconciliation is required.',
-    "finishedAt" = NOW()
-WHERE "status" = 'running';
-
-UPDATE "ProvisioningOperation"
-SET "status" = 'interrupted',
-    "message" = 'Interrupted by control-plane restore; external effects require reconciliation.',
-    "finishedAt" = NOW(),
-    "leaseOwner" = NULL,
-    "leaseExpiresAt" = NULL
-WHERE "status" IN ('running', 'cleaning', 'retrying');
-
-UPDATE "ProvisioningEffect"
-SET "status" = 'reconciliation_required',
-    "error" = 'Control plane was restored while this effect may have been applying.'
-WHERE "status" = 'applying';
-SQL
+  < ./restore-reconcile.sql >/dev/null
 
 # Only containers explicitly labelled as InitPad-managed are removed. Compose
 # services and unrelated host workloads are outside this filter. Their tested
@@ -216,6 +192,7 @@ wait_healthy() {
 }
 
 say "Verifying restored services"
+wait_healthy minio 60
 wait_healthy gitea 60
 wait_healthy api 60
 wait_healthy runner-docker 60

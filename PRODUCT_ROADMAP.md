@@ -662,7 +662,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
    odpojení/re-enrollment prvního okamžitě odmítne jeho starý credential,
    druhý job i workload zůstanou beze změny a platný Agent dokončí každý job
    nejvýše jednou.
-4. 🟡 **8d — failure injection a recovery drill.**
+4. ✅ **8d — failure injection a recovery drill.**
 
    - ✅ **8d-a — selhání před publikací.** Deterministické fault testy
      simulují nedostupný source registry, odmítnutý nebo částečný object-store
@@ -686,9 +686,18 @@ jen konkrétní provozní a vyhodnocovací scénář.
      **Uživatelský test:** spustit 35sekundový **Test protocol**, během
      attemptu 1 zavolat `./agent-lab.sh stop-agent`, po expiraci lease použít
      `./agent-lab.sh start-agent` a ověřit jeden `succeeded` job s `attempt 2`.
-   - TODO **8d-c — provozní recovery drill.** Bezpečně zopakovat výpadek
-     registry/object store a kontrolovaný backup/restore; sepsat evidence a
-     ověřit, že obnovený control plane nevydává starý runtime stav za aktuální.
+   - ✅ **8d-c — provozní recovery drill.** API readiness nyní ověřuje
+     databázi i privátní artifact store a Compose samostatně health-checkuje
+     MinIO. Reprodukovatelný drill odmítne aktivní práci, simuluje výpadek
+     MinIO nebo Gitea/OCI a po obnově kontroluje zdraví. Restore zneplatní
+     runtime projekce, ukončí rozpracované operace, odebere lease starým
+     Agent jobům, resetuje gateway/diagnostiku a zachová immutable artifact
+     identity pro nový auditovaný deploy (ADR-090). SQL kontrakt se testuje
+     nad dočasnými PostgreSQL tabulkami bez změny živých dat.
+     **Uživatelský test:** na jednorázové VM spustit
+     `./recovery-drill.sh artifact-store-outage` a `registry-outage`; potom
+     vytvořit checkpoint pomocí `backup.sh`, obnovit jej přes `restore.sh`
+     a ihned zavolat `./recovery-drill.sh verify-restore`.
 5. TODO **8e — vyhodnocení a předání.** Nezávislý studentský tým a vyučující
    projdou scénář; změří se čas, chyby a SUS. Poté se aktualizuje architektura,
    diagramy, provozní dokumentace a implementační kapitola diplomky.

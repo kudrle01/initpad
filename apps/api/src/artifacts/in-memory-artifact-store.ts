@@ -14,6 +14,10 @@ export class InMemoryArtifactStore implements ArtifactStore {
   readonly durable = false;
   private readonly objects = new Map<string, Buffer>();
 
+  async checkHealth(): Promise<void> {
+    // Process memory is available for as long as this API process is alive.
+  }
+
   async put(key: string, filePath: string): Promise<void> {
     this.objects.set(key, await fs.readFile(filePath));
   }

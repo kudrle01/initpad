@@ -3948,3 +3948,46 @@ identický replay. Worker test vynutí výpadek renew uprostřed deploymentu a
 ověří abort bez completion. Docker fault test přeruší publikaci zdravého
 kandidáta a následující attempt dokončí stejnou instanci do jediného
 výsledného workloadu.
+
+---
+
+## ADR-090 — Obnovený control plane nesmí zdědit autoritu ani observed stav
+
+**Kontext.** Databázový a object-store backup zachycuje control plane v jednom
+klidovém bodě, ale fyzické targety součástí snapshotu nejsou. Po jeho vytvoření
+mohl Agent workload nebo gateway změnit. Historický snapshot navíc může obsahovat
+queued/leased Agent job, rozpracovanou operaci nebo poslední diagnostiku. Pouhé
+obnovení těchto řádků by starému příkazu vrátilo oprávnění měnit target a UI
+by mohlo ukázat runtime stav, který už není prokázaný.
+
+**Rozhodnutí.** Restore zachová uživatelská data, SCM identity, immutable build
+artifact, konfiguraci targetu a stabilní rezervaci hostname. Všechny neukončené
+deployment/provisioning operace ale terminálně uzavře, aktivní Agent joby zruší
+a odstraní jejich lease/fencing token. Environment s dřívějším runtime označí
+`deploymentRequired`; lokální managed kontejnery odstraní. Gateway route se
+vrátí jen do rezervovaného desired stavu a její observed projekce i poslední
+workload diagnostika se explicitně zneplatní. Novou pravdu smí publikovat až
+nový auditovaný deploy/diagnostic job.
+
+Po obnovení logického dumpu se ještě před recovery kontraktem aplikují
+verzované Prisma migrace aktuální instalace. Kontrolovaný starší checkpoint
+tak nejprve získá současné tabulky a teprve potom se bezpečně invalidují jeho
+runtime projekce.
+
+Artifact storage je kritická readiness závislost: S3 implementace provádí
+časově omezený `HeadBucket`, lokální Compose health-checkuje MinIO a restore
+se neoznačí za dokončený, dokud MinIO, Gitea, API a runner nejsou zdravé.
+Nedostupná registry neblokuje čtení control plane, ale blokuje SCM/CI operace;
+pro oba typy dependency existuje vratný provozní drill.
+
+**Důsledky.** Po disaster recovery může na fyzickém targetu dočasně zůstat
+workload nebo route, které control plane neoznačuje za aktuální. To je bezpečnější
+než automatická destrukce vzdálené infrastruktury nebo slepá důvěra ve starý
+snapshot. Následující deterministický deploy použije zachovaný artifact a
+fenced Agent protokol stav znovu ověří/publikuje.
+
+**Testování.** SQL kontrakt běží v transakci nad dočasnými PostgreSQL
+tabulkami a dokazuje zrušení lease, invalidaci projekcí i zachování terminální
+historie. `recovery-drill.sh` odmítne aktivní práci, ověří přechod artifact
+readiness `200 → 503 → 200`, obnovu Gitea/OCI a po reálném restore read-only
+zkontroluje databázové i Docker invarianty.

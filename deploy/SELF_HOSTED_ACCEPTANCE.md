@@ -317,6 +317,25 @@ Na výzvu napiš `restore`. Po obnově ověř:
 - `restore.sh` vypíše `Restore complete` až po health ověření;
 - `docker compose --profile runner ps` nehlásí unhealthy službu.
 
+Před destruktivním testem lze bez změny živých dat ověřit restore SQL a
+bez aktivních operací provést vratné dependency outage testy:
+
+```bash
+./test-restore-reconcile.sh
+./recovery-drill.sh artifact-store-outage
+./recovery-drill.sh registry-outage
+```
+
+Ihned po `restore.sh`, ještě před novým deployem, spusť:
+
+```bash
+./recovery-drill.sh verify-restore
+```
+
+Musí potvrdit zdravou DB i artifact store, nulový počet aktivních operací a
+Agent lease, zneplatněné gateway/diagnostické projekce a nulový počet lokálních
+InitPad-managed workloadů. Starý Agent job se po reconnectu nesmí vykonat.
+
 ## 10. Ověř smazání a opětovné použití názvu
 
 V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení

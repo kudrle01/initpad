@@ -6,6 +6,7 @@ import { pipeline } from 'stream/promises';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -43,6 +44,20 @@ export class S3ArtifactStore implements ArtifactStore {
       forcePathStyle: opts.forcePathStyle,
       credentials: { accessKeyId: opts.accessKeyId, secretAccessKey: opts.secretAccessKey },
     });
+  }
+
+  async checkHealth(): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2_000);
+    timeout.unref();
+    try {
+      await this.client.send(
+        new HeadBucketCommand({ Bucket: this.bucket }),
+        { abortSignal: controller.signal },
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async put(

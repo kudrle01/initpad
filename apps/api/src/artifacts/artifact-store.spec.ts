@@ -69,6 +69,10 @@ describe('InMemoryArtifactStore', () => {
     expect(await text(await store.openRead('artifacts/ws/pr/ar/d.tar'))).toBe('payload-bytes');
   });
 
+  it('reports the process-local fallback as reachable', async () => {
+    await expect(store.checkHealth()).resolves.toBeUndefined();
+  });
+
   it('reports a missing object via head() rather than throwing', async () => {
     expect(await store.head('nope')).toBeNull();
   });

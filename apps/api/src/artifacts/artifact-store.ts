@@ -14,6 +14,12 @@ export interface ArtifactStore {
   readonly durable: boolean;
 
   /**
+   * Verifies that the configured store and private bucket are reachable.
+   * This is a dependency readiness check, not an object-integrity scan.
+   */
+  checkHealth(): Promise<void>;
+
+  /**
    * Uploads a local file to the given opaque key. Overwrites any existing object
    * at that key (keys embed the content digest, so this is idempotent per build).
    */
