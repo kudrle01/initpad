@@ -58,6 +58,63 @@ describe('AuditEventsService', () => {
     });
   });
 
+  it('does not label a named user without a profile display name as the system', async () => {
+    const prisma = {
+      user: { findUnique: jest.fn(async () => ({ username: 'alice', name: null })) },
+      auditEvent: { create: jest.fn(async () => ({})) },
+    };
+    const service = new AuditEventsService(prisma as never);
+
+    await service.record({
+      workspaceId: 'workspace-1',
+      actorUserId: 'user-1',
+      action: 'workspace.metrics_exported',
+      resourceType: 'workspace',
+    });
+
+    expect(prisma.auditEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorUserId: 'user-1',
+        actorUsername: 'alice',
+        actorDisplayName: null,
+      }),
+    });
+  });
+
+  it('preserves a null human display name in the terminal operation snapshot', async () => {
+    const operationId = '123e4567-e89b-42d3-a456-426614174000';
+    const create = jest.fn(async () => ({}));
+    const prisma = {
+      auditEvent: {
+        findFirst: jest.fn(async () => ({
+          actorUserId: 'user-1', actorUsername: 'alice', actorDisplayName: null,
+        })),
+        create,
+      },
+      deploymentOperation: {
+        findUnique: jest.fn(async () => ({
+          id: operationId,
+          kind: 'deploy',
+          status: 'succeeded',
+          environment: {
+            name: 'dev',
+            project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
+          },
+        })),
+      },
+    };
+
+    await new AuditEventsService(prisma as never).recordOperationResult('deployment', operationId);
+
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorUserId: 'user-1',
+        actorUsername: 'alice',
+        actorDisplayName: null,
+      }),
+    });
+  });
+
   it('records accepted and terminal operation events without copying runtime messages', async () => {
     const operationId = '123e4567-e89b-42d3-a456-426614174000';
     const create = jest.fn(async () => ({}));

@@ -19,6 +19,7 @@ const ACTION_LABELS: Record<string, string> = {
   'workspace.created': 'Workspace created',
   'workspace.updated': 'Workspace updated',
   'workspace.production_policy_changed': 'Production policy changed',
+  'workspace.metrics_exported': 'Workspace metrics exported',
   'workspace.member_added': 'Member added',
   'workspace.member_role_changed': 'Member role changed',
   'workspace.member_removed': 'Member removed',
