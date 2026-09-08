@@ -698,9 +698,25 @@ jen konkrétní provozní a vyhodnocovací scénář.
      `./recovery-drill.sh artifact-store-outage` a `registry-outage`; potom
      vytvořit checkpoint pomocí `backup.sh`, obnovit jej přes `restore.sh`
      a ihned zavolat `./recovery-drill.sh verify-restore`.
-5. TODO **8e — vyhodnocení a předání.** Nezávislý studentský tým a vyučující
-   projdou scénář; změří se čas, chyby a SUS. Poté se aktualizuje architektura,
-   diagramy, provozní dokumentace a implementační kapitola diplomky.
+5. ◐ **8e — release audit, vyhodnocení a předání.**
+
+   - ✅ **8e-a — reprodukovatelný repository gate.** `npm run check` nejdřív
+     bez sítě ověří obsah Git indexu: necommitované runtime/personal soubory,
+     absolutní vývojářské cesty, známé formáty tokenů, povinnou veřejnou
+     dokumentaci, executable provozní skripty a dosažitelnost produkčních modulů
+     z entrypointů. Potom sestaví a otestuje všechny aplikace. Síťový
+     `check:release` navíc spustí audit produkčních npm závislostí; nalezená
+     `qs` DoS advisory byla odstraněna kompatibilní aktualizací lockfile.
+   - TODO **8e-b — cílený maintainability pass.** Podle charakterizačních testů
+     rozložit jen potvrzené hotspoty s více odpovědnostmi, zejména projektovou
+     orchestraci, Agent job protokol a SCM HTTP vrstvy. Velikost souboru je signál
+     pro review, ne automatický důvod k abstrakci.
+   - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
+     připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
+   - TODO **8e-d — finální předání.** Podle skutečného release kandidáta se
+     aktualizuje architektura, diagramy, provozní dokumentace a implementační
+     kapitola diplomky. Součástí je verzovaný Agent balíček/installer a seznam
+     vědomých omezení.
 
 ## Akceptační kritéria
 

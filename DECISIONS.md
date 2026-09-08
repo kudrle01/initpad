@@ -3991,3 +3991,41 @@ tabulkami a dokazuje zrušení lease, invalidaci projekcí i zachování termin�
 historie. `recovery-drill.sh` odmítne aktivní práci, ověří přechod artifact
 readiness `200 → 503 → 200`, obnovu Gitea/OCI a po reálném restore read-only
 zkontroluje databázové i Docker invarianty.
+
+---
+
+## ADR-091 — Lokální gate je deterministický, supply-chain kontrola síťová
+
+**Kontext.** Produkční build a testy samy neodhalí omylem commitovaný backup,
+osobní handoff, lokální absolutní cestu nebo zdrojový modul odpojený od aplikace.
+Naopak `npm audit` závisí na dostupnosti a aktuálním stavu externí advisory služby.
+Kdyby byl součástí každé lokální kontroly, síťový výpadek by se tvářil jako
+vada zdrojového kódu. Dosavadní tvrzení roadmapy o kontrole osiřelých modulů
+navíc nebylo vynuceno spustitelným kontraktem.
+
+**Rozhodnutí.** `npm run check` je offline release baseline. Nejprve spustí
+bez-závislostní `scripts/repository-audit.mjs`, jehož autoritou je Git index,
+nikoli lokální ignored pracovní stav. Audit odmítne generovaná/runtime data,
+osobní poznámky, vývojářské absolutní cesty, známé formáty skutečných
+credentialů, chybějící veřejné runbooky, neproveditelné provozní příkazy a
+produkční TypeScript modul nedosažitelný ze vstupního bodu API, webu nebo
+Agenta. Velké moduly pouze vypíše jako review hotspot; počet řádků není
+automatické kvalitativní pravidlo. Po auditu následuje build a kompletní testy.
+
+`npm run check:release` k offline gate přidá online audit produkčních npm
+závislostí. Compose validace a živé recovery/acceptance testy zůstávají explicitní
+provozní gate, protože vyžadují Docker nebo skutečnou infrastrukturu a nemají
+se předstírat jako rychlý unit check.
+
+**Důsledky.** Běžná kontrola je opakovatelná i offline a nový produkční soubor
+se nemůže tiše stát mrtvým kódem. Lokální osobní dokumenty mohou zůstat ignored
+nebo untracked a gate je neplete s veřejnou produktovou dokumentací. Jednoduchý
+statický importní graf nenahrazuje architektonický review ani runtime testy;
+dynamické entrypointy se proto musejí při jejich zavedení do gate explicitně
+přidat.
+
+**Testování.** Audit prošel nad celým sledovaným stromem a našel všechny tři
+aplikační importní grafy bez osiřelého produkčního modulu. Následný online
+audit odhalil transitivní zranitelnost `qs`; kompatibilní aktualizace ji odstranila
+a opakovaný audit vrací nula známých produkčních zranitelností. Konečný gate
+musí dále projít buildem a kompletními API/Agent testy.

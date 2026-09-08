@@ -28,10 +28,10 @@ Self-hosted edice používá vestavěnou Giteu, Gitea Actions a privátní OCI
 registry. GitHub varianta umí přihlášení, instalaci GitHub App, založení nebo
 import repozitáře a převzetí ověřeného Actions artefaktu. Veřejný SaaS zatím
 není hotový produkční profil. InitPad Agent už umí bezpečný outbound enrollment,
-heartbeat, Docker capability discovery a pronajímané joby s obnovou po výpadku.
-Omezený lifecycle engine už umí digest-pinned deploy, health/logs,
-replace/rollback/stop/start a cleanup bez obecného shellu. Napojení ověřeného
-projektového artefaktu a veřejně publikovaný installer jsou další část roadmapy.
+heartbeat, obnovitelné joby, diagnostiku a celý Docker lifecycle nad ověřeným
+artefaktem bez obecného shellu. Produkční gateway režim navíc poskytuje stabilní
+HTTPS adresu a health-gated přepnutí s rollbackem. Před veřejným provozem zbývá
+vydat podepsaný Agent balíček/installer a ověřit celý SaaS profil se živou GitHub App.
 
 ## Rychlé spuštění
 
@@ -93,10 +93,14 @@ Web běží na <http://localhost:5173>, API na
 ## Kontrola změn
 
 ```bash
-npm run check
-npm audit --audit-level=low
+npm run check:release
 docker compose -f deploy/docker-compose.yml --profile runner config --quiet
 ```
+
+`npm run check` je offline gate pro každou změnu: hlídá nechtěné soubory,
+lokální cesty a tokeny, osiřelé produkční moduly, sestavení i testy.
+`check:release` navíc porovná produkční závislosti s aktuální databází
+zranitelností, a proto vyžaduje přístup k internetu.
 
 Změna šablony navíc vyžaduje vyrenderovat vzorový projekt a ověřit jeho
 instalaci, test a Docker build.

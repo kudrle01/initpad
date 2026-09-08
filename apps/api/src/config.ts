@@ -18,8 +18,8 @@ const publicHost = builtInPublicHost(
 
 // Product edition (ADR-039). The self-hosted edition ships the embedded Gitea
 // and the instance administrator chooses the registration policy below. The
-// SaaS edition uses GitHub for identity and SCM (that adapter lands later); its
-// managed password registration stays disabled until then.
+// SaaS edition uses GitHub for identity and SCM; managed password registration
+// stays disabled because GitHub is its only supported interactive login.
 export type Edition = 'self-hosted' | 'saas';
 const EDITIONS: readonly Edition[] = ['self-hosted', 'saas'];
 const edition = (process.env.INITPAD_EDITION || 'self-hosted') as Edition;
