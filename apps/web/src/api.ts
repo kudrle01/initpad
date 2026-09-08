@@ -24,6 +24,7 @@ import type {
   WorkloadDiagnostic,
   AuditEventPage,
   TargetUsage,
+  DeployStatus,
 } from '@/types';
 
 export interface EnvConfig {
@@ -78,6 +79,48 @@ export interface TargetAllocationInput {
   pidsLimit: number;
   devTtlHours?: number | null;
   testTtlHours?: number | null;
+}
+
+export interface WorkspacePortfolio {
+  stats: {
+    projects: number;
+    environments: number;
+    runningEnvironments: number;
+    attentionProjects: number;
+    activeAllocations: number;
+    pendingApprovals: number;
+    cleanupDebt: number;
+  };
+  projects: Array<{
+    id: string;
+    name: string;
+    templateId: string;
+    createdAt: string;
+    health: 'attention' | 'deploying' | 'healthy' | 'idle';
+    runningEnvironments: number;
+    failedEnvironments: number;
+    cleanupDebt: number;
+    pendingApprovals: number;
+    environments: Array<{
+      name: EnvName;
+      status: DeployStatus;
+      version: string | null;
+      expiresAt: string | null;
+    }>;
+    lastBuild: {
+      status: string;
+      runId: string;
+      commitSha: string;
+      createdAt: string;
+    } | null;
+    lastDeployment: {
+      environment: EnvName;
+      kind: string;
+      status: string;
+      phase: string;
+      createdAt: string;
+    } | null;
+  }>;
 }
 
 // One application config variable for an environment (ADR-061). Secret values
@@ -161,6 +204,8 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   listWorkspaces: () => http<Workspace[]>('/workspaces'),
+  getWorkspacePortfolio: (workspaceId: string) =>
+    http<WorkspacePortfolio>(`/workspaces/${workspaceId}/portfolio`),
   createWorkspace: (name: string, slug: string) =>
     http<Workspace>('/workspaces', { method: 'POST', body: JSON.stringify({ name, slug }) }),
   updateWorkspace: (workspaceId: string, name: string) =>

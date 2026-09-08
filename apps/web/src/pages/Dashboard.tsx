@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Layers, Play, Plus, RotateCcw, Server, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Layers, Play, Plus, RotateCcw, ShieldCheck, Wrench } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { StatCard } from '@/components/molecules/StatCard';
-import { ProjectRow } from '@/components/molecules/ProjectRow';
+import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { EmptyState } from '@/components/molecules/EmptyState';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
-import type { Project, ProvisioningStatus, TemplateManifest } from '@/types';
+import type { WorkspacePortfolio } from '@/api';
+import type { ProvisioningStatus, TemplateManifest } from '@/types';
 import { useConfirmation } from '@/confirmation';
 
 const RECENT_LIMIT = 6;
@@ -19,7 +20,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const confirmAction = useConfirmation();
   const { activeWorkspace } = useAuth();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [portfolio, setPortfolio] = useState<WorkspacePortfolio | null>(null);
   const [provisioning, setProvisioning] = useState<ProvisioningStatus[]>([]);
   const [templates, setTemplates] = useState<Record<string, TemplateManifest>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -33,13 +34,14 @@ export default function Dashboard() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [projectRows, templateRows, provisioningRows] = await Promise.all([
-        api.listProjects(),
+      if (!activeWorkspace) return;
+      const [portfolioRows, templateRows, provisioningRows] = await Promise.all([
+        api.getWorkspacePortfolio(activeWorkspace.id),
         api.listTemplates().catch(() => [] as TemplateManifest[]),
         api.listProvisioning().catch(() => [] as ProvisioningStatus[]),
       ]);
       if (request !== requestSequence.current) return;
-      setProjects(projectRows);
+      setPortfolio(portfolioRows);
       setTemplates(Object.fromEntries(templateRows.map((template) => [template.id, template])));
       setProvisioning(provisioningRows);
     } catch (cause) {
@@ -50,7 +52,7 @@ export default function Dashboard() {
   }, [activeWorkspace?.id]);
 
   useEffect(() => {
-    setProjects([]);
+    setPortfolio(null);
     setProvisioning([]);
     void loadDashboard();
     return () => {
@@ -108,12 +110,12 @@ export default function Dashboard() {
     setActionError(null);
     try {
       await api.cleanupProvisioning(id);
-      const [nextOperations, nextProjects] = await Promise.all([
+      const [nextOperations, nextPortfolio] = await Promise.all([
         api.listProvisioning(),
-        api.listProjects(),
+        api.getWorkspacePortfolio(activeWorkspace!.id),
       ]);
       setProvisioning(nextOperations);
-      setProjects(nextProjects);
+      setPortfolio(nextPortfolio);
     } catch (e) {
       setActionError((e as Error).message);
       setProvisioning(await api.listProvisioning().catch(() => provisioning));
@@ -122,12 +124,7 @@ export default function Dashboard() {
     }
   }
 
-  const running = projects.reduce(
-    (n, p) => n + p.environments.filter((e) => e.status === 'running').length,
-    0,
-  );
-  const environmentCount = projects.reduce((n, p) => n + p.environments.length, 0);
-  const recent = projects.slice(0, RECENT_LIMIT);
+  const recent = portfolio?.projects.slice(0, RECENT_LIMIT) ?? [];
   const operationsNeedingAttention = provisioning
     .filter((operation) => !['succeeded', 'retried'].includes(operation.status))
     .slice(0, 5);
@@ -153,11 +150,22 @@ export default function Dashboard() {
         <LoadErrorState className="mb-4" message={loadError} onRetry={loadDashboard} />
       )}
 
-      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Projects" value={loading || loadError ? '—' : projects.length} icon={Layers} />
-        <StatCard label="Running deploys" value={loading || loadError ? '—' : running} icon={Play} />
-        <StatCard label="Environments" value={loading || loadError ? '—' : environmentCount} icon={Server} />
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Projects" value={loading || loadError ? '—' : portfolio?.stats.projects ?? 0} icon={Layers} />
+        <StatCard label="Running" value={loading || loadError ? '—' : portfolio?.stats.runningEnvironments ?? 0} icon={Play} />
+        <StatCard label="Needs attention" value={loading || loadError ? '—' : portfolio?.stats.attentionProjects ?? 0} icon={AlertTriangle} />
+        <StatCard label="Pending approvals" value={loading || loadError ? '—' : portfolio?.stats.pendingApprovals ?? 0} icon={ShieldCheck} />
       </div>
+
+      {!loading && !loadError && portfolio && (
+        <div className="mb-8 flex flex-wrap gap-x-5 gap-y-1 rounded-lg border border-border bg-secondary/30 px-4 py-3 text-xs text-muted-foreground">
+          <span><strong className="text-foreground">{portfolio.stats.environments}</strong> environments</span>
+          <span><strong className="text-foreground">{portfolio.stats.activeAllocations}</strong> active server accesses</span>
+          <span className={portfolio.stats.cleanupDebt ? 'text-warning' : undefined}>
+            <strong className="text-foreground">{portfolio.stats.cleanupDebt}</strong> cleanup items
+          </span>
+        </div>
+      )}
 
       {operationsNeedingAttention.length > 0 && (
         <section className="mb-8" aria-labelledby="provisioning-heading">
@@ -216,7 +224,7 @@ export default function Dashboard() {
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Recent projects
         </p>
-        {projects.length > 0 && (
+        {(portfolio?.stats.projects ?? 0) > 0 && (
           <Link
             to="/projects"
             className="text-link inline-flex items-center gap-1 text-xs font-medium"
@@ -226,7 +234,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {!loadError && !loading && projects.length === 0 ? (
+      {!loadError && !loading && portfolio?.stats.projects === 0 ? (
         <EmptyState
           icon={Layers}
           title="No projects yet"
@@ -241,13 +249,49 @@ export default function Dashboard() {
         />
       ) : !loadError && !loading ? (
         <div className="flex flex-col gap-2">
-          {recent.map((p) => (
-            <ProjectRow
-              key={p.id}
-              project={p}
-              templateName={templates[p.templateId]?.name ?? p.templateId}
-            />
-          ))}
+          {recent.map((project) => {
+            const status = project.health === 'attention'
+              ? 'failed'
+              : project.health === 'deploying'
+                ? 'deploying'
+                : project.health === 'healthy'
+                  ? 'running'
+                  : 'empty';
+            return (
+              <Link
+                key={project.id}
+                to={`/projects/${project.id}`}
+                className="group rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-semibold group-hover:text-primary">{project.name}</span>
+                      <StatusBadge status={status} label={project.health === 'attention' ? 'attention' : project.health} />
+                      {project.pendingApprovals > 0 && (
+                        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
+                          {project.pendingApprovals} approval{project.pendingApprovals === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {templates[project.templateId]?.name ?? project.templateId}
+                      {project.lastBuild ? ` · build ${project.lastBuild.commitSha.slice(0, 7)} ${project.lastBuild.status}` : ' · no verified build yet'}
+                      {project.lastDeployment ? ` · ${project.lastDeployment.environment} ${project.lastDeployment.kind} ${project.lastDeployment.status}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    {project.environments.map((environment) => (
+                      <span key={environment.name} className="text-[11px] text-muted-foreground">
+                        {environment.name} <strong className="font-medium text-foreground">{environment.status}</strong>
+                      </span>
+                    ))}
+                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       ) : !loadError ? (
         <div className="h-28 animate-pulse rounded-lg border border-border bg-card/60" aria-label="Loading projects" />

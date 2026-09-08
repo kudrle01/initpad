@@ -8,11 +8,15 @@ import {
 } from './dto/create-workspace.dto';
 import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto } from './dto/member.dto';
 import { WorkspacesService } from './workspaces.service';
+import { WorkspacePortfolioService } from './workspace-portfolio.service';
 
 @Controller('workspaces')
 @UseGuards(JwtAuthGuard)
 export class WorkspacesController {
-  constructor(private readonly workspaces: WorkspacesService) {}
+  constructor(
+    private readonly workspaces: WorkspacesService,
+    private readonly portfolio: WorkspacePortfolioService,
+  ) {}
 
   @Get()
   list(@CurrentUser() userId: string) {
@@ -22,6 +26,11 @@ export class WorkspacesController {
   @Post()
   create(@CurrentUser() userId: string, @Body() dto: CreateWorkspaceDto) {
     return this.workspaces.create(userId, dto);
+  }
+
+  @Get(':id/portfolio')
+  portfolioSummary(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.portfolio.get(userId, id);
   }
 
   @Put(':id')

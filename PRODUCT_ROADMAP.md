@@ -610,11 +610,14 @@ jen konkrétní provozní a vyhodnocovací scénář.
    živý test po aplikaci migrace.
    **Uživatelský test:** překročení kvóty je odmítnuto před jobem, expirující dev
    je vidět dopředu a po TTL zmizí jen workload; prod zůstane nedotčený.
-4. TODO **7d — organizační portfolio.** Workspace dashboard shrne projekty,
-   poslední CI/deploy, health, aktivní allocations, čekající approvals a cleanup
-   dluh bez N+1 SCM/Docker dotazů. **Uživatelský test:** owner pozná problémový
-   projekt a přejde na konkrétní akci; viewer vidí read-only stav a prázdný list
-   se během načítání falešně nezobrazí.
+4. ◐ **7d — organizační portfolio.** Workspace dashboard jedním databázovým
+   read-modelem shrnuje projekty, poslední CI/deploy, health, aktivní server
+   accesses, čekající approvals a cleanup dluh. Načtení nevolá SCM ani Docker
+   a neroste o dotaz pro každý projekt (ADR-084). Automatické testy a produkční
+   build jsou hotové; zbývá živý acceptance druhé read-only role.
+   **Uživatelský test:** owner pozná problémový projekt a přejde na konkrétní
+   akci; viewer vidí stejný read-only stav a prázdný list se během načítání
+   falešně nezobrazí.
 5. TODO **7e — vyhodnocovací export.** Nabídnout privacy-bounded CSV/JSON export
    workspace metrik (lead time, úspěšnost deploymentů, rollbacky, čas do zdravého
    dev) pro firmu nebo výuku. Export nesmí obsahovat logy, secrets ani druhou

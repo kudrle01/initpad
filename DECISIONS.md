@@ -3729,3 +3729,32 @@ vyloučení produkce. Agent test kontroluje konkrétní Docker `NanoCpus`, memor
 swap a `PidsLimit`; DTO hranice odmítají nebezpečné hodnoty. Živě se nastaví
 krátká policy na testovací allocation, ověří warning, automatický remove,
 audit a nedotčená produkce/repository.
+
+---
+
+## ADR-084 — Dashboard používá databázový workspace read-model
+
+**Kontext.** Původní dashboard skládal základní seznam projektů a několik
+počtů na klientu. Pro provozní rozhodnutí ale chyběl poslední build a deploy,
+problémové prostředí, čekající produkční schválení, využití server access
+a cleanup dluh. Zjišťovat je postupným voláním SCM, Dockeru nebo Agentů by
+zpomalovalo dashboard a výsledek by závisel na dostupnosti každého targetu.
+
+**Rozhodnutí.** Endpoint workspace portfolia sestaví omezenou projekci pouze z
+autoritativní databáze. Jedna transakční skupina načte projekty s posledním
+persistovaným buildem a deployment operation a spočítá workspace agregace.
+Dotazy jsou konstantní vůči počtu projektů; endpoint nevolá SCM, Docker ani
+vzdálený Agent. Health je malý odvozený stav `attention | deploying | healthy |
+idle`, nikoli nový zdroj pravdy. Každý člen workspace smí projekci číst,
+zatímco oprávnění jednotlivých akcí zůstává v jejich stávajících API hranicích.
+
+**Důsledky.** Dashboard se rychle a konzistentně načte i při nedostupném
+serveru. Uživatel vidí, který projekt vyžaduje pozornost, a celý řádek vede na
+jeho detail. Stav je záměrně eventual-consistent s providerem: nejdřív musí
+projít existující webhook/poll synchronizace do databáze. Nezavádíme druhou
+cache ani periodické fan-out dotazy.
+
+**Testování.** Unit test ověřuje jednu databázovou transakční projekci,
+odvozený health, poslední deploy a skrytí cizího workspace jako 404. API i web
+musí projít produkčním buildem. Živě se ověří loading stav, problémový projekt,
+odkaz na jeho detail a read-only zobrazení druhé role.
