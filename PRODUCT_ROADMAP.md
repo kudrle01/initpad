@@ -640,9 +640,15 @@ jen konkrétní provozní a vyhodnocovací scénář.
    nedostatečná role uvnitř vlastního workspace zůstává 403 (ADR-086).
    **Uživatelský test:** bez přihlášení odpoví health, katalog šablon a auth
    config 200, zatímco `/api/projects` vrátí 401; neplatný CI token vrátí 401.
-2. TODO **8b — dvou-workspace E2E matice.** Dva reálné účty a dva workspaces
-   ověří read/write hranice projektů, targetů, allocations, operací, auditu,
-   diagnostiky a exportu včetně přímých cizích ID.
+2. ◐ **8b — dvou-workspace E2E matice.** Automatická cross-service matice
+   modeluje ownera workspace A a uživatele, který je viewerem A a ownerem B.
+   Ověřuje read/write hranice projektu, targetu, allocation, provisioning
+   operace, auditu, diagnostiky, configu, portfolia, Agenta a exportu včetně
+   přímých cizích ID. Test navíc dokazuje, že po 404/403 neběží navazující
+   datový dotaz ani infrastrukturová mutace. K uzavření zbývá stejná matice
+   přes živé HTTP sessions dvou skutečných účtů.
+   **Uživatelský test:** Alice zkusí přímé URL/ID zdrojů Team Beta a dostane
+   404; Bob jako viewer Team Alpha stav přečte, ale každá změna skončí 403.
 3. TODO **8c — Agent adversarial testy.** Kompromitovaný Agent nesmí claimnout,
    obnovit lease, stáhnout artifact ani dokončit job jiného targetu; ověří se
    revoke race, starý credential, starý lease a duplicitní delivery.
