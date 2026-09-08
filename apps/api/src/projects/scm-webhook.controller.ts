@@ -13,6 +13,7 @@ import type { Request } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../config';
 import { ProjectsService } from './projects.service';
+import { PublicEndpoint } from '../auth/public-endpoint.decorator';
 
 interface RepositoryEventDto {
   action?: string;
@@ -27,6 +28,7 @@ interface RepositoryEventDto {
  * Authenticated with the shared platform token, not a user session.
  */
 @Controller('scm')
+@PublicEndpoint('scm-signature')
 export class ScmWebhookController {
   private readonly logger = new Logger('ScmWebhookController');
 

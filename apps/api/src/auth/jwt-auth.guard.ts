@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { ALLOW_PASSWORD_CHANGE } from './allow-password-change.decorator';
+import { PUBLIC_ENDPOINT, type PublicEndpointReason } from './public-endpoint.decorator';
 
 export const TOKEN_COOKIE = 'initpad_token';
 
@@ -35,6 +36,17 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request & { userId?: string }>();
+    const publicReason = this.reflector.getAllAndOverride<PublicEndpointReason>(PUBLIC_ENDPOINT, [
+      ctx.getHandler(),
+      ctx.getClass(),
+    ]);
+    if (publicReason) return true;
+
+    // Some controllers still declare the same guard locally for readability.
+    // The global guard has already authenticated this request, so avoid a
+    // duplicate user lookup when the controller-level guard runs afterwards.
+    if (req.userId) return true;
+
     const token = req.cookies?.[TOKEN_COOKIE];
     if (!token) throw new UnauthorizedException('Not authenticated');
 

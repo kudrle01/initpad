@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
+import { PublicEndpoint } from '../auth/public-endpoint.decorator';
 
 interface CiDeployDto {
   repo?: string; // "owner/name"
@@ -26,6 +27,7 @@ interface CiStartDto {
 // Progress and terminal callbacks called by Gitea/GitHub Actions. They are
 // authenticated with a repository-specific token, not a user session.
 @Controller('ci')
+@PublicEndpoint('ci-token')
 export class CiController {
   constructor(private readonly projects: ProjectsService) {}
 

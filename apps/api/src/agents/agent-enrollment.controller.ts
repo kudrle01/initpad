@@ -21,8 +21,10 @@ import {
   AgentLeaseDto,
 } from './dto/agent-job.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
+import { PublicEndpoint } from '../auth/public-endpoint.decorator';
 
 @Controller('agent')
+@PublicEndpoint('agent-credential')
 export class AgentEnrollmentController {
   constructor(
     private readonly agents: AgentsService,

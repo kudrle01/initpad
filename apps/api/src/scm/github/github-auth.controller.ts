@@ -13,11 +13,13 @@ import {
   GitHubOAuthService,
   OAuthMode,
 } from './github-oauth.service';
+import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 // "Sign in with GitHub" and account linking. Both are top-level browser
 // redirects, so the session cookie (SameSite=Lax) is available on the callback.
 @Controller('auth/github')
+@PublicEndpoint('authentication')
 export class GitHubAuthController {
   constructor(
     private readonly oauth: GitHubOAuthService,

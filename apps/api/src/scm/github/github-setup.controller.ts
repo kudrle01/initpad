@@ -16,6 +16,7 @@ import { WorkspacesService } from '../../workspaces/workspaces.service';
 import { GitHubAppService } from './github-app.service';
 import { GitHubInstallationService } from './github-installation.service';
 import { GITHUB_OAUTH_NONCE_COOKIE, GitHubOAuthService } from './github-oauth.service';
+import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
 
 /**
  * Starts and completes the GitHub App installation handshake (ADR-044). The
@@ -69,6 +70,7 @@ export class GitHubSetupController {
   }
 
   @Get('callback')
+  @PublicEndpoint('authentication')
   async callback(
     @Query('state') state: string,
     @Query('installation_id') installationId: string,

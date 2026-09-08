@@ -37,7 +37,18 @@ describe('WorkspacesService tenant isolation', () => {
     };
     const service = new WorkspacesService(prisma as never, {} as never);
     await expect(service.resolve('u1', 'w1')).resolves.toEqual({ id: 'w1', role: 'member' });
-    await expect(service.resolve('u1', 'w2')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.resolve('u1', 'w2')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('hides a workspace outside the caller tenant as 404', async () => {
+    const prisma = {
+      workspaceMember: { findUnique: jest.fn(async () => null) },
+    };
+    const service = new WorkspacesService(prisma as never, {} as never);
+
+    await expect(service.require('stranger', 'foreign-workspace', 'read')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('allows viewers to read but never write', async () => {

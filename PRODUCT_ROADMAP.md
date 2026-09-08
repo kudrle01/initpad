@@ -632,14 +632,27 @@ jen konkrétní provozní a vyhodnocovací scénář.
 
 ### Fáze 8 — hardening a vyhodnocení
 
-- Threat-model review pro každou tenant boundary a agent protocol.
-- E2E test nejméně se dvěma workspaces, aby se ověřila izolace.
-- Restore drill, výpadek agenta během deploye a retry bez dvojitého spuštění.
-- Failure injection: agent offline, registry nedostupná, disk plný, okamžitý
-  exit kontejneru, health timeout, duplicitní doručení a ztracená odpověď po
-  úspěšném deploymentu.
-- Usability test se studenty a učitelem.
-- Aktualizace architektury, diagramů, ADR a implementační kapitoly diplomky.
+1. ✅ **8a — výchozí autentizační hranice.** Celé API je session-authenticated
+   by default. Veřejné, OAuth/OIDC a strojové endpointy musí nést explicitní
+   důvod výjimky; CI token, SCM podpis a Agent credential se dál ověřují uvnitř
+   jejich protokolu. Nový controller se už nemůže stát veřejným jen zapomenutým
+   guardem. Cizí workspace/project/target/allocation se skrývá jako 404,
+   nedostatečná role uvnitř vlastního workspace zůstává 403 (ADR-086).
+   **Uživatelský test:** bez přihlášení odpoví health, katalog šablon a auth
+   config 200, zatímco `/api/projects` vrátí 401; neplatný CI token vrátí 401.
+2. TODO **8b — dvou-workspace E2E matice.** Dva reálné účty a dva workspaces
+   ověří read/write hranice projektů, targetů, allocations, operací, auditu,
+   diagnostiky a exportu včetně přímých cizích ID.
+3. TODO **8c — Agent adversarial testy.** Kompromitovaný Agent nesmí claimnout,
+   obnovit lease, stáhnout artifact ani dokončit job jiného targetu; ověří se
+   revoke race, starý credential, starý lease a duplicitní delivery.
+4. TODO **8d — failure injection a recovery drill.** Agent offline uprostřed
+   deploye, registry/object store nedostupný, disk full, okamžitý exit,
+   health timeout, ztracená odpověď po úspěchu a restore ze zálohy — bez
+   dvojitého workloadu nebo nepravdivého stavu.
+5. TODO **8e — vyhodnocení a předání.** Nezávislý studentský tým a vyučující
+   projdou scénář; změří se čas, chyby a SUS. Poté se aktualizuje architektura,
+   diagramy, provozní dokumentace a implementační kapitola diplomky.
 
 ## Akceptační kritéria
 
@@ -661,7 +674,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 |---|---|---|
 | 1 — bezpečný baseline | ano | Přihlášení, vytvoření projektu, viditelné CI a responzivní UI; build/test/health jsou zelené. |
 | 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
-| 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 403. |
+| 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 404 a nedostatečná role ve vlastním workspace 403. |
 | 4 — identity/onboarding | ano | Self-hosted `open`: samoobslužná registrace. Self-hosted soukromě: admin vytvoří účet a předá aktivační odkaz nebo dočasné heslo s vynucenou změnou. SaaS: pouze GitHub login. Majitel přidá do týmu existující účet podle e-mailu; role platí i v SCM. |
 | 5 — import repa/SCM | částečně | Self-hosted: stávající Gitea projekty beze změny URL projdou detail/import/deploy/delete. SaaS se živou App: New project nabídne osobní/organizační instalace aktivního workspace, založí soukromé GitHub repo a import vypíše repa všech grantů; cizí workspace installation ID musí vrátit 400. Import bez Dockerfile nebo nového artifact callbacku je zablokovaný. Ověřit commity/check runs, artifact ID/digest, dev deploy stejného SHA, retry a delete/detach. Durable object-store ingestion je hotová; plný cloudový workload provoz čeká na Agenta. |
 | 6 — target allocations | ano | Podle `deploy/SELF_HOSTED_ACCEPTANCE.md` dva workspace nasadí na jeden Docker target; sítě/jména se nepřekrývají, role/cizí data jsou izolované a disabled/quota policy je vynucená. |

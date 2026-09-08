@@ -5,10 +5,12 @@ import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { TOKEN_COOKIE } from '../auth/jwt-auth.guard';
 import { OidcService } from './oidc.service';
+import { PublicEndpoint } from '../auth/public-endpoint.decorator';
 
 // OIDC provider endpoints. The global 'api' prefix applies, so the real
 // paths are /api/.well-known/... and /api/oauth/...
 @Controller()
+@PublicEndpoint('oidc-protocol')
 export class OidcController {
   private readonly logger = new Logger('OidcController');
 

@@ -73,7 +73,8 @@ export class WorkspacesService {
       ? await this.prisma.workspaceMember.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' } })
       : null);
     if (!fallback) {
-      throw new ForbiddenException(requestedId ? 'You are not a member of this workspace' : 'No workspace available');
+      if (requestedId) throw new NotFoundException('Workspace not found');
+      throw new ForbiddenException('No workspace available');
     }
     return { id: fallback.workspaceId, role: fallback.role as WorkspaceRole };
   }
@@ -98,11 +99,9 @@ export class WorkspacesService {
     workspaceId: string,
     permission: WorkspacePermission,
   ): Promise<WorkspaceRole> {
-    const membership = await this.prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId, userId } },
-    });
-    const role = membership?.role as WorkspaceRole | undefined;
-    if (!role || !PERMISSIONS[permission].has(role)) {
+    const role = await this.roleFor(userId, workspaceId);
+    if (!role) throw new NotFoundException('Workspace not found');
+    if (!PERMISSIONS[permission].has(role)) {
       throw new ForbiddenException(`Workspace ${permission} access required`);
     }
     return role;

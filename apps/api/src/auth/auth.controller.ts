@@ -11,6 +11,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AllowDuringPasswordChange } from './allow-password-change.decorator';
 import { AuthRateLimitGuard } from './auth-rate-limit.guard';
 import { config } from '../config';
+import { PublicEndpoint } from './public-endpoint.decorator';
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
@@ -20,6 +21,7 @@ export class AuthController {
 
   // Managed registration — provisions the Gitea account and signs the user in.
   @Get('config')
+  @PublicEndpoint('authentication')
   async authConfig() {
     return {
       registrationAvailable: await this.auth.registrationAvailable(),
@@ -34,6 +36,7 @@ export class AuthController {
   }
 
   @Post('register')
+  @PublicEndpoint('authentication')
   @UseGuards(AuthRateLimitGuard)
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.register(dto);
@@ -43,6 +46,7 @@ export class AuthController {
 
   // Sign-in with a platform-native account.
   @Post('signin')
+  @PublicEndpoint('authentication')
   @UseGuards(AuthRateLimitGuard)
   async signin(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.login(dto);
@@ -95,6 +99,7 @@ export class AuthController {
   }
 
   @Post('email/verify')
+  @PublicEndpoint('authentication')
   @HttpCode(204)
   @UseGuards(AuthRateLimitGuard)
   async verifyEmail(@Body() dto: VerifyEmailDto) {
@@ -103,6 +108,7 @@ export class AuthController {
 
   // Starts a password reset. Always returns ok so accounts cannot be enumerated.
   @Post('password/request-reset')
+  @PublicEndpoint('authentication')
   @UseGuards(AuthRateLimitGuard)
   async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
     await this.auth.requestPasswordReset(dto.identity);
@@ -110,6 +116,7 @@ export class AuthController {
   }
 
   @Post('password/reset')
+  @PublicEndpoint('authentication')
   @HttpCode(204)
   @UseGuards(AuthRateLimitGuard)
   async resetPassword(@Body() dto: ResetPasswordDto, @Res({ passthrough: true }) res: Response) {
@@ -126,6 +133,7 @@ export class AuthController {
   // Activates an admin-provisioned account: the user sets their own password via
   // the link and is signed in immediately.
   @Post('activate')
+  @PublicEndpoint('authentication')
   @UseGuards(AuthRateLimitGuard)
   async activate(@Body() dto: ActivateAccountDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.activate(dto.token, dto.newPassword);
@@ -134,6 +142,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @PublicEndpoint('authentication')
   logout(@Res({ passthrough: true }) res: Response) {
     res.clearCookie(TOKEN_COOKIE, {
       httpOnly: true,

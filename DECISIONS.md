@@ -3797,3 +3797,38 @@ shodné CSV řádky, browserový date-only vstup a konkrétní Prisma select bez
 citlivých polí. API i web musí projít produkčním buildem. Živě se oba soubory
 stáhnou pro známé období, totals se porovnají s deployment historií a druhý
 member ověří absenci export akce.
+
+---
+
+## ADR-086 — HTTP API je autentizované ve výchozím stavu
+
+**Kontext.** Session guard byl historicky deklarovaný u jednotlivých
+controllerů. Stávající endpointy byly chráněné, ale nový controller nebo metoda
+se mohly omylem stát veřejnými pouhým vynecháním dekorátoru. API zároveň
+obsahuje legitimní nesession rozhraní: health, katalog šablon, přihlášení,
+OAuth/OIDC callbacky, CI callback, SCM webhook a Agent protocol.
+
+**Rozhodnutí.** `JwtAuthGuard` je globální `APP_GUARD`. Bez explicitní výjimky
+každý nový endpoint vyžaduje aktivní, nerevokovanou session a respektuje forced
+password change. `@PublicEndpoint(reason)` je úzká výjimka s povinnou kategorií:
+skutečně veřejná data, autentizační protokol nebo alternativní strojová
+autentizace. Výjimka neznamená anonymní důvěru — CI stále ověřuje per-repository
+token, webhooky konstantním časem ověřují podpis, Agent používá hashovaný
+credential a target-bound lease a OAuth/OIDC ověřují state, klienta nebo token.
+
+Přímý požadavek na cizí workspace vrací stejných 404 jako neexistující zdroj.
+403 je vyhrazeno pro člena daného workspace, jehož role nestačí na požadovanou
+akci. Tím se sjednocuje chování projektů, targetů, allocations, portfolia,
+metrik a přímých workspace endpointů.
+
+**Důsledky.** Zapomenutý controller guard už nevytvoří veřejné API. Každá
+veřejná plocha je dohledatelná v kódu i kontraktním testu. Controller-level
+guardy mohou během postupného úklidu zůstat; druhý průchod je idempotentní a
+nedělá další databázový dotaz. Přidání nové veřejné kategorie vyžaduje vědomou
+změnu union typu a security review.
+
+**Testování.** Unit test ověřuje default deny, public výjimku, revokovanou
+session, forced password change a idempotentní lokální guard. Kontraktní test
+eviduje všechny veřejné controllery/metody a zvlášť hlídá, že citlivé account a
+GitHub setup operace veřejné nejsou. Živý smoke test bez cookie očekává 200 pro
+health/auth config/templates, 401 pro projects a 401 pro CI callback bez tokenu.

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { HealthController } from './health/health.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -16,6 +17,7 @@ import { GitHubModule } from './scm/github/github.module';
 import { ArtifactsModule } from './artifacts/artifacts.module';
 import { AgentsModule } from './agents/agents.module';
 import { AuditEventsModule } from './audit/audit-events.module';
+import { JwtAuthGuard } from './auth/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -37,5 +39,6 @@ import { AuditEventsModule } from './audit/audit-events.module';
     AuditEventsModule,
   ],
   controllers: [HealthController],
+  providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],
 })
 export class AppModule {}

@@ -13,6 +13,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../config';
 import { GitHubInstallationService, InstallationEvent } from './github-installation.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
+import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
 
 interface GitHubAuthorizationRevokedEvent {
   action: 'revoked';
@@ -23,6 +24,7 @@ interface GitHubAuthorizationRevokedEvent {
 // body with the App's webhook secret (X-Hub-Signature-256); we verify it before
 // touching any state, and refuse everything when no secret is configured.
 @Controller('scm/github')
+@PublicEndpoint('scm-signature')
 export class GitHubWebhookController {
   constructor(
     private readonly installations: GitHubInstallationService,

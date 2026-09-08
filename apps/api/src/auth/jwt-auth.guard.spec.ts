@@ -1,6 +1,7 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtAuthGuard, TOKEN_COOKIE } from './jwt-auth.guard';
+import { PUBLIC_ENDPOINT, type PublicEndpointReason } from './public-endpoint.decorator';
 
 type UserRow = {
   id: string;
@@ -26,6 +27,7 @@ function build(opts: {
   verifyThrows?: boolean;
   user?: UserRow;
   allowDuringChange?: boolean;
+  publicEndpoint?: PublicEndpointReason;
 }) {
   const jwt = {
     verify: jest.fn(() => {
@@ -35,7 +37,8 @@ function build(opts: {
   };
   const prisma = { user: { findUnique: jest.fn(async () => opts.user ?? null) } };
   const reflector = {
-    getAllAndOverride: jest.fn(() => opts.allowDuringChange ?? false),
+    getAllAndOverride: jest.fn((key: string) =>
+      key === PUBLIC_ENDPOINT ? opts.publicEndpoint : (opts.allowDuringChange ?? false)),
   } as unknown as Reflector;
   const guard = new JwtAuthGuard(jwt as never, prisma as never, reflector);
   return { guard, jwt, prisma, reflector };
@@ -44,6 +47,15 @@ function build(opts: {
 const activeUser = { id: 'u1', active: true, tokenVersion: 0, mustChangePassword: false };
 
 describe('JwtAuthGuard', () => {
+  it('allows only endpoints explicitly marked with a public access reason', async () => {
+    const { guard, jwt, prisma } = build({ publicEndpoint: 'health-check' });
+    const { ctx } = contextWith(undefined);
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(jwt.verify).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
   it('rejects a request without a session cookie', async () => {
     const { guard } = build({});
     const { ctx } = contextWith(undefined);
@@ -61,6 +73,16 @@ describe('JwtAuthGuard', () => {
     const { ctx, req } = contextWith('tok');
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(req.userId).toBe('u1');
+  });
+
+  it('does not repeat the database lookup when a local guard follows the global guard', async () => {
+    const { guard, jwt, prisma } = build({ user: activeUser });
+    const { ctx, req } = contextWith('tok');
+    req.userId = 'u1';
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(jwt.verify).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
   it('rejects a deactivated account', async () => {
