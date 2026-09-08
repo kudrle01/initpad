@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Layers, Play, Plus, RotateCcw, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Download, Layers, Play, Plus, RotateCcw, ShieldCheck, Wrench } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
@@ -13,6 +13,7 @@ import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import type { WorkspacePortfolio } from '@/api';
 import type { ProvisioningStatus, TemplateManifest } from '@/types';
 import { useConfirmation } from '@/confirmation';
+import { WorkspaceMetricsDialog } from '@/components/organisms/WorkspaceMetricsDialog';
 
 const RECENT_LIMIT = 6;
 
@@ -27,6 +28,7 @@ export default function Dashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [operationBusy, setOperationBusy] = useState<string | null>(null);
+  const [metricsOpen, setMetricsOpen] = useState(false);
   const requestSequence = useRef(0);
 
   const loadDashboard = useCallback(async () => {
@@ -129,19 +131,35 @@ export default function Dashboard() {
     .filter((operation) => !['succeeded', 'retried'].includes(operation.status))
     .slice(0, 5);
   const canMaintain = ['owner', 'admin', 'maintainer'].includes(activeWorkspace?.role ?? '');
+  const canExportMetrics = ['owner', 'admin'].includes(activeWorkspace?.role ?? '');
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
         actions={
-          <Button asChild>
-            <Link to="/new">
-              <Plus className="h-4 w-4" /> New project
-            </Link>
-          </Button>
+          <>
+            {canExportMetrics && (
+              <Button variant="secondary" onClick={() => setMetricsOpen(true)}>
+                <Download className="h-4 w-4" /> Export metrics
+              </Button>
+            )}
+            <Button asChild>
+              <Link to="/new">
+                <Plus className="h-4 w-4" /> New project
+              </Link>
+            </Button>
+          </>
         }
       />
+
+      {activeWorkspace && canExportMetrics && (
+        <WorkspaceMetricsDialog
+          workspaceId={activeWorkspace.id}
+          open={metricsOpen}
+          onOpenChange={setMetricsOpen}
+        />
+      )}
 
       {actionError && (
         <p role="alert" className="mb-4 text-sm text-destructive">{actionError}</p>

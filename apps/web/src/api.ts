@@ -202,10 +202,33 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+async function download(path: string): Promise<{ blob: Blob; filename: string }> {
+  const headers = new Headers();
+  const workspaceId = localStorage.getItem('initpad.workspace');
+  if (workspaceId) headers.set('X-Workspace-Id', workspaceId);
+  const res = await fetch(BASE + path, { credentials: 'include', headers });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.message || `HTTP ${res.status}`, res.status);
+  }
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'initpad-metrics';
+  return { blob: await res.blob(), filename };
+}
+
 export const api = {
   listWorkspaces: () => http<Workspace[]>('/workspaces'),
   getWorkspacePortfolio: (workspaceId: string) =>
     http<WorkspacePortfolio>(`/workspaces/${workspaceId}/portfolio`),
+  downloadWorkspaceMetrics: (
+    workspaceId: string,
+    format: 'json' | 'csv',
+    from: string,
+    to: string,
+  ) => {
+    const query = new URLSearchParams({ format, from, to });
+    return download(`/workspaces/${workspaceId}/metrics?${query.toString()}`);
+  },
   createWorkspace: (name: string, slug: string) =>
     http<Workspace>('/workspaces', { method: 'POST', body: JSON.stringify({ name, slug }) }),
   updateWorkspace: (workspaceId: string, name: string) =>

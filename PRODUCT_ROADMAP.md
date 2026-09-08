@@ -618,11 +618,15 @@ jen konkrétní provozní a vyhodnocovací scénář.
    **Uživatelský test:** owner pozná problémový projekt a přejde na konkrétní
    akci; viewer vidí stejný read-only stav a prázdný list se během načítání
    falešně nezobrazí.
-5. TODO **7e — vyhodnocovací export.** Nabídnout privacy-bounded CSV/JSON export
-   workspace metrik (lead time, úspěšnost deploymentů, rollbacky, čas do zdravého
-   dev) pro firmu nebo výuku. Export nesmí obsahovat logy, secrets ani druhou
-   autorizační doménu. **Uživatelský test:** owner exportuje období a hodnoty
-   odpovídají auditovaným operacím; member bez oprávnění export nezíská.
+5. ◐ **7e — vyhodnocovací export.** Owner/admin volí období a stahuje
+   verzovaný JSON nebo CSV s celkovými i denními agregacemi: úspěšnost
+   deploymentů, rollbacky, request-to-healthy dev a build-to-production proxy.
+   Databázový select záměrně nečte logy, message, config, secrets ani identity;
+   cizí workspace vrací 404 a member/viewer 403 (ADR-085). Automatické testy a
+   produkční build jsou hotové; zbývá živě stáhnout oba formáty a porovnat
+   je s deployment historií.
+   **Uživatelský test:** owner exportuje období a hodnoty odpovídají
+   auditovaným operacím; member bez oprávnění export nezíská.
 
 ### Fáze 8 — hardening a vyhodnocení
 

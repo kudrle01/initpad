@@ -3758,3 +3758,42 @@ cache ani periodické fan-out dotazy.
 odvozený health, poslední deploy a skrytí cizího workspace jako 404. API i web
 musí projít produkčním buildem. Živě se ověří loading stav, problémový projekt,
 odkaz na jeho detail a read-only zobrazení druhé role.
+
+---
+
+## ADR-085 — Vyhodnocovací metriky jsou omezená projekce deployment operací
+
+**Kontext.** Firma i školní evaluace potřebují porovnat provozní výsledky v
+čase. Export surového auditu, logů nebo konfigurace by ale smíchal provozní
+telemetrii s bezpečnostní historií a zbytečně zveřejnil identity, providerové
+chyby nebo tajné hodnoty. Git commit timestamp navíc není spolehlivý control-plane
+údaj, takže jej nelze vydávat za přesný začátek lead time.
+
+**Rozhodnutí.** Export je owner/admin operace nad jedním workspace. Nečlen dostane
+404 a role bez admin oprávnění 403. Uživatel zadá nejvýše 366 dní; datum `to` je
+pro formulář inkluzivní a interně se převede na UTC exclusive bound. Dotaz vybírá
+pouze `kind`, `status`, `startedAt`, `finishedAt`, název prostředí a `createdAt`
+navázaného buildu. Nečte message, log, verzi, config, repository, target ani
+uživatelskou identitu. Lifecycle `start|stop|remove` se do deployment metrik
+nezapočítá a příliš velké období je omezeno počtem zpracovaných operací.
+
+Úspěšnost je `succeeded / (succeeded + failed)`; uživatelem zrušené operace
+jsou uvedeny zvlášť a denominator nezkreslují. `Time to healthy dev` je doba od
+vzniku requestu po úspěšné dokončení dev operace, které u deploye následuje až
+po health ověření. `Build to production` je transparentní proxy od vytvoření
+ověřeného build záznamu po úspěšnou produkci, nikoli tvrzení o commit lead time.
+JSON má `schemaVersion: 1`, definice, totals a denní UTC řady; CSV nese shodné
+allow-listed sloupce. Samotné stažení vytvoří bezpečnou audit událost bez
+exportovaných hodnot.
+
+**Důsledky.** Export lze použít ve spreadsheetu, skriptu i při evaluaci diplomky
+bez zavedení analytického skladu nebo druhé autorizační domény. Historické
+agregace odpovídají autoritativně dokončeným deployment operations. Nulové dny
+se nevypisují a prázdný denominator vrací `null`, aby nula nebyla mylně
+prezentována jako neúspěch.
+
+**Testování.** Testy ověřují obě role hranice, datumový limit, přesné výpočty,
+shodné CSV řádky, browserový date-only vstup a konkrétní Prisma select bez
+citlivých polí. API i web musí projít produkčním buildem. Živě se oba soubory
+stáhnou pro známé období, totals se porovnají s deployment historií a druhý
+member ověří absenci export akce.
