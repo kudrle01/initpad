@@ -662,10 +662,24 @@ jen konkrétní provozní a vyhodnocovací scénář.
    odpojení/re-enrollment prvního okamžitě odmítne jeho starý credential,
    druhý job i workload zůstanou beze změny a platný Agent dokončí každý job
    nejvýše jednou.
-4. TODO **8d — failure injection a recovery drill.** Agent offline uprostřed
-   deploye, registry/object store nedostupný, disk full, okamžitý exit,
-   health timeout, ztracená odpověď po úspěchu a restore ze zálohy — bez
-   dvojitého workloadu nebo nepravdivého stavu.
+4. 🟡 **8d — failure injection a recovery drill.**
+
+   - ✅ **8d-a — selhání před publikací.** Deterministické fault testy
+     simulují nedostupný source registry, odmítnutý nebo částečný object-store
+     upload, nedostupná artifact metadata, Docker `no space left on device`
+     po částečném image loadu a okamžitý exit kandidátního kontejneru.
+     Neúspěch nevytvoří dostupný artifact záznam, odstraní dočasná data,
+     nepublikuje kandidáta a zachová poslední zdravý workload (ADR-088).
+     **Uživatelský test:** v Agent labu ponechat zdravý managed deployment,
+     nasadit novější testovací revizi s runtime `CMD`, který ihned skončí,
+     a ověřit failed operaci, stále zdravou původní URL a nepřítomnost
+     failed candidate kontejneru. Zaplnění skutečného host disku se neprovádí.
+   - TODO **8d-b — přerušení během operace.** Agent/API restart, vypršený
+     lease, health timeout a ztracená odpověď po úspěchu musí skončit
+     jedním pravdivým výsledkem bez dvojitého workloadu.
+   - TODO **8d-c — provozní recovery drill.** Bezpečně zopakovat výpadek
+     registry/object store a kontrolovaný backup/restore; sepsat evidence a
+     ověřit, že obnovený control plane nevydává starý runtime stav za aktuální.
 5. TODO **8e — vyhodnocení a předání.** Nezávislý studentský tým a vyučující
    projdou scénář; změří se čas, chyby a SUS. Poté se aktualizuje architektura,
    diagramy, provozní dokumentace a implementační kapitola diplomky.

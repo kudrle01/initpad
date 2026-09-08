@@ -3874,3 +3874,37 @@ progress a completion, revoke mezi autentizací a claim/complete CAS, starý
 credential po rotaci, reassigned fencing token, identický i pozměněný completion
 replay a opožděný progress. Kontroluje nejen odmítnutí, ale i absenci následné
 infrastrukturní mutace a neotevření artifact streamu.
+
+---
+
+## ADR-088 — Nezdravý kandidát se nikdy nestane publikovaným stavem
+
+**Kontext.** Delivery skládá několik externích kroků: export image ze source
+registry, upload do privátního object store, stažení Agenta, Docker image load,
+vytvoření kandidátního workloadu a health gate. Registry, úložiště nebo disk
+mohou selhat po částečném zápisu. Proces v kontejneru může také skončit
+okamžitě, i když jeho image byla korektně sestavena.
+
+**Rozhodnutí.** Artifact záznam dostane stav `available` až po dokončeném
+exportu a uploadu. Selhání před databázovou publikací odstraní privátní
+dočasný adresář a best-effort také objekt, který mohl vzniknout jen částečně.
+Agent po chybném Docker image loadu odstraní pouze image zavedený daným
+přerušeným pokusem; image používaná existující revizí se nemaže.
+
+Nový workload je kandidát s `RestartPolicy: no`. Nejdřív musí běžet a
+projít health gate, teprve potom dostane trvalou restart policy a může nahradit
+poslední zdravou direct-port revizi nebo vstoupit do managed-gateway cutoveru.
+Okamžitý exit nebo health timeout kandidáta odstraní a nesmí smazat dosud
+publikovaný workload.
+
+**Důsledky.** Databáze neodkazuje na objekt, který nebyl bezpečně uložen,
+a Docker po známém neúspěchu nehromadí částečné image ani failed kandidáty.
+U managed gateway zůstává původní HTTPS route obsluhovaná až do samostatně
+ověřeného cutoveru. Chyba je viditelná jako failed operace a opakování po
+odstranění příčiny znovu použije stejný deklarativní tok.
+
+**Testování.** Fault transport simuluje nedostupnou registry, odmítnutý upload,
+částečný Docker image load zakončený `no space left on device`, nedostupnou
+artifact metadata a kontejner, který ihned po startu skončí. Test kontroluje
+neexistenci dostupného artifact záznamu, odstranění dočasných dat, absenci
+kandidáta a zachování identity i běhu původní revize.

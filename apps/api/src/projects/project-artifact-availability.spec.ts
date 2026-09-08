@@ -210,4 +210,78 @@ describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
       'a'.repeat(40),
     )).rejects.toThrow(/durable artifact storage/);
   });
+
+  it('does not publish an artifact record when the source registry is unavailable', async () => {
+    let temporaryPath = '';
+    const create = jest.fn();
+    const store = {
+      durable: true,
+      put: jest.fn(),
+      delete: jest.fn(),
+    };
+    const deployment = {
+      saveImageArchive: jest.fn(async (_imageRef: string, path: string) => {
+        temporaryPath = path;
+        throw new Error('registry unavailable');
+      }),
+    };
+    const lifecycle = new ProjectArtifactLifecycle(
+      {
+        buildArtifact: { findUnique: jest.fn(async () => null), create },
+        deploymentOperation: { updateMany: jest.fn() },
+      } as never,
+      store as never,
+      deployment as never,
+    );
+
+    await expect(lifecycle.captureRegistryArtifact(
+      GITEA_REPOSITORY,
+      { id: 'project-1', workspaceId: 'workspace-1' },
+      'operation-1',
+      'a'.repeat(40),
+    )).rejects.toThrow('registry unavailable');
+
+    expect(store.put).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(temporaryPath).not.toBe('');
+    expect(existsSync(temporaryPath)).toBe(false);
+  });
+
+  it('removes partial object data and local files when object storage rejects an upload', async () => {
+    let temporaryPath = '';
+    const create = jest.fn();
+    const store = {
+      durable: true,
+      put: jest.fn(async () => { throw new Error('object storage unavailable'); }),
+      delete: jest.fn(async () => undefined),
+    };
+    const deployment = {
+      saveImageArchive: jest.fn(async (_imageRef: string, path: string) => {
+        temporaryPath = path;
+        writeFileSync(path, 'verified-registry-archive');
+      }),
+    };
+    const lifecycle = new ProjectArtifactLifecycle(
+      {
+        buildArtifact: { findUnique: jest.fn(async () => null), create },
+        deploymentOperation: { updateMany: jest.fn() },
+      } as never,
+      store as never,
+      deployment as never,
+    );
+
+    await expect(lifecycle.captureRegistryArtifact(
+      GITEA_REPOSITORY,
+      { id: 'project-1', workspaceId: 'workspace-1' },
+      'operation-1',
+      'a'.repeat(40),
+    )).rejects.toThrow('object storage unavailable');
+
+    expect(create).not.toHaveBeenCalled();
+    expect(store.delete).toHaveBeenCalledWith(
+      expect.stringMatching(/^artifacts\/workspace-1\/project-1\//),
+    );
+    expect(temporaryPath).not.toBe('');
+    expect(existsSync(temporaryPath)).toBe(false);
+  });
 });

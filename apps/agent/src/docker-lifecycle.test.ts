@@ -44,6 +44,8 @@ interface FakeContainer {
 
 function fakeEngine(initialImagePresent = false) {
   let imagePresent = initialImagePresent;
+  let imageLoadFailure: string | null = null;
+  let exitOnNextStart = false;
   let networkPresent = false;
   let loadedBytes = Buffer.alloc(0);
   let networkLabels: Record<string, string> = {};
@@ -76,6 +78,14 @@ function fakeEngine(initialImagePresent = false) {
         }
       }
       loadedBytes = Buffer.concat(chunks);
+      if (imageLoadFailure) {
+        const message = imageLoadFailure;
+        imageLoadFailure = null;
+        // Model Docker having written partial image data before the daemon
+        // reports ENOSPC. The caller must actively remove that partial state.
+        imagePresent = true;
+        return response(500, { message });
+      }
       imagePresent = true;
       return response(200, '{"stream":"Loaded image"}\n');
     }
@@ -135,7 +145,13 @@ function fakeEngine(initialImagePresent = false) {
       if (!container) return response(404, { message: 'not found' });
       if (input.method === 'GET' && action === '/json') return response(200, container);
       if (input.method === 'POST' && action === '/start') {
-        container.State.Running = true;
+        if (exitOnNextStart) {
+          exitOnNextStart = false;
+          container.State.Running = false;
+          container.State.ExitCode = 1;
+        } else {
+          container.State.Running = true;
+        }
         return response(204);
       }
       if (input.method === 'POST' && action === '/stop') {
@@ -165,6 +181,12 @@ function fakeEngine(initialImagePresent = false) {
     imagePresent: () => imagePresent,
     networkPresent: () => networkPresent,
     loadedBytes: () => loadedBytes,
+    failNextImageLoad: (message = 'no space left on device') => {
+      imageLoadFailure = message;
+    },
+    exitNextContainerStart: () => {
+      exitOnNextStart = true;
+    },
     seedForeign: (name: string) => {
       containers.set('foreign-1', {
         Id: 'foreign-1',
@@ -338,6 +360,73 @@ test('rejects a corrupt project archive without publishing a workload', async ()
   );
   assert.equal(engine.containers.size, 0);
   assert.equal(engine.imagePresent(), false);
+});
+
+test('cleans a partially loaded image when Docker reports a full disk', async () => {
+  const bytes = Buffer.from('verified-image-archive');
+  const payload = {
+    ...PAYLOAD,
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    imageRef: `registry.test/acme/api:${'a'.repeat(40)}`,
+    configFingerprint: 'b'.repeat(64),
+  };
+  const engine = fakeEngine();
+  engine.failNextImageLoad();
+  const lifecycle = new DockerLifecycle('target-1', 'tcp://docker:2375', engine.transport, 'docker');
+
+  await assert.rejects(
+    lifecycle.deployProject(
+      payload,
+      {
+        artifact: {
+          path: '/api/agent/jobs/job-1/artifact',
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          sizeBytes: bytes.length,
+        },
+        envVars: {},
+      },
+      (async function* () { yield bytes; })(),
+      'job-disk-full',
+      new AbortController().signal,
+      async () => undefined,
+    ),
+    /no space left on device/,
+  );
+
+  assert.equal(engine.containers.size, 0);
+  assert.equal(engine.imagePresent(), false);
+  assert.equal(
+    engine.requests.some((request) => request.method === 'DELETE' && request.path.startsWith('/images/')),
+    true,
+  );
+});
+
+test('keeps the previous workload when a replacement exits before health verification', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+  const previous = { ...PAYLOAD, revision: 'probe-a' };
+  const replacement = { ...PAYLOAD, revision: 'probe-b' };
+
+  await lifecycle.deploy(previous, 'job-previous', new AbortController().signal);
+  const previousContainer = [...engine.containers.values()][0];
+  engine.exitNextContainerStart();
+
+  await assert.rejects(
+    lifecycle.deploy(replacement, 'job-replacement', new AbortController().signal),
+    /Candidate workload failed its health check/,
+  );
+
+  assert.equal(engine.containers.size, 1);
+  assert.equal(engine.containers.has(previousContainer.Id), true);
+  assert.equal(previousContainer.State.Running, true);
+  assert.equal(previousContainer.Config.Labels['com.initpad.revision'], previous.revision);
 });
 
 test('returns only bounded logs, runtime state, exit code and health for an owned workload', async () => {

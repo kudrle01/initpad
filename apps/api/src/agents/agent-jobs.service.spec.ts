@@ -695,6 +695,34 @@ describe('AgentJobsService durable lease protocol', () => {
     expect(artifactStore.head).not.toHaveBeenCalled();
   });
 
+  it('fails safely before delivery when object storage is unavailable', async () => {
+    const { service, prisma, artifactStore } = setup();
+    prisma.agentJob.findFirst
+      .mockResolvedValueOnce({ id: 'job-1', status: 'queued', leaseTokenHash: null })
+      .mockResolvedValueOnce(deliveryBinding())
+      .mockResolvedValueOnce(null);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({ kind: 'deploy' }));
+    prisma.agentJob.findUnique.mockResolvedValue(job({
+      kind: 'deploy',
+      status: 'failed',
+      deploymentOperation: null,
+    }));
+    artifactStore.head.mockRejectedValueOnce(new Error('object storage unavailable'));
+
+    await expect(service.claim('Bearer credential')).resolves.toEqual({
+      job: null,
+      nextPollSeconds: 2,
+    });
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: 'failed',
+        resultCode: 'delivery_invalid',
+        message: 'object storage unavailable',
+      }),
+    }));
+    expect(artifactStore.openRead).not.toHaveBeenCalled();
+  });
+
   it('streams a verified artifact only under the current target lease', async () => {
     const { service, prisma, artifactStore } = setup();
     prisma.agentJob.findFirst.mockResolvedValue(deliveryBinding());
