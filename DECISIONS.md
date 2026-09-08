@@ -4115,3 +4115,35 @@ identitu. Repository audit vynucuje digest base image, obě architektury, SBOM,
 provenance, Cosign a plné SHA všech Actions. Samotná publikace, registry
 referrery, podpisy a clean-host update/rollback zůstávají živým release
 acceptance testem; lokální unit test je nemůže předstírat.
+
+---
+
+## ADR-094 — Navigace kopíruje uživatelské úlohy a scope nastavení
+
+**Kontext.** Původní sidebar míchal běžné cíle, jednorázové akce a tři různé
+úrovně správy. `New project` byl zároveň položkou navigace i hlavní akcí na
+stránkách, názvy `Environments` a `Infrastructure` popisovaly interní model
+spíš než uživatelský cíl a jediná stránka Settings spojovala osobní Git/GitHub
+identitu se členstvím a pravidly workspace. Uživatel pak nemohl podle umístění
+poznat, koho změna ovlivní.
+
+**Rozhodnutí.** Primární navigace obsahuje jen opakované pracovní cíle:
+Overview, Projects, Deployments a Servers. Project templates, Development
+activity, Audit log a Workspace tvoří sekundární skupinu Manage. Vytvoření
+projektu je kontextová akce v Overview a Projects, nikoli trvalý cíl. Osobní
+e-mail, Git credentials a GitHub propojení patří do Account settings v menu
+uživatele. Členové a vlastnosti workspace patří do Workspace settings;
+self-hosted platform administration zůstává samostatnou položkou Instance,
+viditelnou jen platform adminovi. Staré `/settings` se kvůli uloženým odkazům
+bezpečně přesměruje na `/settings/account`.
+
+**Důsledky.** Sidebar je kratší a stejný mentální model funguje na desktopu i
+v mobilním draweru. URL technických stránek `/environments` a
+`/infrastructure` se zatím nemění, aby se nerozbily uložené odkazy; mění se
+pouze uživatelské názvy. Nastavení jsou o jeden klik explicitnější, ale jejich
+scope je čitelný ještě před otevřením formuláře.
+
+**Testování.** Produkční web build ověří nové lazy routes a repository audit
+odmítne osiřelou původní Settings stránku. Uživatelský test projde desktopový i
+mobilní sidebar, otevře Account settings přes profil, Workspace přes Manage,
+ověří podmíněnou položku Instance a přímé otevření starého `/settings`.

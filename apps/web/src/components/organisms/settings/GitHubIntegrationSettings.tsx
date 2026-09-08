@@ -64,7 +64,7 @@ export function GitHubIntegrationSettings() {
     } else if (result === 'error') {
       toast.error(query.get('reason') || 'Could not link GitHub account');
     }
-    if (result) window.history.replaceState({}, '', '/settings');
+    if (result) window.history.replaceState({}, '', '/settings/account');
   }, []);
 
   useEffect(() => {

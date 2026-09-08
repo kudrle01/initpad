@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import {
   Activity,
   Building2,
@@ -13,9 +13,9 @@ import {
   Network,
   Plus,
   Server,
-  Settings,
   ShieldCheck,
   ScrollText,
+  UserRound,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/auth';
@@ -47,18 +47,17 @@ function initials(name: string) {
 }
 
 const NAV: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/projects', label: 'Projects', icon: Layers },
-  { to: '/templates', label: 'Templates', icon: FolderClosed },
-  { to: '/new', label: 'New project', icon: Plus },
+  { to: '/environments', label: 'Deployments', icon: Server },
+  { to: '/infrastructure', label: 'Servers', icon: Network },
 ];
 
-const PLATFORM_NAV: { to: string; label: string; icon: LucideIcon }[] = [
-  { to: '/environments', label: 'Environments', icon: Server },
-  { to: '/activity', label: 'Activity', icon: Activity },
+const MANAGE_NAV: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: '/templates', label: 'Project templates', icon: FolderClosed },
+  { to: '/activity', label: 'Development activity', icon: Activity },
   { to: '/audit', label: 'Audit log', icon: ScrollText },
-  { to: '/infrastructure', label: 'Infrastructure', icon: Network },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/settings/workspace', label: 'Workspace', icon: Building2 },
 ];
 
 function itemClass({ isActive }: { isActive: boolean }) {
@@ -172,15 +171,15 @@ function Navigation({ user, onNavigate }: { user: User; onNavigate?: () => void 
       ))}
 
       <div className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-        Platform
+        Manage
       </div>
-      {PLATFORM_NAV.map((item) => (
+      {MANAGE_NAV.map((item) => (
         <Item key={item.to} {...item} onNavigate={onNavigate} />
       ))}
       {user.edition === 'self-hosted' && user.platformRole === 'admin' && (
         <Item
           to="/admin"
-          label="Administration"
+          label="Instance"
           icon={ShieldCheck}
           onNavigate={onNavigate}
         />
@@ -189,7 +188,15 @@ function Navigation({ user, onNavigate }: { user: User; onNavigate?: () => void 
   );
 }
 
-function UserMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
+function UserMenu({
+  user,
+  onLogout,
+  onNavigate,
+}: {
+  user: User;
+  onLogout: () => void;
+  onNavigate?: () => void;
+}) {
   const display = user.name || user.username;
 
   return (
@@ -213,6 +220,11 @@ function UserMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
       <DropdownMenuContent align="start" side="top" className="w-52">
         <DropdownMenuLabel>Signed in as @{user.username}</DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/settings/account" onClick={onNavigate}>
+            <UserRound className="h-4 w-4" /> Account settings
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onLogout}>
           <LogOut className="h-4 w-4" /> Sign out
         </DropdownMenuItem>
@@ -265,7 +277,11 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
             </div>
             <Navigation user={user} onNavigate={() => setMobileOpen(false)} />
             <div className="border-t border-border p-3">
-              <UserMenu user={user} onLogout={onLogout} />
+              <UserMenu
+                user={user}
+                onLogout={onLogout}
+                onNavigate={() => setMobileOpen(false)}
+              />
             </div>
           </DialogContent>
         </Dialog>

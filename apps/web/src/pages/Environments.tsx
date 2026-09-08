@@ -103,7 +103,7 @@ export default function Environments() {
 
   return (
     <div>
-      <PageHeader title="Environments" />
+      <PageHeader title="Deployments" />
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />

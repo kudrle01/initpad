@@ -292,7 +292,7 @@ export default function Infrastructure() {
   return (
     <div>
       <PageHeader
-        title="Infrastructure"
+        title="Servers"
         actions={!readOnly ? (
           <Button onClick={openNewTarget}>
             <Plus className="h-4 w-4" /> Add server
@@ -303,7 +303,7 @@ export default function Infrastructure() {
       {infrastructure.error ? (
         <LoadErrorState message={infrastructure.error} onRetry={infrastructure.reload} />
       ) : infrastructure.loading ? (
-        <ContentLoading label="Loading infrastructure" variant="cards" />
+        <ContentLoading label="Loading servers" variant="cards" />
       ) : (
         <InfrastructureTargetList
           targets={infrastructure.targets}

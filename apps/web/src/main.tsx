@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, type ComponentType } from 'react';
 import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from '@/auth';
 import { ToastProvider } from '@/toast';
 import { ConfirmationProvider } from '@/confirmation';
@@ -21,7 +21,8 @@ const Environments = lazy(() => import('@/pages/Environments'));
 const Activity = lazy(() => import('@/pages/Activity'));
 const AuditLog = lazy(() => import('@/pages/AuditLog'));
 const Infrastructure = lazy(() => import('@/pages/Infrastructure'));
-const Settings = lazy(() => import('@/pages/Settings'));
+const AccountSettings = lazy(() => import('@/pages/AccountSettings'));
+const WorkspaceSettings = lazy(() => import('@/pages/WorkspaceSettings'));
 const Admin = lazy(() => import('@/pages/Admin'));
 const NewProject = lazy(() => import('@/pages/NewProject'));
 const ImportRepo = lazy(() => import('@/pages/ImportRepo'));
@@ -56,7 +57,9 @@ const router = createBrowserRouter([
       { path: 'activity', element: page(Activity) },
       { path: 'audit', element: page(AuditLog) },
       { path: 'infrastructure', element: page(Infrastructure) },
-      { path: 'settings', element: page(Settings) },
+      { path: 'settings', element: <Navigate to="/settings/account" replace /> },
+      { path: 'settings/account', element: page(AccountSettings) },
+      { path: 'settings/workspace', element: page(WorkspaceSettings) },
       { path: 'admin', element: page(Admin) },
       { path: 'new', element: page(NewProject) },
       { path: 'import', element: page(ImportRepo) },

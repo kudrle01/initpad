@@ -193,7 +193,7 @@ export default function ImportRepo() {
               <p className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
                 <Github className="mr-2 inline h-4 w-4" />
                 No GitHub installation is authorized for this workspace.{' '}
-                <Link to="/settings" className="text-link font-medium">Open Settings</Link>
+                <Link to="/settings/account" className="text-link font-medium">Open account settings</Link>
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">No repositories available to import.</p>

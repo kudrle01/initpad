@@ -32,7 +32,7 @@ export function ProjectRepository({ project }: { project: Project }) {
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">
           Private repository — first time?{' '}
-          <Link to="/settings" className="text-link">
+          <Link to="/settings/account" className="text-link">
             Connect Git
           </Link>{' '}
           once and cloning works without a password.

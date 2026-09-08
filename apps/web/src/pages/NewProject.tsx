@@ -220,12 +220,12 @@ export default function NewProject() {
                 {!ghStatus?.linked
                   ? 'Link GitHub before creating a hosted project.'
                   : 'Authorize a GitHub App installation for this workspace first.'}{' '}
-                <Link to="/settings" className="text-link font-medium">Open Settings</Link>
+                <Link to="/settings/account" className="text-link font-medium">Open account settings</Link>
               </div>
             )}
             {selectedInstallation?.accountType === 'User' && !ghStatus?.credentialReady && (
               <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-muted-foreground">
-                Renew your GitHub authorization in <Link to="/settings" className="text-link font-medium">Settings</Link>{' '}
+                Renew your GitHub authorization in <Link to="/settings/account" className="text-link font-medium">account settings</Link>{' '}
                 before InitPad can create a repository in your personal account.
               </p>
             )}

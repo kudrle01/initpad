@@ -139,7 +139,7 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
       {hasUnverified && verifiedOptions.length > 0 && (
         <p className="text-xs text-muted-foreground">
           Some compatible targets are disabled until their connection or Agent is ready in{' '}
-          <Link to="/infrastructure" className="text-link font-medium">Infrastructure</Link>.
+          <Link to="/infrastructure" className="text-link font-medium">Servers</Link>.
         </p>
       )}
     </div>

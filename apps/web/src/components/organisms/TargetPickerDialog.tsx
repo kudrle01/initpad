@@ -84,7 +84,7 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
             <p className="text-sm text-muted-foreground">
               No verified compatible target yet. Add or test a server in{' '}
               <Link to="/infrastructure" className="text-link">
-                Infrastructure
+                Servers
               </Link>
               .
             </p>
