@@ -573,12 +573,15 @@ export async function executeClaimedJob(
         combinedSignal,
       );
       const headerDigest = response.headers.get('x-initpad-artifact-sha256');
-      const headerSize = Number(response.headers.get('content-length'));
+      const headerSizeValue = response.headers.get('content-length');
       if (headerDigest && headerDigest !== delivery.artifact.sha256) {
         throw new Error('Artifact response digest does not match the claimed delivery');
       }
-      if (Number.isFinite(headerSize) && headerSize !== delivery.artifact.sizeBytes) {
-        throw new Error('Artifact response size does not match the claimed delivery');
+      if (headerSizeValue !== null) {
+        const headerSize = Number(headerSizeValue);
+        if (!Number.isSafeInteger(headerSize) || headerSize !== delivery.artifact.sizeBytes) {
+          throw new Error('Artifact response size does not match the claimed delivery');
+        }
       }
       if (!response.body) throw new Error('Control plane returned an empty artifact stream');
       result = await lifecycle.deployProject(

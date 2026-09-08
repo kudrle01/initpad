@@ -3908,3 +3908,43 @@ odstranění příčiny znovu použije stejný deklarativní tok.
 artifact metadata a kontejner, který ihned po startu skončí. Test kontroluje
 neexistenci dostupného artifact záznamu, odstranění dočasných dat, absenci
 kandidáta a zachování identity i běhu původní revize.
+
+---
+
+## ADR-089 — Přerušený Agent job se obnovuje deklarativním takeoverem
+
+**Kontext.** Agent nebo API mohou skončit po vytvoření kandidáta, po přijetí
+progressu nebo dokonce po uložení completion, jehož HTTP odpověď se ztratí.
+Control plane nesmí takový job ihned označit za neúspěšný ani slepě přijmout
+pozdní výsledek. Agent současně nesmí pokračovat v Docker mutaci, když už
+nedokáže obnovit svou autoritu.
+
+**Rozhodnutí.** Agent-backed deployment operation přežije restart API jako
+durable job. Každý worker jej smí provádět pouze pod obnovovaným lease. Když
+renew nelze dokončit před deadline nebo control plane vrátí autorizační
+chybu, worker abortuje lokální operaci a neposílá completion. Po expiraci
+získá tentýž job nový attempt s novým fencing tokenem; výsledek původního
+attemptu je neplatný.
+
+Docker intent je deterministický podle targetu, allocation, projektu,
+prostředí a revize. Takeover proto zkontroluje existující owned kandidát a
+bez vytvoření třetí instance jej bezpečně dokončí nebo uklidí. Identický
+completion retry je povolen pouze pro již uložený terminální výsledek;
+nemění attempt ani podruhé nepublikuje jinou hodnotu.
+
+Artifact transport nevyžaduje `Content-Length`, protože reverzní proxy může
+použít chunked response. Pokud hlavička existuje, musí být platné celé číslo
+a odpovídat metadata identitě. Bez ní zůstává povinná kontrola skutečného
+počtu streamovaných bytů a SHA-256 před publikací image.
+
+**Důsledky.** Restart může prodloužit operaci nejvýše o lease timeout, ale
+nevytvoří dva publikované workloady ani dva rozdílné terminální výsledky.
+Krátké síťové výpadky se retryují uvnitř platného lease; delší výpadek
+záměrně předá autoritu novému attemptu.
+
+**Testování.** Stavová API simulace provede dva attempty jednoho jobu,
+odmítne starý token, přijme nový completion právě jednou a toleruje jeho
+identický replay. Worker test vynutí výpadek renew uprostřed deploymentu a
+ověří abort bez completion. Docker fault test přeruší publikaci zdravého
+kandidáta a následující attempt dokončí stejnou instanci do jediného
+výsledného workloadu.

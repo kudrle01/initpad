@@ -674,9 +674,18 @@ jen konkrétní provozní a vyhodnocovací scénář.
      nasadit novější testovací revizi s runtime `CMD`, který ihned skončí,
      a ověřit failed operaci, stále zdravou původní URL a nepřítomnost
      failed candidate kontejneru. Zaplnění skutečného host disku se neprovádí.
-   - TODO **8d-b — přerušení během operace.** Agent/API restart, vypršený
-     lease, health timeout a ztracená odpověď po úspěchu musí skončit
-     jedním pravdivým výsledkem bez dvojitého workloadu.
+   - ✅ **8d-b — přerušení během operace.** Stavový test provede claim
+     attemptu 1, expiraci lease, takeover attemptem 2, odmítnutí starého
+     completion a identický retry jediného terminálního zápisu. Výpadek
+     control plane při renew zastaví lokální práci bez neoprávněného
+     completion. Opakovaný Docker pokus použije již vytvořeného zdravého
+     kandidáta a skončí s jediným workloadem. API restart durable Agent job
+     nemaže a ztracená odpověď po completion zůstává idempotentní. Agent
+     navíc přijímá bezpečný chunked artifact stream bez `Content-Length`;
+     velikost i digest stále ověří nad celým streamem (ADR-089).
+     **Uživatelský test:** spustit 35sekundový **Test protocol**, během
+     attemptu 1 zavolat `./agent-lab.sh stop-agent`, po expiraci lease použít
+     `./agent-lab.sh start-agent` a ověřit jeden `succeeded` job s `attempt 2`.
    - TODO **8d-c — provozní recovery drill.** Bezpečně zopakovat výpadek
      registry/object store a kontrolovaný backup/restore; sepsat evidence a
      ověřit, že obnovený control plane nevydává starý runtime stav za aktuální.

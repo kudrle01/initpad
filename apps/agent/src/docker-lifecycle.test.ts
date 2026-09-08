@@ -46,6 +46,7 @@ function fakeEngine(initialImagePresent = false) {
   let imagePresent = initialImagePresent;
   let imageLoadFailure: string | null = null;
   let exitOnNextStart = false;
+  let failNextRestartPolicyUpdate = false;
   let networkPresent = false;
   let loadedBytes = Buffer.alloc(0);
   let networkLabels: Record<string, string> = {};
@@ -162,7 +163,13 @@ function fakeEngine(initialImagePresent = false) {
         container.name = new URL(`http://docker${input.path}`).searchParams.get('name') ?? container.name;
         return response(204);
       }
-      if (input.method === 'POST' && action === '/update') return response(200, {});
+      if (input.method === 'POST' && action === '/update') {
+        if (failNextRestartPolicyUpdate) {
+          failNextRestartPolicyUpdate = false;
+          return response(500, { message: 'simulated interruption before publication' });
+        }
+        return response(200, {});
+      }
       if (input.method === 'GET' && action === '/logs') {
         return response(200, '\u001b[31mbounded\u001b[0m\u0000 log');
       }
@@ -186,6 +193,9 @@ function fakeEngine(initialImagePresent = false) {
     },
     exitNextContainerStart: () => {
       exitOnNextStart = true;
+    },
+    interruptNextPublication: () => {
+      failNextRestartPolicyUpdate = true;
     },
     seedForeign: (name: string) => {
       containers.set('foreign-1', {
@@ -427,6 +437,43 @@ test('keeps the previous workload when a replacement exits before health verific
   assert.equal(engine.containers.has(previousContainer.Id), true);
   assert.equal(previousContainer.State.Running, true);
   assert.equal(previousContainer.Config.Labels['com.initpad.revision'], previous.revision);
+});
+
+test('resumes the same candidate after interruption and finishes with one workload', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+  const previous = { ...PAYLOAD, revision: 'probe-a' };
+  const replacement = { ...PAYLOAD, revision: 'probe-b' };
+
+  await lifecycle.deploy(previous, 'job-previous', new AbortController().signal);
+  engine.interruptNextPublication();
+
+  await assert.rejects(
+    lifecycle.deploy(replacement, 'job-attempt-1', new AbortController().signal),
+    /simulated interruption before publication/,
+  );
+  assert.equal(engine.containers.size, 2);
+
+  const recovered = await lifecycle.deploy(
+    replacement,
+    'job-attempt-2',
+    new AbortController().signal,
+  );
+
+  assert.equal(recovered.state, 'running');
+  assert.equal(recovered.revision, replacement.revision);
+  assert.equal(engine.containers.size, 1);
+  assert.equal(engine.createdBodies.length, 2);
+  assert.equal(
+    [...engine.containers.values()][0].Config.Labels['com.initpad.revision'],
+    replacement.revision,
+  );
 });
 
 test('returns only bounded logs, runtime state, exit code and health for an owned workload', async () => {

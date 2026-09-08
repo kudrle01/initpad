@@ -62,6 +62,12 @@ EOF
   start)
     compose up -d agent-lab-docker agent-lab-ports agent-lab
     ;;
+  stop-agent)
+    compose stop agent-lab
+    ;;
+  start-agent)
+    compose up -d agent-lab
+    ;;
   start-secondary)
     compose up -d agent-lab-docker agent-lab-ports agent-lab-secondary
     ;;
@@ -116,6 +122,8 @@ Usage: ./agent-lab.sh <command>
   gateway-setup  Start local wildcard DNS/TLS and print one-time macOS trust commands
   enroll  Prompt for a one-time token and store the resulting credential
   start   Start the Agent and its isolated Docker daemon
+  stop-agent  Stop only the primary Agent to test lease expiry/recovery
+  start-agent  Start the primary Agent again without restarting its Docker target
   enroll-secondary  Enroll a separate second target identity
   start-secondary   Start the second identity against the same Docker daemon
   logs-secondary    Follow structured logs for the second identity

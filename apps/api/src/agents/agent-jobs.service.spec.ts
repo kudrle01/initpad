@@ -615,6 +615,112 @@ describe('AgentJobsService durable lease protocol', () => {
     }));
   });
 
+  it('recovers an expired attempt and commits exactly one terminal result', async () => {
+    const { service, prisma } = setup();
+    let row = job({
+      status: 'queued',
+      attempt: 0,
+      leasedByAgentId: null,
+      leaseTokenHash: null,
+      leaseExpiresAt: null,
+      progressSequence: 0,
+      progressPercent: 0,
+      progressStage: 'queued',
+      message: 'Waiting for Agent',
+      result: null,
+      leasedAt: null,
+    });
+    let terminalWrites = 0;
+    const matches = (where: Record<string, any>): boolean => {
+      if (where.id !== undefined && where.id !== row.id) return false;
+      if (where.targetId !== undefined && where.targetId !== row.targetId) return false;
+      if (typeof where.status === 'string' && where.status !== row.status) return false;
+      if (where.leasedByAgentId !== undefined && where.leasedByAgentId !== row.leasedByAgentId) return false;
+      if (where.leaseTokenHash !== undefined && where.leaseTokenHash !== row.leaseTokenHash) return false;
+      if (where.leaseExpiresAt?.lte && (!row.leaseExpiresAt || row.leaseExpiresAt > where.leaseExpiresAt.lte)) {
+        return false;
+      }
+      if (where.leaseExpiresAt?.gt && (!row.leaseExpiresAt || row.leaseExpiresAt <= where.leaseExpiresAt.gt)) {
+        return false;
+      }
+      if (where.progressSequence?.lt !== undefined && row.progressSequence >= where.progressSequence.lt) {
+        return false;
+      }
+      if (Array.isArray(where.OR)) {
+        const queued = where.OR.some((candidate: Record<string, any>) => candidate.status === 'queued' && row.status === 'queued');
+        const expired = where.OR.some((candidate: Record<string, any>) => (
+          candidate.status === 'leased'
+          && row.status === 'leased'
+          && row.leaseExpiresAt
+          && row.leaseExpiresAt <= candidate.leaseExpiresAt.lte
+        ));
+        if (!queued && !expired) return false;
+      }
+      return true;
+    };
+    (prisma.agentJob.findFirst as jest.Mock).mockImplementation(async ({ where, select }) => {
+      if (!matches(where)) return null;
+      if (select?.id && select?.status) {
+        return { id: row.id, status: row.status, leaseTokenHash: row.leaseTokenHash };
+      }
+      if (select?.kind) return { kind: row.kind };
+      return { ...row };
+    });
+    (prisma.agentJob.findUnique as jest.Mock).mockImplementation(async () => ({ ...row }));
+    (prisma.agentJob.findUniqueOrThrow as jest.Mock).mockImplementation(async () => ({ ...row }));
+    (prisma.agentJob.updateMany as jest.Mock).mockImplementation(async ({ where, data }) => {
+      if (!matches(where)) return { count: 0 };
+      const previousStatus = row.status;
+      for (const [key, value] of Object.entries(data as Record<string, any>)) {
+        if (value === undefined) continue;
+        if (value === Prisma.DbNull) {
+          (row as Record<string, any>)[key] = null;
+        } else if (value && typeof value === 'object' && value.increment !== undefined) {
+          (row as Record<string, any>)[key] += value.increment;
+        } else {
+          (row as Record<string, any>)[key] = value;
+        }
+      }
+      if (previousStatus === 'leased' && ['succeeded', 'failed'].includes(row.status)) {
+        terminalWrites += 1;
+      }
+      return { count: 1 };
+    });
+
+    const first = await service.claim('Bearer credential');
+    expect(first.job?.attempt).toBe(1);
+    const firstLease = first.job!.leaseToken;
+
+    jest.setSystemTime(new Date(NOW.getTime() + 31_000));
+    const second = await service.claim('Bearer credential');
+    expect(second.job?.attempt).toBe(2);
+    expect(second.job?.leaseToken).not.toBe(firstLease);
+
+    await expect(service.complete('Bearer credential', row.id, {
+      leaseToken: firstLease,
+      status: 'succeeded',
+      message: 'Stale completion',
+      resultCode: 'ok',
+    })).rejects.toBeInstanceOf(ConflictException);
+
+    const completion = {
+      leaseToken: second.job!.leaseToken,
+      status: 'succeeded' as const,
+      message: 'Recovered completion',
+      resultCode: 'ok',
+    };
+    await expect(service.complete('Bearer credential', row.id, completion))
+      .resolves.toMatchObject({ status: 'succeeded', attempt: 2 });
+    await expect(service.complete('Bearer credential', row.id, completion))
+      .resolves.toMatchObject({ status: 'succeeded', attempt: 2 });
+
+    expect(terminalWrites).toBe(1);
+    await expect(service.claim('Bearer credential')).resolves.toEqual({
+      job: null,
+      nextPollSeconds: 2,
+    });
+  });
+
   it('materializes artifact metadata and decrypted config only for the winning deploy lease', async () => {
     const { service, prisma, artifactStore } = setup();
     prisma.agentJob.findFirst

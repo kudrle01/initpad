@@ -92,6 +92,88 @@ test('renews a long probe and retries lost progress/completion responses idempot
   assert.equal(completions[1]?.status, 'succeeded');
 });
 
+test('aborts deployment without completion when lease renewal cannot reach the control plane', async () => {
+  let now = START;
+  let releaseRenewal: (() => void) | undefined;
+  let workloadStarted: (() => void) | undefined;
+  const workloadReady = new Promise<void>((resolve) => { workloadStarted = resolve; });
+  const timing: JobTiming = {
+    now: () => now,
+    sleep: async (_ms, signal) => new Promise<void>((resolve) => {
+      const finish = () => {
+        signal.removeEventListener('abort', finish);
+        resolve();
+      };
+      releaseRenewal = () => {
+        now = START + 30_000;
+        finish();
+      };
+      signal.addEventListener('abort', finish, { once: true });
+    }),
+    renewEveryMs: 10_000,
+    progressEveryMs: 5_000,
+  };
+  let completions = 0;
+  const bytes = Buffer.from('archive');
+  const client: AgentJobClient = {
+    renew: async () => { throw new Error('control plane unavailable'); },
+    progress: async () => { throw new Error('progress must stop with the lease'); },
+    complete: async () => {
+      completions += 1;
+      return summary({ status: 'succeeded' });
+    },
+    downloadArtifact: async () => new Response(bytes),
+  };
+  const execution = executeClaimedJob(
+    claim({
+      kind: 'deploy',
+      payload: {
+        allocationId: '123e4567-e89b-42d3-a456-426614174000',
+        namespace: 'team-alpha',
+        projectSlug: 'alice-api',
+        environment: 'dev',
+        revision: 'a'.repeat(40),
+        imageRef: `registry.test/alice/api:${'a'.repeat(40)}`,
+        containerPort: 3000,
+        healthPath: '/health',
+        routingMode: 'direct-port',
+        configFingerprint: 'b'.repeat(64),
+      },
+      delivery: {
+        artifact: {
+          path: '/api/agent/jobs/job-1/artifact',
+          sha256: 'd'.repeat(64),
+          sizeBytes: bytes.length,
+        },
+        envVars: {},
+      },
+    }),
+    new AbortController().signal,
+    client,
+    {
+      timing,
+      lifecycle: {
+        acceptance: async () => undefined,
+        deployProject: async (_payload, _delivery, _archive, _jobId, signal) => {
+          workloadStarted?.();
+          await new Promise<void>((_resolve, reject) => {
+            const aborted = () => reject(new Error('deployment aborted after lease loss'));
+            if (signal.aborted) aborted();
+            else signal.addEventListener('abort', aborted, { once: true });
+          });
+          throw new Error('unreachable');
+        },
+      },
+    },
+  );
+
+  await workloadReady;
+  assert.ok(releaseRenewal);
+  releaseRenewal();
+  await assert.rejects(execution, /control plane unavailable/);
+  assert.equal(completions, 0);
+});
+
 test('fails a future or unknown job without interpreting its payload as a command', async () => {
   const calls: string[] = [];
   const client: AgentJobClient = {
