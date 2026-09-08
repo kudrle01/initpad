@@ -4074,3 +4074,44 @@ instalátoru a kontroluje absenci credentialů. Release acceptance na čistém
 Linux hostu musí ověřit první enrollment, autostart po rebootu, update na nový
 digest, automatický rollback nefunkčního obrazu a zachování workloadů při
 odpojení Agenta.
+
+---
+
+## ADR-093 — Agent release je tag-gated, multi-arch a ověřitelný bez důvěry v tag
+
+**Kontext.** Distribuční API z ADR-092 umí bezpečně předat instalátor a
+vyžaduje immutable OCI digest, avšak repozitář dosud neměl proces, který by
+takový obraz skutečně vytvořil. Pohyblivý image tag, nepřipnuté Actions nebo
+kontrolní součet bez nezávislého podpisu by jen přesunuly důvěru na registry a
+budoucí stav cizího workflow. Zdrojový repozitář je navíc nyní privátní;
+GitHub artifact attestations jsou pro běžné privátní Free/Pro/Team repozitáře
+nedostupné.
+
+**Rozhodnutí.** Tag `agent-vX.Y.Z` musí přesně odpovídat verzi v Agent package.
+Jediné release workflow nejdřív spustí celý `check:release`, poté z digestem
+připnutého Node base image sestaví GHCR OCI index pro `linux/amd64` a
+`linux/arm64`. Verzi publikuje bez `latest`, odmítne přepsat existující tag a
+přidá BuildKit SPDX SBOM i maximální provenance. Všechny použité Actions jsou
+připnuté na plný commit SHA.
+
+Image digest i release soubory se podepisují keyless Cosign identitou konkrétního
+workflow a tagu přes krátkodobý GitHub OIDC token. Release obsahuje stejný
+instalátor, exportovaný SBOM, strojově čitelný manifest s image digestem,
+`SHA256SUMS` a Sigstore bundle každého souboru. GitHub-native provenance se
+přidá u veřejného repozitáře; privátní Enterprise ji může explicitně zapnout.
+Cosign podpis je základní přenosný mechanismus v obou případech.
+
+**Důsledky.** Uživatel instaluje pouze digest uvedený v podepsaném manifestu a
+kontrolní součty lze ověřit ještě před spuštěním instalátoru. OIDC podpis
+nezavádí dlouhodobý signing secret, ale jeho důvěryhodnost závisí na ochraně
+release tagu a GitHub workflow. První zveřejnění GHCR package je záměrně ruční:
+GitHub změnu na public považuje za nevratnou a anonymní instalace ji vyžaduje.
+Selhání po publikaci OCI tagu vyžaduje provozní rozhodnutí; workflow nikdy
+tiše nepřepíše stejnou verzi jiným digestem.
+
+**Testování.** Lokální test vytváří release bundle, ověřuje manifest,
+executable bit a každý zapsaný SHA-256 a odmítá jinou verzi nebo mutable image
+identitu. Repository audit vynucuje digest base image, obě architektury, SBOM,
+provenance, Cosign a plné SHA všech Actions. Samotná publikace, registry
+referrery, podpisy a clean-host update/rollback zůstávají živým release
+acceptance testem; lokální unit test je nemůže předstírat.

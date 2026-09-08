@@ -51,6 +51,7 @@ const requiredPublicDocs = [
   'deploy/OPERATIONS.md',
   'deploy/SELF_HOSTED_ACCEPTANCE.md',
   'apps/agent/README.md',
+  'apps/agent/RELEASING.md',
 ];
 
 for (const path of requiredPublicDocs) {
@@ -200,6 +201,40 @@ for (const path of ['apps/agent/src/types.ts', 'apps/agent/Dockerfile']) {
   if (!(textFiles.get(path) ?? '').includes(agentPackage.version)) {
     failures.push(`${path}: does not carry Agent version ${agentPackage.version}`);
   }
+}
+
+const releaseWorkflowPath = '.github/workflows/release-agent.yml';
+if (!tracked.has(releaseWorkflowPath)) {
+  failures.push(`${releaseWorkflowPath}: required Agent release workflow is missing`);
+} else {
+  const workflow = textFiles.get(releaseWorkflowPath) ?? '';
+  const actionReferences = [...workflow.matchAll(/^\s*uses:\s*[^\s@]+@([^\s#]+)/gm)];
+  if (actionReferences.length === 0) {
+    failures.push(`${releaseWorkflowPath}: does not invoke any pinned actions`);
+  }
+  for (const [, reference] of actionReferences) {
+    if (!/^[a-f0-9]{40}$/.test(reference)) {
+      failures.push(`${releaseWorkflowPath}: action reference ${reference} is not a full commit SHA`);
+    }
+  }
+  for (const contract of [
+    'platforms: linux/amd64,linux/arm64',
+    'sbom: true',
+    'provenance: mode=max',
+    'cosign sign --yes',
+    'subject-checksums:',
+    'Refuse an existing version tag',
+  ]) {
+    if (!workflow.includes(contract)) {
+      failures.push(`${releaseWorkflowPath}: missing release contract ${contract}`);
+    }
+  }
+}
+
+const agentDockerfile = textFiles.get('apps/agent/Dockerfile') ?? '';
+const baseImages = [...agentDockerfile.matchAll(/^FROM\s+([^\s]+)/gm)].map((match) => match[1]);
+if (baseImages.length === 0 || baseImages.some((image) => !/@sha256:[a-f0-9]{64}$/.test(image))) {
+  failures.push('apps/agent/Dockerfile: every release base image must be pinned by digest');
 }
 
 if (failures.length > 0) {

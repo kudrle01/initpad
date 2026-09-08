@@ -721,10 +721,19 @@ jen konkrétní provozní a vyhodnocovací scénář.
        identitu, instaluje omezený restartovatelný kontejner a při chybné
        aktualizaci obnoví předchozí verzi (ADR-092). Bez
        `INITPAD_AGENT_IMAGE` se produkční instalace v UI záměrně neaktivuje.
-     - TODO **8e-d-b — skutečné vydání.** Publikovat podepsaný multi-arch
-       `amd64/arm64` image, SBOM a checksums do veřejného registry/release;
-       image digest nastavit do release kandidáta a provést čistou instalaci,
-       update i rollback na samostatném Linux hostu.
+     - ◐ **8e-d-b — skutečné vydání.**
+       - ✅ **8e-d-b1 — reprodukovatelná release pipeline.** Tag shodný s
+         verzí Agenta spustí gate, sestaví jeden GHCR OCI index pro
+         `linux/amd64` a `linux/arm64`, připojí SBOM a maximální build
+         provenance, podepíše image i stažitelné soubory přes keyless Cosign
+         a vydá manifest s immutable digestem a `SHA256SUMS` (ADR-093).
+         Workflow nepoužívá `latest`, odmítne již existující verzi a všechny
+         cizí Actions jsou připnuté na commit SHA.
+       - TODO **8e-d-b2 — publikace a živá acceptance.** Ochraňovat tagy
+         `agent-v*`, spustit první release, zveřejnit GHCR package pro
+         anonymní pull, nastavit vzniklý digest do release kandidáta a na
+         samostatném čistém Linux hostu ověřit instalaci, reboot, update,
+         rollback vadného obrazu a zachování workloadů po odpojení Agenta.
      - TODO **8e-d-c — provider a informační architektura.** Dokončit
        `Agent-first` UX, ponechat SFTP jako viditelně označenou kompatibilní
        cestu pro shared PHP/static hosting, přesunout přímé Docker ovládání

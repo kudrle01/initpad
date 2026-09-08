@@ -32,8 +32,8 @@ není hotový produkční profil. InitPad Agent už umí bezpečný outbound enr
 heartbeat, obnovitelné joby, diagnostiku a celý Docker lifecycle nad ověřeným
 artefaktem bez obecného shellu. Produkční gateway režim navíc poskytuje stabilní
 HTTPS adresu a health-gated přepnutí s rollbackem. Před veřejným provozem zbývá
-publikovat a podepsat multi-arch Agent image, jeho digest zapnout v release
-kandidátu a ověřit celý SaaS profil se živou GitHub App.
+spustit připravené podepsané multi-arch vydání Agenta, jeho vzniklý digest
+zapnout v release kandidátu a ověřit celý SaaS profil se živou GitHub App.
 
 ## Rychlé spuštění
 
@@ -121,6 +121,7 @@ izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
 - [deploy/OPERATIONS.md](deploy/OPERATIONS.md) — provoz, zálohy a obnova;
 - [deploy/SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md) — živé ověření;
 - [apps/agent/README.md](apps/agent/README.md) — izolovaný Agent lab;
+- [apps/agent/RELEASING.md](apps/agent/RELEASING.md) — vydání a ověření Agenta;
 - [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) — stav a další milníky;
 - [DECISIONS.md](DECISIONS.md) — architektonická rozhodnutí;
 - [THREAT_MODEL.md](THREAT_MODEL.md) — hranice důvěry a produkční podmínky.

@@ -1,0 +1,175 @@
+name: Release InitPad Agent
+
+on:
+  push:
+    tags:
+      - 'agent-v*'
+
+concurrency:
+  group: agent-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Verify source and release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/agent/package.json').version")"
+          expected_tag="agent-v${version}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Expected tag ${expected_tag}, received ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          image_name="ghcr.io/$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/initpad-agent"
+          {
+            echo "AGENT_VERSION=${version}"
+            echo "IMAGE_NAME=${image_name}"
+          } >> "${GITHUB_ENV}"
+          npm ci
+          npm run check:release
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse an existing version tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "${IMAGE_NAME}:${AGENT_VERSION}" >/dev/null 2>&1; then
+            echo "${IMAGE_NAME}:${AGENT_VERSION} already exists; Agent releases are immutable" >&2
+            exit 1
+          fi
+
+      - name: Build and push the multi-platform image
+        id: image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: apps/agent/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          pull: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ env.AGENT_VERSION }}
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.AGENT_VERSION }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=initpad-agent
+          cache-to: type=gha,mode=max,scope=initpad-agent
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign and verify the image
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          immutable_reference="${IMAGE_NAME}@${IMAGE_DIGEST}"
+          identity="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/release-agent.yml@refs/tags/${GITHUB_REF_NAME}"
+          cosign sign --yes "${immutable_reference}"
+          cosign verify \
+            --certificate-identity "${identity}" \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "${immutable_reference}" >/dev/null
+
+      - name: Prepare signed release assets
+        id: assets
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          release_dir="${RUNNER_TEMP}/initpad-agent-release"
+          sbom_source="${RUNNER_TEMP}/initpad-agent-sbom-source.json"
+          docker buildx imagetools inspect "${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            --format '{{ json .SBOM }}' > "${sbom_source}"
+          node scripts/prepare-agent-release.mjs \
+            --output "${release_dir}" \
+            --tag "${GITHUB_REF_NAME}" \
+            --image "${IMAGE_NAME}" \
+            --digest "${IMAGE_DIGEST}" \
+            --commit "${GITHUB_SHA}" \
+            --repository "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --sbom "${sbom_source}"
+          identity="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/release-agent.yml@refs/tags/${GITHUB_REF_NAME}"
+          for asset in \
+            "${release_dir}/initpad-agent-install.sh" \
+            "${release_dir}/initpad-agent-release.json" \
+            "${release_dir}/initpad-agent-sbom.json" \
+            "${release_dir}/SHA256SUMS"; do
+            cosign sign-blob --yes --bundle "${asset}.sigstore.json" "${asset}"
+            cosign verify-blob \
+              --bundle "${asset}.sigstore.json" \
+              --certificate-identity "${identity}" \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              "${asset}" >/dev/null
+          done
+          echo "directory=${release_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Add GitHub image provenance when supported
+        if: ${{ github.event.repository.visibility == 'public' || vars.INITPAD_ENABLE_PRIVATE_ATTESTATIONS == 'true' }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Add GitHub release-asset provenance when supported
+        if: ${{ github.event.repository.visibility == 'public' || vars.INITPAD_ENABLE_PRIVATE_ATTESTATIONS == 'true' }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-checksums: ${{ steps.assets.outputs.directory }}/SHA256SUMS
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_DIRECTORY: ${{ steps.assets.outputs.directory }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" "${RELEASE_DIRECTORY}"/* \
+            --verify-tag \
+            --title "InitPad Agent ${AGENT_VERSION}" \
+            --generate-notes
+          {
+            echo '## InitPad Agent release'
+            echo
+            echo "\`${IMAGE_NAME}@${IMAGE_DIGEST}\`"
+            echo
+            echo 'The OCI image and every downloadable asset were signed with the release workflow identity.'
+          } >> "${GITHUB_STEP_SUMMARY}"
