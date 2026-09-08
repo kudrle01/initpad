@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -20,7 +21,7 @@ interface Props {
  */
 export function InfoTip({ children, items, label = 'More information', className }: Props) {
   const [open, setOpen] = useState(false);
-  const [horizontalShift, setHorizontalShift] = useState(0);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const id = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLSpanElement>(null);
@@ -28,25 +29,34 @@ export function InfoTip({ children, items, label = 'More information', className
   useLayoutEffect(() => {
     if (!open) return;
 
-    function keepInsideViewport() {
-      const node = tooltipRef.current;
-      if (!node) return;
-      const rect = node.getBoundingClientRect();
+    function placeInsideViewport() {
+      const trigger = rootRef.current?.getBoundingClientRect();
+      const tooltip = tooltipRef.current?.getBoundingClientRect();
+      if (!trigger || !tooltip) return;
       const viewportPadding = 16;
-      setHorizontalShift((current) => {
-        const baseLeft = rect.left - current;
-        const baseRight = rect.right - current;
-        if (baseLeft < viewportPadding) return viewportPadding - baseLeft;
-        if (baseRight > window.innerWidth - viewportPadding) {
-          return window.innerWidth - viewportPadding - baseRight;
-        }
-        return 0;
-      });
+      const gap = 6;
+      const preferredLeft = trigger.left + trigger.width / 2 - tooltip.width / 2;
+      const maximumLeft = Math.max(viewportPadding, window.innerWidth - tooltip.width - viewportPadding);
+      const left = Math.min(Math.max(preferredLeft, viewportPadding), maximumLeft);
+      const below = trigger.bottom + gap;
+      const above = trigger.top - tooltip.height - gap;
+      const preferredTop = below + tooltip.height <= window.innerHeight - viewportPadding
+        ? below
+        : above;
+      const maximumTop = Math.max(viewportPadding, window.innerHeight - tooltip.height - viewportPadding);
+      const top = Math.min(Math.max(preferredTop, viewportPadding), maximumTop);
+      setPosition({ left, top });
     }
 
-    keepInsideViewport();
-    window.addEventListener('resize', keepInsideViewport);
-    return () => window.removeEventListener('resize', keepInsideViewport);
+    setPosition(null);
+    placeInsideViewport();
+    const closeOnScroll = () => setOpen(false);
+    window.addEventListener('resize', placeInsideViewport);
+    window.addEventListener('scroll', closeOnScroll, true);
+    return () => {
+      window.removeEventListener('resize', placeInsideViewport);
+      window.removeEventListener('scroll', closeOnScroll, true);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -72,7 +82,11 @@ export function InfoTip({ children, items, label = 'More information', className
     <span
       ref={rootRef}
       className={cn('relative inline-flex shrink-0 align-middle', className)}
-      onMouseEnter={() => setOpen(true)}
+      // Requiring actual mouse movement avoids a tooltip opening merely
+      // because a newly mounted modal appeared underneath a stationary cursor.
+      onPointerMove={(event) => {
+        if (event.pointerType === 'mouse') setOpen(true);
+      }}
       onMouseLeave={() => setOpen(false)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
@@ -81,37 +95,48 @@ export function InfoTip({ children, items, label = 'More information', className
       <button
         type="button"
         aria-label={label}
-        aria-describedby={id}
+        aria-describedby={open ? id : undefined}
         aria-expanded={open}
         className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        onFocus={() => setOpen(true)}
+        onFocus={(event) => {
+          // Radix moves focus into a dialog when it opens. Do not interpret
+          // that programmatic entry as a request to open the first InfoTip;
+          // keyboard focus moving within the dialog remains supported.
+          const dialog = event.currentTarget.closest('[role="dialog"]');
+          if (
+            dialog &&
+            (!event.relatedTarget || !dialog.contains(event.relatedTarget as Node))
+          ) return;
+          setOpen(true);
+        }}
         onClick={() => setOpen(true)}
       >
         <Info className="h-4 w-4" />
       </button>
-      <span
-        ref={tooltipRef}
-        id={id}
-        role="tooltip"
-        style={{ marginLeft: horizontalShift }}
-        className={cn(
-          'pointer-events-none absolute left-1/2 top-full z-[80] mt-1.5 w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-md border border-border bg-card px-3 py-2.5 text-left text-xs font-normal leading-relaxed text-foreground shadow-lg transition-opacity',
-          open
-            ? 'visible opacity-100'
-            : 'invisible opacity-0',
-        )}
-      >
-        {items ? (
-          <dl className="space-y-2.5">
-            {items.map((item) => (
-              <div key={item.title}>
-                <dt className="font-semibold text-foreground">{item.title}</dt>
-                <dd className="mt-0.5 text-muted-foreground">{item.description}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : children}
-      </span>
+      {open && createPortal(
+        <span
+          ref={tooltipRef}
+          id={id}
+          role="tooltip"
+          style={position ? { left: position.left, top: position.top } : undefined}
+          className={cn(
+            'pointer-events-none fixed z-[100] w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-card px-3 py-2.5 text-left text-xs font-normal leading-relaxed text-foreground shadow-lg transition-opacity',
+            position ? 'visible opacity-100' : 'invisible opacity-0',
+          )}
+        >
+          {items ? (
+            <dl className="space-y-2.5">
+              {items.map((item) => (
+                <div key={item.title}>
+                  <dt className="font-semibold text-foreground">{item.title}</dt>
+                  <dd className="mt-0.5 text-muted-foreground">{item.description}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : children}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }
