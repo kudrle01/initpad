@@ -640,13 +640,14 @@ jen konkrétní provozní a vyhodnocovací scénář.
    nedostatečná role uvnitř vlastního workspace zůstává 403 (ADR-086).
    **Uživatelský test:** bez přihlášení odpoví health, katalog šablon a auth
    config 200, zatímco `/api/projects` vrátí 401; neplatný CI token vrátí 401.
-2. ◐ **8b — dvou-workspace E2E matice.** Automatická cross-service matice
+2. ✅ **8b — dvou-workspace E2E matice.** Automatická cross-service matice
    modeluje ownera workspace A a uživatele, který je viewerem A a ownerem B.
    Ověřuje read/write hranice projektu, targetu, allocation, provisioning
    operace, auditu, diagnostiky, configu, portfolia, Agenta a exportu včetně
    přímých cizích ID. Test navíc dokazuje, že po 404/403 neběží navazující
-   datový dotaz ani infrastrukturová mutace. K uzavření zbývá stejná matice
-   přes živé HTTP sessions dvou skutečných účtů.
+   datový dotaz ani infrastrukturová mutace. Izolovaný acceptance runner stejnou
+   matici provedl přes skutečné HTTP sessions dvou dočasných účtů: 24 kontrol
+   prošlo a závěrečný databázový invariant i odstranění fixtures byly čisté.
    **Uživatelský test:** Alice zkusí přímé URL/ID zdrojů Team Beta a dostane
    404; Bob jako viewer Team Alpha stav přečte, ale každá změna skončí 403.
 3. TODO **8c — Agent adversarial testy.** Kompromitovaný Agent nesmí claimnout,
@@ -721,8 +722,11 @@ při nedostupné veřejné TLS cestě i restart API a Agenta během rozpracovan�
 operace s fencing převzetím druhého pokusu. Souběžný start queued deploymentů
 `team-alpha` a `it000` dokončil obě operace napoprvé a ověřil odlišné hostname,
 project-scoped sítě i HTTP `200`; gate 8f-c a Fáze 5 jsou tím uzavřené. Tyto
-dílčí výsledky nenahrazují závěrečný školní E2E scénář s
-nezávislým týmem.
+dílčí výsledky nenahrazují závěrečný školní E2E scénář s nezávislým týmem.
+Tenant boundary navíc prošla izolovaným HTTP acceptance během 24 požadavků:
+cizí zdroje vrátily 404, viewer mutace 403, povolené čtení a owner export 200.
+Přímá kontrola databáze nepotvrdila žádnou zamítnutou mutaci a automatický
+cleanup nezanechal účet, workspace ani projektový fixture.
 
 ## Vyhodnocení pro diplomovou práci
 

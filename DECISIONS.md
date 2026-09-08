@@ -3832,3 +3832,8 @@ session, forced password change a idempotentní lokální guard. Kontraktní tes
 eviduje všechny veřejné controllery/metody a zvlášť hlídá, že citlivé account a
 GitHub setup operace veřejné nejsou. Živý smoke test bez cookie očekává 200 pro
 health/auth config/templates, 401 pro projects a 401 pro CI callback bez tokenu.
+Samostatný acceptance runner vytváří pouze po explicitním opt-in dva dočasné
+účty, workspaces a minimální databázové resources, ale požadavky vede přes
+skutečný HTTP guard/controller/service řetězec. Kontroluje cizí 404, viewer 403,
+povolené 200 a nulový vedlejší efekt zamítnutých mutací; `finally` odstraní
+všechny fixtures i při neúspěchu testu.

@@ -138,6 +138,22 @@ Po restartu musí platforma i data naběhnout bez nového `install.sh`.
 
 ## 6. Ověř TargetAllocation a izolaci tenantů
 
+Před ručním scénářem lze na lokálním testovacím stacku spustit automatickou
+HTTP matici. Skript vytvoří dva dočasné účty, dva workspaces a minimální
+databázové fixtures, zavolá skutečné API a vše v `finally` odstraní. Vyžaduje
+explicitní opt-in, aby jej nešlo spustit omylem:
+
+```bash
+docker compose exec -T \
+  -e INITPAD_ACCEPTANCE_ALLOW_DB_FIXTURES=1 \
+  api node scripts/tenant-isolation-acceptance.js
+```
+
+Výsledek musí končit `Tenant isolation HTTP acceptance: PASS`. Test ověřuje
+cizí ID jako 404, viewer mutace jako 403, owner přístup jako 200 a nakonec
+přímo v databázi kontroluje, že zamítnuté požadavky nic nezměnily. Nenahrazuje
+ruční kontrolu navigace a skrytých tlačítek popsanou níže.
+
 V každém workspace otevři **Infrastructure → Allocations → Add allocation**:
 
 1. vyber `Company Docker (dev/test)`;
