@@ -613,8 +613,9 @@ jen konkrétní provozní a vyhodnocovací scénář.
 4. ◐ **7d — organizační portfolio.** Workspace dashboard jedním databázovým
    read-modelem shrnuje projekty, poslední CI/deploy, health, aktivní server
    accesses, čekající approvals a cleanup dluh. Načtení nevolá SCM ani Docker
-   a neroste o dotaz pro každý projekt (ADR-084). Automatické testy a produkční
-   build jsou hotové; zbývá živý acceptance druhé read-only role.
+   a neroste o dotaz pro každý projekt (ADR-084). Automatické testy, produkční
+   build a živý owner acceptance nad reálným workspace jsou hotové; zbývá
+   živý acceptance druhé read-only role.
    **Uživatelský test:** owner pozná problémový projekt a přejde na konkrétní
    akci; viewer vidí stejný read-only stav a prázdný list se během načítání
    falešně nezobrazí.
@@ -622,9 +623,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
    verzovaný JSON nebo CSV s celkovými i denními agregacemi: úspěšnost
    deploymentů, rollbacky, request-to-healthy dev a build-to-production proxy.
    Databázový select záměrně nečte logy, message, config, secrets ani identity;
-   cizí workspace vrací 404 a member/viewer 403 (ADR-085). Automatické testy a
-   produkční build jsou hotové; zbývá živě stáhnout oba formáty a porovnat
-   je s deployment historií.
+   cizí workspace vrací 404 a member/viewer 403 (ADR-085). Automatické testy,
+   produkční build a živé stažení obou formátů ownerem jsou hotové; Audit
+   log potvrdil správný formát, období i aktéra. Zbývá živý pokus druhého
+   member/viewer účtu.
    **Uživatelský test:** owner exportuje období a hodnoty odpovídají
    auditovaným operacím; member bez oprávnění export nezíská.
 
