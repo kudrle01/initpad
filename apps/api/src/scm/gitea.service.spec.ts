@@ -9,6 +9,7 @@ jest.mock('../config', () => ({
 }));
 
 import { GiteaService } from './gitea.service';
+import { ScmHttpStatusError } from './scm-http';
 
 const repository = (name = 'nette') => ({
   provider: 'gitea' as const,
@@ -207,5 +208,18 @@ describe('GiteaService managed account hardening', () => {
     const body = JSON.parse(String(init.body));
     expect(body).toMatchObject({ login_name: 'alice', source_id: 0, must_change_password: false });
     expect(body.password).toHaveLength(47);
+  });
+
+  it('does not copy an upstream response body into clone-token errors', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response('internal details with upstream-secret', { status: 403 }),
+    );
+
+    const error = await new GiteaService()
+      .issueCloneToken('alice')
+      .catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(ScmHttpStatusError);
+    expect((error as Error).message).toContain('HTTP 403');
+    expect((error as Error).message).not.toContain('upstream-secret');
   });
 });

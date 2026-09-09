@@ -36,6 +36,13 @@ import {
   ScmRepositoryIdentity,
   ScmRepositoryRef,
 } from '../scm-provider';
+import {
+  collectScmPages,
+  findInScmPages,
+  SCM_DOWNLOAD_TIMEOUT_MS,
+  scmFetch,
+  scmStatusError,
+} from '../scm-http';
 import { adaptWorkflowForGitHub } from './github-workflow';
 import { GitHubInstallationService } from './github-installation.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
@@ -94,18 +101,24 @@ export class GitHubScmProvider implements ScmProvider {
   private async gh(
     path: string,
     token: string,
-    init?: { method?: string; body?: unknown },
+    init?: { method?: string; body?: unknown; operation?: string; timeoutMs?: number },
   ): Promise<Response> {
-    return fetch(`${config.github.apiBaseUrl}${path}`, {
-      method: init?.method ?? 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        ...(init?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    return scmFetch(
+      'GitHub',
+      init?.operation ?? 'API request',
+      `${config.github.apiBaseUrl}${path}`,
+      {
+        method: init?.method ?? 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          ...(init?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       },
-      ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
-    });
+      init?.timeoutMs,
+    );
   }
 
   // Maps a workspace role to a GitHub collaborator permission.
@@ -126,7 +139,7 @@ export class GitHubScmProvider implements ScmProvider {
         ? await this.installations.tokenForBinding(actor.installationId, { permissions: READ_CONTENTS })
         : await this.installations.tokenForOwner(actor.username, { permissions: READ_CONTENTS })
     ).token;
-    const repositories: Array<{
+    type RepositoryPayload = {
         id: number | string;
         name: string;
         full_name: string;
@@ -135,17 +148,32 @@ export class GitHubScmProvider implements ScmProvider {
         default_branch?: string;
         updated_at?: string;
         size?: number;
-      }> = [];
-    for (let page = 1; page <= 100; page += 1) {
-      const res = await this.gh(`/installation/repositories?per_page=100&page=${page}`, token);
-      if (!res.ok) throw new Error(`Could not list GitHub repositories (HTTP ${res.status})`);
-      const data = (await res.json()) as { repositories?: typeof repositories };
-      if (!Array.isArray(data.repositories)) {
-        throw new Error('GitHub returned an invalid repository list');
-      }
-      repositories.push(...data.repositories);
-      if (data.repositories.length < 100) break;
-    }
+      };
+    const repositories = await collectScmPages<RepositoryPayload>({
+      provider: 'GitHub',
+      operation: 'list repositories',
+      pageSize: 100,
+      load: async (page) => {
+        const res = await this.gh(
+          `/installation/repositories?per_page=100&page=${page}`,
+          token,
+          { operation: 'list repositories' },
+        );
+        if (!res.ok) {
+          throw scmStatusError(
+            'GitHub',
+            'list repositories',
+            res,
+            'Could not list GitHub repositories',
+          );
+        }
+        const data = (await res.json()) as { repositories?: RepositoryPayload[] };
+        if (!Array.isArray(data.repositories)) {
+          throw new Error('GitHub returned an invalid repository list');
+        }
+        return data.repositories;
+      },
+    });
     return repositories.map((r) => ({
       provider: 'github',
       repositoryId: String(r.id),
@@ -178,7 +206,12 @@ export class GitHubScmProvider implements ScmProvider {
     );
     if (res.status === 404) return null;
     if (!res.ok) {
-      throw new Error(`Could not read '${path}' from ${repository.fullName} (HTTP ${res.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'read repository file',
+        res,
+        `Could not read '${path}' from ${repository.fullName}`,
+      );
     }
     const data = (await res.json()) as { content?: string; encoding?: string };
     if (!data.content) return null;
@@ -363,7 +396,12 @@ export class GitHubScmProvider implements ScmProvider {
       { method: 'DELETE' },
     );
     if (!res.ok && res.status !== 404) {
-      throw new Error(`Could not delete the GitHub repository (HTTP ${res.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'delete repository',
+        res,
+        'Could not delete the GitHub repository',
+      );
     }
   }
 
@@ -379,7 +417,12 @@ export class GitHubScmProvider implements ScmProvider {
       body: { enabled: false },
     });
     if (!disabled.ok) {
-      throw new Error(`Could not disable Actions on the detached repository (HTTP ${disabled.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'disable repository Actions',
+        disabled,
+        'Could not disable Actions on the detached repository',
+      );
     }
   }
 
@@ -390,7 +433,12 @@ export class GitHubScmProvider implements ScmProvider {
     for (const secret of PLATFORM_SECRETS) {
       const res = await this.gh(`/repos/${repo}/actions/secrets/${secret}`, token, { method: 'DELETE' });
       if (!res.ok && res.status !== 404) {
-        throw new Error(`Could not remove Actions secret '${secret}' (HTTP ${res.status})`);
+        throw scmStatusError(
+          'GitHub',
+          'remove Actions secret',
+          res,
+          `Could not remove Actions secret '${secret}'`,
+        );
       }
     }
   }
@@ -409,7 +457,12 @@ export class GitHubScmProvider implements ScmProvider {
       { method: 'PUT', body: { permission: this.permissionFor(role) } },
     );
     if (!res.ok && res.status !== 201 && res.status !== 204) {
-      throw new Error(`Could not grant repository access to '${username}' (HTTP ${res.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'grant collaborator access',
+        res,
+        `Could not grant repository access to '${username}'`,
+      );
     }
   }
 
@@ -423,7 +476,12 @@ export class GitHubScmProvider implements ScmProvider {
       { method: 'DELETE' },
     );
     if (!res.ok && res.status !== 204 && res.status !== 404) {
-      throw new Error(`Could not revoke repository access from '${username}' (HTTP ${res.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'revoke collaborator access',
+        res,
+        `Could not revoke repository access from '${username}'`,
+      );
     }
   }
 
@@ -438,30 +496,51 @@ export class GitHubScmProvider implements ScmProvider {
     // affiliation=direct excludes access inherited from organization teams.
     // Restoring an inherited effective role as a direct grant would otherwise
     // silently broaden access after a failed import.
-    for (let page = 1; page <= 100; page += 1) {
-      const res = await this.gh(
-        `/repos/${repo}/collaborators?affiliation=direct&per_page=100&page=${page}`,
-        token,
-      );
-      if (!res.ok) throw new Error(`Could not inspect repository collaborators (HTTP ${res.status})`);
-      const users = (await res.json()) as Array<{
-        login?: string;
-        role_name?: string;
-        permissions?: { admin?: boolean; maintain?: boolean; push?: boolean; triage?: boolean; pull?: boolean };
-      }>;
-      const direct = users.find((user) => user.login === username);
-      if (direct) {
-        if (direct.role_name) return direct.role_name;
-        if (direct.permissions?.admin) return 'admin';
-        if (direct.permissions?.maintain) return 'maintain';
-        if (direct.permissions?.push) return 'push';
-        if (direct.permissions?.triage) return 'triage';
-        if (direct.permissions?.pull) return 'pull';
-        throw new Error(`GitHub returned no direct permission for '${username}'`);
-      }
-      if (users.length < 100) break;
-    }
-    return null;
+    type CollaboratorPayload = {
+      login?: string;
+      role_name?: string;
+      permissions?: {
+        admin?: boolean;
+        maintain?: boolean;
+        push?: boolean;
+        triage?: boolean;
+        pull?: boolean;
+      };
+    };
+    const direct = await findInScmPages<CollaboratorPayload, CollaboratorPayload>({
+      provider: 'GitHub',
+      operation: 'find direct collaborator',
+      pageSize: 100,
+      load: async (page) => {
+        const res = await this.gh(
+          `/repos/${repo}/collaborators?affiliation=direct&per_page=100&page=${page}`,
+          token,
+          { operation: 'list direct collaborators' },
+        );
+        if (!res.ok) {
+          throw scmStatusError(
+            'GitHub',
+            'list direct collaborators',
+            res,
+            'Could not inspect repository collaborators',
+          );
+        }
+        const users = (await res.json()) as CollaboratorPayload[];
+        if (!Array.isArray(users)) {
+          throw new Error('GitHub returned an invalid collaborator list');
+        }
+        return users;
+      },
+      find: (users) => users.find((user) => user.login === username),
+    });
+    if (!direct) return null;
+    if (direct.role_name) return direct.role_name;
+    if (direct.permissions?.admin) return 'admin';
+    if (direct.permissions?.maintain) return 'maintain';
+    if (direct.permissions?.push) return 'push';
+    if (direct.permissions?.triage) return 'triage';
+    if (direct.permissions?.pull) return 'pull';
+    throw new Error(`GitHub returned no direct permission for '${username}'`);
   }
 
   async restoreCollaboratorAccess(
@@ -479,7 +558,12 @@ export class GitHubScmProvider implements ScmProvider {
       { method: 'PUT', body: { permission: access } },
     );
     if (!res.ok && res.status !== 201 && res.status !== 204) {
-      throw new Error(`Could not restore repository access for '${username}' (HTTP ${res.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'restore collaborator access',
+        res,
+        `Could not restore repository access for '${username}'`,
+      );
     }
   }
 
@@ -508,7 +592,14 @@ export class GitHubScmProvider implements ScmProvider {
       method: 'POST',
       body: { ref: `refs/tags/${tag}`, sha },
     });
-    if (!created.ok) throw new Error(`Could not queue the CI retry on GitHub (HTTP ${created.status})`);
+    if (!created.ok) {
+      throw scmStatusError(
+        'GitHub',
+        'create CI retry ref',
+        created,
+        'Could not queue the CI retry on GitHub',
+      );
+    }
     return tag;
   }
 
@@ -535,7 +626,12 @@ export class GitHubScmProvider implements ScmProvider {
         'GitHub App cannot re-run jobs. Set repository permission Actions to Read and write, then approve the installation update.',
       );
     }
-    throw new Error(`Could not re-run failed GitHub Actions jobs (HTTP ${response.status})`);
+    throw scmStatusError(
+      'GitHub',
+      're-run failed Actions jobs',
+      response,
+      'Could not re-run failed GitHub Actions jobs',
+    );
   }
 
   async deleteTag(repository: ScmRepositoryRef, tag: string, _actor: ScmActor): Promise<void> {
@@ -547,7 +643,7 @@ export class GitHubScmProvider implements ScmProvider {
       { method: 'DELETE' },
     );
     if (!res.ok && res.status !== 404 && res.status !== 422) {
-      throw new Error(`Could not delete tag '${tag}' (HTTP ${res.status})`);
+      throw scmStatusError('GitHub', 'delete tag', res, `Could not delete tag '${tag}'`);
     }
   }
 
@@ -619,10 +715,20 @@ export class GitHubScmProvider implements ScmProvider {
       body: { name, private: true, auto_init: false },
     });
     if (!response.ok) {
-      const reason = response.status === 422
-        ? `A repository named '${name}' already exists or GitHub rejected the name`
-        : `GitHub repository creation failed (HTTP ${response.status})`;
-      throw new Error(reason);
+      if (response.status === 422) {
+        throw scmStatusError(
+          'GitHub',
+          'create repository',
+          response,
+          `A repository named '${name}' already exists or GitHub rejected the name`,
+        );
+      }
+      throw scmStatusError(
+        'GitHub',
+        'create repository',
+        response,
+        'GitHub repository creation failed',
+      );
     }
     let created: {
       id?: number | string;
@@ -656,7 +762,12 @@ export class GitHubScmProvider implements ScmProvider {
         { method: 'DELETE' },
       ).then((cleanupResponse) => {
         if (!cleanupResponse.ok && cleanupResponse.status !== 404) {
-          throw new Error(`GitHub repository cleanup failed (HTTP ${cleanupResponse.status})`);
+          throw scmStatusError(
+            'GitHub',
+            'clean up repository',
+            cleanupResponse,
+            'GitHub repository cleanup failed',
+          );
         }
       }).catch((cleanupError) => {
         this.logger.error(
@@ -732,6 +843,7 @@ export class GitHubScmProvider implements ScmProvider {
       const res = await this.gh(
         `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/tarball/${encodeURIComponent(ref)}`,
         token,
+        { operation: 'download repository archive', timeoutMs: SCM_DOWNLOAD_TIMEOUT_MS },
       );
       if (!res.ok || !res.body) {
         this.logger.warn(`downloadArchive ${repository.fullName}@${ref} → HTTP ${res.status}`);
@@ -782,7 +894,12 @@ export class GitHubScmProvider implements ScmProvider {
       token,
     );
     if (!response.ok) {
-      throw new Error(`Could not resolve GitHub Actions artifact (HTTP ${response.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'resolve Actions artifact',
+        response,
+        'Could not resolve GitHub Actions artifact',
+      );
     }
     const artifact = (await response.json()) as {
       id?: number | string;
@@ -846,15 +963,7 @@ export class GitHubScmProvider implements ScmProvider {
     }
     const token = await this.token(repository, READ_ACTIONS);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
-    const response = await this.gh(
-      `/repos/${repo}/actions/artifacts?name=${encodeURIComponent(expectedName)}&per_page=100`,
-      token,
-    );
-    if (!response.ok) {
-      throw new Error(`Could not list GitHub Actions artifacts (HTTP ${response.status})`);
-    }
-    const data = (await response.json()) as {
-      artifacts?: Array<{
+    type ArtifactPayload = {
         id?: number | string;
         name?: string;
         digest?: string;
@@ -864,9 +973,33 @@ export class GitHubScmProvider implements ScmProvider {
           repository_id?: number | string;
           head_sha?: string;
         };
-      }>;
-    };
-    const candidates = (data.artifacts ?? [])
+      };
+    const artifacts = await collectScmPages<ArtifactPayload>({
+      provider: 'GitHub',
+      operation: 'list Actions artifacts',
+      pageSize: 100,
+      load: async (page) => {
+        const response = await this.gh(
+          `/repos/${repo}/actions/artifacts?name=${encodeURIComponent(expectedName)}&per_page=100&page=${page}`,
+          token,
+          { operation: 'list Actions artifacts' },
+        );
+        if (!response.ok) {
+          throw scmStatusError(
+            'GitHub',
+            'list Actions artifacts',
+            response,
+            'Could not list GitHub Actions artifacts',
+          );
+        }
+        const data = (await response.json()) as { artifacts?: ArtifactPayload[] };
+        if (!Array.isArray(data.artifacts)) {
+          throw new Error('GitHub returned an invalid Actions artifact list');
+        }
+        return data.artifacts;
+      },
+    });
+    const candidates = artifacts
       .filter((artifact) =>
         artifact.id != null &&
         artifact.name === expectedName &&
@@ -900,9 +1033,18 @@ export class GitHubScmProvider implements ScmProvider {
     const response = await this.gh(
       `/repos/${repo}/actions/artifacts/${encodeURIComponent(artifact.providerArtifactId)}/zip`,
       token,
+      { operation: 'download Actions artifact', timeoutMs: SCM_DOWNLOAD_TIMEOUT_MS },
     );
     if (!response.ok || !response.body) {
-      throw new Error(`Could not download GitHub Actions artifact (HTTP ${response.status})`);
+      if (!response.ok) {
+        throw scmStatusError(
+          'GitHub',
+          'download Actions artifact',
+          response,
+          'Could not download GitHub Actions artifact',
+        );
+      }
+      throw new Error('GitHub Actions artifact download returned no body');
     }
     const base = mkdtempSync(join(tmpdir(), 'initpad-github-artifact-'));
     const path = join(base, artifact.name);
@@ -1025,7 +1167,12 @@ export class GitHubScmProvider implements ScmProvider {
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
     const keyResponse = await this.gh(`/repos/${repo}/actions/secrets/public-key`, token);
     if (!keyResponse.ok) {
-      throw new Error(`Could not read the GitHub Actions public key (HTTP ${keyResponse.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'read Actions public key',
+        keyResponse,
+        'Could not read the GitHub Actions public key',
+      );
     }
     const key = (await keyResponse.json()) as { key_id?: string; key?: string };
     if (!key.key_id || !key.key) throw new Error('GitHub returned an incomplete Actions public key');
@@ -1040,7 +1187,12 @@ export class GitHubScmProvider implements ScmProvider {
         body: { encrypted_value: encryptedValue, key_id: key.key_id },
       });
       if (!response.ok && response.status !== 201 && response.status !== 204) {
-        throw new Error(`Could not configure GitHub Actions secret '${name}' (HTTP ${response.status})`);
+        throw scmStatusError(
+          'GitHub',
+          'configure Actions secret',
+          response,
+          `Could not configure GitHub Actions secret '${name}'`,
+        );
       }
     }
   }

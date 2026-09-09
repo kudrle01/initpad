@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { config } from '../../config';
+import { scmFetch, scmStatusError } from '../scm-http';
 
 export type OAuthMode = 'login' | 'link' | 'setup';
 
@@ -145,14 +146,21 @@ export class GitHubOAuthService {
       redirect_uri: config.github.callbackUrl,
     });
 
-    const userRes = await fetch(`${config.github.apiBaseUrl}/user`, {
+    const userRes = await scmFetch('GitHub', 'read OAuth user', `${config.github.apiBaseUrl}/user`, {
       headers: {
         Authorization: `Bearer ${token.accessToken}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
-    if (!userRes.ok) throw new Error(`Could not read the GitHub user (HTTP ${userRes.status})`);
+    if (!userRes.ok) {
+      throw scmStatusError(
+        'GitHub',
+        'read OAuth user',
+        userRes,
+        'Could not read the GitHub user',
+      );
+    }
     const u = (await userRes.json()) as {
       id: number;
       login: string;
@@ -163,13 +171,18 @@ export class GitHubOAuthService {
     let email = u.email ?? null;
     let emailVerified = false;
     try {
-      const emailsRes = await fetch(`${config.github.apiBaseUrl}/user/emails`, {
-        headers: {
-          Authorization: `Bearer ${token.accessToken}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
+      const emailsRes = await scmFetch(
+        'GitHub',
+        'read OAuth user emails',
+        `${config.github.apiBaseUrl}/user/emails`,
+        {
+          headers: {
+            Authorization: `Bearer ${token.accessToken}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
         },
-      });
+      );
       if (emailsRes.ok) {
         const emails = (await emailsRes.json()) as Array<{
           email?: string;
@@ -215,15 +228,27 @@ export class GitHubOAuthService {
   }
 
   private async requestToken(parameters: Record<string, string>): Promise<GitHubUserTokenSet> {
-    const tokenRes = await fetch(`${config.github.oauthBaseUrl}/login/oauth/access_token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
+    const tokenRes = await scmFetch(
+      'GitHub',
+      'exchange OAuth token',
+      `${config.github.oauthBaseUrl}/login/oauth/access_token`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: new URLSearchParams(parameters),
       },
-      body: new URLSearchParams(parameters),
-    });
-    if (!tokenRes.ok) throw new Error(`GitHub token exchange failed (HTTP ${tokenRes.status})`);
+    );
+    if (!tokenRes.ok) {
+      throw scmStatusError(
+        'GitHub',
+        'exchange OAuth token',
+        tokenRes,
+        'GitHub token exchange failed',
+      );
+    }
     const token = (await tokenRes.json()) as {
       access_token?: string;
       expires_in?: number;

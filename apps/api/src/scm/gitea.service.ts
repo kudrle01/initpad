@@ -18,6 +18,13 @@ import {
   ScmRepositoryIdentity,
   ScmRepositoryRef,
 } from './scm-provider';
+import {
+  collectScmPages,
+  findInScmPages,
+  SCM_DOWNLOAD_TIMEOUT_MS,
+  scmFetch,
+  scmStatusError,
+} from './scm-http';
 
 const exec = promisify(execFile);
 const PLATFORM_SECRETS = [
@@ -43,6 +50,14 @@ export type GiteaActor = ScmActor;
 export class GiteaService implements OnModuleInit, ScmProvider {
   private readonly logger = new Logger('GiteaService');
 
+  private request(
+    input: string | URL | Request,
+    init: RequestInit = {},
+    timeoutMs?: number,
+  ): Promise<Response> {
+    return scmFetch('Gitea', 'API request', input, init, timeoutMs);
+  }
+
   private assertProvider(repository: ScmRepositoryRef): void {
     if (repository.provider !== 'gitea') {
       throw new Error(
@@ -67,7 +82,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     if (!url || !adminToken) return;
     const hookUrl = `${config.scm.webhookUrl.replace(/\/$/, '')}/api/scm/webhook`;
     try {
-      const listed = await fetch(`${url}/api/v1/admin/hooks?limit=50`, {
+      const listed = await this.request(`${url}/api/v1/admin/hooks?limit=50`, {
         headers: { Authorization: `token ${adminToken}` },
       });
       if (listed.ok) {
@@ -80,14 +95,14 @@ export class GiteaService implements OnModuleInit, ScmProvider {
         // older URL format without the token).
         for (const h of hooks) {
           if (h.config?.url?.startsWith(hookUrl)) {
-            await fetch(`${url}/api/v1/admin/hooks/${h.id}`, {
+            await this.request(`${url}/api/v1/admin/hooks/${h.id}`, {
               method: 'DELETE',
               headers: { Authorization: `token ${adminToken}` },
             }).catch(() => undefined);
           }
         }
       }
-      const created = await fetch(`${url}/api/v1/admin/hooks`, {
+      const created = await this.request(`${url}/api/v1/admin/hooks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
         body: JSON.stringify({
@@ -142,7 +157,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     if (!url || !adminToken) {
       throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
-    const res = await fetch(`${url}/api/v1/admin/users`, {
+    const res = await this.request(`${url}/api/v1/admin/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({
@@ -156,7 +171,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       throw new Error('A user with this username or e-mail already exists in Gitea');
     }
     if (!res.ok) {
-      throw new Error(`Gitea user creation failed (HTTP ${res.status})`);
+      throw scmStatusError('Gitea', 'create user', res, 'Gitea user creation failed');
     }
     const data = (await res.json()) as { id: number; login: string };
     return { id: data.id, login: data.login };
@@ -169,13 +184,18 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     if (!url || !adminToken) throw new Error('Gitea admin is not configured');
-    const res = await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
+    const res = await this.request(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({ login_name: username, source_id: 0, active }),
     });
     if (!res.ok) {
-      throw new Error(`Could not ${active ? 'activate' : 'deactivate'} the Gitea account (HTTP ${res.status})`);
+      throw scmStatusError(
+        'Gitea',
+        active ? 'activate account' : 'deactivate account',
+        res,
+        `Could not ${active ? 'activate' : 'deactivate'} the Gitea account`,
+      );
     }
   }
 
@@ -183,7 +203,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     if (!url || !adminToken) return;
-    await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}?purge=true`, {
+    await this.request(`${url}/api/v1/admin/users/${encodeURIComponent(username)}?purge=true`, {
       method: 'DELETE',
       headers: { Authorization: `token ${adminToken}` },
     }).catch(() => undefined);
@@ -194,7 +214,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
   async createUserToken(username: string, password: string): Promise<string> {
     const url = config.gitea.internalUrl;
     const basic = Buffer.from(`${username}:${password}`).toString('base64');
-    const res = await fetch(`${url}/api/v1/users/${username}/tokens`, {
+    const res = await this.request(`${url}/api/v1/users/${username}/tokens`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Basic ${basic}` },
       body: JSON.stringify({
@@ -212,7 +232,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       }),
     });
     if (!res.ok) {
-      throw new Error(`Gitea token creation failed (HTTP ${res.status})`);
+      throw scmStatusError('Gitea', 'create user token', res, 'Gitea token creation failed');
     }
     const data = (await res.json()) as { sha1: string };
     return data.sha1;
@@ -229,7 +249,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const { adminToken } = config.gitea;
     if (!url || !adminToken) throw new Error('Gitea admin is not configured');
     const password = `Ip1!${randomBytes(32).toString('base64url')}`;
-    const res = await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
+    const res = await this.request(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({
@@ -240,7 +260,12 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       }),
     });
     if (!res.ok) {
-      throw new Error(`Could not randomize the local Gitea password (HTTP ${res.status})`);
+      throw scmStatusError(
+        'Gitea',
+        'randomize local password',
+        res,
+        'Could not randomize the local Gitea password',
+      );
     }
   }
 
@@ -261,7 +286,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const tempPassword = `Ip1!${randomBytes(20).toString('hex')}`;
     // Gitea's EditUserOption requires login_name + source_id (422 otherwise).
     // source_id 0 = local account; login_name of a local account = username.
-    const edit = await fetch(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
+    const edit = await this.request(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({
@@ -272,9 +297,11 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       }),
     });
     if (!edit.ok) {
-      const body = await edit.text().catch(() => '');
-      throw new Error(
-        `Could not provision a git token (set-password HTTP ${edit.status}) ${body.slice(0, 120)}`,
+      throw scmStatusError(
+        'Gitea',
+        'prepare clone token',
+        edit,
+        'Could not provision a git token while setting the temporary password',
       );
     }
     const token = await this.createUserToken(username, tempPassword);
@@ -292,7 +319,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const owner = repository.owner;
     const pkgName = repository.name.toLowerCase();
     try {
-      const res = await fetch(
+      const res = await this.request(
         `${url}/api/v1/packages/${owner}?type=container&q=${encodeURIComponent(pkgName)}&limit=100`,
         { headers: { Authorization: `token ${adminToken}` } },
       );
@@ -300,7 +327,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       const pkgs = (await res.json()) as Array<{ type: string; name: string; version: string }>;
       for (const p of pkgs) {
         if (p.type !== 'container' || p.name.toLowerCase() !== pkgName) continue;
-        await fetch(
+        await this.request(
           `${url}/api/v1/packages/${owner}/container/${p.name}/${encodeURIComponent(p.version)}`,
           { method: 'DELETE', headers: { Authorization: `token ${adminToken}` } },
         ).catch(() => undefined);
@@ -317,7 +344,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     if (!url || !adminToken) throw new Error('Gitea is not configured');
-    const response = await fetch(
+    const response = await this.request(
       `${url}/api/v1/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`,
       {
         method: 'DELETE',
@@ -325,7 +352,12 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       },
     );
     if (!response.ok && response.status !== 404) {
-      throw new Error(`Could not delete the Gitea repository (HTTP ${response.status})`);
+      throw scmStatusError(
+        'Gitea',
+        'delete repository',
+        response,
+        'Could not delete the Gitea repository',
+      );
     }
   }
 
@@ -341,14 +373,17 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     await this.removeRepoSecrets(repository);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
     const headers = { Authorization: `token ${adminToken}` };
-    const disabled = await fetch(`${url}/api/v1/repos/${repo}`, {
+    const disabled = await this.request(`${url}/api/v1/repos/${repo}`, {
       method: 'PATCH',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ has_actions: false }),
     });
     if (!disabled.ok) {
-      throw new Error(
-        `Could not disable Actions on the detached repository (HTTP ${disabled.status})`,
+      throw scmStatusError(
+        'Gitea',
+        'disable repository Actions',
+        disabled,
+        'Could not disable Actions on the detached repository',
       );
     }
   }
@@ -361,12 +396,17 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
     const headers = { Authorization: `token ${adminToken}` };
     for (const secret of PLATFORM_SECRETS) {
-      const removed = await fetch(
+      const removed = await this.request(
         `${url}/api/v1/repos/${repo}/actions/secrets/${encodeURIComponent(secret)}`,
         { method: 'DELETE', headers },
       );
       if (!removed.ok && removed.status !== 404) {
-        throw new Error(`Could not remove Actions secret '${secret}' (HTTP ${removed.status})`);
+        throw scmStatusError(
+          'Gitea',
+          'remove Actions secret',
+          removed,
+          `Could not remove Actions secret '${secret}'`,
+        );
       }
     }
   }
@@ -378,14 +418,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const url = config.gitea.internalUrl;
     const token = config.gitea.adminToken || actor.token;
     if (!url || !token) return [];
-    const res = await fetch(
-      `${url}/api/v1/users/${encodeURIComponent(actor.username)}/repos?limit=100`,
-      { headers: { Authorization: `token ${token}` } },
-    );
-    if (!res.ok) {
-      throw new Error(`Could not list repositories for '${actor.username}' (HTTP ${res.status})`);
-    }
-    const data = (await res.json()) as Array<{
+    type RepositoryPayload = {
       id: number | string;
       name: string;
       full_name: string;
@@ -394,7 +427,31 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       default_branch?: string;
       updated_at?: string;
       empty?: boolean;
-    }>;
+    };
+    const data = await collectScmPages<RepositoryPayload>({
+      provider: 'Gitea',
+      operation: 'list repositories',
+      pageSize: 100,
+      load: async (page) => {
+        const res = await this.request(
+          `${url}/api/v1/users/${encodeURIComponent(actor.username)}/repos?limit=100&page=${page}`,
+          { headers: { Authorization: `token ${token}` } },
+        );
+        if (!res.ok) {
+          throw scmStatusError(
+            'Gitea',
+            'list repositories',
+            res,
+            `Could not list repositories for '${actor.username}'`,
+          );
+        }
+        const pageData = (await res.json()) as RepositoryPayload[];
+        if (!Array.isArray(pageData)) {
+          throw new Error('Gitea returned an invalid repository list');
+        }
+        return pageData;
+      },
+    });
     return data.map((r) => ({
       provider: 'gitea',
       repositoryId: String(r.id),
@@ -421,7 +478,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const url = config.gitea.internalUrl;
     const token = config.gitea.adminToken || actor.token;
     if (!url || !token) return null;
-    const res = await fetch(
+    const res = await this.request(
       `${url}/api/v1/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/contents/${path
         .split('/')
         .map(encodeURIComponent)
@@ -430,7 +487,12 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     );
     if (res.status === 404) return null;
     if (!res.ok) {
-      throw new Error(`Could not read '${path}' from ${repository.fullName} (HTTP ${res.status})`);
+      throw scmStatusError(
+        'Gitea',
+        'read repository file',
+        res,
+        `Could not read '${path}' from ${repository.fullName}`,
+      );
     }
     const data = (await res.json()) as { content?: string; encoding?: string };
     if (!data.content) return null;
@@ -456,7 +518,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     username: string,
     permission: string,
   ): Promise<void> {
-    const res = await fetch(
+    const res = await this.request(
       `${config.gitea.internalUrl}/api/v1/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/collaborators/${encodeURIComponent(username)}`,
       {
         method: 'PUT',
@@ -465,19 +527,29 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       },
     );
     if (!res.ok && res.status !== 204) {
-      throw new Error(`Could not grant ${permission} repository access to '${username}' (HTTP ${res.status})`);
+      throw scmStatusError(
+        'Gitea',
+        'grant collaborator access',
+        res,
+        `Could not grant ${permission} repository access to '${username}'`,
+      );
     }
   }
 
   async removeCollaborator(repository: ScmRepositoryRef, username: string): Promise<void> {
     this.assertProvider(repository);
     if (repository.owner === username) return;
-    const res = await fetch(
+    const res = await this.request(
       `${config.gitea.internalUrl}/api/v1/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/collaborators/${encodeURIComponent(username)}`,
       { method: 'DELETE', headers: { Authorization: `token ${config.gitea.adminToken}` } },
     );
     if (!res.ok && res.status !== 204 && res.status !== 404) {
-      throw new Error(`Could not revoke repository access from '${username}' (HTTP ${res.status})`);
+      throw scmStatusError(
+        'Gitea',
+        'revoke collaborator access',
+        res,
+        `Could not revoke repository access from '${username}'`,
+      );
     }
   }
 
@@ -491,22 +563,46 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const headers = { Authorization: `token ${config.gitea.adminToken}` };
     // The list endpoint contains direct collaborators only. The permission
     // endpoint alone would also return inherited organization/team access.
-    let direct = false;
-    for (let page = 1; page <= 100; page += 1) {
-      const listed = await fetch(`${base}/collaborators?limit=100&page=${page}`, { headers });
-      if (!listed.ok) {
-        throw new Error(`Could not inspect repository collaborators (HTTP ${listed.status})`);
-      }
-      const users = (await listed.json()) as Array<{ login?: string; username?: string }>;
-      direct = users.some((user) => (user.login || user.username) === username);
-      if (direct || users.length < 100) break;
-    }
-    if (!direct) return null;
-    const permission = await fetch(`${base}/collaborators/${encodeURIComponent(username)}/permission`, {
-      headers,
+    const direct = await findInScmPages<
+      { login?: string; username?: string },
+      true
+    >({
+      provider: 'Gitea',
+      operation: 'find direct collaborator',
+      pageSize: 100,
+      load: async (page) => {
+        const listed = await this.request(`${base}/collaborators?limit=100&page=${page}`, {
+          headers,
+        });
+        if (!listed.ok) {
+          throw scmStatusError(
+            'Gitea',
+            'list direct collaborators',
+            listed,
+            'Could not inspect repository collaborators',
+          );
+        }
+        const users = (await listed.json()) as Array<{ login?: string; username?: string }>;
+        if (!Array.isArray(users)) {
+          throw new Error('Gitea returned an invalid collaborator list');
+        }
+        return users;
+      },
+      find: (users) =>
+        users.some((user) => (user.login || user.username) === username) ? true : undefined,
     });
+    if (!direct) return null;
+    const permission = await this.request(
+      `${base}/collaborators/${encodeURIComponent(username)}/permission`,
+      { headers },
+    );
     if (!permission.ok) {
-      throw new Error(`Could not inspect repository access for '${username}' (HTTP ${permission.status})`);
+      throw scmStatusError(
+        'Gitea',
+        'inspect collaborator permission',
+        permission,
+        `Could not inspect repository access for '${username}'`,
+      );
     }
     const data = (await permission.json()) as { permission?: string };
     if (!data.permission) throw new Error(`Gitea returned no permission for '${username}'`);
@@ -533,7 +629,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const token = config.gitea.adminToken || actor.token;
     if (!url || !token) return false;
     try {
-      const res = await fetch(`${url}/api/v1/repos/${repository.owner}/${repository.name}`, {
+      const res = await this.request(`${url}/api/v1/repos/${repository.owner}/${repository.name}`, {
         headers: { Authorization: `token ${token}` },
         signal: AbortSignal.timeout(2500),
       });
@@ -559,7 +655,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     if (!url || !readToken) return null;
     try {
       const endpoint = `${url}/api/v1/repos/${repository.owner}/${repository.name}/commits?limit=${limit}`;
-      const res = await fetch(endpoint, {
+      const res = await this.request(endpoint, {
         headers: { Authorization: `token ${readToken}` },
       });
       if (!res.ok) {
@@ -600,7 +696,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
 
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
     const headers = { Authorization: `token ${token}` };
-    const listed = await fetch(`${url}/api/v1/repos/${repo}/tags?limit=50`, { headers });
+    const listed = await this.request(`${url}/api/v1/repos/${repo}/tags?limit=50`, { headers });
     if (listed.ok) {
       const tags = (await listed.json()) as Array<{ name?: string }>;
       await Promise.all(
@@ -612,13 +708,18 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     }
 
     const tag = `initpad-retry-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
-    const created = await fetch(`${url}/api/v1/repos/${repo}/tags`, {
+    const created = await this.request(`${url}/api/v1/repos/${repo}/tags`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ tag_name: tag, target: sha }),
     });
     if (!created.ok) {
-      throw new Error(`Could not queue the CI retry in Gitea (HTTP ${created.status})`);
+      throw scmStatusError(
+        'Gitea',
+        'create CI retry tag',
+        created,
+        'Could not queue the CI retry in Gitea',
+      );
     }
     return tag;
   }
@@ -628,7 +729,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const url = config.gitea.internalUrl;
     const token = config.gitea.adminToken || actor.token;
     if (!url || !token || !tag.startsWith('initpad-retry-')) return;
-    await fetch(
+    await this.request(
       `${url}/api/v1/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/tags/${encodeURIComponent(tag)}`,
       { method: 'DELETE', headers: { Authorization: `token ${token}` } },
     ).catch(() => undefined);
@@ -649,7 +750,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const readToken = adminToken || actor.token;
     if (!url || !readToken) return null;
     try {
-      const res = await fetch(
+      const res = await this.request(
         `${url}/api/v1/repos/${repository.owner}/${repository.name}/commits/${sha}/statuses?sort=recentupdate&limit=50`,
         { headers: { Authorization: `token ${readToken}` } },
       );
@@ -680,7 +781,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     // owns the repo, but the activity feed attributes the action to the
     // service account — consistent with the scaffold push and honest about
     // who actually performed it (automation, not the user).
-    const res = await fetch(
+    const res = await this.request(
       `${url}/api/v1/admin/users/${encodeURIComponent(actor.username)}/repos`,
       {
         method: 'POST',
@@ -694,7 +795,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     // 409 = repo already exists, continue with push after resolving its real
     // immutable id. Never persist an invented id derived from mutable names.
     if (!res.ok && res.status !== 409) {
-      throw new Error(`repository creation failed (HTTP ${res.status})`);
+      throw scmStatusError('Gitea', 'create repository', res, 'Repository creation failed');
     }
     let data = res.ok
       ? ((await res.json().catch(() => null)) as {
@@ -705,12 +806,17 @@ export class GiteaService implements OnModuleInit, ScmProvider {
         } | null)
       : null;
     if (!data?.id) {
-      const resolved = await fetch(
+      const resolved = await this.request(
         `${url}/api/v1/repos/${encodeURIComponent(actor.username)}/${encodeURIComponent(name)}`,
         { headers: { Authorization: `token ${adminToken}` } },
       );
       if (!resolved.ok) {
-        throw new Error(`repository identity lookup failed (HTTP ${resolved.status})`);
+        throw scmStatusError(
+          'Gitea',
+          'resolve repository identity',
+          resolved,
+          'Repository identity lookup failed',
+        );
       }
       data = (await resolved.json()) as typeof data;
     }
@@ -729,7 +835,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     };
 
     // Enables Actions (CI) for the repository (admin can edit any repo).
-    await fetch(`${url}/api/v1/repos/${actor.username}/${name}`, {
+    await this.request(`${url}/api/v1/repos/${actor.username}/${name}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({ has_actions: true }),
@@ -799,13 +905,18 @@ export class GiteaService implements OnModuleInit, ScmProvider {
   ): Promise<void> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
-    const res = await fetch(`${url}/api/v1/repos/${owner}/${repo}/actions/secrets/${key}`, {
+    const res = await this.request(`${url}/api/v1/repos/${owner}/${repo}/actions/secrets/${key}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
       body: JSON.stringify({ data: value }),
     });
     if (!res.ok) {
-      throw new Error(`Could not configure Actions secret '${key}' (HTTP ${res.status})`);
+      throw scmStatusError(
+        'Gitea',
+        'configure Actions secret',
+        res,
+        `Could not configure Actions secret '${key}'`,
+      );
     }
   }
 
@@ -827,9 +938,10 @@ export class GiteaService implements OnModuleInit, ScmProvider {
 
     let res: Response;
     try {
-      res = await fetch(
+      res = await this.request(
         `${url}/api/v1/repos/${repository.owner}/${repository.name}/archive/${encodeURIComponent(ref)}.tar.gz`,
         { headers: { Authorization: `token ${token}` } },
+        SCM_DOWNLOAD_TIMEOUT_MS,
       );
     } catch (e) {
       this.logger.warn(`downloadArchive ${repository.fullName}@${ref}: ${(e as Error).message}`);

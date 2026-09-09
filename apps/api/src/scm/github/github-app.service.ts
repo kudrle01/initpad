@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { createSign } from 'crypto';
 import { config } from '../../config';
+import {
+  collectScmPages,
+  findInScmPages,
+  scmFetch,
+  scmStatusError,
+} from '../scm-http';
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64url');
@@ -93,7 +99,9 @@ export class GitHubAppService {
    * immutable account id, current login/type and installation state.
    */
   async getInstallation(installationId: string | number): Promise<VerifiedGitHubInstallation> {
-    const res = await fetch(
+    const res = await scmFetch(
+      'GitHub',
+      'verify App installation',
       `${config.github.apiBaseUrl}/app/installations/${encodeURIComponent(String(installationId))}`,
       {
         headers: {
@@ -104,7 +112,12 @@ export class GitHubAppService {
       },
     );
     if (!res.ok) {
-      throw new Error(`Could not verify the GitHub App installation (HTTP ${res.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'verify App installation',
+        res,
+        'Could not verify the GitHub App installation',
+      );
     }
     const data = (await res.json()) as {
       id?: number | string;
@@ -117,23 +130,43 @@ export class GitHubAppService {
 
   /** Lists active App installations for personal-account setup recovery. */
   async listInstallations(): Promise<VerifiedGitHubInstallation[]> {
-    const res = await fetch(`${config.github.apiBaseUrl}/app/installations?per_page=100`, {
-      headers: {
-        Authorization: `Bearer ${this.appJwt()}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`Could not list GitHub App installations (HTTP ${res.status})`);
-    }
-    const data = (await res.json()) as Array<{
+    type InstallationPayload = {
       id?: number | string;
       account?: { id?: number | string; login?: string; type?: string };
       repository_selection?: string;
       suspended_at?: string | null;
-    }>;
-    if (!Array.isArray(data)) throw new Error('GitHub returned an invalid installation list');
+    };
+    const jwt = this.appJwt();
+    const data = await collectScmPages<InstallationPayload>({
+      provider: 'GitHub',
+      operation: 'list App installations',
+      pageSize: 100,
+      load: async (page) => {
+        const endpoint = new URL(`${config.github.apiBaseUrl}/app/installations`);
+        endpoint.searchParams.set('per_page', '100');
+        endpoint.searchParams.set('page', String(page));
+        const response = await scmFetch('GitHub', 'list App installations', endpoint, {
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        });
+        if (!response.ok) {
+          throw scmStatusError(
+            'GitHub',
+            'list App installations',
+            response,
+            'Could not list GitHub App installations',
+          );
+        }
+        const pageData = (await response.json()) as InstallationPayload[];
+        if (!Array.isArray(pageData)) {
+          throw new Error('GitHub returned an invalid installation list');
+        }
+        return pageData;
+      },
+    });
     return data.map(parseInstallation);
   }
 
@@ -151,38 +184,58 @@ export class GitHubAppService {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
-    const userRes = await fetch(`${config.github.apiBaseUrl}/user`, { headers });
+    const userRes = await scmFetch(
+      'GitHub',
+      'verify authorizing user',
+      `${config.github.apiBaseUrl}/user`,
+      { headers },
+    );
     if (!userRes.ok) {
-      throw new Error(`Could not verify the GitHub user (HTTP ${userRes.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'verify authorizing user',
+        userRes,
+        'Could not verify the GitHub user',
+      );
     }
     const user = (await userRes.json()) as { id?: number | string };
     if (user.id == null || String(user.id) !== expectedProviderUserId) {
       throw new Error('The authorizing GitHub user does not match the linked identity');
     }
 
-    for (let page = 1; page <= 100; page += 1) {
-      const url = new URL(`${config.github.apiBaseUrl}/user/installations`);
-      url.searchParams.set('per_page', '100');
-      url.searchParams.set('page', String(page));
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        throw new Error(`Could not verify user installation access (HTTP ${response.status})`);
-      }
-      const body = (await response.json()) as {
-        installations?: Array<{
-          id?: number | string;
-          account?: { id?: number | string; login?: string; type?: string };
-          repository_selection?: string;
-          suspended_at?: string | null;
-        }>;
-      };
-      if (!Array.isArray(body.installations)) {
-        throw new Error('GitHub returned an invalid user installation list');
-      }
-      const match = body.installations.find((candidate) => String(candidate.id) === installationId);
-      if (match) return parseInstallation(match);
-      if (body.installations.length < 100) break;
-    }
+    type InstallationPayload = Parameters<typeof parseInstallation>[0];
+    const match = await findInScmPages<InstallationPayload, InstallationPayload>({
+      provider: 'GitHub',
+      operation: 'verify user installation access',
+      pageSize: 100,
+      load: async (page) => {
+        const endpoint = new URL(`${config.github.apiBaseUrl}/user/installations`);
+        endpoint.searchParams.set('per_page', '100');
+        endpoint.searchParams.set('page', String(page));
+        const response = await scmFetch(
+          'GitHub',
+          'verify user installation access',
+          endpoint,
+          { headers },
+        );
+        if (!response.ok) {
+          throw scmStatusError(
+            'GitHub',
+            'verify user installation access',
+            response,
+            'Could not verify user installation access',
+          );
+        }
+        const body = (await response.json()) as { installations?: InstallationPayload[] };
+        if (!Array.isArray(body.installations)) {
+          throw new Error('GitHub returned an invalid user installation list');
+        }
+        return body.installations;
+      },
+      find: (installations) =>
+        installations.find((candidate) => String(candidate.id) === installationId),
+    });
+    if (match) return parseInstallation(match);
     throw new Error('The authorizing GitHub user cannot access this installation');
   }
 
@@ -195,7 +248,9 @@ export class GitHubAppService {
     installationId: string | number,
     options?: { permissions?: Record<string, string>; repositoryIds?: number[] },
   ): Promise<InstallationToken> {
-    const res = await fetch(
+    const res = await scmFetch(
+      'GitHub',
+      'mint installation token',
       `${config.github.apiBaseUrl}/app/installations/${encodeURIComponent(String(installationId))}/access_tokens`,
       {
         method: 'POST',
@@ -212,7 +267,12 @@ export class GitHubAppService {
       },
     );
     if (!res.ok) {
-      throw new Error(`Could not mint a GitHub installation token (HTTP ${res.status})`);
+      throw scmStatusError(
+        'GitHub',
+        'mint installation token',
+        res,
+        'Could not mint a GitHub installation token',
+      );
     }
     const data = (await res.json()) as { token: string; expires_at: string };
     return { token: data.token, expiresAt: data.expires_at };

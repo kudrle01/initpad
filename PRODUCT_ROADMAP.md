@@ -707,7 +707,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
      z entrypointů. Potom sestaví a otestuje všechny aplikace. Síťový
      `check:release` navíc spustí audit produkčních npm závislostí; nalezená
      `qs` DoS advisory byla odstraněna kompatibilní aktualizací lockfile.
-   - ◐ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
+   - ✅ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
      rozložit jen potvrzené hotspoty s více odpovědnostmi. Velikost souboru je
      signál pro review, ne automatický důvod k abstrakci.
      - ✅ **8e-b1 — bezpečný lifecycle smazání projektu.** Orchestrátor předává
@@ -723,8 +723,19 @@ jen konkrétní provozní a vyhodnocovací scénář.
        lease; původní adversarial suite ověřuje celý HTTP aplikační tok.
        **Uživatelský test:** v detailu Agent serveru spustit **Test protocol**;
        nový `probe · attempt 1` přejde přes leased na succeeded a dosáhne 100 %.
-     - TODO **8e-b3 — SCM HTTP vrstvy.** Sjednotit bounded request, mapování
-       chyb a stránkování Gitea/GitHub bez skrytí provider-specific pravidel.
+     - ✅ **8e-b3 — SCM HTTP vrstvy.** Všechna REST/OAuth volání Gitea a
+       GitHub procházejí přes jednu omezenou transportní hranici: běžný
+       request má 15s deadline, streamované archivy a artefakty explicitní
+       15min deadline a mutace se automaticky neopakují. Stavové chyby jsou
+       typované podle autentizace, oprávnění, absence, konfliktu, rate limitu
+       a dostupnosti, aniž by kopírovaly upstream body, URL nebo credentials.
+       Sdílené bounded stránkování nyní pokrývá repozitáře, App
+       instalace, přímé collaborators a Actions artefakty; endpointy,
+       permission scopes a provider-specific význam stavů zůstávají v
+       adaptérech. **Uživatelský test:** v self-hosted edici otevřít
+       **Add project → Import existing repository** a ověřit načtení Gitea
+       repozitářů; v GitHub edici totéž zopakovat pro zvolenou App instalaci
+       a poté otevřít commits/stages importovaného projektu.
    - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
      připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
    - ◐ **8e-d — finální předání.**

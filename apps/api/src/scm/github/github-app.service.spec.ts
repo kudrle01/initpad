@@ -127,6 +127,29 @@ describe('GitHubAppService', () => {
     }]);
   });
 
+  it('paginates App installations instead of stopping after the first 100', async () => {
+    config.github.appId = '123';
+    config.github.privateKey = privateKeyPem;
+    const page = Array.from({ length: 100 }, (_, id) => ({
+      id,
+      account: { id: 10_000 + id, login: `owner-${id}`, type: 'Organization' },
+    }));
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => page })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{
+          id: 100,
+          account: { id: 10_100, login: 'last-owner', type: 'Organization' },
+        }],
+      });
+    global.fetch = fetchMock as never;
+
+    await expect(new GitHubAppService().listInstallations()).resolves.toHaveLength(101);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('page=2');
+  });
+
   it('verifies an organization installation against the linked user access token', async () => {
     const fetchMock = jest
       .fn()
