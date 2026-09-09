@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -11,7 +10,6 @@ import type { Readable } from 'stream';
 import { ARTIFACT_STORE, type ArtifactStore } from '../artifacts/artifact-store';
 import { AuditEventsService } from '../audit/audit-events.service';
 import { decryptSecret } from '../common/secret';
-import { generateToken, hashToken } from '../common/token';
 import {
   activeDeploymentPhasePredecessors,
   ActiveDeploymentPhase,
@@ -34,10 +32,11 @@ import {
   CreateAgentProbeJobDto,
   CreateGatewayPreflightDto,
 } from './dto/agent-job.dto';
+import {
+  AGENT_JOB_NEXT_POLL_SECONDS,
+  AgentJobLeases,
+} from './agent-job-leases';
 
-const LEASE_MS = 30_000;
-const NEXT_POLL_SECONDS = 2;
-const LEASE_PREFIX = 'initpad_lease_';
 const LIFECYCLE_TEST_IMAGE = 'nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa';
 
 interface JobRow {
@@ -95,6 +94,8 @@ export interface AgentArtifactDownload {
 
 @Injectable()
 export class AgentJobsService implements OnModuleInit {
+  private readonly leases: AgentJobLeases;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly agents: AgentsService,
@@ -102,7 +103,9 @@ export class AgentJobsService implements OnModuleInit {
     private readonly gatewayRoutes: GatewayRoutesService,
     @Inject(AuditEventsService)
     private readonly auditEvents?: Pick<AuditEventsService, 'recordOperationResult'>,
-  ) {}
+  ) {
+    this.leases = new AgentJobLeases(prisma, agents);
+  }
 
   async onModuleInit(): Promise<void> {
     // A crash can occur after the terminal AgentJob write but before its
@@ -369,57 +372,14 @@ export class AgentJobsService implements OnModuleInit {
     };
     nextPollSeconds: number;
   }> {
-    const agent = await this.agents.authenticateCredential(authorization);
+    const agent = await this.leases.authenticate(authorization);
     for (let raceAttempt = 0; raceAttempt < 3; raceAttempt += 1) {
-      const now = new Date();
-      const candidate = await this.prisma.agentJob.findFirst({
-        where: {
-          targetId: agent.targetId,
-          protocolVersion: { lte: agent.protocolVersion },
-          OR: [
-            { status: 'queued' },
-            { status: 'leased', leaseExpiresAt: { lte: now } },
-          ],
-          ...this.activeAgentFilter(agent),
-        },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true, status: true, leaseTokenHash: true },
-      });
-      if (!candidate) return { job: null, nextPollSeconds: NEXT_POLL_SECONDS };
-
-      const leaseToken = `${LEASE_PREFIX}${generateToken()}`;
-      const leaseExpiresAt = new Date(now.getTime() + LEASE_MS);
-      const claimed = await this.prisma.agentJob.updateMany({
-        where: {
-          id: candidate.id,
-          targetId: agent.targetId,
-          ...this.activeAgentFilter(agent),
-          ...(candidate.status === 'queued'
-            ? { status: 'queued' }
-            : {
-                status: 'leased',
-                leaseExpiresAt: { lte: now },
-                leaseTokenHash: candidate.leaseTokenHash,
-              }),
-        },
-        data: {
-          status: 'leased',
-          leasedByAgentId: agent.id,
-          leaseTokenHash: hashToken(leaseToken),
-          leasedAt: now,
-          leaseExpiresAt,
-          attempt: { increment: 1 },
-          progressSequence: 0,
-          progressPercent: 0,
-          progressStage: 'assigned',
-          message: 'Claimed by Agent',
-          resultCode: null,
-          result: Prisma.DbNull,
-          finishedAt: null,
-        },
-      });
-      if (claimed.count !== 1) continue;
-      const row = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: candidate.id } });
+      const claim = await this.leases.claimOnce(agent);
+      if (claim.outcome === 'empty') {
+        return { job: null, nextPollSeconds: AGENT_JOB_NEXT_POLL_SECONDS };
+      }
+      if (claim.outcome === 'raced') continue;
+      const { row, leaseToken, leaseExpiresAt } = claim;
       if (row.kind === 'logs') {
         await this.prisma.workloadDiagnostic.updateMany({
           where: { currentJobId: row.id, status: { in: ['queued', 'running'] } },
@@ -457,7 +417,7 @@ export class AgentJobsService implements OnModuleInit {
           leaseExpiresAt: leaseExpiresAt.toISOString(),
           ...(delivery ? { delivery } : {}),
         },
-        nextPollSeconds: NEXT_POLL_SECONDS,
+        nextPollSeconds: AGENT_JOB_NEXT_POLL_SECONDS,
       };
     }
     return { job: null, nextPollSeconds: 1 };
@@ -468,10 +428,12 @@ export class AgentJobsService implements OnModuleInit {
     jobId: string,
     leaseToken: string | undefined,
   ): Promise<AgentArtifactDownload> {
-    if (!leaseToken?.startsWith(LEASE_PREFIX)) throw this.lostLease();
-    const agent = await this.agents.authenticateCredential(authorization);
+    if (!this.leases.hasTokenShape(leaseToken)) throw this.leases.lostLease();
+    const agent = await this.leases.authenticate(authorization);
     const binding = await this.deliveryBinding(agent, jobId, leaseToken);
-    if (!binding || !['deploy', 'rollback'].includes(binding.kind)) throw this.lostLease();
+    if (!binding || !['deploy', 'rollback'].includes(binding.kind)) {
+      throw this.leases.lostLease();
+    }
     const artifact = this.assertDeliveryBinding(binding);
     const object = await this.artifactStore.head(artifact.storageRef);
     const sizeBytes = this.safeSize(artifact.sizeBytes);
@@ -490,15 +452,7 @@ export class AgentJobsService implements OnModuleInit {
     jobId: string,
     leaseToken: string,
   ): Promise<{ leaseExpiresAt: string }> {
-    const agent = await this.agents.authenticateCredential(authorization);
-    const now = new Date();
-    const leaseExpiresAt = new Date(now.getTime() + LEASE_MS);
-    const renewed = await this.prisma.agentJob.updateMany({
-      where: this.activeLeaseWhere(agent, jobId, leaseToken, now),
-      data: { leaseExpiresAt },
-    });
-    if (renewed.count !== 1) throw this.lostLease();
-    return { leaseExpiresAt: leaseExpiresAt.toISOString() };
+    return this.leases.renew(authorization, jobId, leaseToken);
   }
 
   async progress(
@@ -506,11 +460,11 @@ export class AgentJobsService implements OnModuleInit {
     jobId: string,
     dto: AgentJobProgressDto,
   ): Promise<AgentJobSummary> {
-    const agent = await this.agents.authenticateCredential(authorization);
+    const agent = await this.leases.authenticate(authorization);
     const now = new Date();
     const advanced = await this.prisma.agentJob.updateMany({
       where: {
-        ...this.activeLeaseWhere(agent, jobId, dto.leaseToken, now),
+        ...this.leases.activeLease(agent, jobId, dto.leaseToken, now),
         progressSequence: { lt: dto.sequence },
       },
       data: {
@@ -522,9 +476,9 @@ export class AgentJobsService implements OnModuleInit {
     });
     if (advanced.count !== 1) {
       const current = await this.prisma.agentJob.findFirst({
-        where: this.activeLeaseWhere(agent, jobId, dto.leaseToken, now),
+        where: this.leases.activeLease(agent, jobId, dto.leaseToken, now),
       });
-      if (!current) throw this.lostLease();
+      if (!current) throw this.leases.lostLease();
       // A duplicate or out-of-order report must not regress the user-visible
       // operation with stale text after a newer sequence has already won.
       const currentMessage = current.message ?? dto.message;
@@ -552,20 +506,13 @@ export class AgentJobsService implements OnModuleInit {
     jobId: string,
     dto: AgentJobCompleteDto,
   ): Promise<AgentJobSummary> {
-    const agent = await this.agents.authenticateCredential(authorization);
+    const agent = await this.leases.authenticate(authorization);
     const now = new Date();
-    const leaseTokenHash = hashToken(dto.leaseToken);
     const binding = await this.prisma.agentJob.findFirst({
-      where: {
-        id: jobId,
-        targetId: agent.targetId,
-        leasedByAgentId: agent.id,
-        leaseTokenHash,
-        ...this.activeAgentFilter(agent),
-      },
+      where: this.leases.boundLease(agent, jobId, dto.leaseToken),
       select: { kind: true },
     });
-    if (!binding) throw this.lostLease();
+    if (!binding) throw this.leases.lostLease();
     const diagnosticJob = binding?.kind === 'logs';
     if (dto.diagnostic && !diagnosticJob) {
       throw new BadRequestException('Diagnostic output is accepted only for a logs job');
@@ -585,7 +532,7 @@ export class AgentJobsService implements OnModuleInit {
     }
     const completed = await this.prisma.$transaction(async (transaction) => {
       const result = await transaction.agentJob.updateMany({
-        where: this.activeLeaseWhere(agent, jobId, dto.leaseToken, now),
+        where: this.leases.activeLease(agent, jobId, dto.leaseToken, now),
         data: {
           status: dto.status,
           progressPercent: dto.status === 'succeeded' ? 100 : undefined,
@@ -630,13 +577,7 @@ export class AgentJobsService implements OnModuleInit {
     });
     if (completed.count !== 1) {
       const current = await this.prisma.agentJob.findFirst({
-        where: {
-          id: jobId,
-          targetId: agent.targetId,
-          leasedByAgentId: agent.id,
-          leaseTokenHash,
-          ...this.activeAgentFilter(agent),
-        },
+        where: this.leases.boundLease(agent, jobId, dto.leaseToken),
       });
       if (
         !current ||
@@ -646,7 +587,7 @@ export class AgentJobsService implements OnModuleInit {
         !this.sameResult(current.result, dto.result) ||
         (diagnosticJob && !(await this.sameDiagnostic(jobId, dto)))
       ) {
-        throw this.lostLease();
+        throw this.leases.lostLease();
       }
       await this.reconcileGatewayPreflight(jobId);
       await this.reconcileGatewayRoute(jobId);
@@ -1360,27 +1301,13 @@ export class AgentJobsService implements OnModuleInit {
       && stored.logs === dto.diagnostic.logs;
   }
 
-  private activeAgentFilter(agent: AuthenticatedAgent) {
-    return {
-      target: {
-        agent: {
-          is: {
-            id: agent.id,
-            credentialHash: agent.credentialHash,
-            disabledAt: null,
-          },
-        },
-      },
-    };
-  }
-
   private async deliveryForLease(
     agent: AuthenticatedAgent,
     jobId: string,
     leaseToken: string,
   ): Promise<AgentJobDelivery> {
     const binding = await this.deliveryBinding(agent, jobId, leaseToken);
-    if (!binding) throw this.lostLease();
+    if (!binding) throw this.leases.lostLease();
     const artifact = this.assertDeliveryBinding(binding);
     const payload = this.objectRecord(binding.payload);
     const queuedFingerprint = typeof payload?.configFingerprint === 'string'
@@ -1421,7 +1348,7 @@ export class AgentJobsService implements OnModuleInit {
     leaseToken: string,
   ) {
     return this.prisma.agentJob.findFirst({
-      where: this.activeLeaseWhere(agent, jobId, leaseToken, new Date()),
+      where: this.leases.activeLease(agent, jobId, leaseToken, new Date()),
       select: {
         kind: true,
         payload: true,
@@ -1493,7 +1420,7 @@ export class AgentJobsService implements OnModuleInit {
   ): Promise<void> {
     const now = new Date();
     const failed = await this.prisma.agentJob.updateMany({
-      where: this.activeLeaseWhere(agent, jobId, leaseToken, now),
+      where: this.leases.activeLease(agent, jobId, leaseToken, now),
       data: {
         status: 'failed',
         progressStage: 'failed',
@@ -1513,27 +1440,6 @@ export class AgentJobsService implements OnModuleInit {
       throw new BadRequestException('Build artifact has an invalid size');
     }
     return size;
-  }
-
-  private activeLeaseWhere(
-    agent: AuthenticatedAgent,
-    jobId: string,
-    leaseToken: string,
-    now: Date,
-  ) {
-    return {
-      id: jobId,
-      targetId: agent.targetId,
-      status: 'leased',
-      leasedByAgentId: agent.id,
-      leaseTokenHash: hashToken(leaseToken),
-      leaseExpiresAt: { gt: now },
-      ...this.activeAgentFilter(agent),
-    };
-  }
-
-  private lostLease(): ConflictException {
-    return new ConflictException('Agent job lease is no longer valid');
   }
 
   private supportsLifecycle(version: string | null): boolean {

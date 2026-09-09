@@ -715,8 +715,14 @@ jen konkrétní provozní a vyhodnocovací scénář.
        checkoutu komponentě `ProjectDeletion`. Pořadí side effectů i retry/cleanup
        debt kontrakt zůstávají kryté charakterizačními testy; `ProjectsService`
        se zmenšil o 158 řádků bez změny API.
-     - TODO **8e-b2 — Agent job protokol.** Oddělit claim/lease fencing od
-       serializace odpovědí až po doplnění úzkých charakterizačních testů.
+     - ✅ **8e-b2 — Agent job lease protokol.** `AgentJobLeases` vlastní
+       autentizaci, generování tokenu, claim/takeover CAS, credential/target
+       fence, expiraci a renew. Projekce deploymentů ani serializace výsledků
+       do této bezpečnostní hranice nepatří. Úzké testy samostatně hlídají
+       credential CAS, ztracený závod a odmítnutí renew cizího či expirovaného
+       lease; původní adversarial suite ověřuje celý HTTP aplikační tok.
+       **Uživatelský test:** v detailu Agent serveru spustit **Test protocol**;
+       nový `probe · attempt 1` přejde přes leased na succeeded a dosáhne 100 %.
      - TODO **8e-b3 — SCM HTTP vrstvy.** Sjednotit bounded request, mapování
        chyb a stránkování Gitea/GitHub bez skrytí provider-specific pravidel.
    - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
