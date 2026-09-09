@@ -707,10 +707,18 @@ jen konkrétní provozní a vyhodnocovací scénář.
      z entrypointů. Potom sestaví a otestuje všechny aplikace. Síťový
      `check:release` navíc spustí audit produkčních npm závislostí; nalezená
      `qs` DoS advisory byla odstraněna kompatibilní aktualizací lockfile.
-   - TODO **8e-b — cílený maintainability pass.** Podle charakterizačních testů
-     rozložit jen potvrzené hotspoty s více odpovědnostmi, zejména projektovou
-     orchestraci, Agent job protokol a SCM HTTP vrstvy. Velikost souboru je signál
-     pro review, ne automatický důvod k abstrakci.
+   - ◐ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
+     rozložit jen potvrzené hotspoty s více odpovědnostmi. Velikost souboru je
+     signál pro review, ne automatický důvod k abstrakci.
+     - ✅ **8e-b1 — bezpečný lifecycle smazání projektu.** Orchestrátor předává
+       teardown, fencing diagnostiky, artifact cleanup, SCM cleanup a odstranění
+       checkoutu komponentě `ProjectDeletion`. Pořadí side effectů i retry/cleanup
+       debt kontrakt zůstávají kryté charakterizačními testy; `ProjectsService`
+       se zmenšil o 158 řádků bez změny API.
+     - TODO **8e-b2 — Agent job protokol.** Oddělit claim/lease fencing od
+       serializace odpovědí až po doplnění úzkých charakterizačních testů.
+     - TODO **8e-b3 — SCM HTTP vrstvy.** Sjednotit bounded request, mapování
+       chyb a stránkování Gitea/GitHub bez skrytí provider-specific pravidel.
    - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
      připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
    - ◐ **8e-d — finální předání.**

@@ -60,7 +60,6 @@ import { AppConfigService } from './app-config.service';
 import {
   deployedImageRef,
   deploymentSlug,
-  imageRepository,
 } from './project-deployment-identity';
 import { mapWithConcurrency } from '../common/concurrency';
 import { ProjectRollback } from './project-rollback';
@@ -71,6 +70,7 @@ import {
   ProjectProductionApprovals,
   ProductionRequestKind,
 } from './project-production-approvals';
+import { ProjectDeletion } from './project-deletion';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
@@ -99,6 +99,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly rollbackFlow: ProjectRollback;
   private readonly workloadDiagnostics: ProjectWorkloadDiagnostics;
   private readonly productionApprovals: ProjectProductionApprovals;
+  private readonly projectDeletion: ProjectDeletion;
   private readonly repositoryReconcileAfter = new Map<string, number>();
   private readonly repositoryReconcileInFlight = new Set<string>();
   private readonly projectScmReconcileAfter = new Map<string, number>();
@@ -121,6 +122,15 @@ export class ProjectsService implements OnModuleInit {
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
     this.operations = new ProjectDeploymentOperations(prisma, auditEvents);
+    this.projectDeletion = new ProjectDeletion(
+      prisma,
+      deployment,
+      this.environmentTargets,
+      this.operations,
+      this.artifactLifecycle,
+      workspaceScm,
+      (row) => this.actorForRepo(row),
+    );
     const agentDelivery = new ProjectAgentDelivery(prisma, artifactStore);
     this.environmentLifecycle = new ProjectEnvironmentLifecycle(
       prisma,
@@ -1795,7 +1805,7 @@ export class ProjectsService implements OnModuleInit {
         'Production still has deployment state. Confirm production removal explicitly.',
       );
     }
-    await this.cleanupProject(row, {
+    await this.projectDeletion.execute(row, {
       repoAction: opts.deleteRemoteRepo ? 'delete' : 'detach',
       confirmCleanupDebt: opts.confirmCleanupDebt === true,
     });
@@ -1837,175 +1847,7 @@ export class ProjectsService implements OnModuleInit {
       `Repository ${provider}:${repositoryId ?? fullName} was deleted — cleaning up project ${row.id}`,
     );
     // The repository itself is already gone; clean up everything else.
-    await this.cleanupProject(row, { repoAction: 'gone' });
-  }
-
-  // Shared teardown used by user-initiated deletion and the SCM webhook.
-  private async cleanupProject(
-    row: Prisma.ProjectGetPayload<{
-      include: {
-        environments: { include: { target: true; allocation: true; buildArtifact: true } };
-        owner: true;
-      };
-    }>,
-    opts: {
-      repoAction: 'delete' | 'detach' | 'gone';
-      confirmCleanupDebt?: boolean;
-    },
-  ): Promise<void> {
-    const remoteAgentDeployments = row.environments.filter(
-      (environment) =>
-        environment.target?.scope === 'user'
-        && environment.target.kind === 'docker'
-        && (
-          environment.status !== 'empty'
-          || environment.version !== null
-          || environment.activeOperationId !== null
-        ),
-    );
-    if (remoteAgentDeployments.length > 0) {
-      throw new BadRequestException(
-        `Remove Agent-managed deployments first (${remoteAgentDeployments.map((item) => item.name).join(', ')}). `
-        + 'The project can be deleted after their cleanup jobs succeed.',
-      );
-    }
-    const repository = repositoryRef(row);
-    const unfinishedOperations = await this.prisma.deploymentOperation.findMany({
-      where: { environment: { projectId: row.id }, finishedAt: null },
-      select: { id: true },
-    });
-    for (const operation of unfinishedOperations) {
-      await this.operations.complete(operation.id, 'cancelled', 'Project deletion requested');
-    }
-    await this.cancelProjectDiagnosticJobs(row.id);
-    const slug = deploymentSlug(repository);
-    for (const env of row.environments) {
-      let teardownWarning: string | null = null;
-      try {
-        const teardown = await this.deployment.teardown(env.provider as ProviderKind, {
-          projectName: slug,
-          env: env.name,
-          imageRef: deployedImageRef(repository, env),
-          connection: this.environmentTargets.connection(env),
-          allocation: this.environmentTargets.allocation(env),
-        });
-        teardownWarning = teardown?.warning ?? null;
-        // If a later target fails, keep an accurate, retryable project record
-        // instead of claiming that resources already removed still run.
-        await this.prisma.environment.update({
-          where: { id: env.id },
-          data: {
-            status: 'empty',
-            version: null,
-            buildArtifactId: null,
-            url: null,
-            statusReason: teardownWarning ? `Cleanup pending: ${teardownWarning}` : null,
-            allocatedPort: null,
-            activeOperationId: null,
-            deploymentRequired: false,
-          },
-        });
-      } catch (error) {
-        const reason = (error as Error).message || 'Unknown teardown error';
-        await this.prisma.environment.update({
-          where: { id: env.id },
-          data: {
-            status: 'failed',
-            statusReason: `Cleanup failed: ${reason}`,
-            activeOperationId: null,
-          },
-        });
-        throw new BadRequestException(
-          `Could not remove ${env.name} deployment from ${env.target?.name ?? env.provider}: ${reason}`,
-        );
-      }
-      if (teardownWarning) {
-        if (!opts.confirmCleanupDebt) {
-          throw new BadRequestException(
-            `Public ${env.name} deployment was removed from ${env.target?.name ?? env.provider}, but project deletion is waiting for target cleanup: ${teardownWarning}`,
-          );
-        }
-        this.logger.warn(
-          `Project ${row.id} deletion explicitly detached pending ${env.name} cleanup: ${teardownWarning}`,
-        );
-      }
-    }
-    // Only after all containers are stopped, remove the locally pulled
-    // registry images of the project.
-    await this.deployment.removeImages(imageRepository(repository));
-    // Remove durable build-artifact objects before deleting or detaching the
-    // source repository. If object storage is unavailable, the most valuable
-    // external resource (the user's source code) therefore remains intact and
-    // the whole deletion can be retried safely. Store deletion is idempotent,
-    // so a partial object purge is also safe to repeat.
-    const artifactCleanupFailures = await this.artifactLifecycle.purgeProjectObjects(row.id);
-    if (
-      artifactCleanupFailures.length &&
-      opts.repoAction !== 'gone' &&
-      !opts.confirmCleanupDebt
-    ) {
-      throw new BadRequestException(
-        `Project deployments were removed, but deleting stored build artifacts failed: ${artifactCleanupFailures.join('; ')}`,
-      );
-    }
-    if (artifactCleanupFailures.length) {
-      this.logger.warn(
-        `Project ${row.id}: ${artifactCleanupFailures.length} stored artifact object(s) could not be deleted: ${artifactCleanupFailures.join('; ')}`,
-      );
-    }
-    // Also delete images from the SCM registry so no generated packages remain.
-    const scm = this.workspaceScm.provider(repository.provider);
-    await scm.deletePackages(repository);
-    if (opts.repoAction === 'delete') {
-      await scm.deleteRepo(repository, this.actorForRepo(row));
-    } else if (opts.repoAction === 'detach') {
-      await scm.detachRepo(repository, this.actorForRepo(row));
-    }
-    rmSync(row.repoPath, { recursive: true, force: true });
-    await this.prisma.project.delete({ where: { id: row.id } });
-  }
-
-  /**
-   * A diagnostic lease is target-scoped and therefore does not cascade with a
-   * Project row. Fence it explicitly before teardown so an offline Agent
-   * cannot reconnect later and inspect a deleted/re-created project identity.
-   */
-  private async cancelProjectDiagnosticJobs(projectId: string): Promise<void> {
-    const diagnostics = await this.prisma.workloadDiagnostic.findMany({
-      where: { environment: { projectId } },
-      select: { currentJobId: true },
-    });
-    const jobIds = diagnostics.flatMap(({ currentJobId }) => currentJobId ? [currentJobId] : []);
-    if (jobIds.length === 0) return;
-    const now = new Date();
-    await this.prisma.agentJob.updateMany({
-      where: {
-        id: { in: jobIds },
-        status: { in: ['queued', 'leased'] },
-      },
-      data: {
-        status: 'cancelled',
-        progressStage: 'cancelled',
-        message: 'Project deletion requested',
-        resultCode: 'project_deleted',
-        leaseTokenHash: null,
-        leaseExpiresAt: null,
-        leasedByAgentId: null,
-        finishedAt: now,
-      },
-    });
-    await this.prisma.workloadDiagnostic.updateMany({
-      where: {
-        environment: { projectId },
-        status: { in: ['queued', 'running'] },
-      },
-      data: {
-        currentJobId: null,
-        status: 'failed',
-        message: 'Cancelled because project deletion was requested',
-        finishedAt: now,
-      },
-    });
+    await this.projectDeletion.execute(row, { repoAction: 'gone' });
   }
 
   // Retention GC (ADR-059 §7): drops the durable objects of verified artifacts
