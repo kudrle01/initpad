@@ -1,7 +1,7 @@
 import type { ImgHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
 
-type BrandMarkProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'alt' | 'src'>;
+type BrandMarkProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'alt' | 'src' | 'srcSet'>;
 
 /**
  * The standalone InitPad symbol. Product name text remains real HTML so it is
@@ -10,7 +10,8 @@ type BrandMarkProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'alt' | 'src'>;
 export function BrandMark({ className, ...props }: BrandMarkProps) {
   return (
     <img
-      src="/brand/initpad-icon-primary.svg"
+      src="/brand/initpad-icon-128.png"
+      srcSet="/brand/initpad-icon-128.png 1x, /brand/initpad-icon-256.png 2x"
       alt=""
       aria-hidden="true"
       draggable={false}

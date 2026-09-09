@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/brand/initpad-icon-primary.svg" alt="" width="88" height="88">
+  <img src="docs/brand/initpad-icon-256.png" alt="" width="88" height="88">
 </p>
 
 <h1 align="center">InitPad</h1>

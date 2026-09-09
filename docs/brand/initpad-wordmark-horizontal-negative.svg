@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320">
-<rect width="1200" height="320" fill="#4E220F"/>
-<g transform="translate(36 28) scale(0.52)">
-  <path d="M 316 104 H 166 C 126 104 96 134 96 174 V 338 C 96 378 126 408 166 408 H 316" fill="none" stroke="#FFFFFF" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="386" cy="256" r="46" fill="#FFFFFF"/>
-</g>
-<text x="335" y="212" fill="#FFFFFF" font-family="Inter Display, Inter, Arial, sans-serif" font-size="154" font-weight="600" letter-spacing="-3">InitPad</text>
-</svg>

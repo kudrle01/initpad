@@ -1,0 +1,1 @@
+Tento balíček je postavený na uživatelem schváleném přesném PNG masteru. Nevkládám zde nové SVG, aby nedošlo k další změně tvaru. Pokud chceš, můžu v dalším kroku udělat samostatnou ruční vektorovou rekonstrukci 1:1 podle tohoto masteru.
