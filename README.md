@@ -1,4 +1,8 @@
-# InitPad
+<p align="center">
+  <img src="docs/brand/initpad-icon-primary.svg" alt="" width="88" height="88">
+</p>
+
+<h1 align="center">InitPad</h1>
 
 InitPad je interní vývojářská platforma pro školy, menší týmy a firemní
 sandboxy. Z jednoho formuláře připraví soukromý Git repozitář, výchozí kód,

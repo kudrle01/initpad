@@ -21,6 +21,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/auth';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
+import { BrandMark } from '@/components/atoms/BrandMark';
 import { CreateWorkspaceDialog } from '@/components/organisms/CreateWorkspaceDialog';
 import {
   Dialog,
@@ -95,17 +96,20 @@ function Item({
   );
 }
 
-function Brand() {
+function Brand({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-        IP
-      </span>
+    <Link
+      to="/"
+      onClick={onNavigate}
+      className="flex w-fit items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      aria-label="InitPad overview"
+    >
+      <BrandMark className="h-9 w-9" />
       <span className="text-[15px] font-semibold tracking-tight">InitPad</span>
       <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         beta
       </span>
-    </div>
+    </Link>
   );
 }
 
@@ -248,9 +252,7 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
     <>
       <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur lg:hidden">
         <div className="mr-auto flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-            IP
-          </span>
+          <BrandMark className="h-9 w-9" />
           <span className="hidden font-semibold tracking-tight sm:inline">InitPad</span>
         </div>
         <WorkspaceMenu compact onCreate={openCreateWorkspace} />
@@ -270,7 +272,7 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
           >
             <DialogTitle className="sr-only">Navigation</DialogTitle>
             <div className="px-5 py-4">
-              <Brand />
+              <Brand onNavigate={() => setMobileOpen(false)} />
             </div>
             <div className="px-3 pb-3">
               <WorkspaceMenu onCreate={openCreateWorkspace} />

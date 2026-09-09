@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
+import { BrandMark } from '@/components/atoms/BrandMark';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -37,9 +38,7 @@ export default function Activate() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
       <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-6 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
-        <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-base font-bold text-primary-foreground">
-          IP
-        </span>
+        <BrandMark className="mx-auto h-11 w-11" />
         <h1 className="mt-4 text-[20px] font-semibold tracking-tight">Activate your account</h1>
         <p className="mt-1 text-sm text-muted-foreground">Choose a password to finish setting up your InitPad account.</p>
         <form className="mt-6 flex flex-col gap-2.5" onSubmit={submit}>

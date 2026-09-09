@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
+import { BrandMark } from '@/components/atoms/BrandMark';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -66,9 +67,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
       <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-6 text-center shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
-        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-lg font-bold text-primary-foreground">
-          IP
-        </span>
+        <BrandMark className="mx-auto h-12 w-12" />
         <h1 className="mt-4 text-[22px] font-semibold tracking-tight">InitPad</h1>
         <p className="text-sm text-muted-foreground">Internal developer platform</p>
 

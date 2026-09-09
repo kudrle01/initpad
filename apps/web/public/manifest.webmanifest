@@ -1,0 +1,30 @@
+{
+  "name": "InitPad",
+  "short_name": "InitPad",
+  "description": "Internal developer platform for creating, building and deploying projects.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FBF8F0",
+  "theme_color": "#3A6B40",
+  "icons": [
+    {
+      "src": "/brand/initpad-icon-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/initpad-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/initpad-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

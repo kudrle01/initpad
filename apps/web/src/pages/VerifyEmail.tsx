@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '@/api';
+import { BrandMark } from '@/components/atoms/BrandMark';
 
 type State = 'verifying' | 'ok' | 'error';
 
@@ -25,6 +26,7 @@ export default function VerifyEmail() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
       <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-6 text-center shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
+        <BrandMark className="mx-auto mb-4 h-10 w-10" />
         {state === 'verifying' && <p className="text-sm text-muted-foreground">Verifying your e-mail…</p>}
         {state === 'ok' && (
           <>
