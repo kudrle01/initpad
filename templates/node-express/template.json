@@ -11,5 +11,5 @@
   "port": 8080,
   "healthPath": "/health",
   "startCommand": "node src/index.js",
-  "description": "Express REST API with Dockerfile and CI/CD pipeline. Prod: Docker / SSH-VPS."
+  "description": "Express REST API with Dockerfile and CI/CD pipeline. Runs on Agent-backed Docker across dev, test and prod."
 }

@@ -56,6 +56,14 @@ export function InfrastructureTargetList({
   const allocationByTarget = new Map(
     allocations.map((allocation) => [allocation.targetId, allocation]),
   );
+  const orderedTargets = [...targets].sort((left, right) => {
+    const rank = (target: Target) => {
+      if (target.kind === 'ssh') return 3;
+      if (target.kind === 'sftp') return 2;
+      return target.scope === 'user' ? 0 : 1;
+    };
+    return rank(left) - rank(right) || left.name.localeCompare(right.name);
+  });
 
   return (
     <section className="space-y-4">
@@ -84,7 +92,7 @@ export function InfrastructureTargetList({
         <EmptyState
           icon={Server}
           title="No deployment servers"
-          description="Add a Docker, SSH or SFTP server to make deployment capacity available to this workspace."
+          description="Connect a Docker server through InitPad Agent, or add compatible SFTP hosting for PHP and static sites."
           action={!readOnly ? (
             <Button onClick={onAdd}>
               <Plus className="h-4 w-4" /> Add server
@@ -93,7 +101,7 @@ export function InfrastructureTargetList({
         />
       ) : (
         <div className="flex flex-col gap-4">
-          {targets.map((target) => {
+          {orderedTargets.map((target) => {
             const allocation = allocationByTarget.get(target.id) ?? null;
             return (
               <TargetCard

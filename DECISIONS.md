@@ -4147,3 +4147,46 @@ scope je čitelný ještě před otevřením formuláře.
 odmítne osiřelou původní Settings stránku. Uživatelský test projde desktopový i
 mobilní sidebar, otevře Account settings přes profil, Workspace přes Manage,
 ověří podmíněnou položku Instance a přímé otevření starého `/settings`.
+
+---
+
+## ADR-095 — Docker je Agent-first, SFTP kompatibilní a SSH runtime pouze migrační
+
+**Kontext.** Jeden technický výčet Docker/SSH/SFTP v Add server budil dojem tří
+rovnocenných současných architektur. Ve skutečnosti má outbound Agent menší
+credential surface a jediný bounded job protokol, kdežto původní SSH provider
+nahrává zdroj, spouští příkazy a spravuje proces přes shell. SFTP nelze jednoduše
+odstranit: školní a levný shared hosting často nedovolí Agent ani Docker a pro
+statické/PHP aplikace je to legitimní cílová platforma. Vestavěný Docker socket
+je zase součástí důvěryhodné single-node self-hosted instalace, ne kapacita
+veřejného SaaS control plane.
+
+**Rozhodnutí.** Nový Docker target znamená vždy server připojený odchozím
+InitPad Agentem; formulář jej označuje jako doporučenou cestu a nikdy pro něj
+nepřijímá inbound host credential. SFTP zůstává podporovanou kompatibilní volbou
+pro shared static/PHP web hosting a UI vysvětluje, že bezpečný PHP release navíc
+vyžaduje shell přes stejný účet. Self-hosted edice může používat svůj vestavěný
+přímý Docker, ale SaaS tyto built-in řádky nevytváří, nevypisuje ani nezpřístupní
+přes známé ID nebo nový allocation.
+
+Source-based SSH runtime je od této verze migrační legacy provider. API odmítne
+nový SSH target, nový workspace allocation i nové přiřazení environmentu.
+Existující target, allocation a environment se nemažou: lze je zobrazit,
+odpojit, znovu připojit, redeployovat nebo z nich workload přesunout. Provider
+a šablonový `startCommand` proto zatím zůstávají v kódu jako compatibility
+vrstva; odstranění je možné až po doložené migraci všech existujících vazeb.
+Nový Node prod bez explicitní volby používá Docker, nikoli built-in SSH.
+
+**Důsledky.** Golden path má jednu runtime správní hranici a veřejný control
+plane nemůže omylem sáhnout na vlastní Docker host. SFTP vědomě nese užší
+funkčnost a uložené přihlašovací údaje, ale pokrývá infrastrukturu, na kterou
+Agent nelze instalovat. Stávající SSH provoz se nerozbije při aktualizaci, jen
+se nemůže dál rozšiřovat. Built-in legacy VPS zůstává v existujících
+self-hosted/demo databázích viditelně označený pro migraci.
+
+**Testování.** Service testy odmítají vytvoření SSH targetu a allocation,
+odmítají explicitní přiřazení nového projektu na SSH a ověřují Docker výchozí
+volbu pro Node. Edition test kontroluje nejen SaaS seznam, ale i přímý přístup
+na známé built-in ID a zakazuje seed built-inů v SaaS. Uživatelský test ověří
+dva typy v Add server, legacy označení existujícího SSH serveru, absenci SSH v
+novém projektu a zachování běžícího starého SSH deploymentu.

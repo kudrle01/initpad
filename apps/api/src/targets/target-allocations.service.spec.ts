@@ -157,6 +157,48 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
+  it('does not enable new workspace access for a legacy SSH runtime target', async () => {
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'legacy-ssh', kind: 'ssh', scope: 'user', workspaceId: 'ws-1',
+          capabilities: 'node', managementState: 'active',
+        })),
+      },
+      targetAllocation: { findUnique: jest.fn(), create: jest.fn() },
+      workspace: { findUniqueOrThrow: jest.fn() },
+    };
+    const service = makeService(prisma, 'owner');
+
+    await expect(service.create('u1', { targetId: 'legacy-ssh' }, 'ws-1'))
+      .rejects.toThrow('legacy SSH runtime');
+    expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
+  });
+
+  it('does not let SaaS allocate a self-hosted built-in by its known id', async () => {
+    const savedEdition = config.edition;
+    config.edition = 'saas';
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'builtin-docker', kind: 'docker', scope: 'builtin', workspaceId: null,
+          capabilities: 'node',
+        })),
+      },
+      targetAllocation: { findUnique: jest.fn(), create: jest.fn() },
+      workspace: { findUniqueOrThrow: jest.fn() },
+    };
+    const service = makeService(prisma, 'owner');
+
+    try {
+      await expect(service.create('u1', { targetId: 'builtin-docker' }, 'ws-1'))
+        .rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
+    } finally {
+      config.edition = savedEdition;
+    }
+  });
+
   it('allocates a Docker target backed by a compatible enrolled Agent', async () => {
     const savedStore = { ...config.artifactStore };
     Object.assign(config.artifactStore, {

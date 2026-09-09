@@ -211,6 +211,24 @@ describe('Agent-backed Docker target creation', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('rejects creation of the deprecated source-based SSH runtime', async () => {
+    const { service, create } = setup();
+
+    await expect(service.create('owner-1', {
+      name: 'Legacy VPS',
+      kind: 'ssh',
+      capabilities: ['node'],
+      publicUrl: 'https://apps.example.test',
+      host: 'vps.example.test',
+      port: 22,
+      username: 'deploy',
+      auth: 'password',
+      secret: 'secret',
+      remotePath: '/srv/apps',
+    }, 'workspace-1')).rejects.toThrow('no longer supported');
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('requires a clean HTTPS DNS origin for managed gateway routing', async () => {
     const { service, create } = setup();
 
@@ -569,5 +587,30 @@ describe('edition-aware target visibility', () => {
     expect(prisma.target.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { workspaceId: 'workspace-1' },
     }));
+  });
+
+  it('hides a known built-in id from direct SaaS access', async () => {
+    config.edition = 'saas';
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'builtin-docker', scope: 'builtin', kind: 'docker',
+        })),
+      },
+    };
+    const service = new TargetsService(prisma as never, {} as never, {} as never);
+
+    await expect(service.getVisibleTarget('builtin-docker', 'user-1'))
+      .rejects.toThrow("Target 'builtin-docker' not found");
+  });
+
+  it('does not seed local built-ins while running as SaaS', async () => {
+    config.edition = 'saas';
+    const upsert = jest.fn();
+    const service = new TargetsService({ target: { upsert } } as never, {} as never, {} as never);
+
+    await service.onModuleInit();
+
+    expect(upsert).not.toHaveBeenCalled();
   });
 });

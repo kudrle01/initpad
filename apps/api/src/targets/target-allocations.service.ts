@@ -15,6 +15,7 @@ import { allocationUsageDefaults } from './target-allocation-defaults';
 import { AuditEventsService } from '../audit/audit-events.service';
 import type { TargetUsage } from '../domain/types';
 import { environmentExpiry } from '../projects/environment-expiry';
+import { config } from '../config';
 
 const ALLOCATION_INCLUDE = {
   target: {
@@ -152,8 +153,17 @@ export class TargetAllocationsService {
     const target = await this.prisma.target.findUnique({
       where: { id: dto.targetId },
     });
-    if (!target || (target.scope !== 'builtin' && target.workspaceId !== workspaceId)) {
+    if (
+      !target
+      || (target.scope !== 'builtin' && target.workspaceId !== workspaceId)
+      || (config.edition === 'saas' && target.scope === 'builtin')
+    ) {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
+    }
+    if (target.kind === 'ssh') {
+      throw new BadRequestException(
+        'New workspace access cannot be enabled for a legacy SSH runtime target',
+      );
     }
     if (target.scope === 'user' && (target.managementState ?? 'active') !== 'active') {
       throw new BadRequestException(

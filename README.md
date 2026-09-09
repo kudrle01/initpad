@@ -18,7 +18,8 @@ srozumitelném a samostatně nasaditelném systému.
 - import existujícího repozitáře;
 - automatický build, test a nasazení do dev;
 - povýšení stejného buildu do testu a produ;
-- Docker, SSH a SFTP targety včetně PHP hostingu;
+- Docker targety připojené přes InitPad Agent a kompatibilní SFTP hosting pro
+  statické a PHP aplikace;
 - outbound enrollment, heartbeat a durable job protokol vzdáleného Docker
   targetu přes InitPad Agent včetně izolovaného Docker lifecycle testu a
   checksum-bound Linux instalátoru bez klonování repozitáře;
@@ -34,6 +35,9 @@ artefaktem bez obecného shellu. Produkční gateway režim navíc poskytuje sta
 HTTPS adresu a health-gated přepnutí s rollbackem. Před veřejným provozem zbývá
 spustit připravené podepsané multi-arch vydání Agenta, jeho vzniklý digest
 zapnout v release kandidátu a ověřit celý SaaS profil se živou GitHub App.
+Původní source-based SSH runtime je pouze migrační legacy konektor: existující
+deploymenty lze dál spravovat, ale nové servery ani prostředí se na něj
+nevážou.
 
 ## Rychlé spuštění
 

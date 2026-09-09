@@ -142,6 +142,36 @@ describe('ProjectsService create provisioning journal', () => {
     expect(provisioning.succeed).toHaveBeenCalledWith('op1', 'p1');
   });
 
+  it('uses Docker instead of the deprecated SSH runtime for new Node environments', async () => {
+    const builtinSsh: TargetRow = {
+      ...dockerTarget,
+      id: 'builtin-ssh',
+      name: 'Legacy SSH',
+      kind: 'ssh',
+      capabilities: 'node',
+      host: 'fake-vps',
+      port: 22,
+      username: 'deploy',
+      remotePath: '/srv/apps',
+    };
+    const { service, prisma } = build(jest.fn(async () => undefined), {
+      targets: [dockerTarget, builtinSsh],
+    });
+
+    await service.create({ name: 'new-api', templateId: 'node-api' }, 'u1');
+
+    const createInput = prisma.project.create.mock.calls[0]?.[0] as {
+      data: { environments: { create: Array<{ provider: string; targetId: string }> } };
+    };
+    expect(createInput.data.environments.create).toHaveLength(3);
+    expect(createInput.data.environments.create).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'docker', targetId: 'builtin-docker' }),
+    ]));
+    expect(createInput.data.environments.create).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ targetId: 'builtin-ssh' }),
+    ]));
+  });
+
   it('deletes a created repository when persisting its applied result fails', async () => {
     const completeEffect = jest.fn(async () => { throw new Error('journal unavailable'); });
     const { service, scm, provisioning } = build(completeEffect);
@@ -245,7 +275,7 @@ describe('ProjectsService create provisioning journal', () => {
     expect(scm.provision).not.toHaveBeenCalled();
   });
 
-  it('rejects an unverified SaaS target before repository creation', async () => {
+  it('rejects a legacy SSH target before repository creation', async () => {
     config.edition = 'saas';
     config.ci.publicUrl = 'https://initpad.example';
     const unverifiedSshTarget: TargetRow = {
@@ -267,7 +297,7 @@ describe('ProjectsService create provisioning journal', () => {
 
     await expect(
       service.create({ name: 'new-api', templateId: 'node-api', environments }, 'u1'),
-    ).rejects.toThrow("Target 'Company server' must pass Test connection");
+    ).rejects.toThrow('uses the legacy SSH runtime');
     expect(scm.provision).not.toHaveBeenCalled();
   });
 

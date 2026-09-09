@@ -12,7 +12,10 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/atoms/Spinner';
-import { targetIsReady } from '@/components/organisms/EnvironmentTargetFields';
+import {
+  targetAcceptsNewAssignments,
+  targetIsReady,
+} from '@/components/organisms/EnvironmentTargetFields';
 import { cn } from '@/lib/utils';
 import type { EnvName, EnvTarget, ProviderKind, RuntimeKind, Target, TemplateManifest } from '@/types';
 
@@ -54,8 +57,13 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
     if (env) setSelected(current?.id ?? null);
   }, [env, current]);
 
-  const options = template ? targets.filter((t) => usable(t, template)) : [];
-  const verifiedOptions = options.filter(targetIsReady);
+  const options = template
+    ? targets.filter((target) =>
+        usable(target, template)
+        && (targetAcceptsNewAssignments(target) || target.id === current?.id))
+    : [];
+  const selectableOptions = options.filter((target) =>
+    targetAcceptsNewAssignments(target) && targetIsReady(target));
   const selectedTarget = options.find((target) => target.id === selected) ?? null;
   const missingCapability = template
     ? targets.filter(
@@ -80,9 +88,9 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
         </DialogHeader>
 
         <div className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto">
-          {verifiedOptions.length === 0 && (
+          {selectableOptions.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No verified compatible target yet. Add or test a server in{' '}
+              No supported and verified replacement target yet. Add or test a server in{' '}
               <Link to="/infrastructure" className="text-link">
                 Servers
               </Link>
@@ -93,17 +101,18 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
             const Icon = KIND_ICON[t.kind] ?? Server;
             const active = selected === t.id;
             const isCurrent = current?.id === t.id;
+            const selectable = targetAcceptsNewAssignments(t) && targetIsReady(t);
             return (
               <button
                 key={t.id}
                 type="button"
-                onClick={() => targetIsReady(t) && setSelected(t.id)}
-                disabled={!targetIsReady(t)}
+                onClick={() => selectable && setSelected(t.id)}
+                disabled={!selectable}
                 aria-pressed={active}
                 className={cn(
                   'flex items-start gap-3 rounded-lg border p-3 text-left transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                  !targetIsReady(t) && 'cursor-not-allowed opacity-55',
+                  !selectable && 'cursor-not-allowed opacity-55',
                   active ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40',
                 )}
               >
@@ -118,7 +127,10 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" aria-label="Verified" />
                     )}
                     {isCurrent && <span className="text-[11px] text-muted-foreground">current</span>}
-                    {!targetIsReady(t) && (
+                    {t.kind === 'ssh' && (
+                      <span className="text-[11px] font-medium text-warning">legacy · move away</span>
+                    )}
+                    {t.kind !== 'ssh' && !targetIsReady(t) && (
                       <span className="text-[11px] text-warning">
                         {t.scope === 'user' && t.managementState === 'retired'
                           ? 'retired'
@@ -165,7 +177,7 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
             to="/infrastructure"
             className="text-link mr-auto self-start py-2 text-xs font-medium sm:py-0"
           >
-            Manage targets
+            Manage servers
           </Link>
           <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>
             Cancel

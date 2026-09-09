@@ -17,6 +17,10 @@ export function targetSupports(target: Target, template: TemplateManifest): bool
     target.capabilities.includes(runtimeOf(template));
 }
 
+export function targetAcceptsNewAssignments(target: Target): boolean {
+  return target.kind !== 'ssh';
+}
+
 export function targetIsReady(target: Target): boolean {
   if (target.scope === 'user' && (target.managementState ?? 'active') !== 'active') return false;
   if (target.scope === 'user' && target.kind === 'docker') return target.agentReady === true;
@@ -30,14 +34,11 @@ export function suggestedEnvironmentTargets(
 ): EnvironmentTargets {
   const empty: EnvironmentTargets = { dev: '', test: '', prod: '' };
   if (!template || hosted) return empty; // SaaS requires an explicit choice per environment.
-  const usable = targets.filter((target) => targetSupports(target, template) && targetIsReady(target));
+  const usable = targets.filter((target) =>
+    targetAcceptsNewAssignments(target) && targetSupports(target, template) && targetIsReady(target));
   const docker = usable.find((target) => target.scope === 'builtin' && target.kind === 'docker');
   const runtime = runtimeOf(template);
-  const naturalKind = runtime === 'static' || runtime === 'php'
-    ? 'sftp'
-    : runtime === 'node'
-      ? 'ssh'
-      : 'docker';
+  const naturalKind = runtime === 'static' || runtime === 'php' ? 'sftp' : 'docker';
   const production =
     usable.find((target) => target.scope === 'builtin' && target.kind === naturalKind) ??
     usable.find((target) => target.scope === 'user' && target.kind === naturalKind) ??
@@ -59,7 +60,10 @@ interface Props {
 }
 
 export function EnvironmentTargetFields({ template, targets, values, hosted, onChange }: Props) {
-  const options = template ? targets.filter((target) => targetSupports(target, template)) : [];
+  const options = template
+    ? targets.filter((target) =>
+        targetAcceptsNewAssignments(target) && targetSupports(target, template))
+    : [];
   const verifiedOptions = options.filter(targetIsReady);
   const hasUnverified = options.some((target) => !targetIsReady(target));
 

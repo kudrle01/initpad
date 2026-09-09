@@ -136,7 +136,10 @@ export class TargetsService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.seedBuiltins();
+    // Built-ins are the self-contained installation's own demo capacity. A
+    // public control plane must never create or expose deployment capacity on
+    // the machine that happens to run its API.
+    if (config.edition === 'self-hosted') await this.seedBuiltins();
   }
 
   // Upserts the three built-in targets from config. Idempotent — safe on every
@@ -163,7 +166,7 @@ export class TargetsService implements OnModuleInit {
       },
       {
         id: BUILTIN_SSH,
-        name: 'Company VPS (SSH)',
+        name: 'Legacy VPS (SSH)',
         kind: 'ssh',
         scope: 'builtin',
         capabilities: 'node',
@@ -293,6 +296,11 @@ export class TargetsService implements OnModuleInit {
   async create(userId: string, dto: CreateTargetDto, requestedWorkspaceId?: string): Promise<Target> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspaceId, 'maintain');
+    if (dto.kind === 'ssh') {
+      throw new BadRequestException(
+        'New SSH runtime targets are no longer supported. Use an InitPad Agent for Docker workloads or SFTP for shared web hosting.',
+      );
+    }
     const agentBacked = dto.kind === 'docker';
     const routingMode = agentBacked ? dto.routingMode ?? 'direct-port' : 'direct-port';
     let publicUrl = dto.publicUrl;
@@ -626,6 +634,11 @@ export class TargetsService implements OnModuleInit {
   ): Promise<TargetRow> {
     const row = (await this.prisma.target.findUnique({ where: { id } })) as TargetRow | null;
     if (!row) throw new NotFoundException(`Target '${id}' not found`);
+    if (row.scope === 'builtin' && config.edition !== 'self-hosted') {
+      // Keep existence of the private installation's fixed ids hidden from a
+      // hosted caller even when an old database still contains those rows.
+      throw new NotFoundException(`Target '${id}' not found`);
+    }
     if (row.scope !== 'builtin') {
       if (!row.workspaceId) throw new ForbiddenException('Target has no workspace assignment');
       await this.workspaces.require(userId, row.workspaceId, permission);

@@ -71,6 +71,7 @@ function validManagedGatewayOrigin(value: string): boolean {
 // are read-only and never edited here.
 export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }: Props) {
   const editing = !!target;
+  const legacySsh = target?.kind === 'ssh';
   const reconnectingRemote = Boolean(
     target
     && target.kind !== 'docker'
@@ -153,12 +154,26 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           </DialogTitle>
           <DialogDescription>
             {kind === 'docker'
-              ? 'A Docker server that connects outbound to InitPad through an Agent. No inbound SSH credentials are stored.'
-              : 'A remote server the platform reaches over SSH/SFTP. Credentials are encrypted at rest.'}
+              ? 'Recommended for application workloads. The server connects outbound through InitPad Agent; no inbound SSH credential is stored.'
+              : kind === 'sftp'
+                ? 'Compatibility option for shared PHP or static hosting. Connection credentials are encrypted at rest.'
+                : 'Legacy source-based SSH connection. Existing servers remain manageable while their workloads are migrated.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {legacySsh && (
+            <div className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm sm:col-span-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <div>
+                <p className="font-medium">Legacy SSH runtime</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Existing deployments keep working, but new environments cannot be assigned here.
+                  Move runtime applications to an Agent-backed Docker server.
+                </p>
+              </div>
+            </div>
+          )}
           {requiresReconnectCredential && (
             <div className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm sm:col-span-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -176,16 +191,16 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             <Input id="t-name" value={name} placeholder="ESO school server" onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Type</Label>
+            <Label>Connection method</Label>
             <select
               className={selectCls}
               value={kind}
               disabled={editing}
               onChange={(e) => changeKind(e.target.value as ProviderKind)}
             >
-              <option value="docker">Docker (InitPad Agent)</option>
-              <option value="sftp">SFTP (web / PHP hosting)</option>
-              <option value="ssh">SSH (runtime app)</option>
+              <option value="docker">InitPad Agent for Docker (recommended)</option>
+              <option value="sftp">SFTP shared web hosting</option>
+              {legacySsh && <option value="ssh">Legacy SSH runtime (existing only)</option>}
             </select>
           </div>
           {kind !== 'docker' && (
@@ -214,7 +229,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               <Label>Can run</Label>
               <InfoTip label="About supported runtimes">
                 {kind === 'sftp'
-                  ? 'PHP enables Nette, Laravel and Symfony. PHP deployment also needs shell access through the same account.'
+                  ? 'Static sites need SFTP only. PHP enables Nette, Laravel and Symfony and also requires shell access through the same account for isolated, removable releases.'
                   : kind === 'docker'
                     ? 'The Agent confirms Docker support after enrollment. Deployment stays disabled until the delivery path is ready.'
                     : 'Choose only runtimes installed on this server. Test connection reports the detected command-line runtimes.'}

@@ -217,6 +217,11 @@ export class ProjectEnvironmentTargets {
   }
 
   assertUsable(target: TargetRow, template: TemplateManifest): void {
+    if (target.kind === 'ssh') {
+      throw new BadRequestException(
+        `Target '${target.name}' uses the legacy SSH runtime and cannot receive new environment assignments. Use an InitPad Agent target instead.`,
+      );
+    }
     const managementState = target.managementState ?? 'active';
     if (target.scope === 'user' && managementState !== 'active') {
       throw new BadRequestException(
@@ -320,7 +325,6 @@ export class ProjectEnvironmentTargets {
   private defaultKind(template: TemplateManifest): ProviderKind {
     const runtime = templateRuntime(template);
     if (runtime === 'static') return 'sftp';
-    if (runtime === 'node') return 'ssh';
     if (runtime === 'php') return 'sftp';
     return 'docker';
   }

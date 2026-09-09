@@ -734,17 +734,20 @@ jen konkrétní provozní a vyhodnocovací scénář.
          anonymní pull, nastavit vzniklý digest do release kandidáta a na
          samostatném čistém Linux hostu ověřit instalaci, reboot, update,
          rollback vadného obrazu a zachování workloadů po odpojení Agenta.
-     - ◐ **8e-d-c — provider a informační architektura.**
+     - ✅ **8e-d-c — provider a informační architektura.**
        - ✅ **8e-d-c1 — navigace podle úloh a oddělené scope nastavení.**
          Hlavní navigace vede přes Overview, Projects, Deployments a Servers;
          méně časté týmové a provozní funkce jsou pod Manage. Osobní účet je
          dostupný z profilu, workspace správa z Manage a self-hosted instance
          má samostatnou administraci. Vytvoření projektu zůstává výraznou akcí
          v obsahu, ne duplicitním cílem navigace (ADR-094).
-       - TODO **8e-d-c2 — provider policy a dokončení Agent-first UX.** Ponechat
-         SFTP jako viditelně označenou kompatibilní cestu pro shared PHP/static
-         hosting, přesunout přímé Docker ovládání pouze do self-hosted profilu
-         a deprecovat zdrojový SSH runtime provider.
+       - ✅ **8e-d-c2 — provider policy a dokončení Agent-first UX.** Nový
+         Docker server vždy používá outbound InitPad Agent a SFTP je explicitní
+         kompatibilní cesta pro shared PHP/static hosting. Vestavěný přímý
+         Docker se vytváří a zpřístupňuje jen v self-hosted edici. Zdrojový SSH
+         runtime je migrační legacy provider: existující vazby zůstávají
+         provozovatelné, ale nelze vytvořit nový target, allocation ani na něj
+         nově přiřadit prostředí (ADR-095).
      - TODO **8e-d-d — dokumentace release kandidáta.** Podle skutečného
        kandidáta aktualizovat architekturu, diagramy, provozní dokumentaci,
        implementační kapitolu diplomky a seznam vědomých omezení.

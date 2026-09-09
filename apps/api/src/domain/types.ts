@@ -32,9 +32,8 @@ export interface TemplateManifest {
   port?: number;
   // Path used for the post-deploy health check (defaults to '/health').
   healthPath?: string;
-  // Command that starts the app for source-based deployments (SSH). This is
-  // a property of the template, not of the provider (e.g. 'node src/index.js',
-  // 'node dist/main.js').
+  // Command retained for already-bound legacy source-based SSH deployments.
+  // New runtime assignments use an Agent-backed Docker target.
   startCommand?: string;
   // Subdirectory containing the build artifact for static deployments
   // (e.g. 'dist'). When omitted, the repository root is deployed.
