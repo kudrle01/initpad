@@ -488,6 +488,7 @@ export class ProjectsService implements OnModuleInit {
 
   private scheduleMissingRepoReconciliation(workspaceId: string): void {
     const now = Date.now();
+    this.pruneReconciliationDeadlines(now);
     if (
       this.repositoryReconcileInFlight.has(workspaceId) ||
       (this.repositoryReconcileAfter.get(workspaceId) ?? 0) > now
@@ -562,6 +563,7 @@ export class ProjectsService implements OnModuleInit {
     },
   ): void {
     const now = Date.now();
+    this.pruneReconciliationDeadlines(now);
     if (
       this.projectScmReconcileInFlight.has(row.id) ||
       (this.projectScmReconcileAfter.get(row.id) ?? 0) > now
@@ -578,6 +580,19 @@ export class ProjectsService implements OnModuleInit {
         ),
       )
       .finally(() => this.projectScmReconcileInFlight.delete(row.id));
+  }
+
+  private pruneReconciliationDeadlines(now: number): void {
+    for (const [workspaceId, expiresAt] of this.repositoryReconcileAfter) {
+      if (expiresAt <= now && !this.repositoryReconcileInFlight.has(workspaceId)) {
+        this.repositoryReconcileAfter.delete(workspaceId);
+      }
+    }
+    for (const [projectId, expiresAt] of this.projectScmReconcileAfter) {
+      if (expiresAt <= now && !this.projectScmReconcileInFlight.has(projectId)) {
+        this.projectScmReconcileAfter.delete(projectId);
+      }
+    }
   }
 
   private async reconcileProjectScmState(

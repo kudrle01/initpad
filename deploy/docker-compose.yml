@@ -183,7 +183,9 @@ services:
       INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY: ${INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY:-initpad-artifacts}
       INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE: "true"
     volumes:
-      # The API drives deployments through the host Docker daemon.
+      # The API drives deployments through the host Docker daemon. The :ro
+      # suffix protects only the socket inode; Docker API access is inherently
+      # host-privileged and is intentionally confined to the control plane.
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../templates:/templates:ro
       - api-data:/data

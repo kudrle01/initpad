@@ -26,6 +26,7 @@ if [ ! -f .env ]; then
   say "Creating .env from .env.example"
   cp .env.example .env
 fi
+chmod 600 .env
 
 # Replace every __GENERATE__ placeholder with a random secret.
 while grep -q '__GENERATE__' .env; do
@@ -33,6 +34,7 @@ while grep -q '__GENERATE__' .env; do
   tmp=$(mktemp)
   awk -v s="$secret" '!done && /__GENERATE__/ { sub(/__GENERATE__/, s); done=1 } { print }' .env > "$tmp"
   mv "$tmp" .env
+  chmod 600 .env
 done
 say "Secrets are in place"
 
@@ -41,6 +43,7 @@ set_env() {
   local tmp; tmp=$(mktemp)
   awk -v k="$1" -v v="$2" 'BEGIN{FS=OFS="="} $1==k {$0=k"="v; done=1} {print} END{if(!done) print k"="v}' .env > "$tmp"
   mv "$tmp" .env
+  chmod 600 .env
 }
 
 # Upgrade existing installations from the former global CI token. It is now

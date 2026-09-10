@@ -341,7 +341,10 @@ export class SftpProvider implements DeploymentProvider {
 
   private async privateFilesProtected(url: string): Promise<boolean> {
     try {
-      const response = await fetch(url, { redirect: 'manual' });
+      const response = await fetch(url, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(3_000),
+      });
       return !response.ok;
     } catch {
       // The public app was reachable immediately before this check, so a
@@ -353,7 +356,13 @@ export class SftpProvider implements DeploymentProvider {
   private async waitReachable(url: string): Promise<boolean> {
     for (let i = 0; i < 10; i++) {
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, {
+          // A redirect is not proof that the expected release is serving at
+          // this exact address, and must not turn a target probe into an
+          // unbounded cross-host fetch.
+          redirect: 'manual',
+          signal: AbortSignal.timeout(3_000),
+        });
         if (res.ok) return true;
       } catch {
         // not up yet — retry

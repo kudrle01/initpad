@@ -312,6 +312,12 @@ export function validateConfig(): void {
   if (config.oidc.clientSecret === 'gitea-oidc-secret-change-me') {
     insecure.push('INITPAD_OIDC_CLIENT_SECRET');
   }
+  if (
+    artifactStoreConfigured() &&
+    config.artifactStore.secretAccessKey === 'initpad-artifacts'
+  ) {
+    insecure.push('INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY');
+  }
   if (insecure.length) {
     throw new Error(`Refusing production startup with insecure defaults: ${insecure.join(', ')}`);
   }
