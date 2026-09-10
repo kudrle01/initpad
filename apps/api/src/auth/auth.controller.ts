@@ -75,7 +75,7 @@ export class AuthController {
   // password change; re-issues the session cookie so the caller stays signed in
   // while all other sessions are invalidated.
   @Post('change-password')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AuthRateLimitGuard, JwtAuthGuard)
   @AllowDuringPasswordChange()
   async changePassword(
     @CurrentUser() userId: string,
@@ -93,7 +93,7 @@ export class AuthController {
 
   // Issues an e-mail verification link for the signed-in user's own address.
   @Post('email/request-verification')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AuthRateLimitGuard, JwtAuthGuard)
   requestEmailVerification(@CurrentUser() userId: string) {
     return this.auth.requestEmailVerification(userId);
   }

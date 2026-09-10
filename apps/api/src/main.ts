@@ -10,6 +10,7 @@ import { validateConfig } from './config';
 async function bootstrap() {
   validateConfig();
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  app.enableShutdownHooks();
   const express = app.getHttpAdapter().getInstance();
   express.disable('x-powered-by');
   express.set('trust proxy', 1);

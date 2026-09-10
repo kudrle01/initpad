@@ -81,6 +81,6 @@ describe('AdminService', () => {
     expect(updateArgs?.mustChangePassword).toBe(true);
     expect(updateArgs?.tokenVersion).toEqual({ increment: 1 });
     // The stored hash must verify against the returned one-time secret.
-    expect(verifyPassword(temporaryPassword, updateArgs?.passwordHash as string)).toBe(true);
+    await expect(verifyPassword(temporaryPassword, updateArgs?.passwordHash as string)).resolves.toBe(true);
   });
 });

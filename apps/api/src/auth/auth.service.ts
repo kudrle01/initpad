@@ -19,6 +19,11 @@ import { config } from '../config';
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 const ACTIVATION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+// A valid, precomputed scrypt record used only to make an unknown-account
+// sign-in spend the same kind of work as a known account. The plaintext is
+// irrelevant: callers always receive the same generic authentication error.
+const DUMMY_PASSWORD_HASH =
+  '42424242424242424242424242424242:7b1eed877afda522cc3d7931c595e1286685d07309088a38f59e89fcc7a6757d6007f55ec667d4a21cb6c989d838fffa305bb45467b6f388333ecf7d528cef12';
 
 export interface SessionUser {
   id: string;
@@ -168,7 +173,7 @@ export class AuthService implements OnModuleInit {
           name: input.name ?? undefined,
           platformRole: input.platformRole ?? 'user',
           mustChangePassword: input.mustChangePassword ?? false,
-          passwordHash: hashPassword(input.password),
+          passwordHash: await hashPassword(input.password),
           accessToken: encryptSecret(accessToken),
           memberships: {
             create: {
@@ -275,7 +280,11 @@ export class AuthService implements OnModuleInit {
     const user = await this.prisma.user.findFirst({
       where: { OR: [{ username: identity }, { email: identity.toLowerCase() }] },
     });
-    if (!user || !user.passwordHash || !verifyPassword(dto.password, user.passwordHash)) {
+    const passwordMatches = await verifyPassword(
+      dto.password,
+      user?.passwordHash || DUMMY_PASSWORD_HASH,
+    );
+    if (!user || !user.passwordHash || !passwordMatches) {
       throw new UnauthorizedException('Invalid username or password');
     }
     if (user.active === false) {
@@ -295,16 +304,16 @@ export class AuthService implements OnModuleInit {
     newPassword: string,
   ): Promise<{ token: string; user: SessionUser }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.passwordHash || !verifyPassword(currentPassword, user.passwordHash)) {
+    if (!user || !user.passwordHash || !(await verifyPassword(currentPassword, user.passwordHash))) {
       throw new UnauthorizedException('Current password is incorrect');
     }
-    if (verifyPassword(newPassword, user.passwordHash)) {
+    if (await verifyPassword(newPassword, user.passwordHash)) {
       throw new BadRequestException('New password must differ from the current one');
     }
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        passwordHash: hashPassword(newPassword),
+        passwordHash: await hashPassword(newPassword),
         mustChangePassword: false,
         tokenVersion: { increment: 1 },
       },
@@ -363,7 +372,7 @@ export class AuthService implements OnModuleInit {
     await this.prisma.user.update({
       where: { id: record.userId },
       data: {
-        passwordHash: hashPassword(newPassword),
+        passwordHash: await hashPassword(newPassword),
         mustChangePassword: false,
         // A reset invalidates every existing session.
         tokenVersion: { increment: 1 },
@@ -386,7 +395,7 @@ export class AuthService implements OnModuleInit {
     const updated = await this.prisma.user.update({
       where: { id: record.userId },
       data: {
-        passwordHash: hashPassword(newPassword),
+        passwordHash: await hashPassword(newPassword),
         mustChangePassword: false,
         // A fresh generation; any earlier temporary credential is invalidated.
         tokenVersion: { increment: 1 },

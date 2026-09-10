@@ -143,7 +143,7 @@ export class AdminService {
     await this.prisma.user.update({
       where: { id: targetId },
       data: {
-        passwordHash: hashPassword(temporaryPassword),
+        passwordHash: await hashPassword(temporaryPassword),
         mustChangePassword: true,
         // Invalidate every existing session for the reset account.
         tokenVersion: { increment: 1 },

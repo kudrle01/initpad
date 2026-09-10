@@ -21,6 +21,8 @@ interface AuthCode {
   expiresAt: number;
 }
 
+const MAX_EPHEMERAL_ENTRIES = 10_000;
+
 /**
  * The platform's OIDC provider: holds the signing key pair, issues
  * authorization codes and access tokens, and signs id_tokens (RS256).
@@ -134,6 +136,7 @@ export class OidcService {
   // --- authorization codes ---
 
   issueCode(input: Omit<AuthCode, 'expiresAt'>): string {
+    this.pruneExpired();
     const code = randomBytes(24).toString('base64url');
     this.codes.set(code, { ...input, expiresAt: Date.now() + 5 * 60_000 });
     return code;
@@ -149,6 +152,7 @@ export class OidcService {
   // --- access tokens (for the userinfo endpoint) ---
 
   issueAccessToken(userId: string, tokenVersion: number): string {
+    this.pruneExpired();
     const token = randomBytes(32).toString('base64url');
     this.accessTokens.set(token, {
       userId,
@@ -160,8 +164,34 @@ export class OidcService {
 
   accessForToken(token: string): { userId: string; tokenVersion: number } | null {
     const entry = this.accessTokens.get(token);
-    if (!entry || entry.expiresAt < Date.now()) return null;
+    if (!entry) return null;
+    if (entry.expiresAt < Date.now()) {
+      this.accessTokens.delete(token);
+      return null;
+    }
     return { userId: entry.userId, tokenVersion: entry.tokenVersion };
+  }
+
+  private pruneExpired(): void {
+    const now = Date.now();
+    for (const [code, entry] of this.codes) {
+      if (entry.expiresAt < now) this.codes.delete(code);
+    }
+    for (const [token, entry] of this.accessTokens) {
+      if (entry.expiresAt < now) this.accessTokens.delete(token);
+    }
+    // Expiry normally keeps these stores tiny. The cap is a final bound during
+    // deliberate high-volume abuse; Map iteration order evicts the oldest item.
+    while (this.codes.size >= MAX_EPHEMERAL_ENTRIES) {
+      const oldest = this.codes.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.codes.delete(oldest);
+    }
+    while (this.accessTokens.size >= MAX_EPHEMERAL_ENTRIES) {
+      const oldest = this.accessTokens.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.accessTokens.delete(oldest);
+    }
   }
 
   // --- id_token (RS256 JWT, signed manually via node:crypto) ---

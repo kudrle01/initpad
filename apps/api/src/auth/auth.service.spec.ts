@@ -108,7 +108,7 @@ describe('AuthService', () => {
     config.edition = 'self-hosted';
     const user = {
       id: 'u1', username: 'alice', email: 'alice@example.test', name: null, avatarUrl: null,
-      passwordHash: hashPassword('long-password'), accessToken: '', platformRole: 'user',
+      passwordHash: await hashPassword('long-password'), accessToken: '', platformRole: 'user',
       active: true, tokenVersion: 0, mustChangePassword: false,
     };
     const prisma = { user: { findFirst: jest.fn(async () => user) } };
@@ -123,7 +123,7 @@ describe('AuthService', () => {
     config.edition = 'self-hosted';
     const user = {
       id: 'u1', username: 'bob', email: 'bob@example.test', name: null, avatarUrl: null,
-      passwordHash: hashPassword('long-password'), accessToken: '', platformRole: 'user',
+      passwordHash: await hashPassword('long-password'), accessToken: '', platformRole: 'user',
       active: false, tokenVersion: 0, mustChangePassword: false,
     };
     const prisma = { user: { findFirst: jest.fn(async () => user) } };
@@ -135,7 +135,7 @@ describe('AuthService', () => {
   it('clears the forced-change flag and bumps the session generation on change', async () => {
     const stored = {
       id: 'u1', username: 'carol', email: null, name: null, avatarUrl: null,
-      passwordHash: hashPassword('old-password-1'), accessToken: '', platformRole: 'user',
+      passwordHash: await hashPassword('old-password-1'), accessToken: '', platformRole: 'user',
       active: true, tokenVersion: 2, mustChangePassword: true,
     };
     let updateArgs: Record<string, unknown> | undefined;
@@ -158,7 +158,7 @@ describe('AuthService', () => {
 
   it('rejects a password change with the wrong current password', async () => {
     const stored = {
-      id: 'u1', passwordHash: hashPassword('old-password-1'), active: true, tokenVersion: 0,
+      id: 'u1', passwordHash: await hashPassword('old-password-1'), active: true, tokenVersion: 0,
     };
     const prisma = { user: { findUnique: jest.fn(async () => stored), update: jest.fn() } };
     const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
