@@ -54,6 +54,10 @@ verified artifact and secret-safe configuration contract are attached to it.
   separate from PostgreSQL and deployment networks.
 - DTO allow-list validation, bounded lengths, workspace policy checks and target
   endpoint/path validation reduce injection, IDOR and resource-exhaustion risk.
+- User-managed SSH/SFTP connections pin the server's OpenSSH SHA-256 host-key
+  fingerprint. A changed or missing identity stops the connection instead of
+  silently trusting a replacement host. New direct-port deployments bind only
+  to loopback unless the administrator explicitly exposes them.
 - Agent enrollment is workspace-admin-only, short-lived and single-use. The
   database stores only enrollment/credential hashes; the target stores its
   credential atomically as `0600`. Heartbeat is outbound-only and reports a
@@ -82,9 +86,13 @@ verified artifact and secret-safe configuration contract are attached to it.
 - The in-memory login rate limiter is per replica; horizontal scale needs Redis
   or an ingress/WAF limiter.
 - OIDC codes/tokens are in-memory, so API restart invalidates active SSO flows.
-- Registered SSH/SFTP hosts are powerful outbound destinations. In a
-  multi-tenant service they require DNS resolution checks, egress policy and
-  per-tenant agents; in this single-tenant product the owner is trusted.
+- Registered SSH/SFTP hosts are powerful outbound destinations. Host syntax,
+  reserved local/link-local addresses and URL credentials are rejected, while
+  RFC1918 targets remain allowed for the intended school/company LAN use case.
+  DNS rebinding and broader egress policy still require a network control or
+  per-tenant agent in a multi-tenant service; in this single-tenant product the
+  owner is trusted. The fingerprint must be verified over an independent admin
+  channel because accepting an attacker's first key would only pin the attack.
 - Rootless DinD still requires a privileged outer container. It protects the
   host from ordinary workflow Docker control but is not equivalent to a
   dedicated runner VM.

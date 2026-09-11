@@ -236,6 +236,47 @@ describe('Agent-backed Docker target creation', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('rejects malformed and link-local remote target hosts', async () => {
+    const base = {
+      name: 'Shared hosting',
+      kind: 'sftp' as const,
+      capabilities: ['static'],
+      port: 22,
+      username: 'deploy',
+      auth: 'password' as const,
+      secret: 'secret',
+      hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
+      remotePath: '/www',
+      publicUrl: 'https://apps.example.test',
+    };
+
+    for (const host of ['bad..example.test', '999.999.999.999', 'fe80::1']) {
+      const { service, create } = setup();
+      await expect(service.create('owner-1', { ...base, host }, 'workspace-1'))
+        .rejects.toThrow('reserved or unsafe');
+      expect(create).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects a public target URL containing credentials', async () => {
+    const { service, create } = setup();
+
+    await expect(service.create('owner-1', {
+      name: 'Shared hosting',
+      kind: 'sftp',
+      capabilities: ['static'],
+      host: 'sftp.example.test',
+      port: 22,
+      username: 'deploy',
+      auth: 'password',
+      secret: 'secret',
+      hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
+      remotePath: '/www',
+      publicUrl: 'https://user:password@apps.example.test',
+    }, 'workspace-1')).rejects.toThrow('safe HTTP(S) address');
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('requires a clean HTTPS DNS origin for managed gateway routing', async () => {
     const { service, create } = setup();
 

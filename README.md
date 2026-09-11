@@ -74,8 +74,8 @@ pipeline a počkej na dev URL. Podrobné nasazení na server, DNS a HTTPS popisu
 | Python | Django, FastAPI, Flask |
 | PHP | PHP, Laravel, Nette, Symfony |
 
-Každá šablona obsahuje reprodukovatelné závislosti, Dockerfile, health
-endpoint a CI workflow. PHP frameworky mají verzovaný skeleton i
+Každá šablona obsahuje zamčený aplikační dependency lockfile, Dockerfile,
+health endpoint a CI workflow. PHP frameworky mají verzovaný skeleton i
 `composer.lock`; framework se negeneruje až během deploymentu.
 
 ## Lokální vývoj

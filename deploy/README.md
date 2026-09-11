@@ -37,11 +37,18 @@ database migrations and container builds.
    `INITPAD_PUBLIC_URL`. Only a split topology where apps intentionally use a
    different hostname sets `INITPAD_DEPLOY_PUBLIC_HOST`.
 
+   Direct-port deployments bind to `127.0.0.1` by default. Prefer the managed
+   gateway for stable HTTPS application addresses. If trusted LAN clients must
+   access the random direct ports, explicitly set
+   `INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0` and restrict their firewall range to
+   that LAN; changing the bind address alone is not an access-control policy.
+
 3. Run `./install.sh`. Setting `INITPAD_DOMAIN` enables the `server`
    profile — Caddy terminates HTTPS for both domains with automatic
    certificates.
-4. Open firewall ports: 80, 443 (platform + git), 8085 and 8090–8189
-   (deployed student applications).
+4. Open firewall ports 80 and 443 for the platform, Git and managed gateway.
+   Open the configured direct-port range only when the preceding explicit LAN
+   mode is required, and only to trusted source networks.
 
 For a reproducible self-hosted verification on Windows + VirtualBox, follow
 [SELF_HOSTED_ACCEPTANCE.md](./SELF_HOSTED_ACCEPTANCE.md). It covers a bridged

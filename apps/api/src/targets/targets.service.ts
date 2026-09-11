@@ -7,6 +7,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
+import { isIP } from 'node:net';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeploymentService } from '../deployment/deployment.service';
 import { artifactStoreConfigured, config } from '../config';
@@ -47,6 +48,41 @@ const TARGET_FIELD_LABELS: Partial<Record<keyof UpdateTargetDto, string>> = {
   publicUrl: 'publicUrl',
   routingMode: 'routingMode',
 };
+
+const BLOCKED_TARGET_HOSTS = new Set([
+  'localhost',
+  '0.0.0.0',
+  '::',
+  '::1',
+  'api',
+  'postgres',
+  'gitea',
+  'host.docker.internal',
+  '169.254.169.254',
+  'metadata.google.internal',
+]);
+
+function normalizeTargetHost(host: string): string {
+  return host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+}
+
+function hasValidTargetHostSyntax(host: string): boolean {
+  if (!host || host.length > 253 || /[\s/@]/.test(host)) return false;
+  if (isIP(host) !== 0) return true;
+  if (/^[0-9.]+$/.test(host)) return false;
+  return host.split('.').every((label) =>
+    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label),
+  );
+}
+
+function isBlockedTargetHost(host: string): boolean {
+  return BLOCKED_TARGET_HOSTS.has(host)
+    || host.startsWith('127.')
+    || host.startsWith('169.254.')
+    || host.startsWith('fe80:')
+    || host.startsWith('::ffff:127.')
+    || host.startsWith('::ffff:169.254.');
+}
 
 function changedTargetFields(
   dto: UpdateTargetDto,
@@ -816,48 +852,23 @@ export class TargetsService implements OnModuleInit {
   }
 
   private assertSafeEndpoint(host: string, publicUrl: string): void {
-    const blocked = new Set([
-      'localhost',
-      '0.0.0.0',
-      '::',
-      '::1',
-      'api',
-      'postgres',
-      'gitea',
-      'host.docker.internal',
-      '169.254.169.254',
-      'metadata.google.internal',
-    ]);
-    const normalizedHost = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
-    if (
-      !normalizedHost ||
-      blocked.has(normalizedHost) ||
-      normalizedHost.startsWith('127.') ||
-      normalizedHost.startsWith('169.254.') ||
-      /[\s/@]/.test(normalizedHost)
-    ) {
+    const normalizedHost = normalizeTargetHost(host);
+    if (!hasValidTargetHostSyntax(normalizedHost) || isBlockedTargetHost(normalizedHost)) {
       throw new BadRequestException('This target host is reserved or unsafe');
     }
     this.assertSafePublicUrl(publicUrl);
   }
 
   private assertSafePublicUrl(publicUrl: string): void {
-    const blocked = new Set([
-      'localhost',
-      '0.0.0.0',
-      '::',
-      '::1',
-      'api',
-      'postgres',
-      'gitea',
-      'host.docker.internal',
-      '169.254.169.254',
-      'metadata.google.internal',
-    ]);
     try {
       const url = new URL(publicUrl);
-      const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-      if (!['http:', 'https:'].includes(url.protocol) || blocked.has(hostname)) {
+      const hostname = normalizeTargetHost(url.hostname);
+      if (
+        !['http:', 'https:'].includes(url.protocol)
+        || Boolean(url.username || url.password)
+        || !hasValidTargetHostSyntax(hostname)
+        || isBlockedTargetHost(hostname)
+      ) {
         throw new Error('unsafe');
       }
     } catch {
