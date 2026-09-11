@@ -80,7 +80,7 @@ health endpoint a CI workflow. PHP frameworky mají verzovaný skeleton i
 
 ## Lokální vývoj
 
-Požadavky: Node.js 20+ a Docker.
+Požadavky: Node.js 22.12+ a Docker.
 
 ```bash
 npm install
