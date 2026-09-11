@@ -42,6 +42,7 @@ const TARGET_FIELD_LABELS: Partial<Record<keyof UpdateTargetDto, string>> = {
   username: 'username',
   auth: 'authenticationMethod',
   secret: 'authenticationCredentials',
+  hostKeyFingerprint: 'hostKeyFingerprint',
   remotePath: 'remotePath',
   publicUrl: 'publicUrl',
   routingMode: 'routingMode',
@@ -63,6 +64,7 @@ function changedTargetFields(
       case 'username': return dto.username !== row.username;
       case 'auth': return dto.auth !== row.auth;
       case 'secret': return Boolean(dto.secret);
+      case 'hostKeyFingerprint': return dto.hostKeyFingerprint !== row.hostKeyFingerprint;
       case 'remotePath': return dto.remotePath !== row.remotePath;
       case 'publicUrl': return publicUrl !== row.publicUrl;
       case 'routingMode': return routingMode !== (row.routingMode ?? 'direct-port');
@@ -94,6 +96,7 @@ export interface TargetRow {
   username: string | null;
   auth: string | null;
   secret: string | null;
+  hostKeyFingerprint?: string | null;
   remotePath: string | null;
   publicUrl: string | null;
   managementState?: string;
@@ -158,6 +161,7 @@ export class TargetsService implements OnModuleInit {
         username: null,
         auth: null,
         secret: null,
+        hostKeyFingerprint: null,
         remotePath: null,
         publicUrl: null,
         routingMode: 'direct-port',
@@ -175,6 +179,7 @@ export class TargetsService implements OnModuleInit {
         username: ssh.username,
         auth: 'password',
         secret: null,
+        hostKeyFingerprint: null,
         remotePath: ssh.remoteRoot,
         publicUrl: null,
         routingMode: 'direct-port',
@@ -192,6 +197,7 @@ export class TargetsService implements OnModuleInit {
         username: sftp.username,
         auth: 'password',
         secret: null,
+        hostKeyFingerprint: null,
         remotePath: sftp.remoteRoot,
         publicUrl: sftp.publicUrl,
         routingMode: 'direct-port',
@@ -342,6 +348,7 @@ export class TargetsService implements OnModuleInit {
         username: agentBacked ? null : dto.username!,
         auth: agentBacked ? null : dto.auth!,
         secret: agentBacked ? null : encryptSecret(dto.secret!),
+        hostKeyFingerprint: agentBacked ? null : dto.hostKeyFingerprint!,
         remotePath,
         publicUrl,
         routingMode,
@@ -479,6 +486,7 @@ export class TargetsService implements OnModuleInit {
         dto.username !== undefined ||
         dto.auth !== undefined ||
         dto.secret !== undefined ||
+        dto.hostKeyFingerprint !== undefined ||
         dto.remotePath !== undefined ||
         dto.publicUrl !== undefined ||
         capabilitiesChanged);
@@ -492,6 +500,9 @@ export class TargetsService implements OnModuleInit {
         ...(dto.username !== undefined ? { username: dto.username } : {}),
         ...(dto.auth !== undefined ? { auth: dto.auth } : {}),
         ...(dto.secret ? { secret: encryptSecret(dto.secret) } : {}),
+        ...(dto.hostKeyFingerprint !== undefined
+          ? { hostKeyFingerprint: dto.hostKeyFingerprint }
+          : {}),
         ...(dto.remotePath !== undefined ? { remotePath: dto.remotePath } : {}),
         ...(dto.publicUrl !== undefined || routingChanged ? { publicUrl } : {}),
         ...(dto.routingMode !== undefined ? { routingMode } : {}),
@@ -677,6 +688,11 @@ export class TargetsService implements OnModuleInit {
     if (!target.secret) {
       throw new BadRequestException(`Target '${target.name}' has no management credential`);
     }
+    if (!target.hostKeyFingerprint) {
+      throw new BadRequestException(
+        `Target '${target.name}' has no trusted SSH host-key fingerprint. Edit the server and add its SHA256 fingerprint before reconnecting.`,
+      );
+    }
     const secret = target.secret ? decryptSecret(target.secret) : '';
     const isKey = target.auth === 'key';
     return {
@@ -685,6 +701,7 @@ export class TargetsService implements OnModuleInit {
       username: target.username ?? '',
       password: isKey ? undefined : secret,
       privateKey: isKey ? secret : undefined,
+      hostKeyFingerprint: target.hostKeyFingerprint,
       remoteRoot: target.remotePath ?? '',
       publicUrl: target.publicUrl ?? '',
     };
@@ -864,6 +881,7 @@ export class TargetsService implements OnModuleInit {
     auth?: string;
     secret?: string;
     remotePath?: string;
+    hostKeyFingerprint?: string;
   }): void {
     if (
       dto.host !== undefined ||
@@ -871,7 +889,8 @@ export class TargetsService implements OnModuleInit {
       dto.username !== undefined ||
       dto.auth !== undefined ||
       dto.secret !== undefined ||
-      dto.remotePath !== undefined
+      dto.remotePath !== undefined ||
+      dto.hostKeyFingerprint !== undefined
     ) {
       throw new BadRequestException(
         'Agent-backed Docker targets must not contain inbound host credentials',
@@ -908,6 +927,7 @@ export class TargetsService implements OnModuleInit {
       port: row.port,
       username: row.username,
       auth: row.auth,
+      hostKeyFingerprint: row.hostKeyFingerprint ?? null,
       remotePath: row.remotePath,
       publicUrl: row.publicUrl,
       managementState,

@@ -68,6 +68,13 @@ export class UpdateTargetDto {
 
   @IsOptional()
   @IsString()
+  @Matches(/^SHA256:[A-Za-z0-9+/]{43}=?$/, {
+    message: 'Host key fingerprint must use the OpenSSH SHA256:<base64> format',
+  })
+  hostKeyFingerprint?: string;
+
+  @IsOptional()
+  @IsString()
   @Matches(/^(?!.*(?:^|\/)\.\.(?:\/|$))\/[A-Za-z0-9._/-]+$/, {
     message: 'Remote path must be an absolute path without spaces or parent traversal',
   })

@@ -45,6 +45,7 @@ export interface TargetInput {
   username?: string;
   auth?: 'password' | 'key';
   secret?: string;
+  hostKeyFingerprint?: string;
   remotePath?: string;
   publicUrl: string;
 }

@@ -87,6 +87,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
   const [username, setUsername] = useState('');
   const [auth, setAuth] = useState<'password' | 'key'>('password');
   const [secret, setSecret] = useState('');
+  const [hostKeyFingerprint, setHostKeyFingerprint] = useState('');
   const [remotePath, setRemotePath] = useState('');
   const [publicUrl, setPublicUrl] = useState('');
 
@@ -101,6 +102,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
     setUsername(target?.username ?? '');
     setAuth((target?.auth as 'password' | 'key') ?? 'password');
     setSecret('');
+    setHostKeyFingerprint(target?.hostKeyFingerprint ?? '');
     setRemotePath(target?.remotePath ?? '');
     setPublicUrl(target?.publicUrl ?? '');
   }, [open, target]);
@@ -124,6 +126,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
       host.trim() &&
       username.trim() &&
       remotePath.trim() &&
+      /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(hostKeyFingerprint.trim()) &&
       ((editing && !requiresReconnectCredential) || secret.trim())
     ));
 
@@ -141,6 +144,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
       username: username.trim(),
       auth,
       secret: secret.trim() || undefined,
+      hostKeyFingerprint: hostKeyFingerprint.trim(),
       remotePath: remotePath.trim(),
     });
   }
@@ -299,6 +303,29 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                       : editing ? 'Leave blank to keep the existing password' : ''}
                   />
                 )}
+              </div>
+              <div className="flex flex-col gap-1.5 sm:col-span-2">
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="t-host-key">Host key fingerprint</Label>
+                  <InfoTip label="How to verify the server identity">
+                    <span className="block"><strong>Trusted source:</strong> compare the value with the server administrator.</span>
+                    <span className="mt-2 block"><strong>Inspect:</strong></span>
+                    <code className="mt-1 block break-all text-xs">
+                      ssh-keyscan -p {Number(port) || 22} {host || 'host'} 2&gt;/dev/null | ssh-keygen -lf - -E sha256
+                    </code>
+                    <span className="mt-2 block">Do not trust the first scan alone on an untrusted network.</span>
+                  </InfoTip>
+                </div>
+                <Input
+                  id="t-host-key"
+                  value={hostKeyFingerprint}
+                  placeholder="SHA256:AbCd…"
+                  spellCheck={false}
+                  className="font-mono text-xs"
+                  onChange={(e) => setHostKeyFingerprint(e.target.value)}
+                  aria-invalid={hostKeyFingerprint.length > 0
+                    && !/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(hostKeyFingerprint.trim())}
+                />
               </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="t-path">Remote path</Label>

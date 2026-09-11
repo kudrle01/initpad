@@ -70,6 +70,13 @@ export class CreateTargetDto {
   @MaxLength(32_768)
   secret?: string;
 
+  @ValidateIf((dto: CreateTargetDto) => dto.kind !== 'docker')
+  @IsString()
+  @Matches(/^SHA256:[A-Za-z0-9+/]{43}=?$/, {
+    message: 'Host key fingerprint must use the OpenSSH SHA256:<base64> format',
+  })
+  hostKeyFingerprint?: string;
+
   // Writable root on the remote (SFTP web dir; legacy SSH deploy dir).
   @ValidateIf((dto: CreateTargetDto) => dto.kind !== 'docker')
   @IsString()

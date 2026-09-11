@@ -41,6 +41,7 @@ interface EffCfg {
   username: string;
   password?: string;
   privateKey?: string;
+  hostKeyFingerprint?: string;
   remoteRoot: string;
   publicUrl: string;
   internalUrl: string;
@@ -83,6 +84,7 @@ export class SftpProvider implements DeploymentProvider {
         username: c.username,
         password: c.password,
         privateKey: c.privateKey,
+        hostKeyFingerprint: c.hostKeyFingerprint,
         remoteRoot: (input.allocation?.rootPath ?? c.remoteRoot).replace(/\/+$/, ''),
         publicUrl: base,
         internalUrl: base, // the user's server is reachable directly

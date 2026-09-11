@@ -27,6 +27,7 @@ describe('connectionForTarget', () => {
     username: 'kudj05',
     auth: 'password',
     secret: encryptSecret('pw'),
+    hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
     remotePath: '/www',
     publicUrl: 'https://eso.example.edu/~kudj05',
     verifiedAt: null,
@@ -52,6 +53,12 @@ describe('connectionForTarget', () => {
     const c = svc.connectionForTarget({ ...base, auth: 'key', secret: encryptSecret('PEMKEY') })!;
     expect(c.privateKey).toBe('PEMKEY');
     expect(c.password).toBeUndefined();
+  });
+
+  it('refuses a user-managed host until its identity is pinned', () => {
+    expect(() => svc.connectionForTarget({ ...base, hostKeyFingerprint: null })).toThrow(
+      'no trusted SSH host-key fingerprint',
+    );
   });
 });
 
@@ -320,6 +327,7 @@ describe('target capability updates', () => {
     username: 'student',
     auth: 'password',
     secret: encryptSecret('pw'),
+    hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
     remotePath: '/www',
     publicUrl: 'https://eso.example.edu/~student',
     verifiedAt: new Date(),
@@ -468,6 +476,7 @@ describe('target management lifecycle', () => {
     username: 'deploy',
     auth: 'password',
     secret: encryptSecret('secret'),
+    hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
     remotePath: '/srv/apps',
     publicUrl: 'https://apps.example.test',
     managementState: 'active',

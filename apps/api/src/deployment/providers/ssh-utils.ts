@@ -18,6 +18,7 @@ export interface SshTarget {
   password?: string;
   // PEM private key (custom targets that authenticate by key instead of password).
   privateKey?: string;
+  hostKeyFingerprint?: string;
 }
 
 export interface ExecResult {
@@ -36,18 +37,44 @@ export function shellQuote(value: string): string {
 export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client> {
   const conn = new Client();
   await new Promise<void>((resolve, reject) => {
+    let observedFingerprint: string | null = null;
     conn
       .on('ready', () => resolve())
-      .on('error', (err) => reject(err))
+      .on('error', (err) => {
+        if (
+          t.hostKeyFingerprint &&
+          observedFingerprint &&
+          normalizeHostKeyFingerprint(t.hostKeyFingerprint) !== observedFingerprint
+        ) {
+          reject(new Error(
+            `SSH host key mismatch (expected ${normalizeHostKeyFingerprint(t.hostKeyFingerprint)}, received ${observedFingerprint})`,
+          ));
+          return;
+        }
+        reject(err);
+      })
       .connect({
         host: t.host,
         port: t.port,
         username: t.username,
         ...(t.privateKey ? { privateKey: t.privateKey } : { password: t.password }),
+        hostVerifier: (key: Buffer) => {
+          observedFingerprint = sshHostKeyFingerprint(key);
+          return !t.hostKeyFingerprint ||
+            observedFingerprint === normalizeHostKeyFingerprint(t.hostKeyFingerprint);
+        },
         readyTimeout: timeoutMs,
       });
   });
   return conn;
+}
+
+export function sshHostKeyFingerprint(key: Buffer): string {
+  return `SHA256:${createHash('sha256').update(key).digest('base64').replace(/=+$/, '')}`;
+}
+
+export function normalizeHostKeyFingerprint(value: string): string {
+  return value.trim().replace(/=+$/, '');
 }
 
 // Runs a command and collects its output. Does not throw on a non-zero exit

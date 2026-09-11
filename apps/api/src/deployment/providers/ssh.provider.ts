@@ -31,6 +31,7 @@ interface EffConn {
   username: string;
   password?: string;
   privateKey?: string;
+  hostKeyFingerprint?: string;
   remoteRoot: string;
   custom: boolean;
   publicUrl?: string;
@@ -67,6 +68,7 @@ export class SshProvider implements DeploymentProvider {
         username: c.username,
         password: c.password,
         privateKey: c.privateKey,
+        hostKeyFingerprint: c.hostKeyFingerprint,
         remoteRoot: (input.allocation?.rootPath ?? c.remoteRoot).replace(/\/+$/, ''),
         custom: true,
         publicUrl: (input.allocation?.publicUrl ?? c.publicUrl).replace(/\/+$/, ''),

@@ -241,6 +241,7 @@ model Target {
   username                 String?
   auth                     String? // 'password' | 'key'
   secret                   String? // encrypted password or PEM private key (user targets)
+  hostKeyFingerprint       String? // trusted OpenSSH SHA256 host-key fingerprint
   remotePath               String? // writable root on the remote
   publicUrl                String? // public address the deployed app/site is reachable at
   // Lifecycle of the control-plane relationship. Disconnecting or retiring a

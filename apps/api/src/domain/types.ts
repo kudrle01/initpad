@@ -64,6 +64,7 @@ export interface Target {
   port: number | null;
   username: string | null;
   auth: string | null; // 'password' | 'key'
+  hostKeyFingerprint: string | null;
   remotePath: string | null;
   publicUrl: string | null;
   managementState: TargetManagementState;

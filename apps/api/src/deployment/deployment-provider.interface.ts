@@ -9,6 +9,10 @@ export interface ProviderConnection {
   username: string;
   password?: string;
   privateKey?: string;
+  // OpenSSH-style SHA-256 host-key fingerprint (SHA256:<base64>, no padding).
+  // Required for user-managed SSH/SFTP targets; omitted only for built-in lab
+  // services that live inside the trusted self-hosted Compose network.
+  hostKeyFingerprint?: string;
   // Writable root on the remote (SFTP: web dir; SSH: deploy dir).
   remoteRoot: string;
   // Public URL where the deployed app/site is reachable (used for the health

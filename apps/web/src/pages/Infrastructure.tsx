@@ -30,6 +30,7 @@ function changedTargetSettings(target: Target, values: TargetInput): string[] {
     if ((target.username ?? '') !== (values.username ?? '')) fields.push('username');
     if ((target.auth ?? 'password') !== (values.auth ?? 'password')) fields.push('authentication method');
     if (values.secret) fields.push('authentication credentials');
+    if ((target.hostKeyFingerprint ?? '') !== (values.hostKeyFingerprint ?? '')) fields.push('host key fingerprint');
     if ((target.remotePath ?? '') !== (values.remotePath ?? '')) fields.push('remote path');
   }
   return fields;

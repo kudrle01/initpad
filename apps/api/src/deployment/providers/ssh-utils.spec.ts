@@ -1,5 +1,24 @@
 import type { SFTPWrapper } from 'ssh2';
-import { assertSftpWritable, portSlot, sftpRmrf, shellQuote } from './ssh-utils';
+import {
+  assertSftpWritable,
+  normalizeHostKeyFingerprint,
+  portSlot,
+  sftpRmrf,
+  shellQuote,
+  sshHostKeyFingerprint,
+} from './ssh-utils';
+
+describe('SSH host identity', () => {
+  it('uses the OpenSSH SHA256 fingerprint representation', () => {
+    expect(sshHostKeyFingerprint(Buffer.from('initpad-host-key'))).toBe(
+      'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
+    );
+  });
+
+  it('normalizes optional base64 padding from administrator input', () => {
+    expect(normalizeHostKeyFingerprint(' SHA256:abc= ')).toBe('SHA256:abc');
+  });
+});
 
 describe('portSlot', () => {
   it('is within [0, slots)', () => {
