@@ -1032,7 +1032,7 @@ export class ProjectsService implements OnModuleInit {
             !workflow.includes('archive: false')))
       ) {
         throw new BadRequestException(
-          `Cannot import '${repo.fullName}': add an InitPad-compatible workflow at '${workflowPath}' first.`,
+          `Cannot import '${repo.fullName}': add the InitPad starter workflow at '${workflowPath}' first. You can download it from the import screen.`,
         );
       }
 

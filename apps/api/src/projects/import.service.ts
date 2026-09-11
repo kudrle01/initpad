@@ -119,8 +119,8 @@ export class ImportService {
     if (!hasCompatibleWorkflow) {
       warnings.push(
         repo.provider === 'github' && hasBaseWorkflow
-          ? `The GitHub workflow at '${workflowPath}' uses the legacy callback — add the immutable artifact id/digest handoff before importing.`
-          : `No InitPad-compatible workflow at '${workflowPath}' — add the CI callback before importing.`,
+          ? `The GitHub workflow at '${workflowPath}' uses the legacy callback — download the current starter workflow and add its immutable artifact handoff.`
+          : `No InitPad-compatible workflow at '${workflowPath}' — download the starter workflow from this import screen.`,
       );
     }
 

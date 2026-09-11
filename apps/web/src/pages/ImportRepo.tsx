@@ -36,6 +36,7 @@ export default function ImportRepo() {
   const [templateId, setTemplateId] = useState('');
   const [preflight, setPreflight] = useState<ImportPreflight | null>(null);
   const [checking, setChecking] = useState(false);
+  const [downloadingWorkflow, setDownloadingWorkflow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -127,6 +128,27 @@ export default function ImportRepo() {
     } catch (e) {
       toast.error((e as Error).message);
       setBusy(false);
+    }
+  }
+
+  async function downloadStarterWorkflow() {
+    if (!templateId || !selectedRepo) return;
+    setDownloadingWorkflow(true);
+    try {
+      const file = await api.downloadTemplateWorkflow(templateId, selectedRepo.provider);
+      const url = URL.createObjectURL(file.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast.success('Starter workflow downloaded');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setDownloadingWorkflow(false);
     }
   }
 
@@ -252,6 +274,29 @@ export default function ImportRepo() {
                   </li>
                 ))}
               </ul>
+            )}
+            {!preflight.hasCompatibleWorkflow && selectedRepo && (
+              <div className="mt-4 rounded-md border border-border bg-secondary/40 p-3 text-sm">
+                <p className="font-medium">Add the starter CI workflow</p>
+                <p className="mt-1 text-muted-foreground">
+                  Download it, save it as{' '}
+                  <code className="font-mono text-xs">
+                    {selectedRepo.provider === 'github'
+                      ? '.github/workflows/ci.yml'
+                      : '.gitea/workflows/ci.yml'}
+                  </code>
+                  , review the build and test commands, commit it, then run preflight again.
+                </p>
+                <Button
+                  className="mt-3"
+                  variant="secondary"
+                  disabled={downloadingWorkflow}
+                  onClick={downloadStarterWorkflow}
+                >
+                  <DownloadCloud className="h-4 w-4" />
+                  {downloadingWorkflow ? 'Downloading…' : 'Download starter workflow'}
+                </Button>
+              </div>
             )}
             <div className="mt-5">
               <Button

@@ -306,6 +306,8 @@ export const api = {
   cleanupProvisioning: (id: string) =>
     http<void>(`/provisioning/${id}/cleanup`, { method: 'POST' }),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
+  downloadTemplateWorkflow: (templateId: string, provider: 'gitea' | 'github') =>
+    download(`/templates/${encodeURIComponent(templateId)}/workflows/${provider}`),
   getActivity: () => http<ActivityEvent[]>('/activity'),
   getAuditEvents: (filters: AuditEventFilters = {}) => {
     const query = new URLSearchParams();
