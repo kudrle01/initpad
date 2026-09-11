@@ -172,6 +172,9 @@ export interface GitHubStatus {
 }
 
 const BASE = '/api';
+const REQUEST_TIMEOUT_MS = 30_000;
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+export const AUTH_EXPIRED_EVENT = 'initpad:auth-expired';
 
 // Error carrying the HTTP status, so callers can distinguish "gone" (404)
 // from other failures.
@@ -189,12 +192,13 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   headers.set('Content-Type', 'application/json');
   const workspaceId = localStorage.getItem('initpad.workspace');
   if (workspaceId) headers.set('X-Workspace-Id', workspaceId);
-  const res = await fetch(BASE + path, {
+  const res = await boundedFetch(BASE + path, {
     credentials: 'include',
     ...init,
     headers,
-  });
+  }, REQUEST_TIMEOUT_MS);
   if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
     const body = await res.json().catch(() => ({}));
     throw new ApiError(body.message || `HTTP ${res.status}`, res.status);
   }
@@ -207,14 +211,43 @@ async function download(path: string): Promise<{ blob: Blob; filename: string }>
   const headers = new Headers();
   const workspaceId = localStorage.getItem('initpad.workspace');
   if (workspaceId) headers.set('X-Workspace-Id', workspaceId);
-  const res = await fetch(BASE + path, { credentials: 'include', headers });
+  const res = await boundedFetch(
+    BASE + path,
+    { credentials: 'include', headers },
+    DOWNLOAD_TIMEOUT_MS,
+  );
   if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
     const body = await res.json().catch(() => ({}));
     throw new ApiError(body.message || `HTTP ${res.status}`, res.status);
   }
   const disposition = res.headers.get('Content-Disposition') ?? '';
   const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'initpad-metrics';
   return { blob: await res.blob(), filename };
+}
+
+async function boundedFetch(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const sourceSignal = init.signal;
+  const abortFromSource = () => controller.abort(sourceSignal?.reason);
+  if (sourceSignal?.aborted) abortFromSource();
+  else sourceSignal?.addEventListener('abort', abortFromSource, { once: true });
+  const timeout = window.setTimeout(() => controller.abort('timeout'), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !sourceSignal?.aborted) {
+      throw new ApiError('The server did not respond in time. Try again.', 408);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    sourceSignal?.removeEventListener('abort', abortFromSource);
+  }
 }
 
 export const api = {

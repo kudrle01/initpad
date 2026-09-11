@@ -40,11 +40,16 @@ function page(Page: ComponentType) {
 }
 
 const router = createBrowserRouter([
-  { path: '/login', element: page(Login) },
-  { path: '/forgot-password', element: page(ForgotPassword) },
-  { path: '/reset-password/:token', element: page(ResetPassword) },
-  { path: '/verify-email/:token', element: page(VerifyEmail) },
-  { path: '/activate/:token', element: page(Activate) },
+  {
+    errorElement: <RouteError />,
+    children: [
+      { path: '/login', element: page(Login) },
+      { path: '/forgot-password', element: page(ForgotPassword) },
+      { path: '/reset-password/:token', element: page(ResetPassword) },
+      { path: '/verify-email/:token', element: page(VerifyEmail) },
+      { path: '/activate/:token', element: page(Activate) },
+    ],
+  },
   {
     path: '/',
     element: <App />,

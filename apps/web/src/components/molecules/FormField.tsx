@@ -10,12 +10,22 @@ interface FormFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function FormField({ label, error, id, ...props }: FormFieldProps) {
-  const fieldId = id ?? label.toLowerCase().replace(/\s+/g, '-');
+  const generatedId = React.useId();
+  const fieldId = id ?? `field-${generatedId}`;
+  const errorId = `${fieldId}-error`;
+  const describedBy = [props['aria-describedby'], error ? errorId : null]
+    .filter(Boolean)
+    .join(' ') || undefined;
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={fieldId}>{label}</Label>
-      <Input id={fieldId} {...props} />
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      <Input
+        {...props}
+        id={fieldId}
+        aria-invalid={error ? true : props['aria-invalid']}
+        aria-describedby={describedBy}
+      />
+      {error && <p id={errorId} className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

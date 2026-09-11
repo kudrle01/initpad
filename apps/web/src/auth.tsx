@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api } from '@/api';
+import { api, AUTH_EXPIRED_EVENT } from '@/api';
 import type { User, Workspace } from '@/types';
 
 interface AuthState {
@@ -41,6 +41,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const clearSession = () => {
+      localStorage.removeItem('initpad.workspace');
+      setUser(null);
+      setWorkspaces([]);
+      setActiveWorkspace(null);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, clearSession);
     api.me()
       .then(async (current) => {
         setUser(current);
@@ -51,13 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await refreshWorkspaces().catch(() => undefined);
         }
       })
-      .catch(() => {
-        localStorage.removeItem('initpad.workspace');
-        setUser(null);
-        setWorkspaces([]);
-        setActiveWorkspace(null);
-      })
+      .catch(clearSession)
       .finally(() => setLoading(false));
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, clearSession);
   }, [refreshWorkspaces]);
 
   function signIn(next: User) {

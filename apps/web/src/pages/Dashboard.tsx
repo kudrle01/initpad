@@ -64,16 +64,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     let current = true;
-    const timer = window.setInterval(() => {
+    const refreshProvisioning = () => {
+      if (document.visibilityState !== 'visible') return;
       void api.listProvisioning()
         .then((rows) => {
           if (current) setProvisioning(rows);
         })
         .catch(() => undefined);
-    }, 15_000);
+    };
+    const timer = window.setInterval(refreshProvisioning, 15_000);
+    document.addEventListener('visibilitychange', refreshProvisioning);
     return () => {
       current = false;
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshProvisioning);
     };
   }, [activeWorkspace?.id]);
 
