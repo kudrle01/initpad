@@ -8,7 +8,7 @@
     "docker",
     "sftp"
   ],
-  "port": 80,
+  "port": 8080,
   "healthPath": "/health",
   "buildArtifactPath": "/usr/share/nginx/html",
   "description": "Vue single-page app built with Vite. Dev/test on Docker (nginx), prod on static hosting via SFTP."
