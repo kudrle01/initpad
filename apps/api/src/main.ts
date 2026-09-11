@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { config } from './config';
 import { validateConfig } from './config';
+import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
 
 async function bootstrap() {
   validateConfig();
@@ -32,6 +33,7 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: false },
     }),
   );
+  app.useGlobalFilters(new PrismaExceptionFilter());
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   await app.listen(port);
   console.log(`[platform-api] running at http://localhost:${port}/api`);
