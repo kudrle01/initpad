@@ -21,11 +21,7 @@ describe('ProvisioningController', () => {
 
   it('delegates cleanup with the authenticated user rather than a body identity', async () => {
     const projects = { cleanupProvisioning: jest.fn(async () => undefined) };
-    const controller = new ProvisioningController(
-      {} as never,
-      projects as never,
-      {} as never,
-    );
+    const controller = new ProvisioningController({} as never, projects as never, {} as never);
     await controller.cleanup('op1', 'u1');
     expect(projects.cleanupProvisioning).toHaveBeenCalledWith('op1', 'u1');
   });

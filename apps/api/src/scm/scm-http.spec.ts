@@ -52,9 +52,14 @@ describe('SCM HTTP boundary', () => {
   });
 
   it('reports an expired request deadline as a timeout', async () => {
-    global.fetch = jest.fn((_input, init) => new Promise((_resolve, reject) => {
-      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
-    })) as never;
+    global.fetch = jest.fn(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          });
+        }),
+    ) as never;
 
     await expect(
       scmFetch('GitHub', 'read repository', 'https://api.example/repos/one', {}, 1),
@@ -83,38 +88,41 @@ describe('SCM HTTP boundary', () => {
 
 describe('bounded SCM pagination', () => {
   it('collects complete pages and includes the final partial page', async () => {
-    const load = jest
-      .fn()
-      .mockResolvedValueOnce([1, 2])
-      .mockResolvedValueOnce([3]);
-    await expect(collectScmPages({
-      provider: 'GitHub',
-      operation: 'list repositories',
-      pageSize: 2,
-      load,
-    })).resolves.toEqual([1, 2, 3]);
+    const load = jest.fn().mockResolvedValueOnce([1, 2]).mockResolvedValueOnce([3]);
+    await expect(
+      collectScmPages({
+        provider: 'GitHub',
+        operation: 'list repositories',
+        pageSize: 2,
+        load,
+      }),
+    ).resolves.toEqual([1, 2, 3]);
     expect(load).toHaveBeenNthCalledWith(2, 2);
   });
 
   it('stops scanning after a match without loading another page', async () => {
     const load = jest.fn().mockResolvedValueOnce(['alice', 'bob']);
-    await expect(findInScmPages({
-      provider: 'Gitea',
-      operation: 'find collaborator',
-      pageSize: 2,
-      load,
-      find: (items) => items.find((item) => item === 'bob'),
-    })).resolves.toBe('bob');
+    await expect(
+      findInScmPages({
+        provider: 'Gitea',
+        operation: 'find collaborator',
+        pageSize: 2,
+        load,
+        find: (items) => items.find((item) => item === 'bob'),
+      }),
+    ).resolves.toBe('bob');
     expect(load).toHaveBeenCalledTimes(1);
   });
 
   it('fails at the configured boundary instead of silently truncating', async () => {
-    await expect(collectScmPages({
-      provider: 'GitHub',
-      operation: 'list repositories',
-      pageSize: 1,
-      maxPages: 2,
-      load: async (page) => [page],
-    })).rejects.toThrow('exceeded the pagination limit');
+    await expect(
+      collectScmPages({
+        provider: 'GitHub',
+        operation: 'list repositories',
+        pageSize: 1,
+        maxPages: 2,
+        load: async (page) => [page],
+      }),
+    ).rejects.toThrow('exceeded the pagination limit');
   });
 });

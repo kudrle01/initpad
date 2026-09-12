@@ -21,9 +21,27 @@ import { ArtifactsModule } from '../artifacts/artifacts.module';
 import { AuditEventsModule } from '../audit/audit-events.module';
 
 @Module({
-  imports: [TemplatesModule, GeneratorModule, DeploymentModule, TargetsModule, GitHubCoreModule, AuthModule, WorkspacesModule, ArtifactsModule, AuditEventsModule],
+  imports: [
+    TemplatesModule,
+    GeneratorModule,
+    DeploymentModule,
+    TargetsModule,
+    GitHubCoreModule,
+    AuthModule,
+    WorkspacesModule,
+    ArtifactsModule,
+    AuditEventsModule,
+  ],
   providers: [ProjectsService, ImportService, ProvisioningService, AppConfigService],
-  controllers: [ProjectsController, ImportController, ProvisioningController, ActivityController, AppConfigController, CiController, ScmWebhookController],
+  controllers: [
+    ProjectsController,
+    ImportController,
+    ProvisioningController,
+    ActivityController,
+    AppConfigController,
+    CiController,
+    ScmWebhookController,
+  ],
   exports: [AppConfigService],
 })
 export class ProjectsModule {}

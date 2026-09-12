@@ -8,12 +8,17 @@ export function TargetUsageList({ usage }: { usage: TargetUsage[] }) {
   return (
     <details className="group rounded-md border border-border bg-secondary/20 px-3 py-2 text-xs">
       <summary className="text-link flex cursor-pointer list-none items-center justify-between gap-2 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
-        <span>Used by {usage.length} {usage.length === 1 ? 'environment' : 'environments'}</span>
+        <span>
+          Used by {usage.length} {usage.length === 1 ? 'environment' : 'environments'}
+        </span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
       </summary>
       <ul className="mt-2 space-y-1.5 border-t border-border pt-2">
         {usage.map((binding) => (
-          <li key={`${binding.projectId}:${binding.environment}`} className="flex min-w-0 items-center justify-between gap-2">
+          <li
+            key={`${binding.projectId}:${binding.environment}`}
+            className="flex min-w-0 items-center justify-between gap-2"
+          >
             <Link
               to={`/projects/${binding.projectId}`}
               className="text-link min-w-0 truncate font-medium hover:underline"

@@ -60,7 +60,9 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
         confirmLabel: existing.isSecret ? 'Replace secret' : 'Replace variable',
         tone: 'warning',
         consequences: [
-          existing.isSecret ? 'The stored secret value is replaced.' : 'The stored configuration value is replaced.',
+          existing.isSecret
+            ? 'The stored secret value is replaced.'
+            : 'The stored configuration value is replaced.',
           'The running workload is unchanged until the environment is redeployed.',
         ],
       });
@@ -122,7 +124,9 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
         </DialogHeader>
 
         {loading ? (
-          <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
+          <div className="flex justify-center py-6">
+            <Spinner className="h-5 w-5" />
+          </div>
         ) : (
           <div className="flex flex-col gap-2">
             {vars.length === 0 && (
@@ -178,7 +182,12 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
                     />
                     Secret (encrypted, hidden)
                   </label>
-                  <Button size="sm" className="self-end sm:self-auto" disabled={!validKey || saving} onClick={() => void save()}>
+                  <Button
+                    size="sm"
+                    className="self-end sm:self-auto"
+                    disabled={!validKey || saving}
+                    onClick={() => void save()}
+                  >
                     {saving ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Save
                   </Button>
                 </div>

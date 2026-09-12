@@ -1,9 +1,4 @@
-import {
-  Environment,
-  PipelineStage,
-  StageStatus,
-  TemplateManifest,
-} from '../domain/types';
+import { Environment, PipelineStage, StageStatus, TemplateManifest } from '../domain/types';
 import { CI_WAITING_REASON } from './ci-state';
 
 export interface ScmPipelineStatus {
@@ -20,9 +15,7 @@ export interface PipelineDeploymentOperation {
 function jobFromContext(context: string): string | null {
   if (!context) return null;
   const noEvent = context.replace(/\s*\([^)]*\)\s*$/, '');
-  const job = noEvent.includes('/')
-    ? noEvent.slice(noEvent.lastIndexOf('/') + 1)
-    : noEvent;
+  const job = noEvent.includes('/') ? noEvent.slice(noEvent.lastIndexOf('/') + 1) : noEvent;
   return job.trim().toLowerCase();
 }
 
@@ -63,11 +56,11 @@ export function pipelineStages(
     }
   }
 
-  const stages = definitions.map((definition) => {
+  const stages = definitions.map<PipelineStage>((definition) => {
     const hit = definition.tokens.map((token) => latest.get(token)).find(Boolean);
     return {
       name: definition.label,
-      status: hit ? ciStatus(hit.status) : ('pending' as StageStatus),
+      status: hit ? ciStatus(hit.status) : 'pending',
       url: hit?.url ?? null,
     };
   });
@@ -89,12 +82,9 @@ export function withDeploymentState(
   operation?: PipelineDeploymentOperation | null,
 ): PipelineStage[] {
   const visibleStages =
-    environment?.status === 'deploying' &&
-    environment.statusReason === CI_WAITING_REASON
-      ? stages.map((stage) =>
-          stage.status === 'running'
-            ? { ...stage, status: 'pending' as StageStatus }
-            : stage,
+    environment?.status === 'deploying' && environment.statusReason === CI_WAITING_REASON
+      ? stages.map<PipelineStage>((stage) =>
+          stage.status === 'running' ? { ...stage, status: 'pending' } : stage,
         )
       : stages;
   const deployIndex = visibleStages.findIndex((stage) => stage.name === 'deploy');
@@ -114,8 +104,7 @@ export function withDeploymentState(
       operation.status === 'failed'
     ) {
       status = 'failed';
-    }
-    else if (environment.deploymentRequired) {
+    } else if (environment.deploymentRequired) {
       status = environment.status === 'failed' ? 'failed' : 'pending';
     } else if (environment.status === 'running' || environment.status === 'stopped') {
       status = 'success';
@@ -136,8 +125,5 @@ export function withDeploymentState(
   ) {
     status = 'pending';
   }
-  return [
-    ...visibleStages,
-    { name: 'publish', status, url: null, source: 'platform' },
-  ];
+  return [...visibleStages, { name: 'publish', status, url: null, source: 'platform' }];
 }

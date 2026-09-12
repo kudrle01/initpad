@@ -36,7 +36,9 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
             <DialogHeader>
               <DialogTitle>
                 <History className="h-[18px] w-[18px] text-warning" />{' '}
-                {preview.environment === 'prod' ? 'Request production rollback' : `Roll back ${preview.environment}`}
+                {preview.environment === 'prod'
+                  ? 'Request production rollback'
+                  : `Roll back ${preview.environment}`}
               </DialogTitle>
               <DialogDescription>
                 {preview.environment === 'prod'
@@ -77,9 +79,9 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
               <p className="mt-1 text-xs text-muted-foreground">
                 The selected target will replace its current workload with version{' '}
                 <span className="font-mono">{short(preview.rollbackVersion)}</span>. Publication
-                still has to pass the target health check. Stable-routing targets keep their URL
-                and a managed gateway keeps the last healthy revision online until that succeeds;
-                a direct-port target may allocate a new port. Current environment variables and
+                still has to pass the target health check. Stable-routing targets keep their URL and
+                a managed gateway keeps the last healthy revision online until that succeeds; a
+                direct-port target may allocate a new port. Current environment variables and
                 secrets stay in place; rollback changes application code, not configuration.
               </p>
             </div>
@@ -87,10 +89,9 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
               <span>
-                Source deployment succeeded on{' '}
-                {new Date(preview.sourceDeployedAt).toLocaleString()}. Any target or environment
-                or configuration change after this dialog opened will cancel the request for
-                review.
+                Source deployment succeeded on {new Date(preview.sourceDeployedAt).toLocaleString()}
+                . Any target or environment or configuration change after this dialog opened will
+                cancel the request for review.
               </span>
             </div>
 
@@ -104,7 +105,9 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
                 onClick={onConfirm}
               >
                 {busy ? <Spinner className="h-4 w-4" /> : <History className="h-4 w-4" />}
-                {preview.environment === 'prod' ? 'Submit rollback request' : `Roll back ${preview.environment}`}
+                {preview.environment === 'prod'
+                  ? 'Submit rollback request'
+                  : `Roll back ${preview.environment}`}
               </Button>
             </DialogFooter>
           </>

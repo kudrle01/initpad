@@ -1,4 +1,12 @@
-import { BadRequestException, Controller, Delete, Get, HttpCode, Param, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ExternalIdentityService, ScmProviderKind } from './external-identity.service';

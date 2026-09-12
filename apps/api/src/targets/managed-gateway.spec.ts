@@ -6,8 +6,9 @@ import {
 
 describe('managed gateway DNS identity (ADR-073)', () => {
   it('canonicalizes a clean HTTPS DNS origin', () => {
-    expect(normalizeManagedGatewayOrigin('https://Apps.Example.Test/'))
-      .toBe('https://apps.example.test');
+    expect(normalizeManagedGatewayOrigin('https://Apps.Example.Test/')).toBe(
+      'https://apps.example.test',
+    );
   });
 
   it.each([
@@ -22,14 +23,12 @@ describe('managed gateway DNS identity (ADR-073)', () => {
   });
 
   it('allows only the target zone or one of its sub-zones', () => {
-    expect(managedGatewayOrigin(
-      'https://apps.example.test',
-      'https://team-alpha.apps.example.test',
-    )).toBe('https://team-alpha.apps.example.test');
-    expect(() => managedGatewayOrigin(
-      'https://apps.example.test',
-      'https://attacker.example.test',
-    )).toThrow('inside the target DNS zone');
+    expect(
+      managedGatewayOrigin('https://apps.example.test', 'https://team-alpha.apps.example.test'),
+    ).toBe('https://team-alpha.apps.example.test');
+    expect(() =>
+      managedGatewayOrigin('https://apps.example.test', 'https://attacker.example.test'),
+    ).toThrow('inside the target DNS zone');
   });
 
   it('creates a readable stable hostname from the immutable environment id', () => {

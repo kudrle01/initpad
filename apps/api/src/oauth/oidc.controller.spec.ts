@@ -29,7 +29,10 @@ describe('OidcController account lifecycle enforcement', () => {
     const prisma = {
       user: {
         findUnique: jest.fn(async () => ({
-          id: 'u1', active: true, mustChangePassword: false, tokenVersion: 4,
+          id: 'u1',
+          active: true,
+          mustChangePassword: false,
+          tokenVersion: 4,
         })),
       },
     };
@@ -62,7 +65,10 @@ describe('OidcController account lifecycle enforcement', () => {
     const prisma = {
       user: {
         findUnique: jest.fn(async () => ({
-          id: 'u1', active: true, mustChangePassword: false, tokenVersion: 4,
+          id: 'u1',
+          active: true,
+          mustChangePassword: false,
+          tokenVersion: 4,
         })),
       },
     };
@@ -83,7 +89,9 @@ describe('OidcController account lifecycle enforcement', () => {
     const oidc = {
       validateClient: jest.fn(() => true),
       consumeCode: jest.fn(() => ({
-        userId: 'u1', tokenVersion: 2, clientId: 'gitea',
+        userId: 'u1',
+        tokenVersion: 2,
+        clientId: 'gitea',
         redirectUri: authorizeQuery.redirect_uri,
       })),
       issueAccessToken: jest.fn(),
@@ -92,7 +100,10 @@ describe('OidcController account lifecycle enforcement', () => {
     const prisma = {
       user: {
         findUnique: jest.fn(async () => ({
-          id: 'u1', active: true, mustChangePassword: false, tokenVersion: 3,
+          id: 'u1',
+          active: true,
+          mustChangePassword: false,
+          tokenVersion: 3,
         })),
       },
     };
@@ -101,8 +112,10 @@ describe('OidcController account lifecycle enforcement', () => {
 
     await controller.token(
       {
-        grant_type: 'authorization_code', code: 'code-1',
-        client_id: 'gitea', client_secret: 'secret',
+        grant_type: 'authorization_code',
+        code: 'code-1',
+        client_id: 'gitea',
+        client_secret: 'secret',
         redirect_uri: authorizeQuery.redirect_uri,
       },
       { headers: {} } as never,
@@ -118,8 +131,11 @@ describe('OidcController account lifecycle enforcement', () => {
     const oidc = {
       validateClient: jest.fn(() => true),
       consumeCode: jest.fn(() => ({
-        userId: 'u1', tokenVersion: 2, clientId: 'gitea',
-        redirectUri: authorizeQuery.redirect_uri, nonce: 'nonce-1',
+        userId: 'u1',
+        tokenVersion: 2,
+        clientId: 'gitea',
+        redirectUri: authorizeQuery.redirect_uri,
+        nonce: 'nonce-1',
       })),
       issueAccessToken: jest.fn(() => 'access-1'),
       signIdToken: jest.fn(() => 'id-1'),
@@ -127,8 +143,14 @@ describe('OidcController account lifecycle enforcement', () => {
     const prisma = {
       user: {
         findUnique: jest.fn(async () => ({
-          id: 'u1', username: 'alice', name: null, email: 'alice@example.test',
-          emailVerifiedAt: null, active: true, mustChangePassword: false, tokenVersion: 2,
+          id: 'u1',
+          username: 'alice',
+          name: null,
+          email: 'alice@example.test',
+          emailVerifiedAt: null,
+          active: true,
+          mustChangePassword: false,
+          tokenVersion: 2,
         })),
       },
     };
@@ -137,8 +159,10 @@ describe('OidcController account lifecycle enforcement', () => {
 
     await controller.token(
       {
-        grant_type: 'authorization_code', code: 'code-1',
-        client_id: 'gitea', client_secret: 'secret',
+        grant_type: 'authorization_code',
+        code: 'code-1',
+        client_id: 'gitea',
+        client_secret: 'secret',
         redirect_uri: authorizeQuery.redirect_uri,
       },
       { headers: {} } as never,
@@ -157,7 +181,10 @@ describe('OidcController account lifecycle enforcement', () => {
     const prisma = {
       user: {
         findUnique: jest.fn(async () => ({
-          id: 'u1', active: true, mustChangePassword: false, tokenVersion: 2,
+          id: 'u1',
+          active: true,
+          mustChangePassword: false,
+          tokenVersion: 2,
         })),
       },
     };

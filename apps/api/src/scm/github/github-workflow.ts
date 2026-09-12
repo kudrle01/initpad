@@ -12,10 +12,7 @@ export const UPLOAD_ARTIFACT_ACTION =
 export function adaptWorkflowForGitHub(source: string, filename: string): string {
   let workflow = source;
   if (!/^permissions:/m.test(workflow)) {
-    workflow = workflow.replace(
-      /^on: \[push\]$/m,
-      'on: [push]\n\npermissions:\n  contents: read',
-    );
+    workflow = workflow.replace(/^on: \[push\]$/m, 'on: [push]\n\npermissions:\n  contents: read');
   }
 
   const dockerHeader = '  docker:\n    name: docker build\n';
@@ -41,10 +38,7 @@ export function adaptWorkflowForGitHub(source: string, filename: string): string
   }
   workflow = workflow
     .replace(registryLogin, '')
-    .replace(
-      ':${{ github.sha }}" | tr',
-      ':${{ github.sha }}-${{ github.run_id }}" | tr',
-    )
+    .replace(':${{ github.sha }}" | tr', ':${{ github.sha }}-${{ github.run_id }}" | tr')
     .replace(
       '          docker push "$IMAGE"',
       [
@@ -65,14 +59,12 @@ export function adaptWorkflowForGitHub(source: string, filename: string): string
   // but always emits the current terminal-result callback.
   if (!workflow.includes('    if: always()')) {
     workflow = workflow.replace(
-      /(^  deploy:\n(?:    [^\n]*\n)*?^    needs: docker\n)/m,
+      /(^\x20{2}deploy:\n(?:\x20{4}[^\n]*\n)*?^\x20{4}needs: docker\n)/m,
       '$1    if: always()\n',
     );
   }
-  const currentCallback =
-    `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}","ciStatus":"\${{ needs.docker.result }}"}'`;
-  const legacyCallback =
-    `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}"}'`;
+  const currentCallback = `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}","ciStatus":"\${{ needs.docker.result }}"}'`;
+  const legacyCallback = `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}"}'`;
   const callback = workflow.includes(currentCallback) ? currentCallback : legacyCallback;
   if (!workflow.includes(callback)) {
     throw new Error(`Could not locate the InitPad callback in '${filename}'`);

@@ -46,22 +46,25 @@ function defaultCapabilities(kind: ProviderKind): RuntimeKind[] {
 function validManagedGatewayOrigin(value: string): boolean {
   try {
     const url = new URL(value);
-    const ipLiteral = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(url.hostname)
-      || url.hostname.includes(':');
-    const dnsName = url.hostname.length <= 253
-      && url.hostname.split('.').every((label) =>
-        /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
-    return url.protocol === 'https:'
-      && !url.username
-      && !url.password
-      && !url.port
-      && url.pathname === '/'
-      && !url.search
-      && !url.hash
-      && !ipLiteral
-      && url.hostname !== 'localhost'
-      && !url.hostname.endsWith('.localhost')
-      && dnsName;
+    const ipLiteral = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(url.hostname) || url.hostname.includes(':');
+    const dnsName =
+      url.hostname.length <= 253 &&
+      url.hostname
+        .split('.')
+        .every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      url.pathname === '/' &&
+      !url.search &&
+      !url.hash &&
+      !ipLiteral &&
+      url.hostname !== 'localhost' &&
+      !url.hostname.endsWith('.localhost') &&
+      dnsName
+    );
   } catch {
     return false;
   }
@@ -73,9 +76,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
   const editing = !!target;
   const legacySsh = target?.kind === 'ssh';
   const reconnectingRemote = Boolean(
-    target
-    && target.kind !== 'docker'
-    && target.managementState !== 'active',
+    target && target.kind !== 'docker' && target.managementState !== 'active',
   );
   const requiresReconnectCredential = reconnectingRemote && !target?.credentialConfigured;
   const [name, setName] = useState('');
@@ -120,15 +121,16 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
   const valid =
     name.trim() &&
     publicUrl.trim() &&
-    (kind !== 'docker' || routingMode === 'direct-port' || validManagedGatewayOrigin(publicUrl.trim())) &&
+    (kind !== 'docker' ||
+      routingMode === 'direct-port' ||
+      validManagedGatewayOrigin(publicUrl.trim())) &&
     caps.length > 0 &&
-    (kind === 'docker' || (
-      host.trim() &&
-      username.trim() &&
-      remotePath.trim() &&
-      /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(hostKeyFingerprint.trim()) &&
-      ((editing && !requiresReconnectCredential) || secret.trim())
-    ));
+    (kind === 'docker' ||
+      (host.trim() &&
+        username.trim() &&
+        remotePath.trim() &&
+        /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(hostKeyFingerprint.trim()) &&
+        ((editing && !requiresReconnectCredential) || secret.trim())));
 
   function submit() {
     const common = {
@@ -137,16 +139,20 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
       capabilities: caps,
       publicUrl: publicUrl.trim(),
     };
-    onSubmit(kind === 'docker' ? { ...common, routingMode } : {
-      ...common,
-      host: host.trim(),
-      port: Number(port) || 22,
-      username: username.trim(),
-      auth,
-      secret: secret.trim() || undefined,
-      hostKeyFingerprint: hostKeyFingerprint.trim(),
-      remotePath: remotePath.trim(),
-    });
+    onSubmit(
+      kind === 'docker'
+        ? { ...common, routingMode }
+        : {
+            ...common,
+            host: host.trim(),
+            port: Number(port) || 22,
+            username: username.trim(),
+            auth,
+            secret: secret.trim() || undefined,
+            hostKeyFingerprint: hostKeyFingerprint.trim(),
+            remotePath: remotePath.trim(),
+          },
+    );
   }
 
   return (
@@ -154,7 +160,8 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            <Server className="h-[18px] w-[18px]" /> {editing ? 'Edit server' : 'Add deployment server'}
+            <Server className="h-[18px] w-[18px]" />{' '}
+            {editing ? 'Edit server' : 'Add deployment server'}
           </DialogTitle>
           <DialogDescription>
             {kind === 'docker'
@@ -184,15 +191,20 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               <div>
                 <p className="font-medium">A new credential is required</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  The previous credential was permanently removed. Save a replacement, then run
-                  Test connection to resume InitPad management.
+                  The previous credential was permanently removed. Save a replacement, then run Test
+                  connection to resume InitPad management.
                 </p>
               </div>
             </div>
           )}
           <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="t-name">Name</Label>
-            <Input id="t-name" value={name} placeholder="ESO school server" onChange={(e) => setName(e.target.value)} />
+            <Input
+              id="t-name"
+              value={name}
+              placeholder="ESO school server"
+              onChange={(e) => setName(e.target.value)}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Connection method</Label>
@@ -210,7 +222,12 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           {kind !== 'docker' && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="t-port">Port</Label>
-              <Input id="t-port" value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
+              <Input
+                id="t-port"
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                inputMode="numeric"
+              />
             </div>
           )}
           {kind === 'docker' && (
@@ -267,7 +284,12 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             <>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="t-host">Host</Label>
-                <Input id="t-host" value={host} placeholder="eso.example.edu" onChange={(e) => setHost(e.target.value)} />
+                <Input
+                  id="t-host"
+                  value={host}
+                  placeholder="eso.example.edu"
+                  onChange={(e) => setHost(e.target.value)}
+                />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="t-user">Username</Label>
@@ -275,21 +297,31 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label>Auth</Label>
-                <select className={selectCls} value={auth} onChange={(e) => setAuth(e.target.value as 'password' | 'key')}>
+                <select
+                  className={selectCls}
+                  value={auth}
+                  onChange={(e) => setAuth(e.target.value as 'password' | 'key')}
+                >
                   <option value="password">Password</option>
                   <option value="key">SSH key</option>
                 </select>
               </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <Label htmlFor="t-secret">{auth === 'key' ? 'Private key (PEM)' : 'Password'}</Label>
+                <Label htmlFor="t-secret">
+                  {auth === 'key' ? 'Private key (PEM)' : 'Password'}
+                </Label>
                 {auth === 'key' ? (
                   <textarea
                     id="t-secret"
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
-                    placeholder={requiresReconnectCredential
-                      ? '-----BEGIN OPENSSH PRIVATE KEY-----'
-                      : editing ? 'Leave blank to keep the existing key' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
+                    placeholder={
+                      requiresReconnectCredential
+                        ? '-----BEGIN OPENSSH PRIVATE KEY-----'
+                        : editing
+                          ? 'Leave blank to keep the existing key'
+                          : '-----BEGIN OPENSSH PRIVATE KEY-----'
+                    }
                     className="min-h-[84px] w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   />
                 ) : (
@@ -298,9 +330,13 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                     type="password"
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
-                    placeholder={requiresReconnectCredential
-                      ? 'Enter a new password'
-                      : editing ? 'Leave blank to keep the existing password' : ''}
+                    placeholder={
+                      requiresReconnectCredential
+                        ? 'Enter a new password'
+                        : editing
+                          ? 'Leave blank to keep the existing password'
+                          : ''
+                    }
                   />
                 )}
               </div>
@@ -308,12 +344,20 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                 <div className="flex items-center gap-1">
                   <Label htmlFor="t-host-key">Host key fingerprint</Label>
                   <InfoTip label="How to verify the server identity">
-                    <span className="block"><strong>Trusted source:</strong> compare the value with the server administrator.</span>
-                    <span className="mt-2 block"><strong>Inspect:</strong></span>
+                    <span className="block">
+                      <strong>Trusted source:</strong> compare the value with the server
+                      administrator.
+                    </span>
+                    <span className="mt-2 block">
+                      <strong>Inspect:</strong>
+                    </span>
                     <code className="mt-1 block break-all text-xs">
-                      ssh-keyscan -p {Number(port) || 22} {host || 'host'} 2&gt;/dev/null | ssh-keygen -lf - -E sha256
+                      ssh-keyscan -p {Number(port) || 22} {host || 'host'} 2&gt;/dev/null |
+                      ssh-keygen -lf - -E sha256
                     </code>
-                    <span className="mt-2 block">Do not trust the first scan alone on an untrusted network.</span>
+                    <span className="mt-2 block">
+                      Do not trust the first scan alone on an untrusted network.
+                    </span>
                   </InfoTip>
                 </div>
                 <Input
@@ -323,13 +367,20 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                   spellCheck={false}
                   className="font-mono text-xs"
                   onChange={(e) => setHostKeyFingerprint(e.target.value)}
-                  aria-invalid={hostKeyFingerprint.length > 0
-                    && !/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(hostKeyFingerprint.trim())}
+                  aria-invalid={
+                    hostKeyFingerprint.length > 0 &&
+                    !/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(hostKeyFingerprint.trim())
+                  }
                 />
               </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="t-path">Remote path</Label>
-                <Input id="t-path" value={remotePath} placeholder="/www/myapp" onChange={(e) => setRemotePath(e.target.value)} />
+                <Input
+                  id="t-path"
+                  value={remotePath}
+                  placeholder="/www/myapp"
+                  onChange={(e) => setRemotePath(e.target.value)}
+                />
               </div>
             </>
           )}
@@ -338,7 +389,9 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               <Label htmlFor="t-url">
                 {kind === 'docker' && routingMode === 'managed-gateway'
                   ? 'Gateway base URL'
-                  : kind === 'docker' ? 'Application base URL' : 'Public URL'}
+                  : kind === 'docker'
+                    ? 'Application base URL'
+                    : 'Public URL'}
               </Label>
               {kind === 'docker' && (
                 <InfoTip label="About the application address">
@@ -351,16 +404,20 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             <Input
               id="t-url"
               value={publicUrl}
-              placeholder={kind === 'docker'
-                ? routingMode === 'managed-gateway'
-                  ? 'https://apps.example.cz'
-                  : 'http://192.168.1.50'
-                : 'https://eso.example.edu/~user'}
+              placeholder={
+                kind === 'docker'
+                  ? routingMode === 'managed-gateway'
+                    ? 'https://apps.example.cz'
+                    : 'http://192.168.1.50'
+                  : 'https://eso.example.edu/~user'
+              }
               onChange={(e) => setPublicUrl(e.target.value)}
-              aria-invalid={kind === 'docker'
-                && routingMode === 'managed-gateway'
-                && publicUrl.length > 0
-                && !validManagedGatewayOrigin(publicUrl.trim())}
+              aria-invalid={
+                kind === 'docker' &&
+                routingMode === 'managed-gateway' &&
+                publicUrl.length > 0 &&
+                !validManagedGatewayOrigin(publicUrl.trim())
+              }
             />
           </div>
         </div>

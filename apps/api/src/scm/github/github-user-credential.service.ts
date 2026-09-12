@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { decryptSecret, encryptSecret } from '../../common/secret';
 import { PrismaService } from '../../prisma/prisma.service';
-import { GitHubOAuthExchange, GitHubOAuthService, GitHubUserTokenSet } from './github-oauth.service';
+import {
+  GitHubOAuthExchange,
+  GitHubOAuthService,
+  GitHubUserTokenSet,
+} from './github-oauth.service';
 
 const REFRESH_BEFORE_MS = 60_000;
 const REFRESH_LEASE_MS = 30_000;

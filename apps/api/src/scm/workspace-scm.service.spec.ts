@@ -16,7 +16,8 @@ describe('WorkspaceScmService', () => {
       {
         user: {
           findUniqueOrThrow: jest.fn(async () => ({
-            username: 'alice', accessToken: encryptSecret('gitea-user-token'),
+            username: 'alice',
+            accessToken: encryptSecret('gitea-user-token'),
           })),
         },
       } as never,
@@ -50,8 +51,12 @@ describe('WorkspaceScmService', () => {
         gitHubInstallationAccess: {
           findUnique: jest.fn(async () => ({
             githubInstallation: {
-              id: 'installation-a', accountId: 'github-user-a', accountLogin: 'alice',
-              accountType: 'User', deletedAt: null, suspendedAt: null,
+              id: 'installation-a',
+              accountId: 'github-user-a',
+              accountLogin: 'alice',
+              accountType: 'User',
+              deletedAt: null,
+              suspendedAt: null,
             },
           })),
         },
@@ -76,17 +81,26 @@ describe('WorkspaceScmService', () => {
     const github = {
       listRepositories: jest.fn(async (actor: { installationId?: string; username: string }) => [
         {
-          provider: 'github', repositoryId: '101', owner: actor.username, name: 'api',
-          fullName: `${actor.username}/api`, repoUrl: `https://github.com/${actor.username}/api`,
-          installationId: actor.installationId, private: true, defaultBranch: 'main',
-          updatedAt: '', empty: false,
+          provider: 'github',
+          repositoryId: '101',
+          owner: actor.username,
+          name: 'api',
+          fullName: `${actor.username}/api`,
+          repoUrl: `https://github.com/${actor.username}/api`,
+          installationId: actor.installationId,
+          private: true,
+          defaultBranch: 'main',
+          updatedAt: '',
+          empty: false,
         },
       ]),
     };
     const service = new WorkspaceScmService(
       {
         gitHubInstallationAccess: {
-          findMany: jest.fn(async () => installations.map((githubInstallation) => ({ githubInstallation }))),
+          findMany: jest.fn(async () =>
+            installations.map((githubInstallation) => ({ githubInstallation })),
+          ),
         },
       } as never,
       { for: jest.fn(() => github) } as never,
@@ -95,7 +109,9 @@ describe('WorkspaceScmService', () => {
     const repos = await service.listRepositories('user-1', 'workspace-1');
     expect(github.listRepositories).toHaveBeenCalledTimes(2);
     expect(github.listRepositories).toHaveBeenNthCalledWith(2, {
-      username: 'acme', token: '', installationId: 'installation-b',
+      username: 'acme',
+      token: '',
+      installationId: 'installation-b',
     });
     expect(repos).toHaveLength(1);
   });

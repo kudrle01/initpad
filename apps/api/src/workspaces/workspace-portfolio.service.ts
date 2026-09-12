@@ -66,36 +66,44 @@ export class WorkspacePortfolioService {
         this.prisma.provisioningOperation.count({
           where: {
             workspaceId,
-            effects: { some: { status: { in: ['compensation_failed', 'reconciliation_required'] } } },
+            effects: {
+              some: { status: { in: ['compensation_failed', 'reconciliation_required'] } },
+            },
           },
         }),
       ]);
 
     const items = projects.map((project) => {
-      const cleanupDebt = project.environments.filter(
-        (environment) => environment.statusReason?.startsWith('Cleanup pending:'),
+      const cleanupDebt = project.environments.filter((environment) =>
+        environment.statusReason?.startsWith('Cleanup pending:'),
       ).length;
-      const failed = project.environments.filter((environment) =>
-        environment.status === 'failed'
-        || (environment.target?.managementState ?? 'active') !== 'active',
+      const failed = project.environments.filter(
+        (environment) =>
+          environment.status === 'failed' ||
+          (environment.target?.managementState ?? 'active') !== 'active',
       ).length;
       const deploying = project.environments.some(
         (environment) => environment.status === 'deploying' || environment.activeOperationId,
       );
-      const running = project.environments.filter((environment) => environment.status === 'running').length;
-      const health: PortfolioHealth = failed > 0 || cleanupDebt > 0
-        ? 'attention'
-        : deploying
-          ? 'deploying'
-          : running > 0
-            ? 'healthy'
-            : 'idle';
+      const running = project.environments.filter(
+        (environment) => environment.status === 'running',
+      ).length;
+      const health: PortfolioHealth =
+        failed > 0 || cleanupDebt > 0
+          ? 'attention'
+          : deploying
+            ? 'deploying'
+            : running > 0
+              ? 'healthy'
+              : 'idle';
       const lastBuild = project.buildArtifacts[0];
       const lastDeployment = project.environments
-        .flatMap((environment) => environment.operations.map((operation) => ({
-          ...operation,
-          environment: environment.name,
-        })))
+        .flatMap((environment) =>
+          environment.operations.map((operation) => ({
+            ...operation,
+            environment: environment.name,
+          })),
+        )
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
       return {
         id: project.id,

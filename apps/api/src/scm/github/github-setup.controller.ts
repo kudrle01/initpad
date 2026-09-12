@@ -100,7 +100,8 @@ export class GitHubSetupController {
         ),
       );
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Could not authorize GitHub installation';
+      const reason =
+        error instanceof Error ? error.message : 'Could not authorize GitHub installation';
       return res.redirect(
         this.frontend(`/settings?github=installation_error&reason=${encodeURIComponent(reason)}`),
       );

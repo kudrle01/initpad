@@ -16,13 +16,15 @@ import type { Project, TemplateManifest } from '@/types';
 export default function Projects() {
   const [query, setQuery] = useState('');
   const { activeWorkspace } = useAuth();
+  const workspaceId = activeWorkspace?.id;
   const loadProjects = useCallback(async () => {
+    if (!workspaceId) return { projects: [], templates: {} };
     const [projects, templateRows] = await Promise.all([api.listProjects(), api.listTemplates()]);
     return {
       projects,
       templates: Object.fromEntries(templateRows.map((template) => [template.id, template])),
     };
-  }, [activeWorkspace?.id]);
+  }, [workspaceId]);
   const {
     data: { projects, templates },
     loading,

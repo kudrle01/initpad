@@ -68,7 +68,8 @@ function setup() {
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
-    callback(prisma));
+    callback(prisma),
+  );
   const templates = {
     get: jest.fn(() => ({ id: 'node', port: 3000, healthPath: '/health' })),
   };
@@ -84,9 +85,8 @@ describe('ProjectWorkloadDiagnostics', () => {
 
   it('queues one allocation-scoped logs job without executable or secret input', async () => {
     const { diagnostics, prisma } = setup();
-    prisma.environment.findUniqueOrThrow
-      .mockResolvedValueOnce(environment())
-      .mockResolvedValueOnce(environment({
+    prisma.environment.findUniqueOrThrow.mockResolvedValueOnce(environment()).mockResolvedValueOnce(
+      environment({
         diagnostic: {
           status: 'queued',
           runtimeState: null,
@@ -100,22 +100,22 @@ describe('ProjectWorkloadDiagnostics', () => {
           finishedAt: null,
           currentJob: { progressPercent: 0 },
         },
-      }));
+      }),
+    );
 
-    await expect(diagnostics.request(
-      'project-1',
-      'dev',
-      'user-1',
-      '123e4567-e89b-42d3-a456-426614174000',
-    )).resolves.toMatchObject({
+    await expect(
+      diagnostics.request('project-1', 'dev', 'user-1', '123e4567-e89b-42d3-a456-426614174000'),
+    ).resolves.toMatchObject({
       environment: 'dev',
       status: 'queued',
       agentOnline: true,
     });
 
-    const createCall = (prisma.agentJob.create.mock.calls as unknown as Array<[
-      { data: { kind: string; payload: Record<string, unknown> } },
-    ]>)[0][0];
+    const createCall = (
+      prisma.agentJob.create.mock.calls as unknown as Array<
+        [{ data: { kind: string; payload: Record<string, unknown> } }]
+      >
+    )[0][0];
     const create = createCall.data as {
       kind: string;
       payload: Record<string, unknown>;
@@ -138,21 +138,23 @@ describe('ProjectWorkloadDiagnostics', () => {
 
   it('keeps the previous bounded snapshot visible when a refresh fails', async () => {
     const { diagnostics, prisma } = setup();
-    prisma.environment.findUniqueOrThrow.mockResolvedValue(environment({
-      diagnostic: {
-        status: 'failed',
-        runtimeState: 'running',
-        revision: VERSION,
-        exitCode: null,
-        health: 'healthy',
-        logs: 'previous bounded tail',
-        message: 'Agent went offline',
-        requestedAt: NOW,
-        observedAt: new Date(NOW.getTime() - 60_000),
-        finishedAt: NOW,
-        currentJob: { progressPercent: 20 },
-      },
-    }));
+    prisma.environment.findUniqueOrThrow.mockResolvedValue(
+      environment({
+        diagnostic: {
+          status: 'failed',
+          runtimeState: 'running',
+          revision: VERSION,
+          exitCode: null,
+          health: 'healthy',
+          logs: 'previous bounded tail',
+          message: 'Agent went offline',
+          requestedAt: NOW,
+          observedAt: new Date(NOW.getTime() - 60_000),
+          finishedAt: NOW,
+          currentJob: { progressPercent: 20 },
+        },
+      }),
+    );
 
     await expect(diagnostics.get('project-1', 'dev')).resolves.toMatchObject({
       status: 'failed',
@@ -165,22 +167,34 @@ describe('ProjectWorkloadDiagnostics', () => {
 
   it('rejects an outdated Agent and concurrent diagnostic refreshes', async () => {
     const first = setup();
-    first.prisma.environment.findUniqueOrThrow.mockResolvedValue(environment({
-      target: {
-        ...environment().target,
-        agent: { ...environment().target.agent, version: '0.8.1' },
-      },
-    }));
-    await expect(first.diagnostics.request(
-      'project-1', 'dev', 'user-1', '123e4567-e89b-42d3-a456-426614174000',
-    )).rejects.toThrow(/0\.9\.0 or newer/);
+    first.prisma.environment.findUniqueOrThrow.mockResolvedValue(
+      environment({
+        target: {
+          ...environment().target,
+          agent: { ...environment().target.agent, version: '0.8.1' },
+        },
+      }),
+    );
+    await expect(
+      first.diagnostics.request(
+        'project-1',
+        'dev',
+        'user-1',
+        '123e4567-e89b-42d3-a456-426614174000',
+      ),
+    ).rejects.toThrow(/0\.9\.0 or newer/);
 
     const second = setup();
     second.prisma.environment.findUniqueOrThrow.mockResolvedValue(environment());
     second.prisma.workloadDiagnostic.updateMany.mockResolvedValue({ count: 0 });
-    await expect(second.diagnostics.request(
-      'project-1', 'dev', 'user-1', '123e4567-e89b-42d3-a456-426614174001',
-    )).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      second.diagnostics.request(
+        'project-1',
+        'dev',
+        'user-1',
+        '123e4567-e89b-42d3-a456-426614174001',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(second.prisma.agentJob.create).not.toHaveBeenCalled();
   });
 });

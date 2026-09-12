@@ -49,8 +49,12 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
-          id: 'tgt-1', scope: 'builtin', workspaceId: null,
-          capabilities: 'static,php', remotePath: null, publicUrl: 'http://host:8085',
+          id: 'tgt-1',
+          scope: 'builtin',
+          workspaceId: null,
+          capabilities: 'static,php',
+          remotePath: null,
+          publicUrl: 'http://host:8085',
         })),
       },
       targetAllocation: { findUnique: jest.fn(async () => null), create },
@@ -100,9 +104,9 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     };
     const service = makeService(prisma, 'member');
 
-    await expect(
-      service.create('u1', { targetId: 'tgt-1' }, 'ws-1'),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.create('u1', { targetId: 'tgt-1' }, 'ws-1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
   });
 
@@ -110,8 +114,12 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
-          id: 'tgt-1', scope: 'builtin', workspaceId: null,
-          capabilities: 'static', remotePath: null, publicUrl: null,
+          id: 'tgt-1',
+          scope: 'builtin',
+          workspaceId: null,
+          capabilities: 'static',
+          remotePath: null,
+          publicUrl: null,
         })),
       },
       targetAllocation: { findUnique: jest.fn(async () => null), create: jest.fn() },
@@ -151,9 +159,9 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     };
     const service = makeService(prisma, 'owner');
 
-    await expect(
-      service.create('u1', { targetId: 'agent-target' }, 'ws-1'),
-    ).resolves.toMatchObject({ targetId: 'agent-target' });
+    await expect(service.create('u1', { targetId: 'agent-target' }, 'ws-1')).resolves.toMatchObject(
+      { targetId: 'agent-target' },
+    );
     expect(create).toHaveBeenCalledTimes(1);
   });
 
@@ -161,8 +169,12 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
-          id: 'legacy-ssh', kind: 'ssh', scope: 'user', workspaceId: 'ws-1',
-          capabilities: 'node', managementState: 'active',
+          id: 'legacy-ssh',
+          kind: 'ssh',
+          scope: 'user',
+          workspaceId: 'ws-1',
+          capabilities: 'node',
+          managementState: 'active',
         })),
       },
       targetAllocation: { findUnique: jest.fn(), create: jest.fn() },
@@ -170,8 +182,9 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     };
     const service = makeService(prisma, 'owner');
 
-    await expect(service.create('u1', { targetId: 'legacy-ssh' }, 'ws-1'))
-      .rejects.toThrow('legacy SSH runtime');
+    await expect(service.create('u1', { targetId: 'legacy-ssh' }, 'ws-1')).rejects.toThrow(
+      'legacy SSH runtime',
+    );
     expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
   });
 
@@ -181,7 +194,10 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
-          id: 'builtin-docker', kind: 'docker', scope: 'builtin', workspaceId: null,
+          id: 'builtin-docker',
+          kind: 'docker',
+          scope: 'builtin',
+          workspaceId: null,
           capabilities: 'node',
         })),
       },
@@ -191,8 +207,9 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     const service = makeService(prisma, 'owner');
 
     try {
-      await expect(service.create('u1', { targetId: 'builtin-docker' }, 'ws-1'))
-        .rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.create('u1', { targetId: 'builtin-docker' }, 'ws-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
     } finally {
       config.edition = savedEdition;
@@ -362,8 +379,9 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     };
     const service = makeService(prisma, 'admin');
 
-    await expect(service.update('alloc-1', 'u1', { status: 'disabled' }))
-      .rejects.toThrow('deployment operation(s) in progress');
+    await expect(service.update('alloc-1', 'u1', { status: 'disabled' })).rejects.toThrow(
+      'deployment operation(s) in progress',
+    );
     expect(prisma.targetAllocation.update).not.toHaveBeenCalled();
   });
 

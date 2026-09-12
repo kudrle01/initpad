@@ -90,7 +90,8 @@ describe('GatewayRoutesService stable reservations', () => {
       gatewayRoute: {
         findUnique: jest.fn(async () => route),
         create: jest.fn(),
-        update: jest.fn()
+        update: jest
+          .fn()
           .mockResolvedValueOnce({ ...route, generation: 1 })
           .mockResolvedValueOnce({ ...route, generation: 1, reconcileJobId: 'job-1' }),
       },
@@ -101,7 +102,9 @@ describe('GatewayRoutesService stable reservations', () => {
       },
       $transaction: transaction,
     };
-    transaction.mockImplementation(async (callback: (client: unknown) => Promise<unknown>) => callback(prisma));
+    transaction.mockImplementation(async (callback: (client: unknown) => Promise<unknown>) =>
+      callback(prisma),
+    );
     const request = {
       requestId: '323e4567-e89b-42d3-a456-426614174000',
       desiredState: 'active' as const,
@@ -115,8 +118,9 @@ describe('GatewayRoutesService stable reservations', () => {
       operationStep: 2,
     };
 
-    await expect(new GatewayRoutesService(prisma as never).queueReconcile(environment.id, request))
-      .resolves.toEqual({ routeId: route.id, jobId: 'job-1', generation: 1, status: 'queued' });
+    await expect(
+      new GatewayRoutesService(prisma as never).queueReconcile(environment.id, request),
+    ).resolves.toEqual({ routeId: route.id, jobId: 'job-1', generation: 1, status: 'queued' });
 
     expect(prisma.agentJob.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -144,9 +148,11 @@ describe('GatewayRoutesService stable reservations', () => {
         },
       }),
     });
-    const queuedPayload = (prisma.agentJob.create.mock.calls[0]?.[0] as {
-      data: { payload: Record<string, unknown> };
-    }).data.payload;
+    const queuedPayload = (
+      prisma.agentJob.create.mock.calls[0]?.[0] as {
+        data: { payload: Record<string, unknown> };
+      }
+    ).data.payload;
     expect(queuedPayload).not.toHaveProperty('adminUrl');
     expect(queuedPayload).not.toHaveProperty('upstream');
   });
@@ -202,25 +208,27 @@ describe('GatewayRoutesService stable reservations', () => {
       },
     };
 
-    await expect(new GatewayRoutesService(prisma as never).reserve(environment.id))
-      .resolves.toBe(route);
+    await expect(new GatewayRoutesService(prisma as never).reserve(environment.id)).resolves.toBe(
+      route,
+    );
     expect(prisma.gatewayRoute.create).not.toHaveBeenCalled();
   });
 
   it('reuses the exact winner of a concurrent reservation race', async () => {
-    const findUnique = jest.fn()
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(route);
+    const findUnique = jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(route);
     const prisma = {
       environment: { findUnique: jest.fn(async () => environment) },
       gatewayRoute: {
         findUnique,
-        create: jest.fn(async () => { throw new Error('unique constraint'); }),
+        create: jest.fn(async () => {
+          throw new Error('unique constraint');
+        }),
       },
     };
 
-    await expect(new GatewayRoutesService(prisma as never).reserve(environment.id))
-      .resolves.toBe(route);
+    await expect(new GatewayRoutesService(prisma as never).reserve(environment.id)).resolves.toBe(
+      route,
+    );
   });
 
   it('never silently rebinds a reserved hostname to another target', async () => {
@@ -232,7 +240,8 @@ describe('GatewayRoutesService stable reservations', () => {
       },
     };
 
-    await expect(new GatewayRoutesService(prisma as never).reserve(environment.id))
-      .rejects.toThrow('different target');
+    await expect(new GatewayRoutesService(prisma as never).reserve(environment.id)).rejects.toThrow(
+      'different target',
+    );
   });
 });

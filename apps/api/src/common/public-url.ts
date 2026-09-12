@@ -8,7 +8,8 @@ export function publicHttpsUrlIssue(raw: string): string | null {
     const url = new URL(raw);
     const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
     if (url.protocol !== 'https:') return 'The GitHub CI callback must use HTTPS.';
-    if (url.username || url.password) return 'The GitHub CI callback URL must not contain credentials.';
+    if (url.username || url.password)
+      return 'The GitHub CI callback URL must not contain credentials.';
     if (
       host === 'localhost' ||
       host === '0.0.0.0' ||
@@ -48,7 +49,9 @@ export function builtInPublicHost(
   deploymentOverride: string | undefined,
   legacyHost: string | undefined,
 ): string {
-  return deploymentOverride?.trim() || publicHostname(publicUrl) || legacyHost?.trim() || 'localhost';
+  return (
+    deploymentOverride?.trim() || publicHostname(publicUrl) || legacyHost?.trim() || 'localhost'
+  );
 }
 
 // Built-in targets publish through the InitPad host. Their persisted URL keeps

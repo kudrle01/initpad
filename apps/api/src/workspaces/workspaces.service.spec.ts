@@ -5,17 +5,19 @@ describe('WorkspacesService tenant isolation', () => {
   it('returns the production approval policy with workspace navigation data', async () => {
     const prisma = {
       workspaceMember: {
-        findMany: jest.fn(async () => [{
-          role: 'owner',
-          workspace: {
-            id: 'w1',
-            slug: 'team',
-            name: 'Team',
-            type: 'team',
-            productionApprovalPolicy: 'separate-reviewer',
-            createdAt: new Date('2026-09-07T10:00:00.000Z'),
+        findMany: jest.fn(async () => [
+          {
+            role: 'owner',
+            workspace: {
+              id: 'w1',
+              slug: 'team',
+              name: 'Team',
+              type: 'team',
+              productionApprovalPolicy: 'separate-reviewer',
+              createdAt: new Date('2026-09-07T10:00:00.000Z'),
+            },
           },
-        }]),
+        ]),
       },
     };
     const service = new WorkspacesService(prisma as never, {} as never);
@@ -28,10 +30,11 @@ describe('WorkspacesService tenant isolation', () => {
   it('resolves only a workspace the user belongs to', async () => {
     const prisma = {
       workspaceMember: {
-        findFirst: jest.fn(async ({ where }: { where: { userId: string; workspaceId?: string } }) =>
-          where.userId === 'u1' && where.workspaceId === 'w1'
-            ? { workspaceId: 'w1', userId: 'u1', role: 'member', createdAt: new Date() }
-            : null,
+        findFirst: jest.fn(
+          async ({ where }: { where: { userId: string; workspaceId?: string } }) =>
+            where.userId === 'u1' && where.workspaceId === 'w1'
+              ? { workspaceId: 'w1', userId: 'u1', role: 'member', createdAt: new Date() }
+              : null,
         ),
       },
     };
@@ -71,7 +74,9 @@ describe('WorkspacesService tenant isolation', () => {
     };
     const service = new WorkspacesService(prisma as never, {} as never);
     await expect(service.require('u1', 'w1', 'write')).resolves.toBe('member');
-    await expect(service.require('u1', 'w1', 'maintain')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.require('u1', 'w1', 'maintain')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('authorizes a project through its workspace, not its SCM owner', async () => {
@@ -94,8 +99,13 @@ describe('WorkspacesService tenant isolation', () => {
   });
 
   it('does not reveal a missing project as an authorization failure', async () => {
-    const service = new WorkspacesService({ project: { findUnique: jest.fn(async () => null) } } as never, {} as never);
-    await expect(service.requireProject('u1', 'missing', 'read')).rejects.toBeInstanceOf(NotFoundException);
+    const service = new WorkspacesService(
+      { project: { findUnique: jest.fn(async () => null) } } as never,
+      {} as never,
+    );
+    await expect(service.requireProject('u1', 'missing', 'read')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('hides a project in another workspace as 404', async () => {
@@ -105,9 +115,9 @@ describe('WorkspacesService tenant isolation', () => {
     };
     const service = new WorkspacesService(prisma as never, {} as never);
 
-    await expect(service.requireProject('stranger', 'foreign-project', 'read')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      service.requireProject('stranger', 'foreign-project', 'read'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('returns 403 when a workspace member lacks the requested project permission', async () => {
@@ -133,16 +143,18 @@ describe('WorkspacesService tenant isolation', () => {
         findMany: jest.fn(async () => []),
       },
       project: {
-        findMany: jest.fn(async () => [{
-          repoUrl: 'https://git.example/alice/app',
-          scmProvider: 'gitea',
-          scmRepositoryId: '101',
-          scmOwner: 'alice',
-          scmRepositoryName: 'app',
-          scmFullName: 'alice/app',
-          scmDefaultBranch: 'main',
-          scmInstallationId: null,
-        }]),
+        findMany: jest.fn(async () => [
+          {
+            repoUrl: 'https://git.example/alice/app',
+            scmProvider: 'gitea',
+            scmRepositoryId: '101',
+            scmOwner: 'alice',
+            scmRepositoryName: 'app',
+            scmFullName: 'alice/app',
+            scmDefaultBranch: 'main',
+            scmInstallationId: null,
+          },
+        ]),
       },
     };
     const gitea = { setCollaborator: jest.fn(async () => undefined) };
@@ -158,7 +170,10 @@ describe('WorkspacesService tenant isolation', () => {
 
     expect(gitea.setCollaborator).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: 'gitea', repositoryId: '101', owner: 'alice', name: 'app',
+        provider: 'gitea',
+        repositoryId: '101',
+        owner: 'alice',
+        name: 'app',
       }),
       'bob',
       'viewer',
@@ -211,29 +226,36 @@ describe('WorkspacesService tenant isolation', () => {
     const service = new WorkspacesService(prisma as never, {} as never, audit);
     jest.spyOn(service, 'require').mockResolvedValue('admin');
 
-    await expect(service.updateProductionApprovalPolicy('admin', 'team', 'self-review'))
-      .resolves.toMatchObject({ productionApprovalPolicy: 'self-review', role: 'admin' });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'workspace.production_policy_changed',
-      details: {
-        previousPolicy: 'separate-reviewer',
-        policy: 'self-review',
-      },
-    }));
+    await expect(
+      service.updateProductionApprovalPolicy('admin', 'team', 'self-review'),
+    ).resolves.toMatchObject({ productionApprovalPolicy: 'self-review', role: 'admin' });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'workspace.production_policy_changed',
+        details: {
+          previousPolicy: 'separate-reviewer',
+          policy: 'self-review',
+        },
+      }),
+    );
   });
 
   it('does not allow changing the fixed self-review policy of a personal workspace', async () => {
     const prisma = {
       workspace: {
-        findUnique: jest.fn(async () => ({ type: 'personal', productionApprovalPolicy: 'self-review' })),
+        findUnique: jest.fn(async () => ({
+          type: 'personal',
+          productionApprovalPolicy: 'self-review',
+        })),
         update: jest.fn(),
       },
     };
     const service = new WorkspacesService(prisma as never, {} as never);
     jest.spyOn(service, 'require').mockResolvedValue('owner');
 
-    await expect(service.updateProductionApprovalPolicy('owner', 'personal', 'separate-reviewer'))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.updateProductionApprovalPolicy('owner', 'personal', 'separate-reviewer'),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.workspace.update).not.toHaveBeenCalled();
   });
 });

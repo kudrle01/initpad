@@ -68,7 +68,10 @@ test('reads the admin API through a permissionable Unix socket without a TCP ori
 test('refuses ambiguous or unbounded Caddy admin socket configuration', async () => {
   await assert.rejects(
     new CaddyAdminClient(
-      'http://gateway.internal:2019', privateResolver, fetch, '/run/initpad/admin.sock',
+      'http://gateway.internal:2019',
+      privateResolver,
+      fetch,
+      '/run/initpad/admin.sock',
     ).ready(signal()),
     /either the Caddy admin Unix socket or URL/,
   );
@@ -87,12 +90,18 @@ test('atomically adds and verifies a fixed reverse-proxy route with an ETag fenc
       calls.push({ url: input.toString(), init });
       if (calls.length === 1) return jsonResponse([]);
       if (calls.length === 2) return jsonResponse({}, 200, '"config-2"');
-      return jsonResponse([{
-        '@id': route.id,
-        match: [{ host: [route.hostname] }],
-        handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: route.upstream }] }],
-        terminal: true,
-      }], 200, '"config-2"');
+      return jsonResponse(
+        [
+          {
+            '@id': route.id,
+            match: [{ host: [route.hostname] }],
+            handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: route.upstream }] }],
+            terminal: true,
+          },
+        ],
+        200,
+        '"config-2"',
+      );
     },
   );
 
@@ -100,12 +109,14 @@ test('atomically adds and verifies a fixed reverse-proxy route with an ETag fenc
 
   assert.equal(calls[1]?.init?.method, 'PATCH');
   assert.equal(new Headers(calls[1]?.init?.headers).get('if-match'), '"config-1"');
-  assert.deepEqual(JSON.parse(String(calls[1]?.init?.body)), [{
-    '@id': route.id,
-    match: [{ host: [route.hostname] }],
-    handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: route.upstream }] }],
-    terminal: true,
-  }]);
+  assert.deepEqual(JSON.parse(String(calls[1]?.init?.body)), [
+    {
+      '@id': route.id,
+      match: [{ host: [route.hostname] }],
+      handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: route.upstream }] }],
+      terminal: true,
+    },
+  ]);
 });
 
 test('treats Caddy canonical key ordering as an idempotent route', async () => {
@@ -116,12 +127,14 @@ test('treats Caddy canonical key ordering as an idempotent route', async () => {
     async (_input, init) => {
       calls += 1;
       assert.notEqual(init?.method, 'PATCH');
-      return jsonResponse([{
-        '@id': route.id,
-        handle: [{ upstreams: [{ dial: route.upstream }], handler: 'reverse_proxy' }],
-        match: [{ host: [route.hostname] }],
-        terminal: true,
-      }]);
+      return jsonResponse([
+        {
+          '@id': route.id,
+          handle: [{ upstreams: [{ dial: route.upstream }], handler: 'reverse_proxy' }],
+          match: [{ host: [route.hostname] }],
+          terminal: true,
+        },
+      ]);
     },
   );
   await client.reconcileRoute(route, signal());
@@ -129,20 +142,19 @@ test('treats Caddy canonical key ordering as an idempotent route', async () => {
 });
 
 test('captures the exact previous owned upstream for health-gated rollback', async () => {
-  const client = new CaddyAdminClient(
-    'http://gateway.internal:2019',
-    privateResolver,
-    async () => jsonResponse([{
-      '@id': route.id,
-      handle: [{ upstreams: [{ dial: route.upstream }], handler: 'reverse_proxy' }],
-      match: [{ host: [route.hostname] }],
-      terminal: true,
-    }]),
+  const client = new CaddyAdminClient('http://gateway.internal:2019', privateResolver, async () =>
+    jsonResponse([
+      {
+        '@id': route.id,
+        handle: [{ upstreams: [{ dial: route.upstream }], handler: 'reverse_proxy' }],
+        match: [{ host: [route.hostname] }],
+        terminal: true,
+      },
+    ]),
   );
-  assert.deepEqual(
-    await client.currentRoute(route.id, route.hostname, signal()),
-    { upstream: route.upstream },
-  );
+  assert.deepEqual(await client.currentRoute(route.id, route.hostname, signal()), {
+    upstream: route.upstream,
+  });
 });
 
 test('retries an ETag conflict without losing an unrelated Caddy route', async () => {
@@ -160,10 +172,16 @@ test('retries an ETag conflict without losing an unrelated Caddy route', async (
         return jsonResponse({});
       }
       if (request === 1) return jsonResponse([]);
-      return jsonResponse([
-        unrelated,
-        ...(patchedBodies.length > 1 ? [JSON.parse(JSON.stringify((patchedBodies[1] as unknown[])[1]))] : []),
-      ], 200, '"new"');
+      return jsonResponse(
+        [
+          unrelated,
+          ...(patchedBodies.length > 1
+            ? [JSON.parse(JSON.stringify((patchedBodies[1] as unknown[])[1]))]
+            : []),
+        ],
+        200,
+        '"new"',
+      );
     },
   );
 

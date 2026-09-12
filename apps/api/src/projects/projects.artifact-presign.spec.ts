@@ -27,7 +27,11 @@ describe('ProjectArtifactLifecycle.presignDownload', () => {
     });
     expect(presignGet).toHaveBeenCalledWith('artifacts/ws/pr/a1/d.tar', 180);
     // Query is scoped to available object-store artifacts only.
-    const where = (prisma.buildArtifact.findFirst.mock.calls[0] as unknown as [{ where: Record<string, unknown> }])[0].where;
+    const where = (
+      prisma.buildArtifact.findFirst.mock.calls[0] as unknown as [
+        { where: Record<string, unknown> },
+      ]
+    )[0].where;
     expect(where).toMatchObject({ id: 'a1', status: 'available', storageKind: 'object-store' });
   });
 

@@ -57,10 +57,7 @@ import { ProjectDeploymentExecutor } from './project-deployment-executor';
 import { ProjectArtifactIngestion } from './project-artifact-ingestion';
 import { CiArtifactInput, ProjectCiOrchestrator } from './project-ci-orchestrator';
 import { AppConfigService } from './app-config.service';
-import {
-  deployedImageRef,
-  deploymentSlug,
-} from './project-deployment-identity';
+import { deployedImageRef, deploymentSlug } from './project-deployment-identity';
 import { mapWithConcurrency } from '../common/concurrency';
 import { ProjectRollback } from './project-rollback';
 import { ProjectWorkloadDiagnostics } from './project-workload-diagnostics';
@@ -280,27 +277,29 @@ export class ProjectsService implements OnModuleInit {
           resourceType: 'project',
           resourceId: environment.projectId,
           resourceName: environment.project.name,
-          details: { environment: environment.name, expiredAt: environment.expiresAt.toISOString() },
+          details: {
+            environment: environment.name,
+            expiredAt: environment.expiresAt.toISOString(),
+          },
         });
-        await this.environmentLifecycle.remove(
-          environment.projectId,
-          environment.name as EnvName,
-        );
-      } catch (error) {
+        await this.environmentLifecycle.remove(environment.projectId, environment.name as EnvName);
+      } catch {
         const retryAt = new Date(now.getTime() + 5 * 60_000);
         await this.prisma.environment.updateMany({
           where: { id: environment.id, expiresAt: null },
           data: { expiresAt: retryAt, expiryWarningAt: now },
         });
-        await this.auditEvents?.record({
-          workspaceId: environment.project.workspaceId,
-          action: 'environment.expired',
-          outcome: 'failed',
-          resourceType: 'project',
-          resourceId: environment.projectId,
-          resourceName: environment.project.name,
-          details: { environment: environment.name, retryAt: retryAt.toISOString() },
-        }).catch(() => undefined);
+        await this.auditEvents
+          ?.record({
+            workspaceId: environment.project.workspaceId,
+            action: 'environment.expired',
+            outcome: 'failed',
+            resourceType: 'project',
+            resourceId: environment.projectId,
+            resourceName: environment.project.name,
+            details: { environment: environment.name, retryAt: retryAt.toISOString() },
+          })
+          .catch(() => undefined);
       }
     }
     return claimedCount;
@@ -389,7 +388,9 @@ export class ProjectsService implements OnModuleInit {
             }
           }
           try {
-            await this.workspaceScm.provider(repository.provider).configureRepoRuntimeSecrets(repository);
+            await this.workspaceScm
+              .provider(repository.provider)
+              .configureRepoRuntimeSecrets(repository);
           } catch (error) {
             // One externally deleted/inaccessible repository must not prevent
             // configuration reconciliation for every healthy project.
@@ -462,7 +463,9 @@ export class ProjectsService implements OnModuleInit {
             });
           }
         } catch (e) {
-          this.logger.error(`CI credential migration for ${owner.username} failed: ${(e as Error).message}`);
+          this.logger.error(
+            `CI credential migration for ${owner.username} failed: ${(e as Error).message}`,
+          );
         }
       }
     } catch (e) {
@@ -517,30 +520,26 @@ export class ProjectsService implements OnModuleInit {
       where: { workspaceId },
       include: { owner: true },
     });
-    await mapWithConcurrency(
-      rows,
-      SCM_READ_CONCURRENCY,
-      async (row) => {
-        try {
-          const repository = repositoryRef(row);
-          const actor = this.actorForRepo(row);
-          if (await this.workspaceScm.provider(repository.provider).repoMissing(repository, actor)) {
-            this.logger.log(
-              `Repository ${repository.fullName} no longer exists in ${repository.provider} — cleaning up`,
-            );
-            await this.removeByRepo(
-              repository.fullName,
-              repository.provider,
-              repository.repositoryId ?? undefined,
-            ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
-          }
-        } catch (error) {
-          this.logger.warn(
-            `Repository check failed for project ${row.id}: ${(error as Error).message}`,
+    await mapWithConcurrency(rows, SCM_READ_CONCURRENCY, async (row) => {
+      try {
+        const repository = repositoryRef(row);
+        const actor = this.actorForRepo(row);
+        if (await this.workspaceScm.provider(repository.provider).repoMissing(repository, actor)) {
+          this.logger.log(
+            `Repository ${repository.fullName} no longer exists in ${repository.provider} — cleaning up`,
           );
+          await this.removeByRepo(
+            repository.fullName,
+            repository.provider,
+            repository.repositoryId ?? undefined,
+          ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
         }
-      },
-    );
+      } catch (error) {
+        this.logger.warn(
+          `Repository check failed for project ${row.id}: ${(error as Error).message}`,
+        );
+      }
+    });
   }
 
   // Detail reads schedule SCM maintenance but never wait for it. Current
@@ -814,7 +813,9 @@ export class ProjectsService implements OnModuleInit {
         if (repo) {
           try {
             await scm.deleteRepo(repo, scmContext.actor);
-            await this.provisioning.compensateEffect(operationId, repositoryEffect).catch(() => undefined);
+            await this.provisioning
+              .compensateEffect(operationId, repositoryEffect)
+              .catch(() => undefined);
           } catch (cleanupError) {
             await this.provisioning
               .compensationFailed(operationId, repositoryEffect, (cleanupError as Error).message)
@@ -860,7 +861,9 @@ export class ProjectsService implements OnModuleInit {
           const message = (cleanupError as Error).message;
           this.logger.warn(`Repository rollback failed: ${message}`);
           for (const effect of repositoryEffects) {
-            await this.provisioning.compensationFailed(operationId, effect, message).catch(() => undefined);
+            await this.provisioning
+              .compensationFailed(operationId, effect, message)
+              .catch(() => undefined);
           }
         }
         throw new BadRequestException(
@@ -911,7 +914,9 @@ export class ProjectsService implements OnModuleInit {
           projectId: created.id,
         });
       } catch (e) {
-        await this.provisioning.failEffect(operationId, projectEffect, (e as Error).message).catch(() => undefined);
+        await this.provisioning
+          .failEffect(operationId, projectEffect, (e as Error).message)
+          .catch(() => undefined);
         let projectCleanupError: Error | null = null;
         if (created) {
           try {
@@ -931,7 +936,9 @@ export class ProjectsService implements OnModuleInit {
           const message = (cleanupError as Error).message;
           this.logger.warn(`Repository rollback failed: ${message}`);
           for (const effect of repositoryEffects) {
-            await this.provisioning.compensationFailed(operationId, effect, message).catch(() => undefined);
+            await this.provisioning
+              .compensationFailed(operationId, effect, message)
+              .catch(() => undefined);
           }
         }
         if (projectCleanupError) {
@@ -939,7 +946,9 @@ export class ProjectsService implements OnModuleInit {
             .compensationFailed(operationId, projectEffect, projectCleanupError.message)
             .catch(() => undefined);
         } else {
-          await this.provisioning.compensateEffect(operationId, projectEffect).catch(() => undefined);
+          await this.provisioning
+            .compensateEffect(operationId, projectEffect)
+            .catch(() => undefined);
         }
         throw e;
       }
@@ -1019,9 +1028,8 @@ export class ProjectsService implements OnModuleInit {
           );
         }
       }
-      const workflowPath = repo.provider === 'github'
-        ? '.github/workflows/ci.yml'
-        : '.gitea/workflows/ci.yml';
+      const workflowPath =
+        repo.provider === 'github' ? '.github/workflows/ci.yml' : '.gitea/workflows/ci.yml';
       const workflow = await scm.readFile(repo, workflowPath, repo.defaultBranch, actor);
       if (
         !workflow?.includes('INITPAD_PLATFORM_URL') ||
@@ -1093,7 +1101,9 @@ export class ProjectsService implements OnModuleInit {
           projectId: created.id,
         });
       } catch (e) {
-        await this.provisioning.failEffect(op, projectEffect, (e as Error).message).catch(() => undefined);
+        await this.provisioning
+          .failEffect(op, projectEffect, (e as Error).message)
+          .catch(() => undefined);
         if (created) {
           try {
             await this.prisma.project.delete({ where: { id: created.id } });
@@ -1134,7 +1144,9 @@ export class ProjectsService implements OnModuleInit {
           await scm.configureRepoSecrets(repo, ownerToken, ciDeployToken);
           await this.provisioning.completeEffect(op, secretsEffect);
         } catch (e) {
-          await this.provisioning.failEffect(op, secretsEffect, (e as Error).message).catch(() => undefined);
+          await this.provisioning
+            .failEffect(op, secretsEffect, (e as Error).message)
+            .catch(() => undefined);
           throw e;
         }
         const collaborators = await this.prisma.workspaceMember.findMany({
@@ -1193,9 +1205,10 @@ export class ProjectsService implements OnModuleInit {
               .catch(() => undefined);
           }
         }
-        const cleanupSuffix = cleanupErrors.length > 0
-          ? ` Automatic cleanup is incomplete; project '${repo.name}' was kept so an owner can inspect and repair it. ${cleanupErrors.join('; ')}`
-          : ' All InitPad changes were rolled back.';
+        const cleanupSuffix =
+          cleanupErrors.length > 0
+            ? ` Automatic cleanup is incomplete; project '${repo.name}' was kept so an owner can inspect and repair it. ${cleanupErrors.join('; ')}`
+            : ' All InitPad changes were rolled back.';
         throw new BadRequestException(
           `Import failed while configuring the repository: ${(e as Error).message}.${cleanupSuffix}`,
         );
@@ -1218,7 +1231,11 @@ export class ProjectsService implements OnModuleInit {
           : 'Finish the required cleanup before retrying this provisioning operation',
       );
     }
-    if (!operation.request || typeof operation.request !== 'object' || Array.isArray(operation.request)) {
+    if (
+      !operation.request ||
+      typeof operation.request !== 'object' ||
+      Array.isArray(operation.request)
+    ) {
       throw new BadRequestException('This legacy provisioning operation has no retryable request');
     }
     await this.provisioning.claimRetry(operation.id);
@@ -1282,7 +1299,9 @@ export class ProjectsService implements OnModuleInit {
       } catch (error) {
         const message = (error as Error).message;
         cleanupErrors.push(`${key}: ${message}`);
-        await this.provisioning.compensationFailed(operation.id, key, message).catch(() => undefined);
+        await this.provisioning
+          .compensationFailed(operation.id, key, message)
+          .catch(() => undefined);
       }
     };
 
@@ -1393,7 +1412,9 @@ export class ProjectsService implements OnModuleInit {
     }
 
     if (cleanupErrors.length > 0) {
-      throw new BadRequestException(`Provisioning cleanup is still incomplete: ${cleanupErrors.join('; ')}`);
+      throw new BadRequestException(
+        `Provisioning cleanup is still incomplete: ${cleanupErrors.join('; ')}`,
+      );
     }
     await this.provisioning.cleanupFinished(operation.id);
   }
@@ -1405,7 +1426,7 @@ export class ProjectsService implements OnModuleInit {
   private effectMetadata(value: unknown): Record<string, string | null> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     const result: Record<string, string | null> = {};
-    for (const [key, entry] of Object.entries(value)) {
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
       if (typeof entry === 'string' || entry === null) result[key] = entry;
     }
     return result;
@@ -1602,7 +1623,7 @@ export class ProjectsService implements OnModuleInit {
     });
     if (!env) throw new NotFoundException("Environment 'dev' not found");
     if (env.activeOperationId || !['empty', 'failed'].includes(env.status)) {
-      throw new BadRequestException("Dev can only run again after it was cancelled or failed");
+      throw new BadRequestException('Dev can only run again after it was cancelled or failed');
     }
 
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
@@ -1664,11 +1685,7 @@ export class ProjectsService implements OnModuleInit {
     // failed to reach a local/private control plane. Manual Deploy recovers
     // that exact artifact first instead of rebuilding the same commit.
     if (repository.provider === 'github' && scm.findBuildArtifact) {
-      const recovered = await scm.findBuildArtifact(
-        repository,
-        sha,
-        'initpad-image.tar',
-      );
+      const recovered = await scm.findBuildArtifact(repository, sha, 'initpad-image.tar');
       if (recovered) {
         const operationId = await this.operations.begin(
           id,
@@ -1728,7 +1745,9 @@ export class ProjectsService implements OnModuleInit {
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
     const repository = repositoryRef(project);
     if (repository.provider !== 'github') {
-      throw new BadRequestException('Failed-job re-run is currently available only for GitHub projects');
+      throw new BadRequestException(
+        'Failed-job re-run is currently available only for GitHub projects',
+      );
     }
     const dev = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: 'dev' } },
@@ -1756,7 +1775,9 @@ export class ProjectsService implements OnModuleInit {
     const actor = await this.actorForProject(id);
     const statuses = await scm.listCommitStatuses(repository, dev.version, actor, runId);
     if (!statuses?.some((status) => ['failure', 'error'].includes(status.status))) {
-      throw new BadRequestException('The latest attempt of this GitHub Actions run has no failed jobs');
+      throw new BadRequestException(
+        'The latest attempt of this GitHub Actions run has no failed jobs',
+      );
     }
     try {
       // Refresh the callback URL before the retry. This repairs repositories
@@ -1812,8 +1833,7 @@ export class ProjectsService implements OnModuleInit {
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
     const production = row.environments.find(
       (env) =>
-        env.name === 'prod' &&
-        (env.status !== 'empty' || env.version !== null || env.url !== null),
+        env.name === 'prod' && (env.status !== 'empty' || env.version !== null || env.url !== null),
     );
     if (production && !opts.confirmProduction) {
       throw new BadRequestException(
@@ -1932,10 +1952,8 @@ export class ProjectsService implements OnModuleInit {
   // their CI/deploy pipeline state, merged newest-first. A failing project
   // (e.g. its Gitea repo is unreachable) is skipped, not fatal.
   async activity(userId: string, requestedWorkspaceId?: string): Promise<ActivityEvent[]> {
-    return this.queries.activity(
-      userId,
-      requestedWorkspaceId,
-      (projectId, limit) => this.getCommits(projectId, limit),
+    return this.queries.activity(userId, requestedWorkspaceId, (projectId, limit) =>
+      this.getCommits(projectId, limit),
     );
   }
 
@@ -1949,13 +1967,7 @@ export class ProjectsService implements OnModuleInit {
     useRegistry: boolean,
     operationId: string,
   ): Promise<boolean> {
-    return this.deploymentExecutor.execute(
-      projectId,
-      envName,
-      version,
-      useRegistry,
-      operationId,
-    );
+    return this.deploymentExecutor.execute(projectId, envName, version, useRegistry, operationId);
   }
 
   private assertSaasCiCallback(): void {

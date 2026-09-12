@@ -173,12 +173,14 @@ describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
       deployment as never,
     );
 
-    await expect(lifecycle.captureRegistryArtifact(
-      GITEA_REPOSITORY,
-      { id: 'project-1', workspaceId: 'workspace-1' },
-      'operation-1',
-      'a'.repeat(40),
-    )).resolves.toBe(created);
+    await expect(
+      lifecycle.captureRegistryArtifact(
+        GITEA_REPOSITORY,
+        { id: 'project-1', workspaceId: 'workspace-1' },
+        'operation-1',
+        'a'.repeat(40),
+      ),
+    ).resolves.toBe(created);
 
     expect(deployment.saveImageArchive).toHaveBeenCalledWith(
       `127.0.0.1:3001/acme/api:${'a'.repeat(40)}`,
@@ -203,12 +205,14 @@ describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
       { saveImageArchive: jest.fn() } as never,
     );
 
-    await expect(lifecycle.captureRegistryArtifact(
-      GITEA_REPOSITORY,
-      { id: 'project-1', workspaceId: 'workspace-1' },
-      'operation-1',
-      'a'.repeat(40),
-    )).rejects.toThrow(/durable artifact storage/);
+    await expect(
+      lifecycle.captureRegistryArtifact(
+        GITEA_REPOSITORY,
+        { id: 'project-1', workspaceId: 'workspace-1' },
+        'operation-1',
+        'a'.repeat(40),
+      ),
+    ).rejects.toThrow(/durable artifact storage/);
   });
 
   it('does not publish an artifact record when the source registry is unavailable', async () => {
@@ -234,12 +238,14 @@ describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
       deployment as never,
     );
 
-    await expect(lifecycle.captureRegistryArtifact(
-      GITEA_REPOSITORY,
-      { id: 'project-1', workspaceId: 'workspace-1' },
-      'operation-1',
-      'a'.repeat(40),
-    )).rejects.toThrow('registry unavailable');
+    await expect(
+      lifecycle.captureRegistryArtifact(
+        GITEA_REPOSITORY,
+        { id: 'project-1', workspaceId: 'workspace-1' },
+        'operation-1',
+        'a'.repeat(40),
+      ),
+    ).rejects.toThrow('registry unavailable');
 
     expect(store.put).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
@@ -252,7 +258,9 @@ describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
     const create = jest.fn();
     const store = {
       durable: true,
-      put: jest.fn(async () => { throw new Error('object storage unavailable'); }),
+      put: jest.fn(async () => {
+        throw new Error('object storage unavailable');
+      }),
       delete: jest.fn(async () => undefined),
     };
     const deployment = {
@@ -270,12 +278,14 @@ describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
       deployment as never,
     );
 
-    await expect(lifecycle.captureRegistryArtifact(
-      GITEA_REPOSITORY,
-      { id: 'project-1', workspaceId: 'workspace-1' },
-      'operation-1',
-      'a'.repeat(40),
-    )).rejects.toThrow('object storage unavailable');
+    await expect(
+      lifecycle.captureRegistryArtifact(
+        GITEA_REPOSITORY,
+        { id: 'project-1', workspaceId: 'workspace-1' },
+        'operation-1',
+        'a'.repeat(40),
+      ),
+    ).rejects.toThrow('object storage unavailable');
 
     expect(create).not.toHaveBeenCalled();
     expect(store.delete).toHaveBeenCalledWith(

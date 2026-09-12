@@ -29,7 +29,8 @@ export default function Login() {
   const oauthError = oauthErrorMessage(params.get('error'));
 
   useEffect(() => {
-    api.authConfig()
+    api
+      .authConfig()
       .then((x) => {
         setRegistrationAvailable(x.registrationAvailable);
         setGithubEnabled(x.githubEnabled);
@@ -72,7 +73,10 @@ export default function Login() {
         <p className="text-sm text-muted-foreground">Internal developer platform</p>
 
         {oauthError && (
-          <p role="alert" className="mt-4 rounded-md bg-destructive/10 p-2.5 text-sm text-destructive">
+          <p
+            role="alert"
+            className="mt-4 rounded-md bg-destructive/10 p-2.5 text-sm text-destructive"
+          >
             {oauthError}
           </p>
         )}
@@ -84,7 +88,10 @@ export default function Login() {
         )}
 
         {configError && (
-          <p role="alert" className="mt-6 rounded-md bg-destructive/10 p-2.5 text-sm text-destructive">
+          <p
+            role="alert"
+            className="mt-6 rounded-md bg-destructive/10 p-2.5 text-sm text-destructive"
+          >
             Authentication service is unavailable. Refresh and try again.
           </p>
         )}
@@ -99,111 +106,130 @@ export default function Login() {
             </a>
             {passwordAuthEnabled && (
               <div className="my-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">
-                <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
+                <span className="h-px flex-1 bg-border" /> or{' '}
+                <span className="h-px flex-1 bg-border" />
               </div>
             )}
           </div>
         )}
 
-        {!configLoading && passwordAuthEnabled && <>
-        <div className={cn('mb-4 flex gap-1 rounded-md bg-secondary p-1', !githubEnabled && 'mt-6')}>
-          {([
-            'signin',
-            ...(registrationAvailable ? ['register' as const] : []),
-          ] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => {
-                setMode(m);
-                setError(null);
-              }}
+        {!configLoading && passwordAuthEnabled && (
+          <>
+            <div
               className={cn(
-                'min-h-10 flex-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:min-h-0',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                mode === m
-                  ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
+                'mb-4 flex gap-1 rounded-md bg-secondary p-1',
+                !githubEnabled && 'mt-6',
               )}
             >
-              {m === 'signin' ? 'Sign in' : 'Create account'}
-            </button>
-          ))}
-        </div>
+              {(['signin', ...(registrationAvailable ? ['register' as const] : [])] as const).map(
+                (m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setMode(m);
+                      setError(null);
+                    }}
+                    className={cn(
+                      'min-h-10 flex-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:min-h-0',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                      mode === m
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {m === 'signin' ? 'Sign in' : 'Create account'}
+                  </button>
+                ),
+              )}
+            </div>
 
-        <form className="flex flex-col gap-2.5 text-left" onSubmit={submit}>
-          <label htmlFor="login-username" className="sr-only">Username or e-mail</label>
-          <Input
-            id="login-username"
-            placeholder="Username"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-          {mode !== 'signin' && (
-            <>
-              <label htmlFor="login-email" className="sr-only">E-mail</label>
+            <form className="flex flex-col gap-2.5 text-left" onSubmit={submit}>
+              <label htmlFor="login-username" className="sr-only">
+                Username or e-mail
+              </label>
               <Input
-                id="login-email"
-                type="email"
-                placeholder="E-mail"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="login-username"
+                placeholder="Username"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
               />
-            </>
-          )}
-          <label htmlFor="login-password" className="sr-only">Password</label>
-          <Input
-            id="login-password"
-            type="password"
-            placeholder="Password"
-            autoComplete={mode !== 'signin' ? 'new-password' : 'current-password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={mode !== 'signin' ? 12 : undefined}
-          />
+              {mode !== 'signin' && (
+                <>
+                  <label htmlFor="login-email" className="sr-only">
+                    E-mail
+                  </label>
+                  <Input
+                    id="login-email"
+                    type="email"
+                    placeholder="E-mail"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </>
+              )}
+              <label htmlFor="login-password" className="sr-only">
+                Password
+              </label>
+              <Input
+                id="login-password"
+                type="password"
+                placeholder="Password"
+                autoComplete={mode !== 'signin' ? 'new-password' : 'current-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={mode !== 'signin' ? 12 : undefined}
+              />
 
-          {mode !== 'signin' && (
-            <p className="text-xs text-muted-foreground">Use at least 12 characters.</p>
-          )}
+              {mode !== 'signin' && (
+                <p className="text-xs text-muted-foreground">Use at least 12 characters.</p>
+              )}
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" disabled={busy} className="mt-1 w-full">
-            {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
-          </Button>
-        </form>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button type="submit" disabled={busy} className="mt-1 w-full">
+                {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
+              </Button>
+            </form>
 
-        {mode === 'signin' && (
-          <Link to="/forgot-password" className="text-link mt-2 inline-flex min-h-11 items-center justify-center text-xs font-medium sm:min-h-0">
-            Forgot your password?
-          </Link>
+            {mode === 'signin' && (
+              <Link
+                to="/forgot-password"
+                className="text-link mt-2 inline-flex min-h-11 items-center justify-center text-xs font-medium sm:min-h-0"
+              >
+                Forgot your password?
+              </Link>
+            )}
+          </>
         )}
-        </>}
 
         {!configLoading && passwordAuthEnabled && !registrationAvailable && !configError && (
           <p className="mt-4 text-xs text-muted-foreground">
-            Accounts are created by the instance administrator. Ask your InitPad admin for a
-            sign-in link.
+            Accounts are created by the instance administrator. Ask your InitPad admin for a sign-in
+            link.
           </p>
         )}
 
-        {!configLoading && !passwordAuthEnabled && edition === 'saas' && githubEnabled && !configError && (
-          <p className="mt-4 text-xs text-muted-foreground">
-            Your GitHub account creates or opens your InitPad account. Repository access is granted
-            separately through the GitHub App.
-          </p>
-        )}
+        {!configLoading &&
+          !passwordAuthEnabled &&
+          edition === 'saas' &&
+          githubEnabled &&
+          !configError && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              Your GitHub account creates or opens your InitPad account. Repository access is
+              granted separately through the GitHub App.
+            </p>
+          )}
 
         {!configLoading && !passwordAuthEnabled && !githubEnabled && !configError && (
           <p role="alert" className="mt-4 text-sm text-destructive">
             GitHub sign-in is not configured for this SaaS installation.
           </p>
         )}
-
       </div>
     </div>
   );

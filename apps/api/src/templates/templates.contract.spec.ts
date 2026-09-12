@@ -7,9 +7,11 @@ describe('template delivery contract', () => {
   const templatesRoot = resolve(__dirname, '../../../../templates');
   const manifests = readdirSync(templatesRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) =>
-      JSON.parse(readFileSync(resolve(templatesRoot, entry.name, 'template.json'), 'utf8')) as
-        TemplateManifest & { buildCommand?: unknown },
+    .map(
+      (entry) =>
+        JSON.parse(
+          readFileSync(resolve(templatesRoot, entry.name, 'template.json'), 'utf8'),
+        ) as TemplateManifest & { buildCommand?: unknown },
     );
 
   it('deploys every SFTP template from a CI-tested image artifact', () => {

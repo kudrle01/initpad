@@ -65,13 +65,8 @@ describe('ProjectsController project deletion', () => {
       stateToken: 'a'.repeat(64),
     };
 
-    await expect(controller.rollback('project-1', 'prod', dto, 'user-1'))
-      .resolves.toEqual(PROJECT);
-    expect(projects.assertAccess).toHaveBeenCalledWith(
-      'project-1',
-      'user-1',
-      'maintain',
-    );
+    await expect(controller.rollback('project-1', 'prod', dto, 'user-1')).resolves.toEqual(PROJECT);
+    expect(projects.assertAccess).toHaveBeenCalledWith('project-1', 'user-1', 'maintain');
     expect(projects.rollback).toHaveBeenCalledWith(
       'project-1',
       'prod',
@@ -93,14 +88,10 @@ describe('ProjectsController project deletion', () => {
     const controller = new ProjectsController(projects as never, audit as never);
     const requestId = '123e4567-e89b-42d3-a456-426614174000';
 
-    await expect(controller.workloadDiagnostic('project-1', 'dev', 'user-1'))
-      .resolves.toBeNull();
-    await expect(controller.requestWorkloadDiagnostic(
-      'project-1',
-      'dev',
-      { requestId },
-      'user-1',
-    )).resolves.toEqual({ status: 'queued' });
+    await expect(controller.workloadDiagnostic('project-1', 'dev', 'user-1')).resolves.toBeNull();
+    await expect(
+      controller.requestWorkloadDiagnostic('project-1', 'dev', { requestId }, 'user-1'),
+    ).resolves.toEqual({ status: 'queued' });
     expect(projects.assertAccess).toHaveBeenNthCalledWith(1, 'project-1', 'user-1', 'write');
     expect(projects.assertAccess).toHaveBeenNthCalledWith(2, 'project-1', 'user-1', 'write');
     expect(projects.requestWorkloadDiagnostic).toHaveBeenCalledWith(

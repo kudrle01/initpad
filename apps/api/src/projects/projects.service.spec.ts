@@ -187,10 +187,12 @@ describe('ProjectsService project deletion', () => {
       }),
     ).resolves.toBeUndefined();
     expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'project-1' } });
-    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ id: { in: ['diagnostic-job-1'] } }),
-      data: expect.objectContaining({ status: 'cancelled', resultCode: 'project_deleted' }),
-    }));
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ['diagnostic-job-1'] } }),
+        data: expect.objectContaining({ status: 'cancelled', resultCode: 'project_deleted' }),
+      }),
+    );
   });
 
   it('preserves the source repository when durable artifact cleanup fails', async () => {
@@ -215,9 +217,9 @@ describe('ProjectsService project deletion', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       buildArtifact: {
-        findMany: jest.fn().mockResolvedValue([
-          { storageRef: 'artifacts/team/project-1/image.tar' },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ storageRef: 'artifacts/team/project-1/image.tar' }]),
       },
     };
     const deployment = { removeImages: jest.fn().mockResolvedValue(undefined) };

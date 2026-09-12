@@ -85,7 +85,9 @@ export class GitHubInstallationService {
       create: { installationId, ...data },
       update: data,
     });
-    this.logger.log(`GitHub App installation ${event.action ?? 'synced'} for ${inst.account.login}`);
+    this.logger.log(
+      `GitHub App installation ${event.action ?? 'synced'} for ${inst.account.login}`,
+    );
   }
 
   /** Creates a hashed, single-use state bound to the current user/workspace. */
@@ -118,10 +120,7 @@ export class GitHubInstallationService {
    * API without consuming the state. Organization callbacks use this before
    * starting their additional user-authorization round trip.
    */
-  async inspectSetup(
-    state: string,
-    installationId: string,
-  ): Promise<VerifiedGitHubInstallation> {
+  async inspectSetup(state: string, installationId: string): Promise<VerifiedGitHubInstallation> {
     return (await this.loadSetupCandidate(state, installationId)).verified;
   }
 
@@ -147,7 +146,8 @@ export class GitHubInstallationService {
         select: { role: true },
       }),
     ]);
-    if (!identity) throw new ForbiddenException('The GitHub identity used for setup is no longer linked');
+    if (!identity)
+      throw new ForbiddenException('The GitHub identity used for setup is no longer linked');
     if (!membership || !WORKSPACE_ADMINS.has(membership.role)) {
       throw new ForbiddenException('Workspace admin access is required to finish GitHub setup');
     }
@@ -155,11 +155,15 @@ export class GitHubInstallationService {
     // are the same immutable account. Organization installs are authorized by
     // GitHub's own installation UI and the bound one-time workspace state.
     if (verified.accountType === 'User' && identity.providerUserId !== verified.accountId) {
-      throw new ForbiddenException('The installed GitHub account does not match your linked identity');
+      throw new ForbiddenException(
+        'The installed GitHub account does not match your linked identity',
+      );
     }
     if (verified.accountType === 'Organization') {
       if (!userAccessToken) {
-        throw new ForbiddenException('GitHub user authorization is required for an organization installation');
+        throw new ForbiddenException(
+          'GitHub user authorization is required for an organization installation',
+        );
       }
       try {
         const accessible = await this.app.getUserAccessibleInstallation(
@@ -275,7 +279,9 @@ export class GitHubInstallationService {
       throw new Error(`The GitHub App installation for '${installation.accountLogin}' was removed`);
     }
     if (installation.suspendedAt) {
-      throw new Error(`The GitHub App installation for '${installation.accountLogin}' is suspended`);
+      throw new Error(
+        `The GitHub App installation for '${installation.accountLogin}' is suspended`,
+      );
     }
     return this.app.createInstallationToken(installation.installationId, options);
   }
@@ -287,7 +293,8 @@ export class GitHubInstallationService {
   ): Promise<InstallationToken> {
     const installation = await this.findByOwner(login);
     if (!installation) throw new Error(`No GitHub App installation found for '${login}'`);
-    if (installation.suspendedAt) throw new Error(`The GitHub App installation for '${login}' is suspended`);
+    if (installation.suspendedAt)
+      throw new Error(`The GitHub App installation for '${login}' is suspended`);
     return this.app.createInstallationToken(installation.installationId, options);
   }
 

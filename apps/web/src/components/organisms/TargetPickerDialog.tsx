@@ -17,7 +17,14 @@ import {
   targetIsReady,
 } from '@/components/organisms/EnvironmentTargetFields';
 import { cn } from '@/lib/utils';
-import type { EnvName, EnvTarget, ProviderKind, RuntimeKind, Target, TemplateManifest } from '@/types';
+import type {
+  EnvName,
+  EnvTarget,
+  ProviderKind,
+  RuntimeKind,
+  Target,
+  TemplateManifest,
+} from '@/types';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
@@ -50,7 +57,15 @@ interface Props {
 
 // Pick which target an environment deploys to. Only targets that can actually
 // run this template are listed; incompatible ones are explained via the footer.
-export function TargetPickerDialog({ env, current, template, targets, busy, onOpenChange, onPick }: Props) {
+export function TargetPickerDialog({
+  env,
+  current,
+  template,
+  targets,
+  busy,
+  onOpenChange,
+  onPick,
+}: Props) {
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,12 +73,15 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
   }, [env, current]);
 
   const options = template
-    ? targets.filter((target) =>
-        usable(target, template)
-        && (targetAcceptsNewAssignments(target) || target.id === current?.id))
+    ? targets.filter(
+        (target) =>
+          usable(target, template) &&
+          (targetAcceptsNewAssignments(target) || target.id === current?.id),
+      )
     : [];
-  const selectableOptions = options.filter((target) =>
-    targetAcceptsNewAssignments(target) && targetIsReady(target));
+  const selectableOptions = options.filter(
+    (target) => targetAcceptsNewAssignments(target) && targetIsReady(target),
+  );
   const selectedTarget = options.find((target) => target.id === selected) ?? null;
   const missingCapability = template
     ? targets.filter(
@@ -113,7 +131,9 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
                   'flex items-start gap-3 rounded-lg border p-3 text-left transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                   !selectable && 'cursor-not-allowed opacity-55',
-                  active ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40',
+                  active
+                    ? 'border-primary ring-2 ring-primary/20'
+                    : 'border-border hover:border-primary/40',
                 )}
               >
                 <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -124,11 +144,18 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
                       {t.scope === 'builtin' ? 'built-in' : 'yours'}
                     </span>
                     {t.verifiedAt && (
-                      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" aria-label="Verified" />
+                      <ShieldCheck
+                        className="h-3.5 w-3.5 shrink-0 text-success"
+                        aria-label="Verified"
+                      />
                     )}
-                    {isCurrent && <span className="text-[11px] text-muted-foreground">current</span>}
+                    {isCurrent && (
+                      <span className="text-[11px] text-muted-foreground">current</span>
+                    )}
                     {t.kind === 'ssh' && (
-                      <span className="text-[11px] font-medium text-warning">legacy · move away</span>
+                      <span className="text-[11px] font-medium text-warning">
+                        legacy · move away
+                      </span>
                     )}
                     {t.kind !== 'ssh' && !targetIsReady(t) && (
                       <span className="text-[11px] text-warning">
@@ -154,9 +181,12 @@ export function TargetPickerDialog({ env, current, template, targets, busy, onOp
           {missingCapability.length > 0 && template && (
             <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground">
               {missingCapability.map((target) => target.name).join(', ')}{' '}
-              {missingCapability.length === 1 ? 'is' : 'are'} hidden because the target capability list does not include{' '}
+              {missingCapability.length === 1 ? 'is' : 'are'} hidden because the target capability
+              list does not include{' '}
               <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
-              <Link to="/infrastructure" className="text-link font-medium">Update capabilities</Link>
+              <Link to="/infrastructure" className="text-link font-medium">
+                Update capabilities
+              </Link>
               .
             </p>
           )}

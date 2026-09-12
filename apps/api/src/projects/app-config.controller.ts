@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  Param,
-  Put,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Put, UseGuards } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -22,11 +13,7 @@ export class AppConfigController {
   constructor(private readonly config: AppConfigService) {}
 
   @Get()
-  list(
-    @Param('id') id: string,
-    @Param('env') env: string,
-    @CurrentUser() userId: string,
-  ) {
+  list(@Param('id') id: string, @Param('env') env: string, @CurrentUser() userId: string) {
     return this.config.list(userId, id, env);
   }
 

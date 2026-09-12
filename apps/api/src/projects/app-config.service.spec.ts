@@ -9,8 +9,9 @@ function make(prisma: Record<string, unknown>, requireProject = jest.fn(async ()
     ...client.environment,
     updateMany: client.environment?.updateMany ?? jest.fn(async () => ({ count: 1 })),
   };
-  client.$transaction = client.$transaction
-    ?? jest.fn(async (callback: (tx: Record<string, any>) => Promise<unknown>) => callback(client));
+  client.$transaction =
+    client.$transaction ??
+    jest.fn(async (callback: (tx: Record<string, any>) => Promise<unknown>) => callback(client));
   const workspaces = { requireProject } as never;
   return { service: new AppConfigService(client as never, workspaces), requireProject };
 }
@@ -25,7 +26,12 @@ describe('AppConfigService (ADR-061 FC.3)', () => {
       appConfigVar: {
         upsert: jest.fn(async (args: { create: { value: string; isSecret: boolean } }) => {
           saved = args.create;
-          return { key: 'DATABASE_URL', value: args.create.value, isSecret: true, updatedAt: new Date() };
+          return {
+            key: 'DATABASE_URL',
+            value: args.create.value,
+            isSecret: true,
+            updatedAt: new Date(),
+          };
         }),
       },
     };
@@ -48,7 +54,10 @@ describe('AppConfigService (ADR-061 FC.3)', () => {
       environment: envLookup,
       appConfigVar: {
         upsert: jest.fn(async () => ({
-          key: 'GREETING', value: 'ahoj', isSecret: false, updatedAt: new Date(),
+          key: 'GREETING',
+          value: 'ahoj',
+          isSecret: false,
+          updatedAt: new Date(),
         })),
       },
     };
@@ -67,9 +76,9 @@ describe('AppConfigService (ADR-061 FC.3)', () => {
 
   it('rejects a reserved platform key', async () => {
     const { service } = make({ environment: envLookup, appConfigVar: {} });
-    await expect(
-      service.upsert('u1', 'p1', 'dev', 'PORT', { value: '3000' }),
-    ).rejects.toThrow(/reserved/);
+    await expect(service.upsert('u1', 'p1', 'dev', 'PORT', { value: '3000' })).rejects.toThrow(
+      /reserved/,
+    );
   });
 
   it('requires project-write to manage', async () => {
@@ -92,12 +101,10 @@ describe('AppConfigService (ADR-061 FC.3)', () => {
     };
     const { service } = make(prisma);
 
-    await expect(
-      service.upsert('u1', 'p1', 'dev', 'GREETING', { value: 'new' }),
-    ).rejects.toThrow('is busy');
-    await expect(
-      service.remove('u1', 'p1', 'dev', 'GREETING'),
-    ).rejects.toThrow('is busy');
+    await expect(service.upsert('u1', 'p1', 'dev', 'GREETING', { value: 'new' })).rejects.toThrow(
+      'is busy',
+    );
+    await expect(service.remove('u1', 'p1', 'dev', 'GREETING')).rejects.toThrow('is busy');
     expect(prisma.appConfigVar.upsert).not.toHaveBeenCalled();
     expect(prisma.appConfigVar.deleteMany).not.toHaveBeenCalled();
   });

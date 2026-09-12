@@ -23,12 +23,7 @@ import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { BrandMark } from '@/components/atoms/BrandMark';
 import { CreateWorkspaceDialog } from '@/components/organisms/CreateWorkspaceDialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -181,12 +176,7 @@ function Navigation({ user, onNavigate }: { user: User; onNavigate?: () => void 
         <Item key={item.to} {...item} onNavigate={onNavigate} />
       ))}
       {user.edition === 'self-hosted' && user.platformRole === 'admin' && (
-        <Item
-          to="/admin"
-          label="Instance"
-          icon={ShieldCheck}
-          onNavigate={onNavigate}
-        />
+        <Item to="/admin" label="Instance" icon={ShieldCheck} onNavigate={onNavigate} />
       )}
     </nav>
   );
@@ -279,11 +269,7 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
             </div>
             <Navigation user={user} onNavigate={() => setMobileOpen(false)} />
             <div className="border-t border-border p-3">
-              <UserMenu
-                user={user}
-                onLogout={onLogout}
-                onNavigate={() => setMobileOpen(false)}
-              />
+              <UserMenu user={user} onLogout={onLogout} onNavigate={() => setMobileOpen(false)} />
             </div>
           </DialogContent>
         </Dialog>
@@ -302,10 +288,7 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
         </div>
       </aside>
 
-      <CreateWorkspaceDialog
-        open={createWorkspaceOpen}
-        onOpenChange={setCreateWorkspaceOpen}
-      />
+      <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
     </>
   );
 }

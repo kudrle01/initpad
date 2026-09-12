@@ -55,7 +55,9 @@ export function useAgentProtocol(target: Target | null) {
     setTesting('protocol');
     try {
       const created = await api.createAgentProbeJob(targetId, crypto.randomUUID());
-      setJobs((current) => [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10));
+      setJobs((current) =>
+        [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
+      );
       toast.success('Durable Agent protocol probe queued');
       await refresh();
     } catch (cause) {
@@ -70,7 +72,9 @@ export function useAgentProtocol(target: Target | null) {
     setTesting('lifecycle');
     try {
       const created = await api.createAgentLifecycleTest(targetId, crypto.randomUUID());
-      setJobs((current) => [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10));
+      setJobs((current) =>
+        [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
+      );
       toast.success('Docker lifecycle test queued');
       await refresh();
       return true;
@@ -87,7 +91,9 @@ export function useAgentProtocol(target: Target | null) {
     setTesting('gateway');
     try {
       const created = await api.createGatewayPreflight(targetId, crypto.randomUUID());
-      setJobs((current) => [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10));
+      setJobs((current) =>
+        [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
+      );
       toast.success('Gateway preflight queued');
       await refresh();
       return true;

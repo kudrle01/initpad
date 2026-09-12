@@ -522,7 +522,10 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       `${config.gitea.internalUrl}/api/v1/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/collaborators/${encodeURIComponent(username)}`,
       {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `token ${config.gitea.adminToken}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `token ${config.gitea.adminToken}`,
+        },
         body: JSON.stringify({ permission }),
       },
     );
@@ -563,10 +566,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     const headers = { Authorization: `token ${config.gitea.adminToken}` };
     // The list endpoint contains direct collaborators only. The permission
     // endpoint alone would also return inherited organization/team access.
-    const direct = await findInScmPages<
-      { login?: string; username?: string },
-      true
-    >({
+    const direct = await findInScmPages<{ login?: string; username?: string }, true>({
       provider: 'Gitea',
       operation: 'find direct collaborator',
       pageSize: 100,
@@ -1000,9 +1000,13 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       await git(['init', '-b', 'main']);
       await git(['add', '-A']);
       await git([
-        '-c', `user.name=${name}`,
-        '-c', `user.email=${email}`,
-        'commit', '-m', 'init: scaffold from template',
+        '-c',
+        `user.name=${name}`,
+        '-c',
+        `user.email=${email}`,
+        'commit',
+        '-m',
+        'init: scaffold from template',
       ]);
     } catch (e) {
       this.logger.warn(`Local git init failed: ${(e as Error).message}`);

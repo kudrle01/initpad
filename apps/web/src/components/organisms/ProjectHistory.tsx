@@ -13,13 +13,7 @@ interface Props {
   onToggleCommit: (sha: string) => void;
 }
 
-export function ProjectHistory({
-  project,
-  commits,
-  deployments,
-  openSha,
-  onToggleCommit,
-}: Props) {
+export function ProjectHistory({ project, commits, deployments, openSha, onToggleCommit }: Props) {
   return (
     <>
       <DetailSection

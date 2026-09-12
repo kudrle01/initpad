@@ -4230,3 +4230,43 @@ pád před potvrzením, ztracenou odpověď, pozdější potvrzení, neplatný f
 i přeskočenou generaci. Job lease test zachová credential fence pro aktivní
 i pending slot. Živý release gate po nasazení 0.10 ověří změnu generace,
 nepřerušený probe a odmítnutí staré hodnoty.
+
+---
+
+## ADR-097 — Statická kontrola je povinná, type-aware a odděluje produkční kód od test doubles
+
+**Kontext.** Strict TypeScript build zachytí nekompatibilní typy, ale sám
+nehlídá neobsloužené Promise, nebezpečnou práci s `unknown` odpovědí, pravidla
+React Hooks ani konzistentní formát. Externí audit proto správně označil
+chybějící linter a formatter. Prosté zapnutí doporučené konfigurace nad celým
+monorepem však zaměňovalo částečné Jest mocky a callbacky test runneru za
+produkční data a React event handlery za obecné callbacky, které skutečně musí
+vracet `void`.
+
+**Rozhodnutí.** Produkční TypeScript API, webu a Agenta kontroluje ESLint 10 s
+type-aware sadou `typescript-eslint`. Web navíc vynucuje kanonická pravidla
+`rules-of-hooks` a `exhaustive-deps`. JSX atributy smějí přijmout asynchronní
+handler, protože React návratovou hodnotu vědomě ignoruje; Promise uvnitř těla
+však stále podléhají pravidlu `no-floating-promises`. Testy mají syntaktická a
+doporučená TypeScript pravidla, ale vypínají type-aware analýzu a zákaz
+explicitního `any` pro záměrně částečné frameworkové a Prisma test doubles.
+Tato výjimka neplatí pro žádný produkční soubor.
+
+Prettier je jediný formatter kontrolovaného TS/TSX, release skriptů a package
+manifestů. Handlebars šablony a dokumentace do automatického přepisu nespadají:
+mezery mohou být součástí generovaného artefaktu a autorské Markdown texty mají
+vlastní strukturu. `npm run check` spouští repo audit, lint, kontrolu formátu,
+build a testy v tomto pořadí.
+
+**Důsledky.** Nový kód nemůže projít hlavní lokální ani CI gate se stale Hook
+closure, plovoucí Promise, nevalidovanou dynamickou hodnotou nebo nejednotným
+formátem. První zavedení formatteru vytváří větší jednorázový mechanický diff;
+následující změny budou malé a jednoznačné. Testovací výjimka snižuje falešný
+šum, ale typed mock helper zůstává vhodným postupným refaktorem, nikoli
+podmínkou produkční bezpečnosti.
+
+**Testování.** `npm run lint` a `npm run format:check` musí samostatně projít.
+Negativní kontrola lze provést dočasným odebráním Hook dependency nebo
+neformátovanou změnou a ověřením, že příslušná gate selže. Uživatelsky se
+runtime nemění; po čistém `npm ci` musí `npm run check` sestavit API, web i
+Agenta a dokončit všech 703 automatizovaných testů.

@@ -82,7 +82,8 @@ export function InfrastructureTargetList({
             },
             {
               title: 'Environment',
-              description: 'A project’s dev, test or prod application deployed through that access.',
+              description:
+                'A project’s dev, test or prod application deployed through that access.',
             },
           ]}
         />
@@ -93,11 +94,13 @@ export function InfrastructureTargetList({
           icon={Server}
           title="No deployment servers"
           description="Connect a Docker server through InitPad Agent, or add compatible SFTP hosting for PHP and static sites."
-          action={!readOnly ? (
-            <Button onClick={onAdd}>
-              <Plus className="h-4 w-4" /> Add server
-            </Button>
-          ) : undefined}
+          action={
+            !readOnly ? (
+              <Button onClick={onAdd}>
+                <Plus className="h-4 w-4" /> Add server
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <div className="flex flex-col gap-4">

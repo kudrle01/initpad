@@ -23,13 +23,15 @@ describe('project deployment identity', () => {
 
   it('uses GHCR and binds GitHub images to the exact workflow run', () => {
     expect(imageRepository(github)).toBe('ghcr.io/acme-team/customer-api');
-    expect(
-      artifactImageRef(github, { commitSha: 'a'.repeat(40), providerRunId: 'run-17' }),
-    ).toBe(`ghcr.io/acme-team/customer-api:${'a'.repeat(40)}-run-17`);
+    expect(artifactImageRef(github, { commitSha: 'a'.repeat(40), providerRunId: 'run-17' })).toBe(
+      `ghcr.io/acme-team/customer-api:${'a'.repeat(40)}-run-17`,
+    );
   });
 
   it('does not invent a GitHub image ref without verified artifact identity', () => {
-    expect(deployedImageRef(github, { version: 'a'.repeat(40), buildArtifact: null })).toBeUndefined();
+    expect(
+      deployedImageRef(github, { version: 'a'.repeat(40), buildArtifact: null }),
+    ).toBeUndefined();
     expect(deployedImageRef(github, { version: 'bootstrap', buildArtifact: null })).toBeUndefined();
   });
 });

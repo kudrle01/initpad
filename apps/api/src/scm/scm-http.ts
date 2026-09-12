@@ -58,9 +58,7 @@ export async function scmFetch(
     throw new Error('SCM request timeout must be a positive integer');
   }
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const signal = init.signal
-    ? AbortSignal.any([init.signal, timeoutSignal])
-    : timeoutSignal;
+  const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
   try {
     return await fetch(input, { ...init, signal });
   } catch {

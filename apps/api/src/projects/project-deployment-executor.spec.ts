@@ -25,18 +25,20 @@ const ENVIRONMENT = {
   buildArtifact: null,
 };
 
-function make(overrides: {
-  project?: Record<string, unknown>;
-  environment?: Record<string, unknown>;
-  operation?: Record<string, unknown> | null;
-  deployment?: Record<string, unknown>;
-  targets?: Record<string, unknown>;
-  lifecycle?: Record<string, unknown>;
-  operations?: Record<string, unknown>;
-  preparation?: Record<string, unknown>;
-  artifacts?: Record<string, unknown>;
-  agentDelivery?: Record<string, unknown>;
-} = {}) {
+function make(
+  overrides: {
+    project?: Record<string, unknown>;
+    environment?: Record<string, unknown>;
+    operation?: Record<string, unknown> | null;
+    deployment?: Record<string, unknown>;
+    targets?: Record<string, unknown>;
+    lifecycle?: Record<string, unknown>;
+    operations?: Record<string, unknown>;
+    preparation?: Record<string, unknown>;
+    artifacts?: Record<string, unknown>;
+    agentDelivery?: Record<string, unknown>;
+  } = {},
+) {
   const updateMany = jest.fn(async () => ({ count: 1 }));
   const prisma = {
     project: { findUniqueOrThrow: jest.fn(async () => overrides.project ?? PROJECT) },

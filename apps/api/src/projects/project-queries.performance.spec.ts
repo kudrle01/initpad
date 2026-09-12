@@ -4,7 +4,10 @@ describe('ProjectQueries SCM load', () => {
   it('requests only the five commits that can appear in workspace activity', async () => {
     const prisma = {
       project: {
-        findMany: jest.fn(async () => [{ id: 'p1', name: 'api' }, { id: 'p2', name: 'web' }]),
+        findMany: jest.fn(async () => [
+          { id: 'p1', name: 'api' },
+          { id: 'p2', name: 'web' },
+        ]),
       },
     };
     const workspaces = { resolve: jest.fn(async () => ({ id: 'ws1' })) };

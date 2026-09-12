@@ -183,12 +183,12 @@ export class OidcService {
     // Expiry normally keeps these stores tiny. The cap is a final bound during
     // deliberate high-volume abuse; Map iteration order evicts the oldest item.
     while (this.codes.size >= MAX_EPHEMERAL_ENTRIES) {
-      const oldest = this.codes.keys().next().value as string | undefined;
+      const oldest = this.codes.keys().next().value;
       if (!oldest) break;
       this.codes.delete(oldest);
     }
     while (this.accessTokens.size >= MAX_EPHEMERAL_ENTRIES) {
-      const oldest = this.accessTokens.keys().next().value as string | undefined;
+      const oldest = this.accessTokens.keys().next().value;
       if (!oldest) break;
       this.accessTokens.delete(oldest);
     }
@@ -200,8 +200,7 @@ export class OidcService {
     const header = { alg: 'RS256', typ: 'JWT', kid: this.kid };
     const now = Math.floor(Date.now() / 1000);
     const payload = { iss: config.oidc.issuer, iat: now, exp: now + 3600, ...claims };
-    const encode = (obj: unknown) =>
-      Buffer.from(JSON.stringify(obj)).toString('base64url');
+    const encode = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString('base64url');
     const data = `${encode(header)}.${encode(payload)}`;
     const signature = createSign('RSA-SHA256')
       .update(data)

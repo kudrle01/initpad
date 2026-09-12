@@ -47,10 +47,7 @@ export function deploymentProgress(message: string | null): number | null {
   // Preserve useful counters emitted by future providers even before they
   // receive a named end-to-end stage mapping.
   if (ratio) {
-    return Math.min(
-      94,
-      Math.round((Number(ratio[1]) / Math.max(1, Number(ratio[2]))) * 100),
-    );
+    return Math.min(94, Math.round((Number(ratio[1]) / Math.max(1, Number(ratio[2]))) * 100));
   }
   return null;
 }

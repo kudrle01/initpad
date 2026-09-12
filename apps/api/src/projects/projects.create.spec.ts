@@ -14,15 +14,32 @@ const repository = {
 };
 
 const template = {
-  id: 'node-api', name: 'Node API', language: 'TypeScript', runtime: 'node',
-  artifact: 'runtime', compatibleProviders: ['docker', 'ssh'], description: 'test',
+  id: 'node-api',
+  name: 'Node API',
+  language: 'TypeScript',
+  runtime: 'node',
+  artifact: 'runtime',
+  compatibleProviders: ['docker', 'ssh'],
+  description: 'test',
 };
 
 const dockerTarget: TargetRow = {
-  id: 'builtin-docker', name: 'Docker', kind: 'docker', scope: 'builtin',
-  capabilities: 'static,node,php,python', host: null, port: null, username: null,
-  auth: null, secret: null, remotePath: null, publicUrl: null, verifiedAt: null,
-  ownerId: null, workspaceId: null, createdAt: new Date(),
+  id: 'builtin-docker',
+  name: 'Docker',
+  kind: 'docker',
+  scope: 'builtin',
+  capabilities: 'static,node,php,python',
+  host: null,
+  port: null,
+  username: null,
+  auth: null,
+  secret: null,
+  remotePath: null,
+  publicUrl: null,
+  verifiedAt: null,
+  ownerId: null,
+  workspaceId: null,
+  createdAt: new Date(),
 };
 
 function build(
@@ -50,21 +67,23 @@ function build(
       delete: jest.fn(async () => undefined),
     },
     targetAllocation: {
-      findUnique: jest.fn(async (input: {
-        where: { workspaceId_targetId?: { targetId: string } };
-      }) => {
-        const targetId = input.where.workspaceId_targetId?.targetId ?? 'builtin-docker';
-        return options?.allocation ?? {
-          id: `allocation-${targetId}`,
-          targetId,
-          namespace: 'workspace',
-          rootPath: null,
-          publicUrl: null,
-          capabilities: 'static,node,php,python',
-          status: 'active',
-          maxEnvironments: 50,
-        };
-      }),
+      findUnique: jest.fn(
+        async (input: { where: { workspaceId_targetId?: { targetId: string } } }) => {
+          const targetId = input.where.workspaceId_targetId?.targetId ?? 'builtin-docker';
+          return (
+            options?.allocation ?? {
+              id: `allocation-${targetId}`,
+              targetId,
+              namespace: 'workspace',
+              rootPath: null,
+              publicUrl: null,
+              capabilities: 'static,node,php,python',
+              status: 'active',
+              maxEnvironments: 50,
+            }
+          );
+        },
+      ),
       create: jest.fn(),
     },
     environment: {
@@ -96,10 +115,14 @@ function build(
     { get: jest.fn(() => options?.selectedTemplate ?? template) } as never,
     { generate: jest.fn(() => ({ repoPath: '/tmp/initpad-create-journal-test' })) } as never,
     {} as never,
-    { listEntities: jest.fn(async () => options?.targets ?? [dockerTarget]), parseCaps: (v: string) => v.split(',') } as never,
+    {
+      listEntities: jest.fn(async () => options?.targets ?? [dockerTarget]),
+      parseCaps: (v: string) => v.split(','),
+    } as never,
     {
       createContext: jest.fn(async () => ({
-        kind: 'gitea', actor: { username: 'alice', token: 'token' },
+        kind: 'gitea',
+        actor: { username: 'alice', token: 'token' },
         target: { userId: 'u1', installationId: '' },
       })),
       provider: jest.fn(() => scm),
@@ -134,10 +157,16 @@ describe('ProjectsService create provisioning journal', () => {
       service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
     ).resolves.toMatchObject({ id: 'p1' });
     expect(provisioning.planEffect).toHaveBeenCalledWith(
-      'op1', 'repository:create', 'repository', expect.anything(),
+      'op1',
+      'repository:create',
+      'repository',
+      expect.anything(),
     );
     expect(provisioning.planEffect).toHaveBeenCalledWith(
-      'op1', 'project:record', 'project', expect.anything(),
+      'op1',
+      'project:record',
+      'project',
+      expect.anything(),
     );
     expect(provisioning.succeed).toHaveBeenCalledWith('op1', 'p1');
   });
@@ -154,9 +183,12 @@ describe('ProjectsService create provisioning journal', () => {
       username: 'deploy',
       remotePath: '/srv/apps',
     };
-    const { service, prisma } = build(jest.fn(async () => undefined), {
-      targets: [dockerTarget, builtinSsh],
-    });
+    const { service, prisma } = build(
+      jest.fn(async () => undefined),
+      {
+        targets: [dockerTarget, builtinSsh],
+      },
+    );
 
     await service.create({ name: 'new-api', templateId: 'node-api' }, 'u1');
 
@@ -164,26 +196,33 @@ describe('ProjectsService create provisioning journal', () => {
       data: { environments: { create: Array<{ provider: string; targetId: string }> } };
     };
     expect(createInput.data.environments.create).toHaveLength(3);
-    expect(createInput.data.environments.create).toEqual(expect.arrayContaining([
-      expect.objectContaining({ provider: 'docker', targetId: 'builtin-docker' }),
-    ]));
-    expect(createInput.data.environments.create).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ targetId: 'builtin-ssh' }),
-    ]));
+    expect(createInput.data.environments.create).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ provider: 'docker', targetId: 'builtin-docker' }),
+      ]),
+    );
+    expect(createInput.data.environments.create).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ targetId: 'builtin-ssh' })]),
+    );
   });
 
   it('deletes a created repository when persisting its applied result fails', async () => {
-    const completeEffect = jest.fn(async () => { throw new Error('journal unavailable'); });
+    const completeEffect = jest.fn(async () => {
+      throw new Error('journal unavailable');
+    });
     const { service, scm, provisioning } = build(completeEffect);
-    await expect(
-      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
-    ).rejects.toThrow('journal unavailable');
+    await expect(service.create({ name: 'new-api', templateId: 'node-api' }, 'u1')).rejects.toThrow(
+      'journal unavailable',
+    );
     expect(scm.deleteRepo).toHaveBeenCalledWith(
       repository,
       expect.objectContaining({ username: 'alice' }),
     );
     expect(provisioning.compensateEffect).toHaveBeenCalledWith('op1', 'repository:create');
-    expect(provisioning.fail).toHaveBeenCalledWith('op1', expect.stringContaining('journal unavailable'));
+    expect(provisioning.fail).toHaveBeenCalledWith(
+      'op1',
+      expect.stringContaining('journal unavailable'),
+    );
   });
 
   it('binds PHP production to a verified workspace SFTP host by default', async () => {
@@ -203,24 +242,32 @@ describe('ProjectsService create provisioning journal', () => {
       verifiedAt: new Date(),
       workspaceId: 'ws1',
     };
-    const { service, prisma } = build(jest.fn(async () => undefined), {
-      selectedTemplate: phpTemplate,
-      targets: [dockerTarget, phpSftpTarget],
-    });
+    const { service, prisma } = build(
+      jest.fn(async () => undefined),
+      {
+        selectedTemplate: phpTemplate,
+        targets: [dockerTarget, phpSftpTarget],
+      },
+    );
 
     await service.create({ name: 'new-api', templateId: 'nette' }, 'u1');
 
-    const createInput = prisma.project.create.mock.calls[0]?.[0] as {
-      data: { environments: { create: Array<{ name: string; provider: string; targetId: string }> } };
-    } | undefined;
+    const createInput = prisma.project.create.mock.calls[0]?.[0] as
+      | {
+          data: {
+            environments: { create: Array<{ name: string; provider: string; targetId: string }> };
+          };
+        }
+      | undefined;
     expect(createInput).toBeDefined();
     const environments = createInput!.data.environments.create;
-    expect(environments.find((environment: { name: string }) => environment.name === 'prod'))
-      .toMatchObject({
-        provider: 'sftp',
-        targetId: 'eso',
-        allocationId: 'allocation-eso',
-      });
+    expect(
+      environments.find((environment: { name: string }) => environment.name === 'prod'),
+    ).toMatchObject({
+      provider: 'sftp',
+      targetId: 'eso',
+      allocationId: 'allocation-eso',
+    });
   });
 
   it('does not implicitly bind PHP production to an unverified workspace host', async () => {
@@ -239,18 +286,24 @@ describe('ProjectsService create provisioning journal', () => {
       capabilities: 'static,php',
       workspaceId: 'ws1',
     };
-    const { service, prisma } = build(jest.fn(async () => undefined), {
-      selectedTemplate: phpTemplate,
-      targets: [dockerTarget, unverifiedSftpTarget],
-    });
+    const { service, prisma } = build(
+      jest.fn(async () => undefined),
+      {
+        selectedTemplate: phpTemplate,
+        targets: [dockerTarget, unverifiedSftpTarget],
+      },
+    );
 
     await service.create({ name: 'new-api', templateId: 'nette' }, 'u1');
 
     const createInput = prisma.project.create.mock.calls[0]?.[0] as {
-      data: { environments: { create: Array<{ name: string; provider: string; targetId: string }> } };
+      data: {
+        environments: { create: Array<{ name: string; provider: string; targetId: string }> };
+      };
     };
-    expect(createInput.data.environments.create.find((environment) => environment.name === 'prod'))
-      .toMatchObject({ provider: 'docker', targetId: 'builtin-docker' });
+    expect(
+      createInput.data.environments.create.find((environment) => environment.name === 'prod'),
+    ).toMatchObject({ provider: 'docker', targetId: 'builtin-docker' });
   });
 
   it('rejects SaaS provisioning before repository creation when the callback is local', async () => {
@@ -258,9 +311,9 @@ describe('ProjectsService create provisioning journal', () => {
     config.ci.publicUrl = 'http://localhost:8080';
     const { service, scm } = build();
 
-    await expect(
-      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
-    ).rejects.toThrow('GitHub CI callback');
+    await expect(service.create({ name: 'new-api', templateId: 'node-api' }, 'u1')).rejects.toThrow(
+      'GitHub CI callback',
+    );
     expect(scm.provision).not.toHaveBeenCalled();
   });
 
@@ -269,9 +322,9 @@ describe('ProjectsService create provisioning journal', () => {
     config.ci.publicUrl = 'https://initpad.example';
     const { service, scm } = build();
 
-    await expect(
-      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
-    ).rejects.toThrow('Choose a verified workspace target for the dev environment');
+    await expect(service.create({ name: 'new-api', templateId: 'node-api' }, 'u1')).rejects.toThrow(
+      'Choose a verified workspace target for the dev environment',
+    );
     expect(scm.provision).not.toHaveBeenCalled();
   });
 
@@ -287,9 +340,12 @@ describe('ProjectsService create provisioning journal', () => {
       capabilities: 'node',
       workspaceId: 'ws1',
     };
-    const { service, scm } = build(jest.fn(async () => undefined), {
-      targets: [unverifiedSshTarget],
-    });
+    const { service, scm } = build(
+      jest.fn(async () => undefined),
+      {
+        targets: [unverifiedSshTarget],
+      },
+    );
     const environments = (['dev', 'test', 'prod'] as const).map((name) => ({
       name,
       targetId: unverifiedSshTarget.id,
@@ -302,43 +358,49 @@ describe('ProjectsService create provisioning journal', () => {
   });
 
   it('rejects a narrowed allocation before creating a repository', async () => {
-    const { service, scm } = build(jest.fn(async () => undefined), {
-      allocation: {
-        id: 'allocation-builtin-docker',
-        targetId: 'builtin-docker',
-        namespace: 'workspace',
-        rootPath: null,
-        publicUrl: null,
-        capabilities: 'static,php',
-        status: 'active',
-        maxEnvironments: 50,
+    const { service, scm } = build(
+      jest.fn(async () => undefined),
+      {
+        allocation: {
+          id: 'allocation-builtin-docker',
+          targetId: 'builtin-docker',
+          namespace: 'workspace',
+          rootPath: null,
+          publicUrl: null,
+          capabilities: 'static,php',
+          status: 'active',
+          maxEnvironments: 50,
+        },
       },
-    });
+    );
 
-    await expect(
-      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
-    ).rejects.toThrow('does not allow node');
+    await expect(service.create({ name: 'new-api', templateId: 'node-api' }, 'u1')).rejects.toThrow(
+      'does not allow node',
+    );
     expect(scm.provision).not.toHaveBeenCalled();
   });
 
   it('rejects insufficient allocation quota before creating a repository', async () => {
-    const { service, scm } = build(jest.fn(async () => undefined), {
-      allocation: {
-        id: 'allocation-builtin-docker',
-        targetId: 'builtin-docker',
-        namespace: 'workspace',
-        rootPath: null,
-        publicUrl: null,
-        capabilities: 'static,node,php,python',
-        status: 'active',
-        maxEnvironments: 4,
+    const { service, scm } = build(
+      jest.fn(async () => undefined),
+      {
+        allocation: {
+          id: 'allocation-builtin-docker',
+          targetId: 'builtin-docker',
+          namespace: 'workspace',
+          rootPath: null,
+          publicUrl: null,
+          capabilities: 'static,node,php,python',
+          status: 'active',
+          maxEnvironments: 4,
+        },
+        allocatedEnvironments: 2,
       },
-      allocatedEnvironments: 2,
-    });
+    );
 
-    await expect(
-      service.create({ name: 'new-api', templateId: 'node-api' }, 'u1'),
-    ).rejects.toThrow('project needs 3');
+    await expect(service.create({ name: 'new-api', templateId: 'node-api' }, 'u1')).rejects.toThrow(
+      'project needs 3',
+    );
     expect(scm.provision).not.toHaveBeenCalled();
   });
 });

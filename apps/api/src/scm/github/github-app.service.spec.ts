@@ -109,22 +109,26 @@ describe('GitHubAppService', () => {
     config.github.privateKey = privateKeyPem;
     global.fetch = jest.fn(async () => ({
       ok: true,
-      json: async () => [{
-        id: 42,
-        account: { id: 987654, login: 'alice', type: 'User' },
-        repository_selection: 'all',
-        suspended_at: null,
-      }],
+      json: async () => [
+        {
+          id: 42,
+          account: { id: 987654, login: 'alice', type: 'User' },
+          repository_selection: 'all',
+          suspended_at: null,
+        },
+      ],
     })) as never;
 
-    await expect(new GitHubAppService().listInstallations()).resolves.toEqual([{
-      installationId: '42',
-      accountId: '987654',
-      accountLogin: 'alice',
-      accountType: 'User',
-      repositorySelection: 'all',
-      suspendedAt: null,
-    }]);
+    await expect(new GitHubAppService().listInstallations()).resolves.toEqual([
+      {
+        installationId: '42',
+        accountId: '987654',
+        accountLogin: 'alice',
+        accountType: 'User',
+        repositorySelection: 'all',
+        suspendedAt: null,
+      },
+    ]);
   });
 
   it('paginates App installations instead of stopping after the first 100', async () => {
@@ -139,10 +143,12 @@ describe('GitHubAppService', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => page })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => [{
-          id: 100,
-          account: { id: 10_100, login: 'last-owner', type: 'Organization' },
-        }],
+        json: async () => [
+          {
+            id: 100,
+            account: { id: 10_100, login: 'last-owner', type: 'Organization' },
+          },
+        ],
       });
     global.fetch = fetchMock as never;
 
@@ -157,12 +163,14 @@ describe('GitHubAppService', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          installations: [{
-            id: 42,
-            account: { id: 987654, login: 'acme', type: 'Organization' },
-            repository_selection: 'selected',
-            suspended_at: null,
-          }],
+          installations: [
+            {
+              id: 42,
+              account: { id: 987654, login: 'acme', type: 'Organization' },
+              repository_selection: 'selected',
+              suspended_at: null,
+            },
+          ],
         }),
       });
     global.fetch = fetchMock as never;
@@ -189,14 +197,19 @@ describe('GitHubAppService', () => {
   it('scopes the token to the requested repositories and permissions', async () => {
     config.github.appId = '123';
     config.github.privateKey = privateKeyPem;
-    const fetchMock = jest.fn(async () => ({ ok: true, json: async () => ({ token: 't', expires_at: 'x' }) }));
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ token: 't', expires_at: 'x' }),
+    }));
     global.fetch = fetchMock as never;
 
     await new GitHubAppService().createInstallationToken(7, {
       permissions: { contents: 'read' },
       repositoryIds: [111, 222],
     });
-    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    );
     expect(body.permissions).toEqual({ contents: 'read' });
     expect(body.repository_ids).toEqual([111, 222]);
   });

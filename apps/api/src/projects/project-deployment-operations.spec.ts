@@ -76,12 +76,14 @@ describe('ProjectDeploymentOperations', () => {
     await operations.begin('project-1', 'test', 'promote', 'abc123', null, 'user-1');
     await operations.complete(operationId, 'succeeded');
 
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      actorUserId: 'user-1',
-      action: 'environment.promotion_requested',
-      outcome: 'accepted',
-      operation: { type: 'deployment', id: operationId },
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: 'user-1',
+        action: 'environment.promotion_requested',
+        outcome: 'accepted',
+        operation: { type: 'deployment', id: operationId },
+      }),
+    );
     expect(audit.recordOperationResult).toHaveBeenCalledWith('deployment', operationId);
   });
 
@@ -104,9 +106,9 @@ describe('ProjectDeploymentOperations', () => {
     };
     const operations = new ProjectDeploymentOperations(prisma as never);
 
-    await expect(
-      operations.begin('project-1', 'dev', 'redeploy', 'abc123'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(operations.begin('project-1', 'dev', 'redeploy', 'abc123')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
     expect(update).toHaveBeenCalledWith({
       where: { id: 'operation-loser' },
       data: expect.objectContaining({
@@ -136,22 +138,16 @@ describe('ProjectDeploymentOperations', () => {
       deploymentOperation: { create },
     } as never);
 
-    await expect(operations.begin(
-      'project-1',
-      'prod',
-      'promote',
-      'abc123',
-      'artifact-1',
-      'reviewer-1',
-      {
+    await expect(
+      operations.begin('project-1', 'prod', 'promote', 'abc123', 'artifact-1', 'reviewer-1', {
         stateToken: 'token',
         targetId: 'target-1',
         allocationId: 'allocation-1',
         configRevision: 7,
         targetRevision,
         allocationRevision,
-      },
-    )).rejects.toBeInstanceOf(ConflictException);
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(create).not.toHaveBeenCalled();
   });
 

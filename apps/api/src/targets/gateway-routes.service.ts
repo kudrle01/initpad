@@ -1,9 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import {
-  agentVersionAtLeast,
-  MIN_GATEWAY_ROUTE_AGENT_VERSION,
-} from '../agents/agent-version';
+import { agentVersionAtLeast, MIN_GATEWAY_ROUTE_AGENT_VERSION } from '../agents/agent-version';
 import { PrismaService } from '../prisma/prisma.service';
 import { managedGatewayOrigin, stableGatewayHostname } from './managed-gateway';
 
@@ -73,14 +70,14 @@ export class GatewayRoutesService {
     if (!environment) throw new BadRequestException('Gateway route environment does not exist');
     const { target, allocation } = environment;
     if (
-      !target
-      || target.routingMode !== 'managed-gateway'
-      || !allocation
-      || environment.targetId !== target.id
-      || environment.allocationId !== allocation.id
-      || allocation.targetId !== target.id
-      || allocation.workspaceId !== environment.project.workspaceId
-      || allocation.status !== 'active'
+      !target ||
+      target.routingMode !== 'managed-gateway' ||
+      !allocation ||
+      environment.targetId !== target.id ||
+      environment.allocationId !== allocation.id ||
+      allocation.targetId !== target.id ||
+      allocation.workspaceId !== environment.project.workspaceId ||
+      allocation.status !== 'active'
     ) {
       throw new BadRequestException(
         'Gateway route requires active workspace access to the managed-gateway server',
@@ -171,27 +168,31 @@ export class GatewayRoutesService {
     const target = binding?.target;
     const allocation = binding?.allocation;
     if (
-      !binding
-      || !target
-      || target.id !== route.targetId
-      || binding.targetId !== target.id
-      || target.kind !== 'docker'
-      || target.scope !== 'user'
-      || target.workspaceId !== binding.project.workspaceId
-      || target.routingMode !== 'managed-gateway'
-      || target.gatewayAdapter !== 'caddy'
-      || target.gatewayPreflightStatus !== 'passed'
-      || !allocation
-      || allocation.id !== route.allocationId
-      || binding.allocationId !== allocation.id
-      || allocation.targetId !== target.id
-      || allocation.workspaceId !== binding.project.workspaceId
-      || allocation.status !== 'active'
+      !binding ||
+      !target ||
+      target.id !== route.targetId ||
+      binding.targetId !== target.id ||
+      target.kind !== 'docker' ||
+      target.scope !== 'user' ||
+      target.workspaceId !== binding.project.workspaceId ||
+      target.routingMode !== 'managed-gateway' ||
+      target.gatewayAdapter !== 'caddy' ||
+      target.gatewayPreflightStatus !== 'passed' ||
+      !allocation ||
+      allocation.id !== route.allocationId ||
+      binding.allocationId !== allocation.id ||
+      allocation.targetId !== target.id ||
+      allocation.workspaceId !== binding.project.workspaceId ||
+      allocation.status !== 'active'
     ) {
-      throw new BadRequestException('Gateway route requires a preflighted managed-gateway Agent allocation');
+      throw new BadRequestException(
+        'Gateway route requires a preflighted managed-gateway Agent allocation',
+      );
     }
     if (!target.agent?.credentialHash || target.agent.disabledAt) {
-      throw new BadRequestException('Enroll and connect the target Agent before reconciling gateway routes');
+      throw new BadRequestException(
+        'Enroll and connect the target Agent before reconciling gateway routes',
+      );
     }
     if (!agentVersionAtLeast(target.agent.version, MIN_GATEWAY_ROUTE_AGENT_VERSION)) {
       throw new BadRequestException(
@@ -283,12 +284,18 @@ export class GatewayRoutesService {
   }
 
   private validateRequest(request: GatewayRouteReconcileRequest): void {
-    if (!UUID.test(request.requestId)) throw new BadRequestException('Gateway route request id is invalid');
+    if (!UUID.test(request.requestId))
+      throw new BadRequestException('Gateway route request id is invalid');
     if (!['active', 'stopped', 'absent'].includes(request.desiredState)) {
       throw new BadRequestException('Gateway route desired state is invalid');
     }
-    if (!SAFE_ID.test(request.projectSlug)) throw new BadRequestException('Gateway route project slug is invalid');
-    if (!Number.isInteger(request.containerPort) || request.containerPort < 1 || request.containerPort > 65_535) {
+    if (!SAFE_ID.test(request.projectSlug))
+      throw new BadRequestException('Gateway route project slug is invalid');
+    if (
+      !Number.isInteger(request.containerPort) ||
+      request.containerPort < 1 ||
+      request.containerPort > 65_535
+    ) {
       throw new BadRequestException('Gateway route container port is invalid');
     }
     if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$/.test(request.healthPath)) {
@@ -331,9 +338,10 @@ export class GatewayRoutesService {
     job: { id: string; status: string; payload: unknown },
     knownGeneration?: number,
   ): GatewayRouteReconcileJob {
-    const payload = job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload)
-      ? job.payload as Record<string, unknown>
-      : null;
+    const payload =
+      job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload)
+        ? (job.payload as Record<string, unknown>)
+        : null;
     const generation = knownGeneration ?? payload?.generation;
     if (typeof generation !== 'number' || !Number.isInteger(generation) || generation < 1) {
       throw new BadRequestException('Existing gateway route job has an invalid generation');

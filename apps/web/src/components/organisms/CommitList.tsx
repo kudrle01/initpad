@@ -9,9 +9,10 @@ import type { Commit } from '@/types';
 // SCM verification and InitPad publication are separate state machines. Keep
 // their labels explicit so a failed/pending redeploy is never described as CI
 // waiting and a verified commit does not appear to require another runner.
-function commitStatus(
-  pipeline: { status: string; source?: 'scm' | 'platform' }[],
-): { label: string; dot: string } {
+function commitStatus(pipeline: { status: string; source?: 'scm' | 'platform' }[]): {
+  label: string;
+  dot: string;
+} {
   const scmStages = pipeline.filter((stage) => stage.source !== 'platform');
   const platformStage = pipeline.find((stage) => stage.source === 'platform');
 
@@ -75,9 +76,7 @@ export function CommitList({
         const ci = commitStatus(c.pipeline);
         const recoveredPublication =
           c.pipeline.some((stage) => stage.name === 'deploy' && stage.status === 'failed') &&
-          c.pipeline.some(
-            (stage) => stage.source === 'platform' && stage.status === 'success',
-          );
+          c.pipeline.some((stage) => stage.source === 'platform' && stage.status === 'success');
         return (
           <div key={c.sha}>
             <div
@@ -90,7 +89,10 @@ export function CommitList({
               className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
             >
               <ChevronRight
-                className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')}
+                className={cn(
+                  'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                  open && 'rotate-90',
+                )}
               />
               {repoUrl && c.sha !== 'initial' ? (
                 <a
@@ -104,14 +106,23 @@ export function CommitList({
                   {c.sha.slice(0, 7)}
                 </a>
               ) : (
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">{c.sha.slice(0, 7)}</span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {c.sha.slice(0, 7)}
+                </span>
               )}
               <span className="flex-1 truncate text-sm">{c.message}</span>
               <span className="sm:hidden" title={ci.label} aria-label={ci.label}>
                 <StatusDot status={ci.dot} kind="ci" />
               </span>
-              <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{c.author}</span>
-              <StatusBadge status={ci.dot} label={ci.label} kind="ci" className="hidden sm:inline-flex" />
+              <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
+                {c.author}
+              </span>
+              <StatusBadge
+                status={ci.dot}
+                label={ci.label}
+                kind="ci"
+                className="hidden sm:inline-flex"
+              />
             </div>
 
             {open && (
@@ -152,8 +163,8 @@ export function CommitList({
                 </div>
                 {recoveredPublication && (
                   <p className="mt-2.5 text-xs text-muted-foreground">
-                    The original SCM handoff job failed. InitPad later published the same
-                    verified build successfully, so another runner was not started.
+                    The original SCM handoff job failed. InitPad later published the same verified
+                    build successfully, so another runner was not started.
                   </p>
                 )}
                 {(() => {
@@ -162,7 +173,9 @@ export function CommitList({
                   if (ci.label === 'awaiting CI') {
                     return (
                       <p className="mt-2.5 text-xs text-muted-foreground">
-                        Waiting for the {scmProvider === 'github' ? 'GitHub Actions' : 'Gitea Actions'} runner to pick up this commit.
+                        Waiting for the{' '}
+                        {scmProvider === 'github' ? 'GitHub Actions' : 'Gitea Actions'} runner to
+                        pick up this commit.
                       </p>
                     );
                   }
@@ -177,8 +190,8 @@ export function CommitList({
                   if (ci.label === 'deploy failed') {
                     return (
                       <p className="mt-2.5 text-xs text-muted-foreground">
-                        CI has verified this commit, but its latest InitPad deployment failed.
-                        The verified build remains available for retry.
+                        CI has verified this commit, but its latest InitPad deployment failed. The
+                        verified build remains available for retry.
                       </p>
                     );
                   }

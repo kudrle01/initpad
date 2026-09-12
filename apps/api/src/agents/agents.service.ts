@@ -13,10 +13,7 @@ import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
 import { AuditEventsService } from '../audit/audit-events.service';
 import { TargetsService } from '../targets/targets.service';
-import {
-  agentVersionAtLeast,
-  MIN_CREDENTIAL_ROTATION_AGENT_VERSION,
-} from './agent-version';
+import { agentVersionAtLeast, MIN_CREDENTIAL_ROTATION_AGENT_VERSION } from './agent-version';
 
 const ENROLLMENT_TTL_MS = 15 * 60_000;
 export const ONLINE_AFTER_HEARTBEAT_MS = 90_000;
@@ -40,7 +37,7 @@ interface AgentRow {
   pendingCredentialIssuedAt: Date | null;
   protocolVersion: number;
   version: string | null;
-  capabilities: unknown | null;
+  capabilities: unknown;
   enrolledAt: Date | null;
   lastSeenAt: Date | null;
   disabledAt: Date | null;
@@ -72,7 +69,7 @@ export interface AgentSummary {
   credentialRotationPending: boolean;
   protocolVersion: number;
   version: string | null;
-  capabilities: unknown | null;
+  capabilities: unknown;
   enrolledAt: string | null;
   lastSeenAt: string | null;
   disabledAt: string | null;
@@ -98,14 +95,14 @@ export class AgentsService {
     private readonly targets: TargetsService,
     @Inject(AuditEventsService)
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
-      record: async () => undefined,
+      record: () => Promise.resolve(),
     },
   ) {}
 
   async getForTarget(targetId: string, userId: string): Promise<AgentSummary | null> {
     await this.requireTargetAccess(targetId, userId, 'read');
     const agent = await this.prisma.agent.findUnique({ where: { targetId } });
-    return agent ? this.summary(agent as AgentRow) : null;
+    return agent ? this.summary(agent) : null;
   }
 
   async issueEnrollment(
@@ -312,9 +309,9 @@ export class AgentsService {
     };
     const activeSince = agent.credentialActivatedAt ?? agent.enrolledAt;
     if (
-      activeSince
-      && activeSince.getTime() <= now.getTime() - CREDENTIAL_ROTATE_AFTER_MS
-      && agentVersionAtLeast(dto.version, MIN_CREDENTIAL_ROTATION_AGENT_VERSION)
+      activeSince &&
+      activeSince.getTime() <= now.getTime() - CREDENTIAL_ROTATE_AFTER_MS &&
+      agentVersionAtLeast(dto.version, MIN_CREDENTIAL_ROTATION_AGENT_VERSION)
     ) {
       const credential = `${CREDENTIAL_PREFIX}${generateToken()}`;
       const credentialGeneration = agent.credentialGeneration + 1;
@@ -355,9 +352,7 @@ export class AgentsService {
     await this.targets.disconnect(targetId, userId);
   }
 
-  async authenticateCredential(
-    authorization: string | undefined,
-  ): Promise<AuthenticatedAgent> {
+  async authenticateCredential(authorization: string | undefined): Promise<AuthenticatedAgent> {
     const credential = authorization?.match(AGENT_CREDENTIAL_PATTERN)?.[1];
     if (!credential) throw new UnauthorizedException('Invalid Agent credential');
     const credentialHash = hashToken(credential);
@@ -450,14 +445,16 @@ export class AgentsService {
     generation: number,
   ): Promise<void> {
     if (!agent.target?.workspaceId) return;
-    await this.auditEvents.record({
-      workspaceId: agent.target.workspaceId,
-      actorUserId: null,
-      action,
-      resourceType: 'agent',
-      resourceId: agent.id,
-      resourceName: agent.target.name,
-      details: { generation },
-    }).catch(() => undefined);
+    await this.auditEvents
+      .record({
+        workspaceId: agent.target.workspaceId,
+        actorUserId: null,
+        action,
+        resourceType: 'agent',
+        resourceId: agent.id,
+        resourceName: agent.target.name,
+        details: { generation },
+      })
+      .catch(() => undefined);
   }
 }

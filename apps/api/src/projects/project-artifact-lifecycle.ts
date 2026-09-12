@@ -109,10 +109,10 @@ export class ProjectArtifactLifecycle {
       throw new Error('Registry artifact identity is already bound to another project');
     }
     if (
-      existing?.status === 'available'
-      && existing.storageKind === 'object-store'
-      && existing.storageRef
-      && (await this.store.head(existing.storageRef))?.sizeBytes === Number(existing.sizeBytes)
+      existing?.status === 'available' &&
+      existing.storageKind === 'object-store' &&
+      existing.storageRef &&
+      (await this.store.head(existing.storageRef))?.sizeBytes === Number(existing.sizeBytes)
     ) {
       await this.bindOperationArtifact(operationId, project.id, existing.id);
       return existing;
@@ -126,10 +126,7 @@ export class ProjectArtifactLifecycle {
     let persisted = false;
     try {
       await this.deployment.saveImageArchive(imageRef, filePath);
-      const [digest, metadata] = await Promise.all([
-        this.fileSha256(filePath),
-        stat(filePath),
-      ]);
+      const [digest, metadata] = await Promise.all([this.fileSha256(filePath), stat(filePath)]);
       objectKey = artifactObjectKey({
         workspaceId: project.workspaceId,
         projectId: project.id,

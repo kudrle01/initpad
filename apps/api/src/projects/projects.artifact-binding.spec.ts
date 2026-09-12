@@ -72,13 +72,16 @@ describe('ProjectsService immutable artifact binding', () => {
     const prisma = {
       environment: {
         findUnique: jest.fn(async () => ({
-          id: 'env-1', status: 'failed', activeOperationId: null,
+          id: 'env-1',
+          status: 'failed',
+          activeOperationId: null,
         })),
       },
       project: { findUniqueOrThrow: jest.fn(async () => projectRow) },
       deploymentOperation: {
         findFirst: jest.fn(async () => ({
-          version: sha, buildArtifactId: 'artifact-1',
+          version: sha,
+          buildArtifactId: 'artifact-1',
         })),
       },
       buildArtifact: {
@@ -104,7 +107,13 @@ describe('ProjectsService immutable artifact binding', () => {
     // Reuses the derived Docker ref directly; the store is never touched.
     expect(deployment.hasImage).toHaveBeenCalledWith(`ghcr.io/acme/api:${sha}-run-1`);
     expect(schedule).toHaveBeenCalledWith(
-      'project-1', 'dev', sha, true, 'retry', 'artifact-1', undefined,
+      'project-1',
+      'dev',
+      sha,
+      true,
+      'retry',
+      'artifact-1',
+      undefined,
     );
   });
 
@@ -123,7 +132,9 @@ describe('ProjectsService immutable artifact binding', () => {
     const prisma = {
       environment: {
         findUnique: jest.fn(async () => ({
-          id: 'env-1', status: 'empty', activeOperationId: null,
+          id: 'env-1',
+          status: 'empty',
+          activeOperationId: null,
         })),
       },
       project: { findUniqueOrThrow: jest.fn(async () => giteaProject) },
@@ -146,14 +157,18 @@ describe('ProjectsService immutable artifact binding', () => {
       where: expect.objectContaining({
         environmentId: 'env-1',
         version: { not: null },
-        OR: expect.arrayContaining([
-          expect.objectContaining({ buildArtifactId: { not: null } }),
-        ]),
+        OR: expect.arrayContaining([expect.objectContaining({ buildArtifactId: { not: null } })]),
       }),
       orderBy: { createdAt: 'desc' },
     });
     expect(schedule).toHaveBeenCalledWith(
-      'project-1', 'dev', sha, true, 'redeploy', 'artifact-1', undefined,
+      'project-1',
+      'dev',
+      sha,
+      true,
+      'redeploy',
+      'artifact-1',
+      undefined,
     );
   });
 
@@ -162,7 +177,9 @@ describe('ProjectsService immutable artifact binding', () => {
     const prisma = {
       environment: {
         findUnique: jest.fn(async () => ({
-          id: 'env-1', status: 'failed', activeOperationId: null,
+          id: 'env-1',
+          status: 'failed',
+          activeOperationId: null,
         })),
       },
       project: { findUniqueOrThrow: jest.fn(async () => projectRow) },
@@ -200,7 +217,13 @@ describe('ProjectsService immutable artifact binding', () => {
       'd'.repeat(64),
     );
     expect(schedule).toHaveBeenCalledWith(
-      'project-1', 'dev', sha, true, 'retry', 'artifact-1', undefined,
+      'project-1',
+      'dev',
+      sha,
+      true,
+      'retry',
+      'artifact-1',
+      undefined,
     );
   });
 
@@ -219,8 +242,11 @@ describe('ProjectsService immutable artifact binding', () => {
     const prisma = {
       environment: {
         findUnique: jest.fn(async () => ({
-          id: 'env-1', status: 'failed', activeOperationId: null,
-          provider: 'sftp', target: { name: 'ESO' },
+          id: 'env-1',
+          status: 'failed',
+          activeOperationId: null,
+          provider: 'sftp',
+          target: { name: 'ESO' },
         })),
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
@@ -237,9 +263,7 @@ describe('ProjectsService immutable artifact binding', () => {
     };
     const service = make(prisma, {}, { provider: jest.fn(() => scm) });
     jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
-    jest
-      .spyOn((service as any).operations, 'begin')
-      .mockResolvedValue('operation-1');
+    jest.spyOn((service as any).operations, 'begin').mockResolvedValue('operation-1');
     const queue = jest
       .spyOn((service as any).artifactIngestion, 'queue')
       .mockResolvedValue(undefined);
@@ -261,8 +285,11 @@ describe('ProjectsService immutable artifact binding', () => {
     const prisma = {
       environment: {
         findUnique: jest.fn(async () => ({
-          id: 'env-1', status: 'failed', activeOperationId: null,
-          provider: 'sftp', target: { name: 'ESO' },
+          id: 'env-1',
+          status: 'failed',
+          activeOperationId: null,
+          provider: 'sftp',
+          target: { name: 'ESO' },
         })),
       },
       project: {
@@ -302,9 +329,13 @@ describe('ProjectsService immutable artifact binding', () => {
       },
     };
     const scm = {
-      listCommitStatuses: jest.fn(async () => [{
-        context: 'deploy', status: 'failure', targetUrl: 'https://github.example/job/1',
-      }]),
+      listCommitStatuses: jest.fn(async () => [
+        {
+          context: 'deploy',
+          status: 'failure',
+          targetUrl: 'https://github.example/job/1',
+        },
+      ]),
       configureRepoRuntimeSecrets: jest.fn(async () => undefined),
       rerunFailedJobs: jest.fn(async () => undefined),
     };

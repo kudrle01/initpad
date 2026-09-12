@@ -104,7 +104,12 @@ describe('ProjectEnvironmentLifecycle', () => {
     await lifecycle.stop('project-1', 'dev');
 
     expect(operations.begin).toHaveBeenCalledWith(
-      'project-1', 'dev', 'stop', 'a'.repeat(40), 'artifact-1', undefined,
+      'project-1',
+      'dev',
+      'stop',
+      'a'.repeat(40),
+      'artifact-1',
+      undefined,
     );
     expect(agentDelivery.queueLifecycle).toHaveBeenCalledWith(
       'operation-1',
@@ -128,9 +133,7 @@ describe('ProjectEnvironmentLifecycle', () => {
     const deployment = { stop: jest.fn() };
     const lifecycle = make(prisma, deployment);
 
-    await expect(lifecycle.stop('project-1', 'dev')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(lifecycle.stop('project-1', 'dev')).rejects.toBeInstanceOf(BadRequestException);
     expect(deployment.stop).not.toHaveBeenCalled();
   });
 
@@ -209,11 +212,7 @@ describe('ProjectEnvironmentLifecycle', () => {
       $transaction: transaction,
     };
     const deployment = { teardown: jest.fn() };
-    const lifecycle = make(
-      prisma,
-      deployment,
-      { complete: jest.fn(async () => undefined) },
-    );
+    const lifecycle = make(prisma, deployment, { complete: jest.fn(async () => undefined) });
 
     await lifecycle.remove('project-1', 'dev');
 
@@ -273,9 +272,9 @@ describe('ProjectEnvironmentLifecycle', () => {
     };
     const lifecycle = make(prisma);
 
-    await expect(
-      lifecycle.allocateSharedSshPort('project-1', 'dev'),
-    ).rejects.toThrow('database unavailable');
+    await expect(lifecycle.allocateSharedSshPort('project-1', 'dev')).rejects.toThrow(
+      'database unavailable',
+    );
   });
 
   it('releases a shared SSH port when Start is cancelled during provider work', async () => {

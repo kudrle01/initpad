@@ -100,21 +100,21 @@ export class ImportService {
         `No Dockerfile on '${repo.defaultBranch}' — the '${template.name}' template builds the image from one.`,
       );
     }
-    const workflowPath = repo.provider === 'github'
-      ? '.github/workflows/ci.yml'
-      : '.gitea/workflows/ci.yml';
+    const workflowPath =
+      repo.provider === 'github' ? '.github/workflows/ci.yml' : '.gitea/workflows/ci.yml';
     const workflow = repo.empty
       ? null
       : await scm.readFile(repo, workflowPath, repo.defaultBranch, actor);
     const hasBaseWorkflow = Boolean(
-      workflow?.includes('INITPAD_PLATFORM_URL') &&
-      workflow.includes('INITPAD_DEPLOY_TOKEN'),
+      workflow?.includes('INITPAD_PLATFORM_URL') && workflow.includes('INITPAD_DEPLOY_TOKEN'),
     );
-    const hasArtifactHandoff = repo.provider !== 'github' || Boolean(
-      workflow?.includes('artifact-id') &&
-      workflow.includes('artifact-digest') &&
-      workflow.includes('archive: false'),
-    );
+    const hasArtifactHandoff =
+      repo.provider !== 'github' ||
+      Boolean(
+        workflow?.includes('artifact-id') &&
+        workflow.includes('artifact-digest') &&
+        workflow.includes('archive: false'),
+      );
     const hasCompatibleWorkflow = hasBaseWorkflow && hasArtifactHandoff;
     if (!hasCompatibleWorkflow) {
       warnings.push(

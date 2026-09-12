@@ -6,10 +6,7 @@ import {
   terminalDeploymentPhase,
 } from '../domain/deployment-operation-state';
 import { EnvName } from '../domain/types';
-import {
-  AuditEventsService,
-  auditOperationAction,
-} from '../audit/audit-events.service';
+import { AuditEventsService, auditOperationAction } from '../audit/audit-events.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ExpectedProductionState } from './project-production-approvals';
 
@@ -94,7 +91,10 @@ export class ProjectDeploymentOperations {
       },
     });
     if (!environment) throw new NotFoundException(`Environment '${envName}' not found`);
-    if (expectedProductionState && !this.matchesExpectedState(environment, expectedProductionState)) {
+    if (
+      expectedProductionState &&
+      !this.matchesExpectedState(environment, expectedProductionState)
+    ) {
       throw new ConflictException(
         'Artifact, target, or production configuration changed. Create a new production request.',
       );
@@ -252,12 +252,7 @@ export class ProjectDeploymentOperations {
     return !operation || operation.status === 'cancelled';
   }
 
-  reportProgress(
-    operationId: string,
-    projectId: string,
-    envName: EnvName,
-    message: string,
-  ): void {
+  reportProgress(operationId: string, projectId: string, envName: EnvName, message: string): void {
     const phase = /verifying deployment/i.test(message) ? 'verifying' : 'running';
     void Promise.all([
       this.prisma.deploymentOperation.updateMany({
@@ -292,13 +287,15 @@ export class ProjectDeploymentOperations {
     },
     expected: ExpectedProductionState,
   ): boolean {
-    return environment.targetId === expected.targetId
-      && environment.allocationId === expected.allocationId
-      && environment.configRevision === expected.configRevision
-      && (environment.target?.updatedAt.toISOString() ?? null)
-        === (expected.targetRevision?.toISOString() ?? null)
-      && (environment.allocation?.updatedAt.toISOString() ?? null)
-        === (expected.allocationRevision?.toISOString() ?? null);
+    return (
+      environment.targetId === expected.targetId &&
+      environment.allocationId === expected.allocationId &&
+      environment.configRevision === expected.configRevision &&
+      (environment.target?.updatedAt.toISOString() ?? null) ===
+        (expected.targetRevision?.toISOString() ?? null) &&
+      (environment.allocation?.updatedAt.toISOString() ?? null) ===
+        (expected.allocationRevision?.toISOString() ?? null)
+    );
   }
 
   private async cancelUnstarted(

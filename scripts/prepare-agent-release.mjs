@@ -1,13 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import {
-  chmodSync,
-  copyFileSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -62,7 +56,11 @@ export function prepareAgentRelease({
   requireString(digest, 'digest');
   assertMatch(digest, /^sha256:[a-f0-9]{64}$/, 'digest must be a lowercase SHA-256 OCI digest');
   requireString(sourceCommit, 'source commit');
-  assertMatch(sourceCommit, /^[a-f0-9]{40}$/, 'source commit must be a full lowercase Git commit SHA');
+  assertMatch(
+    sourceCommit,
+    /^[a-f0-9]{40}$/,
+    'source commit must be a full lowercase Git commit SHA',
+  );
 
   let sourceUrl;
   try {
@@ -152,7 +150,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     });
     process.stdout.write(`${result.manifest.image.immutableReference}\n`);
   } catch (error) {
-    process.stderr.write(`prepare-agent-release: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `prepare-agent-release: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     process.exitCode = 1;
   }
 }

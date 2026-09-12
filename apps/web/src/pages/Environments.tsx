@@ -73,9 +73,13 @@ function MobileEnvironmentCard({ environment }: { environment: Environment }) {
 
 export default function Environments() {
   const { activeWorkspace } = useAuth();
+  const workspaceId = activeWorkspace?.id;
   const [filter, setFilter] = useState<EnvName | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const loadProjects = useCallback(() => api.listProjects(), [activeWorkspace?.id]);
+  const loadProjects = useCallback(
+    () => (workspaceId ? api.listProjects() : Promise.resolve([])),
+    [workspaceId],
+  );
   const { data: projects, loading, error, reload } = useLoadable<Project[]>(loadProjects, []);
 
   const groups = useMemo(
@@ -145,103 +149,113 @@ export default function Environments() {
           ) : (
             <div className="flex flex-col gap-3">
               {groups.map(({ project, envs }) => {
-              const open = !collapsed.has(project.id);
-              return (
-                <div key={project.id} className="overflow-hidden rounded-lg border border-border bg-card">
-                  <div className="flex items-center gap-2 bg-secondary/40 px-3 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => toggle(project.id)}
-                      aria-expanded={open}
-                      className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
-                      {open ? (
-                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <span className="truncate text-sm font-medium">{project.name}</span>
-                    </button>
-                    <div className="hidden items-center gap-2.5 sm:flex">
-                      {envs.map((e) => (
-                        <span
-                          key={e.name}
-                          className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground"
-                          title={`${e.name}: ${e.status}`}
-                        >
-                          <StatusDot status={e.status} />
-                          {e.name}
-                        </span>
-                      ))}
-                    </div>
-                    <Link
-                      to={`/projects/${project.id}`}
-                      title="Open project"
-                      className="text-link shrink-0 p-1"
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </div>
-
-                  {open && (
-                    <div>
-                      {envs.map((environment) => (
-                        <MobileEnvironmentCard key={environment.name} environment={environment} />
-                      ))}
-                      <div className="hidden overflow-x-auto md:block" role="region" aria-label={`${project.name} environments`} tabIndex={0}>
-                      <table className="min-w-[680px] w-full text-sm">
-                      <tbody>
-                        {envs.map((env) => {
-                          const Icon = KIND_ICON[env.provider] ?? Server;
-                          return (
-                            <tr key={env.name} className="border-t border-border">
-                              <td className="w-14 px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                {env.name}
-                              </td>
-                              <td className="px-4 py-2.5">
-                                <span className="flex items-center gap-1.5">
-                                  <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                  <span className="truncate">{env.target?.name ?? env.provider}</span>
-                                  {env.target?.scope === 'user' && (
-                                    <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                                      yours
-                                    </span>
-                                  )}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2.5">
-                                <StatusBadge status={env.status} />
-                              </td>
-                              <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-                                {env.version ? `v${env.version.slice(0, 7)}` : '—'}
-                              </td>
-                              <td className="px-4 py-2.5">
-                                {env.url ? (
-                                  <a
-                                    href={env.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-link inline-flex items-center gap-1"
-                                  >
-                                    <ExternalLink className="h-3 w-3 shrink-0" />
-                                    <span className="max-w-[200px] truncate">
-                                      {env.url.replace(/^https?:\/\//, '')}
-                                    </span>
-                                  </a>
-                                ) : (
-                                  <span className="text-muted-foreground">—</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      </table>
+                const open = !collapsed.has(project.id);
+                return (
+                  <div
+                    key={project.id}
+                    className="overflow-hidden rounded-lg border border-border bg-card"
+                  >
+                    <div className="flex items-center gap-2 bg-secondary/40 px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => toggle(project.id)}
+                        aria-expanded={open}
+                        className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      >
+                        {open ? (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="truncate text-sm font-medium">{project.name}</span>
+                      </button>
+                      <div className="hidden items-center gap-2.5 sm:flex">
+                        {envs.map((e) => (
+                          <span
+                            key={e.name}
+                            className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground"
+                            title={`${e.name}: ${e.status}`}
+                          >
+                            <StatusDot status={e.status} />
+                            {e.name}
+                          </span>
+                        ))}
                       </div>
+                      <Link
+                        to={`/projects/${project.id}`}
+                        title="Open project"
+                        className="text-link shrink-0 p-1"
+                      >
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
                     </div>
-                  )}
-                </div>
-              );
+
+                    {open && (
+                      <div>
+                        {envs.map((environment) => (
+                          <MobileEnvironmentCard key={environment.name} environment={environment} />
+                        ))}
+                        <div
+                          className="hidden overflow-x-auto md:block"
+                          role="region"
+                          aria-label={`${project.name} environments`}
+                          tabIndex={0}
+                        >
+                          <table className="min-w-[680px] w-full text-sm">
+                            <tbody>
+                              {envs.map((env) => {
+                                const Icon = KIND_ICON[env.provider] ?? Server;
+                                return (
+                                  <tr key={env.name} className="border-t border-border">
+                                    <td className="w-14 px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                      {env.name}
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <span className="flex items-center gap-1.5">
+                                        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                        <span className="truncate">
+                                          {env.target?.name ?? env.provider}
+                                        </span>
+                                        {env.target?.scope === 'user' && (
+                                          <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                            yours
+                                          </span>
+                                        )}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <StatusBadge status={env.status} />
+                                    </td>
+                                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
+                                      {env.version ? `v${env.version.slice(0, 7)}` : '—'}
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      {env.url ? (
+                                        <a
+                                          href={env.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-link inline-flex items-center gap-1"
+                                        >
+                                          <ExternalLink className="h-3 w-3 shrink-0" />
+                                          <span className="max-w-[200px] truncate">
+                                            {env.url.replace(/^https?:\/\//, '')}
+                                          </span>
+                                        </a>
+                                      ) : (
+                                        <span className="text-muted-foreground">—</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
               })}
             </div>
           )}

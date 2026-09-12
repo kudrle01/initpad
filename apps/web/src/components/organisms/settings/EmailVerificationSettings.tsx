@@ -42,9 +42,7 @@ export function EmailVerificationSettings() {
         </Button>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-muted-foreground">
-            Open this link to verify (shown once):
-          </p>
+          <p className="text-xs text-muted-foreground">Open this link to verify (shown once):</p>
           <CopyField command={verifyLink} />
         </div>
       )}

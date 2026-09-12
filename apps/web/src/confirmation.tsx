@@ -126,7 +126,8 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
               {options.requireText && (
                 <div className="flex min-w-0 flex-col gap-1.5">
                   <label htmlFor="confirmation-text" className="text-sm">
-                    Type <strong className="font-semibold">{options.requireText}</strong> to confirm:
+                    Type <strong className="font-semibold">{options.requireText}</strong> to
+                    confirm:
                   </label>
                   <Input
                     id="confirmation-text"
@@ -142,10 +143,16 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
               )}
 
               <DialogFooter>
-                <Button variant="secondary" onClick={() => finish(false)}>Cancel</Button>
+                <Button variant="secondary" onClick={() => finish(false)}>
+                  Cancel
+                </Button>
                 <Button
                   variant={danger ? 'destructive' : 'default'}
-                  className={danger ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : undefined}
+                  className={
+                    danger
+                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                      : undefined
+                  }
                   disabled={!confirmedByText}
                   onClick={() => finish(true)}
                 >

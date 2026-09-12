@@ -32,12 +32,10 @@ import {
   CreateAgentProbeJobDto,
   CreateGatewayPreflightDto,
 } from './dto/agent-job.dto';
-import {
-  AGENT_JOB_NEXT_POLL_SECONDS,
-  AgentJobLeases,
-} from './agent-job-leases';
+import { AGENT_JOB_NEXT_POLL_SECONDS, AgentJobLeases } from './agent-job-leases';
 
-const LIFECYCLE_TEST_IMAGE = 'nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa';
+const LIFECYCLE_TEST_IMAGE =
+  'nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa';
 
 interface JobRow {
   id: string;
@@ -110,13 +108,15 @@ export class AgentJobsService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     // A crash can occur after the terminal AgentJob write but before its
     // Environment projection. The job result is durable, so safely replay it.
-    const pendingOperations = await this.prisma.agentJob.findMany({
-      where: {
-        status: { in: ['succeeded', 'failed'] },
-        deploymentOperation: { is: { status: 'running', finishedAt: null } },
-      },
-      select: { id: true },
-    }).catch(() => []);
+    const pendingOperations = await this.prisma.agentJob
+      .findMany({
+        where: {
+          status: { in: ['succeeded', 'failed'] },
+          deploymentOperation: { is: { status: 'running', finishedAt: null } },
+        },
+        select: { id: true },
+      })
+      .catch(() => []);
     for (const job of pendingOperations) {
       await this.reconcileGatewayRoute(job.id).catch(() => undefined);
       await this.reconcileTerminalJob(job.id).catch(() => undefined);
@@ -124,26 +124,29 @@ export class AgentJobsService implements OnModuleInit {
 
     // Read only the currently fenced target jobs. Scanning every historical
     // terminal preflight on each API restart would grow without bound.
-    const pendingPreflights = await this.prisma.target.findMany({
-      where: {
-        gatewayPreflightStatus: { in: ['queued', 'running'] },
-        gatewayPreflightJobId: { not: null },
-      },
-      select: { gatewayPreflightJobId: true },
-    }).catch(() => []);
+    const pendingPreflights = await this.prisma.target
+      .findMany({
+        where: {
+          gatewayPreflightStatus: { in: ['queued', 'running'] },
+          gatewayPreflightJobId: { not: null },
+        },
+        select: { gatewayPreflightJobId: true },
+      })
+      .catch(() => []);
     for (const target of pendingPreflights) {
       if (target.gatewayPreflightJobId) {
-        await this.reconcileGatewayPreflight(target.gatewayPreflightJobId)
-          .catch(() => undefined);
+        await this.reconcileGatewayPreflight(target.gatewayPreflightJobId).catch(() => undefined);
       }
     }
 
     // GatewayRoute.reconcileJobId is the durable generation fence. Replay
     // only those current projections, never the unbounded AgentJob history.
-    const pendingRoutes = await this.prisma.gatewayRoute.findMany({
-      where: { reconcileJobId: { not: null } },
-      select: { reconcileJobId: true },
-    }).catch(() => []);
+    const pendingRoutes = await this.prisma.gatewayRoute
+      .findMany({
+        where: { reconcileJobId: { not: null } },
+        select: { reconcileJobId: true },
+      })
+      .catch(() => []);
     for (const route of pendingRoutes) {
       if (route.reconcileJobId) {
         await this.reconcileGatewayRoute(route.reconcileJobId).catch(() => undefined);
@@ -178,7 +181,7 @@ export class AgentJobsService implements OnModuleInit {
         message: 'Waiting for Agent',
       },
     });
-    return this.summary(row as JobRow);
+    return this.summary(row);
   }
 
   async createLifecycleTest(
@@ -206,19 +209,25 @@ export class AgentJobsService implements OnModuleInit {
       },
     });
     if (!agent?.credentialHash || agent.disabledAt) {
-      throw new BadRequestException('Enroll and connect the Agent before testing Docker lifecycle operations');
+      throw new BadRequestException(
+        'Enroll and connect the Agent before testing Docker lifecycle operations',
+      );
     }
     if (!this.supportsLifecycle(agent.version)) {
-      throw new BadRequestException(`Docker lifecycle testing requires InitPad Agent ${MIN_LIFECYCLE_AGENT_VERSION.join('.')} or newer`);
+      throw new BadRequestException(
+        `Docker lifecycle testing requires InitPad Agent ${MIN_LIFECYCLE_AGENT_VERSION.join('.')} or newer`,
+      );
     }
     const target = agent.target;
     if (
-      target.kind !== 'docker'
-      || target.scope !== 'user'
-      || !target.workspaceId
-      || !target.workspace?.slug
+      target.kind !== 'docker' ||
+      target.scope !== 'user' ||
+      !target.workspaceId ||
+      !target.workspace?.slug
     ) {
-      throw new BadRequestException('Docker lifecycle testing requires a workspace-owned Docker target');
+      throw new BadRequestException(
+        'Docker lifecycle testing requires a workspace-owned Docker target',
+      );
     }
 
     // The diagnostic uses the same first-class allocation boundary as future
@@ -263,7 +272,7 @@ export class AgentJobsService implements OnModuleInit {
         message: 'Waiting for Agent',
       },
     });
-    return this.summary(row as JobRow);
+    return this.summary(row);
   }
 
   async createGatewayPreflight(
@@ -299,11 +308,11 @@ export class AgentJobsService implements OnModuleInit {
     }
     const target = agent.target;
     if (
-      target.kind !== 'docker'
-      || target.scope !== 'user'
-      || target.routingMode !== 'managed-gateway'
-      || target.gatewayAdapter !== 'caddy'
-      || !target.publicUrl
+      target.kind !== 'docker' ||
+      target.scope !== 'user' ||
+      target.routingMode !== 'managed-gateway' ||
+      target.gatewayAdapter !== 'caddy' ||
+      !target.publicUrl
     ) {
       throw new BadRequestException('Gateway preflight requires a managed-gateway Docker target');
     }
@@ -314,14 +323,14 @@ export class AgentJobsService implements OnModuleInit {
       row = await this.prisma.$transaction(async (transaction) => {
         const created = await transaction.agentJob.create({
           data: {
-          targetId,
-          dedupeKey,
-          kind: 'gateway-preflight',
-          protocolVersion: 1,
-          payload: { adapter: 'caddy', publicUrl: target.publicUrl },
-          status: 'queued',
-          progressStage: 'queued',
-          message: 'Waiting for Agent',
+            targetId,
+            dedupeKey,
+            kind: 'gateway-preflight',
+            protocolVersion: 1,
+            payload: { adapter: 'caddy', publicUrl: target.publicUrl },
+            status: 'queued',
+            progressStage: 'queued',
+            message: 'Waiting for Agent',
           },
         });
         await transaction.target.update({
@@ -333,7 +342,7 @@ export class AgentJobsService implements OnModuleInit {
             gatewayPreflightError: null,
           },
         });
-        return created as JobRow;
+        return created;
       });
     } catch (error) {
       // An HTTP retry with the same request id is idempotent, but must never
@@ -343,7 +352,7 @@ export class AgentJobsService implements OnModuleInit {
       }
       const existing = await this.prisma.agentJob.findUnique({ where: { dedupeKey } });
       if (!existing) throw error;
-      row = existing as JobRow;
+      row = existing;
     }
     return this.summary(row);
   }
@@ -386,11 +395,7 @@ export class AgentJobsService implements OnModuleInit {
           data: { status: 'running', message: 'Claimed by Agent' },
         });
       }
-      await this.advanceDeploymentPhase(
-        row.deploymentOperationId,
-        'assigned',
-        'Claimed by Agent',
-      );
+      await this.advanceDeploymentPhase(row.deploymentOperationId, 'assigned', 'Claimed by Agent');
       let delivery: AgentJobDelivery | undefined;
       if (['deploy', 'rollback'].includes(row.kind)) {
         try {
@@ -485,13 +490,13 @@ export class AgentJobsService implements OnModuleInit {
       await this.mirrorDeploymentProgress(jobId, current.progressStage, currentMessage);
       await this.mirrorGatewayPreflightProgress(jobId);
       await this.mirrorWorkloadDiagnosticProgress(jobId, currentMessage);
-      return this.summary(current as JobRow);
+      return this.summary(current);
     }
     const current = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } });
     await this.mirrorDeploymentProgress(jobId, dto.stage, dto.message);
     await this.mirrorGatewayPreflightProgress(jobId);
     await this.mirrorWorkloadDiagnosticProgress(jobId, dto.message);
-    return this.summary(current as JobRow);
+    return this.summary(current);
   }
 
   private async mirrorWorkloadDiagnosticProgress(jobId: string, message: string): Promise<void> {
@@ -522,10 +527,10 @@ export class AgentJobsService implements OnModuleInit {
     }
     if (diagnosticJob && dto.result && dto.diagnostic) {
       const validHealth =
-        (dto.result.state === 'running'
-          && ['healthy', 'unhealthy'].includes(dto.diagnostic.health))
-        || (dto.result.state === 'stopped' && dto.diagnostic.health === 'not-running')
-        || (dto.result.state === 'missing' && dto.diagnostic.health === 'missing');
+        (dto.result.state === 'running' &&
+          ['healthy', 'unhealthy'].includes(dto.diagnostic.health)) ||
+        (dto.result.state === 'stopped' && dto.diagnostic.health === 'not-running') ||
+        (dto.result.state === 'missing' && dto.diagnostic.health === 'missing');
       if (!validHealth) {
         throw new BadRequestException('Diagnostic health does not match the workload state');
       }
@@ -554,23 +559,24 @@ export class AgentJobsService implements OnModuleInit {
       if (result.count === 1 && diagnosticJob) {
         await transaction.workloadDiagnostic.updateMany({
           where: { currentJobId: jobId, status: { in: ['queued', 'running'] } },
-          data: dto.status === 'succeeded' && dto.result && dto.diagnostic
-            ? {
-                status: 'succeeded',
-                runtimeState: dto.result.state,
-                revision: dto.result.revision ?? null,
-                exitCode: dto.diagnostic.exitCode ?? null,
-                health: dto.diagnostic.health,
-                logs: dto.diagnostic.logs,
-                message: dto.message,
-                observedAt: now,
-                finishedAt: now,
-              }
-            : {
-                status: 'failed',
-                message: dto.message,
-                finishedAt: now,
-              },
+          data:
+            dto.status === 'succeeded' && dto.result && dto.diagnostic
+              ? {
+                  status: 'succeeded',
+                  runtimeState: dto.result.state,
+                  revision: dto.result.revision ?? null,
+                  exitCode: dto.diagnostic.exitCode ?? null,
+                  health: dto.diagnostic.health,
+                  logs: dto.diagnostic.logs,
+                  message: dto.message,
+                  observedAt: now,
+                  finishedAt: now,
+                }
+              : {
+                  status: 'failed',
+                  message: dto.message,
+                  finishedAt: now,
+                },
         });
       }
       return result;
@@ -592,12 +598,12 @@ export class AgentJobsService implements OnModuleInit {
       await this.reconcileGatewayPreflight(jobId);
       await this.reconcileGatewayRoute(jobId);
       await this.reconcileTerminalJob(jobId);
-      return this.summary(current as JobRow);
+      return this.summary(current);
     }
     await this.reconcileGatewayPreflight(jobId);
     await this.reconcileGatewayRoute(jobId);
     await this.reconcileTerminalJob(jobId);
-    return this.summary(await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } }) as JobRow);
+    return this.summary(await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } }));
   }
 
   private async mirrorDeploymentProgress(
@@ -610,11 +616,8 @@ export class AgentJobsService implements OnModuleInit {
       select: { deploymentOperationId: true },
     });
     if (!job?.deploymentOperationId) return;
-    const phase: ActiveDeploymentPhase = stage === 'verifying'
-      ? 'verifying'
-      : stage === 'working'
-        ? 'running'
-        : 'assigned';
+    const phase: ActiveDeploymentPhase =
+      stage === 'verifying' ? 'verifying' : stage === 'working' ? 'running' : 'assigned';
     await this.prisma.$transaction([
       this.prisma.deploymentOperation.updateMany({
         where: { id: job.deploymentOperationId, status: 'running' },
@@ -683,9 +686,8 @@ export class AgentJobsService implements OnModuleInit {
       data: {
         gatewayPreflightStatus: job.status === 'succeeded' ? 'passed' : 'failed',
         gatewayPreflightAt: job.finishedAt ?? new Date(),
-        gatewayPreflightError: job.status === 'failed'
-          ? (job.message ?? 'Gateway preflight failed')
-          : null,
+        gatewayPreflightError:
+          job.status === 'failed' ? (job.message ?? 'Gateway preflight failed') : null,
       },
     });
   }
@@ -704,21 +706,23 @@ export class AgentJobsService implements OnModuleInit {
       },
     });
     if (
-      job?.kind !== 'gateway-route'
-      || !job.gatewayRouteId
-      || !['succeeded', 'failed'].includes(job.status)
-    ) return;
+      job?.kind !== 'gateway-route' ||
+      !job.gatewayRouteId ||
+      !['succeeded', 'failed'].includes(job.status)
+    )
+      return;
     const payload = this.objectRecord(job.payload);
     const generation = payload?.generation;
     const desiredState = payload?.desiredState;
     const revision = payload?.revision;
     if (
-      typeof generation !== 'number'
-      || !Number.isInteger(generation)
-      || generation < 1
-      || !['active', 'stopped', 'absent'].includes(String(desiredState))
-      || (revision !== null && typeof revision !== 'string')
-    ) return;
+      typeof generation !== 'number' ||
+      !Number.isInteger(generation) ||
+      generation < 1 ||
+      !['active', 'stopped', 'absent'].includes(String(desiredState)) ||
+      (revision !== null && typeof revision !== 'string')
+    )
+      return;
     const now = job.finishedAt ?? new Date();
     if (job.status === 'succeeded') {
       await this.prisma.gatewayRoute.updateMany({
@@ -729,7 +733,7 @@ export class AgentJobsService implements OnModuleInit {
         },
         data: {
           observedState: desiredState as string,
-          observedRevision: desiredState === 'absent' ? null : revision as string,
+          observedRevision: desiredState === 'absent' ? null : (revision as string),
           observedGeneration: generation,
           reconcileJobId: null,
           lastError: null,
@@ -794,26 +798,24 @@ export class AgentJobsService implements OnModuleInit {
     }
     const result = this.jobResult(job.result);
     const successfulDeploy =
-      job.kind === 'deploy'
-      && job.status === 'succeeded'
-      && result?.state === 'running'
-      && result.revision === operation.version
-      && result.hostPort !== undefined;
+      job.kind === 'deploy' &&
+      job.status === 'succeeded' &&
+      result?.state === 'running' &&
+      result.revision === operation.version &&
+      result.hostPort !== undefined;
     const successfulStart =
-      job.kind === 'start'
-      && job.status === 'succeeded'
-      && result?.state === 'running'
-      && result.revision === operation.version
-      && result.hostPort !== undefined;
+      job.kind === 'start' &&
+      job.status === 'succeeded' &&
+      result?.state === 'running' &&
+      result.revision === operation.version &&
+      result.hostPort !== undefined;
     const successfulStop =
-      job.kind === 'stop'
-      && job.status === 'succeeded'
-      && result?.state === 'stopped'
-      && result.revision === operation.version;
+      job.kind === 'stop' &&
+      job.status === 'succeeded' &&
+      result?.state === 'stopped' &&
+      result.revision === operation.version;
     const successfulRemove =
-      job.kind === 'remove'
-      && job.status === 'succeeded'
-      && result?.state === 'missing';
+      job.kind === 'remove' && job.status === 'succeeded' && result?.state === 'missing';
     const now = new Date();
     if (successfulDeploy) {
       const url = this.workloadUrl(operation.environment.target?.publicUrl, result.hostPort!);
@@ -873,9 +875,10 @@ export class AgentJobsService implements OnModuleInit {
       });
       return;
     }
-    const reason = job.status === 'failed'
-      ? (job.message || 'Agent deployment failed')
-      : 'Agent returned an invalid deployment result';
+    const reason =
+      job.status === 'failed'
+        ? job.message || 'Agent deployment failed'
+        : 'Agent returned an invalid deployment result';
     await this.prisma.$transaction([
       this.prisma.environment.updateMany({
         where: { id: operation.environmentId, activeOperationId: operation.id },
@@ -930,24 +933,31 @@ export class AgentJobsService implements OnModuleInit {
   ): Promise<void> {
     if (job.status === 'failed') {
       const reason = job.message || 'Agent operation failed';
-      const routeRollback = job.kind === 'gateway-route'
-        ? reason.includes('previous serving route restored')
-          ? 'serving'
-          : reason.includes('previous gateway state restored')
-            ? 'stopped'
-            : 'unknown'
-        : undefined;
+      const routeRollback =
+        job.kind === 'gateway-route'
+          ? reason.includes('previous serving route restored')
+            ? 'serving'
+            : reason.includes('previous gateway state restored')
+              ? 'stopped'
+              : 'unknown'
+          : undefined;
       await this.failManagedOperation(operation, reason, routeRollback);
       return;
     }
     if (![1, 2].includes(job.operationStep ?? 0)) {
-      await this.failManagedOperation(operation, 'Agent returned an invalid managed gateway workflow step');
+      await this.failManagedOperation(
+        operation,
+        'Agent returned an invalid managed gateway workflow step',
+      );
       return;
     }
 
     if (job.operationStep === 1 && ['stop', 'remove'].includes(operation.kind)) {
       if (job.kind !== 'gateway-route') {
-        await this.failManagedOperation(operation, 'Managed teardown did not remove its gateway route first');
+        await this.failManagedOperation(
+          operation,
+          'Managed teardown did not remove its gateway route first',
+        );
         return;
       }
       const next = await this.prisma.agentJob.updateMany({
@@ -988,16 +998,19 @@ export class AgentJobsService implements OnModuleInit {
       const containerPort = payload?.containerPort;
       const healthPath = payload?.healthPath;
       if (
-        !['deploy', 'start'].includes(job.kind)
-        || result?.state !== 'running'
-        || !operation.version
-        || result.revision !== operation.version
-        || typeof projectSlug !== 'string'
-        || !Number.isInteger(containerPort)
-        || typeof healthPath !== 'string'
-        || !result.workloadSlot
+        !['deploy', 'start'].includes(job.kind) ||
+        result?.state !== 'running' ||
+        !operation.version ||
+        result.revision !== operation.version ||
+        typeof projectSlug !== 'string' ||
+        !Number.isInteger(containerPort) ||
+        typeof healthPath !== 'string' ||
+        !result.workloadSlot
       ) {
-        await this.failManagedOperation(operation, 'Agent returned an invalid managed workload result');
+        await this.failManagedOperation(
+          operation,
+          'Agent returned an invalid managed workload result',
+        );
         return;
       }
       try {
@@ -1013,7 +1026,10 @@ export class AgentJobsService implements OnModuleInit {
           deploymentOperationId: operation.id,
           operationStep: 2,
         });
-        await this.publishManagedProgress(operation, 'Workload is ready; waiting for gateway route');
+        await this.publishManagedProgress(
+          operation,
+          'Workload is ready; waiting for gateway route',
+        );
         if (routeJob.status === 'succeeded') {
           await this.reconcileGatewayRoute(routeJob.jobId);
           await this.reconcileTerminalJob(routeJob.jobId);
@@ -1030,14 +1046,12 @@ export class AgentJobsService implements OnModuleInit {
     if (['stop', 'remove'].includes(operation.kind)) {
       const result = this.jobResult(job.result);
       const successfulStop =
-        operation.kind === 'stop'
-        && job.kind === 'stop'
-        && result?.state === 'stopped'
-        && result.revision === operation.version;
+        operation.kind === 'stop' &&
+        job.kind === 'stop' &&
+        result?.state === 'stopped' &&
+        result.revision === operation.version;
       const successfulRemove =
-        operation.kind === 'remove'
-        && job.kind === 'remove'
-        && result?.state === 'missing';
+        operation.kind === 'remove' && job.kind === 'remove' && result?.state === 'missing';
       if (successfulStop) {
         await this.finishLifecycle(operation, job.message, {
           status: 'stopped',
@@ -1059,7 +1073,10 @@ export class AgentJobsService implements OnModuleInit {
         });
         return;
       }
-      await this.failManagedOperation(operation, 'Agent returned an invalid managed teardown result');
+      await this.failManagedOperation(
+        operation,
+        'Agent returned an invalid managed teardown result',
+      );
       return;
     }
 
@@ -1067,11 +1084,11 @@ export class AgentJobsService implements OnModuleInit {
     const payload = this.objectRecord(job.payload);
     const generation = payload?.generation;
     if (
-      job.kind !== 'gateway-route'
-      || !route
-      || route.observedState !== 'active'
-      || route.observedRevision !== operation.version
-      || route.observedGeneration !== generation
+      job.kind !== 'gateway-route' ||
+      !route ||
+      route.observedState !== 'active' ||
+      route.observedRevision !== operation.version ||
+      route.observedGeneration !== generation
     ) {
       await this.failManagedOperation(
         operation,
@@ -1154,22 +1171,25 @@ export class AgentJobsService implements OnModuleInit {
     const now = new Date();
     const route = operation.environment.gatewayRoute;
     const previousStillServing = Boolean(
-      route
-      && route.observedState === 'active'
-      && route.observedRevision
-      && route.observedRevision === operation.environment.version
-      && (routeRollback === undefined || routeRollback === 'serving')
+      route &&
+      route.observedState === 'active' &&
+      route.observedRevision &&
+      route.observedRevision === operation.environment.version &&
+      (routeRollback === undefined || routeRollback === 'serving'),
     );
     const previousStillStopped = Boolean(
-      route
-      && operation.kind === 'start'
-      && route.observedState === 'stopped'
-      && route.observedRevision
-      && route.observedRevision === operation.environment.version
-      && (routeRollback === undefined || routeRollback === 'stopped')
+      route &&
+      operation.kind === 'start' &&
+      route.observedState === 'stopped' &&
+      route.observedRevision &&
+      route.observedRevision === operation.environment.version &&
+      (routeRollback === undefined || routeRollback === 'stopped'),
     );
     const preservedMessage = previousStillServing
-      ? `Deployment failed; revision ${route!.observedRevision!.slice(0, 12)} remains online. ${message}`.slice(0, 500)
+      ? `Deployment failed; revision ${route!.observedRevision!.slice(0, 12)} remains online. ${message}`.slice(
+          0,
+          500,
+        )
       : previousStillStopped
         ? `Start failed; the previous revision remains stopped. ${message}`.slice(0, 500)
         : message;
@@ -1254,10 +1274,17 @@ export class AgentJobsService implements OnModuleInit {
     if (!['running', 'stopped', 'missing'].includes(String(input.state))) return null;
     if (input.revision !== undefined && typeof input.revision !== 'string') return null;
     if (
-      input.hostPort !== undefined
-      && (!Number.isInteger(input.hostPort) || Number(input.hostPort) < 1 || Number(input.hostPort) > 65_535)
-    ) return null;
-    if (input.workloadSlot !== undefined && !/^[a-f0-9]{12}$/.test(String(input.workloadSlot))) return null;
+      input.hostPort !== undefined &&
+      (!Number.isInteger(input.hostPort) ||
+        Number(input.hostPort) < 1 ||
+        Number(input.hostPort) > 65_535)
+    )
+      return null;
+    if (
+      input.workloadSlot !== undefined &&
+      (typeof input.workloadSlot !== 'string' || !/^[a-f0-9]{12}$/.test(input.workloadSlot))
+    )
+      return null;
     return {
       state: input.state as 'running' | 'stopped' | 'missing',
       ...(typeof input.revision === 'string' ? { revision: input.revision } : {}),
@@ -1279,11 +1306,11 @@ export class AgentJobsService implements OnModuleInit {
     if (!received) return stored == null;
     const parsed = this.jobResult(stored);
     return Boolean(
-      parsed
-      && parsed.state === received.state
-      && parsed.revision === received.revision
-      && parsed.hostPort === received.hostPort
-      && parsed.workloadSlot === received.workloadSlot
+      parsed &&
+      parsed.state === received.state &&
+      parsed.revision === received.revision &&
+      parsed.hostPort === received.hostPort &&
+      parsed.workloadSlot === received.workloadSlot,
     );
   }
 
@@ -1294,11 +1321,13 @@ export class AgentJobsService implements OnModuleInit {
     if (!stored || stored.status !== dto.status || stored.message !== dto.message) return false;
     if (dto.status === 'failed') return true;
     if (!dto.result || !dto.diagnostic) return false;
-    return stored.runtimeState === dto.result.state
-      && stored.revision === (dto.result.revision ?? null)
-      && stored.exitCode === (dto.diagnostic.exitCode ?? null)
-      && stored.health === dto.diagnostic.health
-      && stored.logs === dto.diagnostic.logs;
+    return (
+      stored.runtimeState === dto.result.state &&
+      stored.revision === (dto.result.revision ?? null) &&
+      stored.exitCode === (dto.diagnostic.exitCode ?? null) &&
+      stored.health === dto.diagnostic.health &&
+      stored.logs === dto.diagnostic.logs
+    );
   }
 
   private async deliveryForLease(
@@ -1310,9 +1339,8 @@ export class AgentJobsService implements OnModuleInit {
     if (!binding) throw this.leases.lostLease();
     const artifact = this.assertDeliveryBinding(binding);
     const payload = this.objectRecord(binding.payload);
-    const queuedFingerprint = typeof payload?.configFingerprint === 'string'
-      ? payload.configFingerprint
-      : '';
+    const queuedFingerprint =
+      typeof payload?.configFingerprint === 'string' ? payload.configFingerprint : '';
     const currentFingerprint = agentConfigFingerprint(
       binding.deploymentOperation!.environment.configVars,
     );
@@ -1328,9 +1356,7 @@ export class AgentJobsService implements OnModuleInit {
     }
     const envVars: Record<string, string> = {};
     for (const variable of binding.deploymentOperation!.environment.configVars) {
-      envVars[variable.key] = variable.isSecret
-        ? decryptSecret(variable.value)
-        : variable.value;
+      envVars[variable.key] = variable.isSecret ? decryptSecret(variable.value) : variable.value;
     }
     return {
       artifact: {
@@ -1342,11 +1368,7 @@ export class AgentJobsService implements OnModuleInit {
     };
   }
 
-  private deliveryBinding(
-    agent: AuthenticatedAgent,
-    jobId: string,
-    leaseToken: string,
-  ) {
+  private deliveryBinding(agent: AuthenticatedAgent, jobId: string, leaseToken: string) {
     return this.prisma.agentJob.findFirst({
       where: this.leases.activeLease(agent, jobId, leaseToken, new Date()),
       select: {
@@ -1385,13 +1407,13 @@ export class AgentJobsService implements OnModuleInit {
     const operation = binding?.deploymentOperation;
     const artifact = operation?.buildArtifact;
     if (
-      !binding
-      || !operation
-      || !artifact?.storageRef
-      || artifact.status !== 'available'
-      || artifact.storageKind !== 'object-store'
-      || operation.environment.targetId !== binding.targetId
-      || operation.environment.allocationId !== binding.allocationId
+      !binding ||
+      !operation ||
+      !artifact?.storageRef ||
+      artifact.status !== 'available' ||
+      artifact.storageKind !== 'object-store' ||
+      operation.environment.targetId !== binding.targetId ||
+      operation.environment.allocationId !== binding.allocationId
     ) {
       throw new BadRequestException('Agent job is not bound to an available deployment artifact');
     }
@@ -1408,7 +1430,7 @@ export class AgentJobsService implements OnModuleInit {
 
   private objectRecord(value: unknown): Record<string, unknown> | null {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
-      ? value as Record<string, unknown>
+      ? (value as Record<string, unknown>)
       : null;
   }
 

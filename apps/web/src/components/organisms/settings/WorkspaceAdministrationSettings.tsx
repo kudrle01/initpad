@@ -14,17 +14,15 @@ export function WorkspaceAdministrationSettings() {
   const confirmAction = useConfirmation();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [approvalPolicy, setApprovalPolicy] = useState<'self-review' | 'separate-reviewer'>('separate-reviewer');
+  const [approvalPolicy, setApprovalPolicy] = useState<'self-review' | 'separate-reviewer'>(
+    'separate-reviewer',
+  );
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
 
   useEffect(() => {
     setName(activeWorkspace?.name ?? '');
     setApprovalPolicy(activeWorkspace?.productionApprovalPolicy ?? 'separate-reviewer');
-  }, [
-    activeWorkspace?.id,
-    activeWorkspace?.name,
-    activeWorkspace?.productionApprovalPolicy,
-  ]);
+  }, [activeWorkspace?.id, activeWorkspace?.name, activeWorkspace?.productionApprovalPolicy]);
 
   const workspace = activeWorkspace;
   if (!workspace || workspace.type === 'personal' || !canAdmin) return null;
@@ -48,7 +46,8 @@ export function WorkspaceAdministrationSettings() {
   async function deleteWorkspace() {
     const confirmed = await confirmAction({
       title: `Delete workspace ${workspaceName}?`,
-      description: 'A team workspace is the tenant boundary for its members, resources and audit timeline.',
+      description:
+        'A team workspace is the tenant boundary for its members, resources and audit timeline.',
       confirmLabel: 'Delete workspace',
       tone: 'danger',
       requireText: workspaceName,
@@ -76,7 +75,8 @@ export function WorkspaceAdministrationSettings() {
     if (approvalPolicy === 'self-review') {
       const confirmed = await confirmAction({
         title: 'Allow production self-approval?',
-        description: 'A requester with workspace admin rights will be able to approve their own production request.',
+        description:
+          'A requester with workspace admin rights will be able to approve their own production request.',
         confirmLabel: 'Allow self-approval',
         tone: 'warning',
         consequences: [

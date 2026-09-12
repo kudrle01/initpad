@@ -6,12 +6,7 @@ import {
 } from '@nestjs/common';
 import { tokenMatches } from '../common/token';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  repositoryRef,
-  ScmActor,
-  ScmBuildArtifact,
-  ScmRepositoryRef,
-} from '../scm/scm-provider';
+import { repositoryRef, ScmActor, ScmBuildArtifact, ScmRepositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { CI_RUNNING_REASON } from './ci-state';
 import { ProjectArtifactIngestion } from './project-artifact-ingestion';
@@ -29,11 +24,7 @@ type DeployInBackground = (
   operationId: string,
 ) => Promise<void>;
 
-type ScheduleDeployment = (
-  projectId: string,
-  version: string,
-  kind: string,
-) => Promise<void>;
+type ScheduleDeployment = (projectId: string, version: string, kind: string) => Promise<void>;
 
 /**
  * Repository-authenticated CI callback state machine. It validates the source
@@ -132,12 +123,7 @@ export class ProjectCiOrchestrator {
       return;
     }
 
-    const buildArtifact = await this.resolveArtifact(
-      project.id,
-      repository,
-      sha,
-      artifactInput,
-    );
+    const buildArtifact = await this.resolveArtifact(project.id, repository, sha, artifactInput);
     if (buildArtifact === 'duplicate') return;
 
     if (isRetry) {
@@ -184,12 +170,7 @@ export class ProjectCiOrchestrator {
       data: { lastCommit: `ci: deploy ${version.slice(0, 7)}` },
     });
     if (buildArtifact) {
-      const operationId = await this.operations.begin(
-        project.id,
-        'dev',
-        'ci-deploy',
-        version,
-      );
+      const operationId = await this.operations.begin(project.id, 'dev', 'ci-deploy', version);
       await this.ingestion.queue(project.id, repository, buildArtifact, operationId);
     } else {
       await this.scheduleDeployment(project.id, version, 'ci-deploy');
@@ -232,7 +213,9 @@ export class ProjectCiOrchestrator {
           operation.status !== 'running' ||
           operation.version !== sha
         ) {
-          this.logger.log(`Ignoring stale failed CI retry for ${repository.fullName} (${retryTag})`);
+          this.logger.log(
+            `Ignoring stale failed CI retry for ${repository.fullName} (${retryTag})`,
+          );
           return;
         }
         await this.prisma.environment.updateMany({
@@ -261,9 +244,7 @@ export class ProjectCiOrchestrator {
         'ci-deploy',
         sha.toLowerCase(),
       );
-      const finalStatus = ['running', 'stopped'].includes(dev.status)
-        ? dev.status
-        : 'failed';
+      const finalStatus = ['running', 'stopped'].includes(dev.status) ? dev.status : 'failed';
       await this.prisma.environment.updateMany({
         where: { id: dev.id, activeOperationId: operationId },
         data: {

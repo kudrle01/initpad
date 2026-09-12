@@ -28,12 +28,14 @@ const ARTIFACT = {
   expiresAt: new Date('2026-08-10T00:00:00Z'),
 };
 
-function make(options: {
-  project?: Record<string, unknown>;
-  dev?: Record<string, unknown>;
-  replay?: Record<string, unknown> | null;
-  scm?: Record<string, unknown>;
-} = {}) {
+function make(
+  options: {
+    project?: Record<string, unknown>;
+    dev?: Record<string, unknown>;
+    replay?: Record<string, unknown> | null;
+    scm?: Record<string, unknown>;
+  } = {},
+) {
   const project = options.project ?? PROJECT;
   const dev = options.dev ?? {
     id: 'env-1',
@@ -50,9 +52,7 @@ function make(options: {
       findUnique: jest.fn(async () => options.replay ?? null),
     },
     deploymentOperation: {
-      findUnique: jest.fn(
-        async (): Promise<Record<string, unknown> | null> => null,
-      ),
+      findUnique: jest.fn(async (): Promise<Record<string, unknown> | null> => null),
     },
   };
   const scm = options.scm ?? {
@@ -106,12 +106,7 @@ describe('ProjectCiOrchestrator', () => {
         expectedName: 'initpad-image.tar',
       },
     );
-    expect(ctx.operations.begin).toHaveBeenCalledWith(
-      'project-1',
-      'dev',
-      'ci-deploy',
-      SHA,
-    );
+    expect(ctx.operations.begin).toHaveBeenCalledWith('project-1', 'dev', 'ci-deploy', SHA);
     expect(ctx.ingestion.queue).toHaveBeenCalledWith(
       'project-1',
       expect.objectContaining({ fullName: 'acme/api' }),
@@ -180,18 +175,9 @@ describe('ProjectCiOrchestrator', () => {
       version: SHA,
     });
 
-    await ctx.orchestrator.deployFromCi(
-      'acme/api',
-      SHA,
-      'refs/tags/initpad-retry-manual',
-      TOKEN,
-    );
+    await ctx.orchestrator.deployFromCi('acme/api', SHA, 'refs/tags/initpad-retry-manual', TOKEN);
 
-    expect(ctx.deployInBackground).toHaveBeenCalledWith(
-      'project-1',
-      SHA,
-      'operation-retry',
-    );
+    expect(ctx.deployInBackground).toHaveBeenCalledWith('project-1', SHA, 'operation-retry');
     expect((ctx.scm as any).deleteTag).toHaveBeenCalledWith(
       expect.objectContaining({ fullName: 'acme/api' }),
       'initpad-retry-manual',

@@ -14,7 +14,11 @@ describe('templateRuntime', () => {
 });
 
 describe('targetCanRun', () => {
-  const nette: { compatibleProviders: ProviderKind[]; runtime: RuntimeKind; artifact: ArtifactKind } = {
+  const nette: {
+    compatibleProviders: ProviderKind[];
+    runtime: RuntimeKind;
+    artifact: ArtifactKind;
+  } = {
     compatibleProviders: ['docker', 'sftp'],
     runtime: 'php',
     artifact: 'runtime',

@@ -117,14 +117,23 @@ export class SftpProvider implements DeploymentProvider {
     try {
       conn = await sshConnect(cfg);
     } catch (e) {
-      return { ok: false, message: `Cannot connect to ${cfg.host}:${cfg.port} — ${(e as Error).message}` };
+      return {
+        ok: false,
+        message: `Cannot connect to ${cfg.host}:${cfg.port} — ${(e as Error).message}`,
+      };
     }
     try {
       const sftp = await getSftp(conn);
       await assertSftpWritable(sftp, cfg.remoteRoot);
-      return { ok: true, message: `Connected to ${cfg.host} over SFTP. Web root ${cfg.remoteRoot} is writable.` };
+      return {
+        ok: true,
+        message: `Connected to ${cfg.host} over SFTP. Web root ${cfg.remoteRoot} is writable.`,
+      };
     } catch (e) {
-      return { ok: false, message: `Connected, but ${cfg.remoteRoot} is not writable: ${(e as Error).message}` };
+      return {
+        ok: false,
+        message: `Connected, but ${cfg.remoteRoot} is not writable: ${(e as Error).message}`,
+      };
     } finally {
       sshEnd(conn);
     }
@@ -171,12 +180,7 @@ export class SftpProvider implements DeploymentProvider {
 
       input.onProgress?.('Verifying deployment');
       const url = this.publicUrl(cfg, slug, input.webRoot, input.protectedWebLayout);
-      const internalUrl = this.internalUrl(
-        cfg,
-        slug,
-        input.webRoot,
-        input.protectedWebLayout,
-      );
+      const internalUrl = this.internalUrl(cfg, slug, input.webRoot, input.protectedWebLayout);
       const reachable = await this.waitReachable(internalUrl);
       if (!reachable) {
         return {
@@ -190,9 +194,7 @@ export class SftpProvider implements DeploymentProvider {
         const checks = [
           `${internalUrl.replace(/\/+$/, '')}/.initpad-app/${PRIVATE_PROBE}`,
           `${internalUrl.replace(/\/+$/, '')}/.initpad-app/composer.json`,
-          ...(input.writableDirs?.length
-            ? [`${base}/.initpad-data/${slug}/.initpad-probe`]
-            : []),
+          ...(input.writableDirs?.length ? [`${base}/.initpad-data/${slug}/.initpad-probe`] : []),
         ];
         const protectedResults = await Promise.all(
           checks.map((privateUrl) => this.privateFilesProtected(privateUrl)),
@@ -248,8 +250,10 @@ export class SftpProvider implements DeploymentProvider {
     }
   }
 
-  async logs(): Promise<string> {
-    return 'Static hosting has no process logs. Files are served by the web server from the published release.';
+  logs(): Promise<string> {
+    return Promise.resolve(
+      'Static hosting has no process logs. Files are served by the web server from the published release.',
+    );
   }
 
   async stop(input: TeardownInput): Promise<void> {
@@ -277,14 +281,21 @@ export class SftpProvider implements DeploymentProvider {
     try {
       conn = await sshConnect(cfg);
     } catch (e) {
-      return { status: 'failed', url: '', reason: `Cannot reach SFTP host (${(e as Error).message})` };
+      return {
+        status: 'failed',
+        url: '',
+        reason: `Cannot reach SFTP host (${(e as Error).message})`,
+      };
     }
     try {
       const sftp = await getSftp(conn);
       let version = input.version ? this.sanitize(input.version) : '';
       if (!version) {
         const entries = await sftpReaddir(sftp, `${cfg.remoteRoot}/${slug}-releases`);
-        const dirs = entries.filter((e) => e.isDir).map((e) => e.name).sort();
+        const dirs = entries
+          .filter((e) => e.isDir)
+          .map((e) => e.name)
+          .sort();
         version = dirs[dirs.length - 1] ?? '';
       }
       if (!version) {
@@ -400,7 +411,9 @@ export class SftpProvider implements DeploymentProvider {
       input.onProgress?.('Extracting on the server');
       const prepared = await sshExec(conn, `rm -rf -- ${qStaging} && mkdir -p -- ${qStaging}`);
       if (prepared.code !== 0) {
-        throw new Error(`Remote staging failed: ${(prepared.stderr || prepared.stdout).trim().slice(-300)}`);
+        throw new Error(
+          `Remote staging failed: ${(prepared.stderr || prepared.stdout).trim().slice(-300)}`,
+        );
       }
       const ex = await sshExec(conn, `tar xf ${qTar} -C ${qStaging}`);
       await sshExec(conn, `rm -f -- ${qTar}`);
@@ -411,7 +424,9 @@ export class SftpProvider implements DeploymentProvider {
       // (Nette temp/log …) world-writable.
       const readable = await sshExec(conn, `chmod -R a+rX ${qStaging}`);
       if (readable.code !== 0) {
-        throw new Error(`Remote chmod failed: ${(readable.stderr || readable.stdout).trim().slice(-300)}`);
+        throw new Error(
+          `Remote chmod failed: ${(readable.stderr || readable.stdout).trim().slice(-300)}`,
+        );
       }
       for (const d of writable) {
         const path = shellQuote(`${staging}/${d}`);
@@ -441,7 +456,9 @@ export class SftpProvider implements DeploymentProvider {
         `if rm -rf -- ${qDest}; then :; else mkdir -p -- ${shellQuote(quarantineRoot)} && chmod 0700 ${shellQuote(quarantineRoot)} && mv -- ${qDest} ${shellQuote(quarantine)} && echo INITPAD_QUARANTINED; fi && mv -- ${qStaging} ${qDest}`,
       );
       if (swap.code !== 0) {
-        throw new Error(`Remote publish failed: ${(swap.stderr || swap.stdout).trim().slice(-300)}`);
+        throw new Error(
+          `Remote publish failed: ${(swap.stderr || swap.stdout).trim().slice(-300)}`,
+        );
       }
       if (swap.stdout.includes('INITPAD_QUARANTINED')) {
         this.logger.warn(

@@ -66,35 +66,27 @@ export class ProjectQueries {
         if (version && !operationByVersion.has(version)) operationByVersion.set(version, operation);
       }
       const dev = project.environments.find((environment) => environment.name === 'dev');
-      return mapWithConcurrency(
-        fromScm,
-        SCM_READ_CONCURRENCY,
-        async (commit, index) => {
-          const sha = commit.sha.toLowerCase();
-          const operation = operationByVersion.get(sha);
-          const currentDev =
-            dev?.version?.toLowerCase() === sha ||
-            (index === 0 && dev?.status === 'deploying' && !dev.version)
-              ? dev
-              : null;
-          const preferredRunId =
-            operation?.buildArtifact?.providerRunId ?? currentDev?.artifact?.runId ?? null;
-          const statuses = await scm.listCommitStatuses(
-            project.scm,
-            commit.sha,
-            actor,
-            preferredRunId,
-          );
-          return {
-            ...commit,
-            pipeline: withDeploymentState(
-              pipelineStages(template, statuses),
-              currentDev,
-              operation,
-            ),
-          };
-        },
-      );
+      return mapWithConcurrency(fromScm, SCM_READ_CONCURRENCY, async (commit, index) => {
+        const sha = commit.sha.toLowerCase();
+        const operation = operationByVersion.get(sha);
+        const currentDev =
+          dev?.version?.toLowerCase() === sha ||
+          (index === 0 && dev?.status === 'deploying' && !dev.version)
+            ? dev
+            : null;
+        const preferredRunId =
+          operation?.buildArtifact?.providerRunId ?? currentDev?.artifact?.runId ?? null;
+        const statuses = await scm.listCommitStatuses(
+          project.scm,
+          commit.sha,
+          actor,
+          preferredRunId,
+        );
+        return {
+          ...commit,
+          pipeline: withDeploymentState(pipelineStages(template, statuses), currentDev, operation),
+        };
+      });
     }
 
     return [

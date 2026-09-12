@@ -1,11 +1,4 @@
-import {
-  Ban,
-  CheckCircle2,
-  Clock3,
-  ExternalLink,
-  ShieldCheck,
-  XCircle,
-} from 'lucide-react';
+import { Ban, CheckCircle2, Clock3, ExternalLink, ShieldCheck, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,13 +47,17 @@ export function ProductionApprovalCard({
   onCancel,
 }: Props) {
   const StatusIcon = STATUS_ICON[request.status];
-  const waitingForAnotherReviewer = request.status === 'pending'
-    && request.policy === 'separate-reviewer'
-    && request.canReject
-    && !request.canApprove;
+  const waitingForAnotherReviewer =
+    request.status === 'pending' &&
+    request.policy === 'separate-reviewer' &&
+    request.canReject &&
+    !request.canApprove;
 
   return (
-    <section className="mt-4 rounded-lg border border-border bg-card p-4" aria-label="Production approval">
+    <section
+      className="mt-4 rounded-lg border border-border bg-card p-4"
+      aria-label="Production approval"
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
@@ -74,7 +71,8 @@ export function ProductionApprovalCard({
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Requested by {person(request.requester)} · {new Date(request.createdAt).toLocaleString()}
+              Requested by {person(request.requester)} ·{' '}
+              {new Date(request.createdAt).toLocaleString()}
             </p>
           </div>
         </div>
@@ -103,7 +101,9 @@ export function ProductionApprovalCard({
       <dl className="mt-4 grid gap-3 rounded-md bg-secondary/50 p-3 text-xs sm:grid-cols-3">
         <div>
           <dt className="text-muted-foreground">Verified build</dt>
-          <dd className="mt-0.5 font-mono" title={request.version}>{request.version.slice(0, 12)}</dd>
+          <dd className="mt-0.5 font-mono" title={request.version}>
+            {request.version.slice(0, 12)}
+          </dd>
         </div>
         <div>
           <dt className="text-muted-foreground">Target</dt>
@@ -127,12 +127,14 @@ export function ProductionApprovalCard({
         </p>
       )}
       {request.reviewNote && (
-        <p className={cn(
-          'mt-2 text-xs',
-          request.status === 'rejected' || request.status === 'failed'
-            ? 'text-destructive'
-            : 'text-muted-foreground',
-        )}>
+        <p
+          className={cn(
+            'mt-2 text-xs',
+            request.status === 'rejected' || request.status === 'failed'
+              ? 'text-destructive'
+              : 'text-muted-foreground',
+          )}
+        >
           {request.reviewNote}
         </p>
       )}

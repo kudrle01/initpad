@@ -27,9 +27,7 @@ export function SettingsSection({
     <section
       className={cn(
         'rounded-lg border p-5 sm:p-6',
-        tone === 'warning'
-          ? 'border-warning/40 bg-warning/5'
-          : 'border-border bg-card',
+        tone === 'warning' ? 'border-warning/40 bg-warning/5' : 'border-border bg-card',
       )}
     >
       <div className="flex items-start gap-3">

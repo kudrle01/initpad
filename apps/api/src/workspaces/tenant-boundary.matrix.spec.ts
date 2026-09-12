@@ -24,13 +24,17 @@ const memberships = new Map([
 function workspaceBoundary() {
   const prisma = {
     workspaceMember: {
-      findUnique: jest.fn(async ({ where }: {
-        where: { workspaceId_userId: { workspaceId: string; userId: string } };
-      }) => {
-        const key = `${where.workspaceId_userId.workspaceId}:${where.workspaceId_userId.userId}`;
-        const role = memberships.get(key);
-        return role ? { role } : null;
-      }),
+      findUnique: jest.fn(
+        async ({
+          where,
+        }: {
+          where: { workspaceId_userId: { workspaceId: string; userId: string } };
+        }) => {
+          const key = `${where.workspaceId_userId.workspaceId}:${where.workspaceId_userId.userId}`;
+          const role = memberships.get(key);
+          return role ? { role } : null;
+        },
+      ),
     },
     project: {
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
@@ -94,30 +98,38 @@ describe('two-workspace tenant boundary matrix', () => {
   it('distinguishes a foreign tenant (404) from an insufficient local role (403)', async () => {
     const workspaces = workspaceBoundary();
 
-    await expect(workspaces.require('alice', WORKSPACE_B, 'read'))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(workspaces.requireProject('alice', PROJECT_B, 'read'))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(workspaces.requireProject('bob', PROJECT_A, 'read'))
-      .resolves.toEqual({ workspaceId: WORKSPACE_A, role: 'viewer' });
-    await expect(workspaces.requireProject('bob', PROJECT_A, 'write'))
-      .rejects.toBeInstanceOf(ForbiddenException);
+    await expect(workspaces.require('alice', WORKSPACE_B, 'read')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(workspaces.requireProject('alice', PROJECT_B, 'read')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(workspaces.requireProject('bob', PROJECT_A, 'read')).resolves.toEqual({
+      workspaceId: WORKSPACE_A,
+      role: 'viewer',
+    });
+    await expect(workspaces.requireProject('bob', PROJECT_A, 'write')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('does not query project history or diagnostics after a foreign project id is rejected', async () => {
     const workspaces = workspaceBoundary();
     const projects = {
       assertAccess: jest.fn((id: string, userId: string, permission: 'read' | 'write') =>
-        workspaces.requireProject(userId, id, permission)),
+        workspaces.requireProject(userId, id, permission),
+      ),
       deploymentHistory: jest.fn(),
       workloadDiagnostic: jest.fn(),
     };
     const controller = new ProjectsController(projects as never);
 
-    await expect(controller.deployments(PROJECT_B, 'alice'))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(controller.workloadDiagnostic(PROJECT_B, 'dev', 'alice'))
-      .rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.deployments(PROJECT_B, 'alice')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(controller.workloadDiagnostic(PROJECT_B, 'dev', 'alice')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(projects.deploymentHistory).not.toHaveBeenCalled();
     expect(projects.workloadDiagnostic).not.toHaveBeenCalled();
   });
@@ -131,10 +143,10 @@ describe('two-workspace tenant boundary matrix', () => {
     };
     const config = new AppConfigService(prisma as never, workspaces);
 
-    await expect(config.list('alice', PROJECT_B, 'dev'))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(config.upsert('bob', PROJECT_A, 'dev', 'SAFE_KEY', { value: 'value' }))
-      .rejects.toBeInstanceOf(ForbiddenException);
+    await expect(config.list('alice', PROJECT_B, 'dev')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      config.upsert('bob', PROJECT_A, 'dev', 'SAFE_KEY', { value: 'value' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.environment.findUnique).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
@@ -147,8 +159,9 @@ describe('two-workspace tenant boundary matrix', () => {
     ]);
     const prisma = {
       target: {
-        findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
-          targetsById.get(where.id) ?? null),
+        findUnique: jest.fn(
+          async ({ where }: { where: { id: string } }) => targetsById.get(where.id) ?? null,
+        ),
         update: jest.fn(),
         delete: jest.fn(),
       },
@@ -156,10 +169,12 @@ describe('two-workspace tenant boundary matrix', () => {
     };
     const targets = new TargetsService(prisma as never, {} as never, workspaces);
 
-    await expect(targets.update('target-b', 'alice', { name: 'changed' }))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(targets.update('target-a', 'bob', { name: 'changed' }))
-      .rejects.toBeInstanceOf(ForbiddenException);
+    await expect(targets.update('target-b', 'alice', { name: 'changed' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(targets.update('target-a', 'bob', { name: 'changed' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(prisma.environment.count).not.toHaveBeenCalled();
     expect(prisma.target.update).not.toHaveBeenCalled();
   });
@@ -172,20 +187,25 @@ describe('two-workspace tenant boundary matrix', () => {
     ]);
     const prisma = {
       targetAllocation: {
-        findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
-          rows.get(where.id) ?? null),
+        findUnique: jest.fn(
+          async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
+        ),
         update: jest.fn(),
       },
       environment: { count: jest.fn() },
     };
     const allocations = new TargetAllocationsService(prisma as never, workspaces);
 
-    await expect(allocations.get('allocation-b', 'alice'))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(allocations.get('allocation-a', 'bob'))
-      .resolves.toMatchObject({ id: 'allocation-a', workspaceId: WORKSPACE_A });
-    await expect(allocations.update('allocation-a', 'bob', { status: 'disabled' }))
-      .rejects.toBeInstanceOf(ForbiddenException);
+    await expect(allocations.get('allocation-b', 'alice')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(allocations.get('allocation-a', 'bob')).resolves.toMatchObject({
+      id: 'allocation-a',
+      workspaceId: WORKSPACE_A,
+    });
+    await expect(
+      allocations.update('allocation-a', 'bob', { status: 'disabled' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.environment.count).not.toHaveBeenCalled();
     expect(prisma.targetAllocation.update).not.toHaveBeenCalled();
   });
@@ -206,8 +226,9 @@ describe('two-workspace tenant boundary matrix', () => {
     };
     const agents = new AgentsService(prisma as never, workspaces, {} as never);
 
-    await expect(agents.getForTarget('target-b', 'alice'))
-      .rejects.toBeInstanceOf(NotFoundException);
+    await expect(agents.getForTarget('target-b', 'alice')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(prisma.agent.findUnique).not.toHaveBeenCalled();
     expect(prisma.agent.upsert).not.toHaveBeenCalled();
   });
@@ -216,12 +237,16 @@ describe('two-workspace tenant boundary matrix', () => {
     const workspaces = workspaceBoundary();
     const prisma = {
       workspaceMember: {
-        findUnique: jest.fn(async ({ where }: {
-          where: { workspaceId_userId: { workspaceId: string; userId: string } };
-        }) => {
-          const { workspaceId, userId } = where.workspaceId_userId;
-          return memberships.has(`${workspaceId}:${userId}`) ? { workspaceId } : null;
-        }),
+        findUnique: jest.fn(
+          async ({
+            where,
+          }: {
+            where: { workspaceId_userId: { workspaceId: string; userId: string } };
+          }) => {
+            const { workspaceId, userId } = where.workspaceId_userId;
+            return memberships.has(`${workspaceId}:${userId}`) ? { workspaceId } : null;
+          },
+        ),
       },
       auditEvent: { findMany: jest.fn() },
       $transaction: jest.fn(),
@@ -230,14 +255,16 @@ describe('two-workspace tenant boundary matrix', () => {
     const portfolio = new WorkspacePortfolioService(prisma as never, workspaces);
     const metrics = new WorkspaceMetricsService(prisma as never, workspaces);
 
-    await expect(audit.list('alice', WORKSPACE_B, { limit: 30 }))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(portfolio.get('alice', WORKSPACE_B))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(metrics.export('alice', WORKSPACE_B, { format: 'json' }))
-      .rejects.toBeInstanceOf(NotFoundException);
-    await expect(metrics.export('bob', WORKSPACE_A, { format: 'json' }))
-      .rejects.toBeInstanceOf(ForbiddenException);
+    await expect(audit.list('alice', WORKSPACE_B, { limit: 30 })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(portfolio.get('alice', WORKSPACE_B)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(metrics.export('alice', WORKSPACE_B, { format: 'json' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(metrics.export('bob', WORKSPACE_A, { format: 'json' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(prisma.auditEvent.findMany).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
@@ -268,8 +295,9 @@ describe('two-workspace tenant boundary matrix', () => {
       {} as never,
     );
 
-    await expect(projects.retryProvisioning('operation-b', 'alice'))
-      .rejects.toBeInstanceOf(NotFoundException);
+    await expect(projects.retryProvisioning('operation-b', 'alice')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(provisioning.isRetryable).not.toHaveBeenCalled();
     expect(provisioning.claimRetry).not.toHaveBeenCalled();
   });

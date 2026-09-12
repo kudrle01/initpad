@@ -7,14 +7,21 @@ test('reports only the bounded Docker capabilities used by the control plane', a
     if (path === '/_ping') return 'OK';
     if (path === '/version') {
       return JSON.stringify({
-        Version: '27.5.1', ApiVersion: '1.47', Os: 'linux', Arch: 'arm64',
+        Version: '27.5.1',
+        ApiVersion: '1.47',
+        Os: 'linux',
+        Arch: 'arm64',
         GitCommit: 'must-not-leave-the-agent',
       });
     }
     if (path === '/info') {
       return JSON.stringify({
-        NCPU: 4, MemTotal: 8_589_934_592, SecurityOptions: ['name=rootless'],
-        Containers: 123, Images: 456, Name: 'private-hostname',
+        NCPU: 4,
+        MemTotal: 8_589_934_592,
+        SecurityOptions: ['name=rootless'],
+        Containers: 123,
+        Images: 456,
+        Name: 'private-hostname',
       });
     }
     throw new Error(`Unexpected Docker request: ${path}`);

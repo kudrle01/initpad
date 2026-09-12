@@ -39,11 +39,7 @@ export class TargetsController {
   }
 
   @Put(':id')
-  update(
-    @Param('id') id: string,
-    @Body() dto: UpdateTargetDto,
-    @CurrentUser() userId: string,
-  ) {
+  update(@Param('id') id: string, @Body() dto: UpdateTargetDto, @CurrentUser() userId: string) {
     return this.targets.update(id, userId, dto);
   }
 

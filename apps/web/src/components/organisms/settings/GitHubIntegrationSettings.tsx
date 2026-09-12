@@ -37,14 +37,19 @@ export function GitHubIntegrationSettings() {
   const [identities, setIdentities] = useState<LinkedIdentity[]>([]);
   const [status, setStatus] = useState<GitHubStatus | null>(null);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
+  const activeWorkspaceId = activeWorkspace?.id;
   const githubIdentities = identities.filter((identity) => identity.provider === 'github');
 
   useEffect(() => {
-    api.authConfig()
+    api
+      .authConfig()
       .then((config) => {
         setEnabled(config.githubEnabled);
         if (config.githubEnabled) {
-          api.listIdentities().then(setIdentities).catch(() => undefined);
+          api
+            .listIdentities()
+            .then(setIdentities)
+            .catch(() => undefined);
         }
       })
       .catch(() => undefined);
@@ -53,7 +58,10 @@ export function GitHubIntegrationSettings() {
     const result = query.get('github');
     if (result === 'linked') {
       toast.success('GitHub account linked');
-      api.listIdentities().then(setIdentities).catch(() => undefined);
+      api
+        .listIdentities()
+        .then(setIdentities)
+        .catch(() => undefined);
     } else if (result === 'installed') {
       const account = query.get('account');
       toast.success(`GitHub App authorized${account ? ` for ${account}` : ''}`);
@@ -65,10 +73,10 @@ export function GitHubIntegrationSettings() {
       toast.error(query.get('reason') || 'Could not link GitHub account');
     }
     if (result) window.history.replaceState({}, '', '/settings/account');
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
-    if (!enabled || !activeWorkspace) {
+    if (!enabled || !activeWorkspaceId) {
       setStatus(null);
       return;
     }
@@ -116,7 +124,7 @@ export function GitHubIntegrationSettings() {
       window.removeEventListener('focus', refreshWhenFocused);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
-  }, [enabled, activeWorkspace?.id, canAdmin]);
+  }, [enabled, activeWorkspaceId, canAdmin, toast]);
 
   if (!enabled) return null;
 
@@ -182,7 +190,8 @@ export function GitHubIntegrationSettings() {
         },
         {
           title: 'Permissions',
-          description: 'Job retry needs Actions read and write. No organization or account permission is required.',
+          description:
+            'Job retry needs Actions read and write. No organization or account permission is required.',
         },
       ]}
     >
@@ -206,13 +215,12 @@ export function GitHubIntegrationSettings() {
                 </span>
                 <span className="block truncate text-xs text-muted-foreground">
                   linked {new Date(identity.linkedAt).toLocaleDateString()}
-                  {status && (
-                    status.installation.suspended
+                  {status &&
+                    (status.installation.suspended
                       ? ' · App installation suspended'
                       : status.installation.present
                         ? ' · App installed'
-                        : ' · App not installed'
-                  )}
+                        : ' · App not installed')}
                 </span>
               </span>
               {status?.canInstall && (
@@ -248,7 +256,8 @@ export function GitHubIntegrationSettings() {
             >
               <span className="font-medium">{installation.accountLogin}</span>
               <span className="text-muted-foreground">
-                {installation.accountType.toLowerCase()} · {installation.repositorySelection} repositories
+                {installation.accountType.toLowerCase()} · {installation.repositorySelection}{' '}
+                repositories
                 {installation.suspended
                   ? ' · suspended'
                   : ` · authorized for ${activeWorkspace?.name ?? 'workspace'}`}
@@ -260,7 +269,8 @@ export function GitHubIntegrationSettings() {
 
       {status && !status.appConfigured && (
         <p className="mt-2 text-xs text-muted-foreground">
-          GitHub sign-in is available, but repository access has not been configured by the platform administrator.
+          GitHub sign-in is available, but repository access has not been configured by the platform
+          administrator.
         </p>
       )}
       {status && !status.ciCallbackReady && (
@@ -271,8 +281,8 @@ export function GitHubIntegrationSettings() {
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <span>
             GitHub delivery is paused: {status.ciCallbackIssue} The platform administrator must
-            configure a public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code>.
-            Current value: <code className="font-mono">{status.ciCallbackUrl ?? 'not set'}</code>.
+            configure a public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code>. Current
+            value: <code className="font-mono">{status.ciCallbackUrl ?? 'not set'}</code>.
           </span>
         </p>
       )}

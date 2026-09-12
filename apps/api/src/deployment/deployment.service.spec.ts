@@ -34,11 +34,13 @@ describe('DeploymentService image lifecycle', () => {
     const { service, docker, sftp } = serviceWithProviders();
     sftp.teardown.mockRejectedValueOnce(new Error('remote unavailable'));
 
-    await expect(service.teardown('sftp', {
-      projectName: 'acme-site',
-      env: 'prod',
-      imageRef: '127.0.0.1:3001/acme/site:commit',
-    })).rejects.toThrow('remote unavailable');
+    await expect(
+      service.teardown('sftp', {
+        projectName: 'acme-site',
+        env: 'prod',
+        imageRef: '127.0.0.1:3001/acme/site:commit',
+      }),
+    ).rejects.toThrow('remote unavailable');
     expect(docker.cleanupImage).toHaveBeenCalledTimes(1);
   });
 

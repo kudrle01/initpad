@@ -92,7 +92,10 @@ export class SshProvider implements DeploymentProvider {
     try {
       conn = await sshConnect(cfg);
     } catch (e) {
-      return { ok: false, message: `Cannot connect to ${cfg.host}:${cfg.port} — ${(e as Error).message}` };
+      return {
+        ok: false,
+        message: `Cannot connect to ${cfg.host}:${cfg.port} — ${(e as Error).message}`,
+      };
     }
     try {
       const mk = await sshExec(conn, `${this.PATH} mkdir -p ${cfg.remoteRoot} && echo ok`);
@@ -106,7 +109,10 @@ export class SshProvider implements DeploymentProvider {
         conn,
         `${this.PATH} for r in node php python3; do command -v $r >/dev/null 2>&1 && echo $r; done`,
       );
-      const found = probe.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+      const found = probe.stdout
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
       const runtimes = found.length ? found.join(', ') : 'none detected';
       return {
         ok: true,
@@ -253,14 +259,21 @@ export class SshProvider implements DeploymentProvider {
     try {
       conn = await sshConnect(cfg);
     } catch (e) {
-      return { status: 'failed', url: '', reason: `Cannot reach SSH host ${cfg.host}:${cfg.port} (${(e as Error).message})` };
+      return {
+        status: 'failed',
+        url: '',
+        reason: `Cannot reach SSH host ${cfg.host}:${cfg.port} (${(e as Error).message})`,
+      };
     }
     try {
       const has = await sshExec(conn, `[ -d ${base}/current ] && echo ok`);
       if (!has.stdout.includes('ok')) {
         return { status: 'failed', url: '', reason: 'No release to start — use Redeploy first.' };
       }
-      await sshExec(conn, `[ -f ${base}/app.pid ] && kill "$(cat ${base}/app.pid)" 2>/dev/null; true`);
+      await sshExec(
+        conn,
+        `[ -f ${base}/app.pid ] && kill "$(cat ${base}/app.pid)" 2>/dev/null; true`,
+      );
       const startCmd = input.startCommand ?? DEFAULT_START;
       await this.execOrFail(
         conn,
@@ -271,7 +284,11 @@ export class SshProvider implements DeploymentProvider {
         ? await this.waitHealthyUrl(`${url}${healthPath.startsWith('/') ? '' : '/'}${healthPath}`)
         : await this.waitHealthy(appPort, healthPath);
       if (!healthy) {
-        return { status: 'failed', url, reason: `Health check at ${url} did not pass after start.` };
+        return {
+          status: 'failed',
+          url,
+          reason: `Health check at ${url} did not pass after start.`,
+        };
       }
       this.logger.log(`Started SSH app: ${input.projectName} (${input.env}) → ${url}`);
       return { status: 'running', url };

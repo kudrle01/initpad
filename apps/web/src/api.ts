@@ -188,20 +188,32 @@ export class ApiError extends Error {
   }
 }
 
+async function responseErrorMessage(response: Response): Promise<string> {
+  const body: unknown = await response.json().catch(() => undefined);
+  if (body && typeof body === 'object' && !Array.isArray(body)) {
+    const message = (body as Record<string, unknown>).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return `HTTP ${response.status}`;
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set('Content-Type', 'application/json');
   const workspaceId = localStorage.getItem('initpad.workspace');
   if (workspaceId) headers.set('X-Workspace-Id', workspaceId);
-  const res = await boundedFetch(BASE + path, {
-    credentials: 'include',
-    ...init,
-    headers,
-  }, REQUEST_TIMEOUT_MS);
+  const res = await boundedFetch(
+    BASE + path,
+    {
+      credentials: 'include',
+      ...init,
+      headers,
+    },
+    REQUEST_TIMEOUT_MS,
+  );
   if (!res.ok) {
     if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(body.message || `HTTP ${res.status}`, res.status);
+    throw new ApiError(await responseErrorMessage(res), res.status);
   }
   // 204 / empty body (e.g. DELETE) — nothing to parse.
   const text = await res.text();
@@ -219,8 +231,7 @@ async function download(path: string): Promise<{ blob: Blob; filename: string }>
   );
   if (!res.ok) {
     if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(body.message || `HTTP ${res.status}`, res.status);
+    throw new ApiError(await responseErrorMessage(res), res.status);
   }
   const disposition = res.headers.get('Content-Disposition') ?? '';
   const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'initpad-metrics';
@@ -267,42 +278,50 @@ export const api = {
   createWorkspace: (name: string, slug: string) =>
     http<Workspace>('/workspaces', { method: 'POST', body: JSON.stringify({ name, slug }) }),
   updateWorkspace: (workspaceId: string, name: string) =>
-    http<Workspace>(`/workspaces/${workspaceId}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+    http<Workspace>(`/workspaces/${workspaceId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
   updateProductionApprovalPolicy: (
     workspaceId: string,
     policy: Workspace['productionApprovalPolicy'],
-  ) => http<Workspace>(`/workspaces/${workspaceId}/production-approval-policy`, {
-    method: 'PUT',
-    body: JSON.stringify({ policy }),
-  }),
+  ) =>
+    http<Workspace>(`/workspaces/${workspaceId}/production-approval-policy`, {
+      method: 'PUT',
+      body: JSON.stringify({ policy }),
+    }),
   deleteWorkspace: (workspaceId: string) =>
     http<void>(`/workspaces/${workspaceId}`, { method: 'DELETE' }),
   listWorkspaceMembers: (workspaceId: string) =>
     http<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
-  addWorkspaceMember: (workspaceId: string, identity: string, role: Exclude<WorkspaceRole, 'owner'>) =>
+  addWorkspaceMember: (
+    workspaceId: string,
+    identity: string,
+    role: Exclude<WorkspaceRole, 'owner'>,
+  ) =>
     http<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`, {
-      method: 'POST', body: JSON.stringify({ identity, role }),
+      method: 'POST',
+      body: JSON.stringify({ identity, role }),
     }),
   updateWorkspaceMember: (
     workspaceId: string,
     userId: string,
     role: Exclude<WorkspaceRole, 'owner'>,
-  ) => http<WorkspaceMember[]>(`/workspaces/${workspaceId}/members/${userId}`, {
-    method: 'PUT', body: JSON.stringify({ role }),
-  }),
+  ) =>
+    http<WorkspaceMember[]>(`/workspaces/${workspaceId}/members/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    }),
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
   listProjects: () => http<Project[]>('/projects'),
   getProject: (id: string) => http<Project>(`/projects/${id}`),
-  getCommits: (id: string, limit = 20) =>
-    http<Commit[]>(`/projects/${id}/commits?limit=${limit}`),
+  getCommits: (id: string, limit = 20) => http<Commit[]>(`/projects/${id}/commits?limit=${limit}`),
   getDeployments: (id: string, limit = 30) =>
     http<DeploymentOperation[]>(`/projects/${id}/deployments?limit=${limit}`),
-  getProvisioning: (id: string) =>
-    http<ProvisioningStatus | null>(`/projects/${id}/provisioning`),
+  getProvisioning: (id: string) => http<ProvisioningStatus | null>(`/projects/${id}/provisioning`),
   listProvisioning: () => http<ProvisioningStatus[]>('/provisioning'),
-  retryProvisioning: (id: string) =>
-    http<Project>(`/provisioning/${id}/retry`, { method: 'POST' }),
+  retryProvisioning: (id: string) => http<Project>(`/provisioning/${id}/retry`, { method: 'POST' }),
   cleanupProvisioning: (id: string) =>
     http<void>(`/provisioning/${id}/cleanup`, { method: 'POST' }),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
@@ -359,10 +378,11 @@ export const api = {
       candidateOperationId?: string;
       stateToken?: string;
     },
-  ) => http<ProductionDeploymentRequest>(`/projects/${id}/production-request`, {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }),
+  ) =>
+    http<ProductionDeploymentRequest>(`/projects/${id}/production-request`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   approveProductionDeployment: (id: string, requestId: string, note?: string) =>
     http<ProductionDeploymentRequest>(`/projects/${id}/production-request/${requestId}/approve`, {
       method: 'POST',
@@ -374,9 +394,12 @@ export const api = {
       body: JSON.stringify({ note }),
     }),
   cancelProductionDeployment: (id: string, requestId: string) =>
-    http<ProductionDeploymentRequest | null>(`/projects/${id}/production-request/${requestId}/cancel`, {
-      method: 'POST',
-    }),
+    http<ProductionDeploymentRequest | null>(
+      `/projects/${id}/production-request/${requestId}/cancel`,
+      {
+        method: 'POST',
+      },
+    ),
   getWorkloadDiagnostic: (id: string, env: EnvName) =>
     http<WorkloadDiagnostic | null>(`/projects/${id}/diagnostics/${env}`),
   requestWorkloadDiagnostic: (id: string, env: EnvName, requestId: string) =>
@@ -384,8 +407,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ requestId }),
     }),
-  runAgain: (id: string) =>
-    http<Project>(`/projects/${id}/run-again`, { method: 'POST' }),
+  runAgain: (id: string) => http<Project>(`/projects/${id}/run-again`, { method: 'POST' }),
   rerunFailedJobs: (id: string) =>
     http<{ runId: string }>(`/projects/${id}/rerun-failed-jobs`, { method: 'POST' }),
   stopEnv: (id: string, env: EnvName) =>
@@ -407,12 +429,9 @@ export const api = {
   updateTarget: (id: string, body: Partial<TargetInput>) =>
     http<Target>(`/targets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteTarget: (id: string) => http<void>(`/targets/${id}`, { method: 'DELETE' }),
-  disconnectTarget: (id: string) =>
-    http<void>(`/targets/${id}/disconnect`, { method: 'POST' }),
-  retireTarget: (id: string) =>
-    http<void>(`/targets/${id}/retire`, { method: 'POST' }),
-  restoreTarget: (id: string) =>
-    http<void>(`/targets/${id}/restore`, { method: 'POST' }),
+  disconnectTarget: (id: string) => http<void>(`/targets/${id}/disconnect`, { method: 'POST' }),
+  retireTarget: (id: string) => http<void>(`/targets/${id}/retire`, { method: 'POST' }),
+  restoreTarget: (id: string) => http<void>(`/targets/${id}/restore`, { method: 'POST' }),
   verifyTarget: (id: string) =>
     http<{ ok: boolean; message: string }>(`/targets/${id}/verify`, { method: 'POST' }),
   getTargetAgent: (id: string) => http<AgentStatus | null>(`/targets/${id}/agent`),
@@ -449,10 +468,19 @@ export const api = {
   // always masked (value === null); managed by a project-write member.
   listConfigVars: (projectId: string, env: EnvName) =>
     http<ConfigVar[]>(`/projects/${projectId}/environments/${env}/config`),
-  upsertConfigVar: (projectId: string, env: EnvName, key: string, body: { value: string; isSecret?: boolean }) =>
-    http<ConfigVar>(`/projects/${projectId}/environments/${env}/config/${encodeURIComponent(key)}`, {
-      method: 'PUT', body: JSON.stringify(body),
-    }),
+  upsertConfigVar: (
+    projectId: string,
+    env: EnvName,
+    key: string,
+    body: { value: string; isSecret?: boolean },
+  ) =>
+    http<ConfigVar>(
+      `/projects/${projectId}/environments/${env}/config/${encodeURIComponent(key)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      },
+    ),
   deleteConfigVar: (projectId: string, env: EnvName, key: string) =>
     http<void>(`/projects/${projectId}/environments/${env}/config/${encodeURIComponent(key)}`, {
       method: 'DELETE',
@@ -474,10 +502,8 @@ export const api = {
   listIdentities: () => http<LinkedIdentity[]>('/me/identities'),
   unlinkIdentity: (provider: string) =>
     http<void>(`/me/identities/${provider}`, { method: 'DELETE' }),
-  githubStatus: () =>
-    http<GitHubStatus>('/scm/github/status'),
-  startGithubSetup: () =>
-    http<{ installUrl: string }>('/scm/github/setup', { method: 'POST' }),
+  githubStatus: () => http<GitHubStatus>('/scm/github/status'),
+  startGithubSetup: () => http<{ installUrl: string }>('/scm/github/setup', { method: 'POST' }),
   recoverGithubSetup: () =>
     http<{ recovered: boolean; accountLogin: string | null }>('/scm/github/setup/recover', {
       method: 'POST',
@@ -521,7 +547,12 @@ export const api = {
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).
   adminListUsers: () => http<AdminUser[]>('/admin/users'),
-  adminCreateUser: (body: { username: string; email: string; name?: string; platformRole?: 'admin' | 'user' }) =>
+  adminCreateUser: (body: {
+    username: string;
+    email: string;
+    name?: string;
+    platformRole?: 'admin' | 'user';
+  }) =>
     http<{ user: AdminUser; temporaryPassword: string; activationUrl: string }>('/admin/users', {
       method: 'POST',
       body: JSON.stringify(body),

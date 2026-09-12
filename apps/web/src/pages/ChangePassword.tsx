@@ -39,12 +39,19 @@ export default function ChangePassword() {
         <BrandMark className="mb-4 h-10 w-10" />
         <h1 className="text-[20px] font-semibold tracking-tight">Choose a new password</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {user?.username ? <>Signed in as <strong className="font-medium text-foreground">@{user.username}</strong>. </> : null}
+          {user?.username ? (
+            <>
+              Signed in as <strong className="font-medium text-foreground">@{user.username}</strong>
+              .{' '}
+            </>
+          ) : null}
           Your account uses a temporary password. Set a new one to continue.
         </p>
 
         <form className="mt-6 flex flex-col gap-2.5" onSubmit={submit}>
-          <label htmlFor="cp-current" className="text-xs font-medium text-muted-foreground">Temporary password</label>
+          <label htmlFor="cp-current" className="text-xs font-medium text-muted-foreground">
+            Temporary password
+          </label>
           <Input
             id="cp-current"
             type="password"
@@ -53,7 +60,9 @@ export default function ChangePassword() {
             onChange={(e) => setCurrentPassword(e.target.value)}
             required
           />
-          <label htmlFor="cp-new" className="mt-1 text-xs font-medium text-muted-foreground">New password</label>
+          <label htmlFor="cp-new" className="mt-1 text-xs font-medium text-muted-foreground">
+            New password
+          </label>
           <Input
             id="cp-new"
             type="password"
@@ -63,7 +72,9 @@ export default function ChangePassword() {
             required
             minLength={12}
           />
-          <label htmlFor="cp-confirm" className="mt-1 text-xs font-medium text-muted-foreground">Confirm new password</label>
+          <label htmlFor="cp-confirm" className="mt-1 text-xs font-medium text-muted-foreground">
+            Confirm new password
+          </label>
           <Input
             id="cp-confirm"
             type="password"

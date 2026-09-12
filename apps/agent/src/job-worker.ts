@@ -13,37 +13,41 @@ import type {
   AgentJobResult,
   AgentJobSummary,
 } from './types.js';
-import {
-  GatewayPreflight,
-  parseGatewayPreflightPayload,
-} from './gateway-preflight.js';
+import { GatewayPreflight, parseGatewayPreflightPayload } from './gateway-preflight.js';
 import type { GatewayPreflightProgress } from './gateway-preflight.js';
-import {
-  GatewayRouteReconciler,
-  parseGatewayRoutePayload,
-} from './gateway-route.js';
+import { GatewayRouteReconciler, parseGatewayRoutePayload } from './gateway-route.js';
 import type { GatewayRouteProgress, GatewayRouteRunResult } from './gateway-route.js';
 
 const RENEW_EVERY_MS = 10_000;
 const PROGRESS_EVERY_MS = 5_000;
 
+function asError(value: unknown, message: string): Error {
+  return value instanceof Error ? value : new Error(message, { cause: value });
+}
+
 export interface AgentJobClient {
   renew(jobId: string, leaseToken: string): Promise<{ leaseExpiresAt: string }>;
-  progress(jobId: string, input: {
-    leaseToken: string;
-    sequence: number;
-    percent: number;
-    stage: 'accepted' | 'working' | 'verifying';
-    message: string;
-  }): Promise<AgentJobSummary>;
-  complete(jobId: string, input: {
-    leaseToken: string;
-    status: 'succeeded' | 'failed';
-    message: string;
-    resultCode?: string;
-    result?: AgentJobResult;
-    diagnostic?: AgentJobDiagnostic;
-  }): Promise<AgentJobSummary>;
+  progress(
+    jobId: string,
+    input: {
+      leaseToken: string;
+      sequence: number;
+      percent: number;
+      stage: 'accepted' | 'working' | 'verifying';
+      message: string;
+    },
+  ): Promise<AgentJobSummary>;
+  complete(
+    jobId: string,
+    input: {
+      leaseToken: string;
+      status: 'succeeded' | 'failed';
+      message: string;
+      resultCode?: string;
+      result?: AgentJobResult;
+      diagnostic?: AgentJobDiagnostic;
+    },
+  ): Promise<AgentJobSummary>;
   downloadArtifact?(
     jobId: string,
     leaseToken: string,
@@ -132,7 +136,11 @@ export interface JobExecutionOptions {
 function probePayload(value: unknown): ProbePayload {
   if (!value || typeof value !== 'object') throw new Error('Probe payload is invalid');
   const durationSeconds = (value as Record<string, unknown>).durationSeconds;
-  if (!Number.isInteger(durationSeconds) || Number(durationSeconds) < 5 || Number(durationSeconds) > 60) {
+  if (
+    !Number.isInteger(durationSeconds) ||
+    Number(durationSeconds) < 5 ||
+    Number(durationSeconds) > 60
+  ) {
     throw new Error('Probe duration is outside the supported range');
   }
   return { durationSeconds: Number(durationSeconds) };
@@ -179,8 +187,18 @@ export async function executeClaimedJob(
     );
 
   if (
-    job.protocolVersion !== 1
-    || !['probe', 'lifecycle-test', 'gateway-preflight', 'gateway-route', 'deploy', 'start', 'stop', 'remove', 'logs'].includes(job.kind)
+    job.protocolVersion !== 1 ||
+    ![
+      'probe',
+      'lifecycle-test',
+      'gateway-preflight',
+      'gateway-route',
+      'deploy',
+      'start',
+      'stop',
+      'remove',
+      'logs',
+    ].includes(job.kind)
   ) {
     await complete({
       leaseToken: job.leaseToken,
@@ -214,8 +232,12 @@ export async function executeClaimedJob(
       combinedSignal,
       localController,
       () => leaseDeadline,
-      (deadline) => { leaseDeadline = deadline; },
-      (error) => { renewalError = error; },
+      (deadline) => {
+        leaseDeadline = deadline;
+      },
+      (error) => {
+        renewalError = error;
+      },
     );
     let sequence = 0;
     let preflightError: unknown;
@@ -223,13 +245,14 @@ export async function executeClaimedJob(
       await gateway.run(job.payload, combinedSignal, async (progress) => {
         sequence += 1;
         await retryProtocolCall(
-          () => client.progress(job.id, {
-            leaseToken: job.leaseToken,
-            sequence,
-            percent: progress.percent,
-            stage: progress.stage,
-            message: progress.message,
-          }),
+          () =>
+            client.progress(job.id, {
+              leaseToken: job.leaseToken,
+              sequence,
+              percent: progress.percent,
+              stage: progress.stage,
+              message: progress.message,
+            }),
           () => leaseDeadline,
           combinedSignal,
           timing,
@@ -242,7 +265,7 @@ export async function executeClaimedJob(
       await renewal;
     }
     if (signal.aborted) return;
-    if (renewalError) throw renewalError;
+    if (renewalError) throw asError(renewalError, 'Agent job lease renewal failed');
     if (preflightError instanceof ControlPlaneError) throw preflightError;
     if (preflightError) {
       await complete({
@@ -250,7 +273,8 @@ export async function executeClaimedJob(
         status: 'failed',
         message: (preflightError instanceof Error
           ? preflightError.message
-          : 'Gateway preflight failed').slice(0, 240),
+          : 'Gateway preflight failed'
+        ).slice(0, 240),
         resultCode: 'gateway_preflight_failed',
       });
       return;
@@ -290,26 +314,28 @@ export async function executeClaimedJob(
     let diagnosticError: unknown;
     try {
       await retryProtocolCall(
-        () => client.progress(job.id, {
-          leaseToken: job.leaseToken,
-          sequence: 1,
-          percent: 20,
-          stage: 'working',
-          message: 'Inspecting allocation-scoped workload',
-        }),
+        () =>
+          client.progress(job.id, {
+            leaseToken: job.leaseToken,
+            sequence: 1,
+            percent: 20,
+            stage: 'working',
+            message: 'Inspecting allocation-scoped workload',
+          }),
         () => leaseDeadline,
         signal,
         timing,
       );
       result = await lifecycle.diagnostics(job.payload, signal);
       await retryProtocolCall(
-        () => client.progress(job.id, {
-          leaseToken: job.leaseToken,
-          sequence: 2,
-          percent: 90,
-          stage: 'verifying',
-          message: 'Recording bounded logs and health result',
-        }),
+        () =>
+          client.progress(job.id, {
+            leaseToken: job.leaseToken,
+            sequence: 2,
+            percent: 90,
+            stage: 'verifying',
+            message: 'Recording bounded logs and health result',
+          }),
         () => leaseDeadline,
         signal,
         timing,
@@ -325,7 +351,8 @@ export async function executeClaimedJob(
         status: 'failed',
         message: (diagnosticError instanceof Error
           ? diagnosticError.message
-          : 'Workload diagnostics failed').slice(0, 240),
+          : 'Workload diagnostics failed'
+        ).slice(0, 240),
         resultCode: 'diagnostics_failed',
       });
       return;
@@ -333,9 +360,10 @@ export async function executeClaimedJob(
     await complete({
       leaseToken: job.leaseToken,
       status: 'succeeded',
-      message: result.state === 'missing'
-        ? 'Workload is missing'
-        : `Workload is ${result.state} and ${result.health}`,
+      message:
+        result.state === 'missing'
+          ? 'Workload is missing'
+          : `Workload is ${result.state} and ${result.health}`,
       resultCode: 'ok',
       result: {
         state: result.state,
@@ -365,7 +393,8 @@ export async function executeClaimedJob(
       });
       return;
     }
-    const gatewayRoute = options.gatewayRoute ?? new GatewayRouteReconciler(job.targetId, options.dockerHost);
+    const gatewayRoute =
+      options.gatewayRoute ?? new GatewayRouteReconciler(job.targetId, options.dockerHost);
     const localController = new AbortController();
     const combinedSignal = AbortSignal.any([signal, localController.signal]);
     let renewalError: unknown;
@@ -376,8 +405,12 @@ export async function executeClaimedJob(
       combinedSignal,
       localController,
       () => leaseDeadline,
-      (deadline) => { leaseDeadline = deadline; },
-      (error) => { renewalError = error; },
+      (deadline) => {
+        leaseDeadline = deadline;
+      },
+      (error) => {
+        renewalError = error;
+      },
     );
     let sequence = 0;
     let routeError: unknown;
@@ -386,13 +419,14 @@ export async function executeClaimedJob(
       routeResult = await gatewayRoute.run(job.payload, combinedSignal, async (progress) => {
         sequence += 1;
         await retryProtocolCall(
-          () => client.progress(job.id, {
-            leaseToken: job.leaseToken,
-            sequence,
-            percent: progress.percent,
-            stage: progress.stage,
-            message: progress.message,
-          }),
+          () =>
+            client.progress(job.id, {
+              leaseToken: job.leaseToken,
+              sequence,
+              percent: progress.percent,
+              stage: progress.stage,
+              message: progress.message,
+            }),
           () => leaseDeadline,
           combinedSignal,
           timing,
@@ -405,13 +439,16 @@ export async function executeClaimedJob(
       await renewal;
     }
     if (signal.aborted) return;
-    if (renewalError) throw renewalError;
+    if (renewalError) throw asError(renewalError, 'Agent job lease renewal failed');
     if (routeError instanceof ControlPlaneError) throw routeError;
     if (routeError) {
       await complete({
         leaseToken: job.leaseToken,
         status: 'failed',
-        message: (routeError instanceof Error ? routeError.message : 'Gateway route reconcile failed').slice(0, 240),
+        message: (routeError instanceof Error
+          ? routeError.message
+          : 'Gateway route reconcile failed'
+        ).slice(0, 240),
         resultCode: 'gateway_route_failed',
       });
       return;
@@ -419,9 +456,10 @@ export async function executeClaimedJob(
     await complete({
       leaseToken: job.leaseToken,
       status: 'succeeded',
-      message: routeResult?.cleanupComplete === false
-        ? `Gateway route generation ${payload.generation} is active; superseded workload cleanup is pending`
-        : `Gateway route generation ${payload.generation} reconciled to ${payload.desiredState}`,
+      message:
+        routeResult?.cleanupComplete === false
+          ? `Gateway route generation ${payload.generation} is active; superseded workload cleanup is pending`
+          : `Gateway route generation ${payload.generation} reconciled to ${payload.desiredState}`,
       resultCode: routeResult?.cleanupComplete === false ? 'ok_cleanup_pending' : 'ok',
     });
     return;
@@ -460,20 +498,25 @@ export async function executeClaimedJob(
       combinedSignal,
       localController,
       () => leaseDeadline,
-      (deadline) => { leaseDeadline = deadline; },
-      (error) => { renewalError = error; },
+      (deadline) => {
+        leaseDeadline = deadline;
+      },
+      (error) => {
+        renewalError = error;
+      },
     );
     let actionError: unknown;
     let result: AgentJobResult | undefined;
     try {
       await retryProtocolCall(
-        () => client.progress(job.id, {
-          leaseToken: job.leaseToken,
-          sequence: 1,
-          percent: 20,
-          stage: 'working',
-          message: `${job.kind === 'remove' ? 'Removing' : job.kind === 'stop' ? 'Stopping' : 'Starting'} managed workload`,
-        }),
+        () =>
+          client.progress(job.id, {
+            leaseToken: job.leaseToken,
+            sequence: 1,
+            percent: 20,
+            stage: 'working',
+            message: `${job.kind === 'remove' ? 'Removing' : job.kind === 'stop' ? 'Stopping' : 'Starting'} managed workload`,
+          }),
         () => leaseDeadline,
         combinedSignal,
         timing,
@@ -483,13 +526,14 @@ export async function executeClaimedJob(
       if (job.kind === 'remove') await lifecycle.removeProject(payload, combinedSignal);
       result = await lifecycle.status(payload, combinedSignal);
       await retryProtocolCall(
-        () => client.progress(job.id, {
-          leaseToken: job.leaseToken,
-          sequence: 2,
-          percent: 95,
-          stage: 'verifying',
-          message: 'Verifying managed workload state',
-        }),
+        () =>
+          client.progress(job.id, {
+            leaseToken: job.leaseToken,
+            sequence: 2,
+            percent: 95,
+            stage: 'verifying',
+            message: 'Verifying managed workload state',
+          }),
         () => leaseDeadline,
         combinedSignal,
         timing,
@@ -501,7 +545,7 @@ export async function executeClaimedJob(
       await renewal;
     }
     if (signal.aborted) return;
-    if (renewalError) throw renewalError;
+    if (renewalError) throw asError(renewalError, 'Agent job lease renewal failed');
     if (actionError instanceof ControlPlaneError && [401, 403, 409].includes(actionError.status)) {
       throw actionError;
     }
@@ -509,7 +553,10 @@ export async function executeClaimedJob(
       await complete({
         leaseToken: job.leaseToken,
         status: 'failed',
-        message: (actionError instanceof Error ? actionError.message : 'Agent lifecycle action failed').slice(0, 240),
+        message: (actionError instanceof Error
+          ? actionError.message
+          : 'Agent lifecycle action failed'
+        ).slice(0, 240),
         resultCode: 'lifecycle_failed',
       });
       return;
@@ -538,8 +585,7 @@ export async function executeClaimedJob(
       });
       return;
     }
-    const lifecycle = options.lifecycle
-      ?? new DockerLifecycle(job.targetId, options.dockerHost);
+    const lifecycle = options.lifecycle ?? new DockerLifecycle(job.targetId, options.dockerHost);
     if (!lifecycle.deployProject || !client.downloadArtifact) {
       await complete({
         leaseToken: job.leaseToken,
@@ -559,8 +605,12 @@ export async function executeClaimedJob(
       combinedSignal,
       localController,
       () => leaseDeadline,
-      (deadline) => { leaseDeadline = deadline; },
-      (error) => { renewalError = error; },
+      (deadline) => {
+        leaseDeadline = deadline;
+      },
+      (error) => {
+        renewalError = error;
+      },
     );
     let sequence = 0;
     let deploymentError: unknown;
@@ -593,13 +643,14 @@ export async function executeClaimedJob(
         async (progress) => {
           sequence += 1;
           await retryProtocolCall(
-            () => client.progress(job.id, {
-              leaseToken: job.leaseToken,
-              sequence,
-              percent: progress.percent,
-              stage: progress.stage,
-              message: progress.message,
-            }),
+            () =>
+              client.progress(job.id, {
+                leaseToken: job.leaseToken,
+                sequence,
+                percent: progress.percent,
+                stage: progress.stage,
+                message: progress.message,
+              }),
             () => leaseDeadline,
             combinedSignal,
             timing,
@@ -613,18 +664,20 @@ export async function executeClaimedJob(
       await renewal;
     }
     if (signal.aborted) return;
-    if (renewalError) throw renewalError;
+    if (renewalError) throw asError(renewalError, 'Agent job lease renewal failed');
     if (
-      deploymentError instanceof ControlPlaneError
-      && [401, 403, 409].includes(deploymentError.status)
-    ) throw deploymentError;
+      deploymentError instanceof ControlPlaneError &&
+      [401, 403, 409].includes(deploymentError.status)
+    )
+      throw deploymentError;
     if (deploymentError || !result) {
       await complete({
         leaseToken: job.leaseToken,
         status: 'failed',
         message: (deploymentError instanceof Error
           ? deploymentError.message
-          : 'Agent project deployment failed').slice(0, 240),
+          : 'Agent project deployment failed'
+        ).slice(0, 240),
         resultCode: 'deployment_failed',
       });
       return;
@@ -652,8 +705,7 @@ export async function executeClaimedJob(
       return;
     }
 
-    const lifecycle = options.lifecycle
-      ?? new DockerLifecycle(job.targetId, options.dockerHost);
+    const lifecycle = options.lifecycle ?? new DockerLifecycle(job.targetId, options.dockerHost);
     const localController = new AbortController();
     const combinedSignal = AbortSignal.any([signal, localController.signal]);
     let renewalError: unknown;
@@ -688,13 +740,14 @@ export async function executeClaimedJob(
         sequence += 1;
         try {
           await retryProtocolCall(
-            () => client.progress(job.id, {
-              leaseToken: job.leaseToken,
-              sequence,
-              percent: progress.percent,
-              stage: progress.stage,
-              message: progress.message,
-            }),
+            () =>
+              client.progress(job.id, {
+                leaseToken: job.leaseToken,
+                sequence,
+                percent: progress.percent,
+                stage: progress.stage,
+                message: progress.message,
+              }),
             () => leaseDeadline,
             combinedSignal,
             timing,
@@ -711,7 +764,7 @@ export async function executeClaimedJob(
       await renewal;
     }
     if (signal.aborted) return;
-    if (renewalError) throw renewalError;
+    if (renewalError) throw asError(renewalError, 'Agent job lease renewal failed');
     if (lifecycleError instanceof ControlPlaneError) throw lifecycleError;
     if (lifecycleError) {
       await complete({
@@ -719,7 +772,8 @@ export async function executeClaimedJob(
         status: 'failed',
         message: (lifecycleError instanceof Error
           ? lifecycleError.message
-          : 'Docker lifecycle test failed').slice(0, 240),
+          : 'Docker lifecycle test failed'
+        ).slice(0, 240),
         resultCode: 'lifecycle_failed',
       });
       return;
@@ -748,13 +802,14 @@ export async function executeClaimedJob(
 
   let sequence = 1;
   await retryProtocolCall(
-    () => client.progress(job.id, {
-      leaseToken: job.leaseToken,
-      sequence,
-      percent: 5,
-      stage: 'accepted',
-      message: 'Agent accepted the protocol probe',
-    }),
+    () =>
+      client.progress(job.id, {
+        leaseToken: job.leaseToken,
+        sequence,
+        percent: 5,
+        stage: 'accepted',
+        message: 'Agent accepted the protocol probe',
+      }),
     () => leaseDeadline,
     signal,
     timing,
@@ -787,13 +842,14 @@ export async function executeClaimedJob(
       sequence += 1;
       const percent = Math.min(90, 5 + Math.floor(((timing.now() - startedAt) / durationMs) * 85));
       await retryProtocolCall(
-        () => client.progress(job.id, {
-          leaseToken: job.leaseToken,
-          sequence,
-          percent,
-          stage: 'working',
-          message: 'Lease renewal and progress channel are healthy',
-        }),
+        () =>
+          client.progress(job.id, {
+            leaseToken: job.leaseToken,
+            sequence,
+            percent,
+            stage: 'working',
+            message: 'Lease renewal and progress channel are healthy',
+          }),
         () => leaseDeadline,
         signal,
         timing,
@@ -805,13 +861,14 @@ export async function executeClaimedJob(
 
   sequence += 1;
   await retryProtocolCall(
-    () => client.progress(job.id, {
-      leaseToken: job.leaseToken,
-      sequence,
-      percent: 99,
-      stage: 'verifying',
-      message: 'Verifying idempotent completion',
-    }),
+    () =>
+      client.progress(job.id, {
+        leaseToken: job.leaseToken,
+        sequence,
+        percent: 99,
+        stage: 'verifying',
+        message: 'Verifying idempotent completion',
+      }),
     () => leaseDeadline,
     signal,
     timing,

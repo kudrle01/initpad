@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -56,11 +68,7 @@ export class WorkspacesController {
   }
 
   @Put(':id')
-  update(
-    @CurrentUser() userId: string,
-    @Param('id') id: string,
-    @Body() dto: UpdateWorkspaceDto,
-  ) {
+  update(@CurrentUser() userId: string, @Param('id') id: string, @Body() dto: UpdateWorkspaceDto) {
     return this.workspaces.update(userId, id, dto);
   }
 

@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  api,
-  type TargetAllocation,
-  type TargetAllocationInput,
-  type TargetInput,
-} from '@/api';
+import { api, type TargetAllocation, type TargetAllocationInput, type TargetInput } from '@/api';
 import { useToast } from '@/toast';
 import type { Target } from '@/types';
 
@@ -30,11 +25,13 @@ export function useInfrastructure(workspaceId?: string) {
         api.listTargets(),
         api.listAllocations(),
       ]);
-      const nextTargets = await Promise.all(rawTargets.map(async (target) =>
-        target.scope === 'user' && target.kind === 'docker'
-          ? { ...target, agent: await api.getTargetAgent(target.id) }
-          : target,
-      ));
+      const nextTargets = await Promise.all(
+        rawTargets.map(async (target) =>
+          target.scope === 'user' && target.kind === 'docker'
+            ? { ...target, agent: await api.getTargetAgent(target.id) }
+            : target,
+        ),
+      );
       if (request !== requestSequence.current) return;
       setTargets(nextTargets);
       setAllocations(nextAllocations);
@@ -48,7 +45,7 @@ export function useInfrastructure(workspaceId?: string) {
       // release the loading state.
       if (request === requestSequence.current) setLoading(false);
     }
-  }, [workspaceId]);
+  }, []);
 
   useEffect(() => {
     setTargets([]);
@@ -226,7 +223,9 @@ export function useInfrastructure(workspaceId?: string) {
       await api.updateAllocation(allocation.id, {
         status: allocation.status === 'active' ? 'disabled' : 'active',
       });
-      toast.success(allocation.status === 'active' ? 'Workspace access paused' : 'Workspace access resumed');
+      toast.success(
+        allocation.status === 'active' ? 'Workspace access paused' : 'Workspace access resumed',
+      );
       await refresh();
     } catch (cause) {
       toast.error((cause as Error).message);

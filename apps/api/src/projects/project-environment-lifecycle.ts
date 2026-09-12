@@ -150,7 +150,8 @@ export class ProjectEnvironmentLifecycle {
         ]);
         await this.operations.complete(operation.id, 'cancelled', 'Cancellation requested by user');
         const cleanupVersion = operation.version ?? environment.version;
-        if (!cleanupVersion) throw new BadRequestException('Cancelled Agent deployment has no revision to clean up');
+        if (!cleanupVersion)
+          throw new BadRequestException('Cancelled Agent deployment has no revision to clean up');
         const cleanupOperationId = await this.operations.begin(
           projectId,
           envName,
@@ -228,16 +229,11 @@ export class ProjectEnvironmentLifecycle {
     });
     await this.prisma.environment.update({
       where: { projectId_name: { projectId, name: envName } },
-      data: this.emptyState(
-        teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
-      ),
+      data: this.emptyState(teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null),
     });
   }
 
-  usesSharedSshPort(environment: {
-    provider: string;
-    target?: { scope: string } | null;
-  }): boolean {
+  usesSharedSshPort(environment: { provider: string; target?: { scope: string } | null }): boolean {
     return environment.provider === 'ssh' && environment.target?.scope !== 'user';
   }
 
@@ -281,14 +277,7 @@ export class ProjectEnvironmentLifecycle {
       const { project, template, environment, slug } = await this.context(projectId, envName);
       const repository = repositoryRef(project);
       if (this.isAgentBacked(environment)) {
-        await this.queueAgentLifecycle(
-          project,
-          template,
-          environment,
-          slug,
-          'start',
-          operationId,
-        );
+        await this.queueAgentLifecycle(project, template, environment, slug, 'start', operationId);
         return;
       }
       const appPort = this.usesSharedSshPort(environment)
@@ -315,9 +304,7 @@ export class ProjectEnvironmentLifecycle {
         });
         await this.prisma.environment.updateMany({
           where: { projectId, name: envName, activeOperationId: operationId },
-          data: this.emptyState(
-            teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
-          ),
+          data: this.emptyState(teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null),
         });
         await this.operations.complete(operationId, 'cancelled', 'Cancelled by user');
         return;
@@ -366,7 +353,10 @@ export class ProjectEnvironmentLifecycle {
     };
   }
 
-  private isAgentBacked(environment: { provider: string; target?: { scope: string } | null }): boolean {
+  private isAgentBacked(environment: {
+    provider: string;
+    target?: { scope: string } | null;
+  }): boolean {
     return environment.provider === 'docker' && environment.target?.scope === 'user';
   }
 

@@ -60,8 +60,7 @@ describe('SftpProvider teardown', () => {
       .mockResolvedValueOnce({ code: 0, stdout: 'ok\n', stderr: '' })
       .mockResolvedValueOnce({
         code: 0,
-        stdout:
-          'INITPAD_QUARANTINED:/srv/student/.initpad-quarantine/team-app-prod-legacy-one\n',
+        stdout: 'INITPAD_QUARANTINED:/srv/student/.initpad-quarantine/team-app-prod-legacy-one\n',
         stderr: '',
       })
       .mockResolvedValueOnce({ code: 0, stdout: '', stderr: '' })
@@ -119,9 +118,11 @@ describe('SftpProvider teardown', () => {
 describe('SftpProvider allocation routing (ADR-060)', () => {
   it('overlays a workspace root and public URL without copying credentials', () => {
     const provider = new SftpProvider();
-    const effective = (provider as unknown as {
-      eff: (input: unknown) => { remoteRoot: string; publicUrl: string; username: string };
-    }).eff({
+    const effective = (
+      provider as unknown as {
+        eff: (input: unknown) => { remoteRoot: string; publicUrl: string; username: string };
+      }
+    ).eff({
       connection: {
         host: 'sftp.example.test',
         port: 22,

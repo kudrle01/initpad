@@ -31,10 +31,7 @@ const LIFECYCLE_PAYLOAD_FIELDS = new Set([
   'memoryLimitMb',
   'pidsLimit',
 ]);
-const PROJECT_PAYLOAD_FIELDS = new Set([
-  ...LIFECYCLE_PAYLOAD_FIELDS,
-  'configFingerprint',
-]);
+const PROJECT_PAYLOAD_FIELDS = new Set([...LIFECYCLE_PAYLOAD_FIELDS, 'configFingerprint']);
 const DIAGNOSTIC_PAYLOAD_FIELDS = new Set([
   'allocationId',
   'namespace',
@@ -185,16 +182,16 @@ export function parseDiagnosticPayload(value: unknown): DockerDiagnosticPayload 
     revision: requiredSafeString(input.revision, 'revision'),
     containerPort,
     healthPath: requiredSafeString(input.healthPath, 'health path', HEALTH_PATH_PATTERN),
-    routingMode: input.routingMode === 'direct-port' || input.routingMode === 'managed-gateway'
-      ? input.routingMode
-      : (() => { throw new Error('Diagnostic payload contains an invalid routing mode'); })(),
+    routingMode:
+      input.routingMode === 'direct-port' || input.routingMode === 'managed-gateway'
+        ? input.routingMode
+        : (() => {
+            throw new Error('Diagnostic payload contains an invalid routing mode');
+          })(),
   };
 }
 
-function parseWorkloadPayload(
-  value: unknown,
-  projectDelivery: boolean,
-): DockerLifecyclePayload {
+function parseWorkloadPayload(value: unknown, projectDelivery: boolean): DockerLifecyclePayload {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Lifecycle payload is invalid');
   }
@@ -223,11 +220,14 @@ function parseWorkloadPayload(
     ),
     containerPort,
     healthPath: requiredSafeString(input.healthPath, 'health path', HEALTH_PATH_PATTERN),
-    routingMode: input.routingMode === undefined
-      ? 'direct-port'
-      : input.routingMode === 'direct-port' || input.routingMode === 'managed-gateway'
-        ? input.routingMode
-        : (() => { throw new Error('Lifecycle payload contains an invalid routing mode'); })(),
+    routingMode:
+      input.routingMode === undefined
+        ? 'direct-port'
+        : input.routingMode === 'direct-port' || input.routingMode === 'managed-gateway'
+          ? input.routingMode
+          : (() => {
+              throw new Error('Lifecycle payload contains an invalid routing mode');
+            })(),
     cpuLimitMillicores,
     memoryLimitMb,
     pidsLimit,
@@ -274,9 +274,11 @@ export function parseProjectDelivery(value: unknown): DockerProjectDelivery {
       throw new Error('Project environment config contains an invalid variable');
     }
     const bytes = Buffer.byteLength(rawValue);
-    if (bytes > MAX_ENV_VALUE_BYTES) throw new Error(`Project environment variable '${key}' is too large`);
+    if (bytes > MAX_ENV_VALUE_BYTES)
+      throw new Error(`Project environment variable '${key}' is too large`);
     totalBytes += Buffer.byteLength(key) + bytes;
-    if (totalBytes > MAX_ENV_TOTAL_BYTES) throw new Error('Project environment config is too large');
+    if (totalBytes > MAX_ENV_TOTAL_BYTES)
+      throw new Error('Project environment config is too large');
     envVars[key] = rawValue;
   }
   return {
@@ -306,10 +308,9 @@ function boundedDockerName(value: string): string {
   return `${value.slice(0, 115)}-${digest}`;
 }
 
-export function workloadContainerName(payload: Pick<
-  DockerLifecyclePayload,
-  'namespace' | 'projectSlug' | 'environment'
->): string {
+export function workloadContainerName(
+  payload: Pick<DockerLifecyclePayload, 'namespace' | 'projectSlug' | 'environment'>,
+): string {
   return boundedDockerName(
     `initpad-${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`,
   );
@@ -323,23 +324,25 @@ export function managedWorkloadContainerName(
   return boundedDockerName(`${workloadContainerName(payload)}-rev-${slot}`);
 }
 
-export function managedWorkloadSlot(payload: Pick<
-  DockerLifecyclePayload,
-  'revision' | 'imageRef' | 'configFingerprint'
->): string {
+export function managedWorkloadSlot(
+  payload: Pick<DockerLifecyclePayload, 'revision' | 'imageRef' | 'configFingerprint'>,
+): string {
   return createHash('sha256')
     .update(`${payload.revision}\0${payload.imageRef}\0${payload.configFingerprint ?? ''}`)
     .digest('hex')
     .slice(0, 12);
 }
 
-export function workloadNetworkName(payload: Pick<
-  DockerLifecyclePayload,
-  'namespace' | 'projectSlug' | 'environment' | 'routingMode'
->): string {
-  const suffix = payload.routingMode === 'managed-gateway'
-    ? `${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`
-    : `${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.environment)}`;
+export function workloadNetworkName(
+  payload: Pick<
+    DockerLifecyclePayload,
+    'namespace' | 'projectSlug' | 'environment' | 'routingMode'
+  >,
+): string {
+  const suffix =
+    payload.routingMode === 'managed-gateway'
+      ? `${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`
+      : `${dockerNamePart(payload.namespace)}-${dockerNamePart(payload.environment)}`;
   return boundedDockerName(`net-${suffix}`);
 }
 
@@ -375,12 +378,20 @@ function demuxLogs(body: Buffer): string {
   // Keep terminal control sequences out of the persisted/browser-rendered
   // snapshot. Newlines, carriage returns and tabs remain useful log content;
   // ANSI CSI/OSC and other C0 controls are display state, not application text.
-  return (output || body.toString('utf8'))
-    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, '')
-    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
-    .trim()
-    .slice(-MAX_LOG_BYTES);
+  const escape = String.fromCodePoint(27);
+  const bell = String.fromCodePoint(7);
+  const ansiOsc = new RegExp(`${escape}\\][^${bell}]*(?:${bell}|${escape}\\\\)`, 'g');
+  const ansiCsi = new RegExp(`${escape}\\[[0-?]*[ -/]*[@-~]`, 'g');
+  const printable = (output || body.toString('utf8'))
+    .replace(ansiOsc, '')
+    .replace(ansiCsi, '')
+    .split('')
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+    })
+    .join('');
+  return printable.trim().slice(-MAX_LOG_BYTES);
 }
 
 /**
@@ -413,21 +424,38 @@ export class DockerLifecycle {
       await report({ percent: 8, stage: 'working', message: 'Pulling immutable diagnostic image' });
       imageWasPresent = await this.imageMatches(original.imageRef, signal);
       await this.pullImage(original.imageRef, signal);
-      await report({ percent: 24, stage: 'working', message: 'Creating isolated diagnostic workload' });
+      await report({
+        percent: 24,
+        stage: 'working',
+        message: 'Creating isolated diagnostic workload',
+      });
       await this.deploy(original, jobId, signal);
-      await report({ percent: 40, stage: 'verifying', message: 'Verifying health and bounded logs' });
-      if (!(await this.healthy(original, signal))) throw new Error('Diagnostic workload is unhealthy');
+      await report({
+        percent: 40,
+        stage: 'verifying',
+        message: 'Verifying health and bounded logs',
+      });
+      if (!(await this.healthy(original, signal)))
+        throw new Error('Diagnostic workload is unhealthy');
       await this.logs(original, signal);
       await report({ percent: 52, stage: 'working', message: 'Replacing workload idempotently' });
       await this.deploy(promoted, jobId, signal);
-      await report({ percent: 64, stage: 'working', message: 'Rolling back to the previous revision' });
+      await report({
+        percent: 64,
+        stage: 'working',
+        message: 'Rolling back to the previous revision',
+      });
       await this.rollback(original, jobId, signal);
       await report({ percent: 76, stage: 'working', message: 'Stopping and restarting workload' });
       await this.stop(original, signal);
       const stopped = await this.status(original, signal);
       if (stopped.state !== 'stopped') throw new Error('Diagnostic workload did not stop');
       await this.start(original, signal);
-      await report({ percent: 90, stage: 'verifying', message: 'Verifying final state and cleanup' });
+      await report({
+        percent: 90,
+        stage: 'verifying',
+        message: 'Verifying final state and cleanup',
+      });
       const running = await this.status(original, signal);
       if (running.state !== 'running' || !(await this.healthy(original, signal))) {
         throw new Error('Diagnostic workload did not recover after restart');
@@ -445,7 +473,8 @@ export class DockerLifecycle {
   }
 
   async pullImage(imageRef: string, signal: AbortSignal): Promise<void> {
-    if (!IMAGE_REF_PATTERN.test(imageRef)) throw new Error('Image reference must use an immutable sha256 digest');
+    if (!IMAGE_REF_PATTERN.test(imageRef))
+      throw new Error('Image reference must use an immutable sha256 digest');
     if (await this.imageMatches(imageRef, signal)) return;
     const response = await this.request({
       method: 'POST',
@@ -454,7 +483,8 @@ export class DockerLifecycle {
       timeoutMs: 120_000,
       signal,
     });
-    if (response.statusCode < 200 || response.statusCode >= 300) throw dockerError(response, 'pull image');
+    if (response.statusCode < 200 || response.statusCode >= 300)
+      throw dockerError(response, 'pull image');
     if (!(await this.imageMatches(imageRef, signal))) {
       throw new Error('Docker pulled an image that does not expose the requested RepoDigest');
     }
@@ -481,9 +511,17 @@ export class DockerLifecycle {
         delivery.artifact.sizeBytes,
         signal,
       );
-      await report({ percent: 38, stage: 'working', message: 'Creating isolated candidate workload' });
+      await report({
+        percent: 38,
+        stage: 'working',
+        message: 'Creating isolated candidate workload',
+      });
       const status = await this.deploy(payload, jobId, signal, delivery.envVars);
-      await report({ percent: 82, stage: 'verifying', message: 'Verifying published workload health' });
+      await report({
+        percent: 82,
+        stage: 'verifying',
+        message: 'Verifying published workload health',
+      });
       if (status.state !== 'running' || !(await this.healthy(payload, signal))) {
         throw new Error('Published workload did not pass final health verification');
       }
@@ -506,7 +544,8 @@ export class DockerLifecycle {
     expectedSize: number,
     signal: AbortSignal,
   ): Promise<void> {
-    if (!PROJECT_IMAGE_REF_PATTERN.test(imageRef)) throw new Error('Tested image reference is invalid');
+    if (!PROJECT_IMAGE_REF_PATTERN.test(imageRef))
+      throw new Error('Tested image reference is invalid');
     if (!SHA256_PATTERN.test(expectedSha256)) throw new Error('Artifact digest is invalid');
     let size = 0;
     const hash = createHash('sha256');
@@ -550,12 +589,14 @@ export class DockerLifecycle {
     const desired = this.validatedPayload(payload);
     const baseName = this.containerName(desired);
     const candidateName = this.candidateName(desired);
-    const current = desired.routingMode === 'managed-gateway'
-      ? await this.desiredManagedContainer(desired, signal)
-      : await this.ownedContainer(baseName, desired, signal);
+    const current =
+      desired.routingMode === 'managed-gateway'
+        ? await this.desiredManagedContainer(desired, signal)
+        : await this.ownedContainer(baseName, desired, signal);
     if (current && this.matches(current, desired)) {
       if (!current.State?.Running) await this.start(desired, signal);
-      if (!(await this.healthy(desired, signal))) throw new Error('Existing workload failed its health check');
+      if (!(await this.healthy(desired, signal)))
+        throw new Error('Existing workload failed its health check');
       return this.status(desired, signal);
     }
 
@@ -570,74 +611,104 @@ export class DockerLifecycle {
       const memoryMb = desired.memoryLimitMb!;
       const cpu = desired.cpuLimitMillicores! / 1_000;
       const pids = desired.pidsLimit!;
-      const created = responseJson<{ Id: string }>(await this.request({
-        method: 'POST',
-        path: `/containers/create?name=${encodeURIComponent(candidateName)}`,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          Image: desired.imageRef,
-          Labels: this.labels(desired, jobId),
-          ...(Object.keys(envVars).length
-            ? { Env: Object.entries(envVars).map(([key, value]) => `${key}=${value}`) }
-            : {}),
-          ExposedPorts: { [portKey]: {} },
-          HostConfig: {
-            NetworkMode: this.networkName(desired),
-            PortBindings: {
-              [portKey]: [{
-                HostIp: desired.routingMode === 'managed-gateway'
-                  ? process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND?.trim() || '127.0.0.1'
-                  : '0.0.0.0',
-                HostPort: '',
-              }],
+      const created = responseJson<{ Id: string }>(
+        await this.request({
+          method: 'POST',
+          path: `/containers/create?name=${encodeURIComponent(candidateName)}`,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            Image: desired.imageRef,
+            Labels: this.labels(desired, jobId),
+            ...(Object.keys(envVars).length
+              ? { Env: Object.entries(envVars).map(([key, value]) => `${key}=${value}`) }
+              : {}),
+            ExposedPorts: { [portKey]: {} },
+            HostConfig: {
+              NetworkMode: this.networkName(desired),
+              PortBindings: {
+                [portKey]: [
+                  {
+                    HostIp:
+                      desired.routingMode === 'managed-gateway'
+                        ? process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND?.trim() || '127.0.0.1'
+                        : '0.0.0.0',
+                    HostPort: '',
+                  },
+                ],
+              },
+              Memory: Math.round(memoryMb * 1024 * 1024),
+              MemorySwap: Math.round(memoryMb * 1024 * 1024),
+              NanoCpus: Math.round(cpu * 1_000_000_000),
+              PidsLimit: Math.round(pids),
+              CapDrop: ['ALL'],
+              CapAdd: [...SAFE_RUNTIME_CAPABILITIES],
+              SecurityOpt: ['no-new-privileges'],
+              Init: true,
+              // A broken candidate must fail once instead of entering a restart
+              // storm. The durable policy is applied only after health succeeds.
+              RestartPolicy: { Name: 'no' },
+              LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
             },
-            Memory: Math.round(memoryMb * 1024 * 1024),
-            MemorySwap: Math.round(memoryMb * 1024 * 1024),
-            NanoCpus: Math.round(cpu * 1_000_000_000),
-            PidsLimit: Math.round(pids),
-            CapDrop: ['ALL'],
-            CapAdd: [...SAFE_RUNTIME_CAPABILITIES],
-            SecurityOpt: ['no-new-privileges'],
-            Init: true,
-            // A broken candidate must fail once instead of entering a restart
-            // storm. The durable policy is applied only after health succeeds.
-            RestartPolicy: { Name: 'no' },
-            LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
-          },
+          }),
+          signal,
         }),
-        signal,
-      }), 'create container');
-      await this.expect([204, 304], {
-        method: 'POST', path: `/containers/${encodeURIComponent(created.Id)}/start`, signal,
-      }, 'start candidate');
+        'create container',
+      );
+      await this.expect(
+        [204, 304],
+        {
+          method: 'POST',
+          path: `/containers/${encodeURIComponent(created.Id)}/start`,
+          signal,
+        },
+        'start candidate',
+      );
       candidate = await this.inspectContainer(created.Id, signal);
     } else if (!candidate.State?.Running) {
-      await this.expect([204, 304], {
-        method: 'POST', path: `/containers/${encodeURIComponent(candidate.Id)}/start`, signal,
-      }, 'start candidate');
+      await this.expect(
+        [204, 304],
+        {
+          method: 'POST',
+          path: `/containers/${encodeURIComponent(candidate.Id)}/start`,
+          signal,
+        },
+        'start candidate',
+      );
       candidate = await this.inspectContainer(candidate.Id, signal);
     }
     if (!candidate || !(await this.waitHealthy(candidate, desired, signal))) {
       if (candidate) await this.removeContainer(candidate.Id, signal).catch(() => undefined);
       throw new Error('Candidate workload failed its health check');
     }
-    await this.expect([200], {
-      method: 'POST',
-      path: `/containers/${encodeURIComponent(candidate.Id)}/update`,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ RestartPolicy: { Name: 'unless-stopped' } }),
-      signal,
-    }, 'set durable restart policy');
+    await this.expect(
+      [200],
+      {
+        method: 'POST',
+        path: `/containers/${encodeURIComponent(candidate.Id)}/update`,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ RestartPolicy: { Name: 'unless-stopped' } }),
+        signal,
+      },
+      'set durable restart policy',
+    );
     if (current) await this.removeContainer(current.Id, signal);
-    await this.expect([204], {
-      method: 'POST',
-      path: `/containers/${encodeURIComponent(candidate.Id)}/rename?name=${encodeURIComponent(baseName)}`,
-      signal,
-    }, 'publish candidate');
+    await this.expect(
+      [204],
+      {
+        method: 'POST',
+        path: `/containers/${encodeURIComponent(candidate.Id)}/rename?name=${encodeURIComponent(baseName)}`,
+        signal,
+      },
+      'publish candidate',
+    );
     return this.status(desired, signal);
   }
 
-  rollback(payload: DockerLifecyclePayload, jobId: string, signal: AbortSignal): Promise<DockerWorkloadStatus> {
+  rollback(
+    payload: DockerLifecyclePayload,
+    jobId: string,
+    signal: AbortSignal,
+  ): Promise<DockerWorkloadStatus> {
     return this.deploy(payload, jobId, signal);
   }
 
@@ -645,9 +716,15 @@ export class DockerLifecycle {
     const desired = this.validatedPayload(payload);
     const container = await this.desiredContainer(desired, signal);
     if (!container || !container.State?.Running) return;
-    await this.expect([204, 304], {
-      method: 'POST', path: `/containers/${encodeURIComponent(container.Id)}/stop?t=10`, signal,
-    }, 'stop container');
+    await this.expect(
+      [204, 304],
+      {
+        method: 'POST',
+        path: `/containers/${encodeURIComponent(container.Id)}/stop?t=10`,
+        signal,
+      },
+      'stop container',
+    );
   }
 
   async start(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
@@ -655,11 +732,18 @@ export class DockerLifecycle {
     const container = await this.desiredContainer(desired, signal);
     if (!container) throw new Error('Workload does not exist');
     if (!container.State?.Running) {
-      await this.expect([204, 304], {
-        method: 'POST', path: `/containers/${encodeURIComponent(container.Id)}/start`, signal,
-      }, 'start container');
+      await this.expect(
+        [204, 304],
+        {
+          method: 'POST',
+          path: `/containers/${encodeURIComponent(container.Id)}/start`,
+          signal,
+        },
+        'start container',
+      );
     }
-    if (!(await this.healthy(desired, signal))) throw new Error('Workload failed its health check after start');
+    if (!(await this.healthy(desired, signal)))
+      throw new Error('Workload failed its health check after start');
   }
 
   async remove(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
@@ -680,8 +764,8 @@ export class DockerLifecycle {
       for (const revision of revisions) {
         await this.removeContainer(revision.Id, signal);
         if (
-          typeof revision.Image === 'string'
-          && (PROJECT_IMAGE_REF_PATTERN.test(revision.Image) || IMAGE_REF_PATTERN.test(revision.Image))
+          typeof revision.Image === 'string' &&
+          (PROJECT_IMAGE_REF_PATTERN.test(revision.Image) || IMAGE_REF_PATTERN.test(revision.Image))
         ) {
           imageRefs.add(revision.Image);
         }
@@ -693,7 +777,10 @@ export class DockerLifecycle {
     await this.removeNetworkIfEmpty(desired, signal);
   }
 
-  async status(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<DockerWorkloadStatus> {
+  async status(
+    payload: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<DockerWorkloadStatus> {
     const desired = this.validatedPayload(payload);
     const container = await this.desiredContainer(desired, signal);
     return container ? this.toStatus(container, desired) : { state: 'missing' };
@@ -723,9 +810,7 @@ export class DockerLifecycle {
       if (matching.length > 1) {
         throw new Error('Agent found multiple workload revisions for this diagnostic snapshot');
       }
-      container = matching[0]
-        ? await this.ownedContainer(matching[0].Id, payload, signal)
-        : null;
+      container = matching[0] ? await this.ownedContainer(matching[0].Id, payload, signal) : null;
     } else {
       container = await this.ownedContainer(workloadContainerName(payload), payload, signal);
     }
@@ -744,7 +829,7 @@ export class DockerLifecycle {
     }
     return {
       ...status,
-      health: await this.waitHealthy(container, payload, signal) ? 'healthy' : 'unhealthy',
+      health: (await this.waitHealthy(container, payload, signal)) ? 'healthy' : 'unhealthy',
       logs,
     };
   }
@@ -762,7 +847,9 @@ export class DockerLifecycle {
 
   private async imageMatches(imageRef: string, signal: AbortSignal): Promise<boolean> {
     const response = await this.request({
-      method: 'GET', path: `/images/${encodeURIComponent(imageRef)}/json`, signal,
+      method: 'GET',
+      path: `/images/${encodeURIComponent(imageRef)}/json`,
+      signal,
     });
     if (response.statusCode === 404) return false;
     const image = responseJson<ImageInspect>(response, 'inspect image');
@@ -772,7 +859,9 @@ export class DockerLifecycle {
 
   private async imageExists(imageRef: string, signal: AbortSignal): Promise<boolean> {
     const response = await this.request({
-      method: 'GET', path: `/images/${encodeURIComponent(imageRef)}/json`, signal,
+      method: 'GET',
+      path: `/images/${encodeURIComponent(imageRef)}/json`,
+      signal,
     });
     if (response.statusCode === 404) return false;
     return Boolean(responseJson<ImageInspect>(response, 'inspect image').Id);
@@ -780,16 +869,25 @@ export class DockerLifecycle {
 
   private async removeImage(imageRef: string, signal: AbortSignal): Promise<void> {
     const response = await this.request({
-      method: 'DELETE', path: `/images/${encodeURIComponent(imageRef)}?force=false&noprune=false`, signal,
+      method: 'DELETE',
+      path: `/images/${encodeURIComponent(imageRef)}?force=false&noprune=false`,
+      signal,
     });
     if (![200, 404, 409].includes(response.statusCode)) throw dockerError(response, 'remove image');
   }
 
   private async ensureNetwork(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
     const name = this.networkName(payload);
-    const inspected = await this.request({ method: 'GET', path: `/networks/${encodeURIComponent(name)}`, signal });
+    const inspected = await this.request({
+      method: 'GET',
+      path: `/networks/${encodeURIComponent(name)}`,
+      signal,
+    });
     if (inspected.statusCode === 200) {
-      this.assertNetworkOwnership(responseJson<NetworkInspect>(inspected, 'inspect network'), payload);
+      this.assertNetworkOwnership(
+        responseJson<NetworkInspect>(inspected, 'inspect network'),
+        payload,
+      );
       return;
     }
     if (inspected.statusCode !== 404) throw dockerError(inspected, 'inspect network');
@@ -814,27 +912,50 @@ export class DockerLifecycle {
     });
     if (created.statusCode === 201) return;
     if (created.statusCode !== 409) throw dockerError(created, 'create network');
-    const raced = await this.request({ method: 'GET', path: `/networks/${encodeURIComponent(name)}`, signal });
-    this.assertNetworkOwnership(responseJson<NetworkInspect>(raced, 'inspect raced network'), payload);
+    const raced = await this.request({
+      method: 'GET',
+      path: `/networks/${encodeURIComponent(name)}`,
+      signal,
+    });
+    this.assertNetworkOwnership(
+      responseJson<NetworkInspect>(raced, 'inspect raced network'),
+      payload,
+    );
   }
 
-  private async removeNetworkIfEmpty(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
+  private async removeNetworkIfEmpty(
+    payload: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<void> {
     const name = this.networkName(payload);
     const inspected = await this.request({
-      method: 'GET', path: `/networks/${encodeURIComponent(name)}`, signal,
+      method: 'GET',
+      path: `/networks/${encodeURIComponent(name)}`,
+      signal,
     });
     if (inspected.statusCode === 404) return;
     const network = responseJson<NetworkInspect>(inspected, 'inspect network');
     this.assertNetworkOwnership(network, payload);
     if (!network.Containers || Object.keys(network.Containers).length > 0) return;
-    await this.expect([204, 404], {
-      method: 'DELETE', path: `/networks/${encodeURIComponent(name)}`, signal,
-    }, 'remove empty diagnostic network');
+    await this.expect(
+      [204, 404],
+      {
+        method: 'DELETE',
+        path: `/networks/${encodeURIComponent(name)}`,
+        signal,
+      },
+      'remove empty diagnostic network',
+    );
   }
 
-  private async inspectContainer(name: string, signal: AbortSignal): Promise<ContainerInspect | null> {
+  private async inspectContainer(
+    name: string,
+    signal: AbortSignal,
+  ): Promise<ContainerInspect | null> {
     const response = await this.request({
-      method: 'GET', path: `/containers/${encodeURIComponent(name)}/json`, signal,
+      method: 'GET',
+      path: `/containers/${encodeURIComponent(name)}/json`,
+      signal,
     });
     if (response.statusCode === 404) return null;
     return responseJson<ContainerInspect>(response, 'inspect container');
@@ -847,7 +968,9 @@ export class DockerLifecycle {
   ): Promise<ContainerInspect | null> {
     const container = await this.inspectContainer(name, signal);
     if (container && !this.belongsToWorkload(container, payload)) {
-      throw new Error(`Docker container name collision outside allocation '${payload.allocationId}'`);
+      throw new Error(
+        `Docker container name collision outside allocation '${payload.allocationId}'`,
+      );
     }
     return container;
   }
@@ -857,36 +980,43 @@ export class DockerLifecycle {
     signal: AbortSignal,
   ): Promise<ContainerListItem[]> {
     const workloadKey = this.workloadKey(payload);
-    const filters = encodeURIComponent(JSON.stringify({ label: [
-      'com.initpad.managed=true',
-      `com.initpad.target=${this.targetId}`,
-      `com.initpad.allocation.id=${payload.allocationId}`,
-      `com.initpad.workload=${workloadKey}`,
-      'com.initpad.routing.mode=managed-gateway',
-    ] }));
+    const filters = encodeURIComponent(
+      JSON.stringify({
+        label: [
+          'com.initpad.managed=true',
+          `com.initpad.target=${this.targetId}`,
+          `com.initpad.allocation.id=${payload.allocationId}`,
+          `com.initpad.workload=${workloadKey}`,
+          'com.initpad.routing.mode=managed-gateway',
+        ],
+      }),
+    );
     const response = await this.request({
       method: 'GET',
       path: `/containers/json?all=1&filters=${filters}`,
       signal,
     });
-    const containers = responseJson<ContainerListItem[]>(response, 'list managed workload revisions');
+    const containers = responseJson<ContainerListItem[]>(
+      response,
+      'list managed workload revisions',
+    );
     if (!Array.isArray(containers) || containers.length > 256) {
       throw new Error('Docker returned an invalid managed workload revision list');
     }
     for (const container of containers) {
       const labels = container.Labels ?? {};
       if (
-        !container.Id
-        || labels['com.initpad.managed'] !== 'true'
-        || labels['com.initpad.target'] !== this.targetId
-        || labels['com.initpad.allocation.id'] !== payload.allocationId
-        || labels['com.initpad.allocation.namespace'] !== payload.namespace
-        || labels['com.initpad.project'] !== payload.projectSlug
-        || labels['com.initpad.environment'] !== payload.environment
-        || labels['com.initpad.workload'] !== workloadKey
-        || labels['com.initpad.routing.mode'] !== 'managed-gateway'
-        || container.Names?.length !== 1
-        || !/^\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(container.Names[0])
+        !container.Id ||
+        labels['com.initpad.managed'] !== 'true' ||
+        labels['com.initpad.target'] !== this.targetId ||
+        labels['com.initpad.allocation.id'] !== payload.allocationId ||
+        labels['com.initpad.allocation.namespace'] !== payload.namespace ||
+        labels['com.initpad.project'] !== payload.projectSlug ||
+        labels['com.initpad.environment'] !== payload.environment ||
+        labels['com.initpad.workload'] !== workloadKey ||
+        labels['com.initpad.routing.mode'] !== 'managed-gateway' ||
+        container.Names?.length !== 1 ||
+        !/^\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(container.Names[0])
       ) {
         throw new Error('Docker returned a workload outside the managed project allocation');
       }
@@ -895,9 +1025,15 @@ export class DockerLifecycle {
   }
 
   private async removeContainer(id: string, signal: AbortSignal): Promise<void> {
-    await this.expect([204, 404], {
-      method: 'DELETE', path: `/containers/${encodeURIComponent(id)}?force=true&v=true`, signal,
-    }, 'remove container');
+    await this.expect(
+      [204, 404],
+      {
+        method: 'DELETE',
+        path: `/containers/${encodeURIComponent(id)}?force=true&v=true`,
+        signal,
+      },
+      'remove container',
+    );
   }
 
   private async waitHealthy(
@@ -930,25 +1066,26 @@ export class DockerLifecycle {
   ): DockerWorkloadStatus {
     const mapping = container.NetworkSettings?.Ports?.[`${payload.containerPort}/tcp`];
     const hostPort = Number(mapping?.[0]?.HostPort);
-    const workloadSlot = container.Config?.Labels?.['com.initpad.workload.slot']
-      ?? ('imageRef' in payload ? managedWorkloadSlot(payload) : undefined);
+    const workloadSlot =
+      container.Config?.Labels?.['com.initpad.workload.slot'] ??
+      ('imageRef' in payload ? managedWorkloadSlot(payload) : undefined);
     return {
       state: container.State?.Running ? 'running' : 'stopped',
       revision: container.Config?.Labels?.['com.initpad.revision'],
       ...(Number.isInteger(hostPort) && hostPort > 0 ? { hostPort } : {}),
-      ...(payload.routingMode === 'managed-gateway'
-        && workloadSlot
-        ? { workloadSlot }
-        : {}),
+      ...(payload.routingMode === 'managed-gateway' && workloadSlot ? { workloadSlot } : {}),
     };
   }
 
   private matches(container: ContainerInspect, payload: DockerLifecyclePayload): boolean {
-    return this.belongsToWorkload(container, payload)
-      && container.Config?.Labels?.['com.initpad.revision'] === payload.revision
-      && (!payload.configFingerprint
-        || container.Config?.Labels?.['com.initpad.config-fingerprint'] === payload.configFingerprint)
-      && container.Config?.Image === payload.imageRef;
+    return (
+      this.belongsToWorkload(container, payload) &&
+      container.Config?.Labels?.['com.initpad.revision'] === payload.revision &&
+      (!payload.configFingerprint ||
+        container.Config?.Labels?.['com.initpad.config-fingerprint'] ===
+          payload.configFingerprint) &&
+      container.Config?.Image === payload.imageRef
+    );
   }
 
   private belongsToWorkload(
@@ -956,27 +1093,27 @@ export class DockerLifecycle {
     payload: Pick<DockerLifecyclePayload, 'allocationId' | 'projectSlug' | 'environment'>,
   ): boolean {
     const labels = container.Config?.Labels ?? {};
-    return labels['com.initpad.target'] === this.targetId
-      && labels['com.initpad.allocation.id'] === payload.allocationId
-      && labels['com.initpad.workload'] === this.workloadKey(payload);
+    return (
+      labels['com.initpad.target'] === this.targetId &&
+      labels['com.initpad.allocation.id'] === payload.allocationId &&
+      labels['com.initpad.workload'] === this.workloadKey(payload)
+    );
   }
 
   private assertNetworkOwnership(network: NetworkInspect, payload: DockerLifecyclePayload): void {
     const labels = network.Labels ?? {};
     if (
-      labels['com.initpad.managed'] !== 'true'
-      || labels['com.initpad.target'] !== this.targetId
-      || labels['com.initpad.allocation.id'] !== payload.allocationId
-      || labels['com.initpad.allocation.namespace'] !== payload.namespace
-      || labels['com.initpad.environment'] !== payload.environment
-      || (payload.routingMode === 'managed-gateway'
-        && (
-          labels['com.initpad.project'] !== payload.projectSlug
-          || labels['com.initpad.routing.mode'] !== 'managed-gateway'
-        ))
-      || (payload.routingMode === 'direct-port'
-        && labels['com.initpad.routing.mode'] !== undefined
-        && labels['com.initpad.routing.mode'] !== 'direct-port')
+      labels['com.initpad.managed'] !== 'true' ||
+      labels['com.initpad.target'] !== this.targetId ||
+      labels['com.initpad.allocation.id'] !== payload.allocationId ||
+      labels['com.initpad.allocation.namespace'] !== payload.namespace ||
+      labels['com.initpad.environment'] !== payload.environment ||
+      (payload.routingMode === 'managed-gateway' &&
+        (labels['com.initpad.project'] !== payload.projectSlug ||
+          labels['com.initpad.routing.mode'] !== 'managed-gateway')) ||
+      (payload.routingMode === 'direct-port' &&
+        labels['com.initpad.routing.mode'] !== undefined &&
+        labels['com.initpad.routing.mode'] !== 'direct-port')
     ) {
       throw new Error(`Docker network name collision outside allocation '${payload.allocationId}'`);
     }

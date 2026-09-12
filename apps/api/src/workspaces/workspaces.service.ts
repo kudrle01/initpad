@@ -41,7 +41,7 @@ export class WorkspacesService {
     private readonly workspaceScm: WorkspaceScmService,
     @Inject(AuditEventsService)
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
-      record: async () => undefined,
+      record: () => Promise.resolve(),
     },
   ) {}
 
@@ -62,16 +62,24 @@ export class WorkspacesService {
     }));
   }
 
-  async resolve(userId: string, requestedId?: string): Promise<{ id: string; role: WorkspaceRole }> {
+  async resolve(
+    userId: string,
+    requestedId?: string,
+  ): Promise<{ id: string; role: WorkspaceRole }> {
     const membership = await this.prisma.workspaceMember.findFirst({
       where: requestedId
         ? { userId, workspaceId: requestedId }
         : { userId, workspace: { type: 'personal' } },
       orderBy: { createdAt: 'asc' },
     });
-    const fallback = membership ?? (!requestedId
-      ? await this.prisma.workspaceMember.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' } })
-      : null);
+    const fallback =
+      membership ??
+      (!requestedId
+        ? await this.prisma.workspaceMember.findFirst({
+            where: { userId },
+            orderBy: { createdAt: 'asc' },
+          })
+        : null);
     if (!fallback) {
       if (requestedId) throw new NotFoundException('Workspace not found');
       throw new ForbiddenException('No workspace available');
@@ -175,7 +183,11 @@ export class WorkspacesService {
         details: { previousName: previous.name, name: workspace.name },
       });
     }
-    return { ...workspace, role: membership.role as WorkspaceRole, createdAt: workspace.createdAt.toISOString() };
+    return {
+      ...workspace,
+      role: membership.role as WorkspaceRole,
+      createdAt: workspace.createdAt.toISOString(),
+    };
   }
 
   async updateProductionApprovalPolicy(
@@ -233,9 +245,12 @@ export class WorkspacesService {
       include: { _count: { select: { projects: true, targets: true } } },
     });
     if (!workspace) throw new NotFoundException('Workspace not found');
-    if (workspace.type === 'personal') throw new BadRequestException('Personal workspaces cannot be deleted');
+    if (workspace.type === 'personal')
+      throw new BadRequestException('Personal workspaces cannot be deleted');
     if (workspace._count.projects || workspace._count.targets) {
-      throw new BadRequestException('Delete or move all projects and targets before deleting this workspace');
+      throw new BadRequestException(
+        'Delete or move all projects and targets before deleting this workspace',
+      );
     }
     await this.prisma.workspace.delete({ where: { id: workspaceId } });
   }
@@ -322,7 +337,8 @@ export class WorkspacesService {
   ) {
     await this.require(userId, workspaceId, 'admin');
     const member = await this.memberOrThrow(workspaceId, memberId);
-    if (member.role === 'owner') throw new BadRequestException('Workspace owner role cannot be changed');
+    if (member.role === 'owner')
+      throw new BadRequestException('Workspace owner role cannot be changed');
     try {
       await this.syncRepositoryAccess(workspaceId, memberId, dto.role);
     } catch (error) {
@@ -383,7 +399,11 @@ export class WorkspacesService {
     return member;
   }
 
-  private async syncRepositoryAccess(workspaceId: string, memberUserId: string, role: string): Promise<void> {
+  private async syncRepositoryAccess(
+    workspaceId: string,
+    memberUserId: string,
+    role: string,
+  ): Promise<void> {
     const projects = await this.prisma.project.findMany({
       where: { workspaceId },
       select: REPOSITORY_SELECT,
@@ -394,7 +414,9 @@ export class WorkspacesService {
         memberUserId,
         repository.provider,
       );
-      await this.workspaceScm.provider(repository.provider).setCollaborator(repository, username, role);
+      await this.workspaceScm
+        .provider(repository.provider)
+        .setCollaborator(repository, username, role);
     }
   }
 
@@ -409,7 +431,9 @@ export class WorkspacesService {
         memberUserId,
         repository.provider,
       );
-      await this.workspaceScm.provider(repository.provider).removeCollaborator(repository, username);
+      await this.workspaceScm
+        .provider(repository.provider)
+        .removeCollaborator(repository, username);
     }
   }
 }

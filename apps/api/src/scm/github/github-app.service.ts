@@ -1,12 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createSign } from 'crypto';
 import { config } from '../../config';
-import {
-  collectScmPages,
-  findInScmPages,
-  scmFetch,
-  scmStatusError,
-} from '../scm-http';
+import { collectScmPages, findInScmPages, scmFetch, scmStatusError } from '../scm-http';
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64url');
@@ -212,12 +207,9 @@ export class GitHubAppService {
         const endpoint = new URL(`${config.github.apiBaseUrl}/user/installations`);
         endpoint.searchParams.set('per_page', '100');
         endpoint.searchParams.set('page', String(page));
-        const response = await scmFetch(
-          'GitHub',
-          'verify user installation access',
-          endpoint,
-          { headers },
-        );
+        const response = await scmFetch('GitHub', 'verify user installation access', endpoint, {
+          headers,
+        });
         if (!response.ok) {
           throw scmStatusError(
             'GitHub',

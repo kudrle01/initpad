@@ -8,12 +8,9 @@ import { AuthService } from '../../auth/auth.service';
 import { ExternalIdentityService } from '../../identity/external-identity.service';
 import { GitHubInstallationService } from './github-installation.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
-import {
-  GITHUB_OAUTH_NONCE_COOKIE,
-  GitHubOAuthService,
-  OAuthMode,
-} from './github-oauth.service';
+import { GITHUB_OAUTH_NONCE_COOKIE, GitHubOAuthService, OAuthMode } from './github-oauth.service';
 import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
+import { readStringCookie } from '../../common/request-cookie';
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 // "Sign in with GitHub" and account linking. Both are top-level browser
@@ -33,7 +30,8 @@ export class GitHubAuthController {
 
   @Get()
   authorize(@Query('mode') modeRaw: string, @Res() res: Response) {
-    if (!this.oauth.isConfigured()) return res.redirect(this.frontend('/login?error=github_unavailable'));
+    if (!this.oauth.isConfigured())
+      return res.redirect(this.frontend('/login?error=github_unavailable'));
     const mode: Exclude<OAuthMode, 'setup'> = modeRaw === 'link' ? 'link' : 'login';
     const { url, nonce } = this.oauth.authorizeUrl(mode);
     res.cookie(GITHUB_OAUTH_NONCE_COOKIE, nonce, {
@@ -53,10 +51,11 @@ export class GitHubAuthController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.oauth.isConfigured()) return res.redirect(this.frontend('/login?error=github_unavailable'));
+    if (!this.oauth.isConfigured())
+      return res.redirect(this.frontend('/login?error=github_unavailable'));
 
     const verified = this.oauth.verifyState(state);
-    const nonce = (req.cookies as Record<string, string> | undefined)?.[GITHUB_OAUTH_NONCE_COOKIE];
+    const nonce = readStringCookie(req, GITHUB_OAUTH_NONCE_COOKIE);
     res.clearCookie(GITHUB_OAUTH_NONCE_COOKIE, { path: '/' });
     if (!verified || !nonce || nonce !== verified.nonce || !code) {
       return res.redirect(
@@ -95,7 +94,8 @@ export class GitHubAuthController {
           ),
         );
       } catch (error) {
-        const reason = error instanceof Error ? error.message : 'Could not authorize GitHub installation';
+        const reason =
+          error instanceof Error ? error.message : 'Could not authorize GitHub installation';
         return res.redirect(
           this.frontend(`/settings?github=installation_error&reason=${encodeURIComponent(reason)}`),
         );
@@ -110,7 +110,11 @@ export class GitHubAuthController {
         await this.credentials.storeExchange(userId, exchange);
         return res.redirect(this.frontend('/settings?github=linked'));
       } catch (e) {
-        return res.redirect(this.frontend(`/settings?github=error&reason=${encodeURIComponent((e as Error).message)}`));
+        return res.redirect(
+          this.frontend(
+            `/settings?github=error&reason=${encodeURIComponent((e as Error).message)}`,
+          ),
+        );
       }
     }
 
@@ -154,7 +158,7 @@ export class GitHubAuthController {
   // Resolves the current session the same way JwtAuthGuard does, but without
   // throwing — the callback degrades to "please sign in" instead.
   private async sessionUserId(req: Request): Promise<string | null> {
-    const token = (req.cookies as Record<string, string> | undefined)?.[TOKEN_COOKIE];
+    const token = readStringCookie(req, TOKEN_COOKIE);
     if (!token) return null;
     try {
       const payload = this.jwt.verify<JwtPayload>(token);

@@ -13,9 +13,7 @@ export interface StoredAgentConfigVariable {
  * nor whether two installations use the same secret because it is keyed with
  * the control-plane encryption key.
  */
-export function agentConfigFingerprint(
-  variables: readonly StoredAgentConfigVariable[],
-): string {
+export function agentConfigFingerprint(variables: readonly StoredAgentConfigVariable[]): string {
   const hmac = createHmac('sha256', config.security.encryptionKey);
   for (const variable of [...variables].sort((a, b) => a.key.localeCompare(b.key))) {
     hmac.update(variable.key);

@@ -3,11 +3,7 @@ import { ArtifactStore, artifactObjectKey } from '../artifacts/artifact-store';
 import { assertImageArchiveIdentity } from '../artifacts/image-archive';
 import { DeploymentService } from '../deployment/deployment.service';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  ScmBuildArtifact,
-  ScmProvider,
-  ScmRepositoryRef,
-} from '../scm/scm-provider';
+import { ScmBuildArtifact, ScmProvider, ScmRepositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { artifactImageRef } from './project-deployment-identity';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
@@ -42,7 +38,8 @@ export class ProjectArtifactIngestion {
         select: { id: true, projectId: true, commitSha: true },
       });
       for (const artifact of interrupted) {
-        const reason = 'Artifact ingestion was interrupted by a control-plane restart; run CI again';
+        const reason =
+          'Artifact ingestion was interrupted by a control-plane restart; run CI again';
         const operations = await this.prisma.deploymentOperation.findMany({
           where: {
             environment: { projectId: artifact.projectId, name: 'dev' },
@@ -134,9 +131,8 @@ export class ProjectArtifactIngestion {
       data: { message: 'Downloading and verifying tested image' },
     });
     const scm = this.workspaceScm.provider(repository.provider);
-    let download: Awaited<
-      ReturnType<NonNullable<ScmProvider['downloadBuildArtifact']>>
-    > | null = null;
+    let download: Awaited<ReturnType<NonNullable<ScmProvider['downloadBuildArtifact']>>> | null =
+      null;
     let objectKey: string | null = null;
     try {
       if (!scm.downloadBuildArtifact) throw new Error('Artifact download is unavailable');
@@ -189,11 +185,13 @@ export class ProjectArtifactIngestion {
     } catch (error) {
       const message = (error as Error).message;
       if (objectKey) {
-        await this.store.delete(objectKey).catch((cleanupError) =>
-          this.logger.warn(
-            `Could not clean up partial artifact object: ${(cleanupError as Error).message}`,
-          ),
-        );
+        await this.store
+          .delete(objectKey)
+          .catch((cleanupError) =>
+            this.logger.warn(
+              `Could not clean up partial artifact object: ${(cleanupError as Error).message}`,
+            ),
+          );
       }
       await this.prisma.buildArtifact
         .updateMany({
@@ -218,10 +216,7 @@ export class ProjectArtifactIngestion {
     }
   }
 
-  private async accept(
-    projectId: string,
-    artifact: ScmBuildArtifact,
-  ): Promise<{ id: string }> {
+  private async accept(projectId: string, artifact: ScmBuildArtifact): Promise<{ id: string }> {
     const identity = {
       sourceProvider: artifact.provider,
       providerArtifactId: artifact.providerArtifactId,

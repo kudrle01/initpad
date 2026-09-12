@@ -100,13 +100,19 @@ export default function ProjectDetail() {
       const source = currentProject.environments.find((environment) => environment.name === 'test');
       const confirmed = await confirmAction({
         title: 'Request production deployment?',
-        description: 'The exact verified test build, target and production configuration revision will be locked for review.',
+        description:
+          'The exact verified test build, target and production configuration revision will be locked for review.',
         confirmLabel: 'Create request',
         tone: 'warning',
         details: [
           { label: 'Project', value: currentProject.name },
           { label: 'Version', value: source?.version?.slice(0, 7) ?? 'not available' },
-          { label: 'Target', value: currentProject.environments.find((environment) => environment.name === 'prod')?.target?.name ?? 'production' },
+          {
+            label: 'Target',
+            value:
+              currentProject.environments.find((environment) => environment.name === 'prod')?.target
+                ?.name ?? 'production',
+          },
         ],
         consequences: [
           'No production workload changes until an authorized reviewer approves.',
@@ -121,10 +127,13 @@ export default function ProjectDetail() {
 
   async function redeployWithConfirmation(environment: EnvName) {
     if (environment === 'prod') {
-      const current = currentProject.environments.find((candidate) => candidate.name === environment);
+      const current = currentProject.environments.find(
+        (candidate) => candidate.name === environment,
+      );
       const confirmed = await confirmAction({
         title: 'Request production redeploy?',
-        description: 'The current verified production build and configuration revision will be submitted for review.',
+        description:
+          'The current verified production build and configuration revision will be submitted for review.',
         confirmLabel: 'Create request',
         tone: 'warning',
         details: [
@@ -147,7 +156,8 @@ export default function ProjectDetail() {
     if (!productionRequest) return;
     const confirmed = await confirmAction({
       title: 'Approve and deploy to production?',
-      description: 'Approval starts deployment of the exact reviewed build to the recorded production target.',
+      description:
+        'Approval starts deployment of the exact reviewed build to the recorded production target.',
       confirmLabel: 'Approve and deploy',
       tone: 'danger',
       details: [
@@ -187,7 +197,8 @@ export default function ProjectDetail() {
     const current = currentProject.environments.find((candidate) => candidate.name === environment);
     const confirmed = await confirmAction({
       title: `Stop the ${environment} environment?`,
-      description: 'The deployment record is preserved, but the application will stop serving traffic.',
+      description:
+        'The deployment record is preserved, but the application will stop serving traffic.',
       confirmLabel: `Stop ${environment}`,
       tone: environment === 'prod' ? 'danger' : 'warning',
       details: [
@@ -215,7 +226,11 @@ export default function ProjectDetail() {
       description: cancelling
         ? 'InitPad will cancel the active operation and clean up any managed partial workload.'
         : 'InitPad will remove the managed workload from its assigned target.',
-      confirmLabel: cancelling ? 'Cancel deployment' : cleanupPending ? 'Retry cleanup' : 'Remove deployment',
+      confirmLabel: cancelling
+        ? 'Cancel deployment'
+        : cleanupPending
+          ? 'Retry cleanup'
+          : 'Remove deployment',
       tone: 'danger',
       details: [
         { label: 'Environment', value: environment.toUpperCase() },
@@ -234,9 +249,7 @@ export default function ProjectDetail() {
 
   return (
     <div>
-      {error && (
-        <LoadErrorState className="mb-4" message={error} onRetry={retryLoad} />
-      )}
+      {error && <LoadErrorState className="mb-4" message={error} onRetry={retryLoad} />}
       <ProjectSummary
         project={project}
         template={template}
@@ -340,9 +353,9 @@ export default function ProjectDetail() {
 
       <WorkloadDiagnosticsDialog
         projectId={project.id}
-        environment={project.environments.find(
-          (environment) => environment.name === diagnosticEnv,
-        ) ?? null}
+        environment={
+          project.environments.find((environment) => environment.name === diagnosticEnv) ?? null
+        }
         onOpenChange={(open) => !open && setDiagnosticEnv(null)}
       />
     </div>

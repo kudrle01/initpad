@@ -70,10 +70,15 @@ export class ExternalIdentityService {
     });
     if (existing) {
       if (existing.userId !== userId) {
-        throw new ConflictException(`This ${provider} account is already linked to another InitPad user`);
+        throw new ConflictException(
+          `This ${provider} account is already linked to another InitPad user`,
+        );
       }
       // Idempotent re-link — refresh only the mutable display login.
-      return this.prisma.externalIdentity.update({ where: { id: existing.id }, data: { username } });
+      return this.prisma.externalIdentity.update({
+        where: { id: existing.id },
+        data: { username },
+      });
     }
     const already = await this.prisma.externalIdentity.findUnique({
       where: { provider_userId: { provider, userId } },

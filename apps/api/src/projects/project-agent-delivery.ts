@@ -27,10 +27,7 @@ export class ProjectAgentDelivery {
     private readonly gatewayRoutes = new GatewayRoutesService(prisma),
   ) {}
 
-  async queueDeployment(
-    operationId: string,
-    intent: AgentDeploymentIntent,
-  ): Promise<void> {
+  async queueDeployment(operationId: string, intent: AgentDeploymentIntent): Promise<void> {
     if (!this.artifactStore.durable) {
       throw new BadRequestException(
         'Agent deployment requires durable artifact storage; configure the S3/MinIO artifact bucket',
@@ -40,13 +37,15 @@ export class ProjectAgentDelivery {
     const { environment, target, allocation } = this.assertAgentBinding(operation);
     const artifact = operation.buildArtifact;
     if (
-      !artifact
-      || artifact.projectId !== environment.projectId
-      || artifact.status !== 'available'
-      || artifact.storageKind !== 'object-store'
-      || !artifact.storageRef
+      !artifact ||
+      artifact.projectId !== environment.projectId ||
+      artifact.status !== 'available' ||
+      artifact.storageKind !== 'object-store' ||
+      !artifact.storageRef
     ) {
-      throw new BadRequestException('Agent deployment requires an available verified build artifact');
+      throw new BadRequestException(
+        'Agent deployment requires an available verified build artifact',
+      );
     }
 
     const row = await this.prisma.agentJob.upsert({
@@ -205,18 +204,20 @@ export class ProjectAgentDelivery {
     return operation;
   }
 
-  private assertAgentBinding(operation: Awaited<ReturnType<ProjectAgentDelivery['loadOperation']>>) {
+  private assertAgentBinding(
+    operation: Awaited<ReturnType<ProjectAgentDelivery['loadOperation']>>,
+  ) {
     const environment = operation.environment;
     const target = environment.target;
     const allocation = environment.allocation;
     if (
-      !target
-      || target.kind !== 'docker'
-      || target.scope !== 'user'
-      || target.workspaceId !== environment.project.workspaceId
-      || !allocation
-      || allocation.targetId !== target.id
-      || allocation.workspaceId !== environment.project.workspaceId
+      !target ||
+      target.kind !== 'docker' ||
+      target.scope !== 'user' ||
+      target.workspaceId !== environment.project.workspaceId ||
+      !allocation ||
+      allocation.targetId !== target.id ||
+      allocation.workspaceId !== environment.project.workspaceId
     ) {
       throw new BadRequestException('Deployment is not bound to a workspace Agent allocation');
     }
@@ -230,9 +231,9 @@ export class ProjectAgentDelivery {
     }
     if (target.routingMode === 'managed-gateway') {
       if (
-        target.gatewayAdapter !== 'caddy'
-        || target.gatewayPreflightStatus !== 'passed'
-        || !target.publicUrl
+        target.gatewayAdapter !== 'caddy' ||
+        target.gatewayPreflightStatus !== 'passed' ||
+        !target.publicUrl
       ) {
         throw new BadRequestException(
           'Managed gateway deployment requires a successful Caddy gateway preflight',
@@ -246,5 +247,4 @@ export class ProjectAgentDelivery {
     }
     return { environment, target, allocation };
   }
-
 }

@@ -18,7 +18,9 @@ class EnvironmentConfigDto {
   // use built-in defaults; SaaS validates an explicit workspace target for all
   // three environments because its control plane has no local deploy host.
   @IsOptional()
-  @Matches(/^(?:builtin-(?:docker|ssh|sftp)|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)
+  @Matches(
+    /^(?:builtin-(?:docker|ssh|sftp)|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i,
+  )
   targetId?: string;
 }
 

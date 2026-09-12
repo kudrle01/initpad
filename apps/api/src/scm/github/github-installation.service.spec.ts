@@ -19,7 +19,10 @@ describe('GitHubInstallationService webhook lifecycle', () => {
     const prisma = {
       gitHubInstallation: {
         findUnique: jest.fn(async () => null),
-        upsert: jest.fn(async (args: Record<string, unknown>) => { upsertArgs = args; return {}; }),
+        upsert: jest.fn(async (args: Record<string, unknown>) => {
+          upsertArgs = args;
+          return {};
+        }),
       },
     };
     const service = new GitHubInstallationService(prisma as never, {} as never);
@@ -46,10 +49,16 @@ describe('GitHubInstallationService webhook lifecycle', () => {
     };
     const service = new GitHubInstallationService(prisma as never, {} as never);
     await service.handleEvent(event({ action: 'deleted' }));
-    expect(prisma.gitHubInstallation.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ installationId: '42' }),
-      data: expect.objectContaining({ accountId: '987654', accountLogin: 'acme', deletedAt: expect.any(Date) }),
-    }));
+    expect(prisma.gitHubInstallation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ installationId: '42' }),
+        data: expect.objectContaining({
+          accountId: '987654',
+          accountLogin: 'acme',
+          deletedAt: expect.any(Date),
+        }),
+      }),
+    );
     expect(prisma.gitHubInstallation.upsert).not.toHaveBeenCalled();
   });
 
@@ -70,7 +79,10 @@ describe('GitHubInstallationService webhook lifecycle', () => {
     const prisma = {
       gitHubInstallation: {
         findUnique: jest.fn(async () => null),
-        upsert: jest.fn(async (args: { update?: { suspendedAt?: Date } }) => { upsertArgs = args; return {}; }),
+        upsert: jest.fn(async (args: { update?: { suspendedAt?: Date } }) => {
+          upsertArgs = args;
+          return {};
+        }),
       },
     };
     const service = new GitHubInstallationService(prisma as never, {} as never);
@@ -81,7 +93,10 @@ describe('GitHubInstallationService webhook lifecycle', () => {
   it('ignores an event without immutable account identity', async () => {
     const prisma = { gitHubInstallation: { findUnique: jest.fn(), upsert: jest.fn() } };
     const service = new GitHubInstallationService(prisma as never, {} as never);
-    await service.handleEvent({ action: 'created', installation: { id: 42, account: { login: 'x' } } });
+    await service.handleEvent({
+      action: 'created',
+      installation: { id: 42, account: { login: 'x' } },
+    });
     expect(prisma.gitHubInstallation.findUnique).not.toHaveBeenCalled();
     expect(prisma.gitHubInstallation.upsert).not.toHaveBeenCalled();
   });
@@ -94,7 +109,10 @@ describe('GitHubInstallationService setup authorization', () => {
       externalIdentity: { findUnique: jest.fn(async () => ({ id: 'identity-1' })) },
       gitHubInstallationSetup: {
         deleteMany: jest.fn(async () => ({ count: 0 })),
-        create: jest.fn(async (args: { data: { tokenHash: string; expiresAt: Date } }) => { created = args; return {}; }),
+        create: jest.fn(async (args: { data: { tokenHash: string; expiresAt: Date } }) => {
+          created = args;
+          return {};
+        }),
       },
     };
     const service = new GitHubInstallationService(prisma as never, {} as never);
@@ -117,8 +135,11 @@ describe('GitHubInstallationService setup authorization', () => {
     const prisma = {
       gitHubInstallationSetup: {
         findUnique: jest.fn(async () => ({
-          id: 'setup-1', userId: 'user-1', workspaceId: 'workspace-1',
-          expiresAt: new Date(Date.now() + 60_000), usedAt: null,
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
         })),
       },
       externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '123' })) },
@@ -127,32 +148,47 @@ describe('GitHubInstallationService setup authorization', () => {
     };
     const app = {
       getInstallation: jest.fn(async () => ({
-        installationId: '42', accountId: '987654', accountLogin: 'acme',
-        accountType: 'Organization', repositorySelection: 'selected', suspendedAt: null,
+        installationId: '42',
+        accountId: '987654',
+        accountLogin: 'acme',
+        accountType: 'Organization',
+        repositorySelection: 'selected',
+        suspendedAt: null,
       })),
       getUserAccessibleInstallation: jest.fn(async () => ({
-        installationId: '42', accountId: '987654', accountLogin: 'acme',
-        accountType: 'Organization', repositorySelection: 'selected', suspendedAt: null,
+        installationId: '42',
+        accountId: '987654',
+        accountLogin: 'acme',
+        accountType: 'Organization',
+        repositorySelection: 'selected',
+        suspendedAt: null,
       })),
     };
     const service = new GitHubInstallationService(prisma as never, app as never);
-    await expect(service.completeSetup('opaque-state', '42', 'ghu_transient')).resolves.toMatchObject({ accountId: '987654' });
+    await expect(
+      service.completeSetup('opaque-state', '42', 'ghu_transient'),
+    ).resolves.toMatchObject({ accountId: '987654' });
     expect(app.getUserAccessibleInstallation).toHaveBeenCalledWith('ghu_transient', '42', '123');
-    expect(tx.gitHubInstallationAccess.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({
-        githubInstallationId: 'installation-row-1',
-        workspaceId: 'workspace-1',
-        authorizedById: 'user-1',
+    expect(tx.gitHubInstallationAccess.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          githubInstallationId: 'installation-row-1',
+          workspaceId: 'workspace-1',
+          authorizedById: 'user-1',
+        }),
       }),
-    }));
+    );
   });
 
   it('refuses to bind an organization without user-bound authorization', async () => {
     const prisma = {
       gitHubInstallationSetup: {
         findUnique: jest.fn(async () => ({
-          id: 'setup-1', userId: 'user-1', workspaceId: 'workspace-1',
-          expiresAt: new Date(Date.now() + 60_000), usedAt: null,
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
         })),
       },
       externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '123' })) },
@@ -161,8 +197,12 @@ describe('GitHubInstallationService setup authorization', () => {
     };
     const app = {
       getInstallation: jest.fn(async () => ({
-        installationId: '42', accountId: '987654', accountLogin: 'acme',
-        accountType: 'Organization', repositorySelection: 'selected', suspendedAt: null,
+        installationId: '42',
+        accountId: '987654',
+        accountLogin: 'acme',
+        accountType: 'Organization',
+        repositorySelection: 'selected',
+        suspendedAt: null,
       })),
     };
     const service = new GitHubInstallationService(prisma as never, app as never);
@@ -177,8 +217,11 @@ describe('GitHubInstallationService setup authorization', () => {
     const prisma = {
       gitHubInstallationSetup: {
         findUnique: jest.fn(async () => ({
-          id: 'setup-1', userId: 'user-1', workspaceId: 'workspace-1',
-          expiresAt: new Date(Date.now() + 60_000), usedAt: null,
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
         })),
       },
       externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '123' })) },
@@ -187,8 +230,12 @@ describe('GitHubInstallationService setup authorization', () => {
     };
     const app = {
       getInstallation: jest.fn(async () => ({
-        installationId: '42', accountId: '999', accountLogin: 'somebody-else',
-        accountType: 'User', repositorySelection: 'all', suspendedAt: null,
+        installationId: '42',
+        accountId: '999',
+        accountLogin: 'somebody-else',
+        accountType: 'User',
+        repositorySelection: 'all',
+        suspendedAt: null,
       })),
     };
     const service = new GitHubInstallationService(prisma as never, app as never);
@@ -208,8 +255,11 @@ describe('GitHubInstallationService setup authorization', () => {
     const prisma = {
       gitHubInstallationSetup: {
         findFirst: jest.fn(async () => ({
-          id: 'setup-1', userId: 'user-1', workspaceId: 'workspace-1',
-          expiresAt: new Date(Date.now() + 60_000), usedAt: null,
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
         })),
       },
       externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '145552632' })) },
@@ -217,10 +267,16 @@ describe('GitHubInstallationService setup authorization', () => {
       $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     };
     const app = {
-      listInstallations: jest.fn(async () => [{
-        installationId: '147774798', accountId: '145552632', accountLogin: 'kudrle01',
-        accountType: 'User', repositorySelection: 'all', suspendedAt: null,
-      }]),
+      listInstallations: jest.fn(async () => [
+        {
+          installationId: '147774798',
+          accountId: '145552632',
+          accountLogin: 'kudrle01',
+          accountType: 'User',
+          repositorySelection: 'all',
+          suspendedAt: null,
+        },
+      ]),
     };
     const service = new GitHubInstallationService(prisma as never, app as never);
 
@@ -228,20 +284,25 @@ describe('GitHubInstallationService setup authorization', () => {
       installationId: '147774798',
       accountLogin: 'kudrle01',
     });
-    expect(tx.gitHubInstallationAccess.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({
-        workspaceId: 'workspace-1',
-        authorizedById: 'user-1',
+    expect(tx.gitHubInstallationAccess.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          workspaceId: 'workspace-1',
+          authorizedById: 'user-1',
+        }),
       }),
-    }));
+    );
   });
 
   it('never recovers an organization installation from personal identity alone', async () => {
     const prisma = {
       gitHubInstallationSetup: {
         findFirst: jest.fn(async () => ({
-          id: 'setup-1', userId: 'user-1', workspaceId: 'workspace-1',
-          expiresAt: new Date(Date.now() + 60_000), usedAt: null,
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
         })),
       },
       externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '145552632' })) },
@@ -249,10 +310,16 @@ describe('GitHubInstallationService setup authorization', () => {
       $transaction: jest.fn(),
     };
     const app = {
-      listInstallations: jest.fn(async () => [{
-        installationId: '42', accountId: '145552632', accountLogin: 'acme',
-        accountType: 'Organization', repositorySelection: 'all', suspendedAt: null,
-      }]),
+      listInstallations: jest.fn(async () => [
+        {
+          installationId: '42',
+          accountId: '145552632',
+          accountLogin: 'acme',
+          accountType: 'Organization',
+          repositorySelection: 'all',
+          suspendedAt: null,
+        },
+      ]),
     };
     const service = new GitHubInstallationService(prisma as never, app as never);
 
@@ -264,8 +331,11 @@ describe('GitHubInstallationService setup authorization', () => {
     const expired = {
       gitHubInstallationSetup: {
         findUnique: jest.fn(async () => ({
-          id: 'setup-1', userId: 'user-1', workspaceId: 'workspace-1',
-          expiresAt: new Date(Date.now() - 1), usedAt: null,
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() - 1),
+          usedAt: null,
         })),
       },
     };
@@ -276,8 +346,11 @@ describe('GitHubInstallationService setup authorization', () => {
     const noLongerAdmin = {
       gitHubInstallationSetup: {
         findUnique: jest.fn(async () => ({
-          id: 'setup-1', userId: 'user-1', workspaceId: 'workspace-1',
-          expiresAt: new Date(Date.now() + 60_000), usedAt: null,
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
         })),
       },
       externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '123' })) },
@@ -285,12 +358,19 @@ describe('GitHubInstallationService setup authorization', () => {
     };
     const app = {
       getInstallation: jest.fn(async () => ({
-        installationId: '42', accountId: '77', accountLogin: 'acme',
-        accountType: 'Organization', repositorySelection: 'selected', suspendedAt: null,
+        installationId: '42',
+        accountId: '77',
+        accountLogin: 'acme',
+        accountType: 'Organization',
+        repositorySelection: 'selected',
+        suspendedAt: null,
       })),
     };
     await expect(
-      new GitHubInstallationService(noLongerAdmin as never, app as never).completeSetup('state', '42'),
+      new GitHubInstallationService(noLongerAdmin as never, app as never).completeSetup(
+        'state',
+        '42',
+      ),
     ).rejects.toThrow('Workspace admin access');
   });
 });
@@ -298,15 +378,21 @@ describe('GitHubInstallationService setup authorization', () => {
 describe('GitHubInstallationService tokens', () => {
   it('mints a scoped token for an active legacy owner lookup', async () => {
     const prisma = {
-      gitHubInstallation: { findFirst: jest.fn(async () => ({ installationId: '42', suspendedAt: null })) },
+      gitHubInstallation: {
+        findFirst: jest.fn(async () => ({ installationId: '42', suspendedAt: null })),
+      },
     };
-    const app = { createInstallationToken: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })) };
+    const app = {
+      createInstallationToken: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })),
+    };
     const service = new GitHubInstallationService(prisma as never, app as never);
     const token = await service.tokenForOwner('acme', {
-      repositoryIds: [111], permissions: { contents: 'read' },
+      repositoryIds: [111],
+      permissions: { contents: 'read' },
     });
     expect(app.createInstallationToken).toHaveBeenCalledWith('42', {
-      repositoryIds: [111], permissions: { contents: 'read' },
+      repositoryIds: [111],
+      permissions: { contents: 'read' },
     });
     expect(token.token).toBe('ghs_x');
   });
@@ -315,12 +401,17 @@ describe('GitHubInstallationService tokens', () => {
     const prisma = {
       gitHubInstallation: {
         findUnique: jest.fn(async () => ({
-          id: 'installation-row-1', installationId: '42', accountLogin: 'acme-renamed',
-          suspendedAt: null, deletedAt: null,
+          id: 'installation-row-1',
+          installationId: '42',
+          accountLogin: 'acme-renamed',
+          suspendedAt: null,
+          deletedAt: null,
         })),
       },
     };
-    const app = { createInstallationToken: jest.fn(async () => ({ token: 'ghs_bound', expiresAt: 'z' })) };
+    const app = {
+      createInstallationToken: jest.fn(async () => ({ token: 'ghs_bound', expiresAt: 'z' })),
+    };
     const service = new GitHubInstallationService(prisma as never, app as never);
     await expect(
       service.tokenForBinding('installation-row-1', { permissions: { contents: 'read' } }),
@@ -329,13 +420,17 @@ describe('GitHubInstallationService tokens', () => {
 
   it('refuses removed or suspended installation tokens', async () => {
     const removed = {
-      gitHubInstallation: { findUnique: jest.fn(async () => ({ accountLogin: 'acme', deletedAt: new Date() })) },
+      gitHubInstallation: {
+        findUnique: jest.fn(async () => ({ accountLogin: 'acme', deletedAt: new Date() })),
+      },
     };
     await expect(
       new GitHubInstallationService(removed as never, {} as never).tokenForBinding('gone'),
     ).rejects.toThrow('removed');
     const suspended = {
-      gitHubInstallation: { findFirst: jest.fn(async () => ({ accountLogin: 'acme', suspendedAt: new Date() })) },
+      gitHubInstallation: {
+        findFirst: jest.fn(async () => ({ accountLogin: 'acme', suspendedAt: new Date() })),
+      },
     };
     await expect(
       new GitHubInstallationService(suspended as never, {} as never).tokenForOwner('acme'),

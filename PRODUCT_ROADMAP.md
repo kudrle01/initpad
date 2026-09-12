@@ -712,9 +712,14 @@ jen konkrétní provozní a vyhodnocovací scénář.
      bez sítě ověří obsah Git indexu: necommitované runtime/personal soubory,
      absolutní vývojářské cesty, známé formáty tokenů, povinnou veřejnou
      dokumentaci, executable provozní skripty a dosažitelnost produkčních modulů
-     z entrypointů. Potom sestaví a otestuje všechny aplikace. Síťový
+     z entrypointů. Type-aware ESLint kontroluje produkční API, web i Agenta,
+     React Hooks pravidla hlídají závislosti a pořadí hooků a Prettier odmítne
+     nejednotný formát kontrolovaného zdrojového kódu. Potom gate sestaví a
+     otestuje všechny aplikace. Síťový
      `check:release` navíc spustí audit produkčních npm závislostí; nalezená
      `qs` DoS advisory byla odstraněna kompatibilní aktualizací lockfile.
+     **Uživatelský test:** po čistém `npm ci` spustit `npm run check`; lint,
+     format check, build a všech 703 testů musí projít bez ručního zásahu.
    - ✅ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
      rozložit jen potvrzené hotspoty s více odpovědnostmi. Velikost souboru je
      signál pro review, ne automatický důvod k abstrakci.

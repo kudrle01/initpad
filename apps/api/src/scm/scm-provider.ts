@@ -127,8 +127,16 @@ export interface ScmProvider {
   // Direct (not inherited/team) access, in provider-native notation. Import
   // rollback uses this opaque value to restore rather than blindly revoke.
   getCollaboratorAccess(repository: ScmRepositoryRef, username: string): Promise<string | null>;
-  restoreCollaboratorAccess(repository: ScmRepositoryRef, username: string, access: string | null): Promise<void>;
-  listCommits(repository: ScmRepositoryRef, actor: ScmActor, limit?: number): Promise<ScmCommit[] | null>;
+  restoreCollaboratorAccess(
+    repository: ScmRepositoryRef,
+    username: string,
+    access: string | null,
+  ): Promise<void>;
+  listCommits(
+    repository: ScmRepositoryRef,
+    actor: ScmActor,
+    limit?: number,
+  ): Promise<ScmCommit[] | null>;
   createRetryTag(repository: ScmRepositoryRef, sha: string, actor: ScmActor): Promise<string>;
   deleteTag(repository: ScmRepositoryRef, tag: string, actor: ScmActor): Promise<void>;
   // Hosted providers may support retrying the failed jobs of the exact run
@@ -142,11 +150,19 @@ export interface ScmProvider {
     // produced the deployed bytes. Omitted for providers without run identity.
     preferredRunId?: string | null,
   ): Promise<ScmCommitStatus[] | null>;
-  configureRepoSecrets(repository: ScmRepositoryRef, ownerToken: string, ciDeployToken: string): Promise<void>;
+  configureRepoSecrets(
+    repository: ScmRepositoryRef,
+    ownerToken: string,
+    ciDeployToken: string,
+  ): Promise<void>;
   // Remove only the secret names owned by InitPad, without disabling CI.
   removeRepoSecrets(repository: ScmRepositoryRef): Promise<void>;
   configureRepoRuntimeSecrets(repository: ScmRepositoryRef): Promise<void>;
-  downloadArchive(repository: ScmRepositoryRef, ref: string, actor: ScmActor): Promise<RepoArchive | null>;
+  downloadArchive(
+    repository: ScmRepositoryRef,
+    ref: string,
+    actor: ScmActor,
+  ): Promise<RepoArchive | null>;
   // Initialise a local git repository in `dir` (first-commit scaffold).
   initLocal(dir: string, author?: { name: string; email: string }): Promise<void>;
   // Remove the project's OCI packages/images from the provider's registry.
@@ -156,7 +172,12 @@ export interface ScmProvider {
   // List repositories the user can import (for existing-repo import).
   listRepositories(actor: ScmActor): Promise<ScmRepo[]>;
   // Read a file's text content at a ref, or null if it does not exist (preflight).
-  readFile(repository: ScmRepositoryRef, path: string, ref: string, actor: ScmActor): Promise<string | null>;
+  readFile(
+    repository: ScmRepositoryRef,
+    path: string,
+    ref: string,
+    actor: ScmActor,
+  ): Promise<string | null>;
   // Optional because the bundled Gitea edition keeps using its private OCI
   // registry; hosted providers can expose a verified artifact handoff.
   resolveBuildArtifact?(

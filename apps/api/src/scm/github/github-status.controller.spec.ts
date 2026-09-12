@@ -15,12 +15,18 @@ describe('GitHubStatusController', () => {
       listForUser: jest.fn(async () => [{ provider: 'github', username: 'alice' }]),
     };
     const installations = {
-      listForWorkspace: jest.fn(async () => [{
-        githubInstallation: {
-          id: 'installation-row-1', accountId: '987654', accountLogin: 'acme',
-          accountType: 'Organization', repositorySelection: 'selected', suspendedAt: null,
+      listForWorkspace: jest.fn(async () => [
+        {
+          githubInstallation: {
+            id: 'installation-row-1',
+            accountId: '987654',
+            accountLogin: 'acme',
+            accountType: 'Organization',
+            repositorySelection: 'selected',
+            suspendedAt: null,
+          },
         },
-      }]),
+      ]),
     };
     const app = { isConfigured: jest.fn(() => true) };
     const workspaces = { resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })) };

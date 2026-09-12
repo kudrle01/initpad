@@ -27,7 +27,11 @@ function relTime(iso: string): string {
 
 export default function Activity() {
   const { activeWorkspace } = useAuth();
-  const loadEvents = useCallback(() => api.getActivity(), [activeWorkspace?.id]);
+  const workspaceId = activeWorkspace?.id;
+  const loadEvents = useCallback(
+    () => (workspaceId ? api.getActivity() : Promise.resolve([])),
+    [workspaceId],
+  );
   const { data: events, loading, error, reload } = useLoadable<ActivityEvent[]>(loadEvents, []);
 
   return (
@@ -54,10 +58,7 @@ export default function Activity() {
               <GitCommit className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <Link
-                    to={`/projects/${e.projectId}`}
-                    className="text-link text-sm font-medium"
-                  >
+                  <Link to={`/projects/${e.projectId}`} className="text-link text-sm font-medium">
                     {e.projectName}
                   </Link>
                   <span className="font-mono text-xs text-muted-foreground">

@@ -10,12 +10,7 @@ interface Props {
 }
 
 /** Accessible skeletons that preserve a page's shape while its data is loading. */
-export function ContentLoading({
-  label,
-  variant = 'list',
-  count,
-  className,
-}: Props) {
+export function ContentLoading({ label, variant = 'list', count, className }: Props) {
   if (variant === 'detail') {
     return (
       <div
@@ -45,9 +40,7 @@ export function ContentLoading({
       aria-live="polite"
       aria-label={label}
       className={cn(
-        variant === 'cards'
-          ? 'grid grid-cols-1 gap-4 md:grid-cols-2'
-          : 'flex flex-col gap-2',
+        variant === 'cards' ? 'grid grid-cols-1 gap-4 md:grid-cols-2' : 'flex flex-col gap-2',
         className,
       )}
     >

@@ -43,35 +43,37 @@ function job(overrides: Record<string, unknown> = {}) {
 function setup() {
   const prisma = {
     agent: {
-      findUnique: jest.fn(async (): Promise<{
-        credentialHash: string;
-        disabledAt: Date | null;
-        version: string;
-        target: {
-          kind: string;
-          scope: string;
-          workspaceId: string;
-          capabilities: string;
-          publicUrl: string;
-          routingMode: string;
-          gatewayAdapter: string | null;
-          workspace: { slug: string };
-        };
-      } | null> => ({
-        credentialHash: 'hash',
-        disabledAt: null,
-        version: '0.3.0',
-        target: {
-          kind: 'docker',
-          scope: 'user',
-          workspaceId: 'workspace-1',
-          capabilities: 'node,php,static',
-          publicUrl: 'https://apps.example.test',
-          routingMode: 'direct-port',
-          gatewayAdapter: null,
-          workspace: { slug: 'team-alpha' },
-        },
-      })),
+      findUnique: jest.fn(
+        async (): Promise<{
+          credentialHash: string;
+          disabledAt: Date | null;
+          version: string;
+          target: {
+            kind: string;
+            scope: string;
+            workspaceId: string;
+            capabilities: string;
+            publicUrl: string;
+            routingMode: string;
+            gatewayAdapter: string | null;
+            workspace: { slug: string };
+          };
+        } | null> => ({
+          credentialHash: 'hash',
+          disabledAt: null,
+          version: '0.3.0',
+          target: {
+            kind: 'docker',
+            scope: 'user',
+            workspaceId: 'workspace-1',
+            capabilities: 'node,php,static',
+            publicUrl: 'https://apps.example.test',
+            routingMode: 'direct-port',
+            gatewayAdapter: null,
+            workspace: { slug: 'team-alpha' },
+          },
+        }),
+      ),
     },
     targetAllocation: {
       upsert: jest.fn(async () => ({ id: 'allocation-1', namespace: 'team-alpha' })),
@@ -84,11 +86,10 @@ function setup() {
         job({ ...create, status: 'queued', attempt: 0, leasedAt: null, leaseExpiresAt: null }),
       ),
       findMany: jest.fn(async () => [job()]),
-      findFirst: jest.fn(async (
-        args?: { select?: { kind?: boolean } },
-      ): Promise<Record<string, unknown> | null> => (
-        args?.select?.kind ? { kind: 'probe' } : null
-      )),
+      findFirst: jest.fn(
+        async (args?: { select?: { kind?: boolean } }): Promise<Record<string, unknown> | null> =>
+          args?.select?.kind ? { kind: 'probe' } : null,
+      ),
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(async () => job()),
       updateMany: jest.fn(async () => ({ count: 1 })),
@@ -117,7 +118,8 @@ function setup() {
   prisma.$transaction.mockImplementation(async (input: unknown) =>
     typeof input === 'function'
       ? (input as (transaction: typeof prisma) => Promise<unknown>)(prisma)
-      : Promise.all(input as Promise<unknown>[]));
+      : Promise.all(input as Promise<unknown>[]),
+  );
   const agents = {
     requireTargetAccess: jest.fn(async () => undefined),
     authenticateCredential: jest.fn(async () => AGENT),
@@ -192,12 +194,14 @@ describe('AgentJobsService durable lease protocol', () => {
     const { service, prisma } = setup();
     prisma.agentJob.findMany.mockResolvedValue([]);
     prisma.target.findMany.mockResolvedValue([{ gatewayPreflightJobId: 'current-preflight' }]);
-    prisma.agentJob.findUnique.mockResolvedValue(job({
-      id: 'current-preflight',
-      kind: 'gateway-preflight',
-      status: 'succeeded',
-      finishedAt: NOW,
-    }));
+    prisma.agentJob.findUnique.mockResolvedValue(
+      job({
+        id: 'current-preflight',
+        kind: 'gateway-preflight',
+        status: 'succeeded',
+        finishedAt: NOW,
+      }),
+    );
 
     await service.onModuleInit();
 
@@ -243,10 +247,12 @@ describe('AgentJobsService durable lease protocol', () => {
   it('does not queue a probe before enrollment', async () => {
     const { service, prisma } = setup();
     prisma.agent.findUnique.mockResolvedValue(null);
-    await expect(service.createProbe('target-1', 'owner-1', {
-      requestId: '123e4567-e89b-42d3-a456-426614174000',
-      durationSeconds: 35,
-    })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createProbe('target-1', 'owner-1', {
+        requestId: '123e4567-e89b-42d3-a456-426614174000',
+        durationSeconds: 35,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.agentJob.upsert).not.toHaveBeenCalled();
   });
 
@@ -254,24 +260,32 @@ describe('AgentJobsService durable lease protocol', () => {
     const { service, prisma, agents } = setup();
     const requestId = '123e4567-e89b-42d3-a456-426614174000';
 
-    await expect(service.createLifecycleTest('target-1', 'owner-1', { requestId }))
-      .resolves.toMatchObject({ kind: 'lifecycle-test', status: 'queued' });
+    await expect(
+      service.createLifecycleTest('target-1', 'owner-1', { requestId }),
+    ).resolves.toMatchObject({ kind: 'lifecycle-test', status: 'queued' });
 
     expect(agents.requireTargetAccess).toHaveBeenCalledWith('target-1', 'owner-1', 'admin');
-    expect(prisma.targetAllocation.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { workspaceId_targetId: { workspaceId: 'workspace-1', targetId: 'target-1' } },
-      create: expect.objectContaining({ namespace: 'team-alpha', capabilities: 'node,php,static' }),
-    }));
+    expect(prisma.targetAllocation.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId_targetId: { workspaceId: 'workspace-1', targetId: 'target-1' } },
+        create: expect.objectContaining({
+          namespace: 'team-alpha',
+          capabilities: 'node,php,static',
+        }),
+      }),
+    );
     const create = prisma.agentJob.upsert.mock.calls.at(-1)?.[0].create as {
       allocationId: string;
       payload: Record<string, unknown>;
     };
     expect(create.allocationId).toBe('allocation-1');
-    expect(create.payload).toEqual(expect.objectContaining({
-      allocationId: 'allocation-1',
-      namespace: 'team-alpha',
-      imageRef: expect.stringMatching(/^nginx@sha256:[a-f0-9]{64}$/),
-    }));
+    expect(create.payload).toEqual(
+      expect.objectContaining({
+        allocationId: 'allocation-1',
+        namespace: 'team-alpha',
+        imageRef: expect.stringMatching(/^nginx@sha256:[a-f0-9]{64}$/),
+      }),
+    );
     expect(create.payload).not.toHaveProperty('command');
     expect(create.payload).not.toHaveProperty('secret');
   });
@@ -281,9 +295,11 @@ describe('AgentJobsService durable lease protocol', () => {
     const enrolled = await prisma.agent.findUnique();
     prisma.agent.findUnique.mockResolvedValue({ ...enrolled!, version: '0.2.0' });
 
-    await expect(service.createLifecycleTest('target-1', 'owner-1', {
-      requestId: '123e4567-e89b-42d3-a456-426614174000',
-    })).rejects.toThrow(/0\.3\.0 or newer/);
+    await expect(
+      service.createLifecycleTest('target-1', 'owner-1', {
+        requestId: '123e4567-e89b-42d3-a456-426614174000',
+      }),
+    ).rejects.toThrow(/0\.3\.0 or newer/);
     expect(prisma.targetAllocation.upsert).not.toHaveBeenCalled();
   });
 
@@ -301,8 +317,9 @@ describe('AgentJobsService durable lease protocol', () => {
     });
     const requestId = '123e4567-e89b-42d3-a456-426614174000';
 
-    await expect(service.createGatewayPreflight('target-1', 'owner-1', { requestId }))
-      .resolves.toMatchObject({ kind: 'gateway-preflight', status: 'queued' });
+    await expect(
+      service.createGatewayPreflight('target-1', 'owner-1', { requestId }),
+    ).resolves.toMatchObject({ kind: 'gateway-preflight', status: 'queued' });
 
     expect(agents.requireTargetAccess).toHaveBeenCalledWith('target-1', 'owner-1', 'admin');
     expect(prisma.agentJob.create).toHaveBeenCalledWith({
@@ -312,10 +329,12 @@ describe('AgentJobsService durable lease protocol', () => {
         payload: { adapter: 'caddy', publicUrl: 'https://apps.example.test' },
       }),
     });
-    expect(prisma.target.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'target-1' },
-      data: expect.objectContaining({ gatewayPreflightStatus: 'queued' }),
-    }));
+    expect(prisma.target.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'target-1' },
+        data: expect.objectContaining({ gatewayPreflightStatus: 'queued' }),
+      }),
+    );
   });
 
   it('returns an idempotent gateway retry without moving the current target fence', async () => {
@@ -336,30 +355,38 @@ describe('AgentJobsService durable lease protocol', () => {
       status: 'succeeded',
       finishedAt: NOW,
     });
-    prisma.agentJob.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError(
-      'Unique constraint failed',
-      { code: 'P2002', clientVersion: '6.19.2' },
-    ));
+    prisma.agentJob.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '6.19.2',
+      }),
+    );
     prisma.agentJob.findUnique.mockResolvedValue(existing);
 
-    await expect(service.createGatewayPreflight('target-1', 'owner-1', {
-      requestId: '123e4567-e89b-42d3-a456-426614174000',
-    })).resolves.toMatchObject({ id: 'older-job', status: 'succeeded' });
+    await expect(
+      service.createGatewayPreflight('target-1', 'owner-1', {
+        requestId: '123e4567-e89b-42d3-a456-426614174000',
+      }),
+    ).resolves.toMatchObject({ id: 'older-job', status: 'succeeded' });
 
     expect(prisma.target.update).not.toHaveBeenCalled();
   });
 
   it('rejects gateway preflight for an old Agent or a direct-port target', async () => {
     const { service, prisma } = setup();
-    await expect(service.createGatewayPreflight('target-1', 'owner-1', {
-      requestId: '123e4567-e89b-42d3-a456-426614174000',
-    })).rejects.toThrow('0.5.0');
+    await expect(
+      service.createGatewayPreflight('target-1', 'owner-1', {
+        requestId: '123e4567-e89b-42d3-a456-426614174000',
+      }),
+    ).rejects.toThrow('0.5.0');
 
     const enrolled = await prisma.agent.findUnique();
     prisma.agent.findUnique.mockResolvedValue({ ...enrolled!, version: '0.5.0' });
-    await expect(service.createGatewayPreflight('target-1', 'owner-1', {
-      requestId: '123e4567-e89b-42d3-a456-426614174001',
-    })).rejects.toThrow('managed-gateway');
+    await expect(
+      service.createGatewayPreflight('target-1', 'owner-1', {
+        requestId: '123e4567-e89b-42d3-a456-426614174001',
+      }),
+    ).rejects.toThrow('managed-gateway');
   });
 
   it('publishes a terminal gateway preflight only through the current job fence', async () => {
@@ -527,46 +554,56 @@ describe('AgentJobsService durable lease protocol', () => {
         finishedAt: NOW,
       },
     });
-    const jobUpdate = (prisma.agentJob.updateMany.mock.calls as unknown as Array<[
-      { data: Record<string, unknown> },
-    ]>)[0][0];
+    const jobUpdate = (
+      prisma.agentJob.updateMany.mock.calls as unknown as Array<[{ data: Record<string, unknown> }]>
+    )[0][0];
     expect(JSON.stringify(jobUpdate.data)).not.toContain('last 200 lines only');
   });
 
   it('atomically claims only a compatible job on the authenticated target', async () => {
     const { service, prisma } = setup();
     prisma.agentJob.findFirst.mockResolvedValue({
-      id: 'job-1', status: 'queued', leaseTokenHash: null,
+      id: 'job-1',
+      status: 'queued',
+      leaseTokenHash: null,
     });
     prisma.agentJob.findUniqueOrThrow.mockImplementation(async () => job());
 
     const result = await service.claim('Bearer credential');
 
-    expect(result.job).toEqual(expect.objectContaining({
-      id: 'job-1',
-      targetId: 'target-1',
-      leaseToken: expect.stringMatching(/^initpad_lease_/),
-    }));
-    expect(prisma.agentJob.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
+    expect(result.job).toEqual(
+      expect.objectContaining({
+        id: 'job-1',
         targetId: 'target-1',
-        protocolVersion: { lte: 1 },
+        leaseToken: expect.stringMatching(/^initpad_lease_/),
       }),
-    }));
-    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ id: 'job-1', status: 'queued' }),
-      data: expect.objectContaining({
-        status: 'leased',
-        attempt: { increment: 1 },
-        leaseTokenHash: expect.any(String),
+    );
+    expect(prisma.agentJob.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          targetId: 'target-1',
+          protocolVersion: { lte: 1 },
+        }),
       }),
-    }));
+    );
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'job-1', status: 'queued' }),
+        data: expect.objectContaining({
+          status: 'leased',
+          attempt: { increment: 1 },
+          leaseTokenHash: expect.any(String),
+        }),
+      }),
+    );
   });
 
   it('cannot claim after its credential is revoked between authentication and the claim CAS', async () => {
     const { service, prisma } = setup();
     prisma.agentJob.findFirst.mockResolvedValue({
-      id: 'job-1', status: 'queued', leaseTokenHash: null,
+      id: 'job-1',
+      status: 'queued',
+      leaseTokenHash: null,
     });
     prisma.agentJob.updateMany.mockResolvedValue({ count: 0 });
 
@@ -576,25 +613,27 @@ describe('AgentJobsService durable lease protocol', () => {
     });
 
     expect(prisma.agentJob.updateMany).toHaveBeenCalledTimes(3);
-    const updateCalls = prisma.agentJob.updateMany.mock.calls as unknown as Array<[
-      { where: Record<string, unknown> },
-    ]>;
+    const updateCalls = prisma.agentJob.updateMany.mock.calls as unknown as Array<
+      [{ where: Record<string, unknown> }]
+    >;
     for (const [call] of updateCalls) {
-      expect(call.where).toEqual(expect.objectContaining({
-        targetId: AGENT.targetId,
-        target: {
-          agent: {
-            is: {
-              id: AGENT.id,
-              OR: [
-                { credentialHash: AGENT.credentialHash },
-                { pendingCredentialHash: AGENT.credentialHash },
-              ],
-              disabledAt: null,
+      expect(call.where).toEqual(
+        expect.objectContaining({
+          targetId: AGENT.targetId,
+          target: {
+            agent: {
+              is: {
+                id: AGENT.id,
+                OR: [
+                  { credentialHash: AGENT.credentialHash },
+                  { pendingCredentialHash: AGENT.credentialHash },
+                ],
+                disabledAt: null,
+              },
             },
           },
-        },
-      }));
+        }),
+      );
     }
     expect(prisma.agentJob.findUniqueOrThrow).not.toHaveBeenCalled();
   });
@@ -602,25 +641,29 @@ describe('AgentJobsService durable lease protocol', () => {
   it('reclaims an expired lease with a new fencing token and attempt', async () => {
     const { service, prisma } = setup();
     prisma.agentJob.findFirst.mockResolvedValue({
-      id: 'job-1', status: 'leased', leaseTokenHash: 'expired-hash',
+      id: 'job-1',
+      status: 'leased',
+      leaseTokenHash: 'expired-hash',
     });
 
     await service.claim('Bearer credential');
 
-    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        id: 'job-1',
-        status: 'leased',
-        leaseTokenHash: 'expired-hash',
-        leaseExpiresAt: { lte: NOW },
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'job-1',
+          status: 'leased',
+          leaseTokenHash: 'expired-hash',
+          leaseExpiresAt: { lte: NOW },
+        }),
+        data: expect.objectContaining({ attempt: { increment: 1 } }),
       }),
-      data: expect.objectContaining({ attempt: { increment: 1 } }),
-    }));
+    );
   });
 
   it('recovers an expired attempt and commits exactly one terminal result', async () => {
     const { service, prisma } = setup();
-    let row = job({
+    const row = job({
       status: 'queued',
       attempt: 0,
       leasedByAgentId: null,
@@ -638,25 +681,40 @@ describe('AgentJobsService durable lease protocol', () => {
       if (where.id !== undefined && where.id !== row.id) return false;
       if (where.targetId !== undefined && where.targetId !== row.targetId) return false;
       if (typeof where.status === 'string' && where.status !== row.status) return false;
-      if (where.leasedByAgentId !== undefined && where.leasedByAgentId !== row.leasedByAgentId) return false;
-      if (where.leaseTokenHash !== undefined && where.leaseTokenHash !== row.leaseTokenHash) return false;
-      if (where.leaseExpiresAt?.lte && (!row.leaseExpiresAt || row.leaseExpiresAt > where.leaseExpiresAt.lte)) {
+      if (where.leasedByAgentId !== undefined && where.leasedByAgentId !== row.leasedByAgentId)
+        return false;
+      if (where.leaseTokenHash !== undefined && where.leaseTokenHash !== row.leaseTokenHash)
+        return false;
+      if (
+        where.leaseExpiresAt?.lte &&
+        (!row.leaseExpiresAt || row.leaseExpiresAt > where.leaseExpiresAt.lte)
+      ) {
         return false;
       }
-      if (where.leaseExpiresAt?.gt && (!row.leaseExpiresAt || row.leaseExpiresAt <= where.leaseExpiresAt.gt)) {
+      if (
+        where.leaseExpiresAt?.gt &&
+        (!row.leaseExpiresAt || row.leaseExpiresAt <= where.leaseExpiresAt.gt)
+      ) {
         return false;
       }
-      if (where.progressSequence?.lt !== undefined && row.progressSequence >= where.progressSequence.lt) {
+      if (
+        where.progressSequence?.lt !== undefined &&
+        row.progressSequence >= where.progressSequence.lt
+      ) {
         return false;
       }
       if (Array.isArray(where.OR)) {
-        const queued = where.OR.some((candidate: Record<string, any>) => candidate.status === 'queued' && row.status === 'queued');
-        const expired = where.OR.some((candidate: Record<string, any>) => (
-          candidate.status === 'leased'
-          && row.status === 'leased'
-          && row.leaseExpiresAt
-          && row.leaseExpiresAt <= candidate.leaseExpiresAt.lte
-        ));
+        const queued = where.OR.some(
+          (candidate: Record<string, any>) =>
+            candidate.status === 'queued' && row.status === 'queued',
+        );
+        const expired = where.OR.some(
+          (candidate: Record<string, any>) =>
+            candidate.status === 'leased' &&
+            row.status === 'leased' &&
+            row.leaseExpiresAt &&
+            row.leaseExpiresAt <= candidate.leaseExpiresAt.lte,
+        );
         if (!queued && !expired) return false;
       }
       return true;
@@ -699,12 +757,14 @@ describe('AgentJobsService durable lease protocol', () => {
     expect(second.job?.attempt).toBe(2);
     expect(second.job?.leaseToken).not.toBe(firstLease);
 
-    await expect(service.complete('Bearer credential', row.id, {
-      leaseToken: firstLease,
-      status: 'succeeded',
-      message: 'Stale completion',
-      resultCode: 'ok',
-    })).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.complete('Bearer credential', row.id, {
+        leaseToken: firstLease,
+        status: 'succeeded',
+        message: 'Stale completion',
+        resultCode: 'ok',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
 
     const completion = {
       leaseToken: second.job!.leaseToken,
@@ -712,10 +772,14 @@ describe('AgentJobsService durable lease protocol', () => {
       message: 'Recovered completion',
       resultCode: 'ok',
     };
-    await expect(service.complete('Bearer credential', row.id, completion))
-      .resolves.toMatchObject({ status: 'succeeded', attempt: 2 });
-    await expect(service.complete('Bearer credential', row.id, completion))
-      .resolves.toMatchObject({ status: 'succeeded', attempt: 2 });
+    await expect(service.complete('Bearer credential', row.id, completion)).resolves.toMatchObject({
+      status: 'succeeded',
+      attempt: 2,
+    });
+    await expect(service.complete('Bearer credential', row.id, completion)).resolves.toMatchObject({
+      status: 'succeeded',
+      attempt: 2,
+    });
 
     expect(terminalWrites).toBe(1);
     await expect(service.claim('Bearer credential')).resolves.toEqual({
@@ -729,16 +793,18 @@ describe('AgentJobsService durable lease protocol', () => {
     prisma.agentJob.findFirst
       .mockResolvedValueOnce({ id: 'job-1', status: 'queued', leaseTokenHash: null })
       .mockResolvedValueOnce(deliveryBinding());
-    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({
-      kind: 'deploy',
-      allocationId: 'allocation-1',
-      deploymentOperationId: 'operation-1',
-      payload: {
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(
+      job({
+        kind: 'deploy',
         allocationId: 'allocation-1',
-        projectSlug: 'sample-project',
-        environment: 'dev',
-      },
-    }));
+        deploymentOperationId: 'operation-1',
+        payload: {
+          allocationId: 'allocation-1',
+          projectSlug: 'sample-project',
+          environment: 'dev',
+        },
+      }),
+    );
 
     const result = await service.claim('Bearer credential');
 
@@ -761,7 +827,7 @@ describe('AgentJobsService durable lease protocol', () => {
         },
       },
     });
-    expect((result.job?.payload as Record<string, unknown>)).not.toHaveProperty('envVars');
+    expect(result.job?.payload as Record<string, unknown>).not.toHaveProperty('envVars');
     expect(JSON.stringify(prisma.agentJob.updateMany.mock.calls)).not.toContain('db-secret');
     expect(artifactStore.head).toHaveBeenCalledWith('artifacts/ws/project/artifact/a.tar');
     expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
@@ -779,28 +845,34 @@ describe('AgentJobsService durable lease protocol', () => {
     const { service, prisma, artifactStore } = setup();
     prisma.agentJob.findFirst
       .mockResolvedValueOnce({ id: 'job-1', status: 'queued', leaseTokenHash: null })
-      .mockResolvedValueOnce(deliveryBinding({
-        payload: { configFingerprint: 'f'.repeat(64) },
-      }))
+      .mockResolvedValueOnce(
+        deliveryBinding({
+          payload: { configFingerprint: 'f'.repeat(64) },
+        }),
+      )
       .mockResolvedValueOnce(null);
     prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({ kind: 'deploy' }));
-    prisma.agentJob.findUnique.mockResolvedValue(job({
-      kind: 'deploy',
-      status: 'failed',
-      deploymentOperation: null,
-    }));
+    prisma.agentJob.findUnique.mockResolvedValue(
+      job({
+        kind: 'deploy',
+        status: 'failed',
+        deploymentOperation: null,
+      }),
+    );
 
     await expect(service.claim('Bearer credential')).resolves.toEqual({
       job: null,
       nextPollSeconds: 2,
     });
-    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        status: 'failed',
-        resultCode: 'delivery_invalid',
-        message: expect.stringContaining('config changed'),
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'failed',
+          resultCode: 'delivery_invalid',
+          message: expect.stringContaining('config changed'),
+        }),
       }),
-    }));
+    );
     expect(artifactStore.head).not.toHaveBeenCalled();
   });
 
@@ -811,24 +883,28 @@ describe('AgentJobsService durable lease protocol', () => {
       .mockResolvedValueOnce(deliveryBinding())
       .mockResolvedValueOnce(null);
     prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({ kind: 'deploy' }));
-    prisma.agentJob.findUnique.mockResolvedValue(job({
-      kind: 'deploy',
-      status: 'failed',
-      deploymentOperation: null,
-    }));
+    prisma.agentJob.findUnique.mockResolvedValue(
+      job({
+        kind: 'deploy',
+        status: 'failed',
+        deploymentOperation: null,
+      }),
+    );
     artifactStore.head.mockRejectedValueOnce(new Error('object storage unavailable'));
 
     await expect(service.claim('Bearer credential')).resolves.toEqual({
       job: null,
       nextPollSeconds: 2,
     });
-    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        status: 'failed',
-        resultCode: 'delivery_invalid',
-        message: 'object storage unavailable',
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'failed',
+          resultCode: 'delivery_invalid',
+          message: 'object storage unavailable',
+        }),
       }),
-    }));
+    );
     expect(artifactStore.openRead).not.toHaveBeenCalled();
   });
 
@@ -840,126 +916,154 @@ describe('AgentJobsService durable lease protocol', () => {
 
     expect(download).toMatchObject({ sha256: 'a'.repeat(64), sizeBytes: 13 });
     expect(artifactStore.openRead).toHaveBeenCalledWith('artifacts/ws/project/artifact/a.tar');
-    expect(await new Promise<string>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      download.stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-      download.stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-      download.stream.on('error', reject);
-    })).toBe('archive-bytes');
+    expect(
+      await new Promise<string>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        download.stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        download.stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        download.stream.on('error', reject);
+      }),
+    ).toBe('archive-bytes');
   });
 
   it('does not expose an artifact after the lease is lost', async () => {
     const { service, prisma, artifactStore } = setup();
     prisma.agentJob.findFirst.mockResolvedValue(null);
 
-    await expect(service.openArtifact('Bearer credential', 'job-1', LEASE))
-      .rejects.toBeInstanceOf(ConflictException);
+    await expect(service.openArtifact('Bearer credential', 'job-1', LEASE)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(artifactStore.openRead).not.toHaveBeenCalled();
   });
 
   it('rejects artifact, renew, progress and completion for a job outside the Agent target', async () => {
     const artifact = setup();
     artifact.prisma.agentJob.findFirst.mockResolvedValue(null);
-    await expect(artifact.service.openArtifact('Bearer credential', 'foreign-job', LEASE))
-      .rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      artifact.service.openArtifact('Bearer credential', 'foreign-job', LEASE),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(artifact.artifactStore.openRead).not.toHaveBeenCalled();
-    expect(artifact.prisma.agentJob.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ targetId: AGENT.targetId, leasedByAgentId: AGENT.id }),
-    }));
+    expect(artifact.prisma.agentJob.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ targetId: AGENT.targetId, leasedByAgentId: AGENT.id }),
+      }),
+    );
 
     const renew = setup();
     renew.prisma.agentJob.updateMany.mockResolvedValue({ count: 0 });
-    await expect(renew.service.renew('Bearer credential', 'foreign-job', LEASE))
-      .rejects.toBeInstanceOf(ConflictException);
-    expect(renew.prisma.agentJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ targetId: AGENT.targetId, leasedByAgentId: AGENT.id }),
-    }));
+    await expect(
+      renew.service.renew('Bearer credential', 'foreign-job', LEASE),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(renew.prisma.agentJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ targetId: AGENT.targetId, leasedByAgentId: AGENT.id }),
+      }),
+    );
 
     const progress = setup();
     progress.prisma.agentJob.updateMany.mockResolvedValue({ count: 0 });
     progress.prisma.agentJob.findFirst.mockResolvedValue(null);
-    await expect(progress.service.progress('Bearer credential', 'foreign-job', {
-      leaseToken: LEASE,
-      sequence: 2,
-      percent: 40,
-      stage: 'working',
-      message: 'Foreign progress',
-    })).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      progress.service.progress('Bearer credential', 'foreign-job', {
+        leaseToken: LEASE,
+        sequence: 2,
+        percent: 40,
+        stage: 'working',
+        message: 'Foreign progress',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(progress.prisma.deploymentOperation.updateMany).not.toHaveBeenCalled();
     expect(progress.prisma.workloadDiagnostic.updateMany).not.toHaveBeenCalled();
 
     const completion = setup();
     completion.prisma.agentJob.findFirst.mockResolvedValue(null);
-    await expect(completion.service.complete('Bearer credential', 'foreign-job', {
-      leaseToken: LEASE,
-      status: 'succeeded',
-      message: 'Foreign completion',
-      resultCode: 'ok',
-    })).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      completion.service.complete('Bearer credential', 'foreign-job', {
+        leaseToken: LEASE,
+        status: 'succeeded',
+        message: 'Foreign completion',
+        resultCode: 'ok',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(completion.prisma.$transaction).not.toHaveBeenCalled();
     expect(completion.prisma.agentJob.findUnique).not.toHaveBeenCalled();
   });
 
   it('renews and advances progress only under the current unexpired lease', async () => {
     const { service, prisma } = setup();
-    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({
-      progressSequence: 2, progressPercent: 40,
-    }));
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(
+      job({
+        progressSequence: 2,
+        progressPercent: 40,
+      }),
+    );
 
     await expect(service.renew('Bearer credential', 'job-1', LEASE)).resolves.toEqual({
       leaseExpiresAt: new Date(NOW.getTime() + 30_000).toISOString(),
     });
-    await expect(service.progress('Bearer credential', 'job-1', {
-      leaseToken: LEASE,
-      sequence: 2,
-      percent: 40,
-      stage: 'working',
-      message: 'Still running',
-    })).resolves.toMatchObject({ progressSequence: 2, progressPercent: 40 });
-    expect(prisma.agentJob.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        leaseTokenHash: hashToken(LEASE),
-        leaseExpiresAt: { gt: NOW },
-        progressSequence: { lt: 2 },
+    await expect(
+      service.progress('Bearer credential', 'job-1', {
+        leaseToken: LEASE,
+        sequence: 2,
+        percent: 40,
+        stage: 'working',
+        message: 'Still running',
       }),
-    }));
+    ).resolves.toMatchObject({ progressSequence: 2, progressPercent: 40 });
+    expect(prisma.agentJob.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          leaseTokenHash: hashToken(LEASE),
+          leaseExpiresAt: { gt: NOW },
+          progressSequence: { lt: 2 },
+        }),
+      }),
+    );
   });
 
   it('rejects a stale fencing token after the lease has been reassigned', async () => {
     const { service, prisma } = setup();
     prisma.agentJob.updateMany.mockResolvedValue({ count: 0 });
-    prisma.agentJob.findUnique.mockResolvedValue(job({
-      leaseTokenHash: hashToken(`initpad_lease_${'c'.repeat(43)}`),
-      attempt: 2,
-    }));
+    prisma.agentJob.findUnique.mockResolvedValue(
+      job({
+        leaseTokenHash: hashToken(`initpad_lease_${'c'.repeat(43)}`),
+        attempt: 2,
+      }),
+    );
 
-    await expect(service.progress('Bearer credential', 'job-1', {
-      leaseToken: LEASE,
-      sequence: 2,
-      percent: 40,
-      stage: 'working',
-      message: 'Stale worker',
-    })).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.progress('Bearer credential', 'job-1', {
+        leaseToken: LEASE,
+        sequence: 2,
+        percent: 40,
+        stage: 'working',
+        message: 'Stale worker',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('does not regress mirrored state when an older progress delivery is duplicated', async () => {
     const { service, prisma } = setup();
     prisma.agentJob.updateMany.mockResolvedValue({ count: 0 });
-    prisma.agentJob.findFirst.mockResolvedValue(job({
-      progressSequence: 3,
-      progressPercent: 70,
-      progressStage: 'verifying',
-      message: 'Verifying current deployment',
-      deploymentOperationId: 'operation-1',
-    }));
+    prisma.agentJob.findFirst.mockResolvedValue(
+      job({
+        progressSequence: 3,
+        progressPercent: 70,
+        progressStage: 'verifying',
+        message: 'Verifying current deployment',
+        deploymentOperationId: 'operation-1',
+      }),
+    );
 
-    await expect(service.progress('Bearer credential', 'job-1', {
-      leaseToken: LEASE,
-      sequence: 2,
-      percent: 40,
-      stage: 'working',
-      message: 'Late duplicate',
-    })).resolves.toMatchObject({
+    await expect(
+      service.progress('Bearer credential', 'job-1', {
+        leaseToken: LEASE,
+        sequence: 2,
+        percent: 40,
+        stage: 'working',
+        message: 'Late duplicate',
+      }),
+    ).resolves.toMatchObject({
       progressSequence: 3,
       progressPercent: 70,
       progressStage: 'verifying',
@@ -970,8 +1074,9 @@ describe('AgentJobsService durable lease protocol', () => {
       where: { currentJobId: 'job-1', status: { in: ['queued', 'running'] } },
       data: { status: 'running', message: 'Verifying current deployment' },
     });
-    expect(JSON.stringify(prisma.deploymentOperation.updateMany.mock.calls))
-      .not.toContain('Late duplicate');
+    expect(JSON.stringify(prisma.deploymentOperation.updateMany.mock.calls)).not.toContain(
+      'Late duplicate',
+    );
   });
 
   it('makes an identical completion retry idempotent after a lost response', async () => {
@@ -991,12 +1096,14 @@ describe('AgentJobsService durable lease protocol', () => {
       .mockResolvedValueOnce(terminal);
     prisma.agentJob.findUnique.mockResolvedValue(terminal);
 
-    await expect(service.complete('Bearer credential', 'job-1', {
-      leaseToken: LEASE,
-      status: 'succeeded',
-      message: 'Probe completed',
-      resultCode: 'ok',
-    })).resolves.toMatchObject({ status: 'succeeded', resultCode: 'ok' });
+    await expect(
+      service.complete('Bearer credential', 'job-1', {
+        leaseToken: LEASE,
+        status: 'succeeded',
+        message: 'Probe completed',
+        resultCode: 'ok',
+      }),
+    ).resolves.toMatchObject({ status: 'succeeded', resultCode: 'ok' });
   });
 
   it('rejects a changed completion replay and a revoke race after binding validation', async () => {
@@ -1004,20 +1111,24 @@ describe('AgentJobsService durable lease protocol', () => {
     changed.prisma.agentJob.updateMany.mockResolvedValue({ count: 0 });
     changed.prisma.agentJob.findFirst
       .mockResolvedValueOnce({ kind: 'probe' })
-      .mockResolvedValueOnce(job({
-        status: 'succeeded',
-        leaseExpiresAt: null,
-        message: 'Original completion',
-        resultCode: 'ok',
-        finishedAt: NOW,
-      }));
+      .mockResolvedValueOnce(
+        job({
+          status: 'succeeded',
+          leaseExpiresAt: null,
+          message: 'Original completion',
+          resultCode: 'ok',
+          finishedAt: NOW,
+        }),
+      );
 
-    await expect(changed.service.complete('Bearer credential', 'job-1', {
-      leaseToken: LEASE,
-      status: 'succeeded',
-      message: 'Changed replay',
-      resultCode: 'ok',
-    })).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      changed.service.complete('Bearer credential', 'job-1', {
+        leaseToken: LEASE,
+        status: 'succeeded',
+        message: 'Changed replay',
+        resultCode: 'ok',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(changed.prisma.deploymentOperation.updateMany).not.toHaveBeenCalled();
 
     const revoked = setup();
@@ -1026,18 +1137,22 @@ describe('AgentJobsService durable lease protocol', () => {
       .mockResolvedValueOnce({ kind: 'probe' })
       .mockResolvedValueOnce(null);
 
-    await expect(revoked.service.complete('Bearer credential', 'job-1', {
-      leaseToken: LEASE,
-      status: 'succeeded',
-      message: 'Probe completed',
-      resultCode: 'ok',
-    })).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      revoked.service.complete('Bearer credential', 'job-1', {
+        leaseToken: LEASE,
+        status: 'succeeded',
+        message: 'Probe completed',
+        resultCode: 'ok',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(revoked.prisma.deploymentOperation.updateMany).not.toHaveBeenCalled();
   });
 
   it('mirrors Agent progress into the project operation and live environment', async () => {
     const { service, prisma } = setup();
-    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(job({ deploymentOperationId: 'operation-1' }));
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(
+      job({ deploymentOperationId: 'operation-1' }),
+    );
     prisma.agentJob.findUnique.mockResolvedValue(job({ deploymentOperationId: 'operation-1' }));
 
     await service.progress('Bearer credential', 'job-1', {
@@ -1251,9 +1366,11 @@ describe('AgentJobsService durable lease protocol', () => {
       deploymentOperationId: 'operation-1',
       operationStep: 2,
     });
-    expect(prisma.environment.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ activeOperationId: null }),
-    }));
+    expect(prisma.environment.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ activeOperationId: null }),
+      }),
+    );
   });
 
   it('publishes the reserved HTTPS URL after managed route step 2 succeeds', async () => {
@@ -1370,12 +1487,15 @@ describe('AgentJobsService durable lease protocol', () => {
         statusReason: expect.stringContaining('remains online'),
       }),
     });
-    expect(prisma.environment.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ version: requestedRevision }),
-    }));
+    expect(prisma.environment.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ version: requestedRevision }),
+      }),
+    );
 
     prisma.environment.updateMany.mockClear();
-    terminal.message = 'Public HTTPS health check failed; rollback incomplete: route restore failed';
+    terminal.message =
+      'Public HTTPS health check failed; rollback incomplete: route restore failed';
     await service.complete('Bearer credential', 'job-1', {
       leaseToken: LEASE,
       status: 'failed',

@@ -56,7 +56,7 @@ export class WorkspaceMetricsService {
     private readonly workspaces: WorkspacesService,
     @Inject(AuditEventsService)
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
-      record: async () => undefined,
+      record: () => Promise.resolve(),
     },
   ) {}
 
@@ -98,7 +98,9 @@ export class WorkspaceMetricsService {
     ]);
     if (!workspace) throw new NotFoundException('Workspace not found');
     if (operations.length > MAX_OPERATIONS) {
-      throw new BadRequestException('This period contains too many operations; choose a shorter range');
+      throw new BadRequestException(
+        'This period contains too many operations; choose a shorter range',
+      );
     }
 
     const rows = operations as OperationRow[];
@@ -122,9 +124,11 @@ export class WorkspaceMetricsService {
         timezone: 'UTC',
       },
       definitions: {
-        successRate: 'Successful / (successful + failed) deployment operations; cancelled operations are excluded.',
+        successRate:
+          'Successful / (successful + failed) deployment operations; cancelled operations are excluded.',
         timeToHealthyDev: 'Average request-to-success duration for successful dev deployments.',
-        buildToProduction: 'Average time from verified build record creation to successful production deployment.',
+        buildToProduction:
+          'Average time from verified build record creation to successful production deployment.',
       },
       totals: this.aggregate(rows),
       daily,
@@ -168,21 +172,24 @@ export class WorkspaceMetricsService {
       'average_time_to_healthy_dev_seconds',
       'average_build_to_production_hours',
     ];
-    const row = (scope: 'total' | 'day', date: string, values: Aggregate) => [
-      scope,
-      date,
-      exported.period.from,
-      exported.period.toExclusive,
-      values.terminalDeployments,
-      values.successful,
-      values.failed,
-      values.cancelled,
-      values.successRatePercent ?? '',
-      values.rollbackAttempts,
-      values.successfulRollbacks,
-      values.averageTimeToHealthyDevSeconds ?? '',
-      values.averageBuildToProductionHours ?? '',
-    ].map(this.csvCell).join(',');
+    const row = (scope: 'total' | 'day', date: string, values: Aggregate) =>
+      [
+        scope,
+        date,
+        exported.period.from,
+        exported.period.toExclusive,
+        values.terminalDeployments,
+        values.successful,
+        values.failed,
+        values.cancelled,
+        values.successRatePercent ?? '',
+        values.rollbackAttempts,
+        values.successfulRollbacks,
+        values.averageTimeToHealthyDevSeconds ?? '',
+        values.averageBuildToProductionHours ?? '',
+      ]
+        .map((value) => this.csvCell(value))
+        .join(',');
 
     return `\uFEFF${[
       header.join(','),
@@ -224,14 +231,17 @@ export class WorkspaceMetricsService {
       .map((row) => Math.max(0, row.finishedAt!.getTime() - row.startedAt.getTime()) / 1_000);
     const productionLeadTimes = successful
       .filter((row) => row.environment.name === 'prod' && row.finishedAt && row.buildArtifact)
-      .map((row) => (row.finishedAt!.getTime() - row.buildArtifact!.createdAt.getTime()) / (60 * 60 * 1_000))
+      .map(
+        (row) =>
+          (row.finishedAt!.getTime() - row.buildArtifact!.createdAt.getTime()) / (60 * 60 * 1_000),
+      )
       .filter((hours) => hours >= 0);
     return {
       terminalDeployments: rows.length,
       successful: successful.length,
       failed: failed.length,
       cancelled: cancelled.length,
-      successRatePercent: completed ? this.round(successful.length / completed * 100) : null,
+      successRatePercent: completed ? this.round((successful.length / completed) * 100) : null,
       rollbackAttempts: rows.filter((row) => row.kind === 'rollback').length,
       successfulRollbacks: successful.filter((row) => row.kind === 'rollback').length,
       averageTimeToHealthyDevSeconds: this.average(devDurations),
@@ -240,7 +250,9 @@ export class WorkspaceMetricsService {
   }
 
   private average(values: number[]): number | null {
-    return values.length ? this.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
+    return values.length
+      ? this.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+      : null;
   }
 
   private round(value: number): number {

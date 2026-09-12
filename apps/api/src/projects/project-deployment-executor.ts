@@ -36,11 +36,7 @@ export class ProjectDeploymentExecutor {
     useRegistry: boolean,
     operationId: string,
   ): Promise<boolean> {
-    await this.operations.advancePhase(
-      operationId,
-      'assigned',
-      'Assigned to control plane',
-    );
+    await this.operations.advancePhase(operationId, 'assigned', 'Assigned to control plane');
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
     const repository = repositoryRef(project);
     const template = this.templates.get(project.templateId);
@@ -52,9 +48,7 @@ export class ProjectDeploymentExecutor {
       where: { id: operationId },
       include: { buildArtifact: true },
     });
-    const agentBacked =
-      environment.provider === 'docker'
-      && environment.target?.scope === 'user';
+    const agentBacked = environment.provider === 'docker' && environment.target?.scope === 'user';
     let testedImageRef: string | undefined;
     if (useRegistry) {
       if (repository.provider === 'github') {
@@ -71,8 +65,8 @@ export class ProjectDeploymentExecutor {
         }
         testedImageRef = artifactImageRef(repository, artifact);
         if (
-          !agentBacked
-          && !(await this.artifacts.ensureImageAvailable(repository, projectId, artifact.id))
+          !agentBacked &&
+          !(await this.artifacts.ensureImageAvailable(repository, projectId, artifact.id))
         ) {
           throw new Error('Verified build artifact could not be rehydrated from object storage');
         }
@@ -93,7 +87,10 @@ export class ProjectDeploymentExecutor {
     let allocationId: string | undefined;
     let allocation: DeploymentAllocation | undefined;
     if (environment.targetId) {
-      const resolved = await this.targets.ensureAllocation(project.workspaceId, environment.targetId);
+      const resolved = await this.targets.ensureAllocation(
+        project.workspaceId,
+        environment.targetId,
+      );
       await this.targets.assertAcceptsDeploy(
         resolved.id,
         environment.id,

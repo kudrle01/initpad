@@ -1,7 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 
-jest.mock('../common/secret', () => ({ decryptSecret: () => 'tok', encryptSecret: (v: string) => v }));
+jest.mock('../common/secret', () => ({
+  decryptSecret: () => 'tok',
+  encryptSecret: (v: string) => v,
+}));
 
 const provisioning = {
   start: jest.fn(async () => 'op1'),
@@ -19,7 +22,13 @@ const provisioning = {
 };
 
 // Constructor order: prisma, templates, generator, deployment, targets, scm, workspaces, provisioning.
-function build(parts: { prisma?: unknown; templates?: unknown; targets?: unknown; scm?: unknown; workspaces?: unknown }) {
+function build(parts: {
+  prisma?: unknown;
+  templates?: unknown;
+  targets?: unknown;
+  scm?: unknown;
+  workspaces?: unknown;
+}) {
   const scm = parts.scm as { listRepositories?: () => Promise<ReturnType<typeof repository>[]> };
   const prisma = {
     targetAllocation: {
@@ -40,7 +49,9 @@ function build(parts: { prisma?: unknown; templates?: unknown; targets?: unknown
   };
   const workspaceScm = {
     repository: jest.fn(async (_userId: string, _workspaceId: string, repositoryId: string) => {
-      const repo = (await scm.listRepositories?.())?.find((candidate) => candidate.repositoryId === repositoryId);
+      const repo = (await scm.listRepositories?.())?.find(
+        (candidate) => candidate.repositoryId === repositoryId,
+      );
       if (!repo) throw new Error('not found');
       return { repo, actor: { username: owner.username, token: 'tok' } };
     }),
@@ -60,17 +71,37 @@ function build(parts: { prisma?: unknown; templates?: unknown; targets?: unknown
   );
 }
 
-const workspaces = { resolve: jest.fn(async () => ({ id: 'ws1' })), require: jest.fn(async () => 'owner') };
+const workspaces = {
+  resolve: jest.fn(async () => ({ id: 'ws1' })),
+  require: jest.fn(async () => 'owner'),
+};
 const owner = { id: 'u1', username: 'kudrla', accessToken: 'enc' };
 const template = {
-  id: 'node-api', name: 'Node API', language: 'TypeScript', runtime: 'node',
-  artifact: 'runtime', compatibleProviders: ['docker', 'ssh'], description: 'test',
+  id: 'node-api',
+  name: 'Node API',
+  language: 'TypeScript',
+  runtime: 'node',
+  artifact: 'runtime',
+  compatibleProviders: ['docker', 'ssh'],
+  description: 'test',
 };
 const dockerTarget = {
-  id: 'builtin-docker', name: 'Docker', kind: 'docker', scope: 'builtin',
-  capabilities: 'static,node,php,python', host: null, port: null, username: null,
-  auth: null, secret: null, remotePath: null, publicUrl: null, verifiedAt: null,
-  ownerId: null, workspaceId: null, createdAt: new Date(),
+  id: 'builtin-docker',
+  name: 'Docker',
+  kind: 'docker',
+  scope: 'builtin',
+  capabilities: 'static,node,php,python',
+  host: null,
+  port: null,
+  username: null,
+  auth: null,
+  secret: null,
+  remotePath: null,
+  publicUrl: null,
+  verifiedAt: null,
+  ownerId: null,
+  workspaceId: null,
+  createdAt: new Date(),
 };
 const repository = (name = 'api', empty = false) => ({
   provider: 'gitea',
@@ -96,8 +127,9 @@ describe('ProjectsService.importExisting guards', () => {
       templates: { get: jest.fn(() => template) },
       scm: { listRepositories: jest.fn(async () => [repository('NotValid')]) },
     });
-    await expect(service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects a name already used in the workspace', async () => {
@@ -111,8 +143,9 @@ describe('ProjectsService.importExisting guards', () => {
       templates: { get: jest.fn(() => template) },
       scm: { listRepositories: jest.fn(async () => [repository()]) },
     });
-    await expect(service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'))
-      .rejects.toThrow('already has a project');
+    await expect(
+      service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'),
+    ).rejects.toThrow('already has a project');
   });
 
   it('refuses to import an empty repository', async () => {
@@ -123,8 +156,9 @@ describe('ProjectsService.importExisting guards', () => {
     const templates = { get: jest.fn(() => template) };
     const scm = { listRepositories: jest.fn(async () => [repository('api', true)]) };
     const service = build({ workspaces, prisma, templates, scm });
-    await expect(service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'))
-      .rejects.toThrow('empty');
+    await expect(
+      service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'),
+    ).rejects.toThrow('empty');
   });
 
   it('removes partial secrets and the project record when repository setup fails', async () => {
@@ -143,23 +177,31 @@ describe('ProjectsService.importExisting guards', () => {
     const scm = {
       listRepositories: jest.fn(async () => [repository()]),
       readFile: jest.fn(async (_repo: unknown, path: string) =>
-        path === 'Dockerfile' ? 'FROM node:22' : 'INITPAD_PLATFORM_URL INITPAD_DEPLOY_TOKEN'),
+        path === 'Dockerfile' ? 'FROM node:22' : 'INITPAD_PLATFORM_URL INITPAD_DEPLOY_TOKEN',
+      ),
       issueCloneToken: jest.fn(async () => 'clone-token'),
-      configureRepoSecrets: jest.fn(async () => { throw new Error('secret write failed'); }),
+      configureRepoSecrets: jest.fn(async () => {
+        throw new Error('secret write failed');
+      }),
       removeRepoSecrets: jest.fn(async () => undefined),
     };
     const service = build({
       workspaces,
       prisma,
       templates: { get: jest.fn(() => template) },
-      targets: { listEntities: jest.fn(async () => [dockerTarget]), parseCaps: (v: string) => v.split(',') },
+      targets: {
+        listEntities: jest.fn(async () => [dockerTarget]),
+        parseCaps: (v: string) => v.split(','),
+      },
       scm,
     });
 
     await expect(
       service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'),
     ).rejects.toThrow('All InitPad changes were rolled back');
-    expect(scm.removeRepoSecrets).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'kudrla/api' }));
+    expect(scm.removeRepoSecrets).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'kudrla/api' }),
+    );
     expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'p1' } });
     expect(provisioning.compensateEffect).toHaveBeenCalledWith('op1', 'secrets:initpad');
     expect(provisioning.compensateEffect).toHaveBeenCalledWith('op1', 'project:record');
@@ -181,25 +223,35 @@ describe('ProjectsService.importExisting guards', () => {
     const scm = {
       listRepositories: jest.fn(async () => [repository()]),
       readFile: jest.fn(async (_repo: unknown, path: string) =>
-        path === 'Dockerfile' ? 'FROM node:22' : 'INITPAD_PLATFORM_URL INITPAD_DEPLOY_TOKEN'),
+        path === 'Dockerfile' ? 'FROM node:22' : 'INITPAD_PLATFORM_URL INITPAD_DEPLOY_TOKEN',
+      ),
       issueCloneToken: jest.fn(async () => 'clone-token'),
-      configureRepoSecrets: jest.fn(async () => { throw new Error('secret write failed'); }),
-      removeRepoSecrets: jest.fn(async () => { throw new Error('GitHub unavailable'); }),
+      configureRepoSecrets: jest.fn(async () => {
+        throw new Error('secret write failed');
+      }),
+      removeRepoSecrets: jest.fn(async () => {
+        throw new Error('GitHub unavailable');
+      }),
     };
     const service = build({
       workspaces,
       prisma,
       templates: { get: jest.fn(() => template) },
-      targets: { listEntities: jest.fn(async () => [dockerTarget]), parseCaps: (v: string) => v.split(',') },
+      targets: {
+        listEntities: jest.fn(async () => [dockerTarget]),
+        parseCaps: (v: string) => v.split(','),
+      },
       scm,
     });
 
     await expect(
       service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'),
-    ).rejects.toThrow("was kept so an owner can inspect and repair it");
+    ).rejects.toThrow('was kept so an owner can inspect and repair it');
     expect(prisma.project.delete).not.toHaveBeenCalled();
     expect(provisioning.compensationFailed).toHaveBeenCalledWith(
-      'op1', 'secrets:initpad', 'GitHub unavailable',
+      'op1',
+      'secrets:initpad',
+      'GitHub unavailable',
     );
   });
 });

@@ -4,9 +4,15 @@ import { verifyPassword } from '../auth/password';
 
 function row(over: Record<string, unknown> = {}) {
   return {
-    id: 'u2', username: 'newuser', name: null, email: 'new@example.test',
-    platformRole: 'user', active: true, mustChangePassword: false,
-    emailVerifiedAt: null, createdAt: new Date('2026-01-01T00:00:00Z'),
+    id: 'u2',
+    username: 'newuser',
+    name: null,
+    email: 'new@example.test',
+    platformRole: 'user',
+    active: true,
+    mustChangePassword: false,
+    emailVerifiedAt: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
     ...over,
   };
 }
@@ -43,7 +49,9 @@ describe('AdminService', () => {
       },
     };
     const service = new AdminService(prisma as never, {} as never, {} as never);
-    await expect(service.setActive('someoneElse', 'admin1', false)).rejects.toThrow('administrator');
+    await expect(service.setActive('someoneElse', 'admin1', false)).rejects.toThrow(
+      'administrator',
+    );
   });
 
   it('deactivates through Gitea and revokes sessions', async () => {
@@ -81,6 +89,8 @@ describe('AdminService', () => {
     expect(updateArgs?.mustChangePassword).toBe(true);
     expect(updateArgs?.tokenVersion).toEqual({ increment: 1 });
     // The stored hash must verify against the returned one-time secret.
-    await expect(verifyPassword(temporaryPassword, updateArgs?.passwordHash as string)).resolves.toBe(true);
+    await expect(
+      verifyPassword(temporaryPassword, updateArgs?.passwordHash as string),
+    ).resolves.toBe(true);
   });
 });

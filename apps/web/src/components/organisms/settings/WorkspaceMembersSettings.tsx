@@ -31,14 +31,16 @@ export function WorkspaceMembersSettings() {
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
   const canManage = canAdmin && activeWorkspace?.type !== 'personal';
+  const activeWorkspaceId = activeWorkspace?.id;
 
   useEffect(() => {
-    if (!activeWorkspace) return;
+    if (!activeWorkspaceId) return;
     let disposed = false;
     setMembers([]);
     setLoading(true);
     setLoadError(null);
-    api.listWorkspaceMembers(activeWorkspace.id)
+    api
+      .listWorkspaceMembers(activeWorkspaceId)
       .then((rows) => {
         if (!disposed) setMembers(rows);
       })
@@ -51,7 +53,7 @@ export function WorkspaceMembersSettings() {
     return () => {
       disposed = true;
     };
-  }, [activeWorkspace?.id, reloadKey]);
+  }, [activeWorkspaceId, reloadKey]);
 
   async function addMember() {
     if (!activeWorkspace) return;
@@ -84,7 +86,8 @@ export function WorkspaceMembersSettings() {
     if (!activeWorkspace || nextRole === member.role) return;
     const confirmed = await confirmAction({
       title: `Change @${member.username}'s role?`,
-      description: 'Workspace role changes take effect immediately across projects and infrastructure.',
+      description:
+        'Workspace role changes take effect immediately across projects and infrastructure.',
       confirmLabel: `Change role to ${nextRole}`,
       tone: 'warning',
       details: [
@@ -114,7 +117,8 @@ export function WorkspaceMembersSettings() {
     if (!activeWorkspace) return;
     const confirmed = await confirmAction({
       title: `Remove @${member.username} from ${activeWorkspace.name}?`,
-      description: 'The user account remains active, but its access to this team workspace is revoked.',
+      description:
+        'The user account remains active, but its access to this team workspace is revoked.',
       confirmLabel: 'Remove member',
       tone: 'danger',
       consequences: [
@@ -136,10 +140,7 @@ export function WorkspaceMembersSettings() {
   }
 
   return (
-    <SettingsSection
-      icon={Users}
-      title="Workspace members"
-    >
+    <SettingsSection icon={Users} title="Workspace members">
       {canManage && (
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
           <input
@@ -156,7 +157,9 @@ export function WorkspaceMembersSettings() {
             onChange={(event) => setRole(event.target.value as AssignableRole)}
           >
             {ASSIGNABLE_ROLES.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
           </select>
           <Button onClick={() => void addMember()} disabled={adding || !identity.trim()}>
@@ -167,8 +170,8 @@ export function WorkspaceMembersSettings() {
 
       {activeWorkspace?.type === 'personal' && (
         <p className="rounded-md bg-secondary p-3 text-sm text-muted-foreground">
-          Personal workspaces stay private. Use “Add new workspace” in the workspace switcher
-          to create a shared team space.
+          Personal workspaces stay private. Use “Add new workspace” in the workspace switcher to
+          create a shared team space.
         </p>
       )}
 
@@ -178,52 +181,59 @@ export function WorkspaceMembersSettings() {
           message={loadError}
           onRetry={() => setReloadKey((value) => value + 1)}
         />
-      ) : <div className="mt-4 divide-y divide-border rounded-md border border-border">
-        {loading && <p className="p-3 text-sm text-muted-foreground">Loading members…</p>}
-        {!loading && members.length === 0 && (
-          <p className="p-3 text-sm text-muted-foreground">No workspace members found.</p>
-        )}
-        {!loading && members.map((member) => (
-          <div key={member.userId} className="flex flex-wrap items-center gap-3 p-3">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">
-                {member.name || `@${member.username}`}
-              </span>
-              <span className="block truncate text-xs text-muted-foreground">
-                @{member.username}
-              </span>
-            </span>
-            {canManage && member.role !== 'owner' ? (
-              <>
-                <select
-                  className="h-11 rounded-md border border-input bg-card px-2 text-xs sm:h-8"
-                  aria-label={`Role for ${member.username}`}
-                  value={member.role}
-                  disabled={busyMemberId === member.userId}
-                  onChange={(event) => void changeRole(member, event.target.value as AssignableRole)}
-                >
-                  {ASSIGNABLE_ROLES.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Remove ${member.username}`}
-                  disabled={busyMemberId === member.userId}
-                  onClick={() => void removeMember(member)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </>
-            ) : (
-              <span className="rounded-full bg-secondary px-2 py-1 text-xs text-muted-foreground">
-                {member.role}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>}
+      ) : (
+        <div className="mt-4 divide-y divide-border rounded-md border border-border">
+          {loading && <p className="p-3 text-sm text-muted-foreground">Loading members…</p>}
+          {!loading && members.length === 0 && (
+            <p className="p-3 text-sm text-muted-foreground">No workspace members found.</p>
+          )}
+          {!loading &&
+            members.map((member) => (
+              <div key={member.userId} className="flex flex-wrap items-center gap-3 p-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {member.name || `@${member.username}`}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    @{member.username}
+                  </span>
+                </span>
+                {canManage && member.role !== 'owner' ? (
+                  <>
+                    <select
+                      className="h-11 rounded-md border border-input bg-card px-2 text-xs sm:h-8"
+                      aria-label={`Role for ${member.username}`}
+                      value={member.role}
+                      disabled={busyMemberId === member.userId}
+                      onChange={(event) =>
+                        void changeRole(member, event.target.value as AssignableRole)
+                      }
+                    >
+                      {ASSIGNABLE_ROLES.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove ${member.username}`}
+                      disabled={busyMemberId === member.userId}
+                      onClick={() => void removeMember(member)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
+                ) : (
+                  <span className="rounded-full bg-secondary px-2 py-1 text-xs text-muted-foreground">
+                    {member.role}
+                  </span>
+                )}
+              </div>
+            ))}
+        </div>
+      )}
     </SettingsSection>
   );
 }

@@ -44,10 +44,10 @@ export async function heartbeatOnce(
     response = await heartbeat(config, docker);
   } catch (error) {
     if (
-      !(error instanceof ControlPlaneError)
-      || error.status !== 401
-      || !config.previousCredential
-      || config.previousCredentialGeneration === undefined
+      !(error instanceof ControlPlaneError) ||
+      error.status !== 401 ||
+      !config.previousCredential ||
+      config.previousCredentialGeneration === undefined
     ) {
       throw error;
     }
@@ -59,7 +59,11 @@ export async function heartbeatOnce(
     delete fallback.previousCredential;
     delete fallback.previousCredentialGeneration;
     response = await heartbeat(fallback, docker);
-    if (!configPath) throw new Error('Agent config path is required to recover credential rotation');
+    if (!configPath) {
+      throw new Error('Agent config path is required to recover credential rotation', {
+        cause: error,
+      });
+    }
     await saveConfig(configPath, fallback);
     Object.assign(config, fallback);
     delete config.previousCredential;
@@ -163,13 +167,18 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
         attempt: response.job.attempt,
       });
       try {
-        await executeClaimedJob(response.job, signal, {
-          renew: (jobId, leaseToken) => renewJobLease(config, jobId, leaseToken),
-          progress: (jobId, input) => reportJobProgress(config, jobId, input),
-          complete: (jobId, input) => completeJob(config, jobId, input),
-          downloadArtifact: (jobId, leaseToken, path, jobSignal) =>
-            downloadJobArtifact(config, jobId, leaseToken, path, jobSignal),
-        }, { dockerHost: process.env.DOCKER_HOST });
+        await executeClaimedJob(
+          response.job,
+          signal,
+          {
+            renew: (jobId, leaseToken) => renewJobLease(config, jobId, leaseToken),
+            progress: (jobId, input) => reportJobProgress(config, jobId, input),
+            complete: (jobId, input) => completeJob(config, jobId, input),
+            downloadArtifact: (jobId, leaseToken, path, jobSignal) =>
+              downloadJobArtifact(config, jobId, leaseToken, path, jobSignal),
+          },
+          { dockerHost: process.env.DOCKER_HOST },
+        );
         if (!signal.aborted) {
           log('info', 'job.completed', {
             targetId: config.targetId,

@@ -38,10 +38,7 @@ export class AgentJobLeases {
       where: {
         targetId: agent.targetId,
         protocolVersion: { lte: agent.protocolVersion },
-        OR: [
-          { status: 'queued' },
-          { status: 'leased', leaseExpiresAt: { lte: now } },
-        ],
+        OR: [{ status: 'queued' }, { status: 'leased', leaseExpiresAt: { lte: now } }],
         ...this.activeCredential(agent),
       },
       orderBy: { createdAt: 'asc' },
@@ -116,12 +113,7 @@ export class AgentJobLeases {
     };
   }
 
-  activeLease(
-    agent: AuthenticatedAgent,
-    jobId: string,
-    leaseToken: string,
-    now: Date,
-  ) {
+  activeLease(agent: AuthenticatedAgent, jobId: string, leaseToken: string, now: Date) {
     return {
       ...this.boundLease(agent, jobId, leaseToken),
       status: 'leased',

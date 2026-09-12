@@ -97,17 +97,25 @@ export function AllocationDialog({
   const memory = Number(memoryLimitMb);
   const pids = Number(pidsLimit);
   const validOptionalHours = (value: string) =>
-    value === '' || (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 8760);
+    value === '' ||
+    (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 8760);
   const valid =
     targetId.length > 0 &&
     capabilities.length > 0 &&
     Number.isInteger(quota) &&
     quota >= 1 &&
     quota <= 1000 &&
-    Number.isInteger(cpu) && cpu >= 100 && cpu <= 64000 &&
-    Number.isInteger(memory) && memory >= 64 && memory <= 65536 &&
-    Number.isInteger(pids) && pids >= 32 && pids <= 32768 &&
-    validOptionalHours(devTtlHours) && validOptionalHours(testTtlHours) &&
+    Number.isInteger(cpu) &&
+    cpu >= 100 &&
+    cpu <= 64000 &&
+    Number.isInteger(memory) &&
+    memory >= 64 &&
+    memory <= 65536 &&
+    Number.isInteger(pids) &&
+    pids >= 32 &&
+    pids <= 32768 &&
+    validOptionalHours(devTtlHours) &&
+    validOptionalHours(testTtlHours) &&
     (!publicUrl.trim() || /^https?:\/\//i.test(publicUrl.trim()));
 
   return (
@@ -136,7 +144,8 @@ export function AllocationDialog({
                   },
                   {
                     title: 'Credentials',
-                    description: 'Server credentials stay separate and are never copied into the workspace.',
+                    description:
+                      'Server credentials stay separate and are never copied into the workspace.',
                   },
                 ]}
               />
@@ -201,33 +210,73 @@ export function AllocationDialog({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="allocation-cpu">CPU per environment (millicores)</Label>
-              <Input id="allocation-cpu" type="number" min={100} max={64000} value={cpuLimitMillicores} onChange={(event) => setCpuLimitMillicores(event.target.value)} />
+              <Input
+                id="allocation-cpu"
+                type="number"
+                min={100}
+                max={64000}
+                value={cpuLimitMillicores}
+                onChange={(event) => setCpuLimitMillicores(event.target.value)}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="allocation-memory">Memory per environment (MB)</Label>
-              <Input id="allocation-memory" type="number" min={64} max={65536} value={memoryLimitMb} onChange={(event) => setMemoryLimitMb(event.target.value)} />
+              <Input
+                id="allocation-memory"
+                type="number"
+                min={64}
+                max={65536}
+                value={memoryLimitMb}
+                onChange={(event) => setMemoryLimitMb(event.target.value)}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="allocation-pids">Process limit</Label>
-              <Input id="allocation-pids" type="number" min={32} max={32768} value={pidsLimit} onChange={(event) => setPidsLimit(event.target.value)} />
+              <Input
+                id="allocation-pids"
+                type="number"
+                min={32}
+                max={32768}
+                value={pidsLimit}
+                onChange={(event) => setPidsLimit(event.target.value)}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-1">
                 <Label htmlFor="allocation-dev-ttl">Dev lifetime (hours, optional)</Label>
-                <InfoTip label="About automatic cleanup">Expired dev/test workloads are removed automatically. Repositories and production are never affected.</InfoTip>
+                <InfoTip label="About automatic cleanup">
+                  Expired dev/test workloads are removed automatically. Repositories and production
+                  are never affected.
+                </InfoTip>
               </div>
-              <Input id="allocation-dev-ttl" type="number" min={1} max={8760} value={devTtlHours} placeholder="Keep until removed" onChange={(event) => setDevTtlHours(event.target.value)} />
+              <Input
+                id="allocation-dev-ttl"
+                type="number"
+                min={1}
+                max={8760}
+                value={devTtlHours}
+                placeholder="Keep until removed"
+                onChange={(event) => setDevTtlHours(event.target.value)}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="allocation-test-ttl">Test lifetime (hours, optional)</Label>
-              <Input id="allocation-test-ttl" type="number" min={1} max={8760} value={testTtlHours} placeholder="Keep until removed" onChange={(event) => setTestTtlHours(event.target.value)} />
+              <Input
+                id="allocation-test-ttl"
+                type="number"
+                min={1}
+                max={8760}
+                value={testTtlHours}
+                placeholder="Keep until removed"
+                onChange={(event) => setTestTtlHours(event.target.value)}
+              />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <div className="flex items-center gap-1">
                 <Label htmlFor="allocation-url">Public URL override (optional)</Label>
                 <InfoTip label="About the public URL override">
-                  Leave this blank to inherit the server address. Shared platform servers add
-                  the workspace namespace automatically.
+                  Leave this blank to inherit the server address. Shared platform servers add the
+                  workspace namespace automatically.
                 </InfoTip>
               </div>
               <Input
@@ -254,8 +303,12 @@ export function AllocationDialog({
                 cpuLimitMillicores: cpu,
                 memoryLimitMb: memory,
                 pidsLimit: pids,
-                ...(editing || devTtlHours ? { devTtlHours: devTtlHours ? Number(devTtlHours) : null } : {}),
-                ...(editing || testTtlHours ? { testTtlHours: testTtlHours ? Number(testTtlHours) : null } : {}),
+                ...(editing || devTtlHours
+                  ? { devTtlHours: devTtlHours ? Number(devTtlHours) : null }
+                  : {}),
+                ...(editing || testTtlHours
+                  ? { testTtlHours: testTtlHours ? Number(testTtlHours) : null }
+                  : {}),
                 ...(publicUrl.trim() ? { publicUrl: publicUrl.trim() } : {}),
               })
             }

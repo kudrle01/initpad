@@ -57,11 +57,14 @@ export async function dockerHttpRequest(
   input: DockerHttpRequest,
   dockerHost: string,
 ): Promise<DockerHttpResponse> {
-  const body = input.body === undefined
-    ? undefined
-    : isAsyncIterable(input.body)
-      ? input.body
-      : Buffer.isBuffer(input.body) ? input.body : Buffer.from(input.body);
+  const body =
+    input.body === undefined
+      ? undefined
+      : isAsyncIterable(input.body)
+        ? input.body
+        : Buffer.isBuffer(input.body)
+          ? input.body
+          : Buffer.from(input.body);
   const bufferedBody = body && !isAsyncIterable(body) ? body : undefined;
   const request = {
     ...input,
@@ -83,11 +86,13 @@ export async function dockerHttpRequest(
         }
         chunks.push(chunk);
       });
-      response.on('end', () => resolve({
-        statusCode: response.statusCode ?? 0,
-        headers: response.headers,
-        body: Buffer.concat(chunks),
-      }));
+      response.on('end', () =>
+        resolve({
+          statusCode: response.statusCode ?? 0,
+          headers: response.headers,
+          body: Buffer.concat(chunks),
+        }),
+      );
     });
     const abort = () => req.destroy(new Error('Docker API request aborted'));
     input.signal?.addEventListener('abort', abort, { once: true });
@@ -95,14 +100,15 @@ export async function dockerHttpRequest(
       abort();
       return;
     }
-    req.setTimeout(
-      input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      () => req.destroy(new Error('Docker API timed out')),
+    req.setTimeout(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, () =>
+      req.destroy(new Error('Docker API timed out')),
     );
     req.on('error', reject);
     req.on('close', () => input.signal?.removeEventListener('abort', abort));
     if (body && isAsyncIterable(body)) {
-      void writeRequestStream(req, body, input.signal).catch((error) => req.destroy(error as Error));
+      void writeRequestStream(req, body, input.signal).catch((error) =>
+        req.destroy(error as Error),
+      );
     } else {
       if (bufferedBody) req.write(bufferedBody);
       req.end();
@@ -111,11 +117,7 @@ export async function dockerHttpRequest(
 }
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array> {
-  return Boolean(
-    value
-    && typeof value === 'object'
-    && Symbol.asyncIterator in value,
-  );
+  return Boolean(value && typeof value === 'object' && Symbol.asyncIterator in value);
 }
 
 export async function writeRequestStream(

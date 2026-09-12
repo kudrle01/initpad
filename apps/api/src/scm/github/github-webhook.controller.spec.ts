@@ -35,17 +35,22 @@ describe('GitHubWebhookController', () => {
     const service = { handleEvent: jest.fn() };
     const controller = new GitHubWebhookController(service as never, {} as never);
     const raw = Buffer.from('{}');
-    await expect(controller.handle('sha256=deadbeef', 'installation', reqWith(raw), {}))
-      .rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      controller.handle('sha256=deadbeef', 'installation', reqWith(raw), {}),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(service.handleEvent).not.toHaveBeenCalled();
   });
 
   it('refuses everything when no webhook secret is configured', async () => {
     config.github.webhookSecret = '';
-    const controller = new GitHubWebhookController({ handleEvent: jest.fn() } as never, {} as never);
+    const controller = new GitHubWebhookController(
+      { handleEvent: jest.fn() } as never,
+      {} as never,
+    );
     const raw = Buffer.from('{}');
-    await expect(controller.handle(sign(raw, 'whatever'), 'installation', reqWith(raw), {}))
-      .rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      controller.handle(sign(raw, 'whatever'), 'installation', reqWith(raw), {}),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('ignores non-installation events (but accepts them)', async () => {
@@ -60,12 +65,17 @@ describe('GitHubWebhookController', () => {
 
   it('returns a failure when installation state cannot be persisted so GitHub can retry', async () => {
     config.github.webhookSecret = 'whsec';
-    const service = { handleEvent: jest.fn(async () => { throw new Error('database unavailable'); }) };
+    const service = {
+      handleEvent: jest.fn(async () => {
+        throw new Error('database unavailable');
+      }),
+    };
     const controller = new GitHubWebhookController(service as never, {} as never);
     const body = { action: 'created', installation: { id: 1, account: { login: 'a' } } };
     const raw = Buffer.from(JSON.stringify(body));
-    await expect(controller.handle(sign(raw, 'whsec'), 'installation', reqWith(raw), body))
-      .rejects.toThrow('database unavailable');
+    await expect(
+      controller.handle(sign(raw, 'whsec'), 'installation', reqWith(raw), body),
+    ).rejects.toThrow('database unavailable');
   });
 
   it('clears user credentials when GitHub App authorization is revoked', async () => {

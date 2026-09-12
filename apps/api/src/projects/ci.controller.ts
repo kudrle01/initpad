@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Headers,
-  HttpCode,
-  Post,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, Post, UnauthorizedException } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { PublicEndpoint } from '../auth/public-endpoint.decorator';
 
@@ -37,12 +30,7 @@ export class CiController {
     const token = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
     if (!token) throw new UnauthorizedException('Missing CI token');
     if (!body.repo) return { accepted: false };
-    await this.projects.ciStarted(
-      body.repo,
-      body.sha ?? '',
-      body.ref ?? '',
-      token,
-    );
+    await this.projects.ciStarted(body.repo, body.sha ?? '', body.ref ?? '', token);
     return { accepted: true };
   }
 

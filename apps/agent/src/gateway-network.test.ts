@@ -95,20 +95,32 @@ test('refuses a foreign gateway or allocation network without mutating Docker', 
   const signal = new AbortController().signal;
   await assert.rejects(
     new GatewayDockerNetwork(
-      'target-1', 'tcp://docker:2375', foreignGateway.transport, 'initpad-gateway',
+      'target-1',
+      'tcp://docker:2375',
+      foreignGateway.transport,
+      'initpad-gateway',
     ).connect(payload, signal),
     /not a running InitPad gateway/,
   );
-  assert.equal(foreignGateway.requests.some((request) => request.method === 'POST'), false);
+  assert.equal(
+    foreignGateway.requests.some((request) => request.method === 'POST'),
+    false,
+  );
 
   const foreignNetwork = fakeEngine({ targetId: 'other-target' });
   await assert.rejects(
     new GatewayDockerNetwork(
-      'target-1', 'tcp://docker:2375', foreignNetwork.transport, 'initpad-gateway',
+      'target-1',
+      'tcp://docker:2375',
+      foreignNetwork.transport,
+      'initpad-gateway',
     ).connect(payload, signal),
     /name collision outside allocation/,
   );
-  assert.equal(foreignNetwork.requests.some((request) => request.method === 'POST'), false);
+  assert.equal(
+    foreignNetwork.requests.some((request) => request.method === 'POST'),
+    false,
+  );
 });
 
 function publicationEngine() {
@@ -150,8 +162,10 @@ function publicationEngine() {
     if (request.method === 'GET' && request.path.startsWith('/containers/json?')) {
       return response(200, [desired, previous]);
     }
-    if (request.method === 'DELETE' && request.path.startsWith('/containers/')) return response(204);
-    if (request.method === 'DELETE' && request.path.startsWith('/images/')) return response(200, []);
+    if (request.method === 'DELETE' && request.path.startsWith('/containers/'))
+      return response(204);
+    if (request.method === 'DELETE' && request.path.startsWith('/images/'))
+      return response(200, []);
     if (request.method === 'POST' && request.path.includes('/stop?t=10')) return response(204);
     return response(500, { message: `Unhandled ${request.method} ${request.path}` });
   };
@@ -160,7 +174,12 @@ function publicationEngine() {
 
 test('publishes only the verified workload slot and retires the previous revision afterwards', async () => {
   const engine = publicationEngine();
-  const network = new GatewayDockerNetwork('target-1', 'tcp://docker:2375', engine.transport, 'initpad-gateway');
+  const network = new GatewayDockerNetwork(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'initpad-gateway',
+  );
   const signal = new AbortController().signal;
 
   assert.equal(
@@ -183,7 +202,12 @@ test('publishes only the verified workload slot and retires the previous revisio
 
 test('discards only the failed candidate during route rollback', async () => {
   const engine = publicationEngine();
-  const network = new GatewayDockerNetwork('target-1', 'tcp://docker:2375', engine.transport, 'initpad-gateway');
+  const network = new GatewayDockerNetwork(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'initpad-gateway',
+  );
   await network.rollback(payload, new AbortController().signal);
 
   const deletes = engine.requests.filter(

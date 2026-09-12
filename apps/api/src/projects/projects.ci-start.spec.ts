@@ -33,11 +33,15 @@ describe('ProjectsService CI runner start signal', () => {
     const secondToken = 'second-repository-secret';
     const { service, prisma } = serviceWith([
       {
-        id: 'project-1', scmFullName: 'acme/one', scmDefaultBranch: 'main',
+        id: 'project-1',
+        scmFullName: 'acme/one',
+        scmDefaultBranch: 'main',
         ciDeployTokenHash: hashToken(firstToken),
       },
       {
-        id: 'project-2', scmFullName: 'acme/two', scmDefaultBranch: 'main',
+        id: 'project-2',
+        scmFullName: 'acme/two',
+        scmDefaultBranch: 'main',
         ciDeployTokenHash: hashToken(secondToken),
       },
     ]);
@@ -59,10 +63,14 @@ describe('ProjectsService CI runner start signal', () => {
   });
 
   it('rejects a different repository secret before changing state', async () => {
-    const { service, prisma } = serviceWith([{
-      id: 'project-1', scmFullName: 'acme/one', scmDefaultBranch: 'main',
-      ciDeployTokenHash: hashToken('correct-secret'),
-    }]);
+    const { service, prisma } = serviceWith([
+      {
+        id: 'project-1',
+        scmFullName: 'acme/one',
+        scmDefaultBranch: 'main',
+        ciDeployTokenHash: hashToken('correct-secret'),
+      },
+    ]);
 
     await expect(
       service.ciStarted('acme/one', 'a'.repeat(40), 'main', 'wrong-secret'),

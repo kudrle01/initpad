@@ -79,8 +79,8 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
               <Building2 className="h-[18px] w-[18px]" /> Add new workspace
             </DialogTitle>
             <DialogDescription>
-              Create a shared space for a team. You will become its owner and can invite
-              members afterwards.
+              Create a shared space for a team. You will become its owner and can invite members
+              afterwards.
             </DialogDescription>
           </DialogHeader>
 
@@ -100,8 +100,8 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
               <div className="flex items-center gap-1">
                 <Label htmlFor="workspace-slug">Workspace slug</Label>
                 <InfoTip label="About the workspace slug">
-                  A stable identifier used in namespaces and URLs. Use lowercase letters,
-                  numbers and hyphens.
+                  A stable identifier used in namespaces and URLs. Use lowercase letters, numbers
+                  and hyphens.
                 </InfoTip>
               </div>
               <Input
@@ -126,7 +126,12 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => onOpenChange(false)}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={busy || !nameValid || !slugValid}>

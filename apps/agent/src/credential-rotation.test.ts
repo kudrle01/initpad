@@ -36,7 +36,9 @@ test('persists a pending credential before proving and promoting it', async () =
     response({
       credentialRotation: { credential: nextCredential, credentialGeneration: 2 },
     }),
-    async (value) => { persisted.push(structuredClone(value)); },
+    async (value) => {
+      persisted.push(structuredClone(value));
+    },
     async (value) => {
       assert.equal(value.credential, nextCredential);
       assert.equal(value.previousCredential, `initpad_agent_${'a'.repeat(43)}`);
@@ -64,7 +66,9 @@ test('keeps the previous credential when confirmation fails', async () => {
         credentialRotation: { credential: nextCredential, credentialGeneration: 2 },
       }),
       async () => undefined,
-      async () => { throw new Error('response lost'); },
+      async () => {
+        throw new Error('response lost');
+      },
     ),
     /response lost/,
   );
@@ -85,8 +89,12 @@ test('clears a retained fallback after a later confirmation', async () => {
   await reconcileCredentialRotation(
     current,
     response({ credentialGeneration: 2 }),
-    async (value) => { persisted = structuredClone(value); },
-    async () => { throw new Error('not used'); },
+    async (value) => {
+      persisted = structuredClone(value);
+    },
+    async () => {
+      throw new Error('not used');
+    },
   );
 
   assert.equal(persisted?.previousCredential, undefined);

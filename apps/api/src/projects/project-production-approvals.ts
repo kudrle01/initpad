@@ -63,9 +63,7 @@ type ScheduleApprovedProduction = (
   expected: ExpectedProductionState,
 ) => Promise<string>;
 
-type ResolveRollback = (
-  projectId: string,
-) => Promise<RollbackPreview | null>;
+type ResolveRollback = (projectId: string) => Promise<RollbackPreview | null>;
 
 const REQUEST_INCLUDE = {
   deploymentOperation: {
@@ -78,10 +76,12 @@ type RequestRow = Prisma.ProductionDeploymentRequestGetPayload<{
 }>;
 
 function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object'
-    && error !== null
-    && 'code' in error
-    && (error as { code?: unknown }).code === 'P2002';
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
 
 /** Owns immutable production intent, review policy and stale-state detection. */
@@ -138,50 +138,55 @@ export class ProjectProductionApprovals {
 
     let request: RequestRow;
     try {
-      request = await this.prisma.$transaction(async (tx) => {
-        await tx.productionDeploymentRequest.updateMany({
-          where: {
-            environmentId: snapshot.environmentId,
-            status: 'pending',
-          },
-          data: {
-            status: 'stale',
-            reviewNote: 'Replaced by a newer production request',
-          },
-        });
-        return tx.productionDeploymentRequest.create({
-          data: {
-            workspaceId: snapshot.workspaceId,
-            projectId,
-            projectNameSnapshot: snapshot.projectName,
-            environmentId: snapshot.environmentId,
-            requestedById: userId,
-            requestedByUsername: actor.username,
-            requestedByDisplayName: actor.name,
-            kind: input.kind,
-            status: 'pending',
-            sourceEnvironment: snapshot.sourceEnvironment,
-            candidateOperationId: snapshot.candidateOperationId,
-            candidateStateToken: snapshot.candidateStateToken,
-            version: snapshot.version,
-            buildArtifactId: snapshot.buildArtifactId,
-            artifactDigest: snapshot.artifactDigest,
-            targetIdSnapshot: snapshot.targetId,
-            allocationIdSnapshot: snapshot.allocationId,
-            targetNameSnapshot: snapshot.targetName,
-            providerSnapshot: snapshot.provider,
-            configRevisionSnapshot: snapshot.configRevision,
-            targetRevisionSnapshot: snapshot.targetRevision,
-            allocationRevisionSnapshot: snapshot.allocationRevision,
-            stateToken: snapshot.stateToken,
-            policySnapshot: snapshot.policy,
-          },
-          include: REQUEST_INCLUDE,
-        });
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      request = await this.prisma.$transaction(
+        async (tx) => {
+          await tx.productionDeploymentRequest.updateMany({
+            where: {
+              environmentId: snapshot.environmentId,
+              status: 'pending',
+            },
+            data: {
+              status: 'stale',
+              reviewNote: 'Replaced by a newer production request',
+            },
+          });
+          return tx.productionDeploymentRequest.create({
+            data: {
+              workspaceId: snapshot.workspaceId,
+              projectId,
+              projectNameSnapshot: snapshot.projectName,
+              environmentId: snapshot.environmentId,
+              requestedById: userId,
+              requestedByUsername: actor.username,
+              requestedByDisplayName: actor.name,
+              kind: input.kind,
+              status: 'pending',
+              sourceEnvironment: snapshot.sourceEnvironment,
+              candidateOperationId: snapshot.candidateOperationId,
+              candidateStateToken: snapshot.candidateStateToken,
+              version: snapshot.version,
+              buildArtifactId: snapshot.buildArtifactId,
+              artifactDigest: snapshot.artifactDigest,
+              targetIdSnapshot: snapshot.targetId,
+              allocationIdSnapshot: snapshot.allocationId,
+              targetNameSnapshot: snapshot.targetName,
+              providerSnapshot: snapshot.provider,
+              configRevisionSnapshot: snapshot.configRevision,
+              targetRevisionSnapshot: snapshot.targetRevision,
+              allocationRevisionSnapshot: snapshot.allocationRevision,
+              stateToken: snapshot.stateToken,
+              policySnapshot: snapshot.policy,
+            },
+            include: REQUEST_INCLUDE,
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new ConflictException('Another production request was created at the same time. Reload and review it.');
+        throw new ConflictException(
+          'Another production request was created at the same time. Reload and review it.',
+        );
       }
       throw error;
     }
@@ -220,7 +225,8 @@ export class ProjectProductionApprovals {
       where: { id: request.id, status: 'pending' },
       data: { status: 'cancelled', reviewNote: 'Cancelled by requester', reviewedAt: new Date() },
     });
-    if (updated.count !== 1) throw new ConflictException('This production request is no longer pending');
+    if (updated.count !== 1)
+      throw new ConflictException('This production request is no longer pending');
     await this.record(request, userId, 'production.request_cancelled', {
       kind: request.kind,
       environment: 'prod',
@@ -237,13 +243,20 @@ export class ProjectProductionApprovals {
   ) {
     const { workspaceId } = await this.workspaces.requireProject(userId, projectId, 'admin');
     const request = await this.request(projectId, requestId);
-    if (request.workspaceId !== workspaceId) throw new NotFoundException('Production request not found');
+    if (request.workspaceId !== workspaceId)
+      throw new NotFoundException('Production request not found');
     if (request.status !== 'pending') {
       throw new ConflictException(`This production request is already ${request.status}`);
     }
     const policy = await this.currentPolicy(workspaceId);
-    if (decision === 'approved' && policy === 'separate-reviewer' && request.requestedById === userId) {
-      throw new ForbiddenException('This workspace requires a different person to approve production');
+    if (
+      decision === 'approved' &&
+      policy === 'separate-reviewer' &&
+      request.requestedById === userId
+    ) {
+      throw new ForbiddenException(
+        'This workspace requires a different person to approve production',
+      );
     }
     const reviewer = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -263,7 +276,8 @@ export class ProjectProductionApprovals {
           reviewNote: note?.trim() || null,
         },
       });
-      if (updated.count !== 1) throw new ConflictException('This production request was reviewed concurrently');
+      if (updated.count !== 1)
+        throw new ConflictException('This production request was reviewed concurrently');
       await this.record(request, userId, 'production.request_rejected', {
         kind: request.kind,
         environment: 'prod',
@@ -273,7 +287,9 @@ export class ProjectProductionApprovals {
 
     if (!(await this.matchesCurrentState(request))) {
       await this.markStale(request.id);
-      throw new ConflictException('Artifact, target, or production configuration changed. Create a new request.');
+      throw new ConflictException(
+        'Artifact, target, or production configuration changed. Create a new request.',
+      );
     }
     const claimed = await this.prisma.productionDeploymentRequest.updateMany({
       where: { id: request.id, status: 'pending' },
@@ -286,7 +302,8 @@ export class ProjectProductionApprovals {
         reviewNote: note?.trim() || null,
       },
     });
-    if (claimed.count !== 1) throw new ConflictException('This production request was reviewed concurrently');
+    if (claimed.count !== 1)
+      throw new ConflictException('This production request was reviewed concurrently');
 
     try {
       await this.record(request, userId, 'production.approval_accepted', {
@@ -332,7 +349,7 @@ export class ProjectProductionApprovals {
                 reviewedByUsername: null,
                 reviewedByDisplayName: null,
                 reviewedAt: null,
-          }),
+              }),
         },
       });
       await this.record(request, userId, 'production.approval_failed', {
@@ -424,10 +441,14 @@ export class ProjectProductionApprovals {
       }
       const preview = await this.resolveRollback(projectId);
       if (!preview || preview.candidateOperationId !== input.candidateOperationId) {
-        throw new ConflictException('The previous verified production deployment changed. Review rollback again.');
+        throw new ConflictException(
+          'The previous verified production deployment changed. Review rollback again.',
+        );
       }
       if (preview.stateToken !== input.stateToken) {
-        throw new ConflictException('Production changed after rollback confirmation was opened. Review it again.');
+        throw new ConflictException(
+          'Production changed after rollback confirmation was opened. Review it again.',
+        );
       }
       return {
         kind: input.kind,
@@ -442,9 +463,12 @@ export class ProjectProductionApprovals {
 
     const sourceName = input.kind === 'promote' ? 'test' : 'prod';
     const source = environments.find((environment) => environment.name === sourceName);
-    if (!source?.version) throw new BadRequestException(`${sourceName} has no verified build to publish`);
+    if (!source?.version)
+      throw new BadRequestException(`${sourceName} has no verified build to publish`);
     if (input.kind === 'promote' && source.status !== 'running') {
-      throw new BadRequestException('Test must be running before its build can be requested for production');
+      throw new BadRequestException(
+        'Test must be running before its build can be requested for production',
+      );
     }
     return {
       kind: input.kind,
@@ -475,34 +499,38 @@ export class ProjectProductionApprovals {
     state: Omit<ProductionSnapshot, 'stateToken' | 'workspaceId' | 'projectName'>,
   ): string {
     return createHash('sha256')
-      .update(JSON.stringify([
-        projectId,
-        state.environmentId,
-        state.kind,
-        state.sourceEnvironment,
-        state.candidateOperationId,
-        state.candidateStateToken,
-        state.version,
-        state.buildArtifactId,
-        state.artifactDigest,
-        state.targetId,
-        state.allocationId,
-        state.provider,
-        state.configRevision,
-        state.targetRevision?.toISOString() ?? null,
-        state.allocationRevision?.toISOString() ?? null,
-      ]))
+      .update(
+        JSON.stringify([
+          projectId,
+          state.environmentId,
+          state.kind,
+          state.sourceEnvironment,
+          state.candidateOperationId,
+          state.candidateStateToken,
+          state.version,
+          state.buildArtifactId,
+          state.artifactDigest,
+          state.targetId,
+          state.allocationId,
+          state.provider,
+          state.configRevision,
+          state.targetRevision?.toISOString() ?? null,
+          state.allocationRevision?.toISOString() ?? null,
+        ]),
+      )
       .digest('hex');
   }
 
   private request(projectId: string, requestId: string): Promise<RequestRow> {
-    return this.prisma.productionDeploymentRequest.findFirst({
-      where: { id: requestId, projectId },
-      include: REQUEST_INCLUDE,
-    }).then((request) => {
-      if (!request) throw new NotFoundException('Production request not found');
-      return request;
-    });
+    return this.prisma.productionDeploymentRequest
+      .findFirst({
+        where: { id: requestId, projectId },
+        include: REQUEST_INCLUDE,
+      })
+      .then((request) => {
+        if (!request) throw new NotFoundException('Production request not found');
+        return request;
+      });
   }
 
   private async currentPolicy(workspaceId: string): Promise<ProductionApprovalPolicy> {
@@ -517,25 +545,33 @@ export class ProjectProductionApprovals {
   private async markStale(id: string): Promise<void> {
     await this.prisma.productionDeploymentRequest.updateMany({
       where: { id, status: { in: ['pending', 'approving'] } },
-      data: { status: 'stale', reviewNote: 'Production inputs changed after this request was created' },
+      data: {
+        status: 'stale',
+        reviewNote: 'Production inputs changed after this request was created',
+      },
     });
   }
 
   private record(
-    request: Pick<RequestRow, 'workspaceId' | 'projectId' | 'projectNameSnapshot' | 'kind' | 'version'>,
+    request: Pick<
+      RequestRow,
+      'workspaceId' | 'projectId' | 'projectNameSnapshot' | 'kind' | 'version'
+    >,
     actorUserId: string | null,
     action: string,
     details: Record<string, string>,
   ): Promise<void> {
-    return this.audit?.record({
-      workspaceId: request.workspaceId,
-      actorUserId,
-      action,
-      resourceType: 'project',
-      resourceId: request.projectId,
-      resourceName: request.projectNameSnapshot,
-      details,
-    }) ?? Promise.resolve();
+    return (
+      this.audit?.record({
+        workspaceId: request.workspaceId,
+        actorUserId,
+        action,
+        resourceType: 'project',
+        resourceId: request.projectId,
+        resourceName: request.projectNameSnapshot,
+        details,
+      }) ?? Promise.resolve()
+    );
   }
 
   private async toView(request: RequestRow, userId: string) {
@@ -544,8 +580,7 @@ export class ProjectProductionApprovals {
       this.currentPolicy(request.workspaceId),
     ]);
     const canReview = role === 'owner' || role === 'admin';
-    const selfBlocked = currentPolicy === 'separate-reviewer'
-      && request.requestedById === userId;
+    const selfBlocked = currentPolicy === 'separate-reviewer' && request.requestedById === userId;
     return {
       id: request.id,
       kind: request.kind as ProductionRequestKind,

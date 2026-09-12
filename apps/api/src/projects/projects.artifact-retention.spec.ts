@@ -1,10 +1,14 @@
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 
 function make(prisma: Record<string, unknown>, artifactStore: Record<string, unknown>) {
-  return new ProjectArtifactLifecycle({
-    productionDeploymentRequest: { count: jest.fn(async () => 0) },
-    ...prisma,
-  } as never, artifactStore as never, {} as never);
+  return new ProjectArtifactLifecycle(
+    {
+      productionDeploymentRequest: { count: jest.fn(async () => 0) },
+      ...prisma,
+    } as never,
+    artifactStore as never,
+    {} as never,
+  );
 }
 
 describe('ProjectArtifactLifecycle.runRetention', () => {
@@ -180,9 +184,7 @@ describe('ProjectArtifactLifecycle.runRetention', () => {
 
     await expect(service.runRetention()).resolves.toEqual({ removed: 1, kept: 0 });
     expect(del).toHaveBeenCalledWith('older.tar');
-    expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'older' } }),
-    );
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'older' } }));
   });
 
   it('purges every durable object belonging to a deleted project', async () => {

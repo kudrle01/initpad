@@ -69,8 +69,8 @@ export class ProjectRollback {
       },
     });
     const durableArtifactRequired =
-      environment.project.scmProvider === 'github'
-      || (environment.provider === 'docker' && environment.target?.scope === 'user');
+      environment.project.scmProvider === 'github' ||
+      (environment.provider === 'docker' && environment.target?.scope === 'user');
     const candidate = publications.find((operation) => {
       if (!operation.version || !IMMUTABLE_VERSION.test(operation.version)) return false;
       const sameAsCurrent = environment.buildArtifactId
@@ -79,10 +79,10 @@ export class ProjectRollback {
       if (sameAsCurrent) return false;
       if (!durableArtifactRequired) return true;
       return Boolean(
-        operation.buildArtifact
-        && operation.buildArtifact.status === 'available'
-        && operation.buildArtifact.storageKind === 'object-store'
-        && operation.buildArtifact.storageRef,
+        operation.buildArtifact &&
+        operation.buildArtifact.status === 'available' &&
+        operation.buildArtifact.storageKind === 'object-store' &&
+        operation.buildArtifact.storageRef,
       );
     });
     if (!candidate?.version) return null;
@@ -134,7 +134,9 @@ export class ProjectRollback {
       );
     }
     if (preview.candidateOperationId !== candidateOperationId) {
-      throw new ConflictException('The previous verified deployment changed. Review rollback again.');
+      throw new ConflictException(
+        'The previous verified deployment changed. Review rollback again.',
+      );
     }
     await this.schedule(
       projectId,
@@ -156,16 +158,18 @@ export class ProjectRollback {
     configVars: Array<{ key: string; updatedAt: Date }>;
   }): string {
     return createHash('sha256')
-      .update(JSON.stringify([
-        environment.id,
-        environment.targetId,
-        environment.version,
-        environment.buildArtifactId,
-        environment.status,
-        environment.deploymentRequired,
-        environment.activeOperationId,
-        environment.configVars.map(({ key, updatedAt }) => [key, updatedAt.toISOString()]),
-      ]))
+      .update(
+        JSON.stringify([
+          environment.id,
+          environment.targetId,
+          environment.version,
+          environment.buildArtifactId,
+          environment.status,
+          environment.deploymentRequired,
+          environment.activeOperationId,
+          environment.configVars.map(({ key, updatedAt }) => [key, updatedAt.toISOString()]),
+        ]),
+      )
       .digest('hex');
   }
 }

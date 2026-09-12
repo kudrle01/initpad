@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Activity, Bot, Container, Download, Globe2, ShieldAlert, WifiOff } from 'lucide-react';
-import type { AgentDistribution, AgentEnrollment, AgentJobSummary, AgentStatus, Target } from '@/types';
+import type {
+  AgentDistribution,
+  AgentEnrollment,
+  AgentJobSummary,
+  AgentStatus,
+  Target,
+} from '@/types';
 import { api } from '@/api';
 import { CopyField } from '@/components/molecules/CopyField';
 import { InfoTip } from '@/components/molecules/InfoTip';
@@ -42,13 +48,15 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 function hasExpiredLease(job: AgentJobSummary, now = Date.now()): boolean {
-  return job.status === 'leased'
-    && job.leaseExpiresAt !== null
-    && new Date(job.leaseExpiresAt).getTime() <= now;
+  return (
+    job.status === 'leased' &&
+    job.leaseExpiresAt !== null &&
+    new Date(job.leaseExpiresAt).getTime() <= now
+  );
 }
 
 function formatMemory(bytes: number): string {
-  const gibibytes = bytes / (1024 ** 3);
+  const gibibytes = bytes / 1024 ** 3;
   return `${gibibytes >= 10 ? gibibytes.toFixed(0) : gibibytes.toFixed(1)} GiB`;
 }
 
@@ -76,7 +84,8 @@ export function AgentSetupDialog({
     if (!open) return;
     let current = true;
     setDistributionError(null);
-    void api.getAgentDistribution()
+    void api
+      .getAgentDistribution()
       .then((release) => {
         if (current) setDistribution(release);
       })
@@ -97,12 +106,14 @@ export function AgentSetupDialog({
   const installerUrl = distribution
     ? new URL(distribution.installer.path, window.location.origin).toString()
     : null;
-  const publishedHost = currentTarget.routingMode === 'direct-port' && currentTarget.publicUrl
-    ? new URL(currentTarget.publicUrl).hostname
-    : null;
-  const installCommand = distribution?.available && distribution.image && installerUrl
-    ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${distribution.image}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
-    : null;
+  const publishedHost =
+    currentTarget.routingMode === 'direct-port' && currentTarget.publicUrl
+      ? new URL(currentTarget.publicUrl).hostname
+      : null;
+  const installCommand =
+    distribution?.available && distribution.image && installerUrl
+      ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${distribution.image}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
+      : null;
 
   async function issueEnrollment() {
     if (enrollment || agent?.enrollmentPending) {
@@ -124,7 +135,8 @@ export function AgentSetupDialog({
   async function disableAgent() {
     const confirmed = await confirmAction({
       title: `Disconnect the Agent for ${currentTarget.name}?`,
-      description: 'This revokes the server identity used to receive work from InitPad without stopping its workloads.',
+      description:
+        'This revokes the server identity used to receive work from InitPad without stopping its workloads.',
       confirmLabel: 'Disconnect Agent',
       tone: 'danger',
       consequences: [
@@ -140,10 +152,12 @@ export function AgentSetupDialog({
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle><Bot className="h-[18px] w-[18px]" /> InitPad Agent</DialogTitle>
+          <DialogTitle>
+            <Bot className="h-[18px] w-[18px]" /> InitPad Agent
+          </DialogTitle>
           <DialogDescription>
-            {target.name} connects outbound to this control plane. InitPad never needs inbound
-            SSH access or a public management port on the Docker server.
+            {target.name} connects outbound to this control plane. InitPad never needs inbound SSH
+            access or a public management port on the Docker server.
           </DialogDescription>
         </DialogHeader>
 
@@ -152,7 +166,9 @@ export function AgentSetupDialog({
             <div>
               <p className="text-sm font-medium">Agent status</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {agent?.version ? `Version ${agent.version} · protocol ${agent.protocolVersion}` : 'No Agent heartbeat received yet'}
+                {agent?.version
+                  ? `Version ${agent.version} · protocol ${agent.protocolVersion}`
+                  : 'No Agent heartbeat received yet'}
               </p>
               {agent?.credentialGeneration ? (
                 <p className="mt-0.5 text-xs text-muted-foreground">
@@ -166,7 +182,9 @@ export function AgentSetupDialog({
             <StatusBadge
               status={state}
               label={STATE_LABEL[state]}
-              className={state === 'offline' ? 'border-warning/50 bg-warning/10 text-foreground' : undefined}
+              className={
+                state === 'offline' ? 'border-warning/50 bg-warning/10 text-foreground' : undefined
+              }
             />
           </div>
 
@@ -182,8 +200,8 @@ export function AgentSetupDialog({
               <div className="min-w-0">
                 <p className="text-sm font-semibold">Agent is offline</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  The control plane has not received a heartbeat for more than 90 seconds.
-                  Jobs remain safely queued and continue automatically after the Agent reconnects.
+                  The control plane has not received a heartbeat for more than 90 seconds. Jobs
+                  remain safely queued and continue automatically after the Agent reconnects.
                 </p>
                 {agent?.lastSeenAt && (
                   <p className="mt-2 text-xs font-medium text-foreground">
@@ -195,7 +213,10 @@ export function AgentSetupDialog({
           )}
 
           {agent?.credentialRotationPending && (
-            <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm" role="status">
+            <div
+              className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm"
+              role="status"
+            >
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <p>
                 Credential rotation is waiting for Agent confirmation. The current credential
@@ -206,13 +227,16 @@ export function AgentSetupDialog({
 
           {agent?.capabilities && (
             <div className="grid gap-1 rounded-lg border border-border bg-secondary/20 p-3 text-xs text-muted-foreground sm:grid-cols-2">
-              <span>Docker {agent.capabilities.engineVersion} · API {agent.capabilities.apiVersion}</span>
+              <span>
+                Docker {agent.capabilities.engineVersion} · API {agent.capabilities.apiVersion}
+              </span>
               <span className="sm:text-right">
                 {agent.capabilities.os}/{agent.capabilities.arch}
                 {agent.capabilities.rootless ? ' · rootless' : ''}
               </span>
               <span className="sm:col-span-2">
-                {agent.capabilities.cpus} CPU · {formatMemory(agent.capabilities.memoryBytes)} available to Docker
+                {agent.capabilities.cpus} CPU · {formatMemory(agent.capabilities.memoryBytes)}{' '}
+                available to Docker
               </span>
             </div>
           )}
@@ -223,18 +247,24 @@ export function AgentSetupDialog({
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 <p>
                   This token is shown once and expires at{' '}
-                  <b className="font-medium">{new Date(enrollment.enrollmentExpiresAt!).toLocaleTimeString()}</b>.
-                  Closing this dialog discards the plaintext.
+                  <b className="font-medium">
+                    {new Date(enrollment.enrollmentExpiresAt!).toLocaleTimeString()}
+                  </b>
+                  . Closing this dialog discards the plaintext.
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Enrollment token</p>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Enrollment token
+                </p>
                 <CopyField command={enrollment.enrollmentToken} />
               </div>
               <div className="min-w-0">
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {installCommand ? 'Install and enroll on the Docker server' : 'Enroll on the Docker server'}
+                    {installCommand
+                      ? 'Install and enroll on the Docker server'
+                      : 'Enroll on the Docker server'}
                   </p>
                   {installerUrl && (
                     <Button asChild variant="ghost" size="sm">
@@ -248,13 +278,15 @@ export function AgentSetupDialog({
                 <p className="mt-1.5 text-xs text-muted-foreground">
                   {installCommand
                     ? `The checksum and immutable Agent ${distribution?.version} image are verified before installation.`
-                    : (distribution?.unavailableReason ?? distributionError ?? 'Loading Agent release information…')}
-                  {' '}The token is requested through a hidden prompt and never enters shell history.
+                    : (distribution?.unavailableReason ??
+                      distributionError ??
+                      'Loading Agent release information…')}{' '}
+                  The token is requested through a hidden prompt and never enters shell history.
                 </p>
                 {currentTarget.routingMode === 'managed-gateway' && installCommand && (
                   <p className="mt-1.5 text-xs text-muted-foreground">
-                    Managed gateway installations also need the target-local Caddy socket,
-                    gateway container and optional private CA flags shown by the installer help.
+                    Managed gateway installations also need the target-local Caddy socket, gateway
+                    container and optional private CA flags shown by the installer help.
                   </p>
                 )}
               </div>
@@ -284,11 +316,13 @@ export function AgentSetupDialog({
                     items={[
                       {
                         title: 'Checks',
-                        description: 'Claim, progress reporting, lease renewal and completion over 35 seconds.',
+                        description:
+                          'Claim, progress reporting, lease renewal and completion over 35 seconds.',
                       },
                       {
                         title: 'Impact',
-                        description: 'Does not run a shell command or create a workload. Offline jobs wait safely in the queue.',
+                        description:
+                          'Does not run a shell command or create a workload. Offline jobs wait safely in the queue.',
                       },
                     ]}
                   />
@@ -304,7 +338,11 @@ export function AgentSetupDialog({
                 title={canQueueProbe ? 'Queue a protocol probe' : 'The Agent must be enrolled'}
                 onClick={onTestProtocol}
               >
-                {testBusy === 'protocol' ? <Spinner className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                {testBusy === 'protocol' ? (
+                  <Spinner className="h-4 w-4" />
+                ) : (
+                  <Activity className="h-4 w-4" />
+                )}
                 Test protocol
               </Button>
             </div>
@@ -320,15 +358,18 @@ export function AgentSetupDialog({
                     items={[
                       {
                         title: 'Checks',
-                        description: 'Deploy, health, bounded logs, replacement, rollback, stop and restart.',
+                        description:
+                          'Deploy, health, bounded logs, replacement, rollback, stop and restart.',
                       },
                       {
                         title: 'Cleanup',
-                        description: 'Removes the temporary container, diagnostic image and empty network afterwards.',
+                        description:
+                          'Removes the temporary container, diagnostic image and empty network afterwards.',
                       },
                       {
                         title: 'Restrictions',
-                        description: 'No shell command, host mount or deployment secret is sent to the Agent.',
+                        description:
+                          'No shell command, host mount or deployment secret is sent to the Agent.',
                       },
                     ]}
                   />
@@ -341,10 +382,18 @@ export function AgentSetupDialog({
                 variant="secondary"
                 size="sm"
                 disabled={busy || testBusy !== null || !canQueueProbe}
-                title={canQueueProbe ? 'Queue a Docker lifecycle test' : 'Agent 0.3.0 or newer must be enrolled'}
+                title={
+                  canQueueProbe
+                    ? 'Queue a Docker lifecycle test'
+                    : 'Agent 0.3.0 or newer must be enrolled'
+                }
                 onClick={onTestLifecycle}
               >
-                {testBusy === 'lifecycle' ? <Spinner className="h-4 w-4" /> : <Container className="h-4 w-4" />}
+                {testBusy === 'lifecycle' ? (
+                  <Spinner className="h-4 w-4" />
+                ) : (
+                  <Container className="h-4 w-4" />
+                )}
                 Test Docker
               </Button>
             </div>
@@ -361,11 +410,13 @@ export function AgentSetupDialog({
                       items={[
                         {
                           title: 'Checks',
-                          description: 'The configured DNS zone, trusted TLS on port 443 and the private Caddy adapter.',
+                          description:
+                            'The configured DNS zone, trusted TLS on port 443 and the private Caddy adapter.',
                         },
                         {
                           title: 'Impact',
-                          description: 'Read-only: no route is created and gateway configuration is not changed.',
+                          description:
+                            'Read-only: no route is created and gateway configuration is not changed.',
                         },
                       ]}
                     />
@@ -376,9 +427,11 @@ export function AgentSetupDialog({
                   {target.gatewayPreflight && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                       <StatusBadge
-                        status={target.gatewayPreflight.status === 'passed'
-                          ? 'success'
-                          : target.gatewayPreflight.status}
+                        status={
+                          target.gatewayPreflight.status === 'passed'
+                            ? 'success'
+                            : target.gatewayPreflight.status
+                        }
                         label={`preflight ${target.gatewayPreflight.status}`}
                       />
                       {target.gatewayPreflight.checkedAt && (
@@ -396,12 +449,18 @@ export function AgentSetupDialog({
                   variant="secondary"
                   size="sm"
                   disabled={busy || testBusy !== null || !canQueueProbe}
-                  title={canQueueProbe
-                    ? 'Queue a read-only gateway preflight (Agent 0.5.0 or newer)'
-                    : 'The Agent must be enrolled'}
+                  title={
+                    canQueueProbe
+                      ? 'Queue a read-only gateway preflight (Agent 0.5.0 or newer)'
+                      : 'The Agent must be enrolled'
+                  }
                   onClick={onTestGateway}
                 >
-                  {testBusy === 'gateway' ? <Spinner className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
+                  {testBusy === 'gateway' ? (
+                    <Spinner className="h-4 w-4" />
+                  ) : (
+                    <Globe2 className="h-4 w-4" />
+                  )}
                   Test gateway
                 </Button>
               </div>
@@ -424,10 +483,15 @@ export function AgentSetupDialog({
                   return (
                     <div key={job.id} className="rounded-md bg-secondary/30 p-2.5">
                       <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-medium">{job.kind} · attempt {job.attempt}</span>
+                        <span className="font-medium">
+                          {job.kind} · attempt {job.attempt}
+                        </span>
                         <StatusBadge status={displayStatus} />
                       </div>
-                      <time className="mt-0.5 block text-[11px] text-muted-foreground" dateTime={job.createdAt}>
+                      <time
+                        className="mt-0.5 block text-[11px] text-muted-foreground"
+                        dateTime={job.createdAt}
+                      >
                         {new Date(job.createdAt).toLocaleString()}
                       </time>
                       <p className="mt-1 text-xs text-muted-foreground">{displayMessage}</p>
@@ -456,7 +520,6 @@ export function AgentSetupDialog({
               </div>
             )}
           </div>
-
         </div>
 
         <DialogFooter>
@@ -467,7 +530,9 @@ export function AgentSetupDialog({
           )}
           <Button disabled={busy} onClick={() => void issueEnrollment()}>
             {busy && <Spinner className="h-4 w-4" />}
-            {enrollment || agent?.enrollmentPending ? 'Generate a new token' : 'Generate enrollment'}
+            {enrollment || agent?.enrollmentPending
+              ? 'Generate a new token'
+              : 'Generate enrollment'}
           </Button>
         </DialogFooter>
       </DialogContent>

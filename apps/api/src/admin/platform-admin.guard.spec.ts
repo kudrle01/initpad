@@ -32,7 +32,9 @@ describe('PlatformAdminGuard', () => {
 
   it('rejects an unauthenticated request', async () => {
     const guard = new PlatformAdminGuard({} as never);
-    await expect(guard.canActivate(contextFor(undefined))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(contextFor(undefined))).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('does not expose Gitea-backed user administration in SaaS', async () => {

@@ -8,10 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
-import {
-  AuditEventsService,
-  auditOperationAction,
-} from '../audit/audit-events.service';
+import { AuditEventsService, auditOperationAction } from '../audit/audit-events.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type ProvisioningKind = 'create' | 'import';
@@ -146,9 +143,8 @@ export class ProvisioningService implements OnModuleInit {
     };
     let operationId: string;
     if (!options?.retryOfId) {
-      operationId = (
-        await this.prisma.provisioningOperation.create({ data, select: { id: true } })
-      ).id;
+      operationId = (await this.prisma.provisioningOperation.create({ data, select: { id: true } }))
+        .id;
     } else {
       operationId = await this.prisma.$transaction(async (tx) => {
         const op = await tx.provisioningOperation.create({ data, select: { id: true } });
@@ -177,16 +173,18 @@ export class ProvisioningService implements OnModuleInit {
         details: { kind, attempt: options?.attempt ?? 1 },
       });
     } catch (error) {
-      await this.prisma.provisioningOperation.update({
-        where: { id: operationId },
-        data: {
-          status: 'failed',
-          message: 'Provisioning could not be recorded in the audit log',
-          finishedAt: new Date(),
-          leaseOwner: null,
-          leaseExpiresAt: null,
-        },
-      }).catch(() => undefined);
+      await this.prisma.provisioningOperation
+        .update({
+          where: { id: operationId },
+          data: {
+            status: 'failed',
+            message: 'Provisioning could not be recorded in the audit log',
+            finishedAt: new Date(),
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          },
+        })
+        .catch(() => undefined);
       throw error;
     }
     return operationId;
@@ -240,7 +238,14 @@ export class ProvisioningService implements OnModuleInit {
     await this.transitionEffect(
       operationId,
       key,
-      ['planned', 'applying', 'applied', 'failed', 'compensation_failed', 'reconciliation_required'],
+      [
+        'planned',
+        'applying',
+        'applied',
+        'failed',
+        'compensation_failed',
+        'reconciliation_required',
+      ],
       { status: 'compensated', compensatedAt: new Date(), error: null },
     );
   }
@@ -453,7 +458,8 @@ export class ProvisioningService implements OnModuleInit {
         },
         data: {
           status: 'interrupted',
-          message: 'The API process stopped before provisioning completed; reconciliation is required',
+          message:
+            'The API process stopped before provisioning completed; reconciliation is required',
           finishedAt: now,
           leaseOwner: null,
           leaseExpiresAt: null,

@@ -1,24 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  GatewayPreflight,
-  parseGatewayPreflightPayload,
-} from './gateway-preflight.js';
+import { GatewayPreflight, parseGatewayPreflightPayload } from './gateway-preflight.js';
 
 test('accepts only a fixed Caddy preflight over a clean HTTPS DNS origin', () => {
-  assert.deepEqual(parseGatewayPreflightPayload({
-    adapter: 'caddy',
-    publicUrl: 'https://Apps.Example.Test/',
-  }), {
-    adapter: 'caddy',
-    publicUrl: 'https://apps.example.test',
-  });
-  assert.throws(
-    () => parseGatewayPreflightPayload({
+  assert.deepEqual(
+    parseGatewayPreflightPayload({
+      adapter: 'caddy',
+      publicUrl: 'https://Apps.Example.Test/',
+    }),
+    {
       adapter: 'caddy',
       publicUrl: 'https://apps.example.test',
-      adminUrl: 'http://attacker.internal',
-    }),
+    },
+  );
+  assert.throws(
+    () =>
+      parseGatewayPreflightPayload({
+        adapter: 'caddy',
+        publicUrl: 'https://apps.example.test',
+        adminUrl: 'http://attacker.internal',
+      }),
     /unsupported fields/,
   );
   assert.throws(
@@ -35,14 +36,20 @@ test('checks DNS, trusted TLS and the local Caddy adapter in order', async () =>
       calls.push(`dns:${hostname}`);
       return [{ address: '192.0.2.10', family: 4 }];
     },
-    verifyTls: async (hostname) => { calls.push(`tls:${hostname}`); },
-    verifyCaddy: async () => { calls.push('caddy'); },
+    verifyTls: async (hostname) => {
+      calls.push(`tls:${hostname}`);
+    },
+    verifyCaddy: async () => {
+      calls.push('caddy');
+    },
   });
 
   await preflight.run(
     { adapter: 'caddy', publicUrl: 'https://apps.example.test' },
     new AbortController().signal,
-    async (item) => { progress.push(item.percent); },
+    async (item) => {
+      progress.push(item.percent);
+    },
   );
 
   assert.deepEqual(calls, [

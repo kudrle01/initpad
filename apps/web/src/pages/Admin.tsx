@@ -52,7 +52,7 @@ export default function Admin() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, user?.edition, user?.platformRole]);
+  }, [user]);
 
   useEffect(() => {
     void loadUsers();
@@ -72,7 +72,8 @@ export default function Admin() {
     if (role === 'admin') {
       const confirmed = await confirmAction({
         title: `Create @${username.trim()} as platform administrator?`,
-        description: 'Platform administrators manage every account in this self-hosted InitPad instance.',
+        description:
+          'Platform administrators manage every account in this self-hosted InitPad instance.',
         confirmLabel: 'Create administrator',
         tone: 'warning',
         consequences: [
@@ -84,7 +85,11 @@ export default function Admin() {
     }
     setCreating(true);
     try {
-      const { user: created, temporaryPassword, activationUrl } = await api.adminCreateUser({
+      const {
+        user: created,
+        temporaryPassword,
+        activationUrl,
+      } = await api.adminCreateUser({
         username: username.trim(),
         email: email.trim(),
         name: name.trim() || undefined,
@@ -162,7 +167,8 @@ export default function Admin() {
   async function activationLink(target: AdminUser) {
     const confirmed = await confirmAction({
       title: `Create a new activation link for @${target.username}?`,
-      description: 'Activation links are single-use credentials that let the user choose a password.',
+      description:
+        'Activation links are single-use credentials that let the user choose a password.',
       confirmLabel: 'Create new link',
       tone: 'warning',
       consequences: [
@@ -197,24 +203,31 @@ export default function Admin() {
               <div className="min-w-0">
                 <h2 className="text-[15px] font-semibold">Onboarding for @{oneTime.username}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Share securely. Shown <strong className="font-medium text-foreground">once</strong> and cannot be
+                  Share securely. Shown{' '}
+                  <strong className="font-medium text-foreground">once</strong> and cannot be
                   retrieved again. Send the activation link, or give the temporary password.
                 </p>
               </div>
             </div>
             {oneTime.activationUrl && (
               <div className="mt-4">
-                <p className="mb-1 text-xs text-muted-foreground">Activation link — the user sets their own password:</p>
+                <p className="mb-1 text-xs text-muted-foreground">
+                  Activation link — the user sets their own password:
+                </p>
                 <CopyField command={oneTime.activationUrl} />
               </div>
             )}
             {oneTime.password && (
               <div className="mt-3">
-                <p className="mb-1 text-xs text-muted-foreground">Temporary password (must be changed at first sign-in):</p>
+                <p className="mb-1 text-xs text-muted-foreground">
+                  Temporary password (must be changed at first sign-in):
+                </p>
                 <CopyField command={oneTime.password} />
               </div>
             )}
-            <Button variant="secondary" className="mt-3" onClick={() => setOneTime(null)}>Done</Button>
+            <Button variant="secondary" className="mt-3" onClick={() => setOneTime(null)}>
+              Done
+            </Button>
           </div>
         )}
 
@@ -232,9 +245,27 @@ export default function Admin() {
             </div>
           </div>
           <form className="mt-5 grid gap-2 sm:grid-cols-2" onSubmit={createUser}>
-            <Input placeholder="Username" aria-label="Username" value={username} onChange={(e) => setUsername(e.target.value)} required />
-            <Input type="email" placeholder="E-mail" aria-label="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <Input placeholder="Full name (optional)" aria-label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              placeholder="Username"
+              aria-label="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+            <Input
+              type="email"
+              placeholder="E-mail"
+              aria-label="E-mail"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            <Input
+              placeholder="Full name (optional)"
+              aria-label="Full name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
             <select
               className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
               aria-label="Platform role"
@@ -246,7 +277,8 @@ export default function Admin() {
             </select>
             <div className="sm:col-span-2">
               <Button type="submit" disabled={creating || !username.trim() || !email.trim()}>
-                {creating ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Create user
+                {creating ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Create
+                user
               </Button>
             </div>
           </form>
@@ -261,33 +293,66 @@ export default function Admin() {
           ) : (
             <div className="mt-4 divide-y divide-border rounded-md border border-border">
               {users.map((u) => (
-              <div key={u.id} className="flex flex-wrap items-center gap-3 p-3">
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 truncate text-sm font-medium">
-                    {u.name || `@${u.username}`}
-                    {u.platformRole === 'admin' && (
-                      <ShieldCheck className="h-3.5 w-3.5 text-primary" aria-label="Administrator" />
-                    )}
+                <div key={u.id} className="flex flex-wrap items-center gap-3 p-3">
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 truncate text-sm font-medium">
+                      {u.name || `@${u.username}`}
+                      {u.platformRole === 'admin' && (
+                        <ShieldCheck
+                          className="h-3.5 w-3.5 text-primary"
+                          aria-label="Administrator"
+                        />
+                      )}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      @{u.username}
+                      {u.email ? ` · ${u.email}` : ''}
+                    </span>
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    @{u.username}{u.email ? ` · ${u.email}` : ''}
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {!u.active && <Badge tone="destructive">Deactivated</Badge>}
+                    {u.mustChangePassword && <Badge tone="warning">Must change password</Badge>}
+                    {!u.emailVerified && <Badge tone="muted">E-mail unverified</Badge>}
                   </span>
-                </span>
-                <span className="flex flex-wrap items-center gap-1.5">
-                  {!u.active && <Badge tone="destructive">Deactivated</Badge>}
-                  {u.mustChangePassword && <Badge tone="warning">Must change password</Badge>}
-                  {!u.emailVerified && <Badge tone="muted">E-mail unverified</Badge>}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Button variant="ghost" size="sm" disabled={busyUserId === u.id} onClick={() => void activationLink(u)}>Activation link</Button>
-                  <Button variant="ghost" size="sm" disabled={busyUserId === u.id} onClick={() => void resetPassword(u)}>Reset password</Button>
-                  {u.id !== user?.id && (
-                    u.active
-                      ? <Button variant="destructive" size="sm" disabled={busyUserId === u.id} onClick={() => void setActive(u, false)}>Deactivate</Button>
-                      : <Button variant="ghost" size="sm" disabled={busyUserId === u.id} onClick={() => void setActive(u, true)}>Activate</Button>
-                  )}
-                </span>
-              </div>
+                  <span className="flex items-center gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busyUserId === u.id}
+                      onClick={() => void activationLink(u)}
+                    >
+                      Activation link
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busyUserId === u.id}
+                      onClick={() => void resetPassword(u)}
+                    >
+                      Reset password
+                    </Button>
+                    {u.id !== user?.id &&
+                      (u.active ? (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={busyUserId === u.id}
+                          onClick={() => void setActive(u, false)}
+                        >
+                          Deactivate
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busyUserId === u.id}
+                          onClick={() => void setActive(u, true)}
+                        >
+                          Activate
+                        </Button>
+                      ))}
+                  </span>
+                </div>
               ))}
             </div>
           )}
@@ -297,12 +362,20 @@ export default function Admin() {
   );
 }
 
-function Badge({ tone, children }: { tone: 'destructive' | 'warning' | 'muted'; children: React.ReactNode }) {
+function Badge({
+  tone,
+  children,
+}: {
+  tone: 'destructive' | 'warning' | 'muted';
+  children: React.ReactNode;
+}) {
   const cls =
     tone === 'destructive'
       ? 'bg-destructive/10 text-destructive'
       : tone === 'warning'
         ? 'bg-warning/10 text-warning'
         : 'bg-secondary text-muted-foreground';
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}`}>{children}</span>;
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}`}>{children}</span>
+  );
 }

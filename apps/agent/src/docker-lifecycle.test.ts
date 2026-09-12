@@ -113,12 +113,15 @@ function fakeEngine(initialImagePresent = false) {
       return response(204);
     }
     if (input.method === 'GET' && decodedPath.startsWith('/containers/json?')) {
-      return response(200, [...containers.values()].map((container) => ({
-        Id: container.Id,
-        Names: [`/${container.name}`],
-        Image: container.Config.Image,
-        Labels: container.Config.Labels,
-      })));
+      return response(
+        200,
+        [...containers.values()].map((container) => ({
+          Id: container.Id,
+          Names: [`/${container.name}`],
+          Image: container.Config.Image,
+          Labels: container.Config.Labels,
+        })),
+      );
     }
     if (input.method === 'POST' && input.path.startsWith('/containers/create?name=')) {
       const name = decodeURIComponent(input.path.split('=')[1] ?? '');
@@ -139,7 +142,9 @@ function fakeEngine(initialImagePresent = false) {
       containers.set(container.Id, container);
       return response(201, { Id: container.Id });
     }
-    const containerMatch = decodedPath.match(/^\/containers\/([^/?]+)(\/json|\/start|\/stop|\/rename|\/logs|\/update)?/);
+    const containerMatch = decodedPath.match(
+      /^\/containers\/([^/?]+)(\/json|\/start|\/stop|\/rename|\/logs|\/update)?/,
+    );
     if (containerMatch) {
       const container = findContainer(containerMatch[1]);
       const action = containerMatch[2];
@@ -160,7 +165,8 @@ function fakeEngine(initialImagePresent = false) {
         return response(204);
       }
       if (input.method === 'POST' && action === '/rename') {
-        container.name = new URL(`http://docker${input.path}`).searchParams.get('name') ?? container.name;
+        container.name =
+          new URL(`http://docker${input.path}`).searchParams.get('name') ?? container.name;
         return response(204);
       }
       if (input.method === 'POST' && action === '/update') {
@@ -244,19 +250,24 @@ test('validates project artifact metadata and transient config independently', (
   };
   assert.deepEqual(parseProjectPayload(payload), payload);
   assert.throws(() => parseProjectPayload({ ...payload, command: ['sh'] }), /unsupported fields/);
-  assert.throws(() => parseProjectPayload({ ...payload, configFingerprint: 'raw-secret' }), /fingerprint/);
   assert.throws(
-    () => parseProjectDelivery({
-      artifact: { path: 'https://attacker.test/archive', sha256: 'c'.repeat(64), sizeBytes: 10 },
-      envVars: {},
-    }),
+    () => parseProjectPayload({ ...payload, configFingerprint: 'raw-secret' }),
+    /fingerprint/,
+  );
+  assert.throws(
+    () =>
+      parseProjectDelivery({
+        artifact: { path: 'https://attacker.test/archive', sha256: 'c'.repeat(64), sizeBytes: 10 },
+        envVars: {},
+      }),
     /artifact path/,
   );
   assert.throws(
-    () => parseProjectDelivery({
-      artifact: { path: '/api/agent/jobs/job-1/artifact', sha256: 'c'.repeat(64), sizeBytes: 10 },
-      envVars: { PORT: '9999' },
-    }),
+    () =>
+      parseProjectDelivery({
+        artifact: { path: '/api/agent/jobs/job-1/artifact', sha256: 'c'.repeat(64), sizeBytes: 10 },
+        envVars: { PORT: '9999' },
+      }),
     /invalid variable/,
   );
 });
@@ -316,10 +327,14 @@ test('streams and verifies an image archive before publishing an isolated projec
   const status = await lifecycle.deployProject(
     payload,
     delivery,
-    (async function* () { yield bytes; })(),
+    (async function* () {
+      yield bytes;
+    })(),
     'job-1',
     new AbortController().signal,
-    async (item) => { progress.push(item.percent); },
+    async (item) => {
+      progress.push(item.percent);
+    },
   );
 
   assert.equal(status.state, 'running');
@@ -328,10 +343,7 @@ test('streams and verifies an image archive before publishing an isolated projec
   assert.deepEqual(engine.loadedBytes(), bytes);
   assert.equal(engine.containers.size, 1);
   const created = engine.createdBodies[0];
-  assert.deepEqual(created.Env, [
-    'APP_ENV=production',
-    'DATABASE_PASSWORD=never-log-this',
-  ]);
+  assert.deepEqual(created.Env, ['APP_ENV=production', 'DATABASE_PASSWORD=never-log-this']);
   assert.equal(
     (created.Labels as Record<string, string>)['com.initpad.config-fingerprint'],
     payload.configFingerprint,
@@ -348,7 +360,12 @@ test('rejects a corrupt project archive without publishing a workload', async ()
     configFingerprint: 'b'.repeat(64),
   };
   const engine = fakeEngine();
-  const lifecycle = new DockerLifecycle('target-1', 'tcp://docker:2375', engine.transport, 'docker');
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+  );
 
   await assert.rejects(
     lifecycle.deployProject(
@@ -361,7 +378,9 @@ test('rejects a corrupt project archive without publishing a workload', async ()
         },
         envVars: {},
       },
-      (async function* () { yield bytes; })(),
+      (async function* () {
+        yield bytes;
+      })(),
       'job-1',
       new AbortController().signal,
       async () => undefined,
@@ -383,7 +402,12 @@ test('cleans a partially loaded image when Docker reports a full disk', async ()
   };
   const engine = fakeEngine();
   engine.failNextImageLoad();
-  const lifecycle = new DockerLifecycle('target-1', 'tcp://docker:2375', engine.transport, 'docker');
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+  );
 
   await assert.rejects(
     lifecycle.deployProject(
@@ -396,7 +420,9 @@ test('cleans a partially loaded image when Docker reports a full disk', async ()
         },
         envVars: {},
       },
-      (async function* () { yield bytes; })(),
+      (async function* () {
+        yield bytes;
+      })(),
       'job-disk-full',
       new AbortController().signal,
       async () => undefined,
@@ -407,7 +433,9 @@ test('cleans a partially loaded image when Docker reports a full disk', async ()
   assert.equal(engine.containers.size, 0);
   assert.equal(engine.imagePresent(), false);
   assert.equal(
-    engine.requests.some((request) => request.method === 'DELETE' && request.path.startsWith('/images/')),
+    engine.requests.some(
+      (request) => request.method === 'DELETE' && request.path.startsWith('/images/'),
+    ),
     true,
   );
 });
@@ -513,7 +541,9 @@ test('returns only bounded logs, runtime state, exit code and health for an owne
       },
       envVars: {},
     },
-    (async function* () { yield bytes; })(),
+    (async function* () {
+      yield bytes;
+    })(),
     'job-1',
     new AbortController().signal,
     async () => undefined,
@@ -531,10 +561,12 @@ test('returns only bounded logs, runtime state, exit code and health for an owne
   assert.equal(stopped.health, 'not-running');
   assert.equal(stopped.logs, 'bounded log');
   assert.equal(
-    engine.requests.some((request) =>
-      request.method === 'GET'
-      && request.path.includes('/logs?stdout=1&stderr=1&tail=200')
-      && request.maxResponseBytes === 32 * 1024 + 8 * 200),
+    engine.requests.some(
+      (request) =>
+        request.method === 'GET' &&
+        request.path.includes('/logs?stdout=1&stderr=1&tail=200') &&
+        request.maxResponseBytes === 32 * 1024 + 8 * 200,
+    ),
     true,
   );
 });
@@ -549,12 +581,7 @@ test('preserves an immutable diagnostic image that was already cached', async ()
     async () => new Response('ok', { status: 200 }),
   );
 
-  await lifecycle.acceptance(
-    PAYLOAD,
-    'job-2',
-    new AbortController().signal,
-    async () => undefined,
-  );
+  await lifecycle.acceptance(PAYLOAD, 'job-2', new AbortController().signal, async () => undefined);
 
   assert.equal(engine.imagePresent(), true);
   assert.equal(engine.networkPresent(), false);
@@ -563,7 +590,12 @@ test('preserves an immutable diagnostic image that was already cached', async ()
 test('refuses to operate on a same-named container outside the allocation', async () => {
   const engine = fakeEngine();
   engine.seedForeign('initpad-team-alpha-agent-lifecycle-check-diagnostic');
-  const lifecycle = new DockerLifecycle('target-1', 'tcp://docker:2375', engine.transport, 'docker');
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+  );
 
   await assert.rejects(
     lifecycle.remove(PAYLOAD, new AbortController().signal),
@@ -583,12 +615,9 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
     async () => new Response('ok', { status: 200 }),
   );
 
-  await lifecycle.acceptance(
-    PAYLOAD,
-    'job-1',
-    new AbortController().signal,
-    async (item) => { progress.push(item.percent); },
-  );
+  await lifecycle.acceptance(PAYLOAD, 'job-1', new AbortController().signal, async (item) => {
+    progress.push(item.percent);
+  });
 
   assert.deepEqual(progress, [8, 24, 40, 52, 64, 76, 90]);
   assert.equal(engine.containers.size, 0);
@@ -606,10 +635,9 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.equal(host.Privileged, undefined);
   assert.equal(host.Binds, undefined);
   assert.equal(host.NetworkMode, 'net-team-alpha-diagnostic');
-  assert.deepEqual(
-    (host.PortBindings as Record<string, unknown>)['80/tcp'],
-    [{ HostIp: '0.0.0.0', HostPort: '' }],
-  );
+  assert.deepEqual((host.PortBindings as Record<string, unknown>)['80/tcp'], [
+    { HostIp: '0.0.0.0', HostPort: '' },
+  ]);
   assert.deepEqual(host.CapDrop, ['ALL']);
   assert.deepEqual(host.CapAdd, ['CHOWN', 'DAC_OVERRIDE', 'SETGID', 'SETUID', 'NET_BIND_SERVICE']);
   assert.deepEqual(host.SecurityOpt, ['no-new-privileges']);
@@ -619,7 +647,10 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.equal(host.MemorySwap, 384 * 1024 * 1024);
   assert.equal(host.PidsLimit, 128);
   assert.ok(engine.requests.some((item) => item.path.endsWith('/update')));
-  assert.equal((first.Labels as Record<string, string>)['com.initpad.allocation.id'], PAYLOAD.allocationId);
+  assert.equal(
+    (first.Labels as Record<string, string>)['com.initpad.allocation.id'],
+    PAYLOAD.allocationId,
+  );
   assert.equal((first.Labels as Record<string, string>)['com.initpad.target'], 'target-1');
 });
 
@@ -638,10 +669,9 @@ test('isolates a managed-gateway workload network and keeps its health port on l
 
   const host = engine.createdBodies[0].HostConfig as Record<string, unknown>;
   assert.equal(host.NetworkMode, 'net-team-alpha-agent-lifecycle-check-diagnostic');
-  assert.deepEqual(
-    (host.PortBindings as Record<string, unknown>)['80/tcp'],
-    [{ HostIp: '127.0.0.1', HostPort: '' }],
-  );
+  assert.deepEqual((host.PortBindings as Record<string, unknown>)['80/tcp'], [
+    { HostIp: '127.0.0.1', HostPort: '' },
+  ]);
 });
 
 test('keeps the previous managed revision until the public route gate commits', async () => {
@@ -657,7 +687,11 @@ test('keeps the previous managed revision until the public route gate commits', 
   const second = { ...PAYLOAD, revision: 'managed-b', routingMode: 'managed-gateway' as const };
 
   const firstStatus = await lifecycle.deploy(first, 'job-managed-a', new AbortController().signal);
-  const secondStatus = await lifecycle.deploy(second, 'job-managed-b', new AbortController().signal);
+  const secondStatus = await lifecycle.deploy(
+    second,
+    'job-managed-b',
+    new AbortController().signal,
+  );
 
   assert.equal(engine.containers.size, 2);
   assert.notEqual(firstStatus.workloadSlot, secondStatus.workloadSlot);

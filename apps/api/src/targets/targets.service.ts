@@ -63,25 +63,28 @@ const BLOCKED_TARGET_HOSTS = new Set([
 ]);
 
 function normalizeTargetHost(host: string): string {
-  return host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
 }
 
 function hasValidTargetHostSyntax(host: string): boolean {
   if (!host || host.length > 253 || /[\s/@]/.test(host)) return false;
   if (isIP(host) !== 0) return true;
   if (/^[0-9.]+$/.test(host)) return false;
-  return host.split('.').every((label) =>
-    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label),
-  );
+  return host.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
 }
 
 function isBlockedTargetHost(host: string): boolean {
-  return BLOCKED_TARGET_HOSTS.has(host)
-    || host.startsWith('127.')
-    || host.startsWith('169.254.')
-    || host.startsWith('fe80:')
-    || host.startsWith('::ffff:127.')
-    || host.startsWith('::ffff:169.254.');
+  return (
+    BLOCKED_TARGET_HOSTS.has(host) ||
+    host.startsWith('127.') ||
+    host.startsWith('169.254.') ||
+    host.startsWith('fe80:') ||
+    host.startsWith('::ffff:127.') ||
+    host.startsWith('::ffff:169.254.')
+  );
 }
 
 function changedTargetFields(
@@ -92,19 +95,30 @@ function changedTargetFields(
 ): string {
   const changed = (key: keyof UpdateTargetDto): boolean => {
     switch (key) {
-      case 'name': return dto.name !== row.name;
+      case 'name':
+        return dto.name !== row.name;
       case 'capabilities':
         return [...new Set(dto.capabilities)].sort().join(',') !== row.capabilities;
-      case 'host': return dto.host !== row.host;
-      case 'port': return dto.port !== row.port;
-      case 'username': return dto.username !== row.username;
-      case 'auth': return dto.auth !== row.auth;
-      case 'secret': return Boolean(dto.secret);
-      case 'hostKeyFingerprint': return dto.hostKeyFingerprint !== row.hostKeyFingerprint;
-      case 'remotePath': return dto.remotePath !== row.remotePath;
-      case 'publicUrl': return publicUrl !== row.publicUrl;
-      case 'routingMode': return routingMode !== (row.routingMode ?? 'direct-port');
-      case 'kind': return false;
+      case 'host':
+        return dto.host !== row.host;
+      case 'port':
+        return dto.port !== row.port;
+      case 'username':
+        return dto.username !== row.username;
+      case 'auth':
+        return dto.auth !== row.auth;
+      case 'secret':
+        return Boolean(dto.secret);
+      case 'hostKeyFingerprint':
+        return dto.hostKeyFingerprint !== row.hostKeyFingerprint;
+      case 'remotePath':
+        return dto.remotePath !== row.remotePath;
+      case 'publicUrl':
+        return publicUrl !== row.publicUrl;
+      case 'routingMode':
+        return routingMode !== (row.routingMode ?? 'direct-port');
+      case 'kind':
+        return false;
     }
   };
   return (Object.keys(dto) as (keyof UpdateTargetDto)[])
@@ -170,7 +184,7 @@ export class TargetsService implements OnModuleInit {
     private readonly workspaces: WorkspacesService,
     @Inject(AuditEventsService)
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
-      record: async () => undefined,
+      record: () => Promise.resolve(),
     },
   ) {}
 
@@ -280,9 +294,10 @@ export class TargetsService implements OnModuleInit {
       // Built-ins live inside one self-hosted installation. A public SaaS
       // control plane cannot deploy into its own local Docker/SSH demo stack;
       // only targets explicitly owned by the active workspace are real there.
-      where: config.edition === 'saas'
-        ? { workspaceId }
-        : { OR: [{ scope: 'builtin' }, { workspaceId }] },
+      where:
+        config.edition === 'saas'
+          ? { workspaceId }
+          : { OR: [{ scope: 'builtin' }, { workspaceId }] },
       orderBy: [{ scope: 'asc' }, { createdAt: 'asc' }],
       include: {
         agent: { select: { credentialHash: true, disabledAt: true, version: true } },
@@ -325,17 +340,22 @@ export class TargetsService implements OnModuleInit {
   // Raw rows (with secrets) for internal use by ProjectsService (default
   // selection + capability checks at project creation).
   async listEntities(workspaceId: string): Promise<TargetRow[]> {
-    return (await this.prisma.target.findMany({
-      where: config.edition === 'saas'
-        ? { workspaceId }
-        : { OR: [{ scope: 'builtin' }, { workspaceId }] },
+    return await this.prisma.target.findMany({
+      where:
+        config.edition === 'saas'
+          ? { workspaceId }
+          : { OR: [{ scope: 'builtin' }, { workspaceId }] },
       include: {
         agent: { select: { credentialHash: true, disabledAt: true, version: true } },
       },
-    })) as TargetRow[];
+    });
   }
 
-  async create(userId: string, dto: CreateTargetDto, requestedWorkspaceId?: string): Promise<Target> {
+  async create(
+    userId: string,
+    dto: CreateTargetDto,
+    requestedWorkspaceId?: string,
+  ): Promise<Target> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspaceId, 'maintain');
     if (dto.kind === 'ssh') {
@@ -344,14 +364,16 @@ export class TargetsService implements OnModuleInit {
       );
     }
     const agentBacked = dto.kind === 'docker';
-    const routingMode = agentBacked ? dto.routingMode ?? 'direct-port' : 'direct-port';
+    const routingMode = agentBacked ? (dto.routingMode ?? 'direct-port') : 'direct-port';
     let publicUrl = dto.publicUrl;
     if (agentBacked) {
       this.assertNoRemoteCredentials(dto);
       publicUrl = this.normalizeAgentPublicUrl(dto.publicUrl, routingMode);
     } else {
       if (dto.routingMode && dto.routingMode !== 'direct-port') {
-        throw new BadRequestException('Managed gateway routing is available only for Docker Agent targets');
+        throw new BadRequestException(
+          'Managed gateway routing is available only for Docker Agent targets',
+        );
       }
       this.assertSafeEndpoint(dto.host!, dto.publicUrl);
     }
@@ -364,11 +386,14 @@ export class TargetsService implements OnModuleInit {
     });
     const capabilities = this.toCsv(dto.capabilities);
     const remotePath = agentBacked ? null : dto.remotePath!;
-    const usage = allocationUsageDefaults({
-      scope: 'user',
-      remotePath,
-      publicUrl,
-    }, workspace.slug);
+    const usage = allocationUsageDefaults(
+      {
+        scope: 'user',
+        remotePath,
+        publicUrl,
+      },
+      workspace.slug,
+    );
     // A workspace-owned server has one natural consumer at creation time: the
     // workspace that registered it. Create its access policy in the same
     // nested write so the UI never exposes a half-created server that still
@@ -464,7 +489,9 @@ export class TargetsService implements OnModuleInit {
       }
     } else {
       if (dto.routingMode && dto.routingMode !== 'direct-port') {
-        throw new BadRequestException('Managed gateway routing is available only for Docker Agent targets');
+        throw new BadRequestException(
+          'Managed gateway routing is available only for Docker Agent targets',
+        );
       }
       this.assertSafeEndpoint(dto.host ?? row.host ?? '', dto.publicUrl ?? row.publicUrl ?? '');
     }
@@ -478,14 +505,15 @@ export class TargetsService implements OnModuleInit {
     const capabilitiesChanged =
       dto.capabilities !== undefined &&
       this.toCsv(dto.capabilities) !== this.toCsv(currentCapabilities);
-    const capabilitiesRemoved = dto.capabilities !== undefined &&
+    const capabilitiesRemoved =
+      dto.capabilities !== undefined &&
       currentCapabilities.some((capability) => !dto.capabilities!.includes(capability));
     const routingChanged = routingMode !== (row.routingMode ?? 'direct-port');
     const managedOriginChanged =
-      agentBacked
-      && routingMode === 'managed-gateway'
-      && dto.publicUrl !== undefined
-      && publicUrl !== row.publicUrl;
+      agentBacked &&
+      routingMode === 'managed-gateway' &&
+      dto.publicUrl !== undefined &&
+      publicUrl !== row.publicUrl;
     // Adding a capability cannot invalidate an existing environment. Removing
     // one can, so only destructive capability changes are blocked while the
     // target is in use. This lets a shared host evolve from static-only to
@@ -712,9 +740,9 @@ export class TargetsService implements OnModuleInit {
     options: { allowDisconnected?: boolean } = {},
   ): ProviderConnection | undefined {
     if (
-      target.scope === 'user'
-      && this.managementState(target) !== 'active'
-      && !options.allowDisconnected
+      target.scope === 'user' &&
+      this.managementState(target) !== 'active' &&
+      !options.allowDisconnected
     ) {
       throw new BadRequestException(
         `Target '${target.name}' is ${this.managementState(target)} and cannot receive management commands`,
@@ -762,13 +790,15 @@ export class TargetsService implements OnModuleInit {
       );
     }
     const now = new Date();
-    const agent = row.kind === 'docker'
-      ? await this.prisma.agent.findUnique({ where: { targetId: row.id }, select: { id: true } })
-      : null;
+    const agent =
+      row.kind === 'docker'
+        ? await this.prisma.agent.findUnique({ where: { targetId: row.id }, select: { id: true } })
+        : null;
     const bindings = await this.prisma.environment.count({ where: { targetId: row.id } });
-    const message = nextState === 'retired'
-      ? 'Target retired by a workspace administrator'
-      : 'Target disconnected by a workspace administrator';
+    const message =
+      nextState === 'retired'
+        ? 'Target retired by a workspace administrator'
+        : 'Target disconnected by a workspace administrator';
 
     await this.prisma.$transaction([
       this.prisma.target.update({
@@ -868,10 +898,10 @@ export class TargetsService implements OnModuleInit {
       const url = new URL(publicUrl);
       const hostname = normalizeTargetHost(url.hostname);
       if (
-        !['http:', 'https:'].includes(url.protocol)
-        || Boolean(url.username || url.password)
-        || !hasValidTargetHostSyntax(hostname)
-        || isBlockedTargetHost(hostname)
+        !['http:', 'https:'].includes(url.protocol) ||
+        Boolean(url.username || url.password) ||
+        !hasValidTargetHostSyntax(hostname) ||
+        isBlockedTargetHost(hostname)
       ) {
         throw new Error('unsafe');
       }
@@ -880,10 +910,7 @@ export class TargetsService implements OnModuleInit {
     }
   }
 
-  private normalizeAgentPublicUrl(
-    publicUrl: string,
-    routingMode: TargetRoutingMode,
-  ): string {
+  private normalizeAgentPublicUrl(publicUrl: string, routingMode: TargetRoutingMode): string {
     this.assertSafePublicUrl(publicUrl);
     if (routingMode === 'direct-port') return publicUrl;
     return normalizeManagedGatewayOrigin(publicUrl);
@@ -917,21 +944,22 @@ export class TargetsService implements OnModuleInit {
     const routingMode = row.routingMode ?? 'direct-port';
     const managementState = this.managementState(row);
     const managedGatewayReady =
-      routingMode === 'managed-gateway'
-      && row.gatewayAdapter === 'caddy'
-      && row.gatewayPreflightStatus === 'passed'
-      && Boolean(row.publicUrl)
-      && agentVersionAtLeast(row.agent?.version, MIN_GATEWAY_ROUTE_AGENT_VERSION);
-    const agentReady = row.scope === 'user' && row.kind === 'docker'
-      ? Boolean(
-          artifactStoreConfigured()
-          && managementState === 'active'
-          && (routingMode === 'direct-port' || managedGatewayReady)
-          && row.agent?.credentialHash
-          && !row.agent.disabledAt
-          && supportsProjectAgent(row.agent.version),
-        )
-      : undefined;
+      routingMode === 'managed-gateway' &&
+      row.gatewayAdapter === 'caddy' &&
+      row.gatewayPreflightStatus === 'passed' &&
+      Boolean(row.publicUrl) &&
+      agentVersionAtLeast(row.agent?.version, MIN_GATEWAY_ROUTE_AGENT_VERSION);
+    const agentReady =
+      row.scope === 'user' && row.kind === 'docker'
+        ? Boolean(
+            artifactStoreConfigured() &&
+            managementState === 'active' &&
+            (routingMode === 'direct-port' || managedGatewayReady) &&
+            row.agent?.credentialHash &&
+            !row.agent.disabledAt &&
+            supportsProjectAgent(row.agent.version),
+          )
+        : undefined;
     return {
       id: row.id,
       name: row.name,
@@ -951,18 +979,17 @@ export class TargetsService implements OnModuleInit {
         ? { credentialConfigured: Boolean(row.secret) }
         : {}),
       routingMode: routingMode as TargetRoutingMode,
-      gatewayPreflight: routingMode === 'managed-gateway'
-        ? {
-            adapter: 'caddy',
-            status: (row.gatewayPreflightStatus ?? 'not-run') as GatewayPreflightStatus,
-            checkedAt: row.gatewayPreflightAt?.toISOString() ?? null,
-            error: row.gatewayPreflightError ?? null,
-          }
-        : null,
+      gatewayPreflight:
+        routingMode === 'managed-gateway'
+          ? {
+              adapter: 'caddy',
+              status: (row.gatewayPreflightStatus ?? 'not-run') as GatewayPreflightStatus,
+              checkedAt: row.gatewayPreflightAt?.toISOString() ?? null,
+              error: row.gatewayPreflightError ?? null,
+            }
+          : null,
       verifiedAt: row.verifiedAt ? row.verifiedAt.toISOString() : null,
-      ...(agentReady !== undefined
-        ? { agentReady, agentVersion: row.agent?.version ?? null }
-        : {}),
+      ...(agentReady !== undefined ? { agentReady, agentVersion: row.agent?.version ?? null } : {}),
       inUse,
       usage,
     };

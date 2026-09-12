@@ -25,8 +25,8 @@ export function ProjectRepository({ project }: { project: Project }) {
       {cloneUrl && <CopyField command={`git clone ${cloneUrl}`} />}
       {project.scm.provider === 'github' ? (
         <p className="mt-2 text-xs text-muted-foreground">
-          Private GitHub repository — open it in a browser signed into an authorized GitHub
-          account. For cloning, use your normal GitHub credential manager, SSH key or{' '}
+          Private GitHub repository — open it in a browser signed into an authorized GitHub account.
+          For cloning, use your normal GitHub credential manager, SSH key or{' '}
           <code className="font-mono">gh auth login</code>.
         </p>
       ) : (

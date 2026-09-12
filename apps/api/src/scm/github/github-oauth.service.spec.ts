@@ -54,7 +54,9 @@ describe('GitHubOAuthService', () => {
     const [payload] = state.split('.');
     expect(service.verifyState(`${payload}.deadbeef`)).toBeNull(); // wrong signature
     // A correctly-signed but stale state must also fail.
-    const stale = Buffer.from(JSON.stringify({ mode: 'login', nonce: 'n', ts: Date.now() - 11 * 60 * 1000 })).toString('base64url');
+    const stale = Buffer.from(
+      JSON.stringify({ mode: 'login', nonce: 'n', ts: Date.now() - 11 * 60 * 1000 }),
+    ).toString('base64url');
     const sig = createHmac('sha256', config.auth.jwtSecret).update(stale).digest('base64url');
     expect(service.verifyState(`${stale}.${sig}`)).toBeNull();
   });
@@ -65,11 +67,17 @@ describe('GitHubOAuthService', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'gho_tok' }) })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ id: 987654, login: 'octocat', name: 'The Octocat', email: 'octo@example.test', avatar_url: 'https://x/y.png' }),
+        json: async () => ({
+          id: 987654,
+          login: 'octocat',
+          name: 'The Octocat',
+          email: 'octo@example.test',
+          avatar_url: 'https://x/y.png',
+        }),
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ([{ email: 'octo@example.test', primary: true, verified: true }]),
+        json: async () => [{ email: 'octo@example.test', primary: true, verified: true }],
       });
     global.fetch = fetchMock as never;
 
@@ -125,9 +133,7 @@ describe('GitHubOAuthService', () => {
     expect(token.accessToken).toBe('ghu_new');
     expect(token.refreshToken).toBe('ghr_new');
     expect(token.accessTokenExpiresAt?.getTime()).toBeGreaterThanOrEqual(before + 28_800_000);
-    expect(token.refreshTokenExpiresAt?.getTime()).toBeGreaterThanOrEqual(
-      before + 15_897_600_000,
-    );
+    expect(token.refreshTokenExpiresAt?.getTime()).toBeGreaterThanOrEqual(before + 15_897_600_000);
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(init.body)).toContain('grant_type=refresh_token');
     expect(String(init.body)).toContain('refresh_token=ghr_old');
@@ -138,12 +144,16 @@ describe('GitHubOAuthService', () => {
       ok: true,
       json: async () => ({ access_token: 'ghu_new', expires_in: 28800 }),
     })) as never;
-    await expect(new GitHubOAuthService().refreshUserToken('ghr_old'))
-      .rejects.toThrow('incomplete');
+    await expect(new GitHubOAuthService().refreshUserToken('ghr_old')).rejects.toThrow(
+      'incomplete',
+    );
   });
 
   it('throws when GitHub returns no access token', async () => {
-    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ error: 'bad_verification_code' }) })) as never;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ error: 'bad_verification_code' }),
+    })) as never;
     await expect(new GitHubOAuthService().exchangeCodeForUser('x')).rejects.toThrow('access token');
   });
 });

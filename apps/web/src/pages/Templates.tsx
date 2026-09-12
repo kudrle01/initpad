@@ -14,10 +14,12 @@ import type { TemplateManifest } from '@/types';
 
 export default function Templates() {
   const loadTemplates = useCallback(() => api.listTemplates(), []);
-  const { data: templates, loading, error, reload } = useLoadable<TemplateManifest[]>(
-    loadTemplates,
-    [],
-  );
+  const {
+    data: templates,
+    loading,
+    error,
+    reload,
+  } = useLoadable<TemplateManifest[]>(loadTemplates, []);
 
   return (
     <div>
@@ -54,37 +56,37 @@ export default function Templates() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {templates.map((t) => (
-          <Card key={t.id} className="flex flex-col p-5">
-            <div className="flex items-center gap-3">
-              <TemplateIcon templateId={t.id} language={t.language} />
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold">{t.name}</div>
-                <div className="text-xs text-muted-foreground">{t.language}</div>
+          {templates.map((t) => (
+            <Card key={t.id} className="flex flex-col p-5">
+              <div className="flex items-center gap-3">
+                <TemplateIcon templateId={t.id} language={t.language} />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{t.name}</div>
+                  <div className="text-xs text-muted-foreground">{t.language}</div>
+                </div>
               </div>
-            </div>
-            <p className="mt-3 flex-1 text-sm text-muted-foreground">{t.description}</p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                {t.artifact}
-              </span>
-              {t.compatibleProviders.map((p) => (
-                <span
-                  key={p}
-                  className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
-                >
-                  {p}
+              <p className="mt-3 flex-1 text-sm text-muted-foreground">{t.description}</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                  {t.artifact}
                 </span>
-              ))}
-            </div>
-            <Link
-              to={`/new?template=${encodeURIComponent(t.id)}`}
-              className="text-link mt-4 inline-flex items-center gap-1 self-start text-sm font-medium"
-            >
-              Use template <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </Card>
-        ))}
+                {t.compatibleProviders.map((p) => (
+                  <span
+                    key={p}
+                    className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+                  >
+                    {p}
+                  </span>
+                ))}
+              </div>
+              <Link
+                to={`/new?template=${encodeURIComponent(t.id)}`}
+                className="text-link mt-4 inline-flex items-center gap-1 self-start text-sm font-medium"
+              >
+                Use template <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </Card>
+          ))}
         </div>
       )}
     </div>

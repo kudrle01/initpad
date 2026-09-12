@@ -28,13 +28,16 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
 >(({ className, children, hideClose, onOpenAutoFocus, tabIndex, ...props }, ref) => {
   const contentRef = React.useRef<React.ElementRef<typeof DialogPrimitive.Content> | null>(null);
-  const setContentRef = React.useCallback((node: React.ElementRef<typeof DialogPrimitive.Content> | null) => {
-    contentRef.current = node;
-    if (typeof ref === 'function') ref(node);
-    else if (ref) {
-      (ref as React.MutableRefObject<React.ElementRef<typeof DialogPrimitive.Content> | null>).current = node;
-    }
-  }, [ref]);
+  const setContentRef = React.useCallback(
+    (node: React.ElementRef<typeof DialogPrimitive.Content> | null) => {
+      contentRef.current = node;
+      if (typeof ref === 'function') ref(node);
+      else if (ref) {
+        ref.current = node;
+      }
+    },
+    [ref],
+  );
 
   return (
     <DialogPortal>
@@ -75,7 +78,10 @@ function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 
 function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('flex flex-col-reverse justify-end gap-2 sm:flex-row', className)} {...props} />
+    <div
+      className={cn('flex flex-col-reverse justify-end gap-2 sm:flex-row', className)}
+      {...props}
+    />
   );
 }
 

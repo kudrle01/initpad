@@ -52,8 +52,15 @@ export interface GatewayRouteProgress {
 type ProgressReporter = (progress: GatewayRouteProgress) => Promise<void>;
 
 interface GatewayRouteAdapter {
-  reconcileRoute(intent: Parameters<CaddyAdminClient['reconcileRoute']>[0], signal: AbortSignal): Promise<void>;
-  currentRoute(id: string, hostname: string, signal: AbortSignal): Promise<CaddyRouteSnapshot | null>;
+  reconcileRoute(
+    intent: Parameters<CaddyAdminClient['reconcileRoute']>[0],
+    signal: AbortSignal,
+  ): Promise<void>;
+  currentRoute(
+    id: string,
+    hostname: string,
+    signal: AbortSignal,
+  ): Promise<CaddyRouteSnapshot | null>;
 }
 
 interface GatewayNetworkAdapter {
@@ -107,19 +114,23 @@ export class PublicGatewayHealth implements PublicHealthAdapter {
 }
 
 function publicHealthFailure(error: unknown): string {
-  const record = error && typeof error === 'object' ? error as Record<string, unknown> : {};
-  const cause = record.cause && typeof record.cause === 'object'
-    ? record.cause as Record<string, unknown>
-    : {};
+  const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};
+  const cause =
+    record.cause && typeof record.cause === 'object'
+      ? (record.cause as Record<string, unknown>)
+      : {};
   const code = typeof cause.code === 'string' ? cause.code : '';
   if (['ENOTFOUND', 'EAI_AGAIN'].includes(code)) return 'failed because DNS lookup did not resolve';
-  if ([
-    'CERT_HAS_EXPIRED',
-    'DEPTH_ZERO_SELF_SIGNED_CERT',
-    'ERR_TLS_CERT_ALTNAME_INVALID',
-    'SELF_SIGNED_CERT_IN_CHAIN',
-    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
-  ].includes(code)) return `failed TLS verification (${code})`;
+  if (
+    [
+      'CERT_HAS_EXPIRED',
+      'DEPTH_ZERO_SELF_SIGNED_CERT',
+      'ERR_TLS_CERT_ALTNAME_INVALID',
+      'SELF_SIGNED_CERT_IN_CHAIN',
+      'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    ].includes(code)
+  )
+    return `failed TLS verification (${code})`;
   if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH'].includes(code)) {
     return `failed to connect (${code})`;
   }
@@ -142,7 +153,10 @@ export function parseGatewayRoutePayload(value: unknown): GatewayRoutePayload {
   if (Object.keys(input).some((field) => !FIELDS.has(field))) {
     throw new Error('Gateway route payload contains unsupported fields');
   }
-  if (input.adapter !== 'caddy' || !['active', 'stopped', 'absent'].includes(String(input.desiredState))) {
+  if (
+    input.adapter !== 'caddy' ||
+    !['active', 'stopped', 'absent'].includes(String(input.desiredState))
+  ) {
     throw new Error('Gateway route payload is invalid');
   }
   const hostname = required(input.hostname, 'hostname', /^[a-z0-9.-]{1,253}$/);
@@ -151,10 +165,20 @@ export function parseGatewayRoutePayload(value: unknown): GatewayRoutePayload {
   }
   const generation = input.generation;
   const containerPort = input.containerPort;
-  if (typeof generation !== 'number' || !Number.isInteger(generation) || generation < 1 || generation > 2_147_483_647) {
+  if (
+    typeof generation !== 'number' ||
+    !Number.isInteger(generation) ||
+    generation < 1 ||
+    generation > 2_147_483_647
+  ) {
     throw new Error('Gateway route payload contains an invalid generation');
   }
-  if (typeof containerPort !== 'number' || !Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65_535) {
+  if (
+    typeof containerPort !== 'number' ||
+    !Number.isInteger(containerPort) ||
+    containerPort < 1 ||
+    containerPort > 65_535
+  ) {
     throw new Error('Gateway route payload contains an invalid container port');
   }
   const desiredState = input.desiredState as GatewayRoutePayload['desiredState'];
@@ -165,14 +189,24 @@ export function parseGatewayRoutePayload(value: unknown): GatewayRoutePayload {
   if (desiredState === 'absent' && revision !== null) {
     throw new Error('Gateway route payload cannot retain a revision when absent');
   }
-  const healthPath = required(input.healthPath, 'health path', /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$/);
-  const workloadSlot = input.workloadSlot === null
-    ? null
-    : required(input.workloadSlot, 'workload slot', /^[a-f0-9]{12}$/);
-  const activation = input.activation === null ? null : input.activation;
+  const healthPath = required(
+    input.healthPath,
+    'health path',
+    /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$/,
+  );
+  const workloadSlot =
+    input.workloadSlot === null
+      ? null
+      : required(input.workloadSlot, 'workload slot', /^[a-f0-9]{12}$/);
+  const activation =
+    input.activation === null
+      ? null
+      : required(input.activation, 'activation', /^(?:deploy|start)$/);
   if (desiredState === 'active') {
-    if (!workloadSlot || !['deploy', 'start'].includes(String(activation))) {
-      throw new Error('Active gateway route payload requires a verified workload slot and activation');
+    if (!workloadSlot || !activation) {
+      throw new Error(
+        'Active gateway route payload requires a verified workload slot and activation',
+      );
     }
   } else if (workloadSlot !== null || activation !== null) {
     throw new Error('Inactive gateway route payload cannot activate a workload slot');
@@ -200,7 +234,10 @@ export class GatewayRouteReconciler {
     targetId: string,
     dockerHost = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock',
     private readonly caddy: GatewayRouteAdapter = new CaddyAdminClient(),
-    private readonly network: GatewayNetworkAdapter = new GatewayDockerNetwork(targetId, dockerHost),
+    private readonly network: GatewayNetworkAdapter = new GatewayDockerNetwork(
+      targetId,
+      dockerHost,
+    ),
     private readonly publicHealth: PublicHealthAdapter = new PublicGatewayHealth(),
   ) {}
 
@@ -211,27 +248,50 @@ export class GatewayRouteReconciler {
   ): Promise<GatewayRouteRunResult> {
     const payload = parseGatewayRoutePayload(rawPayload);
     const routeId = `initpad_route_${payload.routeId.replaceAll('-', '')}`;
-    await report({ percent: 20, stage: 'working', message: 'Validated bounded gateway route intent' });
+    await report({
+      percent: 20,
+      stage: 'working',
+      message: 'Validated bounded gateway route intent',
+    });
     if (payload.desiredState === 'active') {
-      await report({ percent: 40, stage: 'working', message: 'Connecting gateway to the owned workload network' });
+      await report({
+        percent: 40,
+        stage: 'working',
+        message: 'Connecting gateway to the owned workload network',
+      });
       const previous = await this.caddy.currentRoute(routeId, payload.hostname, signal);
       let upstream: string | null = null;
       try {
         await this.network.connect(payload, signal);
         upstream = await this.network.resolveUpstream(payload, signal);
-        await report({ percent: 60, stage: 'working', message: 'Applying atomic Caddy route update' });
-        await this.caddy.reconcileRoute({
-          id: routeId,
-          hostname: payload.hostname,
-          upstream,
-          present: true,
-        }, signal);
-        await report({ percent: 78, stage: 'verifying', message: 'Verifying the public HTTPS application path' });
+        await report({
+          percent: 60,
+          stage: 'working',
+          message: 'Applying atomic Caddy route update',
+        });
+        await this.caddy.reconcileRoute(
+          {
+            id: routeId,
+            hostname: payload.hostname,
+            upstream,
+            present: true,
+          },
+          signal,
+        );
+        await report({
+          percent: 78,
+          stage: 'verifying',
+          message: 'Verifying the public HTTPS application path',
+        });
         await this.publicHealth.verify(payload, signal);
       } catch (error) {
         await this.rollbackActivation(payload, routeId, previous, upstream, error);
       }
-      await report({ percent: 92, stage: 'working', message: 'Retiring the superseded workload revision' });
+      await report({
+        percent: 92,
+        stage: 'working',
+        message: 'Retiring the superseded workload revision',
+      });
       let cleanupComplete = true;
       try {
         await this.network.commit(payload, signal);
@@ -253,19 +313,34 @@ export class GatewayRouteReconciler {
     }
     const previous = await this.caddy.currentRoute(routeId, payload.hostname, signal);
     try {
-      await report({ percent: 65, stage: 'working', message: 'Applying atomic Caddy route update' });
-      await this.caddy.reconcileRoute({
-        id: routeId,
-        hostname: payload.hostname,
-        upstream: 'inactive.invalid:1',
-        present: false,
-      }, signal);
-      await report({ percent: 82, stage: 'working', message: 'Disconnecting gateway from the workload network' });
+      await report({
+        percent: 65,
+        stage: 'working',
+        message: 'Applying atomic Caddy route update',
+      });
+      await this.caddy.reconcileRoute(
+        {
+          id: routeId,
+          hostname: payload.hostname,
+          upstream: 'inactive.invalid:1',
+          present: false,
+        },
+        signal,
+      );
+      await report({
+        percent: 82,
+        stage: 'working',
+        message: 'Disconnecting gateway from the workload network',
+      });
       await this.network.disconnect(payload, signal);
     } catch (error) {
       await this.restoreInactiveRoute(payload, routeId, previous, error);
     }
-    await report({ percent: 95, stage: 'verifying', message: 'Verified the fenced Caddy route generation' });
+    await report({
+      percent: 95,
+      stage: 'verifying',
+      message: 'Verified the fenced Caddy route generation',
+    });
     return { cleanupComplete: true };
   }
 
@@ -276,17 +351,21 @@ export class GatewayRouteReconciler {
     cause: unknown,
   ): Promise<never> {
     const original = cause instanceof Error ? cause.message : 'Gateway deactivation failed';
-    if (!previous) throw new Error(`${original}; rollback incomplete: previous route was not available`);
+    if (!previous)
+      throw new Error(`${original}; rollback incomplete: previous route was not available`);
     try {
-      await this.caddy.reconcileRoute({
-        id: routeId,
-        hostname: payload.hostname,
-        upstream: previous.upstream,
-        present: true,
-      }, AbortSignal.timeout(15_000));
+      await this.caddy.reconcileRoute(
+        {
+          id: routeId,
+          hostname: payload.hostname,
+          upstream: previous.upstream,
+          present: true,
+        },
+        AbortSignal.timeout(15_000),
+      );
     } catch (error) {
       const failure = error instanceof Error ? error.message : 'route restore failed';
-      throw new Error(`${original}; rollback incomplete: ${failure}`);
+      throw new Error(`${original}; rollback incomplete: ${failure}`, { cause: error });
     }
     throw new Error(`${original}; previous serving route restored`);
   }
@@ -301,12 +380,15 @@ export class GatewayRouteReconciler {
     const rollbackSignal = AbortSignal.timeout(15_000);
     const failures: string[] = [];
     try {
-      await this.caddy.reconcileRoute({
-        id: routeId,
-        hostname: payload.hostname,
-        upstream: previous?.upstream ?? attemptedUpstream ?? 'inactive.invalid:1',
-        present: previous !== null,
-      }, rollbackSignal);
+      await this.caddy.reconcileRoute(
+        {
+          id: routeId,
+          hostname: payload.hostname,
+          upstream: previous?.upstream ?? attemptedUpstream ?? 'inactive.invalid:1',
+          present: previous !== null,
+        },
+        rollbackSignal,
+      );
     } catch (error) {
       failures.push(error instanceof Error ? error.message : 'route restore failed');
     }

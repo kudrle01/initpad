@@ -34,9 +34,9 @@ export class ProjectWorkloadDiagnostics {
       target: environment.target?.name ?? environment.provider,
       status: diagnostic.status as WorkloadDiagnosticStatus,
       agentOnline: Boolean(
-        environment.target?.agent?.credentialHash
-        && !environment.target.agent.disabledAt
-        && agentHeartbeatIsFresh(environment.target.agent.lastSeenAt),
+        environment.target?.agent?.credentialHash &&
+        !environment.target.agent.disabledAt &&
+        agentHeartbeatIsFresh(environment.target.agent.lastSeenAt),
       ),
       progressPercent: diagnostic.currentJob?.progressPercent ?? 0,
       message: diagnostic.message,
@@ -67,14 +67,14 @@ export class ProjectWorkloadDiagnostics {
       );
     }
     if (
-      environment.provider !== 'docker'
-      || !target
-      || target.kind !== 'docker'
-      || target.scope !== 'user'
-      || target.workspaceId !== environment.project.workspaceId
-      || !allocation
-      || allocation.targetId !== target.id
-      || allocation.workspaceId !== environment.project.workspaceId
+      environment.provider !== 'docker' ||
+      !target ||
+      target.kind !== 'docker' ||
+      target.scope !== 'user' ||
+      target.workspaceId !== environment.project.workspaceId ||
+      !allocation ||
+      allocation.targetId !== target.id ||
+      allocation.workspaceId !== environment.project.workspaceId
     ) {
       throw new BadRequestException(
         'Workload diagnostics are available only for a workspace Agent Docker target',
@@ -177,7 +177,7 @@ export class ProjectWorkloadDiagnostics {
     jobId: string,
   ): Promise<WorkloadDiagnostic> {
     const diagnostic = await this.prisma.workloadDiagnostic.findUnique({
-      where: { environmentId: (await this.environmentId(projectId, environmentName)) },
+      where: { environmentId: await this.environmentId(projectId, environmentName) },
       select: { currentJobId: true },
     });
     if (diagnostic?.currentJobId !== jobId) {

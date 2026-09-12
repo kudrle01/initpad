@@ -48,7 +48,7 @@ export class GitHubWebhookController {
       // Let persistence failures return 5xx so GitHub retries the delivery.
       // A logged-and-accepted failure would permanently lose installation
       // state and make repository access disagree with GitHub.
-      await this.installations.handleEvent(body as InstallationEvent);
+      await this.installations.handleEvent(body);
     }
     if (event === 'github_app_authorization') {
       const authorization = body as GitHubAuthorizationRevokedEvent;

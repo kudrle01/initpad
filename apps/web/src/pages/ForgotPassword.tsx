@@ -31,10 +31,13 @@ export default function ForgotPassword() {
         {done ? (
           <>
             <p className="mt-2 text-sm text-muted-foreground">
-              If an account matches that username or e-mail, a reset link has been created. Check your
-              inbox — or, on a self-hosted instance without e-mail, ask your administrator for the link.
+              If an account matches that username or e-mail, a reset link has been created. Check
+              your inbox — or, on a self-hosted instance without e-mail, ask your administrator for
+              the link.
             </p>
-            <Link to="/login" className="text-link mt-5 inline-block text-sm font-medium">Back to sign in</Link>
+            <Link to="/login" className="text-link mt-5 inline-block text-sm font-medium">
+              Back to sign in
+            </Link>
           </>
         ) : (
           <>

@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Download, Layers, Play, Plus, RotateCcw, ShieldCheck, Wrench } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Download,
+  Layers,
+  Play,
+  Plus,
+  RotateCcw,
+  ShieldCheck,
+  Wrench,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
@@ -21,6 +31,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const confirmAction = useConfirmation();
   const { activeWorkspace } = useAuth();
+  const workspaceId = activeWorkspace?.id;
   const [portfolio, setPortfolio] = useState<WorkspacePortfolio | null>(null);
   const [provisioning, setProvisioning] = useState<ProvisioningStatus[]>([]);
   const [templates, setTemplates] = useState<Record<string, TemplateManifest>>({});
@@ -36,9 +47,9 @@ export default function Dashboard() {
     setLoading(true);
     setLoadError(null);
     try {
-      if (!activeWorkspace) return;
+      if (!workspaceId) return;
       const [portfolioRows, templateRows, provisioningRows] = await Promise.all([
-        api.getWorkspacePortfolio(activeWorkspace.id),
+        api.getWorkspacePortfolio(workspaceId),
         api.listTemplates().catch(() => [] as TemplateManifest[]),
         api.listProvisioning().catch(() => [] as ProvisioningStatus[]),
       ]);
@@ -51,7 +62,7 @@ export default function Dashboard() {
     } finally {
       if (request === requestSequence.current) setLoading(false);
     }
-  }, [activeWorkspace?.id]);
+  }, [workspaceId]);
 
   useEffect(() => {
     setPortfolio(null);
@@ -66,7 +77,8 @@ export default function Dashboard() {
     let current = true;
     const refreshProvisioning = () => {
       if (document.visibilityState !== 'visible') return;
-      void api.listProvisioning()
+      void api
+        .listProvisioning()
         .then((rows) => {
           if (current) setProvisioning(rows);
         })
@@ -79,14 +91,14 @@ export default function Dashboard() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', refreshProvisioning);
     };
-  }, [activeWorkspace?.id]);
+  }, [workspaceId]);
 
   async function retryOperation(id: string) {
     setOperationBusy(id);
     setActionError(null);
     try {
       const project = await api.retryProvisioning(id);
-      navigate(`/projects/${project.id}`);
+      void navigate(`/projects/${project.id}`);
     } catch (e) {
       setActionError((e as Error).message);
       setProvisioning(await api.listProvisioning().catch(() => provisioning));
@@ -102,10 +114,12 @@ export default function Dashboard() {
       description: 'Cleanup reconciles resources left behind by an interrupted or failed setup.',
       confirmLabel: 'Retry cleanup',
       tone: 'warning',
-      details: operation ? [
-        { label: 'Operation', value: operation.kind },
-        { label: 'Attempt', value: operation.attempt },
-      ] : undefined,
+      details: operation
+        ? [
+            { label: 'Operation', value: operation.kind },
+            { label: 'Attempt', value: operation.attempt },
+          ]
+        : undefined,
       consequences: [
         'InitPad may delete the partial repository, generated files or project record owned by this failed setup.',
         'Successfully provisioned unrelated resources are not touched.',
@@ -166,23 +180,44 @@ export default function Dashboard() {
       )}
 
       {actionError && (
-        <p role="alert" className="mb-4 text-sm text-destructive">{actionError}</p>
+        <p role="alert" className="mb-4 text-sm text-destructive">
+          {actionError}
+        </p>
       )}
-      {loadError && (
-        <LoadErrorState className="mb-4" message={loadError} onRetry={loadDashboard} />
-      )}
+      {loadError && <LoadErrorState className="mb-4" message={loadError} onRetry={loadDashboard} />}
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Projects" value={loading || loadError ? '—' : portfolio?.stats.projects ?? 0} icon={Layers} />
-        <StatCard label="Running" value={loading || loadError ? '—' : portfolio?.stats.runningEnvironments ?? 0} icon={Play} />
-        <StatCard label="Needs attention" value={loading || loadError ? '—' : portfolio?.stats.attentionProjects ?? 0} icon={AlertTriangle} />
-        <StatCard label="Pending approvals" value={loading || loadError ? '—' : portfolio?.stats.pendingApprovals ?? 0} icon={ShieldCheck} />
+        <StatCard
+          label="Projects"
+          value={loading || loadError ? '—' : (portfolio?.stats.projects ?? 0)}
+          icon={Layers}
+        />
+        <StatCard
+          label="Running"
+          value={loading || loadError ? '—' : (portfolio?.stats.runningEnvironments ?? 0)}
+          icon={Play}
+        />
+        <StatCard
+          label="Needs attention"
+          value={loading || loadError ? '—' : (portfolio?.stats.attentionProjects ?? 0)}
+          icon={AlertTriangle}
+        />
+        <StatCard
+          label="Pending approvals"
+          value={loading || loadError ? '—' : (portfolio?.stats.pendingApprovals ?? 0)}
+          icon={ShieldCheck}
+        />
       </div>
 
       {!loading && !loadError && portfolio && (
         <div className="mb-8 flex flex-wrap gap-x-5 gap-y-1 rounded-lg border border-border bg-secondary/30 px-4 py-3 text-xs text-muted-foreground">
-          <span><strong className="text-foreground">{portfolio.stats.environments}</strong> environments</span>
-          <span><strong className="text-foreground">{portfolio.stats.activeAllocations}</strong> active server accesses</span>
+          <span>
+            <strong className="text-foreground">{portfolio.stats.environments}</strong> environments
+          </span>
+          <span>
+            <strong className="text-foreground">{portfolio.stats.activeAllocations}</strong> active
+            server accesses
+          </span>
           <span className={portfolio.stats.cleanupDebt ? 'text-warning' : undefined}>
             <strong className="text-foreground">{portfolio.stats.cleanupDebt}</strong> cleanup items
           </span>
@@ -193,7 +228,10 @@ export default function Dashboard() {
         <section className="mb-8" aria-labelledby="provisioning-heading">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <p id="provisioning-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p
+              id="provisioning-heading"
+              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
               Provisioning attention
             </p>
           </div>
@@ -206,7 +244,9 @@ export default function Dashboard() {
                       {operation.projectName} · {operation.kind} · attempt {operation.attempt}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {operation.status === 'interrupted' ? 'Interrupted — external state must be reconciled.' : operation.message || `Current step: ${operation.step}`}
+                      {operation.status === 'interrupted'
+                        ? 'Interrupted — external state must be reconciled.'
+                        : operation.message || `Current step: ${operation.step}`}
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
@@ -272,13 +312,14 @@ export default function Dashboard() {
       ) : !loadError && !loading ? (
         <div className="flex flex-col gap-2">
           {recent.map((project) => {
-            const status = project.health === 'attention'
-              ? 'failed'
-              : project.health === 'deploying'
-                ? 'deploying'
-                : project.health === 'healthy'
-                  ? 'running'
-                  : 'empty';
+            const status =
+              project.health === 'attention'
+                ? 'failed'
+                : project.health === 'deploying'
+                  ? 'deploying'
+                  : project.health === 'healthy'
+                    ? 'running'
+                    : 'empty';
             return (
               <Link
                 key={project.id}
@@ -288,24 +329,37 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-semibold group-hover:text-primary">{project.name}</span>
-                      <StatusBadge status={status} label={project.health === 'attention' ? 'attention' : project.health} />
+                      <span className="truncate text-sm font-semibold group-hover:text-primary">
+                        {project.name}
+                      </span>
+                      <StatusBadge
+                        status={status}
+                        label={project.health === 'attention' ? 'attention' : project.health}
+                      />
                       {project.pendingApprovals > 0 && (
                         <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
-                          {project.pendingApprovals} approval{project.pendingApprovals === 1 ? '' : 's'}
+                          {project.pendingApprovals} approval
+                          {project.pendingApprovals === 1 ? '' : 's'}
                         </span>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {templates[project.templateId]?.name ?? project.templateId}
-                      {project.lastBuild ? ` · build ${project.lastBuild.commitSha.slice(0, 7)} ${project.lastBuild.status}` : ' · no verified build yet'}
-                      {project.lastDeployment ? ` · ${project.lastDeployment.environment} ${project.lastDeployment.kind} ${project.lastDeployment.status}` : ''}
+                      {project.lastBuild
+                        ? ` · build ${project.lastBuild.commitSha.slice(0, 7)} ${project.lastBuild.status}`
+                        : ' · no verified build yet'}
+                      {project.lastDeployment
+                        ? ` · ${project.lastDeployment.environment} ${project.lastDeployment.kind} ${project.lastDeployment.status}`
+                        : ''}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                     {project.environments.map((environment) => (
                       <span key={environment.name} className="text-[11px] text-muted-foreground">
-                        {environment.name} <strong className="font-medium text-foreground">{environment.status}</strong>
+                        {environment.name}{' '}
+                        <strong className="font-medium text-foreground">
+                          {environment.status}
+                        </strong>
                       </span>
                     ))}
                     <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
@@ -316,7 +370,10 @@ export default function Dashboard() {
           })}
         </div>
       ) : !loadError ? (
-        <div className="h-28 animate-pulse rounded-lg border border-border bg-card/60" aria-label="Loading projects" />
+        <div
+          className="h-28 animate-pulse rounded-lg border border-border bg-card/60"
+          aria-label="Loading projects"
+        />
       ) : null}
     </div>
   );

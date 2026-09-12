@@ -99,7 +99,10 @@ for (const path of trackedFiles) {
 
 const sensitiveContentRules = [
   { pattern: /\/Users\/[^/\s'"`]+\//, reason: 'a developer-specific absolute home path' },
-  { pattern: /[A-Za-z]:\\Users\\[^\\\s'"`]+\\/i, reason: 'a developer-specific absolute home path' },
+  {
+    pattern: /[A-Za-z]:\\Users\\[^\\\s'"`]+\\/i,
+    reason: 'a developer-specific absolute home path',
+  },
   { pattern: /initpad_enroll_[A-Za-z0-9_-]{24,}/, reason: 'an Agent enrollment token' },
   { pattern: /gh[pousr]_[A-Za-z0-9]{20,}/, reason: 'a GitHub access token' },
   { pattern: /AKIA[0-9A-Z]{16}/, reason: 'an AWS access key ID' },
@@ -179,7 +182,8 @@ for (const group of sourceGroups) {
   }
 
   for (const path of [...sources].sort()) {
-    if (!reachable.has(path)) failures.push(`${path}: production module is not reachable from an entry point`);
+    if (!reachable.has(path))
+      failures.push(`${path}: production module is not reachable from an entry point`);
   }
 
   const largeModules = [...sources]
@@ -214,7 +218,9 @@ if (!tracked.has(releaseWorkflowPath)) {
   }
   for (const [, reference] of actionReferences) {
     if (!/^[a-f0-9]{40}$/.test(reference)) {
-      failures.push(`${releaseWorkflowPath}: action reference ${reference} is not a full commit SHA`);
+      failures.push(
+        `${releaseWorkflowPath}: action reference ${reference} is not a full commit SHA`,
+      );
     }
   }
   for (const contract of [

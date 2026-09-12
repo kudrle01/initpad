@@ -136,29 +136,29 @@ export class GitHubScmProvider implements ScmProvider {
     if (!installation) throw new Error(`No GitHub App installation found for '${actor.username}'`);
     const token = (
       actor.installationId
-        ? await this.installations.tokenForBinding(actor.installationId, { permissions: READ_CONTENTS })
+        ? await this.installations.tokenForBinding(actor.installationId, {
+            permissions: READ_CONTENTS,
+          })
         : await this.installations.tokenForOwner(actor.username, { permissions: READ_CONTENTS })
     ).token;
     type RepositoryPayload = {
-        id: number | string;
-        name: string;
-        full_name: string;
-        html_url?: string;
-        private: boolean;
-        default_branch?: string;
-        updated_at?: string;
-        size?: number;
-      };
+      id: number | string;
+      name: string;
+      full_name: string;
+      html_url?: string;
+      private: boolean;
+      default_branch?: string;
+      updated_at?: string;
+      size?: number;
+    };
     const repositories = await collectScmPages<RepositoryPayload>({
       provider: 'GitHub',
       operation: 'list repositories',
       pageSize: 100,
       load: async (page) => {
-        const res = await this.gh(
-          `/installation/repositories?per_page=100&page=${page}`,
-          token,
-          { operation: 'list repositories' },
-        );
+        const res = await this.gh(`/installation/repositories?per_page=100&page=${page}`, token, {
+          operation: 'list repositories',
+        });
         if (!res.ok) {
           throw scmStatusError(
             'GitHub',
@@ -215,14 +215,19 @@ export class GitHubScmProvider implements ScmProvider {
     }
     const data = (await res.json()) as { content?: string; encoding?: string };
     if (!data.content) return null;
-    return Buffer.from(data.content, data.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+    return Buffer.from(data.content, data.encoding === 'base64' ? 'base64' : 'utf8').toString(
+      'utf8',
+    );
   }
 
   async repoMissing(repository: ScmRepositoryRef, _actor: ScmActor): Promise<boolean> {
     this.assertProvider(repository);
     try {
       const token = await this.token(repository);
-      const res = await this.gh(`/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`, token);
+      const res = await this.gh(
+        `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`,
+        token,
+      );
       return res.status === 404;
     } catch {
       // An outage or missing installation must never be read as "deleted".
@@ -288,22 +293,22 @@ export class GitHubScmProvider implements ScmProvider {
         }
       }
       if (runId) {
-          const jobsResponse = await this.gh(
-            `/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
-            actionsToken,
-          );
-          if (jobsResponse.ok) {
-            const data = (await jobsResponse.json()) as {
-              jobs?: Array<{
-                name?: string;
-                status?: string;
-                conclusion?: string | null;
-                html_url?: string | null;
-              }>;
-            };
-            const jobs = data.jobs ?? [];
-            if (jobs.length > 0) return jobs.map((job) => this.actionJobStatus(job));
-          }
+        const jobsResponse = await this.gh(
+          `/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+          actionsToken,
+        );
+        if (jobsResponse.ok) {
+          const data = (await jobsResponse.json()) as {
+            jobs?: Array<{
+              name?: string;
+              status?: string;
+              conclusion?: string | null;
+              html_url?: string | null;
+            }>;
+          };
+          const jobs = data.jobs ?? [];
+          if (jobs.length > 0) return jobs.map((job) => this.actionJobStatus(job));
+        }
       }
     } catch {
       // Preserve compatibility with an older App installation while its
@@ -348,10 +353,7 @@ export class GitHubScmProvider implements ScmProvider {
     }
     try {
       const token = await this.token(repository, READ_STATUSES);
-      const res = await this.gh(
-        `/repos/${repo}/commits/${encodeURIComponent(sha)}/status`,
-        token,
-      );
+      const res = await this.gh(`/repos/${repo}/commits/${encodeURIComponent(sha)}/status`, token);
       if (!res.ok) return null;
       const data = (await res.json()) as {
         statuses?: Array<{ context: string; state: string; target_url?: string }>;
@@ -374,11 +376,12 @@ export class GitHubScmProvider implements ScmProvider {
   }): ScmCommitStatus {
     let status = 'pending';
     if (job.status === 'completed') {
-      status = job.conclusion === 'success'
-        ? 'success'
-        : job.conclusion === 'skipped' || job.conclusion === 'neutral'
-          ? 'pending'
-          : 'failure';
+      status =
+        job.conclusion === 'success'
+          ? 'success'
+          : job.conclusion === 'skipped' || job.conclusion === 'neutral'
+            ? 'pending'
+            : 'failure';
     }
     return {
       context: job.name ?? '',
@@ -431,7 +434,9 @@ export class GitHubScmProvider implements ScmProvider {
     const token = await this.token(repository, WRITE_SECRETS);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
     for (const secret of PLATFORM_SECRETS) {
-      const res = await this.gh(`/repos/${repo}/actions/secrets/${secret}`, token, { method: 'DELETE' });
+      const res = await this.gh(`/repos/${repo}/actions/secrets/${secret}`, token, {
+        method: 'DELETE',
+      });
       if (!res.ok && res.status !== 404) {
         throw scmStatusError(
           'GitHub',
@@ -687,7 +692,9 @@ export class GitHubScmProvider implements ScmProvider {
       throw new Error('The selected GitHub App installation is no longer available');
     }
     if (installation.suspendedAt) {
-      throw new Error(`The GitHub App installation for '${installation.accountLogin}' is suspended`);
+      throw new Error(
+        `The GitHub App installation for '${installation.accountLogin}' is suspended`,
+      );
     }
     if (!installation.accountId) {
       throw new Error('The selected GitHub App installation has no verified account identity');
@@ -699,17 +706,18 @@ export class GitHubScmProvider implements ScmProvider {
     let createToken: string;
     if (installation.accountType === 'Organization') {
       createToken = (
-          await this.installations.tokenForBinding(installation.id, {
-            permissions: WRITE_ADMINISTRATION,
-          })
-        ).token;
+        await this.installations.tokenForBinding(installation.id, {
+          permissions: WRITE_ADMINISTRATION,
+        })
+      ).token;
     } else {
       await this.userCredentials.assertAccountForUser(target.userId, installation.accountId);
       createToken = await this.userCredentials.accessTokenForUser(target.userId);
     }
-    const path = installation.accountType === 'Organization'
-      ? `/orgs/${encodeURIComponent(installation.accountLogin)}/repos`
-      : '/user/repos';
+    const path =
+      installation.accountType === 'Organization'
+        ? `/orgs/${encodeURIComponent(installation.accountLogin)}/repos`
+        : '/user/repos';
     const response = await this.gh(path, createToken, {
       method: 'POST',
       body: { name, private: true, auto_init: false },
@@ -760,20 +768,22 @@ export class GitHubScmProvider implements ScmProvider {
         `/repos/${encodeURIComponent(cleanupOwner)}/${encodeURIComponent(name)}`,
         createToken,
         { method: 'DELETE' },
-      ).then((cleanupResponse) => {
-        if (!cleanupResponse.ok && cleanupResponse.status !== 404) {
-          throw scmStatusError(
-            'GitHub',
-            'clean up repository',
-            cleanupResponse,
-            'GitHub repository cleanup failed',
+      )
+        .then((cleanupResponse) => {
+          if (!cleanupResponse.ok && cleanupResponse.status !== 404) {
+            throw scmStatusError(
+              'GitHub',
+              'clean up repository',
+              cleanupResponse,
+              'GitHub repository cleanup failed',
+            );
+          }
+        })
+        .catch((cleanupError) => {
+          this.logger.error(
+            `GitHub repository rollback failed after an invalid response: ${(cleanupError as Error).message}`,
           );
-        }
-      }).catch((cleanupError) => {
-        this.logger.error(
-          `GitHub repository rollback failed after an invalid response: ${(cleanupError as Error).message}`,
-        );
-      });
+        });
       throw error;
     }
     const repository: ScmRepositoryIdentity = {
@@ -870,7 +880,9 @@ export class GitHubScmProvider implements ScmProvider {
         return null;
       }
     } catch (error) {
-      this.logger.warn(`downloadArchive ${repository.fullName}@${ref}: ${(error as Error).message}`);
+      this.logger.warn(
+        `downloadArchive ${repository.fullName}@${ref}: ${(error as Error).message}`,
+      );
       return null;
     }
   }
@@ -923,7 +935,9 @@ export class GitHubScmProvider implements ScmProvider {
         String(artifact.workflow_run?.repository_id ?? '') !== repository.repositoryId) ||
       artifact.workflow_run?.head_sha?.toLowerCase() !== locator.commitSha.toLowerCase()
     ) {
-      throw new Error('GitHub artifact identity does not match this repository, commit and workflow');
+      throw new Error(
+        'GitHub artifact identity does not match this repository, commit and workflow',
+      );
     }
     if (artifact.expired) throw new Error('GitHub Actions artifact has expired');
     if (digest !== callbackDigest) {
@@ -964,16 +978,16 @@ export class GitHubScmProvider implements ScmProvider {
     const token = await this.token(repository, READ_ACTIONS);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
     type ArtifactPayload = {
-        id?: number | string;
-        name?: string;
-        digest?: string;
-        expired?: boolean;
-        created_at?: string;
-        workflow_run?: {
-          repository_id?: number | string;
-          head_sha?: string;
-        };
+      id?: number | string;
+      name?: string;
+      digest?: string;
+      expired?: boolean;
+      created_at?: string;
+      workflow_run?: {
+        repository_id?: number | string;
+        head_sha?: string;
       };
+    };
     const artifacts = await collectScmPages<ArtifactPayload>({
       provider: 'GitHub',
       operation: 'list Actions artifacts',
@@ -1000,14 +1014,15 @@ export class GitHubScmProvider implements ScmProvider {
       },
     });
     const candidates = artifacts
-      .filter((artifact) =>
-        artifact.id != null &&
-        artifact.name === expectedName &&
-        artifact.digest &&
-        !artifact.expired &&
-        artifact.workflow_run?.head_sha?.toLowerCase() === commitSha.toLowerCase() &&
-        (repository.repositoryId == null ||
-          String(artifact.workflow_run?.repository_id ?? '') === repository.repositoryId),
+      .filter(
+        (artifact) =>
+          artifact.id != null &&
+          artifact.name === expectedName &&
+          artifact.digest &&
+          !artifact.expired &&
+          artifact.workflow_run?.head_sha?.toLowerCase() === commitSha.toLowerCase() &&
+          (repository.repositoryId == null ||
+            String(artifact.workflow_run?.repository_id ?? '') === repository.repositoryId),
       )
       .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')));
     const candidate = candidates[0];
@@ -1102,9 +1117,13 @@ export class GitHubScmProvider implements ScmProvider {
       await git(['init', '-b', 'main']);
       await git(['add', '-A']);
       await git([
-        '-c', `user.name=${name}`,
-        '-c', `user.email=${email}`,
-        'commit', '-m', 'init: scaffold from template',
+        '-c',
+        `user.name=${name}`,
+        '-c',
+        `user.email=${email}`,
+        'commit',
+        '-m',
+        'init: scaffold from template',
       ]);
     } catch (error) {
       this.logger.warn(`Local git init failed: ${(error as Error).message}`);
@@ -1175,7 +1194,8 @@ export class GitHubScmProvider implements ScmProvider {
       );
     }
     const key = (await keyResponse.json()) as { key_id?: string; key?: string };
-    if (!key.key_id || !key.key) throw new Error('GitHub returned an incomplete Actions public key');
+    if (!key.key_id || !key.key)
+      throw new Error('GitHub returned an incomplete Actions public key');
 
     await sodium.ready;
     const publicKey = sodium.from_base64(key.key, sodium.base64_variants.ORIGINAL);

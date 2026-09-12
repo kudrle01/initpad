@@ -73,12 +73,19 @@ describe('ProjectsService deployment pipeline projection', () => {
       { context: 'deploy', status: 'pending', targetUrl: 'https://x/deploy' },
     ];
     const operation = {
-      version: sha, status: 'running', createdAt: new Date(), buildArtifact: null,
+      version: sha,
+      status: 'running',
+      createdAt: new Date(),
+      buildArtifact: null,
     };
     const queued = make(
       {
-        name: 'dev', status: 'deploying', version: null, deploymentRequired: false,
-        statusReason: 'Waiting for an available CI runner', artifact: null,
+        name: 'dev',
+        status: 'deploying',
+        version: null,
+        deploymentRequired: false,
+        statusReason: 'Waiting for an available CI runner',
+        artifact: null,
       },
       operation,
       pendingStatuses,
@@ -92,8 +99,12 @@ describe('ProjectsService deployment pipeline projection', () => {
 
     const started = make(
       {
-        name: 'dev', status: 'deploying', version: null, deploymentRequired: false,
-        statusReason: 'CI runner started the build', artifact: null,
+        name: 'dev',
+        status: 'deploying',
+        version: null,
+        deploymentRequired: false,
+        statusReason: 'CI runner started the build',
+        artifact: null,
       },
       operation,
       pendingStatuses,
@@ -109,11 +120,21 @@ describe('ProjectsService deployment pipeline projection', () => {
   it('keeps a failed runner handoff and records recovered publication separately', async () => {
     const { service, scm } = make(
       {
-        name: 'dev', status: 'running', version: sha, deploymentRequired: false,
-        artifact: { id: 'artifact-1', provider: 'github-actions', digest: 'd'.repeat(64), runId: '77' },
+        name: 'dev',
+        status: 'running',
+        version: sha,
+        deploymentRequired: false,
+        artifact: {
+          id: 'artifact-1',
+          provider: 'github-actions',
+          digest: 'd'.repeat(64),
+          runId: '77',
+        },
       },
       {
-        version: sha, status: 'succeeded', createdAt: new Date(),
+        version: sha,
+        status: 'succeeded',
+        createdAt: new Date(),
         buildArtifact: { providerRunId: '77' },
       },
     );
@@ -121,58 +142,102 @@ describe('ProjectsService deployment pipeline projection', () => {
     const commits = await service.getCommits(project.id);
 
     expect(scm.listCommits).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'github' }), expect.anything(), 20,
+      expect.objectContaining({ provider: 'github' }),
+      expect.anything(),
+      20,
     );
     expect(scm.listCommitStatuses).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'github' }), sha, expect.anything(), '77',
+      expect.objectContaining({ provider: 'github' }),
+      sha,
+      expect.anything(),
+      '77',
     );
     expect(commits[0]?.pipeline.find((stage) => stage.name === 'deploy')).toEqual({
-      name: 'deploy', status: 'failed', url: 'https://x/run-77/deploy',
+      name: 'deploy',
+      status: 'failed',
+      url: 'https://x/run-77/deploy',
     });
     expect(commits[0]?.pipeline.find((stage) => stage.name === 'publish')).toEqual({
-      name: 'publish', status: 'success', url: null, source: 'platform',
+      name: 'publish',
+      status: 'success',
+      url: null,
+      source: 'platform',
     });
   });
 
   it('shows publication as pending after a target change and running during upload', async () => {
     const pending = make(
       {
-        name: 'dev', status: 'empty', version: sha, deploymentRequired: true,
-        artifact: { id: 'artifact-1', provider: 'github-actions', digest: 'd'.repeat(64), runId: '77' },
+        name: 'dev',
+        status: 'empty',
+        version: sha,
+        deploymentRequired: true,
+        artifact: {
+          id: 'artifact-1',
+          provider: 'github-actions',
+          digest: 'd'.repeat(64),
+          runId: '77',
+        },
       },
       {
-        version: sha, status: 'succeeded', createdAt: new Date(),
+        version: sha,
+        status: 'succeeded',
+        createdAt: new Date(),
         buildArtifact: { providerRunId: '77' },
       },
     );
     expect(
-      (await pending.service.getCommits(project.id))[0]?.pipeline.find((stage) => stage.name === 'publish')?.status,
+      (await pending.service.getCommits(project.id))[0]?.pipeline.find(
+        (stage) => stage.name === 'publish',
+      )?.status,
     ).toBe('pending');
 
     const running = make(
       {
-        name: 'dev', status: 'deploying', version: sha, deploymentRequired: true,
-        artifact: { id: 'artifact-1', provider: 'github-actions', digest: 'd'.repeat(64), runId: '77' },
+        name: 'dev',
+        status: 'deploying',
+        version: sha,
+        deploymentRequired: true,
+        artifact: {
+          id: 'artifact-1',
+          provider: 'github-actions',
+          digest: 'd'.repeat(64),
+          runId: '77',
+        },
       },
       {
-        version: sha, status: 'running', createdAt: new Date(),
+        version: sha,
+        status: 'running',
+        createdAt: new Date(),
         buildArtifact: { providerRunId: '77' },
       },
     );
     expect(
-      (await running.service.getCommits(project.id))[0]?.pipeline.find((stage) => stage.name === 'publish')?.status,
+      (await running.service.getCommits(project.id))[0]?.pipeline.find(
+        (stage) => stage.name === 'publish',
+      )?.status,
     ).toBe('running');
   });
 
   it('shows a failed publication when rollback kept the previous revision online', async () => {
     const rolledBack = make(
       {
-        name: 'dev', status: 'running', version: sha, deploymentRequired: true,
+        name: 'dev',
+        status: 'running',
+        version: sha,
+        deploymentRequired: true,
         statusReason: 'Deployment failed; the previous revision remains online',
-        artifact: { id: 'artifact-1', provider: 'github-actions', digest: 'd'.repeat(64), runId: '77' },
+        artifact: {
+          id: 'artifact-1',
+          provider: 'github-actions',
+          digest: 'd'.repeat(64),
+          runId: '77',
+        },
       },
       {
-        version: sha, status: 'failed', createdAt: new Date(),
+        version: sha,
+        status: 'failed',
+        createdAt: new Date(),
         buildArtifact: { providerRunId: '77' },
       },
       [
@@ -195,27 +260,50 @@ describe('ProjectsService deployment pipeline projection', () => {
     const finishedAt = new Date('2026-07-20T20:11:37.000Z');
     const prisma = {
       deploymentOperation: {
-        findMany: jest.fn(async () => [{
-          id: 'operation-1', kind: 'redeploy', status: 'succeeded', phase: 'succeeded', version: sha,
-          message: 'Verifying deployment', startedAt, finishedAt,
-          targetName: 'ESO school server', environment: { name: 'dev' },
-          buildArtifact: { providerRunId: '77' },
-        }]),
+        findMany: jest.fn(async () => [
+          {
+            id: 'operation-1',
+            kind: 'redeploy',
+            status: 'succeeded',
+            phase: 'succeeded',
+            version: sha,
+            message: 'Verifying deployment',
+            startedAt,
+            finishedAt,
+            targetName: 'ESO school server',
+            environment: { name: 'dev' },
+            buildArtifact: { providerRunId: '77' },
+          },
+        ]),
       },
     };
     const service = new ProjectsService(
-      prisma as never, {} as never, {} as never, {} as never,
-      {} as never, {} as never, {} as never, {} as never,
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
     );
 
-    await expect(service.deploymentHistory(project.id, 7)).resolves.toEqual([{
-      id: 'operation-1', environment: 'dev', target: 'ESO school server',
-      kind: 'redeploy', status: 'succeeded', phase: 'succeeded', version: sha,
-      message: 'Verifying deployment',
-      startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(),
-      artifactRunId: '77',
-    }]);
+    await expect(service.deploymentHistory(project.id, 7)).resolves.toEqual([
+      {
+        id: 'operation-1',
+        environment: 'dev',
+        target: 'ESO school server',
+        kind: 'redeploy',
+        status: 'succeeded',
+        phase: 'succeeded',
+        version: sha,
+        message: 'Verifying deployment',
+        startedAt: startedAt.toISOString(),
+        finishedAt: finishedAt.toISOString(),
+        artifactRunId: '77',
+      },
+    ]);
     expect(prisma.deploymentOperation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ take: 7 }),
     );
@@ -229,13 +317,21 @@ describe('ProjectsService deployment pipeline projection', () => {
 
     await service.getCommits(project.id, 500);
     expect(scm.listCommits).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'github' }), expect.anything(), 100,
+      expect.objectContaining({ provider: 'github' }),
+      expect.anything(),
+      100,
     );
 
     const prisma = { deploymentOperation: { findMany: jest.fn(async () => []) } };
     const historyService = new ProjectsService(
-      prisma as never, {} as never, {} as never, {} as never,
-      {} as never, {} as never, {} as never, {} as never,
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
     );
     await historyService.deploymentHistory(project.id, 500);

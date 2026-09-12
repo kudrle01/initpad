@@ -24,10 +24,12 @@ function identity(overrides: Record<string, unknown> = {}) {
 
 describe('GitHubUserCredentialService', () => {
   it('stores access and refresh tokens encrypted after immutable identity matching', async () => {
-    let captured: {
-      where: Record<string, unknown>;
-      data: Record<string, any>;
-    } | undefined;
+    let captured:
+      | {
+          where: Record<string, unknown>;
+          data: Record<string, any>;
+        }
+      | undefined;
     const updateMany = jest.fn(async (input: typeof captured) => {
       captured = input;
       return { count: 1 };
@@ -41,19 +43,27 @@ describe('GitHubUserCredentialService', () => {
 
     await service.storeExchange('user-1', {
       user: {
-        providerUserId: '123', login: 'alice', name: null, email: null,
-        emailVerified: false, avatarUrl: null,
+        providerUserId: '123',
+        login: 'alice',
+        name: null,
+        email: null,
+        emailVerified: false,
+        avatarUrl: null,
       },
       token: {
-        accessToken: 'ghu_secret', accessTokenExpiresAt: accessExpiry,
-        refreshToken: 'ghr_secret', refreshTokenExpiresAt: refreshExpiry,
+        accessToken: 'ghu_secret',
+        accessTokenExpiresAt: accessExpiry,
+        refreshToken: 'ghr_secret',
+        refreshTokenExpiresAt: refreshExpiry,
       },
     });
 
     expect(captured).toBeDefined();
     const call = captured!;
     expect(call.where).toMatchObject({
-      userId: 'user-1', provider: 'github', providerUserId: '123',
+      userId: 'user-1',
+      provider: 'github',
+      providerUserId: '123',
     });
     expect(call.data.accessTokenEncrypted).not.toContain('ghu_secret');
     expect(call.data.refreshTokenEncrypted).not.toContain('ghr_secret');
@@ -82,11 +92,13 @@ describe('GitHubUserCredentialService', () => {
     const service = new GitHubUserCredentialService(
       {
         externalIdentity: {
-          findUnique: jest.fn(async () => identity({
-            accessTokenExpiresAt: new Date(Date.now() - 1_000),
-            refreshTokenEncrypted: encryptSecret('ghr_valid'),
-            refreshTokenExpiresAt: new Date(Date.now() + 60_000),
-          })),
+          findUnique: jest.fn(async () =>
+            identity({
+              accessTokenExpiresAt: new Date(Date.now() - 1_000),
+              refreshTokenEncrypted: encryptSecret('ghr_valid'),
+              refreshTokenExpiresAt: new Date(Date.now() + 60_000),
+            }),
+          ),
         },
       } as never,
       oauth as never,
@@ -127,11 +139,13 @@ describe('GitHubUserCredentialService', () => {
     const service = new GitHubUserCredentialService(
       {
         externalIdentity: {
-          findUnique: jest.fn(async () => identity({
-            accessTokenExpiresAt: new Date(Date.now() - 1_000),
-            refreshTokenEncrypted: encryptSecret('ghr_old'),
-            refreshTokenExpiresAt: new Date(Date.now() + 60_000),
-          })),
+          findUnique: jest.fn(async () =>
+            identity({
+              accessTokenExpiresAt: new Date(Date.now() - 1_000),
+              refreshTokenEncrypted: encryptSecret('ghr_old'),
+              refreshTokenExpiresAt: new Date(Date.now() + 60_000),
+            }),
+          ),
           updateMany,
         },
       } as never,
@@ -158,9 +172,7 @@ describe('GitHubUserCredentialService', () => {
       accessTokenExpiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
       credentialVersion: 4,
     });
-    const findUnique = jest.fn()
-      .mockResolvedValueOnce(expired)
-      .mockResolvedValueOnce(fresh);
+    const findUnique = jest.fn().mockResolvedValueOnce(expired).mockResolvedValueOnce(fresh);
     const oauth = { refreshUserToken: jest.fn() };
     const service = new GitHubUserCredentialService(
       {
@@ -181,24 +193,29 @@ describe('GitHubUserCredentialService', () => {
     const service = new GitHubUserCredentialService(
       {
         externalIdentity: {
-          findUnique: jest.fn(async () => identity({
-            accessTokenExpiresAt: new Date(Date.now() - 1_000),
-          })),
+          findUnique: jest.fn(async () =>
+            identity({
+              accessTokenExpiresAt: new Date(Date.now() - 1_000),
+            }),
+          ),
           updateMany,
         },
       } as never,
       {} as never,
     );
 
-    await expect(service.accessTokenForUser('user-1'))
-      .rejects.toBeInstanceOf(GitHubReauthorizationRequiredError);
-    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        accessTokenEncrypted: null,
-        refreshTokenEncrypted: null,
-        credentialVersion: { increment: 1 },
+    await expect(service.accessTokenForUser('user-1')).rejects.toBeInstanceOf(
+      GitHubReauthorizationRequiredError,
+    );
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          accessTokenEncrypted: null,
+          refreshTokenEncrypted: null,
+          credentialVersion: { increment: 1 },
+        }),
       }),
-    }));
+    );
   });
 
   it('clears credentials by immutable provider user id on revocation', async () => {

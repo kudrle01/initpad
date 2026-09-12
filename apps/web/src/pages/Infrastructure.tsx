@@ -21,16 +21,20 @@ function sameCapabilities(left: string[], right: string[]): boolean {
 
 function changedTargetSettings(target: Target, values: TargetInput): string[] {
   const fields: string[] = [];
-  if (!sameCapabilities(target.capabilities, values.capabilities)) fields.push('runtime capabilities');
+  if (!sameCapabilities(target.capabilities, values.capabilities))
+    fields.push('runtime capabilities');
   if (target.publicUrl !== values.publicUrl) fields.push('public URL');
-  if ((target.routingMode ?? 'direct-port') !== (values.routingMode ?? 'direct-port')) fields.push('routing mode');
+  if ((target.routingMode ?? 'direct-port') !== (values.routingMode ?? 'direct-port'))
+    fields.push('routing mode');
   if (target.kind !== 'docker') {
     if ((target.host ?? '') !== (values.host ?? '')) fields.push('host');
     if ((target.port ?? 22) !== (values.port ?? 22)) fields.push('port');
     if ((target.username ?? '') !== (values.username ?? '')) fields.push('username');
-    if ((target.auth ?? 'password') !== (values.auth ?? 'password')) fields.push('authentication method');
+    if ((target.auth ?? 'password') !== (values.auth ?? 'password'))
+      fields.push('authentication method');
     if (values.secret) fields.push('authentication credentials');
-    if ((target.hostKeyFingerprint ?? '') !== (values.hostKeyFingerprint ?? '')) fields.push('host key fingerprint');
+    if ((target.hostKeyFingerprint ?? '') !== (values.hostKeyFingerprint ?? ''))
+      fields.push('host key fingerprint');
     if ((target.remotePath ?? '') !== (values.remotePath ?? '')) fields.push('remote path');
   }
   return fields;
@@ -41,8 +45,10 @@ function changedAllocationSettings(
   values: TargetAllocationInput,
 ): string[] {
   const fields: string[] = [];
-  if (!sameCapabilities(allocation.capabilities, values.capabilities)) fields.push('runtime capabilities');
-  if (values.publicUrl !== undefined && allocation.publicUrl !== values.publicUrl) fields.push('public URL');
+  if (!sameCapabilities(allocation.capabilities, values.capabilities))
+    fields.push('runtime capabilities');
+  if (values.publicUrl !== undefined && allocation.publicUrl !== values.publicUrl)
+    fields.push('public URL');
   if (allocation.maxEnvironments !== values.maxEnvironments) fields.push('environment quota');
   if (allocation.cpuLimitMillicores !== values.cpuLimitMillicores) fields.push('CPU limit');
   if (allocation.memoryLimitMb !== values.memoryLimitMb) fields.push('memory limit');
@@ -56,6 +62,7 @@ export default function Infrastructure() {
   const { activeWorkspace } = useAuth();
   const confirmAction = useConfirmation();
   const infrastructure = useInfrastructure(activeWorkspace?.id);
+  const { reload: reloadInfrastructure } = infrastructure;
   const [targetDialogOpen, setTargetDialogOpen] = useState(false);
   const [editingTarget, setEditingTarget] = useState<Target | null>(null);
   const [allocationDialogOpen, setAllocationDialogOpen] = useState(false);
@@ -66,18 +73,17 @@ export default function Infrastructure() {
   const agentProtocol = useAgentProtocol(agentTarget);
   const lastGatewayRefreshJob = useRef<string | null>(null);
 
-  const readOnly = !activeWorkspace
-    || !['owner', 'admin', 'maintainer'].includes(activeWorkspace.role);
-  const canManageAllocations = !!activeWorkspace
-    && ['owner', 'admin'].includes(activeWorkspace.role);
+  const readOnly =
+    !activeWorkspace || !['owner', 'admin', 'maintainer'].includes(activeWorkspace.role);
+  const canManageAllocations =
+    !!activeWorkspace && ['owner', 'admin'].includes(activeWorkspace.role);
   const canManageAgent = canManageAllocations;
   const allocatedTargetIds = new Set(
     infrastructure.allocations.map((allocation) => allocation.targetId),
   );
   const availableAllocationTargets = infrastructure.targets.filter(
     (target) =>
-      !allocatedTargetIds.has(target.id) &&
-      (target.managementState ?? 'active') === 'active',
+      !allocatedTargetIds.has(target.id) && (target.managementState ?? 'active') === 'active',
   );
 
   useEffect(() => {
@@ -87,12 +93,13 @@ export default function Infrastructure() {
   }, [agentTarget, infrastructure.targets]);
 
   useEffect(() => {
-    const terminal = agentProtocol.jobs.find((job) =>
-      job.kind === 'gateway-preflight' && ['succeeded', 'failed'].includes(job.status));
+    const terminal = agentProtocol.jobs.find(
+      (job) => job.kind === 'gateway-preflight' && ['succeeded', 'failed'].includes(job.status),
+    );
     if (!terminal || terminal.id === lastGatewayRefreshJob.current) return;
     lastGatewayRefreshJob.current = terminal.id;
-    void infrastructure.reload();
-  }, [agentProtocol.jobs, infrastructure.reload]);
+    void reloadInfrastructure();
+  }, [agentProtocol.jobs, reloadInfrastructure]);
 
   useEffect(() => {
     if (!agentEnrollment) return;
@@ -101,8 +108,8 @@ export default function Infrastructure() {
     // still be redeemed. A successful enrollment advances the credential
     // generation; expiry must remove the secret even if the dialog stays open.
     if (
-      agentProtocol.agent?.targetId === agentEnrollment.targetId
-      && agentProtocol.agent.credentialGeneration > agentEnrollment.credentialGeneration
+      agentProtocol.agent?.targetId === agentEnrollment.targetId &&
+      agentProtocol.agent.credentialGeneration > agentEnrollment.credentialGeneration
     ) {
       setAgentEnrollment(null);
       return;
@@ -116,11 +123,7 @@ export default function Infrastructure() {
 
     const timeout = window.setTimeout(() => setAgentEnrollment(null), remainingMs);
     return () => window.clearTimeout(timeout);
-  }, [
-    agentEnrollment,
-    agentProtocol.agent?.credentialGeneration,
-    agentProtocol.agent?.targetId,
-  ]);
+  }, [agentEnrollment, agentProtocol.agent?.credentialGeneration, agentProtocol.agent?.targetId]);
 
   function openNewTarget() {
     setEditingTarget(null);
@@ -171,7 +174,8 @@ export default function Infrastructure() {
       if (changedSettings.length > 0) {
         const confirmed = await confirmAction({
           title: `Save workspace access changes for ${editingAllocation.targetName}?`,
-          description: 'Workspace access controls how this workspace may use the deployment server.',
+          description:
+            'Workspace access controls how this workspace may use the deployment server.',
           confirmLabel: 'Save access changes',
           tone: 'warning',
           details: [
@@ -196,7 +200,8 @@ export default function Infrastructure() {
   async function deleteTarget(target: Target) {
     const confirmed = await confirmAction({
       title: `Delete server ${target.name}?`,
-      description: 'InitPad will forget this server connection. The physical server itself is never deleted.',
+      description:
+        'InitPad will forget this server connection. The physical server itself is never deleted.',
       confirmLabel: 'Delete server',
       tone: 'danger',
       details: [
@@ -237,7 +242,8 @@ export default function Infrastructure() {
     const usage = target.usage ?? [];
     const confirmed = await confirmAction({
       title: `Retire ${target.name} as unmanaged?`,
-      description: 'Use this when the server and its applications should remain, but InitPad must stop managing them.',
+      description:
+        'Use this when the server and its applications should remain, but InitPad must stop managing them.',
       confirmLabel: 'Retire server',
       tone: 'danger',
       requireText: target.name,
@@ -294,11 +300,13 @@ export default function Infrastructure() {
     <div>
       <PageHeader
         title="Servers"
-        actions={!readOnly ? (
-          <Button onClick={openNewTarget}>
-            <Plus className="h-4 w-4" /> Add server
-          </Button>
-        ) : undefined}
+        actions={
+          !readOnly ? (
+            <Button onClick={openNewTarget}>
+              <Plus className="h-4 w-4" /> Add server
+            </Button>
+          ) : undefined
+        }
       />
 
       {infrastructure.error ? (
@@ -354,9 +362,13 @@ export default function Infrastructure() {
       <AllocationDialog
         open={allocationDialogOpen}
         allocation={editingAllocation}
-        targets={editingAllocation
-          ? infrastructure.targets.filter((target) => target.id === editingAllocation.targetId)
-          : allocationTarget ? [allocationTarget] : availableAllocationTargets}
+        targets={
+          editingAllocation
+            ? infrastructure.targets.filter((target) => target.id === editingAllocation.targetId)
+            : allocationTarget
+              ? [allocationTarget]
+              : availableAllocationTargets
+        }
         busy={infrastructure.savingAllocation}
         onOpenChange={(open) => {
           setAllocationDialogOpen(open);

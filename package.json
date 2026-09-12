@@ -12,8 +12,11 @@
     "build": "npm run build --workspace @initpad/api && npm run build --workspace @initpad/web && npm run build --workspace @initpad/agent",
     "test": "npm run test:release-tools && npm run test --workspace @initpad/api -- --runInBand && npm run test --workspace @initpad/web && npm run test --workspace @initpad/agent",
     "test:release-tools": "node --test scripts/*.test.mjs",
+    "lint": "eslint 'apps/{api,agent}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs",
+    "format": "prettier --write 'apps/{api,agent}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs package.json 'apps/*/package.json'",
+    "format:check": "prettier --check 'apps/{api,agent}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs package.json 'apps/*/package.json'",
     "audit:repo": "node scripts/repository-audit.mjs",
-    "check": "npm run audit:repo && npm run build && npm run test",
+    "check": "npm run audit:repo && npm run lint && npm run format:check && npm run build && npm run test",
     "check:release": "npm run check && npm audit --omit=dev --audit-level=low"
   },
   "engines": {
@@ -23,5 +26,13 @@
     "@nestjs/platform-express": {
       "multer": "2.3.0"
     }
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "typescript-eslint": "^8.70.0"
   }
 }

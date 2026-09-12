@@ -1,11 +1,6 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { targetCanRun, templateRuntime } from '../domain/capability';
-import {
-  EnvName,
-  ProviderKind,
-  RuntimeKind,
-  TemplateManifest,
-} from '../domain/types';
+import { EnvName, ProviderKind, RuntimeKind, TemplateManifest } from '../domain/types';
 import type {
   DeploymentAllocation,
   ProviderConnection,
@@ -77,11 +72,13 @@ export class ProjectEnvironmentTargets {
     workspaceId: string,
     targetId: string,
     preserveLegacy = false,
-  ): Promise<DeploymentAllocation & {
-    capabilities: string;
-    status: string;
-    maxEnvironments: number;
-  }> {
+  ): Promise<
+    DeploymentAllocation & {
+      capabilities: string;
+      status: string;
+      maxEnvironments: number;
+    }
+  > {
     const selection = {
       id: true,
       targetId: true,
@@ -148,9 +145,7 @@ export class ProjectEnvironmentTargets {
     for (const [targetId, planned] of grouped) {
       const allocation = await this.ensureAllocation(workspaceId, targetId);
       if (allocation.status !== 'active') {
-        throw new BadRequestException(
-          `Workspace access to '${planned[0].target.name}' is paused.`,
-        );
+        throw new BadRequestException(`Workspace access to '${planned[0].target.name}' is paused.`);
       }
       const capabilities = this.targets.parseCaps(allocation.capabilities);
       if (!capabilities.includes(requiredRuntime)) {
@@ -246,9 +241,9 @@ export class ProjectEnvironmentTargets {
       }
       if ((target.routingMode ?? 'direct-port') === 'managed-gateway') {
         if (
-          target.gatewayAdapter !== 'caddy'
-          || target.gatewayPreflightStatus !== 'passed'
-          || !target.publicUrl
+          target.gatewayAdapter !== 'caddy' ||
+          target.gatewayPreflightStatus !== 'passed' ||
+          !target.publicUrl
         ) {
           throw new BadRequestException(
             `Managed gateway target '${target.name}' must pass its Caddy gateway preflight before use.`,
@@ -301,15 +296,16 @@ export class ProjectEnvironmentTargets {
       const candidates = entities.filter(
         (candidate) =>
           candidate.kind === kind &&
-          template.compatibleProviders.includes(candidate.kind as ProviderKind) &&
+          template.compatibleProviders.includes(candidate.kind) &&
           this.targets.parseCaps(candidate.capabilities).includes(runtime),
       );
       const natural =
         candidates.find((candidate) => candidate.scope === 'builtin') ??
-        candidates.find((candidate) =>
-          candidate.scope === 'user'
-          && (candidate.managementState ?? 'active') === 'active'
-          && candidate.verifiedAt
+        candidates.find(
+          (candidate) =>
+            candidate.scope === 'user' &&
+            (candidate.managementState ?? 'active') === 'active' &&
+            candidate.verifiedAt,
         );
       if (natural) return natural;
     }

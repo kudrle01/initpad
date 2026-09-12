@@ -51,7 +51,9 @@ function b64url(input: string): string {
 @Injectable()
 export class GitHubOAuthService {
   isConfigured(): boolean {
-    return Boolean(config.github.clientId && config.github.clientSecret && config.github.callbackUrl);
+    return Boolean(
+      config.github.clientId && config.github.clientSecret && config.github.callbackUrl,
+    );
   }
 
   /** Builds the GitHub authorize URL and the matching signed state + nonce. */
@@ -115,7 +117,8 @@ export class GitHubOAuthService {
         Date.now() - data.ts > STATE_TTL_MS ||
         typeof data.nonce !== 'string' ||
         data.nonce.length < 16
-      ) return null;
+      )
+        return null;
       if (data.mode === 'setup') {
         if (!data.setupState || !data.installationId) return null;
         return {
@@ -146,20 +149,20 @@ export class GitHubOAuthService {
       redirect_uri: config.github.callbackUrl,
     });
 
-    const userRes = await scmFetch('GitHub', 'read OAuth user', `${config.github.apiBaseUrl}/user`, {
-      headers: {
-        Authorization: `Bearer ${token.accessToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
+    const userRes = await scmFetch(
+      'GitHub',
+      'read OAuth user',
+      `${config.github.apiBaseUrl}/user`,
+      {
+        headers: {
+          Authorization: `Bearer ${token.accessToken}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
       },
-    });
+    );
     if (!userRes.ok) {
-      throw scmStatusError(
-        'GitHub',
-        'read OAuth user',
-        userRes,
-        'Could not read the GitHub user',
-      );
+      throw scmStatusError('GitHub', 'read OAuth user', userRes, 'Could not read the GitHub user');
     }
     const u = (await userRes.json()) as {
       id: number;

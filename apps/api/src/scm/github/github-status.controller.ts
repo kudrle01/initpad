@@ -32,7 +32,8 @@ export class GitHubStatusController {
       config.github.clientId && config.github.clientSecret && config.github.callbackUrl,
     );
     const appConfigured = this.app.isConfigured() && Boolean(config.github.appSlug);
-    const linked = (await this.identities.listForUser(userId)).find((i) => i.provider === 'github') ?? null;
+    const linked =
+      (await this.identities.listForUser(userId)).find((i) => i.provider === 'github') ?? null;
     const workspace = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const accesses = await this.installations.listForWorkspace(workspace.id);
     const rows = accesses.map(({ githubInstallation: record }) => ({
@@ -48,12 +49,9 @@ export class GitHubStatusController {
     }));
     const present = rows.length > 0;
     const suspended = present && rows.every((row) => row.suspended);
-    const credentialReady = linked
-      ? await this.credentials.isReadyForUser(userId)
-      : false;
-    const ciCallbackIssue = config.edition === 'saas'
-      ? publicHttpsUrlIssue(config.ci.publicUrl)
-      : null;
+    const credentialReady = linked ? await this.credentials.isReadyForUser(userId) : false;
+    const ciCallbackIssue =
+      config.edition === 'saas' ? publicHttpsUrlIssue(config.ci.publicUrl) : null;
     return {
       enabled,
       appConfigured,

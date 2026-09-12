@@ -19,18 +19,18 @@ export function normalizeManagedGatewayOrigin(value: string): string {
   const hostname = url.hostname.toLowerCase();
   const labels = hostname.split('.');
   if (
-    url.protocol !== 'https:'
-    || url.username
-    || url.password
-    || url.port
-    || url.pathname !== '/'
-    || url.search
-    || url.hash
-    || hostname === 'localhost'
-    || hostname.endsWith('.localhost')
-    || isIP(hostname) !== 0
-    || hostname.length > 253
-    || labels.some((label) => !DNS_LABEL.test(label))
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    url.port ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    isIP(hostname) !== 0 ||
+    hostname.length > 253 ||
+    labels.some((label) => !DNS_LABEL.test(label))
   ) {
     throw new BadRequestException(
       'Managed gateway base URL must be an HTTPS DNS origin without credentials, path, query or fragment',
@@ -72,16 +72,22 @@ export function stableGatewayHostname(
   gatewayOrigin: string,
 ): string {
   const baseHost = new URL(normalizeManagedGatewayOrigin(gatewayOrigin)).hostname;
-  const digest = createHash('sha256').update(environmentId).digest('hex').slice(0, ROUTE_HASH_LENGTH);
-  const readable = `${projectName}-${environmentName}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'app';
+  const digest = createHash('sha256')
+    .update(environmentId)
+    .digest('hex')
+    .slice(0, ROUTE_HASH_LENGTH);
+  const readable =
+    `${projectName}-${environmentName}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'app';
   const maxReadable = 63 - ROUTE_HASH_LENGTH - 1;
   const prefix = readable.slice(0, maxReadable).replace(/-+$/g, '') || 'app';
   const hostname = `${prefix}-${digest}.${baseHost}`;
   if (hostname.length > 253) {
-    throw new BadRequestException('Managed gateway DNS zone is too long for an application hostname');
+    throw new BadRequestException(
+      'Managed gateway DNS zone is too long for an application hostname',
+    );
   }
   return hostname;
 }

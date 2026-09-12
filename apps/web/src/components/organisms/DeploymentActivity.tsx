@@ -69,8 +69,8 @@ export function DeploymentActivity({ operations, repoUrl, scmProvider, limit }: 
                 : operation.phase === 'failed' || operation.phase === 'unhealthy'
                   ? 'failed'
                   : operation.phase === 'cancelled' || operation.phase === 'queued'
-                  ? 'pending'
-                  : 'running';
+                    ? 'pending'
+                    : 'running';
             return (
               <div
                 key={operation.id}
@@ -91,12 +91,17 @@ export function DeploymentActivity({ operations, repoUrl, scmProvider, limit }: 
                       </span>
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {operation.message ?? (operation.status === 'succeeded' ? 'Deployment completed' : operation.status)}
+                      {operation.message ??
+                        (operation.status === 'succeeded'
+                          ? 'Deployment completed'
+                          : operation.status)}
                     </p>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-3 pl-4 text-xs text-muted-foreground sm:pl-0">
-                  {operation.version && <span className="font-mono">{operation.version.slice(0, 7)}</span>}
+                  {operation.version && (
+                    <span className="font-mono">{operation.version.slice(0, 7)}</span>
+                  )}
                   <span>{elapsed(operation)}</span>
                 </div>
               </div>

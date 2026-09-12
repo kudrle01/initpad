@@ -6,7 +6,11 @@ import { CurrentUser } from './current-user.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { ActivateAccountDto, RequestPasswordResetDto, ResetPasswordDto } from './dto/password-reset.dto';
+import {
+  ActivateAccountDto,
+  RequestPasswordResetDto,
+  ResetPasswordDto,
+} from './dto/password-reset.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AllowDuringPasswordChange } from './allow-password-change.decorator';
 import { AuthRateLimitGuard } from './auth-rate-limit.guard';

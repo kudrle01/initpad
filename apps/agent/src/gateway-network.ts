@@ -42,7 +42,10 @@ function responseJson<T>(response: DockerHttpResponse, action: string): T {
 
 function containsContainer(network: WorkloadNetworkInspect, containerId: string): boolean {
   return Object.keys(network.Containers ?? {}).some(
-    (memberId) => memberId === containerId || memberId.startsWith(containerId) || containerId.startsWith(memberId),
+    (memberId) =>
+      memberId === containerId ||
+      memberId.startsWith(containerId) ||
+      containerId.startsWith(memberId),
   );
 }
 
@@ -174,9 +177,9 @@ export class GatewayDockerNetwork {
     });
     const gateway = responseJson<GatewayContainerInspect>(response, 'inspect configured gateway');
     if (
-      !gateway.Id
-      || gateway.Config?.Labels?.['com.initpad.gateway'] !== 'true'
-      || !gateway.State?.Running
+      !gateway.Id ||
+      gateway.Config?.Labels?.['com.initpad.gateway'] !== 'true' ||
+      !gateway.State?.Running
     ) {
       throw new Error('Configured gateway container is not a running InitPad gateway');
     }
@@ -195,12 +198,12 @@ export class GatewayDockerNetwork {
     const matches = (await this.ownedWorkloads(payload, signal)).filter((container) => {
       const labels = container.Labels ?? {};
       const name = this.containerName(container);
-      return container.State === 'running'
-        && labels['com.initpad.revision'] === payload.revision
-        && (
-          (name === expected && labels['com.initpad.workload.slot'] === payload.workloadSlot)
-          || (name === legacy && labels['com.initpad.workload.slot'] === undefined)
-        );
+      return (
+        container.State === 'running' &&
+        labels['com.initpad.revision'] === payload.revision &&
+        ((name === expected && labels['com.initpad.workload.slot'] === payload.workloadSlot) ||
+          (name === legacy && labels['com.initpad.workload.slot'] === undefined))
+      );
     });
     if (matches.length !== 1) {
       throw new Error('Managed gateway could not identify exactly one healthy workload revision');
@@ -213,13 +216,17 @@ export class GatewayDockerNetwork {
     signal: AbortSignal,
   ): Promise<ManagedWorkloadInspect[]> {
     const workloadKey = `${payload.allocationId}:${payload.projectSlug}:${payload.environment}`;
-    const filters = encodeURIComponent(JSON.stringify({ label: [
-      'com.initpad.managed=true',
-      `com.initpad.target=${this.targetId}`,
-      `com.initpad.allocation.id=${payload.allocationId}`,
-      `com.initpad.workload=${workloadKey}`,
-      'com.initpad.routing.mode=managed-gateway',
-    ] }));
+    const filters = encodeURIComponent(
+      JSON.stringify({
+        label: [
+          'com.initpad.managed=true',
+          `com.initpad.target=${this.targetId}`,
+          `com.initpad.allocation.id=${payload.allocationId}`,
+          `com.initpad.workload=${workloadKey}`,
+          'com.initpad.routing.mode=managed-gateway',
+        ],
+      }),
+    );
     const response = await this.request({
       method: 'GET',
       path: `/containers/json?all=1&filters=${filters}`,
@@ -232,15 +239,15 @@ export class GatewayDockerNetwork {
     for (const container of containers) {
       const labels = container.Labels ?? {};
       if (
-        !container.Id
-        || labels['com.initpad.managed'] !== 'true'
-        || labels['com.initpad.target'] !== this.targetId
-        || labels['com.initpad.allocation.id'] !== payload.allocationId
-        || labels['com.initpad.allocation.namespace'] !== payload.namespace
-        || labels['com.initpad.project'] !== payload.projectSlug
-        || labels['com.initpad.environment'] !== payload.environment
-        || labels['com.initpad.workload'] !== workloadKey
-        || labels['com.initpad.routing.mode'] !== 'managed-gateway'
+        !container.Id ||
+        labels['com.initpad.managed'] !== 'true' ||
+        labels['com.initpad.target'] !== this.targetId ||
+        labels['com.initpad.allocation.id'] !== payload.allocationId ||
+        labels['com.initpad.allocation.namespace'] !== payload.namespace ||
+        labels['com.initpad.project'] !== payload.projectSlug ||
+        labels['com.initpad.environment'] !== payload.environment ||
+        labels['com.initpad.workload'] !== workloadKey ||
+        labels['com.initpad.routing.mode'] !== 'managed-gateway'
       ) {
         throw new Error('Docker returned a workload outside the managed route allocation');
       }
@@ -270,13 +277,13 @@ export class GatewayDockerNetwork {
     const network = responseJson<WorkloadNetworkInspect>(response, 'inspect workload network');
     const labels = network.Labels ?? {};
     if (
-      labels['com.initpad.managed'] !== 'true'
-      || labels['com.initpad.target'] !== this.targetId
-      || labels['com.initpad.allocation.id'] !== payload.allocationId
-      || labels['com.initpad.allocation.namespace'] !== payload.namespace
-      || labels['com.initpad.project'] !== payload.projectSlug
-      || labels['com.initpad.environment'] !== payload.environment
-      || labels['com.initpad.routing.mode'] !== 'managed-gateway'
+      labels['com.initpad.managed'] !== 'true' ||
+      labels['com.initpad.target'] !== this.targetId ||
+      labels['com.initpad.allocation.id'] !== payload.allocationId ||
+      labels['com.initpad.allocation.namespace'] !== payload.namespace ||
+      labels['com.initpad.project'] !== payload.projectSlug ||
+      labels['com.initpad.environment'] !== payload.environment ||
+      labels['com.initpad.routing.mode'] !== 'managed-gateway'
     ) {
       throw new Error(`Docker network name collision outside allocation '${payload.allocationId}'`);
     }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Ban, CheckCircle2, CircleX, Clock3, ScrollText, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, type AuditEventFilters } from '@/api';
@@ -67,9 +67,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 function label(value: string): string {
-  return value
-    .replace(/[._-]+/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value.replace(/[._-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function eventLabel(action: string): string {
@@ -128,10 +126,7 @@ function EventCard({ event }: { event: AuditEvent }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">{eventLabel(event.action)}</h2>
-            <Badge
-              variant="outline"
-              className={OUTCOME_STYLES[event.outcome]}
-            >
+            <Badge variant="outline" className={OUTCOME_STYLES[event.outcome]}>
               {event.outcome}
             </Badge>
             <time
@@ -194,6 +189,7 @@ function EventCard({ event }: { event: AuditEvent }) {
 
 export default function AuditLog() {
   const { activeWorkspace } = useAuth();
+  const workspaceId = activeWorkspace?.id;
   const [action, setAction] = useState('');
   const [resourceType, setResourceType] = useState('');
   const [outcome, setOutcome] = useState<'' | AuditEvent['outcome']>('');
@@ -203,15 +199,18 @@ export default function AuditLog() {
   const [moreError, setMoreError] = useState<string | null>(null);
   const loadMoreSequence = useRef(0);
 
-  const filters: AuditEventFilters = {
-    ...(action ? { action } : {}),
-    ...(resourceType ? { resourceType } : {}),
-    ...(outcome ? { outcome } : {}),
-    limit: 30,
-  };
+  const filters = useMemo<AuditEventFilters>(
+    () => ({
+      ...(action ? { action } : {}),
+      ...(resourceType ? { resourceType } : {}),
+      ...(outcome ? { outcome } : {}),
+      limit: 30,
+    }),
+    [action, resourceType, outcome],
+  );
   const loadFirstPage = useCallback(
-    () => api.getAuditEvents(filters),
-    [activeWorkspace?.id, action, resourceType, outcome],
+    () => (workspaceId ? api.getAuditEvents(filters) : Promise.resolve(EMPTY_PAGE)),
+    [workspaceId, filters],
   );
   const { data, loading, error, reload } = useLoadable(loadFirstPage, EMPTY_PAGE);
 
@@ -253,19 +252,30 @@ export default function AuditLog() {
           },
           {
             title: 'Privacy',
-            description: 'Secrets, configuration values and application logs are never stored here.',
+            description:
+              'Secrets, configuration values and application logs are never stored here.',
           },
         ]}
       />
 
       <div className="mb-5 grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-3">
-        <Select value={action} onChange={(event) => setAction(event.target.value)} aria-label="Filter by action">
+        <Select
+          value={action}
+          onChange={(event) => setAction(event.target.value)}
+          aria-label="Filter by action"
+        >
           <option value="">All actions</option>
           {Object.entries(ACTION_LABELS).map(([value, text]) => (
-            <option key={value} value={value}>{text}</option>
+            <option key={value} value={value}>
+              {text}
+            </option>
           ))}
         </Select>
-        <Select value={resourceType} onChange={(event) => setResourceType(event.target.value)} aria-label="Filter by resource">
+        <Select
+          value={resourceType}
+          onChange={(event) => setResourceType(event.target.value)}
+          aria-label="Filter by resource"
+        >
           <option value="">All resources</option>
           <option value="workspace">Workspace</option>
           <option value="member">Member</option>
@@ -295,28 +305,43 @@ export default function AuditLog() {
         <EmptyState
           icon={ScrollText}
           title={filtered ? 'No matching events' : 'No audit events yet'}
-          description={filtered
-            ? 'Change or clear the filters to see other workspace events.'
-            : 'Security-relevant workspace changes will appear here.'}
-          action={filtered ? (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setAction('');
-                setResourceType('');
-                setOutcome('');
-              }}
-            >
-              Clear filters
-            </Button>
-          ) : undefined}
+          description={
+            filtered
+              ? 'Change or clear the filters to see other workspace events.'
+              : 'Security-relevant workspace changes will appear here.'
+          }
+          action={
+            filtered ? (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setAction('');
+                  setResourceType('');
+                  setOutcome('');
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <div className="flex flex-col gap-3">
-          {items.map((event) => <EventCard key={event.id} event={event} />)}
-          {moreError && <p role="alert" className="text-sm text-destructive">{moreError}</p>}
+          {items.map((event) => (
+            <EventCard key={event.id} event={event} />
+          ))}
+          {moreError && (
+            <p role="alert" className="text-sm text-destructive">
+              {moreError}
+            </p>
+          )}
           {nextCursor && (
-            <Button variant="secondary" className="self-center" disabled={loadingMore} onClick={() => void loadMore()}>
+            <Button
+              variant="secondary"
+              className="self-center"
+              disabled={loadingMore}
+              onClick={() => void loadMore()}
+            >
               {loadingMore ? 'Loading…' : 'Load more'}
             </Button>
           )}

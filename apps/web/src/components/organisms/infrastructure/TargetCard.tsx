@@ -66,9 +66,11 @@ function TargetState({ target }: { target: Target }) {
       <StatusBadge
         status={managementState === 'retired' ? 'disabled' : 'offline'}
         label={managementState}
-        className={managementState === 'disconnected'
-          ? 'border-warning/50 bg-warning/10 text-foreground'
-          : undefined}
+        className={
+          managementState === 'disconnected'
+            ? 'border-warning/50 bg-warning/10 text-foreground'
+            : undefined
+        }
       />
     );
   }
@@ -77,9 +79,9 @@ function TargetState({ target }: { target: Target }) {
       <StatusBadge
         status={agentState}
         label={agentState.replace('-', ' ')}
-        className={agentState === 'offline'
-          ? 'border-warning/50 bg-warning/10 text-foreground'
-          : undefined}
+        className={
+          agentState === 'offline' ? 'border-warning/50 bg-warning/10 text-foreground' : undefined
+        }
       />
     );
   }
@@ -129,12 +131,14 @@ export function TargetCard({
   const usage = allocation?.usage ?? target.usage ?? [];
 
   return (
-    <Card className={cn(
-      'min-w-0 p-0',
-      ((isAgentTarget && agentState === 'offline') || managementState === 'disconnected')
-        && 'border-warning/60',
-      managementState === 'retired' && 'border-muted-foreground/30',
-    )}>
+    <Card
+      className={cn(
+        'min-w-0 p-0',
+        ((isAgentTarget && agentState === 'offline') || managementState === 'disconnected') &&
+          'border-warning/60',
+        managementState === 'retired' && 'border-muted-foreground/30',
+      )}
+    >
       <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -163,8 +167,9 @@ export function TargetCard({
             <div>
               <p className="font-medium text-foreground">Legacy SSH runtime</p>
               <p className="mt-0.5 text-muted-foreground">
-                Existing deployments can remain online and be maintained. New environment assignments are disabled;
-                use an Agent-backed Docker server for runtime applications.
+                Existing deployments can remain online and be maintained. New environment
+                assignments are disabled; use an Agent-backed Docker server for runtime
+                applications.
               </p>
             </div>
           </div>
@@ -176,7 +181,8 @@ export function TargetCard({
             <div>
               <p className="font-medium text-foreground">Agent is offline</p>
               <p className="mt-0.5 text-muted-foreground">
-                Running applications are unaffected. New jobs wait safely until the Agent reconnects.
+                Running applications are unaffected. New jobs wait safely until the Agent
+                reconnects.
               </p>
             </div>
           </div>
@@ -188,7 +194,8 @@ export function TargetCard({
             <div>
               <p className="font-medium text-foreground">Disconnected from InitPad</p>
               <p className="mt-0.5 text-muted-foreground">
-                Existing workloads stay online, but InitPad cannot deploy, stop, inspect or remove them.
+                Existing workloads stay online, but InitPad cannot deploy, stop, inspect or remove
+                them.
               </p>
             </div>
           </div>
@@ -220,18 +227,21 @@ export function TargetCard({
                 },
                 {
                   title: 'Policy',
-                  description: 'Allowed runtimes and the environment quota apply only to this workspace.',
+                  description:
+                    'Allowed runtimes and the environment quota apply only to this workspace.',
                 },
               ]}
             />
           </div>
           {allocation && (
-            <span className={cn(
-              'rounded-full px-2.5 py-0.5 text-xs font-medium',
-              accessDisabled || unavailable
-                ? 'bg-muted text-muted-foreground'
-                : 'bg-success/10 text-success',
-            )}>
+            <span
+              className={cn(
+                'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                accessDisabled || unavailable
+                  ? 'bg-muted text-muted-foreground'
+                  : 'bg-success/10 text-success',
+              )}
+            >
               {unavailable ? `server ${managementState}` : accessDisabled ? 'paused' : 'enabled'}
             </span>
           )}
@@ -242,7 +252,9 @@ export function TargetCard({
             <dl className="mt-4 grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
               <div>
                 <dt className="text-muted-foreground">Isolated namespace</dt>
-                <dd className="mt-1 truncate font-mono font-medium text-foreground">{allocation.namespace}</dd>
+                <dd className="mt-1 truncate font-mono font-medium text-foreground">
+                  {allocation.namespace}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Environment usage</dt>
@@ -254,7 +266,10 @@ export function TargetCard({
                 <dt className="text-muted-foreground">Allowed runtimes</dt>
                 <dd className="mt-1 flex flex-wrap gap-1">
                   {allocation.capabilities.map((capability) => (
-                    <span key={capability} className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                    <span
+                      key={capability}
+                      className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary"
+                    >
                       {capability}
                     </span>
                   ))}
@@ -269,15 +284,22 @@ export function TargetCard({
             )}
 
             <div className="mt-3 text-xs text-muted-foreground">
-              {allocation.cpuLimitMillicores / 1000} CPU · {allocation.memoryLimitMb} MB · {allocation.pidsLimit} processes
+              {allocation.cpuLimitMillicores / 1000} CPU · {allocation.memoryLimitMb} MB ·{' '}
+              {allocation.pidsLimit} processes
               {(allocation.devTtlHours || allocation.testTtlHours) && (
-                <span> · cleanup {allocation.devTtlHours ? `dev ${allocation.devTtlHours}h` : ''}{allocation.devTtlHours && allocation.testTtlHours ? ', ' : ''}{allocation.testTtlHours ? `test ${allocation.testTtlHours}h` : ''}</span>
+                <span>
+                  {' '}
+                  · cleanup {allocation.devTtlHours ? `dev ${allocation.devTtlHours}h` : ''}
+                  {allocation.devTtlHours && allocation.testTtlHours ? ', ' : ''}
+                  {allocation.testTtlHours ? `test ${allocation.testTtlHours}h` : ''}
+                </span>
               )}
             </div>
 
             {unavailable && (
               <p className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs text-muted-foreground">
-                Access settings are preserved, but management remains unavailable until the server is reconnected.
+                Access settings are preserved, but management remains unavailable until the server
+                is reconnected.
               </p>
             )}
 
@@ -294,7 +316,11 @@ export function TargetCard({
                   variant="ghost"
                   size="sm"
                   disabled={busy || (accessDisabled && unavailable)}
-                  title={accessDisabled && unavailable ? 'Reconnect the server before resuming access' : undefined}
+                  title={
+                    accessDisabled && unavailable
+                      ? 'Reconnect the server before resuming access'
+                      : undefined
+                  }
                   onClick={onToggleAccess}
                 >
                   {accessDisabled ? <Play className="h-4 w-4" /> : <PowerOff className="h-4 w-4" />}
@@ -304,9 +330,11 @@ export function TargetCard({
                   variant="ghost"
                   size="sm"
                   disabled={busy || usage.length > 0}
-                  title={usage.length > 0
-                    ? `Used by ${usage.length} environment${usage.length === 1 ? '' : 's'}`
-                    : 'Remove workspace access'}
+                  title={
+                    usage.length > 0
+                      ? `Used by ${usage.length} environment${usage.length === 1 ? '' : 's'}`
+                      : 'Remove workspace access'
+                  }
                   onClick={onRemoveAccess}
                 >
                   <Trash2 className="h-4 w-4" /> Remove access
@@ -330,7 +358,9 @@ export function TargetCard({
               <Button
                 size="sm"
                 disabled={busy || unavailable}
-                title={unavailable ? 'Reconnect the server before enabling workspace access' : undefined}
+                title={
+                  unavailable ? 'Reconnect the server before enabling workspace access' : undefined
+                }
                 onClick={onEnableAccess}
               >
                 Enable for {workspaceName}
@@ -354,12 +384,16 @@ export function TargetCard({
               <dd className="mt-1 break-all font-mono text-foreground">
                 {target.host
                   ? `${target.username ? `${target.username}@` : ''}${target.host}${target.port ? `:${target.port}` : ''}`
-                  : isAgentTarget ? 'Outbound InitPad Agent' : 'Platform configuration'}
+                  : isAgentTarget
+                    ? 'Outbound InitPad Agent'
+                    : 'Platform configuration'}
               </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Application address</dt>
-              <dd className="mt-1 break-all font-mono text-foreground">{target.publicUrl ?? 'Assigned during deployment'}</dd>
+              <dd className="mt-1 break-all font-mono text-foreground">
+                {target.publicUrl ?? 'Assigned during deployment'}
+              </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Server supports</dt>
@@ -398,7 +432,9 @@ export function TargetCard({
                   variant="ghost"
                   size="sm"
                   disabled={busy || unavailable}
-                  title={unavailable ? 'Restore or reconnect this server before editing it' : undefined}
+                  title={
+                    unavailable ? 'Restore or reconnect this server before editing it' : undefined
+                  }
                   onClick={onEdit}
                 >
                   <Pencil className="h-4 w-4" /> Edit server
@@ -424,9 +460,11 @@ export function TargetCard({
                   variant="ghost"
                   size="sm"
                   disabled={busy || usage.length > 0}
-                  title={usage.length > 0
-                    ? `Used by ${usage.length} environment${usage.length === 1 ? '' : 's'}`
-                    : 'Delete server'}
+                  title={
+                    usage.length > 0
+                      ? `Used by ${usage.length} environment${usage.length === 1 ? '' : 's'}`
+                      : 'Delete server'
+                  }
                   onClick={onDelete}
                 >
                   <Trash2 className="h-4 w-4" /> Delete server

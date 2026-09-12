@@ -15,10 +15,16 @@ describe('OidcService redirect validation', () => {
   });
 
   it('accepts only a Gitea OAuth callback on the exact origin', () => {
-    expect(service.isAllowedRedirect('https://git.example.test/user/oauth2/initpad/callback')).toBe(true);
-    expect(service.isAllowedRedirect('https://git.example.test.evil.test/user/oauth2/initpad/callback')).toBe(false);
+    expect(service.isAllowedRedirect('https://git.example.test/user/oauth2/initpad/callback')).toBe(
+      true,
+    );
+    expect(
+      service.isAllowedRedirect('https://git.example.test.evil.test/user/oauth2/initpad/callback'),
+    ).toBe(false);
     expect(service.isAllowedRedirect('https://git.example.test/other/callback')).toBe(false);
-    expect(service.isAllowedRedirect('https://user@git.example.test/user/oauth2/initpad/callback')).toBe(false);
+    expect(
+      service.isAllowedRedirect('https://user@git.example.test/user/oauth2/initpad/callback'),
+    ).toBe(false);
   });
 
   it('consumes an authorization code only once', () => {

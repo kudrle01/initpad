@@ -52,10 +52,8 @@ export const config = {
   edition,
   publicHost,
   deployHealthHost,
-  templatesDir:
-    process.env.INITPAD_TEMPLATES_DIR || resolve(process.cwd(), '../../templates'),
-  workspaceDir:
-    process.env.INITPAD_WORKSPACE_DIR || resolve(process.cwd(), '../../.workspace'),
+  templatesDir: process.env.INITPAD_TEMPLATES_DIR || resolve(process.cwd(), '../../templates'),
+  workspaceDir: process.env.INITPAD_WORKSPACE_DIR || resolve(process.cwd(), '../../.workspace'),
   agentDistribution: {
     // The control plane serves a generic installer, while the administrator
     // chooses the release image. Production images must be immutable: tags
@@ -74,14 +72,12 @@ export const config = {
     // Server-to-server URL the API uses for Gitea REST calls and git pushes.
     // Same as `url` in local development; the compose setup points it at the
     // internal service name (http://gitea:3000).
-    internalUrl:
-      process.env.INITPAD_GITEA_INTERNAL_URL || process.env.INITPAD_GITEA_URL || '',
+    internalUrl: process.env.INITPAD_GITEA_INTERNAL_URL || process.env.INITPAD_GITEA_URL || '',
     user: process.env.INITPAD_GITEA_USER || '',
     token: process.env.INITPAD_GITEA_TOKEN || '',
     // Gitea admin token — the platform uses it to provision user accounts
     // (managed registration). Falls back to the main token when not set.
-    adminToken:
-      process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
+    adminToken: process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
   },
   git: {
     authorName: process.env.INITPAD_GIT_AUTHOR_NAME || 'InitPad Bot',
@@ -99,9 +95,7 @@ export const config = {
   // Key for encrypting sensitive DB values (tokens). Falls back to the JWT secret.
   security: {
     encryptionKey:
-      process.env.INITPAD_ENCRYPTION_KEY ||
-      process.env.INITPAD_JWT_SECRET ||
-      'dev-secret-zmen-me',
+      process.env.INITPAD_ENCRYPTION_KEY || process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
   },
   // CI → deploy: shared token the CI job uses to authenticate against the
   // platform webhook. The platform sets it as the repo's Actions secret.
@@ -110,15 +104,11 @@ export const config = {
     // each repo as an Actions secret; the generated workflow posts the deploy
     // webhook to it. host.docker.internal works for the npm-run-dev setup;
     // the compose setup overrides it with the internal service name.
-    platformUrl:
-      process.env.INITPAD_PLATFORM_INTERNAL_URL || 'http://host.docker.internal:3000',
+    platformUrl: process.env.INITPAD_PLATFORM_INTERNAL_URL || 'http://host.docker.internal:3000',
     // Public browser/API origin reachable by GitHub-hosted Actions runners.
     // Kept separate from the internal Gitea callback above: localhost and
     // Docker service names are valid internally but never from github.com.
-    publicUrl:
-      process.env.INITPAD_PLATFORM_PUBLIC_URL ||
-      process.env.INITPAD_FRONTEND_URL ||
-      '',
+    publicUrl: process.env.INITPAD_PLATFORM_PUBLIC_URL || process.env.INITPAD_FRONTEND_URL || '',
   },
   scm: {
     webhookUrl:
@@ -139,8 +129,7 @@ export const config = {
     // their nested daemon (where *.localhost resolves to loopback).
     ciHost: process.env.INITPAD_CI_REGISTRY_HOST || 'host.docker.internal:3001',
     user: process.env.INITPAD_GITEA_USER || '',
-    password:
-      process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
+    password: process.env.INITPAD_GITEA_ADMIN_TOKEN || process.env.INITPAD_GITEA_TOKEN || '',
   },
   deployment: {
     // Development binds app ports to loopback. A server installation opts in
@@ -305,17 +294,15 @@ export function validateConfig(): void {
   if (process.env.NODE_ENV !== 'production') return;
   const insecure: string[] = [];
   if (config.auth.jwtSecret === 'dev-secret-zmen-me') insecure.push('INITPAD_JWT_SECRET');
-  if (config.security.encryptionKey === 'dev-secret-zmen-me') insecure.push('INITPAD_ENCRYPTION_KEY');
+  if (config.security.encryptionKey === 'dev-secret-zmen-me')
+    insecure.push('INITPAD_ENCRYPTION_KEY');
   if (config.scm.webhookToken === 'scm-webhook-secret-change-me') {
     insecure.push('INITPAD_SCM_WEBHOOK_TOKEN');
   }
   if (config.oidc.clientSecret === 'gitea-oidc-secret-change-me') {
     insecure.push('INITPAD_OIDC_CLIENT_SECRET');
   }
-  if (
-    artifactStoreConfigured() &&
-    config.artifactStore.secretAccessKey === 'initpad-artifacts'
-  ) {
+  if (artifactStoreConfigured() && config.artifactStore.secretAccessKey === 'initpad-artifacts') {
     insecure.push('INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY');
   }
   if (insecure.length) {

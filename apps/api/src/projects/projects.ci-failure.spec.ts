@@ -54,9 +54,11 @@ describe('ProjectsService failed CI handoff', () => {
       {} as never,
     );
 
-    await expect(service.deployFromCi('acme/api', sha, 'main', token, {
-      ciStatus: 'failure',
-    })).resolves.toBeUndefined();
+    await expect(
+      service.deployFromCi('acme/api', sha, 'main', token, {
+        ciStatus: 'failure',
+      }),
+    ).resolves.toBeUndefined();
 
     expect(deployment.deploy).not.toHaveBeenCalled();
     expect(prisma.deploymentOperation.create).toHaveBeenCalledWith({

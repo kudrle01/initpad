@@ -19,7 +19,9 @@ describe('ExternalIdentityService', () => {
     const user = await service.findUser('github', '12345');
     expect(user).toEqual({ id: 'u1', username: 'dev' });
     expect(prisma.externalIdentity.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { provider_providerUserId: { provider: 'github', providerUserId: '12345' } } }),
+      expect.objectContaining({
+        where: { provider_providerUserId: { provider: 'github', providerUserId: '12345' } },
+      }),
     );
   });
 
@@ -32,12 +34,16 @@ describe('ExternalIdentityService', () => {
   it('never exposes encrypted provider credentials in the linked identity DTO', async () => {
     const prisma = {
       externalIdentity: {
-        findMany: jest.fn(async () => [{
-          provider: 'github', providerUserId: '123', username: 'alice',
-          createdAt: new Date('2026-07-20T12:00:00.000Z'),
-          accessTokenEncrypted: 'enc:v1:access-secret',
-          refreshTokenEncrypted: 'enc:v1:refresh-secret',
-        }]),
+        findMany: jest.fn(async () => [
+          {
+            provider: 'github',
+            providerUserId: '123',
+            username: 'alice',
+            createdAt: new Date('2026-07-20T12:00:00.000Z'),
+            accessTokenEncrypted: 'enc:v1:access-secret',
+            refreshTokenEncrypted: 'enc:v1:refresh-secret',
+          },
+        ]),
       },
       user: { findUnique: jest.fn(async () => ({ passwordHash: 'hash' })) },
     };
@@ -45,13 +51,15 @@ describe('ExternalIdentityService', () => {
 
     const result = await service.listForUser('u1');
 
-    expect(result).toEqual([{
-      provider: 'github',
-      providerUserId: '123',
-      username: 'alice',
-      linkedAt: '2026-07-20T12:00:00.000Z',
-      canUnlink: true,
-    }]);
+    expect(result).toEqual([
+      {
+        provider: 'github',
+        providerUserId: '123',
+        username: 'alice',
+        linkedAt: '2026-07-20T12:00:00.000Z',
+        canUnlink: true,
+      },
+    ]);
     expect(JSON.stringify(result)).not.toContain('secret');
   });
 
@@ -60,12 +68,20 @@ describe('ExternalIdentityService', () => {
     const prisma = {
       externalIdentity: {
         findUnique: jest.fn(async () => null),
-        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => { createData = data; return data; }),
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          createData = data;
+          return data;
+        }),
       },
     };
     const service = new ExternalIdentityService(prisma as never);
     await service.link('u1', 'github', '999', 'octocat');
-    expect(createData).toEqual({ userId: 'u1', provider: 'github', providerUserId: '999', username: 'octocat' });
+    expect(createData).toEqual({
+      userId: 'u1',
+      provider: 'github',
+      providerUserId: '999',
+      username: 'octocat',
+    });
   });
 
   it('is idempotent when the same user re-links the same account', async () => {
@@ -87,7 +103,9 @@ describe('ExternalIdentityService', () => {
       externalIdentity: { findUnique: jest.fn(async () => ({ id: 'e1', userId: 'someone-else' })) },
     };
     const service = new ExternalIdentityService(prisma as never);
-    await expect(service.link('u1', 'github', '999', 'octocat')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.link('u1', 'github', '999', 'octocat')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 
   it('refuses a second identity for the same provider on one user', async () => {
@@ -101,7 +119,9 @@ describe('ExternalIdentityService', () => {
       },
     };
     const service = new ExternalIdentityService(prisma as never);
-    await expect(service.link('u1', 'github', '999', 'octocat')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.link('u1', 'github', '999', 'octocat')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(prisma.externalIdentity.create).not.toHaveBeenCalled();
   });
 

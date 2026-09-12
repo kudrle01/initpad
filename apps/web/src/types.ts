@@ -114,7 +114,14 @@ export interface ProvisioningStatus {
   effects: Array<{
     key: string;
     kind: 'repository' | 'collaborator' | 'secrets' | 'project';
-    status: 'planned' | 'applying' | 'applied' | 'failed' | 'compensated' | 'compensation_failed' | 'reconciliation_required';
+    status:
+      | 'planned'
+      | 'applying'
+      | 'applied'
+      | 'failed'
+      | 'compensated'
+      | 'compensation_failed'
+      | 'reconciliation_required';
     metadata: unknown;
     error: string | null;
     createdAt: string;
@@ -399,12 +406,7 @@ export interface ProductionDeploymentRequest {
   reviewedAt: string | null;
 }
 
-export type WorkloadDiagnosticStatus =
-  | 'idle'
-  | 'queued'
-  | 'running'
-  | 'succeeded'
-  | 'failed';
+export type WorkloadDiagnosticStatus = 'idle' | 'queued' | 'running' | 'succeeded' | 'failed';
 export type WorkloadHealth = 'healthy' | 'unhealthy' | 'not-running' | 'missing';
 
 // One explicitly requested, bounded snapshot of an Agent-managed workload.

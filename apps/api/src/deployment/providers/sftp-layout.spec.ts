@@ -45,7 +45,9 @@ describe('prepareProtectedWebLayout', () => {
   it('rejects a missing or traversing web root', () => {
     const app = join(root, 'app');
     mkdirSync(app);
-    expect(() => prepareProtectedWebLayout(app, root, '../public')).toThrow('Invalid template web root');
+    expect(() => prepareProtectedWebLayout(app, root, '../public')).toThrow(
+      'Invalid template web root',
+    );
     expect(() => prepareProtectedWebLayout(app, root, 'public')).toThrow('is missing');
   });
 });

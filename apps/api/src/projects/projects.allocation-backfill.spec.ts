@@ -78,19 +78,16 @@ describe('ProjectEnvironmentTargets.reconcileAllocations (ADR-060 backfill)', ()
   });
 
   it('reuses the allocation created by a concurrent project request', async () => {
-    const findUnique = jest
-      .fn()
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: 'alloc-winner',
-        targetId: 'tgt-1',
-        namespace: 'acme',
-        rootPath: '/var/www/acme',
-        publicUrl: 'http://host/acme',
-        capabilities: 'node',
-        status: 'active',
-        maxEnvironments: 50,
-      });
+    const findUnique = jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: 'alloc-winner',
+      targetId: 'tgt-1',
+      namespace: 'acme',
+      rootPath: '/var/www/acme',
+      publicUrl: 'http://host/acme',
+      capabilities: 'node',
+      status: 'active',
+      maxEnvironments: 50,
+    });
     const prisma = {
       targetAllocation: {
         findUnique,

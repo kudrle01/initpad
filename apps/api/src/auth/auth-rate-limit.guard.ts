@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+  Injectable,
+} from '@nestjs/common';
 import type { Request } from 'express';
 
 interface Bucket {
@@ -27,9 +33,8 @@ export class AuthRateLimitGuard implements CanActivate {
     }
     const key = `${req.ip || 'unknown'}:${req.path}`;
     const current = this.buckets.get(key);
-    const bucket = !current || current.resetAt <= now
-      ? { count: 0, resetAt: now + this.windowMs }
-      : current;
+    const bucket =
+      !current || current.resetAt <= now ? { count: 0, resetAt: now + this.windowMs } : current;
     bucket.count += 1;
     this.buckets.set(key, bucket);
     if (bucket.count <= this.limit) return true;

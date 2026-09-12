@@ -42,7 +42,11 @@ export default function ImportRepo() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
-  const [environmentTargets, setEnvironmentTargets] = useState<EnvironmentTargets>({ dev: '', test: '', prod: '' });
+  const [environmentTargets, setEnvironmentTargets] = useState<EnvironmentTargets>({
+    dev: '',
+    test: '',
+    prod: '',
+  });
 
   useEffect(() => {
     let current = true;
@@ -115,16 +119,20 @@ export default function ImportRepo() {
   }
 
   async function doImport() {
-    if (readOnly || !preflight?.canImport || ENV_NAMES.some((name) => !environmentTargets[name])) return;
+    if (readOnly || !preflight?.canImport || ENV_NAMES.some((name) => !environmentTargets[name]))
+      return;
     setBusy(true);
     try {
       const project = await api.importRepo(
         repositoryId,
         templateId,
-        ENV_NAMES.map((environment) => ({ name: environment, targetId: environmentTargets[environment] })),
+        ENV_NAMES.map((environment) => ({
+          name: environment,
+          targetId: environmentTargets[environment],
+        })),
       );
       toast.success('Repository imported');
-      navigate(`/projects/${project.id}`);
+      void navigate(`/projects/${project.id}`);
     } catch (e) {
       toast.error((e as Error).message);
       setBusy(false);
@@ -173,15 +181,22 @@ export default function ImportRepo() {
       </Link>
 
       {readOnly && (
-        <p role="alert" className="mb-4 rounded-md border border-border bg-secondary p-3 text-sm text-muted-foreground">
-          Viewer access is read-only. Ask a workspace admin for a member or maintainer role to import projects.
+        <p
+          role="alert"
+          className="mb-4 rounded-md border border-border bg-secondary p-3 text-sm text-muted-foreground"
+        >
+          Viewer access is read-only. Ask a workspace admin for a member or maintainer role to
+          import projects.
         </p>
       )}
       {hosted && ghStatus && !ghStatus.ciCallbackReady && (
-        <p role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground">
+        <p
+          role="alert"
+          className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground"
+        >
           <AlertTriangle className="mr-2 inline h-4 w-4 text-destructive" />
-          {ghStatus.ciCallbackIssue ?? 'GitHub cannot reach the InitPad CI callback.'}{' '}
-          Configure a public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code> before importing.
+          {ghStatus.ciCallbackIssue ?? 'GitHub cannot reach the InitPad CI callback.'} Configure a
+          public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code> before importing.
         </p>
       )}
 
@@ -191,133 +206,156 @@ export default function ImportRepo() {
         <ContentLoading label="Loading repositories" variant="detail" />
       ) : (
         <div className="flex max-w-2xl flex-col gap-5">
-        <div className="flex flex-col gap-1.5">
-          <Label>Repository</Label>
-          <Select
-            value={repositoryId}
-            aria-label="Repository"
-            onChange={(e) => setRepositoryId(e.target.value)}
-          >
-            <option value="" disabled>Choose a repository…</option>
-            {repos.map((r) => (
-              <option
-                key={`${r.provider}:${r.repositoryId}`}
-                value={r.repositoryId}
-                disabled={r.alreadyImported || r.empty}
-              >
-                {r.fullName}
-                {r.alreadyImported ? ' — already imported' : r.empty ? ' — empty' : ''}
+          <div className="flex flex-col gap-1.5">
+            <Label>Repository</Label>
+            <Select
+              value={repositoryId}
+              aria-label="Repository"
+              onChange={(e) => setRepositoryId(e.target.value)}
+            >
+              <option value="" disabled>
+                Choose a repository…
               </option>
-            ))}
-          </Select>
-          {repos.length === 0 && !loadError && (
-            hosted && ghStatus?.installations.length === 0 ? (
-              <p className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
-                <Github className="mr-2 inline h-4 w-4" />
-                No GitHub installation is authorized for this workspace.{' '}
-                <Link to="/settings/account" className="text-link font-medium">Open account settings</Link>
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">No repositories available to import.</p>
-            )
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-1">
-            <Label>Runtime template</Label>
-            <InfoTip label="About the runtime template">
-              Choose the runtime contract this repository already follows. Import validates the
-              repository but never rewrites its code.
-            </InfoTip>
-          </div>
-          <Select value={templateId} aria-label="Template" onChange={(e) => setTemplateId(e.target.value)}>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.name} · {t.language}</option>
-            ))}
-          </Select>
-        </div>
-
-        <EnvironmentTargetFields
-          template={template}
-          targets={targets}
-          values={environmentTargets}
-          hosted={hosted}
-          onChange={chooseTarget}
-        />
-
-        <div>
-          <Button variant="secondary" onClick={runPreflight} disabled={!repositoryId || !templateId || checking}>
-            {checking ? <Spinner className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-            {checking ? 'Checking…' : 'Run preflight check'}
-          </Button>
-        </div>
-
-        {preflight && (
-          <div className="rounded-lg border border-border bg-card p-5">
-            <h2 className="text-[15px] font-semibold">Preflight — {preflight.repo}</h2>
-            <dl className="mt-3 grid grid-cols-1 gap-x-3 gap-y-1 text-sm sm:grid-cols-2 sm:gap-y-2">
-              <dt className="text-muted-foreground">Default branch</dt>
-              <dd className="mb-1 break-all font-medium sm:mb-0">{preflight.branch}</dd>
-              <dt className="text-muted-foreground">Runtime</dt>
-              <dd className="mb-1 font-medium sm:mb-0">{preflight.runtime}</dd>
-              <dt className="text-muted-foreground">Dockerfile</dt>
-              <dd className="mb-1 font-medium sm:mb-0">{preflight.hasDockerfile ? 'found' : 'not found'}</dd>
-              <dt className="text-muted-foreground">InitPad workflow</dt>
-              <dd className="font-medium">{preflight.hasCompatibleWorkflow ? 'compatible' : 'not found'}</dd>
-            </dl>
-            {preflight.warnings.length > 0 && (
-              <ul className="mt-4 flex flex-col gap-1.5">
-                {preflight.warnings.map((w, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-warning">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> <span className="text-muted-foreground">{w}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {!preflight.hasCompatibleWorkflow && selectedRepo && (
-              <div className="mt-4 rounded-md border border-border bg-secondary/40 p-3 text-sm">
-                <p className="font-medium">Add the starter CI workflow</p>
-                <p className="mt-1 text-muted-foreground">
-                  Download it, save it as{' '}
-                  <code className="font-mono text-xs">
-                    {selectedRepo.provider === 'github'
-                      ? '.github/workflows/ci.yml'
-                      : '.gitea/workflows/ci.yml'}
-                  </code>
-                  , review the build and test commands, commit it, then run preflight again.
-                </p>
-                <Button
-                  className="mt-3"
-                  variant="secondary"
-                  disabled={downloadingWorkflow}
-                  onClick={downloadStarterWorkflow}
+              {repos.map((r) => (
+                <option
+                  key={`${r.provider}:${r.repositoryId}`}
+                  value={r.repositoryId}
+                  disabled={r.alreadyImported || r.empty}
                 >
-                  <DownloadCloud className="h-4 w-4" />
-                  {downloadingWorkflow ? 'Downloading…' : 'Download starter workflow'}
-                </Button>
-              </div>
-            )}
-            <div className="mt-5">
-              <Button
-                disabled={
-                  readOnly ||
-                  busy ||
-                  !preflight.canImport ||
-                  (hosted && !ghStatus?.ciCallbackReady) ||
-                  ENV_NAMES.some((environment) => !environmentTargets[environment])
-                }
-                onClick={doImport}
-              >
-                {busy ? <Spinner className="h-4 w-4" /> : <DownloadCloud className="h-4 w-4" />}
-                {busy ? 'Importing…' : `Import ${selectedRepo?.name ?? 'repository'}`}
-              </Button>
-              {!preflight.canImport && (
-                <p className="mt-2 text-xs text-muted-foreground">Resolve the issues above before importing.</p>
-              )}
-            </div>
+                  {r.fullName}
+                  {r.alreadyImported ? ' — already imported' : r.empty ? ' — empty' : ''}
+                </option>
+              ))}
+            </Select>
+            {repos.length === 0 &&
+              !loadError &&
+              (hosted && ghStatus?.installations.length === 0 ? (
+                <p className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
+                  <Github className="mr-2 inline h-4 w-4" />
+                  No GitHub installation is authorized for this workspace.{' '}
+                  <Link to="/settings/account" className="text-link font-medium">
+                    Open account settings
+                  </Link>
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No repositories available to import.
+                </p>
+              ))}
           </div>
-        )}
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1">
+              <Label>Runtime template</Label>
+              <InfoTip label="About the runtime template">
+                Choose the runtime contract this repository already follows. Import validates the
+                repository but never rewrites its code.
+              </InfoTip>
+            </div>
+            <Select
+              value={templateId}
+              aria-label="Template"
+              onChange={(e) => setTemplateId(e.target.value)}
+            >
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} · {t.language}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <EnvironmentTargetFields
+            template={template}
+            targets={targets}
+            values={environmentTargets}
+            hosted={hosted}
+            onChange={chooseTarget}
+          />
+
+          <div>
+            <Button
+              variant="secondary"
+              onClick={runPreflight}
+              disabled={!repositoryId || !templateId || checking}
+            >
+              {checking ? <Spinner className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+              {checking ? 'Checking…' : 'Run preflight check'}
+            </Button>
+          </div>
+
+          {preflight && (
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h2 className="text-[15px] font-semibold">Preflight — {preflight.repo}</h2>
+              <dl className="mt-3 grid grid-cols-1 gap-x-3 gap-y-1 text-sm sm:grid-cols-2 sm:gap-y-2">
+                <dt className="text-muted-foreground">Default branch</dt>
+                <dd className="mb-1 break-all font-medium sm:mb-0">{preflight.branch}</dd>
+                <dt className="text-muted-foreground">Runtime</dt>
+                <dd className="mb-1 font-medium sm:mb-0">{preflight.runtime}</dd>
+                <dt className="text-muted-foreground">Dockerfile</dt>
+                <dd className="mb-1 font-medium sm:mb-0">
+                  {preflight.hasDockerfile ? 'found' : 'not found'}
+                </dd>
+                <dt className="text-muted-foreground">InitPad workflow</dt>
+                <dd className="font-medium">
+                  {preflight.hasCompatibleWorkflow ? 'compatible' : 'not found'}
+                </dd>
+              </dl>
+              {preflight.warnings.length > 0 && (
+                <ul className="mt-4 flex flex-col gap-1.5">
+                  {preflight.warnings.map((w, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-warning">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{' '}
+                      <span className="text-muted-foreground">{w}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!preflight.hasCompatibleWorkflow && selectedRepo && (
+                <div className="mt-4 rounded-md border border-border bg-secondary/40 p-3 text-sm">
+                  <p className="font-medium">Add the starter CI workflow</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Download it, save it as{' '}
+                    <code className="font-mono text-xs">
+                      {selectedRepo.provider === 'github'
+                        ? '.github/workflows/ci.yml'
+                        : '.gitea/workflows/ci.yml'}
+                    </code>
+                    , review the build and test commands, commit it, then run preflight again.
+                  </p>
+                  <Button
+                    className="mt-3"
+                    variant="secondary"
+                    disabled={downloadingWorkflow}
+                    onClick={downloadStarterWorkflow}
+                  >
+                    <DownloadCloud className="h-4 w-4" />
+                    {downloadingWorkflow ? 'Downloading…' : 'Download starter workflow'}
+                  </Button>
+                </div>
+              )}
+              <div className="mt-5">
+                <Button
+                  disabled={
+                    readOnly ||
+                    busy ||
+                    !preflight.canImport ||
+                    (hosted && !ghStatus?.ciCallbackReady) ||
+                    ENV_NAMES.some((environment) => !environmentTargets[environment])
+                  }
+                  onClick={doImport}
+                >
+                  {busy ? <Spinner className="h-4 w-4" /> : <DownloadCloud className="h-4 w-4" />}
+                  {busy ? 'Importing…' : `Import ${selectedRepo?.name ?? 'repository'}`}
+                </Button>
+                {!preflight.canImport && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Resolve the issues above before importing.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

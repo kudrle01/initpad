@@ -20,9 +20,11 @@ function pipelineActive(commits: Commit[]): boolean {
     return true;
   }
   const head = commits[0];
-  return !!head
-    && head.pipeline.some((stage) => stage.status === 'pending')
-    && !head.pipeline.some((stage) => stage.status === 'failed');
+  return (
+    !!head &&
+    head.pipeline.some((stage) => stage.status === 'pending') &&
+    !head.pipeline.some((stage) => stage.status === 'failed')
+  );
 }
 
 export default function ProjectCommits() {
@@ -34,32 +36,35 @@ export default function ProjectCommits() {
   const [error, setError] = useState<string | null>(null);
   const pollInFlight = useRef(false);
 
-  const load = useCallback(async (showLoading = false, mode: 'full' | 'head' = 'full') => {
-    if (!id) return;
-    if (mode === 'head' && pollInFlight.current) return;
-    if (mode === 'head') pollInFlight.current = true;
-    if (showLoading) {
-      setLoading(true);
-      setError(null);
-    }
-    try {
-      const [projectRow, commitRows] = await Promise.all([
-        api.getProject(id),
-        api.getCommits(id, mode === 'head' ? 1 : HISTORY_LIMIT),
-      ]);
-      setProject(projectRow);
-      setCommits((current) =>
-        mode === 'head' ? mergeCommitHead(current, commitRows, HISTORY_LIMIT) : commitRows,
-      );
-      setOpenSha((current) => current ?? commitRows[0]?.sha ?? null);
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      if (mode === 'head') pollInFlight.current = false;
-      setLoading(false);
-    }
-  }, [id]);
+  const load = useCallback(
+    async (showLoading = false, mode: 'full' | 'head' = 'full') => {
+      if (!id) return;
+      if (mode === 'head' && pollInFlight.current) return;
+      if (mode === 'head') pollInFlight.current = true;
+      if (showLoading) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const [projectRow, commitRows] = await Promise.all([
+          api.getProject(id),
+          api.getCommits(id, mode === 'head' ? 1 : HISTORY_LIMIT),
+        ]);
+        setProject(projectRow);
+        setCommits((current) =>
+          mode === 'head' ? mergeCommitHead(current, commitRows, HISTORY_LIMIT) : commitRows,
+        );
+        setOpenSha((current) => current ?? commitRows[0]?.sha ?? null);
+        setError(null);
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        if (mode === 'head') pollInFlight.current = false;
+        setLoading(false);
+      }
+    },
+    [id],
+  );
 
   useEffect(() => {
     setProject(null);
@@ -108,13 +113,7 @@ export default function ProjectCommits() {
         ]}
       />
 
-      {error && (
-        <LoadErrorState
-          className="mb-4"
-          message={error}
-          onRetry={() => void load(true)}
-        />
-      )}
+      {error && <LoadErrorState className="mb-4" message={error} onRetry={() => void load(true)} />}
       {loading ? (
         <ContentLoading label="Loading commit history" />
       ) : project ? (

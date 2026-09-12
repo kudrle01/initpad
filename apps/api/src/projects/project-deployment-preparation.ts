@@ -7,11 +7,7 @@ import { DeploymentService } from '../deployment/deployment.service';
 import { exportVersion } from '../deployment/providers/source-export';
 import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
 import { ProviderKind, TemplateManifest } from '../domain/types';
-import {
-  RepoArchive,
-  ScmActor,
-  ScmRepositoryRef,
-} from '../scm/scm-provider';
+import { RepoArchive, ScmActor, ScmRepositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { registryImageRef } from './project-deployment-identity';
 
@@ -49,8 +45,7 @@ export class ProjectDeploymentPreparation {
 
   async prepare(input: PrepareDeploymentInput): Promise<PreparedDeployment> {
     const useBuildExtract = input.provider === 'sftp' && !!input.template.buildArtifactPath;
-    const needsSource =
-      !useBuildExtract && (input.provider !== 'docker' || !input.useRegistry);
+    const needsSource = !useBuildExtract && (input.provider !== 'docker' || !input.useRegistry);
     let source: RepoArchive | null = null;
     let extractedDir: string | null = null;
     let repoPath = input.projectRepoPath;
@@ -72,11 +67,7 @@ export class ProjectDeploymentPreparation {
         repoPath = join(extractedDir, basename(input.template.buildArtifactPath!));
         artifactDir = undefined;
         if (input.template.webRoot) {
-          repoPath = prepareProtectedWebLayout(
-            repoPath,
-            extractedDir,
-            input.template.webRoot,
-          );
+          repoPath = prepareProtectedWebLayout(repoPath, extractedDir, input.template.webRoot);
           writableDirs = (input.template.writableDirs ?? []).map(
             (directory) => `${PRIVATE_APP_DIR}/${directory.replace(/^\/+|\/+$/g, '')}`,
           );
@@ -121,7 +112,9 @@ export class ProjectDeploymentPreparation {
     try {
       rmSync(extractedDir, { recursive: true, force: true });
     } catch (error) {
-      this.logger.warn(`Could not clean up extracted deployment artifact: ${(error as Error).message}`);
+      this.logger.warn(
+        `Could not clean up extracted deployment artifact: ${(error as Error).message}`,
+      );
     }
   }
 }

@@ -38,7 +38,9 @@ const HEALTH_PRESENTATION: Record<WorkloadHealth, { status: string; label: strin
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0 rounded-md border border-border bg-secondary/20 p-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
       <p className={`mt-1 truncate text-sm font-medium ${mono ? 'font-mono' : ''}`} title={value}>
         {value}
       </p>
@@ -58,18 +60,21 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
   const [error, setError] = useState<string | null>(null);
   const environmentName = environment?.name ?? null;
 
-  const load = useCallback(async (initial = false) => {
-    if (!environmentName) return;
-    if (initial) setLoading(true);
-    try {
-      setSnapshot(await api.getWorkloadDiagnostic(projectId, environmentName));
-      setError(null);
-    } catch (loadError) {
-      setError((loadError as Error).message);
-    } finally {
-      if (initial) setLoading(false);
-    }
-  }, [environmentName, projectId]);
+  const load = useCallback(
+    async (initial = false) => {
+      if (!environmentName) return;
+      if (initial) setLoading(true);
+      try {
+        setSnapshot(await api.getWorkloadDiagnostic(projectId, environmentName));
+        setError(null);
+      } catch (loadError) {
+        setError((loadError as Error).message);
+      } finally {
+        if (initial) setLoading(false);
+      }
+    },
+    [environmentName, projectId],
+  );
 
   useEffect(() => {
     setSnapshot(null);
@@ -92,11 +97,9 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
     setRequesting(true);
     setError(null);
     try {
-      setSnapshot(await api.requestWorkloadDiagnostic(
-        projectId,
-        environmentName,
-        crypto.randomUUID(),
-      ));
+      setSnapshot(
+        await api.requestWorkloadDiagnostic(projectId, environmentName, crypto.randomUUID()),
+      );
     } catch (requestError) {
       setError((requestError as Error).message);
     } finally {
@@ -112,7 +115,9 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
     <Dialog open={environment !== null} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle><Activity className="h-[18px] w-[18px]" /> Workload diagnostics — {environmentName}</DialogTitle>
+          <DialogTitle>
+            <Activity className="h-[18px] w-[18px]" /> Workload diagnostics — {environmentName}
+          </DialogTitle>
           <DialogDescription>
             A read-only snapshot from {environment?.target?.name ?? 'the Agent target'}. It does not
             deploy, restart or execute a shell command in the workload.
@@ -126,14 +131,20 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
         ) : (
           <div className="flex min-w-0 flex-col gap-4">
             {error && (
-              <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+              <div
+                className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+                role="alert"
+              >
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
             {snapshot && !snapshot.agentOnline && (
-              <div className="flex items-start gap-3 rounded-lg border border-warning/60 bg-warning/10 p-4" role="status">
+              <div
+                className="flex items-start gap-3 rounded-lg border border-warning/60 bg-warning/10 p-4"
+                role="status"
+              >
                 <WifiOff className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
                 <div>
                   <p className="text-sm font-semibold">Agent is offline</p>
@@ -192,9 +203,11 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="flex items-center gap-1.5 text-sm font-semibold">
-                    {snapshot.runtimeState === 'running'
-                      ? <CheckCircle2 className="h-4 w-4 text-success" />
-                      : <CircleStop className="h-4 w-4 text-muted-foreground" />}
+                    {snapshot.runtimeState === 'running' ? (
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                    ) : (
+                      <CircleStop className="h-4 w-4 text-muted-foreground" />
+                    )}
                     Last successful snapshot
                   </p>
                   <span className="text-xs text-muted-foreground">
@@ -204,23 +217,43 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   <Detail label="Runtime" value={snapshot.runtimeState ?? 'unknown'} />
                   <div className="min-w-0 rounded-md border border-border bg-secondary/20 p-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Health</p>
-                    <div className="mt-1"><StatusBadge status={health?.status ?? 'idle'} label={health?.label ?? 'unknown'} /></div>
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Health
+                    </p>
+                    <div className="mt-1">
+                      <StatusBadge
+                        status={health?.status ?? 'idle'}
+                        label={health?.label ?? 'unknown'}
+                      />
+                    </div>
                   </div>
-                  <Detail label="Exit code" value={snapshot.exitCode === null ? '—' : String(snapshot.exitCode)} mono />
+                  <Detail
+                    label="Exit code"
+                    value={snapshot.exitCode === null ? '—' : String(snapshot.exitCode)}
+                    mono
+                  />
                   <Detail label="Revision" value={snapshot.revision?.slice(0, 12) ?? '—'} mono />
                 </div>
                 <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-foreground/[0.035]">
                   <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-                    <p className="flex items-center gap-1.5 text-sm font-medium"><ScrollText className="h-4 w-4" /> Application output</p>
-                    <span className="text-[11px] text-muted-foreground">last 200 lines · max 32 KiB</span>
+                    <p className="flex items-center gap-1.5 text-sm font-medium">
+                      <ScrollText className="h-4 w-4" /> Application output
+                    </p>
+                    <span className="text-[11px] text-muted-foreground">
+                      last 200 lines · max 32 KiB
+                    </span>
                   </div>
                   {snapshot.logs ? (
-                    <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-foreground" tabIndex={0}>
+                    <pre
+                      className="max-h-72 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-foreground"
+                      tabIndex={0}
+                    >
                       {snapshot.logs}
                     </pre>
                   ) : (
-                    <p className="p-4 text-sm text-muted-foreground">No output was captured in the bounded window.</p>
+                    <p className="p-4 text-sm text-muted-foreground">
+                      No output was captured in the bounded window.
+                    </p>
                   )}
                 </div>
               </>
@@ -229,22 +262,30 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                 <ScrollText className="mx-auto h-7 w-7 text-muted-foreground" />
                 <p className="mt-2 text-sm font-medium">No diagnostic snapshot yet</p>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                  Run diagnostics to read container state, health, exit code and bounded recent output.
+                  Run diagnostics to read container state, health, exit code and bounded recent
+                  output.
                 </p>
               </div>
             ) : null}
 
             <p className="text-xs leading-relaxed text-muted-foreground">
               Application output can contain sensitive business data. Access is limited to project
-              members who can change the project, and each refresh replaces the previous stored output.
+              members who can change the project, and each refresh replaces the previous stored
+              output.
             </p>
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
           <Button disabled={loading || requesting || active} onClick={requestSnapshot}>
-            {requesting || active ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+            {requesting || active ? (
+              <Spinner className="h-4 w-4" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
             {active ? 'Diagnostics running' : observed ? 'Refresh diagnostics' : 'Run diagnostics'}
           </Button>
         </DialogFooter>

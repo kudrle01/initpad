@@ -38,7 +38,8 @@ function build(opts: {
   const prisma = { user: { findUnique: jest.fn(async () => opts.user ?? null) } };
   const reflector = {
     getAllAndOverride: jest.fn((key: string) =>
-      key === PUBLIC_ENDPOINT ? opts.publicEndpoint : (opts.allowDuringChange ?? false)),
+      key === PUBLIC_ENDPOINT ? opts.publicEndpoint : (opts.allowDuringChange ?? false),
+    ),
   } as unknown as Reflector;
   const guard = new JwtAuthGuard(jwt as never, prisma as never, reflector);
   return { guard, jwt, prisma, reflector };
@@ -92,7 +93,10 @@ describe('JwtAuthGuard', () => {
   });
 
   it('rejects a token whose generation is stale', async () => {
-    const { guard } = build({ payload: { sub: 'u1', ver: 0 }, user: { ...activeUser, tokenVersion: 3 } });
+    const { guard } = build({
+      payload: { sub: 'u1', ver: 0 },
+      user: { ...activeUser, tokenVersion: 3 },
+    });
     const { ctx } = contextWith('tok');
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
   });
@@ -104,13 +108,19 @@ describe('JwtAuthGuard', () => {
   });
 
   it('blocks ordinary endpoints while a password change is required', async () => {
-    const { guard } = build({ user: { ...activeUser, mustChangePassword: true }, allowDuringChange: false });
+    const { guard } = build({
+      user: { ...activeUser, mustChangePassword: true },
+      allowDuringChange: false,
+    });
     const { ctx } = contextWith('tok');
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('allows explicitly whitelisted endpoints during a forced change', async () => {
-    const { guard } = build({ user: { ...activeUser, mustChangePassword: true }, allowDuringChange: true });
+    const { guard } = build({
+      user: { ...activeUser, mustChangePassword: true },
+      allowDuringChange: true,
+    });
     const { ctx } = contextWith('tok');
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });

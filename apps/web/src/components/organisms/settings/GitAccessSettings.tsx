@@ -97,8 +97,8 @@ export function GitAccessSettings() {
       {access && !access.token && (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
-            No personal access token is available. Generate one in Gitea with repository scope
-            and use it as the password when cloning.
+            No personal access token is available. Generate one in Gitea with repository scope and
+            use it as the password when cloning.
           </p>
           <a
             href={`${access.giteaUrl}/user/settings/applications`}

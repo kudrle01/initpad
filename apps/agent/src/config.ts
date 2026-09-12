@@ -13,7 +13,9 @@ async function ensureConfigDirectory(path: string): Promise<string> {
   }
   if (process.platform !== 'win32' && (directoryStat.mode & 0o077) !== 0) {
     if (path !== DEFAULT_CONFIG_PATH) {
-      throw new Error(`Agent config directory permissions are too broad: ${directory} must be mode 0700`);
+      throw new Error(
+        `Agent config directory permissions are too broad: ${directory} must be mode 0700`,
+      );
     }
     await chmod(directory, 0o700);
   }
@@ -34,13 +36,12 @@ function assertConfig(value: unknown): asserts value is AgentConfig {
     !Number.isInteger(config.credentialGeneration) ||
     Number(config.credentialGeneration) < 1 ||
     hasPreviousCredential !== hasPreviousGeneration ||
-    (hasPreviousCredential && (
-      typeof config.previousCredential !== 'string' ||
-      !/^initpad_agent_[A-Za-z0-9_-]{43}$/.test(config.previousCredential) ||
-      !Number.isInteger(config.previousCredentialGeneration) ||
-      Number(config.previousCredentialGeneration) < 1 ||
-      Number(config.previousCredentialGeneration) >= Number(config.credentialGeneration)
-    )) ||
+    (hasPreviousCredential &&
+      (typeof config.previousCredential !== 'string' ||
+        !/^initpad_agent_[A-Za-z0-9_-]{43}$/.test(config.previousCredential) ||
+        !Number.isInteger(config.previousCredentialGeneration) ||
+        Number(config.previousCredentialGeneration) < 1 ||
+        Number(config.previousCredentialGeneration) >= Number(config.credentialGeneration))) ||
     config.protocolVersion !== 1 ||
     typeof config.enrolledAt !== 'string'
   ) {
@@ -111,9 +112,7 @@ export function normalizeControlPlaneUrl(input: string, allowInsecureHttp = fals
     throw new Error('Control-plane URL must not contain credentials, a query or a fragment');
   }
   const loopback =
-    url.hostname === 'localhost' ||
-    url.hostname === '::1' ||
-    url.hostname.startsWith('127.');
+    url.hostname === 'localhost' || url.hostname === '::1' || url.hostname.startsWith('127.');
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && (allowInsecureHttp || loopback))) {
     throw new Error('HTTPS is required; use --allow-insecure-http only for a trusted local test');
   }

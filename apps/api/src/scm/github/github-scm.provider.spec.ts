@@ -25,9 +25,14 @@ function make(fetchImpl: jest.Mock) {
   const installations = {
     findByOwner: jest.fn(async () => ({ id: 'installation-row-1', installationId: '42' })),
     findById: jest.fn(async () => ({
-      id: 'installation-row-1', installationId: '42', accountId: '987654',
-      accountLogin: 'acme', accountType: 'Organization', repositorySelection: 'selected',
-      suspendedAt: null, deletedAt: null,
+      id: 'installation-row-1',
+      installationId: '42',
+      accountId: '987654',
+      accountLogin: 'acme',
+      accountType: 'Organization',
+      repositorySelection: 'selected',
+      suspendedAt: null,
+      deletedAt: null,
     })),
     tokenForOwner: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })),
     tokenForBinding: jest.fn(async () => ({ token: 'ghs_x', expiresAt: 'z' })),
@@ -63,8 +68,24 @@ describe('GitHubScmProvider reads', () => {
       ok: true,
       json: async () => ({
         repositories: [
-          { id: 101, name: 'api', full_name: 'acme/api', private: true, default_branch: 'main', updated_at: 't', size: 42 },
-          { id: 102, name: 'fresh', full_name: 'acme/fresh', private: false, default_branch: 'main', updated_at: 't', size: 0 },
+          {
+            id: 101,
+            name: 'api',
+            full_name: 'acme/api',
+            private: true,
+            default_branch: 'main',
+            updated_at: 't',
+            size: 42,
+          },
+          {
+            id: 102,
+            name: 'fresh',
+            full_name: 'acme/fresh',
+            private: false,
+            default_branch: 'main',
+            updated_at: 't',
+            size: 0,
+          },
         ],
       }),
     }));
@@ -74,8 +95,11 @@ describe('GitHubScmProvider reads', () => {
       permissions: { metadata: 'read', contents: 'read' },
     });
     expect(repos[0]).toMatchObject({
-      repositoryId: '101', name: 'api', fullName: 'acme/api',
-      installationId: 'installation-row-1', empty: false,
+      repositoryId: '101',
+      name: 'api',
+      fullName: 'acme/api',
+      installationId: 'installation-row-1',
+      empty: false,
     });
     expect(repos[1].empty).toBe(true); // size 0
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -85,7 +109,10 @@ describe('GitHubScmProvider reads', () => {
 
   it('paginates all installation repositories', async () => {
     const firstPage = Array.from({ length: 100 }, (_, id) => ({
-      id, name: `repo-${id}`, full_name: `acme/repo-${id}`, private: true,
+      id,
+      name: `repo-${id}`,
+      full_name: `acme/repo-${id}`,
+      private: true,
     }));
     const fetchMock = jest
       .fn()
@@ -104,7 +131,14 @@ describe('GitHubScmProvider reads', () => {
   it('reads and decodes a file, and returns null on 404', async () => {
     const fetchMock = jest
       .fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ content: Buffer.from('FROM node').toString('base64'), encoding: 'base64' }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: Buffer.from('FROM node').toString('base64'),
+          encoding: 'base64',
+        }),
+      })
       .mockResolvedValueOnce({ ok: false, status: 404 });
     const { provider } = make(fetchMock);
     expect(await provider.readFile(repository(), 'Dockerfile', 'main', actor)).toBe('FROM node');
@@ -113,7 +147,9 @@ describe('GitHubScmProvider reads', () => {
 
   it('does not turn a permission failure into a missing file', async () => {
     const { provider } = make(jest.fn(async () => ({ ok: false, status: 403 })));
-    await expect(provider.readFile(repository(), 'Dockerfile', 'main', actor)).rejects.toThrow('HTTP 403');
+    await expect(provider.readFile(repository(), 'Dockerfile', 'main', actor)).rejects.toThrow(
+      'HTTP 403',
+    );
   });
 
   it('reports a missing repository only on 404, never on error', async () => {
@@ -121,37 +157,71 @@ describe('GitHubScmProvider reads', () => {
     expect(await provider.repoMissing(repository('gone'), actor)).toBe(true);
     const { provider: p2 } = make(jest.fn(async () => ({ status: 200, ok: true })));
     expect(await p2.repoMissing(repository('there'), actor)).toBe(false);
-    const installations = { tokenForBinding: jest.fn(async () => { throw new Error('no installation'); }) };
+    const installations = {
+      tokenForBinding: jest.fn(async () => {
+        throw new Error('no installation');
+      }),
+    };
     const p3 = new GitHubScmProvider(installations as never, {} as never);
     expect(await p3.repoMissing(repository('x'), actor)).toBe(false);
   });
 
   it('maps commits and combined statuses', async () => {
-    const commits = make(jest.fn(async () => ({ ok: true, json: async () => ([{ sha: 'abc', commit: { message: 'init', author: { name: 'Dev', date: 'd' } } }]) })));
-    expect(await commits.provider.listCommits(repository(), actor)).toEqual([{ sha: 'abc', message: 'init', author: 'Dev', date: 'd' }]);
+    const commits = make(
+      jest.fn(async () => ({
+        ok: true,
+        json: async () => [
+          { sha: 'abc', commit: { message: 'init', author: { name: 'Dev', date: 'd' } } },
+        ],
+      })),
+    );
+    expect(await commits.provider.listCommits(repository(), actor)).toEqual([
+      { sha: 'abc', message: 'init', author: 'Dev', date: 'd' },
+    ]);
 
-    const statuses = make(jest.fn(async () => ({ ok: true, json: async () => ({ statuses: [{ context: 'ci', state: 'success', target_url: 'https://x' }] }) })));
-    expect(await statuses.provider.listCommitStatuses(repository(), 'abc', actor)).toEqual([{ context: 'ci', status: 'success', targetUrl: 'https://x' }]);
+    const statuses = make(
+      jest.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          statuses: [{ context: 'ci', state: 'success', target_url: 'https://x' }],
+        }),
+      })),
+    );
+    expect(await statuses.provider.listCommitStatuses(repository(), 'abc', actor)).toEqual([
+      { context: 'ci', status: 'success', targetUrl: 'https://x' },
+    ]);
   });
 
   it('maps the latest GitHub Actions run jobs with clickable URLs', async () => {
-    const actions = make(jest.fn(async (url: string) => {
-      if (url.includes('/actions/workflows/ci.yml/runs?')) {
-        return { ok: true, json: async () => ({ workflow_runs: [{ id: 42 }] }) };
-      }
-      if (url.includes('/actions/runs/42/jobs?')) {
-        return {
-          ok: true,
-          json: async () => ({
-            jobs: [
-              { name: 'build', status: 'completed', conclusion: 'success', html_url: 'https://x/build' },
-              { name: 'test', status: 'in_progress', conclusion: null, html_url: 'https://x/test' },
-            ],
-          }),
-        };
-      }
-      return { ok: false, status: 404 };
-    }));
+    const actions = make(
+      jest.fn(async (url: string) => {
+        if (url.includes('/actions/workflows/ci.yml/runs?')) {
+          return { ok: true, json: async () => ({ workflow_runs: [{ id: 42 }] }) };
+        }
+        if (url.includes('/actions/runs/42/jobs?')) {
+          return {
+            ok: true,
+            json: async () => ({
+              jobs: [
+                {
+                  name: 'build',
+                  status: 'completed',
+                  conclusion: 'success',
+                  html_url: 'https://x/build',
+                },
+                {
+                  name: 'test',
+                  status: 'in_progress',
+                  conclusion: null,
+                  html_url: 'https://x/test',
+                },
+              ],
+            }),
+          };
+        }
+        return { ok: false, status: 404 };
+      }),
+    );
     await expect(actions.provider.listCommitStatuses(repository(), 'abc', actor)).resolves.toEqual([
       { context: 'build', status: 'success', targetUrl: 'https://x/build' },
       { context: 'test', status: 'pending', targetUrl: 'https://x/test' },
@@ -168,7 +238,12 @@ describe('GitHubScmProvider reads', () => {
           ok: true,
           json: async () => ({
             jobs: [
-              { name: 'deploy', status: 'completed', conclusion: 'failure', html_url: 'https://x/run-77/deploy' },
+              {
+                name: 'deploy',
+                status: 'completed',
+                conclusion: 'failure',
+                html_url: 'https://x/run-77/deploy',
+              },
             ],
           }),
         };
@@ -187,22 +262,29 @@ describe('GitHubScmProvider reads', () => {
   });
 
   it('falls back to GitHub Check Runs when no Actions run is available', async () => {
-    const checks = make(jest.fn(async (url: string) => {
-      if (url.includes('/actions/workflows/ci.yml/runs?')) {
-        return { ok: true, json: async () => ({ workflow_runs: [] }) };
-      }
-      if (url.includes('/check-runs?')) {
-        return {
-          ok: true,
-          json: async () => ({
-            check_runs: [
-              { name: 'build', status: 'completed', conclusion: 'success', details_url: 'https://x/check' },
-            ],
-          }),
-        };
-      }
-      return { ok: false, status: 404 };
-    }));
+    const checks = make(
+      jest.fn(async (url: string) => {
+        if (url.includes('/actions/workflows/ci.yml/runs?')) {
+          return { ok: true, json: async () => ({ workflow_runs: [] }) };
+        }
+        if (url.includes('/check-runs?')) {
+          return {
+            ok: true,
+            json: async () => ({
+              check_runs: [
+                {
+                  name: 'build',
+                  status: 'completed',
+                  conclusion: 'success',
+                  details_url: 'https://x/check',
+                },
+              ],
+            }),
+          };
+        }
+        return { ok: false, status: 404 };
+      }),
+    );
     await expect(checks.provider.listCommitStatuses(repository(), 'abc', actor)).resolves.toEqual([
       { context: 'build', status: 'success', targetUrl: 'https://x/check' },
     ]);
@@ -210,8 +292,9 @@ describe('GitHubScmProvider reads', () => {
 
   it('requires an explicit workspace-authorized installation for provisioning', async () => {
     const { provider } = make(jest.fn());
-    await expect(provider.provision('api', '/tmp', actor, 'deploy-secret'))
-      .rejects.toThrow('workspace-authorized');
+    await expect(provider.provision('api', '/tmp', actor, 'deploy-secret')).rejects.toThrow(
+      'workspace-authorized',
+    );
   });
 
   it('downloads and unwraps an exact GitHub tarball', async () => {
@@ -242,10 +325,12 @@ describe('GitHubScmProvider reads', () => {
     const { provider } = make(jest.fn());
     try {
       await provider.initLocal(dir, { name: 'InitPad Test', email: 'test@initpad.local' });
-      expect(execFileSync('git', ['branch', '--show-current'], { cwd: dir, encoding: 'utf8' }).trim()).toBe('main');
-      expect(execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: dir, encoding: 'utf8' }).trim()).toBe(
-        'init: scaffold from template',
-      );
+      expect(
+        execFileSync('git', ['branch', '--show-current'], { cwd: dir, encoding: 'utf8' }).trim(),
+      ).toBe('main');
+      expect(
+        execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: dir, encoding: 'utf8' }).trim(),
+      ).toBe('init: scaffold from template');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -265,7 +350,7 @@ describe('GitHubScmProvider reads', () => {
         '    name: docker build',
         '    steps:',
         '      - run: |',
-        '          IMAGE=$(echo "${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}" | tr \'[:upper:]\' \'[:lower:]\')',
+        "          IMAGE=$(echo \"${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}\" | tr '[:upper:]' '[:lower:]')",
         '          echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \\',
         '            docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin',
         '          docker build -t "$IMAGE" .',
@@ -290,7 +375,9 @@ describe('GitHubScmProvider reads', () => {
       expect(workflow).toContain('permissions:\n  contents: read');
       expect(workflow).toContain('docker save "$IMAGE" -o initpad-image.tar');
       expect(workflow).toContain('${{ github.sha }}-${{ github.run_id }}');
-      expect(workflow).toContain('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+      expect(workflow).toContain(
+        'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+      );
       expect(workflow).toContain('archive: false');
       expect(workflow).toContain('"artifactId":"${{ needs.docker.outputs.artifact-id }}"');
       expect(workflow).not.toContain('INITPAD_REGISTRY_PASSWORD');
@@ -304,22 +391,32 @@ describe('GitHubScmProvider reads', () => {
   it('resolves an immutable Actions artifact against repository, run SHA and digest', async () => {
     const digest = 'a'.repeat(64);
     const sha = 'b'.repeat(40);
-    const { provider, installations } = make(jest.fn(async () => new Response(JSON.stringify({
-      id: 987,
-      name: 'initpad-image.tar',
-      size_in_bytes: 123,
-      expired: false,
-      expires_at: '2026-07-21T00:00:00Z',
-      digest: `sha256:${digest}`,
-      workflow_run: { id: 456, repository_id: 101, head_sha: sha },
-    }), { status: 200 })));
+    const { provider, installations } = make(
+      jest.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              id: 987,
+              name: 'initpad-image.tar',
+              size_in_bytes: 123,
+              expired: false,
+              expires_at: '2026-07-21T00:00:00Z',
+              digest: `sha256:${digest}`,
+              workflow_run: { id: 456, repository_id: 101, head_sha: sha },
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
 
-    await expect(provider.resolveBuildArtifact(repository(), {
-      providerArtifactId: '987',
-      digest,
-      commitSha: sha,
-      expectedName: 'initpad-image.tar',
-    })).resolves.toMatchObject({
+    await expect(
+      provider.resolveBuildArtifact(repository(), {
+        providerArtifactId: '987',
+        digest,
+        commitSha: sha,
+        expectedName: 'initpad-image.tar',
+      }),
+    ).resolves.toMatchObject({
       provider: 'github-actions',
       providerArtifactId: '987',
       providerRunId: '456',
@@ -334,78 +431,106 @@ describe('GitHubScmProvider reads', () => {
 
   it('rejects artifact metadata from another commit', async () => {
     const digest = 'a'.repeat(64);
-    const { provider } = make(jest.fn(async () => new Response(JSON.stringify({
-      id: 987,
-      name: 'initpad-image.tar',
-      size_in_bytes: 123,
-      expired: false,
-      expires_at: '2026-07-21T00:00:00Z',
-      digest: `sha256:${digest}`,
-      workflow_run: { id: 456, repository_id: 101, head_sha: 'c'.repeat(40) },
-    }), { status: 200 })));
-    await expect(provider.resolveBuildArtifact(repository(), {
-      providerArtifactId: '987', digest, commitSha: 'b'.repeat(40), expectedName: 'initpad-image.tar',
-    })).rejects.toThrow('identity does not match');
+    const { provider } = make(
+      jest.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              id: 987,
+              name: 'initpad-image.tar',
+              size_in_bytes: 123,
+              expired: false,
+              expires_at: '2026-07-21T00:00:00Z',
+              digest: `sha256:${digest}`,
+              workflow_run: { id: 456, repository_id: 101, head_sha: 'c'.repeat(40) },
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    await expect(
+      provider.resolveBuildArtifact(repository(), {
+        providerArtifactId: '987',
+        digest,
+        commitSha: 'b'.repeat(40),
+        expectedName: 'initpad-image.tar',
+      }),
+    ).rejects.toThrow('identity does not match');
   });
 
   it('recovers the newest non-expired Actions artifact for an exact commit', async () => {
     const digest = 'd'.repeat(64);
     const sha = 'b'.repeat(40);
-    const { provider } = make(jest.fn(async (url: string) => {
-      if (url.includes('/actions/artifacts?name=')) {
-        return new Response(JSON.stringify({
-          artifacts: [
-            {
-              id: 900,
-              name: 'initpad-image.tar',
-              digest: `sha256:${digest}`,
-              expired: true,
-              created_at: '2026-07-20T19:00:00Z',
-              workflow_run: { repository_id: 101, head_sha: sha },
-            },
-            {
+    const { provider } = make(
+      jest.fn(async (url: string) => {
+        if (url.includes('/actions/artifacts?name=')) {
+          return new Response(
+            JSON.stringify({
+              artifacts: [
+                {
+                  id: 900,
+                  name: 'initpad-image.tar',
+                  digest: `sha256:${digest}`,
+                  expired: true,
+                  created_at: '2026-07-20T19:00:00Z',
+                  workflow_run: { repository_id: 101, head_sha: sha },
+                },
+                {
+                  id: 901,
+                  name: 'initpad-image.tar',
+                  digest: `sha256:${digest}`,
+                  expired: false,
+                  created_at: '2026-07-20T20:00:00Z',
+                  workflow_run: { repository_id: 101, head_sha: sha },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/actions/artifacts/901')) {
+          return new Response(
+            JSON.stringify({
               id: 901,
               name: 'initpad-image.tar',
-              digest: `sha256:${digest}`,
+              size_in_bytes: 123,
               expired: false,
-              created_at: '2026-07-20T20:00:00Z',
-              workflow_run: { repository_id: 101, head_sha: sha },
-            },
-          ],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/actions/artifacts/901')) {
-        return new Response(JSON.stringify({
-          id: 901,
-          name: 'initpad-image.tar',
-          size_in_bytes: 123,
-          expired: false,
-          expires_at: '2026-07-21T00:00:00Z',
-          digest: `sha256:${digest}`,
-          workflow_run: { id: 456, repository_id: 101, head_sha: sha },
-        }), { status: 200 });
-      }
-      return new Response(null, { status: 404 });
-    }));
+              expires_at: '2026-07-21T00:00:00Z',
+              digest: `sha256:${digest}`,
+              workflow_run: { id: 456, repository_id: 101, head_sha: sha },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(null, { status: 404 });
+      }),
+    );
 
-    await expect(provider.findBuildArtifact(repository(), sha, 'initpad-image.tar'))
-      .resolves.toMatchObject({
-        providerArtifactId: '901',
-        providerRunId: '456',
-        commitSha: sha,
-        digest,
-      });
+    await expect(
+      provider.findBuildArtifact(repository(), sha, 'initpad-image.tar'),
+    ).resolves.toMatchObject({
+      providerArtifactId: '901',
+      providerRunId: '456',
+      commitSha: sha,
+      digest,
+    });
   });
 
   it('returns null when no Actions artifact belongs to the requested commit', async () => {
-    const { provider } = make(jest.fn(async () => new Response(JSON.stringify({
-      artifacts: [],
-    }), { status: 200 })));
-    await expect(provider.findBuildArtifact(
-      repository(),
-      'b'.repeat(40),
-      'initpad-image.tar',
-    )).resolves.toBeNull();
+    const { provider } = make(
+      jest.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              artifacts: [],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    await expect(
+      provider.findBuildArtifact(repository(), 'b'.repeat(40), 'initpad-image.tar'),
+    ).resolves.toBeNull();
   });
 
   it('streams a direct artifact to a private temp file and verifies its bytes', async () => {
@@ -413,9 +538,14 @@ describe('GitHubScmProvider reads', () => {
     const digest = createHash('sha256').update(bytes).digest('hex');
     const { provider } = make(jest.fn(async () => new Response(bytes, { status: 200 })));
     const download = await provider.downloadBuildArtifact(repository(), {
-      provider: 'github-actions', providerArtifactId: '987', providerRunId: '456',
-      name: 'initpad-image.tar', digest, commitSha: 'b'.repeat(40),
-      sizeBytes: bytes.length, expiresAt: new Date('2026-07-21T00:00:00Z'),
+      provider: 'github-actions',
+      providerArtifactId: '987',
+      providerRunId: '456',
+      name: 'initpad-image.tar',
+      digest,
+      commitSha: 'b'.repeat(40),
+      sizeBytes: bytes.length,
+      expiresAt: new Date('2026-07-21T00:00:00Z'),
     });
     try {
       expect(readFileSync(download.filePath)).toEqual(bytes);
@@ -455,8 +585,11 @@ describe('GitHubScmProvider writes', () => {
     await expect(
       provider.provision('api', '/generated', actor, 'deploy-secret', target),
     ).resolves.toMatchObject({
-      provider: 'github', repositoryId: '101', fullName: 'acme/api',
-      installationId: 'installation-row-1', defaultBranch: 'main',
+      provider: 'github',
+      repositoryId: '101',
+      fullName: 'acme/api',
+      installationId: 'installation-row-1',
+      defaultBranch: 'main',
     });
     expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toContain('/orgs/acme/repos');
     expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
@@ -464,22 +597,35 @@ describe('GitHubScmProvider writes', () => {
     });
     expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
       permissions: {
-        metadata: 'read', contents: 'write', workflows: 'write',
+        metadata: 'read',
+        contents: 'write',
+        workflows: 'write',
       },
     });
     expect(userCredentials.accessTokenForUser).not.toHaveBeenCalled();
-    expect(push).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'acme/api' }), '/generated', 'ghs_x');
+    expect(push).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'acme/api' }),
+      '/generated',
+      'ghs_x',
+    );
   });
 
   it('creates a personal repository with the initiating user credential', async () => {
     const fetchMock = jest.fn(async () => ({
-      ok: true, status: 201, json: async () => createdRepository(),
+      ok: true,
+      status: 201,
+      json: async () => createdRepository(),
     }));
     const { provider, installations, userCredentials } = make(fetchMock);
     installations.findById.mockResolvedValueOnce({
-      id: 'installation-row-1', installationId: '42', accountId: '987654',
-      accountLogin: 'acme', accountType: 'User', repositorySelection: 'selected',
-      suspendedAt: null, deletedAt: null,
+      id: 'installation-row-1',
+      installationId: '42',
+      accountId: '987654',
+      accountLogin: 'acme',
+      accountType: 'User',
+      repositorySelection: 'selected',
+      suspendedAt: null,
+      deletedAt: null,
     });
     jest.spyOn(provider as any, 'setRepoSecrets').mockResolvedValue(undefined);
     jest.spyOn(provider as any, 'pushScaffold').mockResolvedValue(undefined);
@@ -487,13 +633,16 @@ describe('GitHubScmProvider writes', () => {
     await provider.provision('api', '/generated', actor, 'deploy-secret', target);
 
     expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toContain('/user/repos');
-    expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers)
-      .toMatchObject({ Authorization: 'Bearer ghu_user' });
+    expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers).toMatchObject({
+      Authorization: 'Bearer ghu_user',
+    });
     expect(userCredentials.accessTokenForUser).toHaveBeenCalledWith('user-1');
     expect(userCredentials.assertAccountForUser).toHaveBeenCalledWith('user-1', '987654');
     expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
       permissions: {
-        metadata: 'read', contents: 'write', workflows: 'write',
+        metadata: 'read',
+        contents: 'write',
+        workflows: 'write',
       },
     });
   });
@@ -510,8 +659,7 @@ describe('GitHubScmProvider writes', () => {
       provider.provision('api', '/generated', actor, 'deploy-secret', target),
     ).rejects.toThrow('public key');
     const deleteCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE') as
-      | [string, RequestInit]
-      | undefined;
+      [string, RequestInit] | undefined;
     expect(deleteCall?.[0]).toContain('/repos/acme/api');
   });
 
@@ -526,8 +674,7 @@ describe('GitHubScmProvider writes', () => {
       provider.provision('api', '/generated', actor, 'deploy-secret', target),
     ).rejects.toThrow('invalid repository identity');
     const deleteCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE') as
-      | [string, RequestInit]
-      | undefined;
+      [string, RequestInit] | undefined;
     expect(deleteCall?.[0]).toContain('/repos/acme/api');
   });
 
@@ -572,7 +719,7 @@ describe('GitHubScmProvider writes', () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ([{ login: 'dev', role_name: 'maintain' }]),
+        json: async () => [{ login: 'dev', role_name: 'maintain' }],
       })
       .mockResolvedValueOnce({ ok: true, status: 204 });
     const { provider, installations } = make(fetchMock);
@@ -589,7 +736,7 @@ describe('GitHubScmProvider writes', () => {
   it('does not turn inherited organization access into a direct grant', async () => {
     const fetchMock = jest.fn(async () => ({
       ok: true,
-      json: async () => ([{ login: 'other', role_name: 'push' }]),
+      json: async () => [{ login: 'other', role_name: 'push' }],
     }));
     const { provider } = make(fetchMock);
     await expect(provider.getCollaboratorAccess(repository(), 'dev')).resolves.toBeNull();
@@ -598,13 +745,19 @@ describe('GitHubScmProvider writes', () => {
   it('replaces stale retry tags and creates a new one at the sha', async () => {
     const fetchMock = jest
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ([{ ref: 'refs/tags/initpad-retry-old' }]) }) // list
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ ref: 'refs/tags/initpad-retry-old' }],
+      }) // list
       .mockResolvedValueOnce({ ok: true, status: 204 }) // delete stale (deleteTag → new token + DELETE)
       .mockResolvedValueOnce({ ok: true, status: 201 }); // create
     const { provider } = make(fetchMock);
     const tag = await provider.createRetryTag(repository(), 'deadbeef', actor);
     expect(tag).toMatch(/^initpad-retry-/);
-    const createCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1] as unknown as [string, RequestInit];
+    const createCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1] as unknown as [
+      string,
+      RequestInit,
+    ];
     expect(createCall[0]).toContain('/repos/acme/api/git/refs');
     expect(JSON.parse(createCall[1].body as string).sha).toBe('deadbeef');
   });
@@ -690,12 +843,14 @@ describe('GitHubScmProvider writes', () => {
       String(url).endsWith('/actions/secrets/INITPAD_PLATFORM_URL'),
     ) as unknown as [string, RequestInit];
     const platformBody = JSON.parse(platformCall[1].body as string) as { encrypted_value: string };
-    expect(sodium.crypto_box_seal_open(
-      sodium.from_base64(platformBody.encrypted_value, sodium.base64_variants.ORIGINAL),
-      keyPair.publicKey,
-      keyPair.privateKey,
-      'text',
-    )).toBe('https://initpad.example');
+    expect(
+      sodium.crypto_box_seal_open(
+        sodium.from_base64(platformBody.encrypted_value, sodium.base64_variants.ORIGINAL),
+        keyPair.publicKey,
+        keyPair.privateKey,
+        'text',
+      ),
+    ).toBe('https://initpad.example');
   });
 
   it('uses the organization GHCR endpoint for organization installations', async () => {

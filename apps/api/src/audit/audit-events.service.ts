@@ -26,28 +26,32 @@ export interface RecordAuditEvent {
 
 const IDENTIFIER = /^[a-z][a-z0-9_.-]*$/;
 const RESOURCE_TYPE = /^[a-z][a-z0-9_-]*$/;
-const SENSITIVE_DETAIL_KEY = /(password|secret|token|credential|authorization|private[_-]?key|access[_-]?key|config[_-]?value|logs?)/i;
+const SENSITIVE_DETAIL_KEY =
+  /(password|secret|token|credential|authorization|private[_-]?key|access[_-]?key|config[_-]?value|logs?)/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function uniqueViolation(error: unknown): boolean {
-  return typeof error === 'object'
-    && error !== null
-    && 'code' in error
-    && (error as { code?: unknown }).code === 'P2002';
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
 
 function deploymentAction(kind: string, stage: 'requested' | 'completed'): string {
-  const operation = kind === 'promote'
-    ? 'promotion'
-    : kind === 'rollback'
-      ? 'rollback'
-      : kind === 'start'
-        ? 'start'
-        : kind === 'stop'
-          ? 'stop'
-          : kind === 'remove'
-            ? 'teardown'
-            : 'deployment';
+  const operation =
+    kind === 'promote'
+      ? 'promotion'
+      : kind === 'rollback'
+        ? 'rollback'
+        : kind === 'start'
+          ? 'start'
+          : kind === 'stop'
+            ? 'stop'
+            : kind === 'remove'
+              ? 'teardown'
+              : 'deployment';
   return `environment.${operation}_${stage}`;
 }
 
@@ -56,7 +60,9 @@ function provisioningAction(kind: string, stage: 'requested' | 'completed'): str
   return `project.${operation}_${stage}`;
 }
 
-function safeDetails(details?: Record<string, AuditDetailValue>): Prisma.InputJsonObject | undefined {
+function safeDetails(
+  details?: Record<string, AuditDetailValue>,
+): Prisma.InputJsonObject | undefined {
   if (!details) return undefined;
   const entries = Object.entries(details);
   if (entries.length > 20) throw new Error('Audit event details may contain at most 20 fields');
@@ -235,30 +241,39 @@ export class AuditEventsService {
           })
         : [],
     ]);
-    const operationState = new Map<string, {
-      kind: string;
-      status: string;
-      phase: string | null;
-      projectId: string | null;
-    }>([
-      ...deployments.map((operation) => [
-        `deployment:${operation.id}`,
-        {
-          kind: operation.kind,
-          status: operation.status,
-          phase: operation.phase,
-          projectId: operation.environment.projectId,
-        },
-      ] as const),
-      ...provisioning.map((operation) => [
-        `provisioning:${operation.id}`,
-        {
-          kind: operation.kind,
-          status: operation.status,
-          phase: operation.step,
-          projectId: operation.projectId,
-        },
-      ] as const),
+    const operationState = new Map<
+      string,
+      {
+        kind: string;
+        status: string;
+        phase: string | null;
+        projectId: string | null;
+      }
+    >([
+      ...deployments.map(
+        (operation) =>
+          [
+            `deployment:${operation.id}`,
+            {
+              kind: operation.kind,
+              status: operation.status,
+              phase: operation.phase,
+              projectId: operation.environment.projectId,
+            },
+          ] as const,
+      ),
+      ...provisioning.map(
+        (operation) =>
+          [
+            `provisioning:${operation.id}`,
+            {
+              kind: operation.kind,
+              status: operation.status,
+              phase: operation.step,
+              projectId: operation.projectId,
+            },
+          ] as const,
+      ),
     ]);
     return {
       items: items.map((row) => ({
@@ -275,18 +290,19 @@ export class AuditEventsService {
           id: row.resourceId,
           name: row.resourceName,
         },
-        operation: row.operationType && row.operationId
-          ? {
-              type: row.operationType as AuditOperationType,
-              id: row.operationId,
-              ...(operationState.get(`${row.operationType}:${row.operationId}`) ?? {
-                kind: 'unknown',
-                status: 'removed',
-                phase: null,
-                projectId: row.resourceId,
-              }),
-            }
-          : null,
+        operation:
+          row.operationType && row.operationId
+            ? {
+                type: row.operationType as AuditOperationType,
+                id: row.operationId,
+                ...(operationState.get(`${row.operationType}:${row.operationId}`) ?? {
+                  kind: 'unknown',
+                  status: 'removed',
+                  phase: null,
+                  projectId: row.resourceId,
+                }),
+              }
+            : null,
         details: row.details,
         createdAt: row.createdAt.toISOString(),
       })),

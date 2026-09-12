@@ -2,13 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { decryptSecret } from '../common/secret';
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  ScmActor,
-  ScmKind,
-  ScmProvisionTarget,
-  ScmRepo,
-  ScmRepositoryRef,
-} from './scm-provider';
+import { ScmActor, ScmKind, ScmProvisionTarget, ScmRepo, ScmRepositoryRef } from './scm-provider';
 import { ScmRegistry } from './github/scm-registry';
 
 /**
@@ -54,10 +48,14 @@ export class WorkspaceScmService {
     });
     const installation = access?.githubInstallation;
     if (!installation || installation.deletedAt) {
-      throw new BadRequestException('The selected GitHub App installation is not authorized for this workspace');
+      throw new BadRequestException(
+        'The selected GitHub App installation is not authorized for this workspace',
+      );
     }
     if (installation.suspendedAt) {
-      throw new BadRequestException(`The GitHub App installation for '${installation.accountLogin}' is suspended`);
+      throw new BadRequestException(
+        `The GitHub App installation for '${installation.accountLogin}' is suspended`,
+      );
     }
     if (installation.accountType === 'User') {
       const identity = await this.prisma.externalIdentity.findUnique({
@@ -119,7 +117,15 @@ export class WorkspaceScmService {
       (candidate) => candidate.repositoryId === repositoryId,
     );
     if (!repo) throw new NotFoundException(`Repository '${repositoryId}' not found`);
-    return { repo, actor: await this.actorFor(userId, repo.provider, repo.installationId ?? undefined, repo.owner) };
+    return {
+      repo,
+      actor: await this.actorFor(
+        userId,
+        repo.provider,
+        repo.installationId ?? undefined,
+        repo.owner,
+      ),
+    };
   }
 
   async actorFor(
@@ -161,7 +167,9 @@ export class WorkspaceScmService {
       select: { username: true },
     });
     if (!identity?.username) {
-      throw new BadRequestException('Every workspace member must link GitHub before receiving repository access');
+      throw new BadRequestException(
+        'Every workspace member must link GitHub before receiving repository access',
+      );
     }
     return identity.username;
   }

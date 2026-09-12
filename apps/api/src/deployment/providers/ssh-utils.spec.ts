@@ -77,14 +77,16 @@ describe('assertSftpWritable', () => {
   it('rejects a webroot that exists but does not allow child creation', async () => {
     const sftp = {
       mkdir: (path: string, cb: (err?: Error) => void) =>
-        cb(path === '/www' ? Object.assign(new Error('exists'), { code: 4 }) : new Error('Permission denied')),
+        cb(
+          path === '/www'
+            ? Object.assign(new Error('exists'), { code: 4 })
+            : new Error('Permission denied'),
+        ),
       stat: (path: string, cb: (err?: Error) => void) =>
         cb(path === '/www' ? undefined : new Error('No such file')),
       rmdir: jest.fn(),
     } as unknown as SFTPWrapper;
 
-    await expect(assertSftpWritable(sftp, '/www')).rejects.toThrow(
-      'mkdir /www/.initpad-write-',
-    );
+    await expect(assertSftpWritable(sftp, '/www')).rejects.toThrow('mkdir /www/.initpad-write-');
   });
 });

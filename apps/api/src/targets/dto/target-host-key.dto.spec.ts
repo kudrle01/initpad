@@ -24,9 +24,7 @@ describe('CreateTargetDto host identity', () => {
   });
 
   it('accepts an OpenSSH SHA-256 fingerprint', async () => {
-    const errors = await validate(
-      sftpDto('SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg'),
-    );
+    const errors = await validate(sftpDto('SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg'));
     expect(errors).toHaveLength(0);
   });
 });

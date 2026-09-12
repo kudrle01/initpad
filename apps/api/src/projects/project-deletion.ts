@@ -7,11 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ScmActor, repositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
-import {
-  deployedImageRef,
-  deploymentSlug,
-  imageRepository,
-} from './project-deployment-identity';
+import { deployedImageRef, deploymentSlug, imageRepository } from './project-deployment-identity';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
 
@@ -48,18 +44,16 @@ export class ProjectDeletion {
   async execute(row: ProjectDeletionRow, opts: ProjectDeletionOptions): Promise<void> {
     const remoteAgentDeployments = row.environments.filter(
       (environment) =>
-        environment.target?.scope === 'user'
-        && environment.target.kind === 'docker'
-        && (
-          environment.status !== 'empty'
-          || environment.version !== null
-          || environment.activeOperationId !== null
-        ),
+        environment.target?.scope === 'user' &&
+        environment.target.kind === 'docker' &&
+        (environment.status !== 'empty' ||
+          environment.version !== null ||
+          environment.activeOperationId !== null),
     );
     if (remoteAgentDeployments.length > 0) {
       throw new BadRequestException(
-        `Remove Agent-managed deployments first (${remoteAgentDeployments.map((item) => item.name).join(', ')}). `
-        + 'The project can be deleted after their cleanup jobs succeed.',
+        `Remove Agent-managed deployments first (${remoteAgentDeployments.map((item) => item.name).join(', ')}). ` +
+          'The project can be deleted after their cleanup jobs succeed.',
       );
     }
 
@@ -85,11 +79,7 @@ export class ProjectDeletion {
     // source control, so a storage outage never destroys the user's source.
     await this.deployment.removeImages(imageRepository(repository));
     const artifactCleanupFailures = await this.artifactLifecycle.purgeProjectObjects(row.id);
-    if (
-      artifactCleanupFailures.length
-      && opts.repoAction !== 'gone'
-      && !opts.confirmCleanupDebt
-    ) {
+    if (artifactCleanupFailures.length && opts.repoAction !== 'gone' && !opts.confirmCleanupDebt) {
       throw new BadRequestException(
         `Project deployments were removed, but deleting stored build artifacts failed: ${artifactCleanupFailures.join('; ')}`,
       );
@@ -174,7 +164,7 @@ export class ProjectDeletion {
       where: { environment: { projectId } },
       select: { currentJobId: true },
     });
-    const jobIds = diagnostics.flatMap(({ currentJobId }) => currentJobId ? [currentJobId] : []);
+    const jobIds = diagnostics.flatMap(({ currentJobId }) => (currentJobId ? [currentJobId] : []));
     if (jobIds.length === 0) return;
     const now = new Date();
     await this.prisma.agentJob.updateMany({

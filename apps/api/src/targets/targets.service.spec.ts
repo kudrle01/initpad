@@ -117,11 +117,13 @@ describe('Agent-backed Docker target creation', () => {
         verifiedAt: null,
         createdAt: new Date(),
         ...targetData,
-        allocations: [{
-          id: 'allocation-default',
-          capabilities: targetData.capabilities,
-          maxEnvironments: 50,
-        }],
+        allocations: [
+          {
+            id: 'allocation-default',
+            capabilities: targetData.capabilities,
+            maxEnvironments: 50,
+          },
+        ],
       };
     });
     const prisma = {
@@ -134,7 +136,12 @@ describe('Agent-backed Docker target creation', () => {
     };
     const audit = { record: jest.fn(async () => undefined) };
     return {
-      service: new TargetsService(prisma as never, {} as never, workspaces as never, audit as never),
+      service: new TargetsService(
+        prisma as never,
+        {} as never,
+        workspaces as never,
+        audit as never,
+      ),
       create,
       audit,
     };
@@ -143,12 +150,18 @@ describe('Agent-backed Docker target creation', () => {
   it('creates an outbound-only Docker target without inbound credentials', async () => {
     const { service, create, audit } = setup();
 
-    await expect(service.create('owner-1', {
-      name: 'Office Docker',
-      kind: 'docker',
-      capabilities: ['static', 'node', 'php', 'python'],
-      publicUrl: 'http://192.168.1.50',
-    }, 'workspace-1')).resolves.toMatchObject({
+    await expect(
+      service.create(
+        'owner-1',
+        {
+          name: 'Office Docker',
+          kind: 'docker',
+          capabilities: ['static', 'node', 'php', 'python'],
+          publicUrl: 'http://192.168.1.50',
+        },
+        'workspace-1',
+      ),
+    ).resolves.toMatchObject({
       id: 'target-agent',
       kind: 'docker',
       routingMode: 'direct-port',
@@ -156,25 +169,27 @@ describe('Agent-backed Docker target creation', () => {
       verifiedAt: null,
     });
 
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        kind: 'docker',
-        host: null,
-        port: null,
-        username: null,
-        auth: null,
-        secret: null,
-        remotePath: null,
-        workspaceId: 'workspace-1',
-        allocations: {
-          create: expect.objectContaining({
-            workspaceId: 'workspace-1',
-            namespace: 'team-alpha',
-            capabilities: 'node,php,python,static',
-          }),
-        },
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          kind: 'docker',
+          host: null,
+          port: null,
+          username: null,
+          auth: null,
+          secret: null,
+          remotePath: null,
+          workspaceId: 'workspace-1',
+          allocations: {
+            create: expect.objectContaining({
+              workspaceId: 'workspace-1',
+              namespace: 'team-alpha',
+              capabilities: 'node,php,python,static',
+            }),
+          },
+        }),
       }),
-    }));
+    );
     expect(audit.record).toHaveBeenCalledWith({
       workspaceId: 'workspace-1',
       actorUserId: 'owner-1',
@@ -208,31 +223,43 @@ describe('Agent-backed Docker target creation', () => {
   it('rejects inbound credentials on an Agent-backed Docker target', async () => {
     const { service, create } = setup();
 
-    await expect(service.create('owner-1', {
-      name: 'Unsafe Docker',
-      kind: 'docker',
-      capabilities: ['node'],
-      publicUrl: 'https://apps.example.test',
-      host: 'server.example.test',
-    }, 'workspace-1')).rejects.toThrow('must not contain inbound host credentials');
+    await expect(
+      service.create(
+        'owner-1',
+        {
+          name: 'Unsafe Docker',
+          kind: 'docker',
+          capabilities: ['node'],
+          publicUrl: 'https://apps.example.test',
+          host: 'server.example.test',
+        },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('must not contain inbound host credentials');
     expect(create).not.toHaveBeenCalled();
   });
 
   it('rejects creation of the deprecated source-based SSH runtime', async () => {
     const { service, create } = setup();
 
-    await expect(service.create('owner-1', {
-      name: 'Legacy VPS',
-      kind: 'ssh',
-      capabilities: ['node'],
-      publicUrl: 'https://apps.example.test',
-      host: 'vps.example.test',
-      port: 22,
-      username: 'deploy',
-      auth: 'password',
-      secret: 'secret',
-      remotePath: '/srv/apps',
-    }, 'workspace-1')).rejects.toThrow('no longer supported');
+    await expect(
+      service.create(
+        'owner-1',
+        {
+          name: 'Legacy VPS',
+          kind: 'ssh',
+          capabilities: ['node'],
+          publicUrl: 'https://apps.example.test',
+          host: 'vps.example.test',
+          port: 22,
+          username: 'deploy',
+          auth: 'password',
+          secret: 'secret',
+          remotePath: '/srv/apps',
+        },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('no longer supported');
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -252,8 +279,9 @@ describe('Agent-backed Docker target creation', () => {
 
     for (const host of ['bad..example.test', '999.999.999.999', 'fe80::1']) {
       const { service, create } = setup();
-      await expect(service.create('owner-1', { ...base, host }, 'workspace-1'))
-        .rejects.toThrow('reserved or unsafe');
+      await expect(service.create('owner-1', { ...base, host }, 'workspace-1')).rejects.toThrow(
+        'reserved or unsafe',
+      );
       expect(create).not.toHaveBeenCalled();
     }
   });
@@ -261,41 +289,59 @@ describe('Agent-backed Docker target creation', () => {
   it('rejects a public target URL containing credentials', async () => {
     const { service, create } = setup();
 
-    await expect(service.create('owner-1', {
-      name: 'Shared hosting',
-      kind: 'sftp',
-      capabilities: ['static'],
-      host: 'sftp.example.test',
-      port: 22,
-      username: 'deploy',
-      auth: 'password',
-      secret: 'secret',
-      hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
-      remotePath: '/www',
-      publicUrl: 'https://user:password@apps.example.test',
-    }, 'workspace-1')).rejects.toThrow('safe HTTP(S) address');
+    await expect(
+      service.create(
+        'owner-1',
+        {
+          name: 'Shared hosting',
+          kind: 'sftp',
+          capabilities: ['static'],
+          host: 'sftp.example.test',
+          port: 22,
+          username: 'deploy',
+          auth: 'password',
+          secret: 'secret',
+          hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
+          remotePath: '/www',
+          publicUrl: 'https://user:password@apps.example.test',
+        },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('safe HTTP(S) address');
     expect(create).not.toHaveBeenCalled();
   });
 
   it('requires a clean HTTPS DNS origin for managed gateway routing', async () => {
     const { service, create } = setup();
 
-    await expect(service.create('owner-1', {
-      name: 'Production gateway',
-      kind: 'docker',
-      routingMode: 'managed-gateway',
-      capabilities: ['node'],
-      publicUrl: 'http://apps.example.test/path',
-    }, 'workspace-1')).rejects.toThrow('HTTPS DNS origin');
+    await expect(
+      service.create(
+        'owner-1',
+        {
+          name: 'Production gateway',
+          kind: 'docker',
+          routingMode: 'managed-gateway',
+          capabilities: ['node'],
+          publicUrl: 'http://apps.example.test/path',
+        },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('HTTPS DNS origin');
     expect(create).not.toHaveBeenCalled();
 
-    await expect(service.create('owner-1', {
-      name: 'Production gateway',
-      kind: 'docker',
-      routingMode: 'managed-gateway',
-      capabilities: ['node'],
-      publicUrl: 'https://apps.example.test/',
-    }, 'workspace-1')).resolves.toMatchObject({
+    await expect(
+      service.create(
+        'owner-1',
+        {
+          name: 'Production gateway',
+          kind: 'docker',
+          routingMode: 'managed-gateway',
+          capabilities: ['node'],
+          publicUrl: 'https://apps.example.test/',
+        },
+        'workspace-1',
+      ),
+    ).resolves.toMatchObject({
       routingMode: 'managed-gateway',
       publicUrl: 'https://apps.example.test',
       agentReady: false,
@@ -311,30 +357,32 @@ describe('Agent-backed Docker target creation', () => {
     });
     const prisma = {
       target: {
-        findMany: jest.fn(async () => [{
-          id: 'managed-target',
-          name: 'Production gateway',
-          kind: 'docker',
-          scope: 'user',
-          capabilities: 'node',
-          host: null,
-          port: null,
-          username: null,
-          auth: null,
-          secret: null,
-          remotePath: null,
-          publicUrl: 'https://apps.example.test',
-          routingMode: 'managed-gateway',
-          gatewayAdapter: 'caddy',
-          gatewayPreflightStatus: 'passed',
-          gatewayPreflightAt: new Date(),
-          gatewayPreflightError: null,
-          verifiedAt: null,
-          ownerId: 'owner-1',
-          workspaceId: 'workspace-1',
-          createdAt: new Date(),
-          agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
-        }]),
+        findMany: jest.fn(async () => [
+          {
+            id: 'managed-target',
+            name: 'Production gateway',
+            kind: 'docker',
+            scope: 'user',
+            capabilities: 'node',
+            host: null,
+            port: null,
+            username: null,
+            auth: null,
+            secret: null,
+            remotePath: null,
+            publicUrl: 'https://apps.example.test',
+            routingMode: 'managed-gateway',
+            gatewayAdapter: 'caddy',
+            gatewayPreflightStatus: 'passed',
+            gatewayPreflightAt: new Date(),
+            gatewayPreflightError: null,
+            verifiedAt: null,
+            ownerId: 'owner-1',
+            workspaceId: 'workspace-1',
+            createdAt: new Date(),
+            agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
+          },
+        ]),
       },
       environment: { findMany: jest.fn(async () => []) },
     };
@@ -382,19 +430,28 @@ describe('target capability updates', () => {
     const prisma = {
       target: {
         findUnique: jest.fn(async () => current),
-        update: jest.fn(async ({ data }: { data: Partial<TargetRow> }) => ({ ...current, ...data })),
+        update: jest.fn(async ({ data }: { data: Partial<TargetRow> }) => ({
+          ...current,
+          ...data,
+        })),
         delete: jest.fn(async () => current),
       },
       environment: {
         count: jest.fn(async ({ where }: { where: { activeOperationId?: unknown } }) =>
-          where.activeOperationId ? 0 : 2),
+          where.activeOperationId ? 0 : 2,
+        ),
         updateMany: jest.fn(),
       },
     };
     const workspaces = { require: jest.fn(async () => 'maintainer') };
     const audit = { record: jest.fn(async () => undefined) };
     return {
-      service: new TargetsService(prisma as never, {} as never, workspaces as never, audit as never),
+      service: new TargetsService(
+        prisma as never,
+        {} as never,
+        workspaces as never,
+        audit as never,
+      ),
       prisma,
       audit,
     };
@@ -429,10 +486,12 @@ describe('target capability updates', () => {
       publicUrl: row.publicUrl!,
     });
 
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'target.updated',
-      details: { changedFields: 'authenticationCredentials' },
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'target.updated',
+        details: { changedFields: 'authenticationCredentials' },
+      }),
+    );
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain('rotated-password');
   });
 
@@ -465,9 +524,9 @@ describe('target capability updates', () => {
   it('blocks removing a capability from a target that is in use', async () => {
     const { service } = serviceWithTarget('static,php');
 
-    await expect(
-      service.update('target-1', 'u1', { capabilities: ['php'] }),
-    ).rejects.toThrow('cannot remove runtime capabilities');
+    await expect(service.update('target-1', 'u1', { capabilities: ['php'] })).rejects.toThrow(
+      'cannot remove runtime capabilities',
+    );
   });
 
   it('does not move a managed gateway DNS origin while environments hold stable routes', async () => {
@@ -490,17 +549,17 @@ describe('target capability updates', () => {
     const prisma = {
       target: { findUnique: jest.fn(async () => current), update: jest.fn() },
       environment: {
-        count: jest.fn()
-          .mockResolvedValueOnce(0)
-          .mockResolvedValueOnce(1),
+        count: jest.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1),
       },
     };
     const workspaces = { require: jest.fn(async () => 'maintainer') };
     const service = new TargetsService(prisma as never, {} as never, workspaces as never);
 
-    await expect(service.update('target-1', 'u1', {
-      publicUrl: 'https://new-apps.example.test',
-    })).rejects.toThrow('cannot change its DNS origin');
+    await expect(
+      service.update('target-1', 'u1', {
+        publicUrl: 'https://new-apps.example.test',
+      }),
+    ).rejects.toThrow('cannot change its DNS origin');
     expect(prisma.target.update).not.toHaveBeenCalled();
   });
 });
@@ -536,9 +595,7 @@ describe('target management lifecycle', () => {
         update: targetUpdate,
       },
       environment: {
-        count: jest.fn()
-          .mockResolvedValueOnce(activeOperations)
-          .mockResolvedValueOnce(2),
+        count: jest.fn().mockResolvedValueOnce(activeOperations).mockResolvedValueOnce(2),
       },
       agent: {
         findUnique: jest.fn(async () => null),
@@ -551,7 +608,12 @@ describe('target management lifecycle', () => {
     const workspaces = { require: jest.fn(async () => 'admin') };
     const audit = { record: jest.fn(async () => undefined) };
     return {
-      service: new TargetsService(prisma as never, {} as never, workspaces as never, audit as never),
+      service: new TargetsService(
+        prisma as never,
+        {} as never,
+        workspaces as never,
+        audit as never,
+      ),
       prisma,
       targetUpdate,
       audit,
@@ -573,27 +635,29 @@ describe('target management lifecycle', () => {
     });
     expect(prisma.environment.deleteMany).toBeUndefined();
     expect(prisma.environment.updateMany).toBeUndefined();
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'target.disconnected',
-      details: { kind: 'sftp', boundEnvironments: 2 },
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'target.disconnected',
+        details: { kind: 'sftp', boundEnvironments: 2 },
+      }),
+    );
   });
 
   it('does not revoke management while an environment operation is in progress', async () => {
     const { service, targetUpdate } = setup(1);
 
-    await expect(service.retire(remote.id, 'owner-1')).rejects.toThrow(
-      'operation(s) in progress',
-    );
+    await expect(service.retire(remote.id, 'owner-1')).rejects.toThrow('operation(s) in progress');
     expect(targetUpdate).not.toHaveBeenCalled();
   });
 
   it('rejects management commands after a target is disconnected', () => {
     const { service } = setup();
-    expect(() => service.connectionForTarget({
-      ...remote,
-      managementState: 'disconnected',
-    })).toThrow('cannot receive management commands');
+    expect(() =>
+      service.connectionForTarget({
+        ...remote,
+        managementState: 'disconnected',
+      }),
+    ).toThrow('cannot receive management commands');
   });
 
   it('restores a retired target as disconnected so fresh trust is still required', async () => {
@@ -612,16 +676,20 @@ describe('target management lifecycle', () => {
         verifiedAt: null,
       }),
     });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'target.restored',
-      details: { kind: 'sftp', state: 'disconnected' },
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'target.restored',
+        details: { kind: 'sftp', state: 'disconnected' },
+      }),
+    );
   });
 });
 
 describe('edition-aware target visibility', () => {
   const savedEdition = config.edition;
-  afterEach(() => { config.edition = savedEdition; });
+  afterEach(() => {
+    config.edition = savedEdition;
+  });
 
   it('does not expose self-hosted built-ins from the public SaaS control plane', async () => {
     config.edition = 'saas';
@@ -634,9 +702,11 @@ describe('edition-aware target visibility', () => {
 
     await service.listForUser('user-1', 'workspace-1');
 
-    expect(prisma.target.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { workspaceId: 'workspace-1' },
-    }));
+    expect(prisma.target.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-1' },
+      }),
+    );
   });
 
   it('hides a known built-in id from direct SaaS access', async () => {
@@ -644,14 +714,17 @@ describe('edition-aware target visibility', () => {
     const prisma = {
       target: {
         findUnique: jest.fn(async () => ({
-          id: 'builtin-docker', scope: 'builtin', kind: 'docker',
+          id: 'builtin-docker',
+          scope: 'builtin',
+          kind: 'docker',
         })),
       },
     };
     const service = new TargetsService(prisma as never, {} as never, {} as never);
 
-    await expect(service.getVisibleTarget('builtin-docker', 'user-1'))
-      .rejects.toThrow("Target 'builtin-docker' not found");
+    await expect(service.getVisibleTarget('builtin-docker', 'user-1')).rejects.toThrow(
+      "Target 'builtin-docker' not found",
+    );
   });
 
   it('does not seed local built-ins while running as SaaS', async () => {

@@ -33,7 +33,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshWorkspaces = useCallback(async () => {
     const rows = await api.listWorkspaces();
     const stored = localStorage.getItem('initpad.workspace');
-    const selected = rows.find((w) => w.id === stored) ?? rows.find((w) => w.type === 'personal') ?? rows[0] ?? null;
+    const selected =
+      rows.find((w) => w.id === stored) ??
+      rows.find((w) => w.type === 'personal') ??
+      rows[0] ??
+      null;
     if (selected) localStorage.setItem('initpad.workspace', selected.id);
     else localStorage.removeItem('initpad.workspace');
     setWorkspaces(rows);
@@ -48,7 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveWorkspace(null);
     };
     window.addEventListener(AUTH_EXPIRED_EVENT, clearSession);
-    api.me()
+    api
+      .me()
       .then(async (current) => {
         setUser(current);
         // A forced password change blocks workspace endpoints (they are not on
@@ -93,16 +98,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      loading,
-      signIn,
-      logout,
-      workspaces,
-      activeWorkspace,
-      switchWorkspace,
-      refreshWorkspaces,
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signIn,
+        logout,
+        workspaces,
+        activeWorkspace,
+        switchWorkspace,
+        refreshWorkspaces,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -43,15 +43,15 @@ export function parseGatewayPreflightPayload(value: unknown): GatewayPreflightPa
   }
   const labels = url.hostname.split('.');
   if (
-    url.protocol !== 'https:'
-    || url.username
-    || url.password
-    || url.port
-    || url.pathname !== '/'
-    || url.search
-    || url.hash
-    || isIP(url.hostname) !== 0
-    || labels.some((label) => !DNS_LABEL.test(label))
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    url.port ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash ||
+    isIP(url.hostname) !== 0 ||
+    labels.some((label) => !DNS_LABEL.test(label))
   ) {
     throw new Error('Gateway preflight requires a valid HTTPS DNS origin');
   }
@@ -94,17 +94,15 @@ async function verifyTrustedTls(hostname: string, signal: AbortSignal): Promise<
 }
 
 export class GatewayPreflight {
-  constructor(private readonly dependencies: GatewayPreflightDependencies = {
-    resolve: (hostname) => lookup(hostname, { all: true }),
-    verifyTls: verifyTrustedTls,
-    verifyCaddy: (signal) => new CaddyAdminClient().ready(signal),
-  }) {}
+  constructor(
+    private readonly dependencies: GatewayPreflightDependencies = {
+      resolve: (hostname) => lookup(hostname, { all: true }),
+      verifyTls: verifyTrustedTls,
+      verifyCaddy: (signal) => new CaddyAdminClient().ready(signal),
+    },
+  ) {}
 
-  async run(
-    rawPayload: unknown,
-    signal: AbortSignal,
-    report: ProgressReporter,
-  ): Promise<void> {
+  async run(rawPayload: unknown, signal: AbortSignal, report: ProgressReporter): Promise<void> {
     const payload = parseGatewayPreflightPayload(rawPayload);
     const gatewayHostname = new URL(payload.publicUrl).hostname;
     // A wildcard certificate for *.apps.example.test does not cover the zone
@@ -118,8 +116,9 @@ export class GatewayPreflight {
     }
 
     await report({ percent: 15, stage: 'working', message: 'Resolving wildcard gateway DNS' });
-    const addresses = await this.dependencies.resolve(dnsProbeHostname)
-      .catch(() => { throw new Error('Gateway DNS lookup failed'); });
+    const addresses = await this.dependencies.resolve(dnsProbeHostname).catch(() => {
+      throw new Error('Gateway DNS lookup failed');
+    });
     if (!addresses.length) throw new Error('Gateway DNS lookup returned no addresses');
     if (signal.aborted) throw new Error('Gateway preflight interrupted');
 
@@ -127,9 +126,17 @@ export class GatewayPreflight {
     await this.dependencies.verifyTls(gatewayHostname, signal);
     if (signal.aborted) throw new Error('Gateway preflight interrupted');
 
-    await report({ percent: 80, stage: 'verifying', message: 'Checking private Caddy adapter readiness' });
+    await report({
+      percent: 80,
+      stage: 'verifying',
+      message: 'Checking private Caddy adapter readiness',
+    });
     await this.dependencies.verifyCaddy(signal);
 
-    await report({ percent: 95, stage: 'verifying', message: 'Gateway DNS, TLS and adapter are ready' });
+    await report({
+      percent: 95,
+      stage: 'verifying',
+      message: 'Gateway DNS, TLS and adapter are ready',
+    });
   }
 }

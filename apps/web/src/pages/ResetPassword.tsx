@@ -27,7 +27,7 @@ export default function ResetPassword() {
     try {
       await api.resetPassword(token, password);
       setDone(true);
-      setTimeout(() => navigate('/login'), 1500);
+      setTimeout(() => void navigate('/login'), 1500);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -45,7 +45,9 @@ export default function ResetPassword() {
           </p>
         ) : (
           <>
-            <p className="mt-1 text-sm text-muted-foreground">Choose a new password for your account.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Choose a new password for your account.
+            </p>
             <form className="mt-6 flex flex-col gap-2.5" onSubmit={submit}>
               <Input
                 type="password"

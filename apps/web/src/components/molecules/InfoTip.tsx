@@ -36,14 +36,19 @@ export function InfoTip({ children, items, label = 'More information', className
       const viewportPadding = 16;
       const gap = 6;
       const preferredLeft = trigger.left + trigger.width / 2 - tooltip.width / 2;
-      const maximumLeft = Math.max(viewportPadding, window.innerWidth - tooltip.width - viewportPadding);
+      const maximumLeft = Math.max(
+        viewportPadding,
+        window.innerWidth - tooltip.width - viewportPadding,
+      );
       const left = Math.min(Math.max(preferredLeft, viewportPadding), maximumLeft);
       const below = trigger.bottom + gap;
       const above = trigger.top - tooltip.height - gap;
-      const preferredTop = below + tooltip.height <= window.innerHeight - viewportPadding
-        ? below
-        : above;
-      const maximumTop = Math.max(viewportPadding, window.innerHeight - tooltip.height - viewportPadding);
+      const preferredTop =
+        below + tooltip.height <= window.innerHeight - viewportPadding ? below : above;
+      const maximumTop = Math.max(
+        viewportPadding,
+        window.innerHeight - tooltip.height - viewportPadding,
+      );
       const top = Math.min(Math.max(preferredTop, viewportPadding), maximumTop);
       setPosition({ left, top });
     }
@@ -103,40 +108,40 @@ export function InfoTip({ children, items, label = 'More information', className
           // that programmatic entry as a request to open the first InfoTip;
           // keyboard focus moving within the dialog remains supported.
           const dialog = event.currentTarget.closest('[role="dialog"]');
-          if (
-            dialog &&
-            (!event.relatedTarget || !dialog.contains(event.relatedTarget as Node))
-          ) return;
+          if (dialog && (!event.relatedTarget || !dialog.contains(event.relatedTarget))) return;
           setOpen(true);
         }}
         onClick={() => setOpen(true)}
       >
         <Info className="h-4 w-4" />
       </button>
-      {open && createPortal(
-        <span
-          ref={tooltipRef}
-          id={id}
-          role="tooltip"
-          style={position ? { left: position.left, top: position.top } : undefined}
-          className={cn(
-            'pointer-events-none fixed z-[100] w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-card px-3 py-2.5 text-left text-xs font-normal leading-relaxed text-foreground shadow-lg transition-opacity',
-            position ? 'visible opacity-100' : 'invisible opacity-0',
-          )}
-        >
-          {items ? (
-            <dl className="space-y-2.5">
-              {items.map((item) => (
-                <div key={item.title}>
-                  <dt className="font-semibold text-foreground">{item.title}</dt>
-                  <dd className="mt-0.5 text-muted-foreground">{item.description}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : children}
-        </span>,
-        document.body,
-      )}
+      {open &&
+        createPortal(
+          <span
+            ref={tooltipRef}
+            id={id}
+            role="tooltip"
+            style={position ? { left: position.left, top: position.top } : undefined}
+            className={cn(
+              'pointer-events-none fixed z-[100] w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-card px-3 py-2.5 text-left text-xs font-normal leading-relaxed text-foreground shadow-lg transition-opacity',
+              position ? 'visible opacity-100' : 'invisible opacity-0',
+            )}
+          >
+            {items ? (
+              <dl className="space-y-2.5">
+                {items.map((item) => (
+                  <div key={item.title}>
+                    <dt className="font-semibold text-foreground">{item.title}</dt>
+                    <dd className="mt-0.5 text-muted-foreground">{item.description}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              children
+            )}
+          </span>,
+          document.body,
+        )}
     </span>
   );
 }

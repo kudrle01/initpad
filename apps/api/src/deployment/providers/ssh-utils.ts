@@ -46,9 +46,11 @@ export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client
           observedFingerprint &&
           normalizeHostKeyFingerprint(t.hostKeyFingerprint) !== observedFingerprint
         ) {
-          reject(new Error(
-            `SSH host key mismatch (expected ${normalizeHostKeyFingerprint(t.hostKeyFingerprint)}, received ${observedFingerprint})`,
-          ));
+          reject(
+            new Error(
+              `SSH host key mismatch (expected ${normalizeHostKeyFingerprint(t.hostKeyFingerprint)}, received ${observedFingerprint})`,
+            ),
+          );
           return;
         }
         reject(err);
@@ -60,8 +62,10 @@ export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client
         ...(t.privateKey ? { privateKey: t.privateKey } : { password: t.password }),
         hostVerifier: (key: Buffer) => {
           observedFingerprint = sshHostKeyFingerprint(key);
-          return !t.hostKeyFingerprint ||
-            observedFingerprint === normalizeHostKeyFingerprint(t.hostKeyFingerprint);
+          return (
+            !t.hostKeyFingerprint ||
+            observedFingerprint === normalizeHostKeyFingerprint(t.hostKeyFingerprint)
+          );
         },
         readyTimeout: timeoutMs,
       });
@@ -86,9 +90,7 @@ export function sshExec(conn: Client, cmd: string): Promise<ExecResult> {
       let stdout = '';
       let stderr = '';
       stream
-        .on('close', (code: number | null) =>
-          resolve({ code: code ?? 0, stdout, stderr }),
-        )
+        .on('close', (code: number | null) => resolve({ code: code ?? 0, stdout, stderr }))
         .on('data', (d: Buffer) => (stdout += d.toString()))
         .stderr.on('data', (d: Buffer) => (stderr += d.toString()));
     });
@@ -164,9 +166,7 @@ export async function mkdirp(sftp: SFTPWrapper, remoteDir: string): Promise<void
       sftp.mkdir(current, (err) => {
         if (!err) return resolve();
         sftp.stat(current, (statErr) =>
-          statErr
-            ? reject(new Error(`mkdir ${current} failed: ${err.message}`))
-            : resolve(),
+          statErr ? reject(new Error(`mkdir ${current} failed: ${err.message}`)) : resolve(),
         );
       }),
     );
@@ -176,10 +176,7 @@ export async function mkdirp(sftp: SFTPWrapper, remoteDir: string): Promise<void
 // Confirm that an existing SFTP webroot is actually writable. Merely calling
 // mkdirp(root) is insufficient: it succeeds when a root-owned directory exists
 // even though the deploy identity cannot create a release below it.
-export async function assertSftpWritable(
-  sftp: SFTPWrapper,
-  remoteRoot: string,
-): Promise<void> {
+export async function assertSftpWritable(sftp: SFTPWrapper, remoteRoot: string): Promise<void> {
   const base = remoteRoot.replace(/\/+$/, '') || '/';
   const probe = `${base === '/' ? '' : base}/.initpad-write-${randomUUID()}`;
   await mkdirp(sftp, probe);
@@ -232,10 +229,7 @@ function missingRemotePath(error: SftpError): boolean {
   return error.code === 2 || /no such file|not found/i.test(error.message);
 }
 
-function sftpReaddirForRemoval(
-  sftp: SFTPWrapper,
-  path: string,
-): Promise<RemoteEntry[] | null> {
+function sftpReaddirForRemoval(sftp: SFTPWrapper, path: string): Promise<RemoteEntry[] | null> {
   return new Promise((resolve, reject) =>
     sftp.readdir(path, (err, list) => {
       if (err) return missingRemotePath(err) ? resolve(null) : reject(err);

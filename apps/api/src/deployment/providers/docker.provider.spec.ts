@@ -7,11 +7,7 @@ import * as tarStream from 'tar-stream';
 // (ADR-059 P1.4); DockerProvider.loadImageArchive delegates to it. Tests stay here
 // to preserve the Docker-ingest boundary contract they were written for.
 import { assertImageArchiveIdentity } from '../../artifacts/image-archive';
-import {
-  DockerProvider,
-  dockerContainerName,
-  dockerNetworkName,
-} from './docker.provider';
+import { DockerProvider, dockerContainerName, dockerNetworkName } from './docker.provider';
 
 type Manifest = { Config?: string; RepoTags?: string[]; Layers?: string[] };
 
@@ -30,7 +26,9 @@ async function imageArchive(
 }
 
 function standard(repoTags: string[]): Array<{ name: string; body: string }> {
-  const manifest: Manifest[] = [{ Config: 'config.json', RepoTags: repoTags, Layers: ['layer.tar'] }];
+  const manifest: Manifest[] = [
+    { Config: 'config.json', RepoTags: repoTags, Layers: ['layer.tar'] },
+  ];
   return [
     { name: 'manifest.json', body: JSON.stringify(manifest) },
     { name: 'config.json', body: '{}' },
@@ -130,22 +128,46 @@ describe('DockerProvider config-var injection (ADR-061)', () => {
 
   it('injects config vars into the container Env', async () => {
     const { provider, created } = providerWithMockDaemon();
-    const port = await (provider as unknown as {
-      runContainer: (i: string, n: string, net: string, p: number, project: string, env: string, vars?: Record<string, string>) => Promise<string>;
-    }).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev', { GREETING: 'ahoj', TOKEN: 's3cr3t' });
+    const port = await (
+      provider as unknown as {
+        runContainer: (
+          i: string,
+          n: string,
+          net: string,
+          p: number,
+          project: string,
+          env: string,
+          vars?: Record<string, string>,
+        ) => Promise<string>;
+      }
+    ).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev', {
+      GREETING: 'ahoj',
+      TOKEN: 's3cr3t',
+    });
     expect(port).toBe('12345');
     expect(created[0].Env).toEqual(['GREETING=ahoj', 'TOKEN=s3cr3t']);
-    expect(created[0].Labels).toEqual(expect.objectContaining({
-      'com.initpad.project': 'acme-api',
-      'com.initpad.environment': 'dev',
-    }));
+    expect(created[0].Labels).toEqual(
+      expect.objectContaining({
+        'com.initpad.project': 'acme-api',
+        'com.initpad.environment': 'dev',
+      }),
+    );
   });
 
   it('omits Env when there are no config vars', async () => {
     const { provider, created } = providerWithMockDaemon();
-    await (provider as unknown as {
-      runContainer: (i: string, n: string, net: string, p: number, project: string, env: string) => Promise<string>;
-    }).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev');
+    await (
+      provider as unknown as {
+        runContainer: (
+          i: string,
+          n: string,
+          net: string,
+          p: number,
+          project: string,
+          env: string,
+        ) => Promise<string>;
+      }
+    ).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev');
     expect(created[0].Env).toBeUndefined();
   });
 });
@@ -154,8 +176,9 @@ describe('DockerProvider allocation isolation (ADR-060)', () => {
   it('uses workspace-scoped network and container names with a legacy fallback', () => {
     expect(dockerNetworkName('dev', 'Team Alpha')).toBe('net-team-alpha-dev');
     expect(dockerNetworkName('dev')).toBe('net-dev');
-    expect(dockerContainerName('alice-api', 'dev', 'Team Alpha'))
-      .toBe('initpad-team-alpha-alice-api-dev');
+    expect(dockerContainerName('alice-api', 'dev', 'Team Alpha')).toBe(
+      'initpad-team-alpha-alice-api-dev',
+    );
     expect(dockerContainerName('alice-api', 'dev')).toBe('initpad-alice-api-dev');
   });
 });
@@ -177,14 +200,16 @@ describe('DockerProvider registry diagnostics', () => {
       error: 'dial tcp [::1]:3001: connect: connection refused',
     }));
 
-    await expect(provider.deploy({
-      projectName: 'acme-api',
-      version: 'a'.repeat(40),
-      env: 'dev',
-      repoPath: '/unused',
-      imageRef: `127.0.0.1:3001/acme/api:${'a'.repeat(40)}`,
-      allowBuildFallback: false,
-    })).resolves.toEqual({
+    await expect(
+      provider.deploy({
+        projectName: 'acme-api',
+        version: 'a'.repeat(40),
+        env: 'dev',
+        repoPath: '/unused',
+        imageRef: `127.0.0.1:3001/acme/api:${'a'.repeat(40)}`,
+        allowBuildFallback: false,
+      }),
+    ).resolves.toEqual({
       status: 'failed',
       url: '',
       reason: expect.stringContaining('dial tcp [::1]:3001: connect: connection refused'),
@@ -222,9 +247,11 @@ describe('DockerProvider registry diagnostics', () => {
       })),
     };
 
-    await (provider as unknown as {
-      pruneUnusedRepositoryImages: (ref: string) => Promise<void>;
-    }).pruneUnusedRepositoryImages('127.0.0.1:3001/acme/api:new');
+    await (
+      provider as unknown as {
+        pruneUnusedRepositoryImages: (ref: string) => Promise<void>;
+      }
+    ).pruneUnusedRepositoryImages('127.0.0.1:3001/acme/api:new');
 
     expect(removed).toEqual(['127.0.0.1:3001/acme/api:old']);
   });

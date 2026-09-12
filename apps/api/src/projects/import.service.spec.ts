@@ -33,7 +33,10 @@ describe('ImportService.listImportable', () => {
         ]),
       },
     };
-    const workspaces = { resolve: jest.fn(async () => ({ id: 'ws1' })), require: jest.fn(async () => 'member') };
+    const workspaces = {
+      resolve: jest.fn(async () => ({ id: 'ws1' })),
+      require: jest.fn(async () => 'member'),
+    };
     const scm = {
       listRepositories: jest.fn(async () => [
         repo(),
@@ -41,7 +44,12 @@ describe('ImportService.listImportable', () => {
       ]),
     };
     const workspaceScm = { listRepositories: scm.listRepositories };
-    const service = new ImportService(prisma as never, workspaces as never, {} as never, workspaceScm as never);
+    const service = new ImportService(
+      prisma as never,
+      workspaces as never,
+      {} as never,
+      workspaceScm as never,
+    );
     const result = await service.listImportable('u1');
     expect(result.find((r) => r.name === 'api')?.alreadyImported).toBe(true);
     expect(result.find((r) => r.name === 'web')?.alreadyImported).toBe(false);
@@ -49,7 +57,10 @@ describe('ImportService.listImportable', () => {
 });
 
 describe('ImportService.preflight', () => {
-  const workspaces = { resolve: jest.fn(async () => ({ id: 'ws1' })), require: jest.fn(async () => 'maintainer') };
+  const workspaces = {
+    resolve: jest.fn(async () => ({ id: 'ws1' })),
+    require: jest.fn(async () => 'maintainer'),
+  };
 
   function build(opts: {
     repos?: unknown[];
@@ -62,15 +73,28 @@ describe('ImportService.preflight', () => {
       user: { findUniqueOrThrow: jest.fn(async () => OWNER) },
       project: { findFirst: jest.fn(async () => opts.existingProject ?? null) },
     };
-    const templates = { get: jest.fn(() => opts.template ?? { id: 'node-api', name: 'Node API', runtime: 'node', artifact: 'runtime' }) };
+    const templates = {
+      get: jest.fn(
+        () =>
+          opts.template ?? {
+            id: 'node-api',
+            name: 'Node API',
+            runtime: 'node',
+            artifact: 'runtime',
+          },
+      ),
+    };
     const scm = {
       listRepositories: jest.fn(async () => opts.repos ?? [repo()]),
       readFile: jest.fn(async (_repo: unknown, path: string) =>
         path === 'Dockerfile'
-          ? (opts.dockerfile === undefined ? 'FROM node' : opts.dockerfile)
-          : (opts.workflow === undefined
-              ? 'curl "$INITPAD_PLATFORM_URL" -H "$INITPAD_DEPLOY_TOKEN"'
-              : opts.workflow)),
+          ? opts.dockerfile === undefined
+            ? 'FROM node'
+            : opts.dockerfile
+          : opts.workflow === undefined
+            ? 'curl "$INITPAD_PLATFORM_URL" -H "$INITPAD_DEPLOY_TOKEN"'
+            : opts.workflow,
+      ),
     };
     const workspaceScm = {
       repository: jest.fn(async (_userId: string, _workspaceId: string, repositoryId: string) => {
@@ -82,28 +106,43 @@ describe('ImportService.preflight', () => {
       }),
       provider: jest.fn(() => scm),
     };
-    return new ImportService(prisma as never, workspaces as never, templates as never, workspaceScm as never);
+    return new ImportService(
+      prisma as never,
+      workspaces as never,
+      templates as never,
+      workspaceScm as never,
+    );
   }
 
   it('passes a healthy repo with a Dockerfile', async () => {
-    const result = await build({}).preflight('u1', undefined, { repositoryId: '101', templateId: 'node-api' });
-    expect(result).toMatchObject({ branch: 'main', runtime: 'node', hasDockerfile: true, canImport: true });
+    const result = await build({}).preflight('u1', undefined, {
+      repositoryId: '101',
+      templateId: 'node-api',
+    });
+    expect(result).toMatchObject({
+      branch: 'main',
+      runtime: 'node',
+      hasDockerfile: true,
+      canImport: true,
+    });
     expect(result.warnings).toHaveLength(0);
   });
 
   it('blocks a non-static template with no Dockerfile', async () => {
-    const result = await build({ dockerfile: null }).preflight('u1', undefined, { repositoryId: '101', templateId: 'node-api' });
+    const result = await build({ dockerfile: null }).preflight('u1', undefined, {
+      repositoryId: '101',
+      templateId: 'node-api',
+    });
     expect(result.hasDockerfile).toBe(false);
     expect(result.canImport).toBe(false);
     expect(result.warnings.join(' ')).toContain('No Dockerfile');
   });
 
   it('blocks a repository without the provider-specific InitPad workflow', async () => {
-    const result = await build({ workflow: null }).preflight(
-      'u1',
-      undefined,
-      { repositoryId: '101', templateId: 'node-api' },
-    );
+    const result = await build({ workflow: null }).preflight('u1', undefined, {
+      repositoryId: '101',
+      templateId: 'node-api',
+    });
     expect(result.hasCompatibleWorkflow).toBe(false);
     expect(result.canImport).toBe(false);
     expect(result.warnings.join(' ')).toContain('.gitea/workflows/ci.yml');
@@ -120,19 +159,29 @@ describe('ImportService.preflight', () => {
   });
 
   it('blocks an empty repository', async () => {
-    const result = await build({ repos: [repo({ empty: true })] }).preflight('u1', undefined, { repositoryId: '101', templateId: 'node-api' });
+    const result = await build({ repos: [repo({ empty: true })] }).preflight('u1', undefined, {
+      repositoryId: '101',
+      templateId: 'node-api',
+    });
     expect(result.canImport).toBe(false);
     expect(result.warnings.join(' ')).toContain('empty');
   });
 
   it('blocks a name already used in the workspace', async () => {
-    const result = await build({ existingProject: { id: 'p1' } }).preflight('u1', undefined, { repositoryId: '101', templateId: 'node-api' });
+    const result = await build({ existingProject: { id: 'p1' } }).preflight('u1', undefined, {
+      repositoryId: '101',
+      templateId: 'node-api',
+    });
     expect(result.alreadyImported).toBe(true);
     expect(result.canImport).toBe(false);
   });
 
   it('rejects an unknown repository', async () => {
-    await expect(build({ repos: [] }).preflight('u1', undefined, { repositoryId: 'ghost', templateId: 'node-api' }))
-      .rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      build({ repos: [] }).preflight('u1', undefined, {
+        repositoryId: 'ghost',
+        templateId: 'node-api',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

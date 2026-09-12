@@ -48,7 +48,9 @@ export function useProjectDetail() {
   const [commits, setCommits] = useState<Commit[]>([]);
   const [deployments, setDeployments] = useState<DeploymentOperation[]>([]);
   const [provisioning, setProvisioning] = useState<ProvisioningStatus | null>(null);
-  const [productionRequest, setProductionRequest] = useState<ProductionDeploymentRequest | null>(null);
+  const [productionRequest, setProductionRequest] = useState<ProductionDeploymentRequest | null>(
+    null,
+  );
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -64,57 +66,59 @@ export function useProjectDetail() {
   const [targets, setTargets] = useState<Target[]>([]);
   const pollInFlight = useRef(false);
 
-  const projectRole = workspaces.find(
-    (workspace) => workspace.id === project?.workspaceId,
-  )?.role;
+  const projectRole = workspaces.find((workspace) => workspace.id === project?.workspaceId)?.role;
   const readOnly = projectRole === 'viewer';
   const canMaintain =
     projectRole === 'owner' || projectRole === 'admin' || projectRole === 'maintainer';
 
-  const load = useCallback(async (mode: 'full' | 'head' = 'full') => {
-    if (!id) return;
-    if (mode === 'head' && pollInFlight.current) return;
-    if (mode === 'head') pollInFlight.current = true;
-    try {
-      const [projectRow, commitRows, provisioningRow, deploymentRows, productionRequestRow] = await Promise.all([
-        api.getProject(id),
-        api.getCommits(id, mode === 'head' ? 1 : DETAIL_COMMIT_LIMIT).catch(() => [] as Commit[]),
-        api.getProvisioning(id).catch(() => null),
-        api.getDeployments(id).catch(() => [] as DeploymentOperation[]),
-        api.getProductionRequest(id).catch(() => null),
-      ]);
-      setProject(projectRow);
-      setCommits((current) =>
-        mode === 'head'
-          ? mergeCommitHead(current, commitRows, DETAIL_COMMIT_LIMIT)
-          : commitRows,
-      );
-      setProvisioning(provisioningRow ?? null);
-      setDeployments(deploymentRows);
-      setProductionRequest(productionRequestRow);
-      setOpenSha((current) => current ?? commitRows[0]?.sha ?? null);
-      setError(null);
-      setNotFound(false);
-    } catch (loadError) {
-      if (loadError instanceof ApiError && loadError.status === 404) {
-        // A project can disappear while this tab remains open (delete in
-        // another tab or control-plane restore). Never leave stale actions
-        // visible once the authoritative read says it is gone.
-        setProject(null);
-        setCommits([]);
-        setDeployments([]);
-        setProvisioning(null);
-        setProductionRequest(null);
+  const load = useCallback(
+    async (mode: 'full' | 'head' = 'full') => {
+      if (!id) return;
+      if (mode === 'head' && pollInFlight.current) return;
+      if (mode === 'head') pollInFlight.current = true;
+      try {
+        const [projectRow, commitRows, provisioningRow, deploymentRows, productionRequestRow] =
+          await Promise.all([
+            api.getProject(id),
+            api
+              .getCommits(id, mode === 'head' ? 1 : DETAIL_COMMIT_LIMIT)
+              .catch(() => [] as Commit[]),
+            api.getProvisioning(id).catch(() => null),
+            api.getDeployments(id).catch(() => [] as DeploymentOperation[]),
+            api.getProductionRequest(id).catch(() => null),
+          ]);
+        setProject(projectRow);
+        setCommits((current) =>
+          mode === 'head' ? mergeCommitHead(current, commitRows, DETAIL_COMMIT_LIMIT) : commitRows,
+        );
+        setProvisioning(provisioningRow ?? null);
+        setDeployments(deploymentRows);
+        setProductionRequest(productionRequestRow);
+        setOpenSha((current) => current ?? commitRows[0]?.sha ?? null);
         setError(null);
-        setNotFound(true);
-      } else {
-        setError((loadError as Error).message);
+        setNotFound(false);
+      } catch (loadError) {
+        if (loadError instanceof ApiError && loadError.status === 404) {
+          // A project can disappear while this tab remains open (delete in
+          // another tab or control-plane restore). Never leave stale actions
+          // visible once the authoritative read says it is gone.
+          setProject(null);
+          setCommits([]);
+          setDeployments([]);
+          setProvisioning(null);
+          setProductionRequest(null);
+          setError(null);
+          setNotFound(true);
+        } else {
+          setError((loadError as Error).message);
+        }
+      } finally {
+        if (mode === 'head') pollInFlight.current = false;
+        setLoading(false);
       }
-    } finally {
-      if (mode === 'head') pollInFlight.current = false;
-      setLoading(false);
-    }
-  }, [id]);
+    },
+    [id],
+  );
 
   useEffect(() => {
     setProject(null);
@@ -135,9 +139,10 @@ export function useProjectDetail() {
     if (notFound) return;
     // During a short API restart retain the last useful view with a visible
     // warning, but retry quickly instead of waiting for the idle interval.
-    const delay = error || isLive(project, commits, ciRerunRequested)
-      ? ACTIVE_PROJECT_POLL_MS
-      : IDLE_PROJECT_POLL_MS;
+    const delay =
+      error || isLive(project, commits, ciRerunRequested)
+        ? ACTIVE_PROJECT_POLL_MS
+        : IDLE_PROJECT_POLL_MS;
     const timer = setTimeout(() => {
       if (document.visibilityState === 'visible') void load('head');
     }, delay);
@@ -181,7 +186,10 @@ export function useProjectDetail() {
   }, [project]);
 
   useEffect(() => {
-    api.listTargets().then(setTargets).catch(() => undefined);
+    api
+      .listTargets()
+      .then(setTargets)
+      .catch(() => undefined);
   }, []);
 
   async function promote(target: EnvName) {
@@ -236,19 +244,23 @@ export function useProjectDetail() {
     setBusy(`rollback-${rollbackPreview.environment}`);
     try {
       if (rollbackPreview.environment === 'prod') {
-        setProductionRequest(await api.requestProductionDeployment(id, {
-          kind: 'rollback',
-          candidateOperationId: rollbackPreview.candidateOperationId,
-          stateToken: rollbackPreview.stateToken,
-        }));
+        setProductionRequest(
+          await api.requestProductionDeployment(id, {
+            kind: 'rollback',
+            candidateOperationId: rollbackPreview.candidateOperationId,
+            stateToken: rollbackPreview.stateToken,
+          }),
+        );
         toast.success('Production rollback requested');
       } else {
-        setProject(await api.rollback(
-          id,
-          rollbackPreview.environment,
-          rollbackPreview.candidateOperationId,
-          rollbackPreview.stateToken,
-        ));
+        setProject(
+          await api.rollback(
+            id,
+            rollbackPreview.environment,
+            rollbackPreview.candidateOperationId,
+            rollbackPreview.stateToken,
+          ),
+        );
         toast.success(
           `Rolling back ${rollbackPreview.environment} to ${rollbackPreview.rollbackVersion.slice(0, 7)} without a new CI build.`,
         );
@@ -266,7 +278,9 @@ export function useProjectDetail() {
     setBusy(`production-${kind}`);
     try {
       setProductionRequest(await api.requestProductionDeployment(id, { kind }));
-      toast.success(kind === 'promote' ? 'Production deployment requested' : 'Production redeploy requested');
+      toast.success(
+        kind === 'promote' ? 'Production deployment requested' : 'Production redeploy requested',
+      );
     } catch (actionError) {
       toast.error((actionError as Error).message);
     } finally {
@@ -278,17 +292,20 @@ export function useProjectDetail() {
     if (!id || !productionRequest) return;
     setBusy(`production-${action}`);
     try {
-      const updated = action === 'approve'
-        ? await api.approveProductionDeployment(id, productionRequest.id)
-        : action === 'reject'
-          ? await api.rejectProductionDeployment(id, productionRequest.id)
-          : await api.cancelProductionDeployment(id, productionRequest.id);
+      const updated =
+        action === 'approve'
+          ? await api.approveProductionDeployment(id, productionRequest.id)
+          : action === 'reject'
+            ? await api.rejectProductionDeployment(id, productionRequest.id)
+            : await api.cancelProductionDeployment(id, productionRequest.id);
       setProductionRequest(updated);
       if (action === 'approve') {
         toast.success('Production deployment approved and queued');
         await load('head');
       } else {
-        toast.success(action === 'reject' ? 'Production request rejected' : 'Production request cancelled');
+        toast.success(
+          action === 'reject' ? 'Production request rejected' : 'Production request cancelled',
+        );
       }
     } catch (actionError) {
       toast.error((actionError as Error).message);
@@ -390,7 +407,7 @@ export function useProjectDetail() {
     try {
       await api.deleteProject(id, options);
       toast.success(`Deleted ${project.name}`);
-      navigate('/');
+      void navigate('/');
     } catch (actionError) {
       try {
         setProject(await api.getProject(id));
@@ -437,8 +454,7 @@ export function useProjectDetail() {
     setConfigEnv,
     setDiagnosticEnv,
     retryLoad,
-    toggleCommit: (sha: string) =>
-      setOpenSha((current) => (current === sha ? null : sha)),
+    toggleCommit: (sha: string) => setOpenSha((current) => (current === sha ? null : sha)),
     promote,
     redeploy,
     requestRollback,

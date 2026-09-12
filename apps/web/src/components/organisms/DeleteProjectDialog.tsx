@@ -78,9 +78,9 @@ export function DeleteProjectDialog({
             <Trash2 className="h-[18px] w-[18px] text-destructive" /> Delete project
           </DialogTitle>
           <DialogDescription>
-            InitPad will remove every managed deployment before deleting its project record.
-            Cleanup must succeed on every target by default. Protected leftovers can only be
-            detached through a separate explicit acknowledgement.
+            InitPad will remove every managed deployment before deleting its project record. Cleanup
+            must succeed on every target by default. Protected leftovers can only be detached
+            through a separate explicit acknowledgement.
           </DialogDescription>
         </DialogHeader>
 
@@ -89,7 +89,10 @@ export function DeleteProjectDialog({
           <ul className="mt-2 space-y-1.5 text-muted-foreground">
             {deployed.length ? (
               deployed.map((env) => (
-                <li key={env.name} className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <li
+                  key={env.name}
+                  className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                >
                   <span className="capitalize">{env.name} deployment</span>
                   <span className="break-words text-xs sm:text-right">
                     {env.target?.name ?? env.provider} · {env.status}
@@ -152,9 +155,9 @@ export function DeleteProjectDialog({
                   Delete the InitPad record with protected cleanup still pending
                 </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  The public application is already gone. A target administrator must still
-                  delete the listed quarantined paths. InitPad cannot retry that cleanup after
-                  this project record is deleted.
+                  The public application is already gone. A target administrator must still delete
+                  the listed quarantined paths. InitPad cannot retry that cleanup after this project
+                  record is deleted.
                 </span>
               </span>
             </label>
@@ -175,8 +178,8 @@ export function DeleteProjectDialog({
                 </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
                   Optional and irreversible. If you preserve the repository, its name remains
-                  occupied in Gitea and should later be added back as an existing project. Delete
-                  it if a brand-new project must reuse the same name.
+                  occupied in Gitea and should later be added back as an existing project. Delete it
+                  if a brand-new project must reuse the same name.
                 </span>
               </span>
             </label>

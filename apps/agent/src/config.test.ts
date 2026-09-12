@@ -71,22 +71,19 @@ test('never changes broad permissions on a custom parent directory', async () =>
   await chmod(root, 0o755);
   const path = join(root, 'agent.json');
 
-  await assert.rejects(
-    preflightConfigStorage(path),
-    /directory permissions are too broad/,
-  );
+  await assert.rejects(preflightConfigStorage(path), /directory permissions are too broad/);
   assert.equal((await stat(root)).mode & 0o777, 0o755);
 });
 
 test('requires HTTPS unless insecure HTTP is explicit or loopback-only', () => {
-  assert.equal(normalizeControlPlaneUrl('https://initpad.example.test/'), 'https://initpad.example.test');
+  assert.equal(
+    normalizeControlPlaneUrl('https://initpad.example.test/'),
+    'https://initpad.example.test',
+  );
   assert.equal(normalizeControlPlaneUrl('http://127.0.0.1:8080'), 'http://127.0.0.1:8080');
   assert.equal(
     normalizeControlPlaneUrl('http://host.docker.internal:8080', true),
     'http://host.docker.internal:8080',
   );
-  assert.throws(
-    () => normalizeControlPlaneUrl('http://initpad.example.test'),
-    /HTTPS is required/,
-  );
+  assert.throws(() => normalizeControlPlaneUrl('http://initpad.example.test'), /HTTPS is required/);
 });

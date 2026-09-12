@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { GiteaService } from '../scm/gitea.service';
@@ -96,7 +92,7 @@ export class AdminService {
     // Two ways to onboard: read out the temporary password, or send the
     // activation link where the user sets their own password.
     const activationUrl = await this.auth.createActivationLink(user.id);
-    return { user: toAdminUser(user as UserRow), temporaryPassword, activationUrl };
+    return { user: toAdminUser(user), temporaryPassword, activationUrl };
   }
 
   async createActivationLink(targetId: string): Promise<{ activationUrl: string }> {
@@ -112,7 +108,7 @@ export class AdminService {
     const target = await this.prisma.user.findUnique({ where: { id: targetId } });
     if (!target) throw new NotFoundException('User not found');
     if (target.active === active) {
-      return toAdminUser(target as UserRow);
+      return toAdminUser(target);
     }
     if (!active && target.platformRole === 'admin') {
       const otherAdmins = await this.prisma.user.count({
@@ -128,9 +124,7 @@ export class AdminService {
     const updated = await this.prisma.user.update({
       where: { id: targetId },
       // Deactivation also revokes live sessions by advancing the generation.
-      data: active
-        ? { active: true }
-        : { active: false, tokenVersion: { increment: 1 } },
+      data: active ? { active: true } : { active: false, tokenVersion: { increment: 1 } },
       select: USER_SELECT,
     });
     return toAdminUser(updated);

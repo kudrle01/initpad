@@ -79,7 +79,9 @@ export function WorkspaceMetricsDialog({
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle><TableProperties className="h-[18px] w-[18px]" /> Export workspace metrics</DialogTitle>
+          <DialogTitle>
+            <TableProperties className="h-[18px] w-[18px]" /> Export workspace metrics
+          </DialogTitle>
           <DialogDescription>
             Deployment counts and durations only. Logs, secrets and account data are excluded.
           </DialogDescription>
@@ -108,14 +110,20 @@ export function WorkspaceMetricsDialog({
           </div>
         </div>
         {!valid && from && to && (
-          <p role="alert" className="text-xs text-destructive">End date must not be before start date.</p>
+          <p role="alert" className="text-xs text-destructive">
+            End date must not be before start date.
+          </p>
         )}
 
         <DialogFooter>
           <Button variant="secondary" disabled={!!busy} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="secondary" disabled={!valid || !!busy} onClick={() => exportMetrics('json')}>
+          <Button
+            variant="secondary"
+            disabled={!valid || !!busy}
+            onClick={() => exportMetrics('json')}
+          >
             {busy === 'json' ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />}
             JSON
           </Button>

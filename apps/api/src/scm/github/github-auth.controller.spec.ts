@@ -20,12 +20,18 @@ describe('GitHubAuthController setup verification', () => {
       })),
       exchangeCode: jest.fn(async () => ({
         token: {
-          accessToken: 'ghu_transient', accessTokenExpiresAt: null,
-          refreshToken: null, refreshTokenExpiresAt: null,
+          accessToken: 'ghu_transient',
+          accessTokenExpiresAt: null,
+          refreshToken: null,
+          refreshTokenExpiresAt: null,
         },
         user: {
-          providerUserId: '123', login: 'alice', name: null, email: null,
-          emailVerified: false, avatarUrl: null,
+          providerUserId: '123',
+          login: 'alice',
+          name: null,
+          email: null,
+          emailVerified: false,
+          avatarUrl: null,
         },
       })),
     };
@@ -86,7 +92,12 @@ describe('GitHubAuthController setup verification', () => {
       redirect: jest.fn((url: string) => url),
     };
 
-    await controller.callback('oauth-code', 'signed-state', { cookies: {} } as never, response as never);
+    await controller.callback(
+      'oauth-code',
+      'signed-state',
+      { cookies: {} } as never,
+      response as never,
+    );
 
     expect(oauth.exchangeCode).not.toHaveBeenCalled();
     expect(response.redirect).toHaveBeenCalledWith(expect.stringContaining('installation_error'));
@@ -96,12 +107,18 @@ describe('GitHubAuthController setup verification', () => {
     config.auth.frontendUrl = 'https://initpad.example';
     const exchange = {
       token: {
-        accessToken: 'ghu_user', accessTokenExpiresAt: null,
-        refreshToken: null, refreshTokenExpiresAt: null,
+        accessToken: 'ghu_user',
+        accessTokenExpiresAt: null,
+        refreshToken: null,
+        refreshTokenExpiresAt: null,
       },
       user: {
-        providerUserId: '123', login: 'alice', name: null, email: null,
-        emailVerified: false, avatarUrl: null,
+        providerUserId: '123',
+        login: 'alice',
+        name: null,
+        email: null,
+        emailVerified: false,
+        avatarUrl: null,
       },
     };
     const oauth = {
@@ -116,7 +133,11 @@ describe('GitHubAuthController setup verification', () => {
       identities as never,
       {} as never,
       { verify: jest.fn(() => ({ sub: 'user-1', ver: 0 })) } as never,
-      { user: { findUnique: jest.fn(async () => ({ id: 'user-1', active: true, tokenVersion: 0 })) } } as never,
+      {
+        user: {
+          findUnique: jest.fn(async () => ({ id: 'user-1', active: true, tokenVersion: 0 })),
+        },
+      } as never,
       {} as never,
       credentials as never,
     );

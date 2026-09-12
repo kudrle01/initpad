@@ -35,9 +35,12 @@ const target: TargetRow = {
 
 describe('ProjectEnvironmentTargets Agent readiness', () => {
   const savedStore = { ...config.artifactStore };
-  const service = new ProjectEnvironmentTargets({} as never, {
-    parseCaps: (value: string) => value.split(','),
-  } as never);
+  const service = new ProjectEnvironmentTargets(
+    {} as never,
+    {
+      parseCaps: (value: string) => value.split(','),
+    } as never,
+  );
 
   afterEach(() => Object.assign(config.artifactStore, savedStore));
 
@@ -65,10 +68,15 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
       secretAccessKey: 'test-secret',
     });
     expect(() => service.assertUsable({ ...target, agent: null }, template)).toThrow('Enroll');
-    expect(() => service.assertUsable({
-      ...target,
-      agent: { credentialHash: 'hash', disabledAt: null, version: '0.3.0' },
-    }, template)).toThrow('0.4.0');
+    expect(() =>
+      service.assertUsable(
+        {
+          ...target,
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.3.0' },
+        },
+        template,
+      ),
+    ).toThrow('0.4.0');
   });
 
   it('requires managed gateway preflight and Agent 0.8 before accepting the target', () => {
@@ -78,17 +86,27 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
       secretAccessKey: 'test-secret',
     });
 
-    expect(() => service.assertUsable({
-      ...target,
-      routingMode: 'managed-gateway',
-    }, template)).toThrow('Caddy gateway preflight');
+    expect(() =>
+      service.assertUsable(
+        {
+          ...target,
+          routingMode: 'managed-gateway',
+        },
+        template,
+      ),
+    ).toThrow('Caddy gateway preflight');
 
-    expect(() => service.assertUsable({
-      ...target,
-      routingMode: 'managed-gateway',
-      gatewayAdapter: 'caddy',
-      gatewayPreflightStatus: 'passed',
-      agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
-    }, template)).not.toThrow();
+    expect(() =>
+      service.assertUsable(
+        {
+          ...target,
+          routingMode: 'managed-gateway',
+          gatewayAdapter: 'caddy',
+          gatewayPreflightStatus: 'passed',
+          agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
+        },
+        template,
+      ),
+    ).not.toThrow();
   });
 });

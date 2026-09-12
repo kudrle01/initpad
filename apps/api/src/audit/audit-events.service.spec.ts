@@ -87,7 +87,9 @@ describe('AuditEventsService', () => {
     const prisma = {
       auditEvent: {
         findFirst: jest.fn(async () => ({
-          actorUserId: 'user-1', actorUsername: 'alice', actorDisplayName: null,
+          actorUserId: 'user-1',
+          actorUsername: 'alice',
+          actorDisplayName: null,
         })),
         create,
       },
@@ -190,22 +192,22 @@ describe('AuditEventsService', () => {
       },
       auditEvent: { findMany: jest.fn(async () => [operationRow]) },
       deploymentOperation: {
-        findMany: jest.fn(async () => [{
-          id: operationId,
-          kind: 'deploy',
-          status: 'succeeded',
-          phase: 'succeeded',
-          environment: { projectId: 'project-1' },
-        }]),
+        findMany: jest.fn(async () => [
+          {
+            id: operationId,
+            kind: 'deploy',
+            status: 'succeeded',
+            phase: 'succeeded',
+            environment: { projectId: 'project-1' },
+          },
+        ]),
       },
       provisioningOperation: { findMany: jest.fn() },
     };
 
-    const page = await new AuditEventsService(prisma as never).list(
-      'user-1',
-      'workspace-1',
-      { limit: 30 },
-    );
+    const page = await new AuditEventsService(prisma as never).list('user-1', 'workspace-1', {
+      limit: 30,
+    });
 
     expect(page.items[0].operation).toEqual({
       type: 'deployment',
@@ -240,10 +242,7 @@ describe('AuditEventsService', () => {
     };
 
     await expect(
-      new AuditEventsService(prisma as never).recordOperationResult(
-        'provisioning',
-        operationId,
-      ),
+      new AuditEventsService(prisma as never).recordOperationResult('provisioning', operationId),
     ).resolves.toBeUndefined();
   });
 
@@ -254,13 +253,15 @@ describe('AuditEventsService', () => {
     };
     const service = new AuditEventsService(prisma as never);
 
-    await expect(service.record({
-      workspaceId: 'workspace-1',
-      actorUserId: 'user-1',
-      action: 'target.created',
-      resourceType: 'target',
-      details: { password: 'never-store-this' },
-    })).rejects.toThrow("Unsafe audit detail key 'password'");
+    await expect(
+      service.record({
+        workspaceId: 'workspace-1',
+        actorUserId: 'user-1',
+        action: 'target.created',
+        resourceType: 'target',
+        details: { password: 'never-store-this' },
+      }),
+    ).rejects.toThrow("Unsafe audit detail key 'password'");
     expect(prisma.auditEvent.create).not.toHaveBeenCalled();
   });
 
@@ -298,11 +299,13 @@ describe('AuditEventsService', () => {
     });
     expect(page.items.map((event) => event.id)).toEqual(['3', '2']);
     expect(page.nextCursor).toBe('2');
-    expect(page.items[0]).toEqual(expect.objectContaining({
-      actor: { userId: 'user-1', username: 'alice', displayName: 'Alice' },
-      resource: { type: 'member', id: 'member-3', name: 'user-3' },
-      createdAt: '2026-09-01T12:03:00.000Z',
-    }));
+    expect(page.items[0]).toEqual(
+      expect.objectContaining({
+        actor: { userId: 'user-1', username: 'alice', displayName: 'Alice' },
+        resource: { type: 'member', id: 'member-3', name: 'user-3' },
+        createdAt: '2026-09-01T12:03:00.000Z',
+      }),
+    );
   });
 
   it('hides a foreign workspace as 404 before reading any event', async () => {
@@ -325,10 +328,12 @@ describe('AuditEventsService', () => {
     };
     const service = new AuditEventsService(prisma as never);
 
-    await expect(service.list('user-1', 'workspace-1', {
-      limit: 30,
-      cursor: 'c529f180-040f-4c4a-8c46-8c488df8468f',
-    })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.list('user-1', 'workspace-1', {
+        limit: 30,
+        cursor: 'c529f180-040f-4c4a-8c46-8c488df8468f',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.auditEvent.findMany).not.toHaveBeenCalled();
   });
 });

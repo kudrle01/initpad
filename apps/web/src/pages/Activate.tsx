@@ -28,7 +28,7 @@ export default function Activate() {
     try {
       const user = await api.activateAccount(token, password);
       signIn(user);
-      navigate('/');
+      void navigate('/');
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -40,7 +40,9 @@ export default function Activate() {
       <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-6 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
         <BrandMark className="mx-auto h-11 w-11" />
         <h1 className="mt-4 text-[20px] font-semibold tracking-tight">Activate your account</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Choose a password to finish setting up your InitPad account.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Choose a password to finish setting up your InitPad account.
+        </p>
         <form className="mt-6 flex flex-col gap-2.5" onSubmit={submit}>
           <Input
             type="password"

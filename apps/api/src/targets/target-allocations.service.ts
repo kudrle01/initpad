@@ -66,20 +66,29 @@ function changedAllocationFields(
   };
   const isChanged = (key: keyof UpdateTargetAllocationDto): boolean => {
     switch (key) {
-      case 'capabilities': return capabilities !== row.capabilities;
-      case 'publicUrl': return dto.publicUrl !== row.publicUrl;
-      case 'status': return dto.status !== row.status;
-      case 'maxEnvironments': return dto.maxEnvironments !== row.maxEnvironments;
-      case 'cpuLimitMillicores': return dto.cpuLimitMillicores !== row.cpuLimitMillicores;
-      case 'memoryLimitMb': return dto.memoryLimitMb !== row.memoryLimitMb;
-      case 'pidsLimit': return dto.pidsLimit !== row.pidsLimit;
-      case 'devTtlHours': return dto.devTtlHours !== row.devTtlHours;
-      case 'testTtlHours': return dto.testTtlHours !== row.testTtlHours;
+      case 'capabilities':
+        return capabilities !== row.capabilities;
+      case 'publicUrl':
+        return dto.publicUrl !== row.publicUrl;
+      case 'status':
+        return dto.status !== row.status;
+      case 'maxEnvironments':
+        return dto.maxEnvironments !== row.maxEnvironments;
+      case 'cpuLimitMillicores':
+        return dto.cpuLimitMillicores !== row.cpuLimitMillicores;
+      case 'memoryLimitMb':
+        return dto.memoryLimitMb !== row.memoryLimitMb;
+      case 'pidsLimit':
+        return dto.pidsLimit !== row.pidsLimit;
+      case 'devTtlHours':
+        return dto.devTtlHours !== row.devTtlHours;
+      case 'testTtlHours':
+        return dto.testTtlHours !== row.testTtlHours;
     }
   };
   return (Object.keys(dto) as (keyof UpdateTargetAllocationDto)[])
     .filter(isChanged)
-    .map((key) => labels[key as keyof UpdateTargetAllocationDto])
+    .map((key) => labels[key])
     .filter((key): key is string => key !== undefined)
     .sort()
     .join(',');
@@ -121,7 +130,7 @@ export class TargetAllocationsService {
     private readonly workspaces: WorkspacesService,
     @Inject(AuditEventsService)
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
-      record: async () => undefined,
+      record: () => Promise.resolve(),
     },
   ) {}
 
@@ -154,9 +163,9 @@ export class TargetAllocationsService {
       where: { id: dto.targetId },
     });
     if (
-      !target
-      || (target.scope !== 'builtin' && target.workspaceId !== workspaceId)
-      || (config.edition === 'saas' && target.scope === 'builtin')
+      !target ||
+      (target.scope !== 'builtin' && target.workspaceId !== workspaceId) ||
+      (config.edition === 'saas' && target.scope === 'builtin')
     ) {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
     }
@@ -170,9 +179,11 @@ export class TargetAllocationsService {
         `Server '${target.name}' is ${target.managementState}; restore and reconnect it before enabling workspace access`,
       );
     }
-    if (await this.prisma.targetAllocation.findUnique({
-      where: { workspaceId_targetId: { workspaceId, targetId: dto.targetId } },
-    })) {
+    if (
+      await this.prisma.targetAllocation.findUnique({
+        where: { workspaceId_targetId: { workspaceId, targetId: dto.targetId } },
+      })
+    ) {
       throw new BadRequestException('This workspace already has access to that server');
     }
 
@@ -239,9 +250,9 @@ export class TargetAllocationsService {
         ? this.resolveCapabilities(dto.capabilities, row.target.capabilities)
         : undefined;
     if (
-      dto.status === 'active'
-      && row.target.scope === 'user'
-      && (row.target.managementState ?? 'active') !== 'active'
+      dto.status === 'active' &&
+      row.target.scope === 'user' &&
+      (row.target.managementState ?? 'active') !== 'active'
     ) {
       throw new BadRequestException(
         `Reconnect server '${row.target.name}' before resuming workspace access`,
@@ -254,7 +265,9 @@ export class TargetAllocationsService {
         ...(dto.publicUrl !== undefined ? { publicUrl: dto.publicUrl } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
         ...(dto.maxEnvironments !== undefined ? { maxEnvironments: dto.maxEnvironments } : {}),
-        ...(dto.cpuLimitMillicores !== undefined ? { cpuLimitMillicores: dto.cpuLimitMillicores } : {}),
+        ...(dto.cpuLimitMillicores !== undefined
+          ? { cpuLimitMillicores: dto.cpuLimitMillicores }
+          : {}),
         ...(dto.memoryLimitMb !== undefined ? { memoryLimitMb: dto.memoryLimitMb } : {}),
         ...(dto.pidsLimit !== undefined ? { pidsLimit: dto.pidsLimit } : {}),
         ...(dto.devTtlHours !== undefined ? { devTtlHours: dto.devTtlHours } : {}),
@@ -273,12 +286,14 @@ export class TargetAllocationsService {
       });
       const now = new Date();
       if (bound.length) {
-        await this.prisma.$transaction(bound.map((environment) =>
-          this.prisma.environment.update({
-            where: { id: environment.id },
-            data: environmentExpiry(environment.name, updated, now),
-          }),
-        ));
+        await this.prisma.$transaction(
+          bound.map((environment) =>
+            this.prisma.environment.update({
+              where: { id: environment.id },
+              data: environmentExpiry(environment.name, updated, now),
+            }),
+          ),
+        );
       }
     }
     const changedFields = changedAllocationFields(dto, row, capabilities);
@@ -355,7 +370,10 @@ export class TargetAllocationsService {
   }
 
   private parse(csv: string): string[] {
-    return csv.split(',').map((s) => s.trim()).filter(Boolean);
+    return csv
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 
   private csv(caps: string[]): string {
@@ -390,7 +408,8 @@ export class TargetAllocationsService {
       id: row.id,
       targetId: row.targetId,
       targetName: row.target.name,
-      targetManagementState: (row.target.managementState ?? 'active') as TargetAllocationSummary['targetManagementState'],
+      targetManagementState: (row.target.managementState ??
+        'active') as TargetAllocationSummary['targetManagementState'],
       workspaceId: row.workspaceId,
       namespace: row.namespace,
       rootPath: row.rootPath,

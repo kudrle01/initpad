@@ -25,7 +25,9 @@ test('streaming request body removes transient listeners after every drain', asy
 
   await writeRequestStream(
     request as unknown as http.ClientRequest,
-    (async function* () { yield* chunks; })(),
+    (async function* () {
+      yield* chunks;
+    })(),
   );
 
   assert.equal(request.writes, chunks.length);
@@ -44,7 +46,9 @@ test('streaming request body removes listeners when a write fails', async () => 
   await assert.rejects(
     writeRequestStream(
       request as unknown as http.ClientRequest,
-      (async function* () { yield Buffer.alloc(1); })(),
+      (async function* () {
+        yield Buffer.alloc(1);
+      })(),
     ),
     /socket failed/,
   );

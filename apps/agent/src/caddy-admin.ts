@@ -29,23 +29,29 @@ export interface CaddyRouteSnapshot {
 
 function privateAddress(address: string): boolean {
   const normalized = address.toLowerCase();
-  if (normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+  if (normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd'))
+    return true;
   if (/^fe[89ab]/.test(normalized)) return true;
   const octets = normalized.split('.').map(Number);
-  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+  if (
+    octets.length !== 4 ||
+    octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+  ) {
     return false;
   }
-  return octets[0] === 10
-    || octets[0] === 127
-    || (octets[0] === 169 && octets[1] === 254)
-    || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
-    || (octets[0] === 192 && octets[1] === 168);
+  return (
+    octets[0] === 10 ||
+    octets[0] === 127 ||
+    (octets[0] === 169 && octets[1] === 254) ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168)
+  );
 }
 
 function routeHostname(route: CaddyRoute): string | null {
   const match = route.match;
   if (!Array.isArray(match) || match.length !== 1) return null;
-  const matcher = match[0];
+  const matcher: unknown = match[0];
   if (!matcher || typeof matcher !== 'object' || Array.isArray(matcher)) return null;
   const hosts = (matcher as Record<string, unknown>).host;
   return Array.isArray(hosts) && hosts.length === 1 && typeof hosts[0] === 'string'
@@ -54,14 +60,19 @@ function routeHostname(route: CaddyRoute): string | null {
 }
 
 function routeUpstream(route: CaddyRoute): string | null {
-  if (route.terminal !== true || !Array.isArray(route.handle) || route.handle.length !== 1) return null;
-  const handler = route.handle[0];
+  if (route.terminal !== true || !Array.isArray(route.handle) || route.handle.length !== 1)
+    return null;
+  const handler: unknown = route.handle[0];
   if (!handler || typeof handler !== 'object' || Array.isArray(handler)) return null;
   const record = handler as Record<string, unknown>;
-  if (record.handler !== 'reverse_proxy' || !Array.isArray(record.upstreams) || record.upstreams.length !== 1) {
+  if (
+    record.handler !== 'reverse_proxy' ||
+    !Array.isArray(record.upstreams) ||
+    record.upstreams.length !== 1
+  ) {
     return null;
   }
-  const upstream = record.upstreams[0];
+  const upstream: unknown = record.upstreams[0];
   if (!upstream || typeof upstream !== 'object' || Array.isArray(upstream)) return null;
   const dial = (upstream as Record<string, unknown>).dial;
   return typeof dial === 'string' ? dial : null;
@@ -71,10 +82,12 @@ function managedRoute(intent: CaddyRouteIntent): CaddyRoute {
   return {
     '@id': intent.id,
     match: [{ host: [intent.hostname] }],
-    handle: [{
-      handler: 'reverse_proxy',
-      upstreams: [{ dial: intent.upstream }],
-    }],
+    handle: [
+      {
+        handler: 'reverse_proxy',
+        upstreams: [{ dial: intent.upstream }],
+      },
+    ],
     terminal: true,
   };
 }
@@ -95,7 +108,11 @@ export class CaddyAdminClient {
     await this.readRoutes(signal);
   }
 
-  async currentRoute(id: string, hostname: string, signal: AbortSignal): Promise<CaddyRouteSnapshot | null> {
+  async currentRoute(
+    id: string,
+    hostname: string,
+    signal: AbortSignal,
+  ): Promise<CaddyRouteSnapshot | null> {
     const current = await this.readRoutes(signal);
     const owned = current.routes.filter((route) => route['@id'] === id);
     if (owned.length > 1) throw new Error('Caddy contains duplicate InitPad route identities');
@@ -121,25 +138,30 @@ export class CaddyAdminClient {
 
       const ownedRoutes = current.routes.filter((route) => route['@id'] === intent.id);
       if (
-        intent.present
-        && ownedRoutes.length === 1
-        && routeHostname(ownedRoutes[0]) === intent.hostname
-        && routeUpstream(ownedRoutes[0]) === intent.upstream
-      ) return;
+        intent.present &&
+        ownedRoutes.length === 1 &&
+        routeHostname(ownedRoutes[0]) === intent.hostname &&
+        routeUpstream(ownedRoutes[0]) === intent.upstream
+      )
+        return;
       if (!intent.present && ownedRoutes.length === 0) return;
 
       const next = current.routes.filter((route) => route['@id'] !== intent.id);
       if (intent.present) next.push(managedRoute(intent));
 
-      const response = await this.fetch(ROUTES_PATH, {
-        method: 'PATCH',
-        headers: {
-          accept: 'application/json',
-          'content-type': 'application/json',
-          'if-match': current.etag,
+      const response = await this.fetch(
+        ROUTES_PATH,
+        {
+          method: 'PATCH',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+            'if-match': current.etag,
+          },
+          body: JSON.stringify(next),
         },
-        body: JSON.stringify(next),
-      }, signal);
+        signal,
+      );
       if (response.status === 412) continue;
       if (!response.ok) throw new Error(`Caddy route update returned HTTP ${response.status}`);
 
@@ -148,24 +170,29 @@ export class CaddyAdminClient {
       if (intent.present && routeHostname(finalRoute ?? {}) !== intent.hostname) {
         throw new Error('Caddy did not publish the requested route');
       }
-      if (!intent.present && finalRoute) throw new Error('Caddy did not remove the requested route');
+      if (!intent.present && finalRoute)
+        throw new Error('Caddy did not remove the requested route');
       return;
     }
     throw new Error('Caddy configuration changed concurrently; retry the route operation');
   }
 
   private async readRoutes(signal: AbortSignal): Promise<{ routes: CaddyRoute[]; etag: string }> {
-    const response = await this.fetch(ROUTES_PATH, {
-      headers: { accept: 'application/json' },
-    }, signal);
+    const response = await this.fetch(
+      ROUTES_PATH,
+      {
+        headers: { accept: 'application/json' },
+      },
+      signal,
+    );
     if (!response.ok) throw new Error(`Caddy adapter readiness returned HTTP ${response.status}`);
     const etag = response.headers.get('etag');
     if (!etag) throw new Error('Caddy adapter did not provide a configuration ETag');
     const document: unknown = await response.json();
     if (
-      !Array.isArray(document)
-      || document.length > MAX_ROUTE_COUNT
-      || document.some((route) => !route || typeof route !== 'object' || Array.isArray(route))
+      !Array.isArray(document) ||
+      document.length > MAX_ROUTE_COUNT ||
+      document.some((route) => !route || typeof route !== 'object' || Array.isArray(route))
     ) {
       throw new Error('Caddy adapter returned an invalid route document');
     }
@@ -212,41 +239,48 @@ export class CaddyAdminClient {
     }
     const headers = Object.fromEntries(new Headers(init.headers).entries());
     return new Promise((resolve, reject) => {
-      const request = http.request({
-        socketPath,
-        path,
-        method: init.method ?? 'GET',
-        headers: { host: 'localhost', ...headers },
-      }, (response) => {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        response.on('data', (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > MAX_ADMIN_RESPONSE_BYTES) {
-            request.destroy(new Error('Caddy adapter response is too large'));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.on('end', () => {
-          const responseHeaders = new Headers();
-          for (const [name, value] of Object.entries(response.headers)) {
-            if (Array.isArray(value)) value.forEach((item) => responseHeaders.append(name, item));
-            else if (value !== undefined) responseHeaders.set(name, value);
-          }
-          resolve(new Response(Buffer.concat(chunks), {
-            status: response.statusCode ?? 500,
-            headers: responseHeaders,
-          }));
-        });
-      });
+      const request = http.request(
+        {
+          socketPath,
+          path,
+          method: init.method ?? 'GET',
+          headers: { host: 'localhost', ...headers },
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          response.on('data', (chunk: Buffer) => {
+            size += chunk.length;
+            if (size > MAX_ADMIN_RESPONSE_BYTES) {
+              request.destroy(new Error('Caddy adapter response is too large'));
+              return;
+            }
+            chunks.push(chunk);
+          });
+          response.on('end', () => {
+            const responseHeaders = new Headers();
+            for (const [name, value] of Object.entries(response.headers)) {
+              if (Array.isArray(value)) value.forEach((item) => responseHeaders.append(name, item));
+              else if (value !== undefined) responseHeaders.set(name, value);
+            }
+            resolve(
+              new Response(Buffer.concat(chunks), {
+                status: response.statusCode ?? 500,
+                headers: responseHeaders,
+              }),
+            );
+          });
+        },
+      );
       const abort = () => request.destroy(new Error('Caddy adapter request aborted'));
       signal.addEventListener('abort', abort, { once: true });
       if (signal.aborted) {
         abort();
         return;
       }
-      request.setTimeout(10_000, () => request.destroy(new Error('Caddy adapter request timed out')));
+      request.setTimeout(10_000, () =>
+        request.destroy(new Error('Caddy adapter request timed out')),
+      );
       request.on('error', reject);
       request.on('close', () => signal.removeEventListener('abort', abort));
       if (typeof init.body === 'string') request.write(init.body);
@@ -264,12 +298,12 @@ export class CaddyAdminClient {
       throw new Error('Caddy adapter URL is invalid');
     }
     if (
-      !['http:', 'https:'].includes(url.protocol)
-      || url.username
-      || url.password
-      || (url.pathname !== '/' && url.pathname !== '')
-      || url.search
-      || url.hash
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      (url.pathname !== '/' && url.pathname !== '') ||
+      url.search ||
+      url.hash
     ) {
       throw new Error('Caddy adapter URL must be a private HTTP(S) origin');
     }

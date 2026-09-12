@@ -79,10 +79,7 @@ describe('ProjectsService SCM identity', () => {
       expect.objectContaining({
         where: {
           scmProvider: 'gitea',
-          OR: [
-            { scmRepositoryId: '101' },
-            { scmRepositoryId: null, scmFullName: 'acme/api' },
-          ],
+          OR: [{ scmRepositoryId: '101' }, { scmRepositoryId: null, scmFullName: 'acme/api' }],
         },
       }),
     );

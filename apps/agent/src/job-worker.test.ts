@@ -21,11 +21,13 @@ function claim(overrides: Partial<AgentJobClaim> = {}): AgentJobClaim {
   };
 }
 
-function summary(input: {
-  status?: string;
-  sequence?: number;
-  percent?: number;
-} = {}): AgentJobSummary {
+function summary(
+  input: {
+    status?: string;
+    sequence?: number;
+    percent?: number;
+  } = {},
+): AgentJobSummary {
   return {
     id: 'job-1',
     kind: 'probe',
@@ -47,7 +49,9 @@ test('renews a long probe and retries lost progress/completion responses idempot
   let now = START;
   const timing: JobTiming = {
     now: () => now,
-    sleep: async (ms) => { now += ms; },
+    sleep: async (ms) => {
+      now += ms;
+    },
     renewEveryMs: 10_000,
     progressEveryMs: 5_000,
   };
@@ -82,10 +86,19 @@ test('renews a long probe and retries lost progress/completion responses idempot
   await executeClaimedJob(claim(), new AbortController().signal, client, { timing });
 
   assert.ok(renewals.length >= 3);
-  assert.equal(renewals.every((token) => token === LEASE), true);
-  assert.deepEqual(progress.slice(0, 2).map((item) => item.sequence), [1, 1]);
+  assert.equal(
+    renewals.every((token) => token === LEASE),
+    true,
+  );
+  assert.deepEqual(
+    progress.slice(0, 2).map((item) => item.sequence),
+    [1, 1],
+  );
   const distinctSequences = [...new Set(progress.map((item) => item.sequence))];
-  assert.deepEqual(distinctSequences, [...distinctSequences].sort((a, b) => a - b));
+  assert.deepEqual(
+    distinctSequences,
+    [...distinctSequences].sort((a, b) => a - b),
+  );
   assert.equal(progress.at(-1)?.percent, 99);
   assert.equal(completions.length, 2);
   assert.deepEqual(completions[0], completions[1]);
@@ -96,28 +109,35 @@ test('aborts deployment without completion when lease renewal cannot reach the c
   let now = START;
   let releaseRenewal: (() => void) | undefined;
   let workloadStarted: (() => void) | undefined;
-  const workloadReady = new Promise<void>((resolve) => { workloadStarted = resolve; });
+  const workloadReady = new Promise<void>((resolve) => {
+    workloadStarted = resolve;
+  });
   const timing: JobTiming = {
     now: () => now,
-    sleep: async (_ms, signal) => new Promise<void>((resolve) => {
-      const finish = () => {
-        signal.removeEventListener('abort', finish);
-        resolve();
-      };
-      releaseRenewal = () => {
-        now = START + 30_000;
-        finish();
-      };
-      signal.addEventListener('abort', finish, { once: true });
-    }),
+    sleep: async (_ms, signal) =>
+      new Promise<void>((resolve) => {
+        const finish = () => {
+          signal.removeEventListener('abort', finish);
+          resolve();
+        };
+        releaseRenewal = () => {
+          now = START + 30_000;
+          finish();
+        };
+        signal.addEventListener('abort', finish, { once: true });
+      }),
     renewEveryMs: 10_000,
     progressEveryMs: 5_000,
   };
   let completions = 0;
   const bytes = Buffer.from('archive');
   const client: AgentJobClient = {
-    renew: async () => { throw new Error('control plane unavailable'); },
-    progress: async () => { throw new Error('progress must stop with the lease'); },
+    renew: async () => {
+      throw new Error('control plane unavailable');
+    },
+    progress: async () => {
+      throw new Error('progress must stop with the lease');
+    },
     complete: async () => {
       completions += 1;
       return summary({ status: 'succeeded' });
@@ -177,8 +197,12 @@ test('aborts deployment without completion when lease renewal cannot reach the c
 test('fails a future or unknown job without interpreting its payload as a command', async () => {
   const calls: string[] = [];
   const client: AgentJobClient = {
-    renew: async () => { throw new Error('must not renew'); },
-    progress: async () => { throw new Error('must not report progress'); },
+    renew: async () => {
+      throw new Error('must not renew');
+    },
+    progress: async () => {
+      throw new Error('must not report progress');
+    },
     complete: async (_jobId, input) => {
       calls.push(`${input.status}:${input.resultCode}`);
       return summary({ status: input.status });
@@ -277,10 +301,12 @@ test('runs the bounded gateway route interface and reports its generation', asyn
   );
 
   assert.deepEqual(progress, [60, 95]);
-  assert.deepEqual(completions, [{
-    status: 'succeeded',
-    message: 'Gateway route generation 4 reconciled to active',
-  }]);
+  assert.deepEqual(completions, [
+    {
+      status: 'succeeded',
+      message: 'Gateway route generation 4 reconciled to active',
+    },
+  ]);
 });
 
 test('runs only the explicit Docker lifecycle acceptance interface', async () => {
@@ -354,42 +380,39 @@ test('collects project diagnostics through the fixed bounded Agent interface', a
     },
   };
 
-  await executeClaimedJob(
-    claim({ kind: 'logs', payload }),
-    new AbortController().signal,
-    client,
-    {
-      lifecycle: {
-        acceptance: async () => undefined,
-        diagnostics: async () => ({
-          state: 'stopped',
-          revision: payload.revision,
-          workloadSlot: 'a1b2c3d4e5f6',
-          exitCode: 137,
-          health: 'not-running',
-          logs: 'bounded application tail',
-        }),
-      },
+  await executeClaimedJob(claim({ kind: 'logs', payload }), new AbortController().signal, client, {
+    lifecycle: {
+      acceptance: async () => undefined,
+      diagnostics: async () => ({
+        state: 'stopped',
+        revision: payload.revision,
+        workloadSlot: 'a1b2c3d4e5f6',
+        exitCode: 137,
+        health: 'not-running',
+        logs: 'bounded application tail',
+      }),
     },
-  );
+  });
 
   assert.deepEqual(progress, [20, 90]);
-  assert.deepEqual(completions, [{
-    leaseToken: LEASE,
-    status: 'succeeded',
-    message: 'Workload is stopped and not-running',
-    resultCode: 'ok',
-    result: {
-      state: 'stopped',
-      revision: payload.revision,
-      workloadSlot: 'a1b2c3d4e5f6',
+  assert.deepEqual(completions, [
+    {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Workload is stopped and not-running',
+      resultCode: 'ok',
+      result: {
+        state: 'stopped',
+        revision: payload.revision,
+        workloadSlot: 'a1b2c3d4e5f6',
+      },
+      diagnostic: {
+        exitCode: 137,
+        health: 'not-running',
+        logs: 'bounded application tail',
+      },
     },
-    diagnostic: {
-      exitCode: 137,
-      health: 'not-running',
-      logs: 'bounded application tail',
-    },
-  }]);
+  ]);
 });
 
 test('downloads and runs a project artifact without exposing config to progress or completion', async () => {
@@ -447,7 +470,14 @@ test('downloads and runs a project artifact without exposing config to progress 
     {
       lifecycle: {
         acceptance: async () => undefined,
-        deployProject: async (receivedPayload, receivedDelivery, archive, _jobId, _signal, report) => {
+        deployProject: async (
+          receivedPayload,
+          receivedDelivery,
+          archive,
+          _jobId,
+          _signal,
+          report,
+        ) => {
           lifecycleCalls.push(receivedPayload, receivedDelivery);
           const chunks: Buffer[] = [];
           for await (const chunk of archive) chunks.push(Buffer.from(chunk));
@@ -461,13 +491,15 @@ test('downloads and runs a project artifact without exposing config to progress 
 
   assert.equal(lifecycleCalls.length, 2);
   assert.deepEqual(progressMessages, ['Creating workload']);
-  assert.deepEqual(completions, [{
-    leaseToken: LEASE,
-    status: 'succeeded',
-    message: 'Deployment is running and healthy',
-    resultCode: 'ok',
-    result: { state: 'running', revision: payload.revision, hostPort: 32780 },
-  }]);
+  assert.deepEqual(completions, [
+    {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: 'Deployment is running and healthy',
+      resultCode: 'ok',
+      result: { state: 'running', revision: payload.revision, hostPort: 32780 },
+    },
+  ]);
   assert.equal(JSON.stringify(progressMessages).includes('top-secret'), false);
   assert.equal(JSON.stringify(completions).includes('top-secret'), false);
 });
@@ -489,28 +521,35 @@ test('executes only explicit project stop/start/remove lifecycle methods', async
     const completions: Array<Record<string, unknown>> = [];
     const client: AgentJobClient = {
       renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
-      progress: async (_jobId, input) => summary({ sequence: input.sequence, percent: input.percent }),
+      progress: async (_jobId, input) =>
+        summary({ sequence: input.sequence, percent: input.percent }),
       complete: async (_jobId, input) => {
         completions.push(input as unknown as Record<string, unknown>);
         return summary({ status: input.status });
       },
     };
-    await executeClaimedJob(
-      claim({ kind, payload }),
-      new AbortController().signal,
-      client,
-      {
-        lifecycle: {
-          acceptance: async () => undefined,
-          start: async () => { calls.push('start'); },
-          stop: async () => { calls.push('stop'); },
-          removeProject: async () => { calls.push('remove'); },
-          status: async () => kind === 'remove'
-            ? { state: 'missing' }
-            : { state: kind === 'stop' ? 'stopped' : 'running', revision: payload.revision, hostPort: 32780 },
+    await executeClaimedJob(claim({ kind, payload }), new AbortController().signal, client, {
+      lifecycle: {
+        acceptance: async () => undefined,
+        start: async () => {
+          calls.push('start');
         },
+        stop: async () => {
+          calls.push('stop');
+        },
+        removeProject: async () => {
+          calls.push('remove');
+        },
+        status: async () =>
+          kind === 'remove'
+            ? { state: 'missing' }
+            : {
+                state: kind === 'stop' ? 'stopped' : 'running',
+                revision: payload.revision,
+                hostPort: 32780,
+              },
       },
-    );
+    });
     assert.deepEqual(calls, [kind]);
     assert.equal(completions[0]?.status, 'succeeded');
     assert.deepEqual(

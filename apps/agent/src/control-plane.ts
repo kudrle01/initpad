@@ -41,10 +41,13 @@ async function postJson<T>(
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     if (!response.ok) {
       const apiMessage = typeof payload?.message === 'string' ? payload.message : undefined;
-      throw new ControlPlaneError(response.status, apiMessage || `Control plane returned HTTP ${response.status}`);
+      throw new ControlPlaneError(
+        response.status,
+        apiMessage || `Control plane returned HTTP ${response.status}`,
+      );
     }
     return payload as T;
   } finally {
@@ -57,11 +60,17 @@ export function enroll(
   token: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<EnrollmentResponse> {
-  return postJson<EnrollmentResponse>(controlPlaneUrl, '/api/agent/enroll', {
-    token,
-    version: AGENT_VERSION,
-    protocolVersion: PROTOCOL_VERSION,
-  }, undefined, fetchImpl);
+  return postJson<EnrollmentResponse>(
+    controlPlaneUrl,
+    '/api/agent/enroll',
+    {
+      token,
+      version: AGENT_VERSION,
+      protocolVersion: PROTOCOL_VERSION,
+    },
+    undefined,
+    fetchImpl,
+  );
 }
 
 export function heartbeat(
@@ -69,21 +78,33 @@ export function heartbeat(
   docker: DockerCapabilities,
   fetchImpl: FetchLike = fetch,
 ): Promise<HeartbeatResponse> {
-  return postJson<HeartbeatResponse>(config.controlPlaneUrl, '/api/agent/heartbeat', {
-    version: AGENT_VERSION,
-    protocolVersion: PROTOCOL_VERSION,
-    docker,
-  }, config.credential, fetchImpl);
+  return postJson<HeartbeatResponse>(
+    config.controlPlaneUrl,
+    '/api/agent/heartbeat',
+    {
+      version: AGENT_VERSION,
+      protocolVersion: PROTOCOL_VERSION,
+      docker,
+    },
+    config.credential,
+    fetchImpl,
+  );
 }
 
 export function claimJob(
   config: AgentConfig,
   fetchImpl: FetchLike = fetch,
 ): Promise<ClaimJobResponse> {
-  return postJson<ClaimJobResponse>(config.controlPlaneUrl, '/api/agent/jobs/claim', {
-    version: AGENT_VERSION,
-    protocolVersion: PROTOCOL_VERSION,
-  }, config.credential, fetchImpl);
+  return postJson<ClaimJobResponse>(
+    config.controlPlaneUrl,
+    '/api/agent/jobs/claim',
+    {
+      version: AGENT_VERSION,
+      protocolVersion: PROTOCOL_VERSION,
+    },
+    config.credential,
+    fetchImpl,
+  );
 }
 
 export function renewJobLease(
@@ -92,9 +113,15 @@ export function renewJobLease(
   leaseToken: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<{ leaseExpiresAt: string }> {
-  return postJson(config.controlPlaneUrl, `/api/agent/jobs/${encodeURIComponent(jobId)}/lease`, {
-    leaseToken,
-  }, config.credential, fetchImpl);
+  return postJson(
+    config.controlPlaneUrl,
+    `/api/agent/jobs/${encodeURIComponent(jobId)}/lease`,
+    {
+      leaseToken,
+    },
+    config.credential,
+    fetchImpl,
+  );
 }
 
 /**
@@ -122,7 +149,7 @@ export async function downloadJobArtifact(
     signal,
   });
   if (!response.ok) {
-    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     const apiMessage = typeof payload?.message === 'string' ? payload.message : undefined;
     throw new ControlPlaneError(
       response.status,
@@ -145,8 +172,13 @@ export function reportJobProgress(
   },
   fetchImpl: FetchLike = fetch,
 ): Promise<AgentJobSummary> {
-  return postJson(config.controlPlaneUrl, `/api/agent/jobs/${encodeURIComponent(jobId)}/progress`, input,
-    config.credential, fetchImpl);
+  return postJson(
+    config.controlPlaneUrl,
+    `/api/agent/jobs/${encodeURIComponent(jobId)}/progress`,
+    input,
+    config.credential,
+    fetchImpl,
+  );
 }
 
 export function completeJob(
@@ -161,6 +193,11 @@ export function completeJob(
   },
   fetchImpl: FetchLike = fetch,
 ): Promise<AgentJobSummary> {
-  return postJson(config.controlPlaneUrl, `/api/agent/jobs/${encodeURIComponent(jobId)}/complete`, input,
-    config.credential, fetchImpl);
+  return postJson(
+    config.controlPlaneUrl,
+    `/api/agent/jobs/${encodeURIComponent(jobId)}/complete`,
+    input,
+    config.credential,
+    fetchImpl,
+  );
 }

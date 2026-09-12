@@ -33,7 +33,8 @@ describe('GitHub artifact workflow adaptation', () => {
   });
 
   it('fails closed when a custom workflow has no recognizable build boundary', () => {
-    expect(() => adaptWorkflowForGitHub('name: custom\non: [push]\n', 'custom.yml'))
-      .toThrow('docker job');
+    expect(() => adaptWorkflowForGitHub('name: custom\non: [push]\n', 'custom.yml')).toThrow(
+      'docker job',
+    );
   });
 });

@@ -102,12 +102,15 @@ export function EnvironmentPipeline({
           target.status === 'running' &&
           target.version === env.version &&
           (env.artifact ? target.artifact?.id === env.artifact.id : !target.artifact);
-        const canPromote = !readOnly
-          && busy === null
-          && env.status === 'running'
-          && !synced
-          && !(target?.target?.scope === 'user'
-            && (target.target.managementState ?? 'active') !== 'active');
+        const canPromote =
+          !readOnly &&
+          busy === null &&
+          env.status === 'running' &&
+          !synced &&
+          !(
+            target?.target?.scope === 'user' &&
+            (target.target.managementState ?? 'active') !== 'active'
+          );
         const deploying = busy === next || target?.status === 'deploying';
         const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
         const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
@@ -123,13 +126,11 @@ export function EnvironmentPipeline({
           );
         const deploymentHistoryUrl = `/projects/${project.id}/deployments`;
         const waitingForRunner =
-          env.status === 'deploying' &&
-          env.statusReason === 'Waiting for an available CI runner';
+          env.status === 'deploying' && env.statusReason === 'Waiting for an available CI runner';
         // Providers publish named deployment stages. Known stages advance the
         // end-to-end bar; a moving highlight communicates activity inside a
         // stage without pretending that elapsed time equals real completion.
-        const pct =
-          env.status === 'deploying' ? deploymentProgress(env.statusReason) : null;
+        const pct = env.status === 'deploying' ? deploymentProgress(env.statusReason) : null;
         // Stop/Start only makes sense for process targets (Docker/SSH), not static hosting (SFTP).
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
@@ -137,8 +138,7 @@ export function EnvironmentPipeline({
         const targetNeedsDeploy =
           env.deploymentRequired && ['empty', 'failed'].includes(env.status);
         const targetUnavailable = Boolean(
-          env.target?.scope === 'user'
-          && (env.target.managementState ?? 'active') !== 'active',
+          env.target?.scope === 'user' && (env.target.managementState ?? 'active') !== 'active',
         );
         const targetAcceptsManagement = !targetUnavailable;
         const canDeployToTarget =
@@ -158,9 +158,9 @@ export function EnvironmentPipeline({
           env.target?.kind === 'docker' &&
           env.target.scope === 'user';
         const expiryWarning = Boolean(
-          env.expiresAt
-          && env.expiryWarningAt
-          && Date.now() >= new Date(env.expiryWarningAt).getTime(),
+          env.expiresAt &&
+          env.expiryWarningAt &&
+          Date.now() >= new Date(env.expiryWarningAt).getTime(),
         );
 
         return (
@@ -171,7 +171,7 @@ export function EnvironmentPipeline({
                   'absolute inset-x-0 top-0 h-1',
                   waitingForRunner
                     ? 'bg-muted-foreground/25'
-                    : STRIPE[env.status] ?? 'bg-muted-foreground/25',
+                    : (STRIPE[env.status] ?? 'bg-muted-foreground/25'),
                 )}
               />
               <div className="flex items-center justify-between gap-2">
@@ -197,94 +197,102 @@ export function EnvironmentPipeline({
                       kind={waitingForRunner ? 'ci' : 'deploy'}
                     />
                   )}
-                  {!readOnly && (targetAcceptsManagement ? (hasDeployment || canTarget) : canTarget) && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={busy !== null}
-                          aria-label="Environment actions"
-                        >
-                          <MoreVertical className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        {hasFailedGitHubJobs && targetAcceptsManagement && (
-                          <DropdownMenuItem onSelect={onRerunFailedJobs}>
-                            <RefreshCw className="h-4 w-4" /> Re-run failed GitHub jobs
-                          </DropdownMenuItem>
-                        )}
-                        {canDeployToTarget && (
-                          <DropdownMenuItem
-                            onSelect={() => env.version ? onRedeploy(env.name) : onRunAgain()}
+                  {!readOnly &&
+                    (targetAcceptsManagement ? hasDeployment || canTarget : canTarget) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={busy !== null}
+                            aria-label="Environment actions"
                           >
-                            <Play className="h-4 w-4" /> {env.version ? 'Deploy verified build' : 'Deploy'}
-                          </DropdownMenuItem>
-                        )}
-                        {canRunAgain && (
-                          <DropdownMenuItem onSelect={onRunAgain}>
-                            <Play className="h-4 w-4" /> Deploy
-                          </DropdownMenuItem>
-                        )}
-                        {hasDeployment && targetAcceptsManagement && !targetNeedsDeploy && (
-                          <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
-                            <RefreshCw className="h-4 w-4" />
-                            {env.name === 'prod'
-                              ? 'Request production redeploy'
-                              : 'Redeploy verified build'}
-                          </DropdownMenuItem>
-                        )}
-                        {hasDeployment && targetAcceptsManagement && canRollback && !targetNeedsDeploy && (
-                          <DropdownMenuItem onSelect={() => onRollback(env.name)}>
-                            <Undo2 className="h-4 w-4" />
-                            {env.name === 'prod'
-                              ? 'Request production rollback…'
-                              : 'Roll back to previous version…'}
-                          </DropdownMenuItem>
-                        )}
-                        {canInspectWorkload && (
-                          <DropdownMenuItem onSelect={() => onDiagnostics(env.name)}>
-                            <Activity className="h-4 w-4" /> Workload diagnostics…
-                          </DropdownMenuItem>
-                        )}
-                        {hasDeployment &&
-                          targetAcceptsManagement &&
-                          canStopStart &&
-                          (env.status === 'stopped' ? (
-                            <DropdownMenuItem onSelect={() => onStart(env.name)}>
-                              <Play className="h-4 w-4" /> Start
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          {hasFailedGitHubJobs && targetAcceptsManagement && (
+                            <DropdownMenuItem onSelect={onRerunFailedJobs}>
+                              <RefreshCw className="h-4 w-4" /> Re-run failed GitHub jobs
                             </DropdownMenuItem>
-                          ) : (
+                          )}
+                          {canDeployToTarget && (
                             <DropdownMenuItem
-                              onSelect={() => onStop(env.name)}
-                              disabled={env.status !== 'running'}
+                              onSelect={() => (env.version ? onRedeploy(env.name) : onRunAgain())}
                             >
-                              <Square className="h-4 w-4" /> Stop
+                              <Play className="h-4 w-4" />{' '}
+                              {env.version ? 'Deploy verified build' : 'Deploy'}
                             </DropdownMenuItem>
-                          ))}
-                        {canTarget && (
-                          <DropdownMenuItem onSelect={() => onConfigureTarget(env.name)}>
-                            <Server className="h-4 w-4" /> Change target
-                          </DropdownMenuItem>
-                        )}
-                        {targetAcceptsManagement
-                          && (hasDeployment || env.status === 'deploying' || cleanupPending) && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem destructive onSelect={() => onRemoveEnv(env.name)}>
-                              <Trash2 className="h-4 w-4" />{' '}
-                              {env.status === 'deploying'
-                                ? 'Cancel deploy'
-                                : cleanupPending
-                                  ? 'Retry cleanup'
-                                  : 'Remove deployment'}
+                          )}
+                          {canRunAgain && (
+                            <DropdownMenuItem onSelect={onRunAgain}>
+                              <Play className="h-4 w-4" /> Deploy
                             </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                          )}
+                          {hasDeployment && targetAcceptsManagement && !targetNeedsDeploy && (
+                            <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
+                              <RefreshCw className="h-4 w-4" />
+                              {env.name === 'prod'
+                                ? 'Request production redeploy'
+                                : 'Redeploy verified build'}
+                            </DropdownMenuItem>
+                          )}
+                          {hasDeployment &&
+                            targetAcceptsManagement &&
+                            canRollback &&
+                            !targetNeedsDeploy && (
+                              <DropdownMenuItem onSelect={() => onRollback(env.name)}>
+                                <Undo2 className="h-4 w-4" />
+                                {env.name === 'prod'
+                                  ? 'Request production rollback…'
+                                  : 'Roll back to previous version…'}
+                              </DropdownMenuItem>
+                            )}
+                          {canInspectWorkload && (
+                            <DropdownMenuItem onSelect={() => onDiagnostics(env.name)}>
+                              <Activity className="h-4 w-4" /> Workload diagnostics…
+                            </DropdownMenuItem>
+                          )}
+                          {hasDeployment &&
+                            targetAcceptsManagement &&
+                            canStopStart &&
+                            (env.status === 'stopped' ? (
+                              <DropdownMenuItem onSelect={() => onStart(env.name)}>
+                                <Play className="h-4 w-4" /> Start
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                onSelect={() => onStop(env.name)}
+                                disabled={env.status !== 'running'}
+                              >
+                                <Square className="h-4 w-4" /> Stop
+                              </DropdownMenuItem>
+                            ))}
+                          {canTarget && (
+                            <DropdownMenuItem onSelect={() => onConfigureTarget(env.name)}>
+                              <Server className="h-4 w-4" /> Change target
+                            </DropdownMenuItem>
+                          )}
+                          {targetAcceptsManagement &&
+                            (hasDeployment || env.status === 'deploying' || cleanupPending) && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  destructive
+                                  onSelect={() => onRemoveEnv(env.name)}
+                                >
+                                  <Trash2 className="h-4 w-4" />{' '}
+                                  {env.status === 'deploying'
+                                    ? 'Cancel deploy'
+                                    : cleanupPending
+                                      ? 'Retry cleanup'
+                                      : 'Remove deployment'}
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                 </div>
               </div>
 
@@ -300,7 +308,10 @@ export function EnvironmentPipeline({
                 </div>
               )}
               {deployedCommit && (
-                <div className="truncate text-xs text-muted-foreground" title={deployedCommit.message}>
+                <div
+                  className="truncate text-xs text-muted-foreground"
+                  title={deployedCommit.message}
+                >
                   {deployedCommit.message}
                 </div>
               )}
@@ -321,8 +332,8 @@ export function EnvironmentPipeline({
                 <div className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-muted-foreground">
                   <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                   <span>
-                    Server is {env.target!.managementState ?? 'disconnected'}. The URL may remain online, but InitPad
-                    management is unavailable.{' '}
+                    Server is {env.target!.managementState ?? 'disconnected'}. The URL may remain
+                    online, but InitPad management is unavailable.{' '}
                     <Link to="/infrastructure" className="text-link font-medium">
                       Reconnect server
                     </Link>
@@ -462,7 +473,7 @@ export function EnvironmentPipeline({
                       <ArrowRight className="h-4 w-4" />
                     </button>
                     <span className="text-[11px] text-muted-foreground">
-                      {canPromote ? next === 'prod' ? 'Request prod' : `Deploy to ${next}` : next}
+                      {canPromote ? (next === 'prod' ? 'Request prod' : `Deploy to ${next}`) : next}
                     </span>
                   </>
                 )}

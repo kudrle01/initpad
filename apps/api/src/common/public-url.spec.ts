@@ -41,37 +41,34 @@ describe('publicHostname', () => {
 
 describe('builtInPublicHost', () => {
   it('uses the platform URL instead of a stale legacy VM address', () => {
-    expect(builtInPublicHost(
-      'http://203.0.113.10:8080',
-      undefined,
-      '198.51.100.20',
-    )).toBe('203.0.113.10');
+    expect(builtInPublicHost('http://203.0.113.10:8080', undefined, '198.51.100.20')).toBe(
+      '203.0.113.10',
+    );
   });
 
   it('allows an explicitly split deployment hostname', () => {
-    expect(builtInPublicHost(
-      'https://initpad.example',
-      'apps.initpad.example',
-      'old.example',
-    )).toBe('apps.initpad.example');
+    expect(
+      builtInPublicHost('https://initpad.example', 'apps.initpad.example', 'old.example'),
+    ).toBe('apps.initpad.example');
   });
 });
 
 describe('withCurrentPublicHost', () => {
   it('keeps the allocated port and path while replacing a stale VM address', () => {
-    expect(withCurrentPublicHost(
-      'http://198.51.100.20:49173/health',
-      '203.0.113.10',
-    )).toBe('http://203.0.113.10:49173/health');
+    expect(withCurrentPublicHost('http://198.51.100.20:49173/health', '203.0.113.10')).toBe(
+      'http://203.0.113.10:49173/health',
+    );
   });
 
   it('preserves a URL without an explicit trailing slash', () => {
-    expect(withCurrentPublicHost('http://old.test:8085', 'initpad.home.arpa'))
-      .toBe('http://initpad.home.arpa:8085');
+    expect(withCurrentPublicHost('http://old.test:8085', 'initpad.home.arpa')).toBe(
+      'http://initpad.home.arpa:8085',
+    );
   });
 
   it('formats an IPv6 public host without losing the allocated port', () => {
-    expect(withCurrentPublicHost('http://old.test:8085', '[2001:db8::10]'))
-      .toBe('http://[2001:db8::10]:8085');
+    expect(withCurrentPublicHost('http://old.test:8085', '[2001:db8::10]')).toBe(
+      'http://[2001:db8::10]:8085',
+    );
   });
 });

@@ -29,7 +29,9 @@ describe('ProjectEnvironmentTargets.assertAcceptsDeploy (ADR-060 P2.5)', () => {
     const prisma = {
       targetAllocation: {
         findUnique: jest.fn(async () => ({
-          status: 'disabled', capabilities: 'node', maxEnvironments: 50,
+          status: 'disabled',
+          capabilities: 'node',
+          maxEnvironments: 50,
           _count: { environments: 1 },
         })),
       },
@@ -45,7 +47,9 @@ describe('ProjectEnvironmentTargets.assertAcceptsDeploy (ADR-060 P2.5)', () => {
     const prisma = {
       targetAllocation: {
         findUnique: jest.fn(async () => ({
-          status: 'active', capabilities: 'node', maxEnvironments: 2,
+          status: 'active',
+          capabilities: 'node',
+          maxEnvironments: 2,
           _count: { environments: 2 },
         })),
       },
@@ -60,7 +64,9 @@ describe('ProjectEnvironmentTargets.assertAcceptsDeploy (ADR-060 P2.5)', () => {
     const prisma = {
       targetAllocation: {
         findUnique: jest.fn(async () => ({
-          status: 'active', capabilities: 'node', maxEnvironments: 2,
+          status: 'active',
+          capabilities: 'node',
+          maxEnvironments: 2,
           _count: { environments: 2 },
         })),
       },
@@ -74,7 +80,9 @@ describe('ProjectEnvironmentTargets.assertAcceptsDeploy (ADR-060 P2.5)', () => {
     const prisma = {
       targetAllocation: {
         findUnique: jest.fn(async () => ({
-          status: 'active', capabilities: 'node', maxEnvironments: 50,
+          status: 'active',
+          capabilities: 'node',
+          maxEnvironments: 50,
           _count: { environments: 3 },
         })),
       },

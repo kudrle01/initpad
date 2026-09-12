@@ -9,25 +9,51 @@ describe('WorkspacePortfolioService', () => {
     createdAt: new Date('2026-09-01T00:00:00Z'),
     environments: [
       {
-        name: 'dev', status: 'running', version: 'a'.repeat(40), statusReason: null,
-        activeOperationId: null, expiresAt: null, target: { managementState: 'active' },
-        operations: [{ kind: 'deploy', status: 'succeeded', phase: 'succeeded', createdAt: new Date('2026-09-03T00:00:00Z') }],
+        name: 'dev',
+        status: 'running',
+        version: 'a'.repeat(40),
+        statusReason: null,
+        activeOperationId: null,
+        expiresAt: null,
+        target: { managementState: 'active' },
+        operations: [
+          {
+            kind: 'deploy',
+            status: 'succeeded',
+            phase: 'succeeded',
+            createdAt: new Date('2026-09-03T00:00:00Z'),
+          },
+        ],
       },
       {
-        name: 'test', status: 'failed', version: null, statusReason: 'Health check failed',
-        activeOperationId: null, expiresAt: null, target: { managementState: 'active' },
+        name: 'test',
+        status: 'failed',
+        version: null,
+        statusReason: 'Health check failed',
+        activeOperationId: null,
+        expiresAt: null,
+        target: { managementState: 'active' },
         operations: [],
       },
       {
-        name: 'prod', status: 'empty', version: null, statusReason: null,
-        activeOperationId: null, expiresAt: null, target: { managementState: 'active' },
+        name: 'prod',
+        status: 'empty',
+        version: null,
+        statusReason: null,
+        activeOperationId: null,
+        expiresAt: null,
+        target: { managementState: 'active' },
         operations: [],
       },
     ],
-    buildArtifacts: [{
-      status: 'available', providerRunId: '42', commitSha: 'a'.repeat(40),
-      createdAt: new Date('2026-09-02T00:00:00Z'),
-    }],
+    buildArtifacts: [
+      {
+        status: 'available',
+        providerRunId: '42',
+        commitSha: 'a'.repeat(40),
+        createdAt: new Date('2026-09-02T00:00:00Z'),
+      },
+    ],
     productionRequests: [{ id: 'request-1' }],
   };
 
@@ -57,15 +83,21 @@ describe('WorkspacePortfolioService', () => {
       cleanupDebt: 1,
     });
     expect(result.projects[0]).toMatchObject({
-      id: 'project-1', health: 'attention', failedEnvironments: 1, pendingApprovals: 1,
+      id: 'project-1',
+      health: 'attention',
+      failedEnvironments: 1,
+      pendingApprovals: 1,
       lastDeployment: { environment: 'dev', kind: 'deploy', status: 'succeeded' },
     });
   });
 
   it('hides another workspace as 404', async () => {
-    const service = new WorkspacePortfolioService({} as never, {
-      roleFor: jest.fn(async () => null),
-    } as never);
+    const service = new WorkspacePortfolioService(
+      {} as never,
+      {
+        roleFor: jest.fn(async () => null),
+      } as never,
+    );
     await expect(service.get('stranger', 'workspace-1')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

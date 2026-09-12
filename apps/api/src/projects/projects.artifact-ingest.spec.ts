@@ -163,16 +163,11 @@ describe('ProjectArtifactIngestion → object storage', () => {
       environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
       deploymentOperation: { update: jest.fn(async () => ({})) },
     };
-    const { ingestion, deployVerifiedArtifact } = makeIngestion(
-      prisma,
-      {},
-      {},
-      {},
-    );
+    const { ingestion, deployVerifiedArtifact } = makeIngestion(prisma, {}, {}, {});
 
-    await expect(
-      ingestion.queue('project-1', repository, artifact, 'op-1'),
-    ).rejects.toThrow('already bound to another deployment');
+    await expect(ingestion.queue('project-1', repository, artifact, 'op-1')).rejects.toThrow(
+      'already bound to another deployment',
+    );
     expect(prisma.buildArtifact.create).not.toHaveBeenCalled();
     expect(prisma.buildArtifact.update).not.toHaveBeenCalled();
     expect(deployVerifiedArtifact).not.toHaveBeenCalled();

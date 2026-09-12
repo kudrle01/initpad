@@ -37,8 +37,8 @@ export async function reconcileCredentialRotation(
   const rotation = response.credentialRotation;
   if (rotation) {
     if (
-      !CREDENTIAL_PATTERN.test(rotation.credential)
-      || rotation.credentialGeneration !== config.credentialGeneration + 1
+      !CREDENTIAL_PATTERN.test(rotation.credential) ||
+      rotation.credentialGeneration !== config.credentialGeneration + 1
     ) {
       throw new Error('Control plane returned an invalid credential rotation');
     }

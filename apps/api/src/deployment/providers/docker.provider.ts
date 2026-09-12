@@ -17,23 +17,19 @@ import {
 } from '../deployment-provider.interface';
 
 function safeAllocationNamespace(namespace: string): string {
-  return namespace
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'workspace';
+  return (
+    namespace
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'workspace'
+  );
 }
 
 export function dockerNetworkName(env: string, namespace?: string): string {
-  return namespace
-    ? `net-${safeAllocationNamespace(namespace)}-${env}`
-    : `net-${env}`;
+  return namespace ? `net-${safeAllocationNamespace(namespace)}-${env}` : `net-${env}`;
 }
 
-export function dockerContainerName(
-  projectName: string,
-  env: string,
-  namespace?: string,
-): string {
+export function dockerContainerName(projectName: string, env: string, namespace?: string): string {
   return namespace
     ? `initpad-${safeAllocationNamespace(namespace)}-${projectName}-${env}`
     : `initpad-${projectName}-${env}`;
@@ -289,11 +285,11 @@ export class DockerProvider implements DeploymentProvider {
     ].filter((name, index, all) => all.indexOf(name) === index);
     for (const name of names) {
       try {
-        const buf = (await this.docker.getContainer(name).logs({
+        const buf = await this.docker.getContainer(name).logs({
           stdout: true,
           stderr: true,
           tail: 200,
-        })) as unknown as Buffer;
+        });
         return this.demuxLogs(buf).trim();
       } catch (e) {
         const msg = (e as Error).message;
@@ -342,7 +338,10 @@ export class DockerProvider implements DeploymentProvider {
         (img.RepoTags ?? []).some((t) => t.startsWith(`${repo}:`)),
       );
       for (const img of targets) {
-        await this.docker.getImage(img.Id).remove({ force: true }).catch(() => undefined);
+        await this.docker
+          .getImage(img.Id)
+          .remove({ force: true })
+          .catch(() => undefined);
       }
       if (targets.length) this.logger.log(`Removed ${targets.length} image(s) (${repo})`);
     } catch (e) {
@@ -366,7 +365,7 @@ export class DockerProvider implements DeploymentProvider {
     }
     const container = await this.docker.createContainer({ Image: imageRef, Cmd: ['true'] });
     try {
-      const stream = (await container.getArchive({ path: srcPath })) as unknown as NodeJS.ReadableStream;
+      const stream = await container.getArchive({ path: srcPath });
       await new Promise<void>((resolve, reject) => {
         const extract = tar.extract(destDir);
         extract.on('finish', () => resolve());
@@ -444,14 +443,9 @@ export class DockerProvider implements DeploymentProvider {
   }
 
   private async buildImage(contextDir: string, tag: string): Promise<void> {
-    const stream = await this.docker.buildImage(
-      tar.pack(contextDir) as unknown as NodeJS.ReadableStream,
-      { t: tag },
-    );
+    const stream = await this.docker.buildImage(tar.pack(contextDir), { t: tag });
     await new Promise<void>((resolve, reject) => {
-      this.docker.modem.followProgress(stream, (err) =>
-        err ? reject(err) : resolve(),
-      );
+      this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
     });
   }
 
@@ -465,7 +459,7 @@ export class DockerProvider implements DeploymentProvider {
         password: config.registry.password,
         serveraddress: config.registry.host,
       };
-      const stream = (await this.docker.pull(ref, { authconfig: auth })) as NodeJS.ReadableStream;
+      const stream = await this.docker.pull(ref, { authconfig: auth });
       await new Promise<void>((resolve, reject) => {
         this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
       });
@@ -498,10 +492,15 @@ export class DockerProvider implements DeploymentProvider {
         },
       });
       for (const container of containers) {
-        await this.docker.getContainer(container.Id).remove({ force: true }).catch(() => undefined);
+        await this.docker
+          .getContainer(container.Id)
+          .remove({ force: true })
+          .catch(() => undefined);
       }
     } catch (error) {
-      this.logger.warn(`Could not remove superseded containers for ${projectName}/${env}: ${(error as Error).message}`);
+      this.logger.warn(
+        `Could not remove superseded containers for ${projectName}/${env}: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -527,7 +526,10 @@ export class DockerProvider implements DeploymentProvider {
           (tag) => tag.startsWith(`${repo}:`) && tag !== imageRef,
         );
         for (const tag of staleTags) {
-          const result = await this.docker.getImage(tag).remove({ force: false }).catch(() => null);
+          const result: unknown = await this.docker
+            .getImage(tag)
+            .remove({ force: false })
+            .catch(() => null);
           if (result) removed += 1;
         }
       }
@@ -574,9 +576,7 @@ export class DockerProvider implements DeploymentProvider {
         PortBindings: {
           [portKey]: [{ HostIp: config.deployment.bindAddress, HostPort: '' }],
         },
-        Memory: allocation
-          ? allocation.memoryLimitMb * 1024 * 1024
-          : config.deployment.memoryBytes,
+        Memory: allocation ? allocation.memoryLimitMb * 1024 * 1024 : config.deployment.memoryBytes,
         MemorySwap: allocation
           ? allocation.memoryLimitMb * 1024 * 1024
           : config.deployment.memoryBytes,

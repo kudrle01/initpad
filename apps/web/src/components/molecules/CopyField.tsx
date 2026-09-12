@@ -12,9 +12,13 @@ export function CopyField({ command }: { command: string }) {
       <button
         type="button"
         onClick={() => {
-          navigator.clipboard.writeText(command);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
+          void navigator.clipboard.writeText(command).then(
+            () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            },
+            () => setCopied(false),
+          );
         }}
         className="flex shrink-0 items-center gap-1 rounded text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >

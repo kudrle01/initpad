@@ -72,11 +72,13 @@ export class AuthService implements OnModuleInit {
         select: { username: true },
       });
       for (const user of users) {
-        await this.gitea.randomizeUserPassword(user.username).catch((error) =>
-          this.logger.warn(
-            `Could not harden the local Gitea password for ${user.username}: ${(error as Error).message}`,
-          ),
-        );
+        await this.gitea
+          .randomizeUserPassword(user.username)
+          .catch((error) =>
+            this.logger.warn(
+              `Could not harden the local Gitea password for ${user.username}: ${(error as Error).message}`,
+            ),
+          );
       }
     } catch (error) {
       this.logger.warn(`Managed Gitea password hardening skipped: ${(error as Error).message}`);
@@ -116,11 +118,11 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  private async registerUnlocked(
-    dto: RegisterDto,
-  ): Promise<{ token: string; user: SessionUser }> {
+  private async registerUnlocked(dto: RegisterDto): Promise<{ token: string; user: SessionUser }> {
     if (!(await this.registrationAvailable())) {
-      throw new ForbiddenException('Account registration is closed. Ask the platform administrator for access.');
+      throw new ForbiddenException(
+        'Account registration is closed. Ask the platform administrator for access.',
+      );
     }
     const userCount = await this.prisma.user.count();
     const user = await this.provisionManagedUser({
@@ -215,9 +217,7 @@ export class AuthService implements OnModuleInit {
     const username = await this.uniqueUsername(input.login);
     // In SaaS the e-mail participates in account display and workspace lookup,
     // so keep it only when GitHub explicitly attested it as verified.
-    const emailRaw = input.emailVerified
-      ? input.email?.trim().toLowerCase() || null
-      : null;
+    const emailRaw = input.emailVerified ? input.email?.trim().toLowerCase() || null : null;
     const emailTaken = emailRaw
       ? (await this.prisma.user.findUnique({ where: { email: emailRaw } })) != null
       : false;
@@ -250,7 +250,11 @@ export class AuthService implements OnModuleInit {
           },
         },
         externalIdentities: {
-          create: { provider: input.provider, providerUserId: input.providerUserId, username: input.login },
+          create: {
+            provider: input.provider,
+            providerUserId: input.providerUserId,
+            username: input.login,
+          },
         },
       },
     });
@@ -265,7 +269,8 @@ export class AuthService implements OnModuleInit {
     if (base.length < 2) base = `${base}gh`;
     let candidate = base;
     for (let i = 1; i <= 50; i++) {
-      if (!(await this.prisma.user.findUnique({ where: { username: candidate } }))) return candidate;
+      if (!(await this.prisma.user.findUnique({ where: { username: candidate } })))
+        return candidate;
       candidate = `${base}-${i}`;
     }
     return `${base}-${generateToken(3)}`;
@@ -304,7 +309,11 @@ export class AuthService implements OnModuleInit {
     newPassword: string,
   ): Promise<{ token: string; user: SessionUser }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.passwordHash || !(await verifyPassword(currentPassword, user.passwordHash))) {
+    if (
+      !user ||
+      !user.passwordHash ||
+      !(await verifyPassword(currentPassword, user.passwordHash))
+    ) {
       throw new UnauthorizedException('Current password is incorrect');
     }
     if (await verifyPassword(newPassword, user.passwordHash)) {
@@ -390,7 +399,10 @@ export class AuthService implements OnModuleInit {
     return `${this.frontendBase()}/activate/${token}`;
   }
 
-  async activate(token: string, newPassword: string): Promise<{ token: string; user: SessionUser }> {
+  async activate(
+    token: string,
+    newPassword: string,
+  ): Promise<{ token: string; user: SessionUser }> {
     const record = await this.consumeAuthToken(token, 'activation');
     const updated = await this.prisma.user.update({
       where: { id: record.userId },
@@ -423,8 +435,15 @@ export class AuthService implements OnModuleInit {
 
   private async consumeAuthToken(token: string, kind: string): Promise<{ userId: string }> {
     if (!token) throw new BadRequestException('This link is invalid or has expired');
-    const record = await this.prisma.authToken.findUnique({ where: { tokenHash: hashToken(token) } });
-    if (!record || record.kind !== kind || record.usedAt || record.expiresAt.getTime() < Date.now()) {
+    const record = await this.prisma.authToken.findUnique({
+      where: { tokenHash: hashToken(token) },
+    });
+    if (
+      !record ||
+      record.kind !== kind ||
+      record.usedAt ||
+      record.expiresAt.getTime() < Date.now()
+    ) {
       throw new BadRequestException('This link is invalid or has expired');
     }
     // Claim the token atomically. Two concurrent requests may both read the

@@ -123,21 +123,25 @@ describe('ProjectAgentDelivery', () => {
 
   it('requires durable storage and Agent 0.4 before creating a job', async () => {
     const noStore = setup(operation(), false);
-    await expect(noStore.service.queueDeployment('operation-1', intent))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(noStore.service.queueDeployment('operation-1', intent)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
     expect(noStore.prisma.agentJob.upsert).not.toHaveBeenCalled();
 
-    const oldAgent = setup(operation({
-      environment: {
-        ...operation().environment,
-        target: {
-          ...operation().environment.target,
-          agent: { credentialHash: 'hash', disabledAt: null, version: '0.3.0' },
+    const oldAgent = setup(
+      operation({
+        environment: {
+          ...operation().environment,
+          target: {
+            ...operation().environment.target,
+            agent: { credentialHash: 'hash', disabledAt: null, version: '0.3.0' },
+          },
         },
-      },
-    }));
-    await expect(oldAgent.service.queueDeployment('operation-1', intent))
-      .rejects.toThrow(/0\.4\.0 or newer/);
+      }),
+    );
+    await expect(oldAgent.service.queueDeployment('operation-1', intent)).rejects.toThrow(
+      /0\.4\.0 or newer/,
+    );
     expect(oldAgent.prisma.agentJob.upsert).not.toHaveBeenCalled();
   });
 
@@ -149,11 +153,13 @@ describe('ProjectAgentDelivery', () => {
       expect(create.kind).toBe(kind);
       expect(create.deploymentOperationId).toBe('operation-1');
       expect(create.operationStep).toBe(1);
-      expect(create.payload).toEqual(expect.objectContaining({
-        imageRef: intent.imageRef,
-        routingMode: 'direct-port',
-        configFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
-      }));
+      expect(create.payload).toEqual(
+        expect.objectContaining({
+          imageRef: intent.imageRef,
+          routingMode: 'direct-port',
+          configFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      );
       expect(JSON.stringify(create)).not.toContain('DATABASE_PASSWORD');
       expect(JSON.stringify(create)).not.toContain('enc:v1:opaque');
       expect(prisma.environment.updateMany).toHaveBeenCalledWith({
@@ -204,13 +210,15 @@ describe('ProjectAgentDelivery', () => {
 
     await service.queueLifecycle('operation-1', 'stop', intent);
 
-    expect(prisma.agentJob.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({
-        operationStep: 2,
-        status: 'blocked',
-        progressStage: 'blocked',
+    expect(prisma.agentJob.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          operationStep: 2,
+          status: 'blocked',
+          progressStage: 'blocked',
+        }),
       }),
-    }));
+    );
     expect(gatewayRoutes.queueReconcile).toHaveBeenCalledWith('environment-1', {
       requestId: 'operation-1',
       desiredState: 'stopped',
@@ -234,8 +242,9 @@ describe('ProjectAgentDelivery', () => {
     });
     const { service, prisma } = setup(row);
 
-    await expect(service.queueDeployment('operation-1', intent))
-      .rejects.toThrow(/workspace Agent allocation/);
+    await expect(service.queueDeployment('operation-1', intent)).rejects.toThrow(
+      /workspace Agent allocation/,
+    );
     expect(prisma.agentJob.upsert).not.toHaveBeenCalled();
   });
 });

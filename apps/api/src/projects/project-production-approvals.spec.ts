@@ -24,26 +24,31 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
     };
     return request;
   });
-  const updateMany = jest.fn(async ({ where, data }: {
-    where: Record<string, any>;
-    data: Record<string, any>;
-  }) => {
-    if (!request) return { count: 0 };
-    if (where.id && where.id !== request.id) return { count: 0 };
-    const allowed = where.status === undefined
-      || where.status === request.status
-      || (where.status?.in?.includes(request.status) ?? false);
-    if (!allowed) return { count: 0 };
-    request = { ...request, ...data };
-    return { count: 1 };
-  });
+  const updateMany = jest.fn(
+    async ({ where, data }: { where: Record<string, any>; data: Record<string, any> }) => {
+      if (!request) return { count: 0 };
+      if (where.id && where.id !== request.id) return { count: 0 };
+      const allowed =
+        where.status === undefined ||
+        where.status === request.status ||
+        (where.status?.in?.includes(request.status) ?? false);
+      if (!allowed) return { count: 0 };
+      request = { ...request, ...data };
+      return { count: 1 };
+    },
+  );
   const update = jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
     if (!request) throw new Error('missing request');
     request = {
       ...request,
       ...data,
       deploymentOperation: data.deploymentOperationId
-        ? { id: data.deploymentOperationId, status: 'running', phase: 'queued', message: 'Preparing deployment' }
+        ? {
+            id: data.deploymentOperationId,
+            status: 'running',
+            phase: 'queued',
+            message: 'Preparing deployment',
+          }
         : request.deploymentOperation,
     };
     return request;
@@ -65,7 +70,12 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
         targetId: 'target-test',
         allocationId: 'allocation-test',
         configRevision: 1,
-        target: { id: 'target-test', name: 'Test target', updatedAt: targetRevision, managementState: 'active' },
+        target: {
+          id: 'target-test',
+          name: 'Test target',
+          updatedAt: targetRevision,
+          managementState: 'active',
+        },
         allocation: { id: 'allocation-test', updatedAt: allocationRevision, status: 'active' },
         buildArtifact: { id: 'artifact-1', digest: 'digest-1' },
       },
@@ -80,7 +90,12 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
         targetId: 'target-prod',
         allocationId: 'allocation-prod',
         configRevision,
-        target: { id: 'target-prod', name: 'Production', updatedAt: targetRevision, managementState: 'active' },
+        target: {
+          id: 'target-prod',
+          name: 'Production',
+          updatedAt: targetRevision,
+          managementState: 'active',
+        },
         allocation: { id: 'allocation-prod', updatedAt: allocationRevision, status: 'active' },
         buildArtifact: { id: 'artifact-old', digest: 'digest-old' },
       },
@@ -104,7 +119,9 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
       findUnique: jest.fn(async () => request),
     },
   };
-  prisma.$transaction = jest.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma));
+  prisma.$transaction = jest.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+    callback(prisma),
+  );
   const workspaces = {
     requireProject: jest.fn(async () => ({ workspaceId: 'workspace-1', role: 'owner' })),
     roleFor: jest.fn(async () => 'owner'),
@@ -123,9 +140,15 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
     prisma,
     audit,
     schedule,
-    get request() { return request; },
-    setPolicy(value: 'self-review' | 'separate-reviewer') { policy = value; },
-    changeProductionConfig() { configRevision += 1; },
+    get request() {
+      return request;
+    },
+    setPolicy(value: 'self-review' | 'separate-reviewer') {
+      policy = value;
+    },
+    changeProductionConfig() {
+      configRevision += 1;
+    },
   };
 }
 
@@ -133,8 +156,12 @@ describe('ProjectProductionApprovals', () => {
   it('stores one immutable production intent without configuration or secret values', async () => {
     const h = harness();
 
-    await expect(h.service.create('project-1', 'requester', { kind: 'promote' }))
-      .resolves.toMatchObject({ status: 'pending', version: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
+    await expect(
+      h.service.create('project-1', 'requester', { kind: 'promote' }),
+    ).resolves.toMatchObject({
+      status: 'pending',
+      version: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    });
 
     const data = h.prisma.productionDeploymentRequest.create.mock.calls[0][0].data;
     expect(data).toMatchObject({
@@ -148,18 +175,21 @@ describe('ProjectProductionApprovals', () => {
     });
     expect(data.stateToken).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(data)).not.toMatch(/secret|password|DATABASE_URL/i);
-    expect(h.audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'production.requested',
-      actorUserId: 'requester',
-    }));
+    expect(h.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'production.requested',
+        actorUserId: 'requester',
+      }),
+    );
   });
 
   it('enforces a different reviewer for team production', async () => {
     const h = harness();
     await h.service.create('project-1', 'requester', { kind: 'promote' });
 
-    await expect(h.service.approve('project-1', 'request-1', 'requester'))
-      .rejects.toBeInstanceOf(ForbiddenException);
+    await expect(h.service.approve('project-1', 'request-1', 'requester')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(h.schedule).not.toHaveBeenCalled();
     expect(h.request?.status).toBe('pending');
   });
@@ -168,11 +198,10 @@ describe('ProjectProductionApprovals', () => {
     const h = harness();
     await h.service.create('project-1', 'requester', { kind: 'promote' });
 
-    await expect(h.service.approve('project-1', 'request-1', 'reviewer'))
-      .resolves.toMatchObject({
-        status: 'approved',
-        deployment: { id: 'operation-1' },
-      });
+    await expect(h.service.approve('project-1', 'request-1', 'reviewer')).resolves.toMatchObject({
+      status: 'approved',
+      deployment: { id: 'operation-1' },
+    });
     expect(h.schedule).toHaveBeenCalledTimes(1);
     expect(h.schedule).toHaveBeenCalledWith(
       'project-1',
@@ -186,16 +215,16 @@ describe('ProjectProductionApprovals', () => {
         configRevision: 3,
       }),
     );
-    const auditActions = (h.audit.record.mock.calls as unknown as Array<[Record<string, unknown>]>)
-      .map(([event]) => event.action);
-    expect(auditActions)
-      .toEqual(expect.arrayContaining([
-        'production.approval_accepted',
-        'production.request_approved',
-      ]));
+    const auditActions = (
+      h.audit.record.mock.calls as unknown as Array<[Record<string, unknown>]>
+    ).map(([event]) => event.action);
+    expect(auditActions).toEqual(
+      expect.arrayContaining(['production.approval_accepted', 'production.request_approved']),
+    );
 
-    await expect(h.service.approve('project-1', 'request-1', 'reviewer'))
-      .rejects.toBeInstanceOf(ConflictException);
+    await expect(h.service.approve('project-1', 'request-1', 'reviewer')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(h.schedule).toHaveBeenCalledTimes(1);
   });
 
@@ -204,8 +233,9 @@ describe('ProjectProductionApprovals', () => {
     await h.service.create('project-1', 'requester', { kind: 'promote' });
     h.changeProductionConfig();
 
-    await expect(h.service.approve('project-1', 'request-1', 'reviewer'))
-      .rejects.toBeInstanceOf(ConflictException);
+    await expect(h.service.approve('project-1', 'request-1', 'reviewer')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(h.schedule).not.toHaveBeenCalled();
     expect(h.request?.status).toBe('stale');
   });
@@ -215,9 +245,12 @@ describe('ProjectProductionApprovals', () => {
     await h.service.create('project-1', 'requester', { kind: 'promote' });
     h.setPolicy('self-review');
 
-    await expect(h.service.latest('project-1', 'requester'))
-      .resolves.toMatchObject({ policy: 'self-review', canApprove: true });
-    await expect(h.service.approve('project-1', 'request-1', 'requester'))
-      .resolves.toMatchObject({ status: 'approved' });
+    await expect(h.service.latest('project-1', 'requester')).resolves.toMatchObject({
+      policy: 'self-review',
+      canApprove: true,
+    });
+    await expect(h.service.approve('project-1', 'request-1', 'requester')).resolves.toMatchObject({
+      status: 'approved',
+    });
   });
 });

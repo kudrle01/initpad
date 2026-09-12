@@ -22,9 +22,9 @@ export class InMemoryArtifactStore implements ArtifactStore {
     this.objects.set(key, await fs.readFile(filePath));
   }
 
-  async head(key: string): Promise<ArtifactObjectHead | null> {
+  head(key: string): Promise<ArtifactObjectHead | null> {
     const buf = this.objects.get(key);
-    return buf ? { sizeBytes: buf.length } : null;
+    return Promise.resolve(buf ? { sizeBytes: buf.length } : null);
   }
 
   async getToFile(key: string, destPath: string): Promise<void> {
@@ -33,18 +33,19 @@ export class InMemoryArtifactStore implements ArtifactStore {
     await fs.writeFile(destPath, buf);
   }
 
-  async openRead(key: string): Promise<Readable> {
+  openRead(key: string): Promise<Readable> {
     const buf = this.objects.get(key);
-    if (!buf) throw new Error(`ArtifactStore: object '${key}' not found`);
-    return Readable.from(buf);
+    if (!buf) return Promise.reject(new Error(`ArtifactStore: object '${key}' not found`));
+    return Promise.resolve(Readable.from(buf));
   }
 
-  async delete(key: string): Promise<void> {
+  delete(key: string): Promise<void> {
     this.objects.delete(key);
+    return Promise.resolve();
   }
 
-  async presignGet(key: string, ttlSeconds: number): Promise<string> {
-    return `memory://artifact/${encodeURIComponent(key)}?ttl=${ttlSeconds}`;
+  presignGet(key: string, ttlSeconds: number): Promise<string> {
+    return Promise.resolve(`memory://artifact/${encodeURIComponent(key)}?ttl=${ttlSeconds}`);
   }
 
   /** Test helper: whether a key currently holds an object. */

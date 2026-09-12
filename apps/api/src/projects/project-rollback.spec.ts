@@ -110,13 +110,15 @@ describe('ProjectRollback', () => {
   it('supports a previous immutable Gitea OCI tag on a direct provider', async () => {
     const prisma = {
       environment: {
-        findUnique: jest.fn(async () => environment({
-          provider: 'sftp',
-          target: { id: 'target-1', name: 'ESO', scope: 'user' },
-          project: { scmProvider: 'gitea' },
-          buildArtifactId: null,
-          buildArtifact: null,
-        })),
+        findUnique: jest.fn(async () =>
+          environment({
+            provider: 'sftp',
+            target: { id: 'target-1', name: 'ESO', scope: 'user' },
+            project: { scmProvider: 'gitea' },
+            buildArtifactId: null,
+            buildArtifact: null,
+          }),
+        ),
       },
       deploymentOperation: {
         findMany: jest.fn(async () => [publication('previous-operation', PREVIOUS, null)]),
@@ -145,12 +147,7 @@ describe('ProjectRollback', () => {
     const rollback = new ProjectRollback(prisma as never, schedule);
     const preview = await rollback.preview('project-1', 'test');
 
-    await rollback.execute(
-      'project-1',
-      'test',
-      'previous-operation',
-      preview!.stateToken,
-    );
+    await rollback.execute('project-1', 'test', 'previous-operation', preview!.stateToken);
     expect(schedule).toHaveBeenCalledWith(
       'project-1',
       'test',

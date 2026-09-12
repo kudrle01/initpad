@@ -44,7 +44,7 @@ export class ProjectsController {
     private readonly projects: ProjectsService,
     @Inject(AuditEventsService)
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
-      record: async () => undefined,
+      record: () => Promise.resolve(),
     },
   ) {}
 
@@ -179,13 +179,7 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'maintain');
-    return this.projects.rollback(
-      id,
-      env,
-      dto.candidateOperationId,
-      dto.stateToken,
-      userId,
-    );
+    return this.projects.rollback(id, env, dto.candidateOperationId, dto.stateToken, userId);
   }
 
   // Application logs may contain sensitive business data even after secrets
@@ -209,7 +203,12 @@ export class ProjectsController {
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
-    const diagnostic = await this.projects.requestWorkloadDiagnostic(id, env, userId, dto.requestId);
+    const diagnostic = await this.projects.requestWorkloadDiagnostic(
+      id,
+      env,
+      userId,
+      dto.requestId,
+    );
     const project = await this.projects.get(id);
     await this.recordProject(project, userId, 'environment.diagnostic_requested', {
       environment: env,

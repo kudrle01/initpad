@@ -51,10 +51,9 @@ export class S3ArtifactStore implements ArtifactStore {
     const timeout = setTimeout(() => controller.abort(), 2_000);
     timeout.unref();
     try {
-      await this.client.send(
-        new HeadBucketCommand({ Bucket: this.bucket }),
-        { abortSignal: controller.signal },
-      );
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }), {
+        abortSignal: controller.signal,
+      });
     } finally {
       clearTimeout(timeout);
     }
@@ -79,9 +78,7 @@ export class S3ArtifactStore implements ArtifactStore {
 
   async head(key: string): Promise<ArtifactObjectHead | null> {
     try {
-      const res = await this.client.send(
-        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
-      );
+      const res = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
       return { sizeBytes: Number(res.ContentLength ?? 0) };
     } catch (err) {
       if (isNotFound(err)) return null;
@@ -90,9 +87,7 @@ export class S3ArtifactStore implements ArtifactStore {
   }
 
   async getToFile(key: string, destPath: string): Promise<void> {
-    const res = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-    );
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     const body = res.Body;
     if (!body || !(body instanceof Readable)) {
       throw new Error(`S3ArtifactStore: unexpected empty body for '${key}'`);
@@ -101,9 +96,7 @@ export class S3ArtifactStore implements ArtifactStore {
   }
 
   async openRead(key: string): Promise<Readable> {
-    const res = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-    );
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     const body = res.Body;
     if (!body || !(body instanceof Readable)) {
       throw new Error(`S3ArtifactStore: unexpected empty body for '${key}'`);
@@ -117,11 +110,9 @@ export class S3ArtifactStore implements ArtifactStore {
   }
 
   async presignGet(key: string, ttlSeconds: number): Promise<string> {
-    return getSignedUrl(
-      this.client,
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-      { expiresIn: ttlSeconds },
-    );
+    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
+      expiresIn: ttlSeconds,
+    });
   }
 }
 

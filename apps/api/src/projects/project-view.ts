@@ -67,7 +67,8 @@ export function projectView(row: ProjectRow, publicHost: string): Project {
               kind: environment.target.kind as ProviderKind,
               scope: environment.target.scope as TargetScope,
               host: environment.target.host,
-              managementState: (environment.target.managementState ?? 'active') as TargetManagementState,
+              managementState: (environment.target.managementState ??
+                'active') as TargetManagementState,
             }
           : null,
       })),

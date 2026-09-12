@@ -47,7 +47,9 @@ describe('GitHubSetupController', () => {
     const response = { redirect: jest.fn((url: string) => url) };
     await controller.callback('state', '42', 'install', response as never);
     expect(installations.completeSetup).toHaveBeenCalledWith('state', '42');
-    expect(response.redirect).toHaveBeenCalledWith(expect.stringContaining('/settings?github=installed&account=acme'));
+    expect(response.redirect).toHaveBeenCalledWith(
+      expect.stringContaining('/settings?github=installed&account=acme'),
+    );
   });
 
   it('recovers an already-installed personal App for the current workspace', async () => {
@@ -86,7 +88,9 @@ describe('GitHubSetupController', () => {
     const response = { redirect: jest.fn((url: string) => url) };
     await controller.callback('state', '', 'request', response as never);
     expect(installations.completeSetup).not.toHaveBeenCalled();
-    expect(response.redirect).toHaveBeenCalledWith(expect.stringContaining('github=installation_requested'));
+    expect(response.redirect).toHaveBeenCalledWith(
+      expect.stringContaining('github=installation_requested'),
+    );
   });
 
   it('continues an organization callback through user-bound OAuth verification', async () => {
