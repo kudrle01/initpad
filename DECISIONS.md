@@ -4269,4 +4269,4 @@ podmínkou produkční bezpečnosti.
 Negativní kontrola lze provést dočasným odebráním Hook dependency nebo
 neformátovanou změnou a ověřením, že příslušná gate selže. Uživatelsky se
 runtime nemění; po čistém `npm ci` musí `npm run check` sestavit API, web i
-Agenta a dokončit všech 703 automatizovaných testů.
+Agenta a dokončit všech 707 automatizovaných testů.

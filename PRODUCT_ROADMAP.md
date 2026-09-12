@@ -718,8 +718,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
      otestuje všechny aplikace. Síťový
      `check:release` navíc spustí audit produkčních npm závislostí; nalezená
      `qs` DoS advisory byla odstraněna kompatibilní aktualizací lockfile.
+     Frontendová vrstva navíc interakčně ověřuje destruktivní project-delete
+     potvrzení a stavový hook detailu projektu včetně autoritativního 404.
      **Uživatelský test:** po čistém `npm ci` spustit `npm run check`; lint,
-     format check, build a všech 703 testů musí projít bez ručního zásahu.
+     format check, build a všech 707 testů musí projít bez ručního zásahu.
    - ✅ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
      rozložit jen potvrzené hotspoty s více odpovědnostmi. Velikost souboru je
      signál pro review, ne automatický důvod k abstrakci.

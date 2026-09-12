@@ -62,6 +62,12 @@ export function DeleteProjectDialog({
     setDeleteRepository(false);
   }
 
+  function close() {
+    if (deleting) return;
+    reset();
+    onOpenChange(false);
+  }
+
   return (
     <Dialog
       open={open}
@@ -200,7 +206,7 @@ export function DeleteProjectDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={deleting}>
+          <Button variant="secondary" onClick={close} disabled={deleting}>
             Cancel
           </Button>
           <Button variant="destructive" onClick={confirm} disabled={!confirmed || deleting}>
