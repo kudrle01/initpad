@@ -18,15 +18,15 @@ API with a restricted service account instead of the host socket. Workspace
 RBAC is an application authorization boundary, not a hostile-workload compute
 boundary. The implemented Agent performs trust bootstrap, bounded Docker
 discovery, heartbeat, a leased outbound job protocol and an allocation-scoped
-Docker lifecycle allow-list. Real project delivery remains locked until a
-verified artifact and secret-safe configuration contract are attached to it.
+Docker lifecycle allow-list. Project delivery passes only an immutable verified
+artifact and bounded in-memory configuration through the fenced job protocol.
 
 ## Assets
 
 - Gitea admin token, user PATs, per-repository deploy tokens and webhook secret;
 - JWT/OIDC signing keys and encryption key;
 - source repositories, OCI images and deployment target credentials;
-- Agent enrollment tokens, per-target long-lived credentials and short-lived
+- Agent enrollment tokens, rotating per-target credentials and short-lived
   job lease tokens;
 - PostgreSQL project/identity state and availability of the host.
 
@@ -61,7 +61,12 @@ verified artifact and secret-safe configuration contract are attached to it.
 - Agent enrollment is workspace-admin-only, short-lived and single-use. The
   database stores only enrollment/credential hashes; the target stores its
   credential atomically as `0600`. Heartbeat is outbound-only and reports a
-  bounded Docker capability object, not host or workload inventory.
+  bounded Docker capability object, not host or workload inventory. Agent 0.10+
+  rotates an active credential after 30 days through a two-phase overlap: the
+  previous credential remains usable until the Agent atomically stores and
+  proves possession of the next generation. A lost response or restart therefore
+  cannot strand an otherwise reachable target. Unconfirmed pending material is
+  reissued after 24 hours and the control plane never stores its plaintext.
 - Agent jobs are target-scoped, atomically claimed and fenced by a short lease
   whose plaintext token is never persisted or logged. Monotonic progress,
   idempotency keys and idempotent completion make response loss and lease
@@ -100,8 +105,10 @@ verified artifact and secret-safe configuration contract are attached to it.
   self-hosted control plane's provider credentials and Docker trust boundary.
   Do not expose this profile as a hostile public SaaS.
 - Agent access to a Docker daemon is root-equivalent on that target. A stolen
-  Agent credential is target-scoped and revocable, and individual claims use
-  short-lived fencing tokens. Allocation enforcement, verified artifact
+  Agent credential is target-scoped, revocable and automatically rotated by
+  Agent 0.10+; older enrolled Agents retain their credential until upgraded or
+  explicitly re-enrolled. Individual claims use short-lived fencing tokens.
+  Allocation enforcement, verified artifact
   authorization, secret-safe config delivery and a non-shell Docker allow-list
   exist. The release still needs a signed multi-arch image/SBOM and an
   independent security review; read-only filesystems and dropped capabilities

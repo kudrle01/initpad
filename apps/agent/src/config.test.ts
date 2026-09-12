@@ -30,6 +30,42 @@ test('stores the credential atomically with root-only-style permissions', async 
   assert.equal((await stat(join(root, 'nested'))).mode & 0o777, 0o700);
 });
 
+test('round-trips the previous credential retained during rotation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'initpad-agent-rotation-'));
+  const path = join(root, 'agent.json');
+  const rotating: AgentConfig = {
+    ...CONFIG,
+    previousCredential: CONFIG.credential,
+    previousCredentialGeneration: CONFIG.credentialGeneration,
+    credential: `initpad_agent_${'b'.repeat(43)}`,
+    credentialGeneration: 2,
+  };
+
+  await saveConfig(path, rotating);
+
+  assert.deepEqual(await loadConfig(path), rotating);
+});
+
+test('rejects an incomplete or non-monotonic rotation fallback', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'initpad-agent-invalid-rotation-'));
+
+  await assert.rejects(
+    saveConfig(join(root, 'missing-generation.json'), {
+      ...CONFIG,
+      previousCredential: `initpad_agent_${'b'.repeat(43)}`,
+    }),
+    /Agent config is invalid/,
+  );
+  await assert.rejects(
+    saveConfig(join(root, 'same-generation.json'), {
+      ...CONFIG,
+      previousCredential: `initpad_agent_${'b'.repeat(43)}`,
+      previousCredentialGeneration: 1,
+    }),
+    /Agent config is invalid/,
+  );
+});
+
 test('never changes broad permissions on a custom parent directory', async () => {
   const root = await mkdtemp(join(tmpdir(), 'initpad-agent-parent-'));
   await chmod(root, 0o755);

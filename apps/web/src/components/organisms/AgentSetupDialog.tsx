@@ -154,6 +154,14 @@ export function AgentSetupDialog({
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {agent?.version ? `Version ${agent.version} · protocol ${agent.protocolVersion}` : 'No Agent heartbeat received yet'}
               </p>
+              {agent?.credentialGeneration ? (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Credential generation {agent.credentialGeneration}
+                  {agent.credentialActivatedAt
+                    ? ` · active since ${new Date(agent.credentialActivatedAt).toLocaleString()}`
+                    : ''}
+                </p>
+              ) : null}
             </div>
             <StatusBadge
               status={state}
@@ -183,6 +191,16 @@ export function AgentSetupDialog({
                   </p>
                 )}
               </div>
+            </div>
+          )}
+
+          {agent?.credentialRotationPending && (
+            <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm" role="status">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <p>
+                Credential rotation is waiting for Agent confirmation. The current credential
+                remains valid, so reconnecting the Agent is safe.
+              </p>
             </div>
           )}
 

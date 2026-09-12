@@ -9,6 +9,8 @@ import {
 } from './control-plane.js';
 import { inspectDocker } from './docker.js';
 import { executeClaimedJob } from './job-worker.js';
+import { saveConfig } from './config.js';
+import { reconcileCredentialRotation } from './credential-rotation.js';
 import type { AgentConfig, DockerCapabilities, HeartbeatResponse } from './types.js';
 
 type LogLevel = 'info' | 'warn' | 'error';
@@ -34,22 +36,52 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 export async function heartbeatOnce(
   config: AgentConfig,
   dockerHost = process.env.DOCKER_HOST,
+  configPath = process.env.INITPAD_AGENT_CONFIG,
 ): Promise<{ docker: DockerCapabilities; response: HeartbeatResponse }> {
   const docker = await inspectDocker(dockerHost);
-  const response = await heartbeat(config, docker);
-  if (response.targetId !== config.targetId) {
-    throw new Error('Control plane returned a different target identity');
+  let response: HeartbeatResponse;
+  try {
+    response = await heartbeat(config, docker);
+  } catch (error) {
+    if (
+      !(error instanceof ControlPlaneError)
+      || error.status !== 401
+      || !config.previousCredential
+      || config.previousCredentialGeneration === undefined
+    ) {
+      throw error;
+    }
+    const fallback: AgentConfig = {
+      ...config,
+      credential: config.previousCredential,
+      credentialGeneration: config.previousCredentialGeneration,
+    };
+    delete fallback.previousCredential;
+    delete fallback.previousCredentialGeneration;
+    response = await heartbeat(fallback, docker);
+    if (!configPath) throw new Error('Agent config path is required to recover credential rotation');
+    await saveConfig(configPath, fallback);
+    Object.assign(config, fallback);
+    delete config.previousCredential;
+    delete config.previousCredentialGeneration;
   }
-  if (response.credentialGeneration !== config.credentialGeneration) {
-    throw new Error('Control plane returned a different credential generation');
-  }
-  return { docker, response };
+  const reconciled = await reconcileCredentialRotation(
+    config,
+    response,
+    async (next) => {
+      if (!configPath) throw new Error('Agent config path is required for credential rotation');
+      await saveConfig(configPath, next);
+    },
+    (next) => heartbeat(next, docker),
+  );
+  return { docker, response: reconciled };
 }
 
 export async function runAgent(
   config: AgentConfig,
   signal: AbortSignal,
   dockerHost = process.env.DOCKER_HOST,
+  configPath = process.env.INITPAD_AGENT_CONFIG,
 ): Promise<void> {
   const runtimeController = new AbortController();
   const abortRuntime = () => runtimeController.abort();
@@ -62,7 +94,7 @@ export async function runAgent(
   });
   try {
     await Promise.all([
-      runHeartbeatLoop(config, runtimeSignal, dockerHost),
+      runHeartbeatLoop(config, runtimeSignal, dockerHost, configPath),
       runJobLoop(config, runtimeSignal),
     ]);
   } finally {
@@ -76,11 +108,12 @@ async function runHeartbeatLoop(
   config: AgentConfig,
   signal: AbortSignal,
   dockerHost = process.env.DOCKER_HOST,
+  configPath = process.env.INITPAD_AGENT_CONFIG,
 ): Promise<void> {
   let retrySeconds = 2;
   while (!signal.aborted) {
     try {
-      const { docker, response } = await heartbeatOnce(config, dockerHost);
+      const { docker, response } = await heartbeatOnce(config, dockerHost, configPath);
       retrySeconds = 2;
       log('info', 'heartbeat.accepted', {
         targetId: config.targetId,
@@ -158,6 +191,13 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
       }
     } catch (error) {
       if (error instanceof ControlPlaneError && error.status >= 400 && error.status < 500) {
+        if (error.status === 401 && config.previousCredential) {
+          log('warn', 'agent.credential_rotation_syncing', {
+            targetId: config.targetId,
+          });
+          await delay(1_000, signal);
+          continue;
+        }
         log('error', 'agent.credential_or_protocol_rejected', {
           targetId: config.targetId,
           status: error.status,

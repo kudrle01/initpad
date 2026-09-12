@@ -293,6 +293,13 @@ model Agent {
   enrollmentExpiresAt  DateTime?
   credentialHash       String?    @unique
   credentialGeneration Int        @default(0)
+  credentialActivatedAt DateTime?
+  // Rotation is a two-phase overlap. The current hash remains valid until the
+  // Agent proves it atomically stored and can authenticate with the pending
+  // generation; plaintext credentials never enter the database.
+  pendingCredentialHash       String?   @unique
+  pendingCredentialGeneration Int?
+  pendingCredentialIssuedAt   DateTime?
   protocolVersion      Int        @default(1)
   version              String?
   capabilities         Json?

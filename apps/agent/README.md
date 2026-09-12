@@ -16,6 +16,10 @@ allocation-owned workload network and Agent 0.8 a dual-revision, public-HTTPS
 health gate. The control plane orchestrates workload and route jobs in a safe
 order and publishes a managed deployment only after its stable browser URL
 returns 2xx. A failed cutover restores the previously serving revision.
+Agent 0.9 added bounded allocation-scoped workload diagnostics. Agent 0.10
+automatically rotates its target credential after 30 days with a two-phase
+overlap: it persists the new generation and old fallback before proving the new
+identity, so a restart or lost response cannot disconnect the target.
 
 The repository builds the Agent as an executable Node.js package and a minimal
 container image. A reviewed Linux installer is served by the control plane and

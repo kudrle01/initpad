@@ -4190,3 +4190,43 @@ volbu pro Node. Edition test kontroluje nejen SaaS seznam, ale i přímý přís
 na známé built-in ID a zakazuje seed built-inů v SaaS. Uživatelský test ověří
 dva typy v Add server, legacy označení existujícího SSH serveru, absenci SSH v
 novém projektu a zachování běžícího starého SSH deploymentu.
+
+---
+
+## ADR-096 — Agent credential se rotuje dvoufázově s potvrzením nové generace
+
+**Kontext.** Původní per-target credential platil od enrollmentu do ručního
+disconnect/re-enroll. Prosté nastavení expirace by sice omezilo dobu zneužití
+ukradené hodnoty, ale dlouho offline server, ztracená heartbeat odpověď nebo
+pád při zápisu configu by mohly target bez obslouženého zásahu trvale odříznout.
+Control plane navíc nesmí ukládat obnovitelný plaintext Agenta.
+
+**Rozhodnutí.** Agent 0.10+ po 30 dnech dostane přes autentizovaný heartbeat
+náhodný credential generace `n + 1`. Control plane uchová pouze jeho hash jako
+pending a nadále přijímá aktivní generaci `n`. Agent nejprve atomicky zapíše
+novou hodnotu spolu se starým fallbackem do souboru s právy `0600` a teprve
+potom novou identitou odešle potvrzovací heartbeat. Compare-and-set promocí se
+pending hash stane jediným aktivním hashem; po potvrzení Agent starý fallback
+atomicky odstraní. Při odpovědi ztracené po promoci potvrzení zopakuje, při
+odmítnutí neaktivovaného pending klíče obnoví starý. Nevyzvednutý pending lze
+po 24 hodinách nahradit novým. Starší Agent rotaci nedostane, dokud není
+aktualizován.
+
+Během překryvu mohou oba hashe projít autentizací a credential fence jobu;
+lease token, target a allocation fencing se nemění. Databázový constraint
+vynucuje úplný pending záznam a vyšší generaci. Audit zaznamená pouze
+vydání/aktivaci a číslo generace, nikdy credential.
+
+**Důsledky.** Běžné přihlašovací údaje už nejsou neomezeně dlouhověké a
+rotace nezpůsobí plánovaný výpadek workloadu ani jobů. Nejdelší běžné
+okno kompromitované aktivní hodnoty je rotační interval; podezřelý incident
+stále vyžaduje okamžitý Disconnect nebo re-enrollment, nikoli čekání. Krátké
+překryvné období záměrně přijímá dvě generace, ale pouze pro tutéž target
+identitu a s následným odvoláním staré.
+
+**Testování.** API testy ověřují hash-only staging, generační CAS, odmítnutí
+rotace starému Agentu, promoci a audit bez plaintextu. Agent testy simulují
+pád před potvrzením, ztracenou odpověď, pozdější potvrzení, neplatný formát
+i přeskočenou generaci. Job lease test zachová credential fence pro aktivní
+i pending slot. Živý release gate po nasazení 0.10 ověří změnu generace,
+nepřerušený probe a odmítnutí staré hodnoty.

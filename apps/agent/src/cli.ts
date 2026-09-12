@@ -74,7 +74,7 @@ async function enrollAgent(cli: CliOptions): Promise<void> {
     enrolledAt: new Date().toISOString(),
   };
   await saveConfig(cli.configPath, config);
-  await heartbeatOnce(config);
+  await heartbeatOnce(config, undefined, cli.configPath);
   console.log(`Agent enrolled for target ${response.targetId}.`);
   console.log(`Docker ${docker.engineVersion} (${docker.os}/${docker.arch}) is ready.`);
   console.log(`Credential stored in ${cli.configPath} with mode 0600.`);
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cli.command === 'once') {
-    const { response } = await heartbeatOnce(config);
+    const { response } = await heartbeatOnce(config, undefined, cli.configPath);
     console.log(`Heartbeat accepted at ${response.acceptedAt}.`);
     return;
   }
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
     const controller = new AbortController();
     process.once('SIGINT', () => controller.abort());
     process.once('SIGTERM', () => controller.abort());
-    await runAgent(config, controller.signal);
+    await runAgent(config, controller.signal, undefined, cli.configPath);
     return;
   }
   throw new Error(`Unknown command '${cli.command}'\n\n${HELP}`);

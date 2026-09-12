@@ -7,6 +7,19 @@ import { hashToken } from '../common/token';
 import { AgentsService } from './agents.service';
 
 const NOW = new Date('2026-08-10T12:00:00.000Z');
+const HEARTBEAT = {
+  version: '0.10.0',
+  protocolVersion: 1,
+  docker: {
+    engineVersion: '27.5.1',
+    apiVersion: '1.47',
+    os: 'linux',
+    arch: 'arm64',
+    rootless: true,
+    cpus: 4,
+    memoryBytes: 8_589_934_592,
+  },
+};
 
 function agentRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -16,6 +29,10 @@ function agentRow(overrides: Record<string, unknown> = {}) {
     enrollmentExpiresAt: null,
     credentialHash: null,
     credentialGeneration: 0,
+    credentialActivatedAt: null,
+    pendingCredentialHash: null,
+    pendingCredentialGeneration: null,
+    pendingCredentialIssuedAt: null,
     protocolVersion: 1,
     version: null,
     capabilities: null,
@@ -42,6 +59,7 @@ function setup(role: string | null = 'owner') {
     },
     agent: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       upsert: jest.fn(async ({ create }: { create: Record<string, unknown> }) =>
         agentRow({
           enrollmentTokenHash: create.enrollmentTokenHash,
@@ -186,6 +204,10 @@ describe('AgentsService trust bootstrap', () => {
       enrollmentExpiresAt: null,
       credentialHash: hashToken(result.credential),
       credentialGeneration: 3,
+      credentialActivatedAt: NOW,
+      pendingCredentialHash: null,
+      pendingCredentialGeneration: null,
+      pendingCredentialIssuedAt: null,
       version: '0.1.0',
     }));
     expect(JSON.stringify(update.data)).not.toContain(result.credential);
@@ -194,10 +216,12 @@ describe('AgentsService trust bootstrap', () => {
   it('accepts an authenticated heartbeat and stores only bounded Docker telemetry', async () => {
     const credential = `initpad_agent_${'c'.repeat(43)}`;
     const { service, prisma } = setup();
-    prisma.agent.findUnique.mockResolvedValue(agentRow({
+    prisma.agent.findFirst.mockResolvedValue(agentRow({
       credentialHash: hashToken(credential),
       credentialGeneration: 3,
+      credentialActivatedAt: NOW,
       enrolledAt: NOW,
+      target: { workspaceId: 'workspace-1', name: 'Remote Docker' },
     }));
 
     await expect(service.heartbeat(`Bearer ${credential}`, {
@@ -215,12 +239,19 @@ describe('AgentsService trust bootstrap', () => {
     })).resolves.toEqual({
       targetId: 'target-1',
       credentialGeneration: 3,
+      credentialConfirmed: true,
       acceptedAt: NOW.toISOString(),
       nextHeartbeatSeconds: 30,
     });
 
-    expect(prisma.agent.findUnique).toHaveBeenCalledWith({
-      where: { credentialHash: hashToken(credential) },
+    expect(prisma.agent.findFirst).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { credentialHash: hashToken(credential) },
+          { pendingCredentialHash: hashToken(credential) },
+        ],
+      },
+      include: { target: { select: { workspaceId: true, name: true } } },
     });
     expect(prisma.agent.updateMany).toHaveBeenCalledWith({
       where: {
@@ -237,6 +268,113 @@ describe('AgentsService trust bootstrap', () => {
     });
   });
 
+  it('stages an overdue credential for a compatible Agent without revoking the active one', async () => {
+    const credential = `initpad_agent_${'g'.repeat(43)}`;
+    const { service, prisma, audit } = setup();
+    prisma.agent.findFirst.mockResolvedValue(agentRow({
+      credentialHash: hashToken(credential),
+      credentialGeneration: 3,
+      credentialActivatedAt: new Date(NOW.getTime() - 31 * 24 * 60 * 60_000),
+      enrolledAt: new Date(NOW.getTime() - 31 * 24 * 60 * 60_000),
+      target: { workspaceId: 'workspace-1', name: 'Remote Docker' },
+    }));
+
+    const result = await service.heartbeat(`Bearer ${credential}`, HEARTBEAT);
+
+    expect(result.credentialRotation).toEqual({
+      credential: expect.stringMatching(/^initpad_agent_/),
+      credentialGeneration: 4,
+    });
+    const rotationWrite = prisma.agent.updateMany.mock.calls[1][0];
+    expect(rotationWrite.where).toEqual(expect.objectContaining({
+      id: 'agent-1',
+      credentialHash: hashToken(credential),
+      credentialGeneration: 3,
+      disabledAt: null,
+      OR: [
+        { pendingCredentialHash: null },
+        { pendingCredentialIssuedAt: { lte: new Date(NOW.getTime() - 24 * 60 * 60_000) } },
+      ],
+    }));
+    expect(rotationWrite.data).toEqual({
+      pendingCredentialHash: hashToken(result.credentialRotation!.credential),
+      pendingCredentialGeneration: 4,
+      pendingCredentialIssuedAt: NOW,
+    });
+    expect(rotationWrite.data).not.toHaveProperty('credentialHash');
+    expect(JSON.stringify(rotationWrite.data)).not.toContain(result.credentialRotation!.credential);
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'workspace-1',
+      actorUserId: null,
+      action: 'agent.credential_rotation_issued',
+      details: { generation: 4 },
+    }));
+  });
+
+  it('promotes a pending credential only after the Agent proves it possesses it', async () => {
+    const activeCredential = `initpad_agent_${'h'.repeat(43)}`;
+    const pendingCredential = `initpad_agent_${'i'.repeat(43)}`;
+    const { service, prisma, audit } = setup();
+    prisma.agent.findFirst.mockResolvedValue(agentRow({
+      credentialHash: hashToken(activeCredential),
+      credentialGeneration: 3,
+      credentialActivatedAt: new Date(NOW.getTime() - 31 * 24 * 60 * 60_000),
+      pendingCredentialHash: hashToken(pendingCredential),
+      pendingCredentialGeneration: 4,
+      pendingCredentialIssuedAt: NOW,
+      target: { workspaceId: 'workspace-1', name: 'Remote Docker' },
+    }));
+
+    await expect(service.heartbeat(`Bearer ${pendingCredential}`, HEARTBEAT)).resolves.toEqual({
+      targetId: 'target-1',
+      credentialGeneration: 4,
+      credentialConfirmed: true,
+      acceptedAt: NOW.toISOString(),
+      nextHeartbeatSeconds: 30,
+    });
+
+    expect(prisma.agent.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'agent-1',
+        pendingCredentialHash: hashToken(pendingCredential),
+        pendingCredentialGeneration: 4,
+        disabledAt: null,
+      },
+      data: expect.objectContaining({
+        credentialHash: hashToken(pendingCredential),
+        credentialGeneration: 4,
+        credentialActivatedAt: NOW,
+        pendingCredentialHash: null,
+        pendingCredentialGeneration: null,
+        pendingCredentialIssuedAt: null,
+        lastSeenAt: NOW,
+      }),
+    });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'agent.credential_rotation_activated',
+      details: { generation: 4 },
+    }));
+  });
+
+  it('keeps older Agents on their active credential until they are upgraded', async () => {
+    const credential = `initpad_agent_${'j'.repeat(43)}`;
+    const { service, prisma } = setup();
+    prisma.agent.findFirst.mockResolvedValue(agentRow({
+      credentialHash: hashToken(credential),
+      credentialGeneration: 2,
+      credentialActivatedAt: new Date(NOW.getTime() - 31 * 24 * 60 * 60_000),
+      target: { workspaceId: 'workspace-1', name: 'Remote Docker' },
+    }));
+
+    const response = await service.heartbeat(`Bearer ${credential}`, {
+      ...HEARTBEAT,
+      version: '0.9.0',
+    });
+
+    expect(response.credentialRotation).toBeUndefined();
+    expect(prisma.agent.updateMany).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects malformed, unknown and concurrently revoked Agent credentials', async () => {
     const credential = `initpad_agent_${'d'.repeat(43)}`;
     const malformed = setup();
@@ -248,10 +386,10 @@ describe('AgentsService trust bootstrap', () => {
         rootless: false, cpus: 2, memoryBytes: 1_073_741_824,
       },
     })).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(malformed.prisma.agent.findUnique).not.toHaveBeenCalled();
+    expect(malformed.prisma.agent.findFirst).not.toHaveBeenCalled();
 
     const unknown = setup();
-    unknown.prisma.agent.findUnique.mockResolvedValue(null);
+    unknown.prisma.agent.findFirst.mockResolvedValue(null);
     await expect(unknown.service.heartbeat(`Bearer ${credential}`, {
       version: '0.1.0',
       protocolVersion: 1,
@@ -262,7 +400,7 @@ describe('AgentsService trust bootstrap', () => {
     })).rejects.toBeInstanceOf(UnauthorizedException);
 
     const revoked = setup();
-    revoked.prisma.agent.findUnique.mockResolvedValue(agentRow({
+    revoked.prisma.agent.findFirst.mockResolvedValue(agentRow({
       credentialHash: hashToken(credential),
     }));
     revoked.prisma.agent.updateMany.mockResolvedValue({ count: 0 });
@@ -281,15 +419,21 @@ describe('AgentsService trust bootstrap', () => {
     const currentCredential = `initpad_agent_${'f'.repeat(43)}`;
 
     const previous = setup();
-    previous.prisma.agent.findUnique.mockResolvedValue(null);
+    previous.prisma.agent.findFirst.mockResolvedValue(null);
     await expect(previous.service.authenticateCredential(`Bearer ${previousCredential}`))
       .rejects.toBeInstanceOf(UnauthorizedException);
-    expect(previous.prisma.agent.findUnique).toHaveBeenCalledWith({
-      where: { credentialHash: hashToken(previousCredential) },
+    expect(previous.prisma.agent.findFirst).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { credentialHash: hashToken(previousCredential) },
+          { pendingCredentialHash: hashToken(previousCredential) },
+        ],
+      },
+      include: { target: { select: { workspaceId: true, name: true } } },
     });
 
     const current = setup();
-    current.prisma.agent.findUnique.mockResolvedValue(agentRow({
+    current.prisma.agent.findFirst.mockResolvedValue(agentRow({
       credentialHash: hashToken(currentCredential),
       credentialGeneration: 4,
     }));

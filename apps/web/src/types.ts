@@ -169,6 +169,8 @@ export interface AgentStatus {
   enrollmentPending: boolean;
   enrollmentExpiresAt: string | null;
   credentialGeneration: number;
+  credentialActivatedAt: string | null;
+  credentialRotationPending: boolean;
   protocolVersion: number;
   version: string | null;
   capabilities: AgentDockerCapabilities | null;

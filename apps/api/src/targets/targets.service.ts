@@ -797,6 +797,10 @@ export class TargetsService implements OnModuleInit {
           enrollmentTokenHash: null,
           enrollmentExpiresAt: null,
           credentialHash: null,
+          credentialActivatedAt: null,
+          pendingCredentialHash: null,
+          pendingCredentialGeneration: null,
+          pendingCredentialIssuedAt: null,
         },
       }),
       this.prisma.workloadDiagnostic.updateMany({

@@ -586,7 +586,10 @@ describe('AgentJobsService durable lease protocol', () => {
           agent: {
             is: {
               id: AGENT.id,
-              credentialHash: AGENT.credentialHash,
+              OR: [
+                { credentialHash: AGENT.credentialHash },
+                { pendingCredentialHash: AGENT.credentialHash },
+              ],
               disabledAt: null,
             },
           },

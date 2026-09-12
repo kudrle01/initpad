@@ -1,4 +1,4 @@
-export const AGENT_VERSION = '0.9.0';
+export const AGENT_VERSION = '0.10.0';
 export const PROTOCOL_VERSION = 1;
 
 export interface AgentConfig {
@@ -7,6 +7,8 @@ export interface AgentConfig {
   targetId: string;
   credential: string;
   credentialGeneration: number;
+  previousCredential?: string;
+  previousCredentialGeneration?: number;
   protocolVersion: number;
   enrolledAt: string;
 }
@@ -34,6 +36,11 @@ export interface HeartbeatResponse {
   credentialGeneration: number;
   acceptedAt: string;
   nextHeartbeatSeconds: number;
+  credentialConfirmed?: boolean;
+  credentialRotation?: {
+    credential: string;
+    credentialGeneration: number;
+  };
 }
 
 export interface AgentJobClaim {

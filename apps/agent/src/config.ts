@@ -23,6 +23,8 @@ async function ensureConfigDirectory(path: string): Promise<string> {
 function assertConfig(value: unknown): asserts value is AgentConfig {
   if (!value || typeof value !== 'object') throw new Error('Agent config is invalid');
   const config = value as Record<string, unknown>;
+  const hasPreviousCredential = config.previousCredential !== undefined;
+  const hasPreviousGeneration = config.previousCredentialGeneration !== undefined;
   if (
     typeof config.controlPlaneUrl !== 'string' ||
     typeof config.agentId !== 'string' ||
@@ -30,6 +32,15 @@ function assertConfig(value: unknown): asserts value is AgentConfig {
     typeof config.credential !== 'string' ||
     !/^initpad_agent_[A-Za-z0-9_-]{43}$/.test(config.credential) ||
     !Number.isInteger(config.credentialGeneration) ||
+    Number(config.credentialGeneration) < 1 ||
+    hasPreviousCredential !== hasPreviousGeneration ||
+    (hasPreviousCredential && (
+      typeof config.previousCredential !== 'string' ||
+      !/^initpad_agent_[A-Za-z0-9_-]{43}$/.test(config.previousCredential) ||
+      !Number.isInteger(config.previousCredentialGeneration) ||
+      Number(config.previousCredentialGeneration) < 1 ||
+      Number(config.previousCredentialGeneration) >= Number(config.credentialGeneration)
+    )) ||
     config.protocolVersion !== 1 ||
     typeof config.enrolledAt !== 'string'
   ) {

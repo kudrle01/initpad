@@ -72,7 +72,10 @@ describe('AgentJobLeases fencing', () => {
           agent: {
             is: {
               id: AGENT.id,
-              credentialHash: AGENT.credentialHash,
+              OR: [
+                { credentialHash: AGENT.credentialHash },
+                { pendingCredentialHash: AGENT.credentialHash },
+              ],
               disabledAt: null,
             },
           },

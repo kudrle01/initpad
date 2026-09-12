@@ -143,8 +143,11 @@ export class AgentJobLeases {
         agent: {
           is: {
             id: agent.id,
-            credentialHash: agent.credentialHash,
             disabledAt: null,
+            OR: [
+              { credentialHash: agent.credentialHash },
+              { pendingCredentialHash: agent.credentialHash },
+            ],
           },
         },
       },
