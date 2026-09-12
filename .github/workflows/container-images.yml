@@ -1,0 +1,58 @@
+name: Verify container images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/*/Dockerfile"
+      - "apps/*/package.json"
+      - "templates/**"
+      - "deploy/*.yml"
+      - "infra/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/test-template-images.sh"
+      - ".github/dependabot.yml"
+      - ".github/workflows/container-images.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/*/Dockerfile"
+      - "apps/*/package.json"
+      - "templates/**"
+      - "deploy/*.yml"
+      - "infra/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/test-template-images.sh"
+      - ".github/dependabot.yml"
+      - ".github/workflows/container-images.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: container-images-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build platform and template images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Build platform runtime images
+        run: |
+          docker build --pull -f apps/api/Dockerfile -t initpad-api:acceptance .
+          docker build --pull -f apps/web/Dockerfile -t initpad-web:acceptance .
+          docker build --pull -f apps/agent/Dockerfile -t initpad-agent:acceptance .
+
+      - name: Build and probe every project template
+        run: ./scripts/test-template-images.sh

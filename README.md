@@ -62,6 +62,11 @@ Instalátor vygeneruje lokální secrety, spustí databázi a služby, aplikuje
 migrace, nastaví SSO a zaregistruje izolovaný CI runner. Je idempotentní, takže
 slouží i pro aktualizaci existující instalace.
 
+Výchozí object storage je lokální kompatibilní služba určená pro vývoj a
+důvěryhodné single-node instalace. Veřejná produkce musí použít samostatně
+udržované S3-compatible úložiště; konkrétní provozní hranice popisuje
+[deploy/OPERATIONS.md](deploy/OPERATIONS.md#object-storage-produkční-hranice).
+
 První ověření je jednoduché: vytvoř účet, založ projekt, otevři jeho CI
 pipeline a počkej na dev URL. Podrobné nasazení na server, DNS a HTTPS popisuje
 [deploy/README.md](deploy/README.md).
@@ -112,8 +117,12 @@ lokální cesty a tokeny, osiřelé produkční moduly, sestavení i testy.
 `check:release` navíc porovná produkční závislosti s aktuální databází
 zranitelností, a proto vyžaduje přístup k internetu.
 
-Změna šablony navíc vyžaduje vyrenderovat vzorový projekt a ověřit jeho
-instalaci, test a Docker build.
+Změna šablony nebo kontejnerové image navíc spouští samostatný GitHub Actions
+gate, který sestaví platformu, vyrenderuje všech dvanáct šablon, ověří jejich
+test target, non-root runtime a health endpoint. Lokálně lze stejný test spustit
+pro vybrané šablony například přes
+`./scripts/test-template-images.sh nette laravel symfony`; stáhne a sestaví
+image, takže vyžaduje Docker, síť a dostatek volného místa.
 
 ## Důležité omezení
 

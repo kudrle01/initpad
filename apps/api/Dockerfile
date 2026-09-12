@@ -1,7 +1,7 @@
 # Platform API. Build context = repository root (npm workspaces monorepo):
 #   docker build -f apps/api/Dockerfile .
 # ---------------------------------------------------------------- build ----
-FROM node:22-alpine AS build
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
 # openssl: Prisma detects the SSL version at install time and downloads the
 # matching engine binaries — without it the detection silently falls back to
 # openssl 1.1 and the engines fail to load at runtime.
@@ -15,7 +15,7 @@ COPY apps/api apps/api
 RUN npm run build --workspace @initpad/api
 
 # -------------------------------------------------------------- runtime ----
-FROM node:22-alpine
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
 # git: scaffold init/push at project creation (deployments themselves are
 # stateless and fetch archives from Gitea over HTTP).
 # openssl: required by the Prisma engines (see the build stage note).

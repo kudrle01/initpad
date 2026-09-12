@@ -67,6 +67,7 @@ const executableOperations = [
   'deploy/reset.sh',
   'deploy/agent-lab.sh',
   'apps/agent/install.sh',
+  'scripts/test-template-images.sh',
 ];
 const indexModes = new Map(
   git(['ls-files', '-s', '--', ...executableOperations])
@@ -207,21 +208,30 @@ for (const path of ['apps/agent/src/types.ts', 'apps/agent/Dockerfile']) {
   }
 }
 
-const releaseWorkflowPath = '.github/workflows/release-agent.yml';
-if (!tracked.has(releaseWorkflowPath)) {
-  failures.push(`${releaseWorkflowPath}: required Agent release workflow is missing`);
-} else {
-  const workflow = textFiles.get(releaseWorkflowPath) ?? '';
+const requiredAutomation = [
+  '.github/dependabot.yml',
+  '.github/workflows/container-images.yml',
+  '.github/workflows/release-agent.yml',
+];
+for (const path of requiredAutomation) {
+  if (!tracked.has(path)) failures.push(`${path}: required dependency automation is missing`);
+}
+
+for (const path of trackedFiles.filter((path) => /^\.github\/workflows\/.*\.ya?ml$/.test(path))) {
+  const workflow = textFiles.get(path) ?? '';
   const actionReferences = [...workflow.matchAll(/^\s*uses:\s*[^\s@]+@([^\s#]+)/gm)];
-  if (actionReferences.length === 0) {
-    failures.push(`${releaseWorkflowPath}: does not invoke any pinned actions`);
-  }
   for (const [, reference] of actionReferences) {
     if (!/^[a-f0-9]{40}$/.test(reference)) {
-      failures.push(
-        `${releaseWorkflowPath}: action reference ${reference} is not a full commit SHA`,
-      );
+      failures.push(`${path}: action reference ${reference} is not a full commit SHA`);
     }
+  }
+}
+
+const releaseWorkflowPath = '.github/workflows/release-agent.yml';
+if (tracked.has(releaseWorkflowPath)) {
+  const workflow = textFiles.get(releaseWorkflowPath) ?? '';
+  if (![...workflow.matchAll(/^\s*uses:\s*[^\s@]+@([^\s#]+)/gm)].length) {
+    failures.push(`${releaseWorkflowPath}: does not invoke any pinned actions`);
   }
   for (const contract of [
     'platforms: linux/amd64,linux/arm64',
@@ -237,10 +247,56 @@ if (!tracked.has(releaseWorkflowPath)) {
   }
 }
 
-const agentDockerfile = textFiles.get('apps/agent/Dockerfile') ?? '';
-const baseImages = [...agentDockerfile.matchAll(/^FROM\s+([^\s]+)/gm)].map((match) => match[1]);
-if (baseImages.length === 0 || baseImages.some((image) => !/@sha256:[a-f0-9]{64}$/.test(image))) {
-  failures.push('apps/agent/Dockerfile: every release base image must be pinned by digest');
+const digestPattern = /@sha256:[a-f0-9]{64}$/;
+for (const path of trackedFiles.filter((path) => /(^|\/)Dockerfile$/.test(path))) {
+  const content = textFiles.get(path) ?? '';
+  const stages = new Set();
+  for (const line of content.matchAll(/^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/gim)) {
+    const [, image, alias] = line;
+    if (!stages.has(image) && !digestPattern.test(image)) {
+      failures.push(`${path}: external base image ${image} is not pinned by digest`);
+    }
+    if (alias) stages.add(alias);
+  }
+  for (const line of content.matchAll(/^COPY\s+--from=(\S+)/gim)) {
+    const image = line[1];
+    if (!stages.has(image) && !/^\d+$/.test(image) && !digestPattern.test(image)) {
+      failures.push(`${path}: external COPY image ${image} is not pinned by digest`);
+    }
+  }
+}
+
+const localComposeImages = new Set(['initpad-agent-lab:dev']);
+for (const path of trackedFiles.filter((path) => /\.ya?ml$/.test(path))) {
+  const content = textFiles.get(path) ?? '';
+  for (const match of content.matchAll(/^\s*image:\s*["']?([^\s"']+)/gm)) {
+    const image = match[1];
+    if (!localComposeImages.has(image) && !digestPattern.test(image)) {
+      failures.push(`${path}: external Compose image ${image} is not pinned by digest`);
+    }
+  }
+  for (const match of content.matchAll(/docker:\/\/([^\s"']+)/g)) {
+    const image = match[1];
+    if (!digestPattern.test(image)) {
+      failures.push(`${path}: runner image ${image} is not pinned by digest`);
+    }
+  }
+}
+
+for (const path of [
+  'deploy/agent-lab-gateway-bootstrap.sh',
+  'deploy/backup.sh',
+  'deploy/restore.sh',
+]) {
+  const content = textFiles.get(path) ?? '';
+  const imageReferences = content.match(
+    /(?:alpine|caddy|postgres):[A-Za-z0-9._-]+(?:@sha256:[a-f0-9]{64})?/g,
+  );
+  for (const image of imageReferences ?? []) {
+    if (!digestPattern.test(image)) {
+      failures.push(`${path}: operational helper image ${image} is not pinned by digest`);
+    }
+  }
 }
 
 if (failures.length > 0) {

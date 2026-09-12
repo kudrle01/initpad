@@ -63,7 +63,7 @@ else
   fail "Neither sha256sum nor shasum is installed."
 fi
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
-docker run --rm -i postgres:16-alpine pg_restore --list \
+docker run --rm -i postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 pg_restore --list \
   < "$src/postgres.dump" >/dev/null || fail "PostgreSQL dump is not readable."
 
 echo "⚠  This OVERWRITES the current database and data volumes from:"
@@ -157,7 +157,7 @@ restore_volume() {
   docker run --rm \
     -v "${volume}:/target" \
     -v "$(cd "$src" && pwd):/backup:ro" \
-    alpine:3.21 sh -c 'rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; tar -C /target -xzf "/backup/'"$archive"'"'
+    alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d sh -c 'rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; tar -C /target -xzf "/backup/'"$archive"'"'
 }
 
 say "Restoring data volumes"

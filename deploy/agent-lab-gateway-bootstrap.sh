@@ -78,7 +78,7 @@ if [ -n "$resume_config" ]; then
     --volume "$config_volume:/config" \
     --env "INITPAD_CADDY_RESUME_B64=$resume_b64" \
     --entrypoint /bin/sh \
-    caddy:2.10-alpine \
+    caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d \
     -ec 'mkdir -p /config/caddy; printf "%s" "$INITPAD_CADDY_RESUME_B64" | base64 -d > /config/caddy/autosave.json; caddy validate --config /config/caddy/autosave.json' \
     >/dev/null
 fi
@@ -104,7 +104,7 @@ docker container run --detach \
   --publish 0.0.0.0:4180:8080 \
   --env "INITPAD_CADDY_CONFIG_B64=$config_b64" \
   --entrypoint /bin/sh \
-  caddy:2.10-alpine \
+  caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d \
   -ec 'rm -f /run/initpad-gateway/admin.sock; if [ -s /config/caddy/autosave.json ]; then exec caddy run --resume; fi; printf "%s" "$INITPAD_CADDY_CONFIG_B64" | base64 -d > /tmp/initpad.json; exec caddy run --config /tmp/initpad.json' \
   >/dev/null
 

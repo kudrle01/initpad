@@ -7,7 +7,7 @@ runner:
   # The "ubuntu-latest" label must match `runs-on:` in the workflows.
   # The catthehacker image ships the Docker CLI (needed for `docker build`).
   labels:
-    - "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
+    - "ubuntu-latest:docker://catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
   capacity: 1
   timeout: 30m
   shutdown_timeout: 2m

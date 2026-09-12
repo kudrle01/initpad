@@ -1,4 +1,4 @@
-FROM php:8.3-cli-alpine AS base
+FROM php:8.3-cli-alpine@sha256:afdf8b1fee58486ccc0dab5f30f634b86873d56dac985f71ba217945647c05ad AS base
 WORKDIR /app
 COPY . .
 

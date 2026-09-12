@@ -4310,3 +4310,50 @@ nedostupného artifact/deployment backendu, nepřekrývající se interval a jeh
 zastavení při shutdownu. Uživatelsky se po restartu ověří okamžité načtení
 existujících projektů, zachování SCM URL a deploymentů, background úklid
 externě smazaného repozitáře a pravidlo expirace pouze pro dev/test.
+
+---
+
+## ADR-099 — Container reference je immutable a aktualizace prochází build acceptance
+
+**Kontext.** Dockerfile šablon, platformní Compose i provozní skripty používaly
+tagy bez digestu, včetně několika `latest`. Stejný commit tak mohl v různý den
+stáhnout jiný obsah nebo přestat fungovat; právě původní Docker Hub odkazy
+`minio/minio:latest` a `minio/mc:latest` již manifest neposkytují. Pouhé
+uzamčení digestu bez procesu aktualizace by naopak dlouhodobě zmrazilo známé
+chyby.
+
+**Rozhodnutí.** Každý externí Dockerfile base/COPY image, statický Compose
+image, runner image a provozní helper má čitelný tag i immutable SHA-256 manifest
+digest. Lokálně sestavovaný `initpad-agent-lab:dev` je jediná explicitní
+výjimka. Repository audit tento kontrakt i plné commit SHA všech GitHub Actions
+vynucuje. Dependabot jednou týdně seskupí návrhy aktualizací npm, Dockerfile,
+Compose a Actions; embedded helper/runner reference, kterou správce neumí
+automaticky změnit, se kontroluje auditem a aktualizuje ve stejném review.
+Path-filtered workflow sestaví runtime API, webu a Agenta a u každé projektové
+šablony sestaví test target i finální image, odmítne root runtime a ověří 2xx na
+manifestovém health endpointu.
+
+MinIO je zvláštní přechodová výjimka na úrovni podpory, nikoli integrity:
+Compose používá dostupný digest posledního oficiálně distribuovaného Quay
+binárního image, takže obsah je reprodukovatelný, ale tento release předchází
+pozdější bezpečnostní opravě publikované už jen ve zdrojovém kódu. Vestavěný
+object store proto smí sloužit jen lokálnímu a důvěryhodnému single-node
+profilu. Veřejná produkce musí použít oddělené aktivně udržované S3-compatible
+úložiště, dokud samostatné rozhodnutí nezvolí udržovanou vestavěnou náhradu nebo
+reprodukovatelný auditem ověřený source build.
+
+**Důsledky.** Pull ani reinstall stejného commitu nemění obrazy pod rukama a
+zmizí závislost na odstraněných `latest` manifestech. Aktualizace jsou viditelné
+PR se stejným build gate jako ruční změna. Digest je platformní manifest, takže
+Compose dál vybere správnou architekturu. Správce musí před image/storage
+upgradem zálohovat data a produkce má další externí službu; toto omezení je
+bezpečnější než předstírat podporu zastaralého veřejného object store.
+
+**Testování.** `npm run check` odmítne odebrání digestu z Dockerfile, Compose,
+runneru nebo provozního helperu i tagovou GitHub Action. Workflow **Verify
+container images** po relevantní změně sestaví platformu a všech dvanáct
+vyrenderovaných šablon, spustí jejich test targety a health probes. Uživatel
+může stejný template gate cíleně spustit přes
+`./scripts/test-template-images.sh nette laravel symfony`; živá produkční
+acceptance navíc před veřejným provozem ověří externí privátní S3 bucket,
+upload, presigned download, redeploy a retention bez dostupného MinIO profilu.

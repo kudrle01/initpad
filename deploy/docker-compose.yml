@@ -10,7 +10,7 @@ name: initpad
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     environment:
       POSTGRES_USER: initpad
       POSTGRES_PASSWORD: ${INITPAD_DB_PASSWORD:-initpad}
@@ -29,10 +29,11 @@ services:
     restart: unless-stopped
 
   # Durable object storage for verified build artifacts (ADR-059). The local
-  # demo runs MinIO (S3-compatible); a cloud install points the API's
+  # demo runs a pinned legacy MinIO release (S3-compatible); production
+  # should point the API's
   # INITPAD_ARTIFACT_S3_* variables at real S3 and can drop this service.
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${INITPAD_ARTIFACT_S3_ACCESS_KEY_ID:-initpad}
@@ -52,7 +53,7 @@ services:
 
   # One-shot: wait for MinIO, create the PRIVATE artifact bucket, then exit.
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     depends_on:
       minio: { condition: service_healthy }
     environment:
@@ -74,7 +75,7 @@ services:
     restart: "no"
 
   gitea:
-    image: gitea/gitea:1.22
+    image: gitea/gitea:1.22@sha256:538658de667c5d098a274f2f63aa6ec891d88f670cdd5282cf27221ba747dda4
     environment:
       # INSTALL_LOCK skips the web install wizard — the instance is configured
       # entirely from here and from install.sh (no manual clicking).
@@ -237,7 +238,7 @@ services:
   # The outer cgroup is also the aggregate resource envelope for every nested
   # build container, so CI cannot starve the platform control plane.
   runner-docker:
-    image: docker:27.5.1-dind-rootless
+    image: docker:27.5.1-dind-rootless@sha256:e2ac8e8f66ae21a060b0a8e3005c70f6ed9441aabf409434463d1f6eecd38026
     profiles: ["runner"]
     privileged: true
     environment:
@@ -272,7 +273,7 @@ services:
 
   # Gitea Actions runner — registered automatically by install.sh.
   act_runner:
-    image: gitea/act_runner:0.2.11
+    image: gitea/act_runner:0.2.11@sha256:c57233403eff970945cfb8b13f0e622d2124f4dbc623af3e2c74f061d05e8f60
     profiles: ["runner"]
     environment:
       # Persisted by act_runner and passed to checkout jobs. Keep it separate
@@ -280,7 +281,7 @@ services:
       GITEA_INSTANCE_URL: ${INITPAD_GITEA_RUNNER_URL:-http://host.docker.internal:3001}
       GITEA_RUNNER_REGISTRATION_TOKEN: ${INITPAD_RUNNER_TOKEN:-}
       GITEA_RUNNER_NAME: initpad-runner
-      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
       CONFIG_FILE: /config.yaml
     volumes:
       - ./.runtime/act-runner-config.yaml:/config.yaml:ro
@@ -303,7 +304,7 @@ services:
   # root:root. Prepare the shared webroot before SFTP starts so the unprivileged
   # deploy user can create versioned releases on both fresh and existing stacks.
   sftp-volume-init:
-    image: alpine:3.22
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
     command:
       - /bin/sh
       - -ec
@@ -316,7 +317,7 @@ services:
     restart: "no"
 
   fake-sftp:
-    image: atmoz/sftp
+    image: atmoz/sftp:latest@sha256:0960390462a4441dbb63698d7c185b76a41ffcee7b78ff4adf275f3e66f9c475
     # The image ships amd64 only; declare it so arm64 hosts (Apple Silicon)
     # run it via emulation without the platform-mismatch warning.
     platform: linux/amd64
@@ -329,7 +330,7 @@ services:
     restart: unless-stopped
 
   static-web:
-    image: nginx:alpine
+    image: nginx:alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
     depends_on: [fake-sftp]
     ports:
       - "8085:80"
@@ -365,7 +366,7 @@ services:
   # --- reverse proxy with automatic HTTPS (server installs only) -----------
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     profiles: ["server"]
     ports:
       - "80:80"

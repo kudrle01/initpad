@@ -128,6 +128,23 @@ běžící deploye se nedotýká):
 Volitelně přes cron (např. týdně). Ověřené buildy v object storage uklízí sama
 platforma (retention, ADR-059).
 
+## Object storage: produkční hranice
+
+Compose profil obsahuje připnutý MinIO image, aby šlo lokální a školní
+single-node scénář spustit bez další služby. Upstream ale ukončil distribuci
+aktuálních komunitních binárních image a poslední dostupný image předchází
+pozdější bezpečnostní opravě ve zdrojovém kódu. Vestavěné MinIO proto používej
+jen v důvěryhodné síti, nevystavuj jeho porty veřejně a nepovažuj jej za
+produkční bezpečnostní hranici.
+
+Pro veřejný nebo firemní produkční provoz nastav `INITPAD_ARTIFACT_S3_ENDPOINT`,
+region, bucket a samostatné omezené credentials na aktivně udržované externí
+S3-compatible úložiště. Bucket musí zůstat privátní; InitPad vydává pouze
+krátkodobé podepsané přístupy. Přechod nejdřív nacvič nad kopií dat a před
+každou změnou image nebo storage backendu spusť `./backup.sh`. Volba dlouhodobé
+vestavěné náhrady nebo vlastního auditem ověřeného source buildu zůstává
+samostatným release rozhodnutím.
+
 ## HTTPS
 
 - **Veřejná doména:** nastav `INITPAD_DOMAIN` + `INITPAD_GIT_DOMAIN` v `.env`,

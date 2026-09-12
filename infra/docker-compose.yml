@@ -6,7 +6,7 @@ name: initpad
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     environment:
       POSTGRES_USER: initpad
       POSTGRES_PASSWORD: initpad
@@ -18,7 +18,7 @@ services:
     networks: [platform]
 
   gitea:
-    image: gitea/gitea:1.22
+    image: gitea/gitea:1.22@sha256:538658de667c5d098a274f2f63aa6ec891d88f670cdd5282cf27221ba747dda4
     environment:
       GITEA__server__ROOT_URL: http://gitea.localhost:3001/
       # Enables Gitea Actions (CI). The runner registers below (profile "ci").
@@ -51,7 +51,7 @@ services:
   #   2) infra/register-runner.sh            # prints the token
   #   3) docker compose --profile ci up -d act_runner
   runner-docker:
-    image: docker:27.5.1-dind-rootless
+    image: docker:27.5.1-dind-rootless@sha256:e2ac8e8f66ae21a060b0a8e3005c70f6ed9441aabf409434463d1f6eecd38026
     profiles: ["ci"]
     privileged: true
     environment:
@@ -78,7 +78,7 @@ services:
     restart: unless-stopped
 
   act_runner:
-    image: gitea/act_runner:0.2.11
+    image: gitea/act_runner:0.2.11@sha256:c57233403eff970945cfb8b13f0e622d2124f4dbc623af3e2c74f061d05e8f60
     profiles: ["ci"]
     depends_on:
       gitea: { condition: service_started }
@@ -90,7 +90,7 @@ services:
       # Labels are written AT REGISTRATION TIME and the image reads them from
       # here (not from config.yaml). Must include "ubuntu-latest" because the
       # workflows use runs-on: ubuntu-latest.
-      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
       CONFIG_FILE: /config.yaml
     volumes:
       - ./act_runner/config.yaml:/config.yaml:ro
@@ -106,7 +106,7 @@ services:
   # here over SFTP; the content (per-project symlinks) is served by the nginx
   # service below. The volume is shared with nginx.
   sftp-volume-init:
-    image: alpine:3.22
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
     command:
       - /bin/sh
       - -ec
@@ -119,7 +119,7 @@ services:
     restart: "no"
 
   fake-sftp:
-    image: atmoz/sftp
+    image: atmoz/sftp:latest@sha256:0960390462a4441dbb63698d7c185b76a41ffcee7b78ff4adf275f3e66f9c475
     command: deploy:deploy:::www
     ports:
       - "2222:22" # SFTP reachable from the API on the host (config.providers.sftp.port)
@@ -131,7 +131,7 @@ services:
 
   # Serves the uploaded static content (releases published via symlinks).
   static-web:
-    image: nginx:alpine
+    image: nginx:alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
     depends_on: [fake-sftp]
     ports:
       - "8085:80" # config.providers.sftp.publicUrl

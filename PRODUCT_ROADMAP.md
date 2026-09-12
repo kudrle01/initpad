@@ -763,6 +763,23 @@ jen konkrétní provozní a vyhodnocovací scénář.
       ověřit původní repository URL, commity a prostředí. Smazání repozitáře
       mimo InitPad se po následném načtení uklidí na pozadí; expirující dev/test
       se odstraní, zatímco prod zůstane beze změny.
+    - ✅ **8e-b5 — reprodukovatelné container images.** Všechny externí
+      Dockerfile base images, Compose služby, runner obrazy i provozní helpery
+      jsou vedle čitelného tagu připnuté na immutable manifest digest.
+      Repository audit odmítne nový pohyblivý odkaz a kontroluje SHA pin všech
+      GitHub Actions. Dependabot týdně připravuje seskupené aktualizační PR pro
+      npm, Dockerfile, Compose a Actions; změna image nebo šablony spustí
+      samostatný build/probe všech platformních a dvanácti projektových images.
+      Nefunkční Docker Hub `minio/*:latest` nahradil dostupný připnutý Quay
+      image, ale poslední distribuovaný komunitní binární release předchází
+      novější source-only bezpečnostní opravě. Bundled object store je proto
+      výslovně jen pro lokální/důvěryhodný single-node profil; veřejná produkce
+      musí použít aktivně udržované externí S3-compatible úložiště (ADR-099).
+      **Uživatelský test:** po pushi změny Dockerfile nebo šablony otevřít
+      workflow **Verify container images** a ověřit zelený platform build i
+      všech 12 health probes. Lokálně lze cíleně spustit
+      `./scripts/test-template-images.sh nette laravel symfony`; test vyžaduje
+      síť, Docker a dočasný prostor pro build cache.
    - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
      připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
    - ◐ **8e-d — finální předání.**

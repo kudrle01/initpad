@@ -14,6 +14,13 @@ git clone <this repo> && cd initpad/deploy
 Open http://localhost:8080, create the initial account and then create a project.
 The script is idempotent — re-run it anytime; it only fixes what's missing.
 
+The bundled S3-compatible object store is a pinned legacy MinIO binary for
+local evaluation and trusted single-node installations. It is not the
+recommended public-production storage boundary: configure the
+`INITPAD_ARTIFACT_S3_*` variables for a separately maintained S3-compatible
+service before exposing InitPad publicly. See the production rationale in
+[OPERATIONS.md](./OPERATIONS.md#object-storage-produkční-hranice).
+
 What it automates: secret generation, Gitea provisioning without the web
 wizard (service account + admin token via CLI), SSO registration (the
 platform is Gitea's OIDC sign-in), isolated CI runner registration, versioned
@@ -70,8 +77,11 @@ public SaaS delivery test yet.
   backed-up `.env`, database and inactive volumes, and then starts the base
   stack, runner and configured HTTPS profile. Always test this on a disposable
   host before relying on a backup.
-- **Upgrade**: `git pull && ./install.sh`. The installer applies reviewed
-  Prisma migrations and reconciles the stack.
+- **Upgrade**: create a backup, review the dependency/image update, then run
+  `git pull && ./install.sh`. Container tags are also pinned to immutable
+  digests, so a pull never silently changes a base service. Dependabot proposes
+  reviewed digest updates and the image acceptance workflow builds the
+  platform and all templates before merge.
 - **Logs**: `docker compose logs -f api` (or any other service).
 - Do not run this stack and the `infra/` development stack simultaneously;
   they intentionally share the compose project name.
