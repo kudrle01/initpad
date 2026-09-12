@@ -1,4 +1,5 @@
 import { ProjectsService } from './projects.service';
+import { ProjectReconciliation } from './project-reconciliation';
 
 function serviceWith(prisma: unknown, scm: unknown) {
   return new ProjectsService(
@@ -11,6 +12,17 @@ function serviceWith(prisma: unknown, scm: unknown) {
     {} as never,
     {} as never,
     {} as never,
+  );
+}
+
+function reconciliationWith(prisma: unknown, scm: unknown) {
+  return new ProjectReconciliation(
+    prisma as never,
+    {} as never,
+    { provider: jest.fn(() => scm) } as never,
+    { complete: jest.fn() } as never,
+    () => ({ username: 'owner', token: '' }),
+    jest.fn(async () => undefined),
   );
 }
 
@@ -50,11 +62,9 @@ describe('ProjectsService SCM identity', () => {
         },
       ]),
     };
-    const service = serviceWith(prisma, scm) as unknown as {
-      reconcileRepositoryIdentities(): Promise<void>;
-    };
+    const reconciliation = reconciliationWith(prisma, scm);
 
-    await service.reconcileRepositoryIdentities();
+    await reconciliation.reconcileRepositoryIdentities();
 
     expect(prisma.project.update).toHaveBeenCalledWith({
       where: { id: 'project-1' },
@@ -105,11 +115,9 @@ describe('ProjectsService SCM identity', () => {
         .mockRejectedValueOnce(new Error('HTTP 404'))
         .mockResolvedValueOnce(undefined),
     };
-    const service = serviceWith(prisma, scm) as unknown as {
-      reconcileCiRuntimeSecrets(): Promise<void>;
-    };
+    const reconciliation = reconciliationWith(prisma, scm);
 
-    await expect(service.reconcileCiRuntimeSecrets()).resolves.toBeUndefined();
+    await expect(reconciliation.reconcileCiRuntimeSecrets()).resolves.toBeUndefined();
     expect(scm.configureRepoRuntimeSecrets).toHaveBeenCalledTimes(2);
   });
 });

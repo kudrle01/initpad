@@ -1,11 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  OnModuleInit,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { rmSync } from 'fs';
 import { Prisma } from '@prisma/client';
 import {
@@ -28,11 +21,9 @@ import { DeploymentService } from '../deployment/deployment.service';
 import { ARTIFACT_STORE, ArtifactStore } from '../artifacts/artifact-store';
 import { TargetsService } from '../targets/targets.service';
 import {
-  ScmProvider,
   ScmActor,
   ScmRepositoryIdentity,
   ScmRepositoryRef,
-  ProjectScmFields,
   ScmKind,
   repositoryRef,
 } from '../scm/scm-provider';
@@ -44,7 +35,6 @@ import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces
 import { ProvisioningService } from './provisioning.service';
 import { publicHttpsUrlIssue } from '../common/public-url';
 import { CI_WAITING_REASON } from './ci-state';
-import { pipelineStages } from './project-pipeline';
 import { ProjectQueries } from './project-queries';
 import { projectView } from './project-view';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
@@ -58,7 +48,6 @@ import { ProjectArtifactIngestion } from './project-artifact-ingestion';
 import { CiArtifactInput, ProjectCiOrchestrator } from './project-ci-orchestrator';
 import { AppConfigService } from './app-config.service';
 import { deployedImageRef, deploymentSlug } from './project-deployment-identity';
-import { mapWithConcurrency } from '../common/concurrency';
 import { ProjectRollback } from './project-rollback';
 import { ProjectWorkloadDiagnostics } from './project-workload-diagnostics';
 import { AuditEventsService } from '../audit/audit-events.service';
@@ -68,12 +57,9 @@ import {
   ProductionRequestKind,
 } from './project-production-approvals';
 import { ProjectDeletion } from './project-deletion';
+import { ProjectReconciliation } from './project-reconciliation';
 
 const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
-const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
-const PROJECT_SCM_RECONCILE_INTERVAL_MS = 15_000;
-const SCM_READ_CONCURRENCY = 4;
-const ENVIRONMENT_EXPIRY_SWEEP_MS = 60_000;
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
 /**
@@ -82,7 +68,7 @@ type ProvisioningRetry = { retryOfId: string; attempt: number };
  * in PostgreSQL via Prisma.
  */
 @Injectable()
-export class ProjectsService implements OnModuleInit {
+export class ProjectsService {
   private readonly logger = new Logger('ProjectsService');
   private readonly queries: ProjectQueries;
   private readonly artifactLifecycle: ProjectArtifactLifecycle;
@@ -97,10 +83,7 @@ export class ProjectsService implements OnModuleInit {
   private readonly workloadDiagnostics: ProjectWorkloadDiagnostics;
   private readonly productionApprovals: ProjectProductionApprovals;
   private readonly projectDeletion: ProjectDeletion;
-  private readonly repositoryReconcileAfter = new Map<string, number>();
-  private readonly repositoryReconcileInFlight = new Set<string>();
-  private readonly projectScmReconcileAfter = new Map<string, number>();
-  private readonly projectScmReconcileInFlight = new Set<string>();
+  private readonly reconciliation: ProjectReconciliation;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -119,6 +102,14 @@ export class ProjectsService implements OnModuleInit {
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
     this.operations = new ProjectDeploymentOperations(prisma, auditEvents);
+    this.reconciliation = new ProjectReconciliation(
+      prisma,
+      templates,
+      workspaceScm,
+      this.operations,
+      (row) => this.actorForRepo(row),
+      (fullName, provider, repositoryId) => this.removeByRepo(fullName, provider, repositoryId),
+    );
     this.projectDeletion = new ProjectDeletion(
       prisma,
       deployment,
@@ -209,26 +200,14 @@ export class ProjectsService implements OnModuleInit {
     this.workloadDiagnostics = new ProjectWorkloadDiagnostics(prisma, templates);
   }
 
-  async onModuleInit(): Promise<void> {
-    await this.reconcileRepositoryIdentities();
-    await this.migrateLegacyCiTokens();
-    await this.reconcileCiRuntimeSecrets();
+  /** Internal recovery boundary invoked by ProjectsLifecycleService at startup. */
+  async reconcilePersistedState(): Promise<void> {
+    await this.reconciliation.reconcileRepositoryIdentities();
+    await this.reconciliation.migrateLegacyCiTokens();
+    await this.reconciliation.reconcileCiRuntimeSecrets();
     await this.operations.recoverInterrupted();
     await this.artifactIngestion.recoverInterrupted();
     await this.environmentTargets.reconcileAllocations();
-    // Best-effort retention sweep; never blocks startup on storage issues.
-    await this.runArtifactRetention().catch((error) =>
-      this.logger.warn(`Artifact retention sweep skipped: ${(error as Error).message}`),
-    );
-    await this.runEnvironmentExpiry().catch((error) =>
-      this.logger.warn(`Environment expiry sweep skipped: ${(error as Error).message}`),
-    );
-    const expiryTimer = setInterval(() => {
-      void this.runEnvironmentExpiry().catch((error) =>
-        this.logger.warn(`Environment expiry sweep skipped: ${(error as Error).message}`),
-      );
-    }, ENVIRONMENT_EXPIRY_SWEEP_MS);
-    expiryTimer.unref();
   }
 
   /**
@@ -305,106 +284,6 @@ export class ProjectsService implements OnModuleInit {
     return claimedCount;
   }
 
-  // The SQL migration can safely backfill provider + owner/name without
-  // contacting an external service, but it must not invent an immutable id.
-  // On startup, resolve missing ids and refresh mutable coordinates by matching
-  // existing rows on provider + immutable id. An SCM outage only postpones the
-  // enrichment and never blocks the API.
-  private async reconcileRepositoryIdentities(): Promise<void> {
-    try {
-      const projects = await this.prisma.project.findMany({
-        where: { scmProvider: 'gitea' },
-        include: { owner: true },
-      });
-      const repositoriesByOwner = new Map<
-        string,
-        Awaited<ReturnType<ScmProvider['listRepositories']>>
-      >();
-      const scm = this.workspaceScm.provider('gitea');
-      for (const project of projects) {
-        const actor = this.actorForRepo(project);
-        let repositories = repositoriesByOwner.get(actor.username);
-        if (!repositories) {
-          repositories = await scm.listRepositories(actor);
-          repositoriesByOwner.set(actor.username, repositories);
-        }
-        const match = repositories.find(
-          (repository) =>
-            repository.provider === 'gitea' &&
-            (project.scmRepositoryId
-              ? repository.repositoryId === project.scmRepositoryId
-              : repository.fullName === project.scmFullName ||
-                (repository.owner === project.scmOwner &&
-                  repository.name === project.scmRepositoryName)),
-        );
-        if (!match) continue;
-        try {
-          await this.prisma.project.update({
-            where: { id: project.id },
-            data: {
-              scmRepositoryId: match.repositoryId,
-              scmOwner: match.owner,
-              scmRepositoryName: match.name,
-              scmFullName: match.fullName,
-              scmDefaultBranch: match.defaultBranch,
-              repoUrl: match.repoUrl,
-            },
-          });
-        } catch (error) {
-          this.logger.warn(
-            `SCM identity reconciliation failed for project ${project.id}: ${(error as Error).message}`,
-          );
-        }
-      }
-    } catch (error) {
-      this.logger.warn(`SCM identity reconciliation skipped: ${(error as Error).message}`);
-    }
-  }
-
-  private async reconcileCiRuntimeSecrets(): Promise<void> {
-    try {
-      const projects = await this.prisma.project.findMany({
-        select: {
-          scmProvider: true,
-          scmRepositoryId: true,
-          scmOwner: true,
-          scmRepositoryName: true,
-          scmFullName: true,
-          scmDefaultBranch: true,
-          scmInstallationId: true,
-          repoUrl: true,
-        },
-      });
-      await Promise.all(
-        projects.map(async (project) => {
-          const repository = repositoryRef(project);
-          if (repository.provider === 'github') {
-            const callbackIssue = publicHttpsUrlIssue(config.ci.publicUrl);
-            if (callbackIssue) {
-              this.logger.warn(
-                `CI runtime-secret reconciliation skipped for github:${repository.fullName}: ${callbackIssue}`,
-              );
-              return;
-            }
-          }
-          try {
-            await this.workspaceScm
-              .provider(repository.provider)
-              .configureRepoRuntimeSecrets(repository);
-          } catch (error) {
-            // One externally deleted/inaccessible repository must not prevent
-            // configuration reconciliation for every healthy project.
-            this.logger.warn(
-              `CI runtime-secret reconciliation failed for ${repository.provider}:${repository.fullName}: ${(error as Error).message}`,
-            );
-          }
-        }),
-      );
-    } catch (e) {
-      this.logger.warn(`CI runtime-secret reconciliation skipped: ${(e as Error).message}`);
-    }
-  }
-
   private async scheduleDeployment(
     projectId: string,
     envName: EnvName,
@@ -428,53 +307,6 @@ export class ProjectsService implements OnModuleInit {
     return operationId;
   }
 
-  // Projects created before repository-specific CI credentials used a single
-  // platform-wide token. Rotate those repositories on startup. Each affected
-  // user receives one fresh package-capable PAT, then every project gets an
-  // independent deploy secret whose plaintext lives only in Gitea Actions.
-  private async migrateLegacyCiTokens(): Promise<void> {
-    try {
-      const legacy = await this.prisma.project.findMany({
-        where: { ciDeployTokenHash: null, scmProvider: 'gitea' },
-        include: { owner: true },
-      });
-      const byOwner = new Map<string, typeof legacy>();
-      for (const project of legacy) {
-        if (!project.owner) continue;
-        const list = byOwner.get(project.owner.id) ?? [];
-        list.push(project);
-        byOwner.set(project.owner.id, list);
-      }
-      for (const projects of byOwner.values()) {
-        const owner = projects[0].owner!;
-        try {
-          const scm = this.workspaceScm.provider('gitea');
-          const ownerToken = await scm.issueCloneToken(owner.username);
-          await this.prisma.user.update({
-            where: { id: owner.id },
-            data: { accessToken: encryptSecret(ownerToken) },
-          });
-          for (const project of projects) {
-            const token = generateToken();
-            await scm.configureRepoSecrets(repositoryRef(project), ownerToken, token);
-            await this.prisma.project.update({
-              where: { id: project.id },
-              data: { ciDeployTokenHash: hashToken(token) },
-            });
-          }
-        } catch (e) {
-          this.logger.error(
-            `CI credential migration for ${owner.username} failed: ${(e as Error).message}`,
-          );
-        }
-      }
-    } catch (e) {
-      // During the first migration-aware startup the column may not exist yet.
-      // The container migration step runs before the API in normal deployments.
-      this.logger.warn(`CI credential migration skipped: ${(e as Error).message}`);
-    }
-  }
-
   async list(userId: string, requestedWorkspaceId?: string): Promise<Project[]> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const rows = await this.prisma.project.findMany({
@@ -485,198 +317,15 @@ export class ProjectsService implements OnModuleInit {
     // SCM reconciliation is maintenance, not part of the user-facing read.
     // Repository webhooks remain the immediate path; this throttled sweep is a
     // fail-safe for missed events and must not make GET /projects O(repos).
-    this.scheduleMissingRepoReconciliation(workspaceId);
+    this.reconciliation.scheduleMissingRepoReconciliation(workspaceId);
     return rows.map((row) => projectView(row, config.publicHost));
-  }
-
-  private scheduleMissingRepoReconciliation(workspaceId: string): void {
-    const now = Date.now();
-    this.pruneReconciliationDeadlines(now);
-    if (
-      this.repositoryReconcileInFlight.has(workspaceId) ||
-      (this.repositoryReconcileAfter.get(workspaceId) ?? 0) > now
-    ) {
-      return;
-    }
-
-    this.repositoryReconcileAfter.set(workspaceId, now + REPOSITORY_RECONCILE_INTERVAL_MS);
-    this.repositoryReconcileInFlight.add(workspaceId);
-    void this.pruneMissingRepos(workspaceId)
-      .catch((error) =>
-        this.logger.warn(
-          `Repository reconciliation skipped for workspace ${workspaceId}: ${(error as Error).message}`,
-        ),
-      )
-      .finally(() => this.repositoryReconcileInFlight.delete(workspaceId));
-  }
-
-  // Drops the owner's projects whose repositories no longer exist in Gitea.
-  // A repository counts as gone ONLY on an explicit 404 (with a short request
-  // timeout) — an outage never deletes anything. The sweep runs outside the
-  // request path with bounded concurrency so a large workspace cannot flood
-  // its SCM provider.
-  private async pruneMissingRepos(workspaceId: string): Promise<void> {
-    const rows = await this.prisma.project.findMany({
-      where: { workspaceId },
-      include: { owner: true },
-    });
-    await mapWithConcurrency(rows, SCM_READ_CONCURRENCY, async (row) => {
-      try {
-        const repository = repositoryRef(row);
-        const actor = this.actorForRepo(row);
-        if (await this.workspaceScm.provider(repository.provider).repoMissing(repository, actor)) {
-          this.logger.log(
-            `Repository ${repository.fullName} no longer exists in ${repository.provider} — cleaning up`,
-          );
-          await this.removeByRepo(
-            repository.fullName,
-            repository.provider,
-            repository.repositoryId ?? undefined,
-          ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
-        }
-      } catch (error) {
-        this.logger.warn(
-          `Repository check failed for project ${row.id}: ${(error as Error).message}`,
-        );
-      }
-    });
   }
 
   // Detail reads schedule SCM maintenance but never wait for it. Current
   // workflows and repository webhooks provide the immediate state changes;
   // this throttled path only recovers missed legacy callbacks/events.
   async reconcileProject(id: string): Promise<void> {
-    const row = await this.prisma.project.findUnique({
-      where: { id },
-      include: { owner: true },
-    });
-    if (!row) return; // get() reports the 404
-    this.scheduleProjectScmReconciliation(row);
-  }
-
-  private scheduleProjectScmReconciliation(
-    row: ProjectScmFields & {
-      id: string;
-      templateId: string;
-      owner: { username: string; accessToken: string } | null;
-    },
-  ): void {
-    const now = Date.now();
-    this.pruneReconciliationDeadlines(now);
-    if (
-      this.projectScmReconcileInFlight.has(row.id) ||
-      (this.projectScmReconcileAfter.get(row.id) ?? 0) > now
-    ) {
-      return;
-    }
-
-    this.projectScmReconcileAfter.set(row.id, now + PROJECT_SCM_RECONCILE_INTERVAL_MS);
-    this.projectScmReconcileInFlight.add(row.id);
-    void this.reconcileProjectScmState(row)
-      .catch((error) =>
-        this.logger.warn(
-          `SCM state reconciliation skipped for ${row.scmFullName}: ${(error as Error).message}`,
-        ),
-      )
-      .finally(() => this.projectScmReconcileInFlight.delete(row.id));
-  }
-
-  private pruneReconciliationDeadlines(now: number): void {
-    for (const [workspaceId, expiresAt] of this.repositoryReconcileAfter) {
-      if (expiresAt <= now && !this.repositoryReconcileInFlight.has(workspaceId)) {
-        this.repositoryReconcileAfter.delete(workspaceId);
-      }
-    }
-    for (const [projectId, expiresAt] of this.projectScmReconcileAfter) {
-      if (expiresAt <= now && !this.projectScmReconcileInFlight.has(projectId)) {
-        this.projectScmReconcileAfter.delete(projectId);
-      }
-    }
-  }
-
-  private async reconcileProjectScmState(
-    row: ProjectScmFields & {
-      id: string;
-      templateId: string;
-      owner: { username: string; accessToken: string } | null;
-    },
-  ): Promise<void> {
-    const repository = repositoryRef(row);
-    const actor = this.actorForRepo(row);
-    if (await this.workspaceScm.provider(repository.provider).repoMissing(repository, actor)) {
-      this.logger.log(
-        `Repository ${repository.fullName} no longer exists in ${repository.provider} — cleaning up`,
-      );
-      await this.removeByRepo(
-        repository.fullName,
-        repository.provider,
-        repository.repositoryId ?? undefined,
-      ).catch((e) => this.logger.error(`Cleanup failed: ${(e as Error).message}`));
-      return;
-    }
-    await this.reconcileWaitingCiFailure(row, repository, actor).catch((error) =>
-      this.logger.warn(
-        `CI state reconciliation skipped for ${repository.fullName}: ${(error as Error).message}`,
-      ),
-    );
-  }
-
-  // Legacy/generated workflows used to notify InitPad only after every
-  // upstream job succeeded. A failed build therefore had no callback and dev
-  // remained "deploying" indefinitely. Project refreshes now close that wait
-  // from provider status as a compatibility safety net; current workflows also
-  // send an explicit terminal callback via `if: always()`.
-  private async reconcileWaitingCiFailure(
-    project: ProjectScmFields & { id: string; templateId: string },
-    repository: ScmRepositoryRef,
-    actor: ScmActor,
-  ): Promise<void> {
-    const dev = await this.prisma.environment.findUnique({
-      where: { projectId_name: { projectId: project.id, name: 'dev' } },
-    });
-    if (!dev || dev.status !== 'deploying') return;
-
-    const operation = dev.activeOperationId
-      ? await this.prisma.deploymentOperation.findUnique({
-          where: { id: dev.activeOperationId },
-        })
-      : null;
-    // Only a CI wait is reconciled here. A real deployment/ingestion owns its
-    // own background failure handling and must never be overridden by SCM UI.
-    if (operation && operation.kind !== 'ci-retry') return;
-
-    let sha = operation?.version ?? null;
-    const scm = this.workspaceScm.provider(repository.provider);
-    if (!sha) {
-      const commits = await scm.listCommits(repository, actor, 1);
-      sha = commits?.[0]?.sha ?? null;
-    }
-    if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) return;
-
-    const statuses = await scm.listCommitStatuses(repository, sha, actor);
-    const stages = pipelineStages(this.templates.get(project.templateId), statuses);
-    const failed = stages.filter((stage) => stage.status === 'failed').map((stage) => stage.name);
-    if (failed.length === 0) return;
-
-    const reason =
-      `CI failed before it could publish a deployable image (${failed.join(', ')}). ` +
-      'Open the SCM run logs, fix the job and run again.';
-    const closed = await this.prisma.environment.updateMany({
-      where: {
-        id: dev.id,
-        status: 'deploying',
-        activeOperationId: dev.activeOperationId,
-      },
-      data: {
-        status: 'failed',
-        statusReason: reason,
-        deploymentRequired: true,
-        activeOperationId: null,
-      },
-    });
-    if (closed.count !== 1) return;
-    if (operation) await this.operations.complete(operation.id, 'failed', reason);
-    this.logger.warn(`Reconciled failed CI wait: ${repository.fullName} (${sha.slice(0, 7)})`);
+    await this.reconciliation.reconcileProject(id);
   }
 
   async get(id: string): Promise<Project> {

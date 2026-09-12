@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
+import { ProjectsLifecycleService } from './projects-lifecycle.service';
 import { ProjectsController } from './projects.controller';
 import { ImportController } from './import.controller';
 import { ImportService } from './import.service';
@@ -32,7 +33,13 @@ import { AuditEventsModule } from '../audit/audit-events.module';
     ArtifactsModule,
     AuditEventsModule,
   ],
-  providers: [ProjectsService, ImportService, ProvisioningService, AppConfigService],
+  providers: [
+    ProjectsService,
+    ProjectsLifecycleService,
+    ImportService,
+    ProvisioningService,
+    AppConfigService,
+  ],
   controllers: [
     ProjectsController,
     ImportController,

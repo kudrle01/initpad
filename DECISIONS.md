@@ -4269,4 +4269,44 @@ podmínkou produkční bezpečnosti.
 Negativní kontrola lze provést dočasným odebráním Hook dependency nebo
 neformátovanou změnou a ověřením, že příslušná gate selže. Uživatelsky se
 runtime nemění; po čistém `npm ci` musí `npm run check` sestavit API, web i
-Agenta a dokončit všech 707 automatizovaných testů.
+Agenta a dokončit všech 710 automatizovaných testů.
+
+---
+
+## ADR-098 — Údržba projektů má vlastní lifecycle a reconciliation hranici
+
+**Kontext.** `ProjectsService` kromě uživatelských příkazů a dotazů spouštěl
+při startu procesu migraci SCM identity a CI secrets, obnovu přerušených
+operací, retention artefaktů a nekonečný interval expirace prostředí. Současně
+vlastnil mapy pro throttling a deduplikaci background SCM kontrol. Jedna třída
+tak řídila doménové operace, vzdálenou údržbu i životní cyklus Nest procesu;
+timer navíc nebylo možné při shutdownu explicitně zastavit.
+
+**Rozhodnutí.** `ProjectReconciliation` vlastní veškerou best-effort SCM údržbu:
+obnovu immutable identity, CI credentials, kontrolu chybějících repozitářů a
+opravu legacy CI wait stavu. Provider požadavky mají omezenou souběžnost a
+uživatelské list/detail requesty pouze naplánují deduplikovanou kontrolu mimo
+kritickou cestu. `ProjectsLifecycleService` jako samostatný Nest provider
+vlastní startup recovery, úvodní retention/expiry a periodický expiry sweep.
+Při shutdownu timer zruší a pomalý sweep se nikdy nepřekryje s dalším.
+
+`ProjectsService` zůstává veřejnou aplikační fasádou a poskytuje lifecycle
+provideru úzký interní recovery vstup. Jednotlivé již existující projektové
+komponenty se v tomto kroku nemění na globální Nest providery: znamenalo by to
+velký DI přepis bez nového uživatelského přínosu. Distribuovaný scheduler nebo
+fronta jsou samostatné budoucí rozhodnutí pro multi-replica control plane;
+databázové claimy nadále chrání destruktivní expiry operaci.
+
+**Důsledky.** Restart, shutdown a background práce jsou samostatně testovatelné
+a projektový orchestrátor se zmenšil o více než 350 řádků. Veřejné endpointy,
+response modely ani databáze se nemění. Reconciliation je stále best-effort a
+in-process; ztráta procesu pouze odloží další kontrolu a nesmí smazat data při
+výpadku SCM.
+
+**Testování.** Charakterizační testy ověřují rename podle immutable repository
+ID, izolaci chyby jednoho repozitáře, uzavření legacy CI failure a neblokující
+list/detail. Lifecycle test ověřuje pořadí startup recovery, toleranci
+nedostupného artifact/deployment backendu, nepřekrývající se interval a jeho
+zastavení při shutdownu. Uživatelsky se po restartu ověří okamžité načtení
+existujících projektů, zachování SCM URL a deploymentů, background úklid
+externě smazaného repozitáře a pravidlo expirace pouze pro dev/test.

@@ -721,7 +721,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
      Frontendová vrstva navíc interakčně ověřuje destruktivní project-delete
      potvrzení a stavový hook detailu projektu včetně autoritativního 404.
      **Uživatelský test:** po čistém `npm ci` spustit `npm run check`; lint,
-     format check, build a všech 707 testů musí projít bez ručního zásahu.
+     format check, build a všech 710 testů musí projít bez ručního zásahu.
    - ✅ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
      rozložit jen potvrzené hotspoty s více odpovědnostmi. Velikost souboru je
      signál pro review, ne automatický důvod k abstrakci.
@@ -751,6 +751,18 @@ jen konkrétní provozní a vyhodnocovací scénář.
        **Add project → Import existing repository** a ověřit načtení Gitea
        repozitářů; v GitHub edici totéž zopakovat pro zvolenou App instalaci
        a poté otevřít commits/stages importovaného projektu.
+    - ✅ **8e-b4 — oddělený lifecycle a SCM reconciliation.** Startup recovery,
+      periodický expiry sweep a background SCM údržba už nejsou skryté vedlejší
+      odpovědnosti uživatelského projektového orchestrátoru. Samostatný Nest
+      lifecycle provider vlastní start, stop a nepřekrývající se timer;
+      `ProjectReconciliation` vlastní throttling, deduplikaci a omezenou
+      souběžnost provider requestů. `ProjectsService` zůstává fasádou pro
+      projektové příkazy a zmenšil se o více než 350 řádků bez změny endpointů
+      nebo databázového formátu (ADR-098). **Uživatelský test:** restartovat
+      API, ihned otevřít Projects a detail existujícího Gitea/GitHub projektu a
+      ověřit původní repository URL, commity a prostředí. Smazání repozitáře
+      mimo InitPad se po následném načtení uklidí na pozadí; expirující dev/test
+      se odstraní, zatímco prod zůstane beze změny.
    - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
      připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
    - ◐ **8e-d — finální předání.**

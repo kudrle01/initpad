@@ -1,4 +1,5 @@
 import { hashToken } from '../common/token';
+import { ProjectReconciliation } from './project-reconciliation';
 import { ProjectsService } from './projects.service';
 
 describe('ProjectsService failed CI handoff', () => {
@@ -123,22 +124,16 @@ describe('ProjectsService failed CI handoff', () => {
         { context: 'ci / build (push)', status: 'failure', targetUrl: 'http://gitea/run/1' },
       ]),
     };
-    const service = new ProjectsService(
+    const reconciliation = new ProjectReconciliation(
       prisma as never,
       { get: jest.fn(() => ({ artifact: 'runtime' })) } as never,
-      {} as never,
-      {} as never,
-      {} as never,
       { provider: jest.fn(() => scm) } as never,
-      {} as never,
-      {} as never,
-      {} as never,
+      { complete: jest.fn() } as never,
+      () => ({ username: 'acme', token: '' }),
+      jest.fn(async () => undefined),
     );
 
-    const internal = service as unknown as {
-      reconcileProjectScmState(row: typeof project): Promise<void>;
-    };
-    await expect(internal.reconcileProjectScmState(project)).resolves.toBeUndefined();
+    await expect(reconciliation.reconcileProjectScmState(project)).resolves.toBeUndefined();
 
     expect(prisma.environment.updateMany).toHaveBeenCalledWith({
       where: {
