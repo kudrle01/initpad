@@ -723,7 +723,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
      Frontendová vrstva navíc interakčně ověřuje destruktivní project-delete
      potvrzení a stavový hook detailu projektu včetně autoritativního 404.
      **Uživatelský test:** po čistém `npm ci` spustit `npm run check`; lint,
-     format check, build a všech 737 testů musí projít bez ručního zásahu.
+     format check, build a všech 743 testů musí projít bez ručního zásahu.
    - ✅ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
      rozložit jen potvrzené hotspoty s více odpovědnostmi. Velikost souboru je
      signál pro review, ne automatický důvod k abstrakci.
@@ -813,8 +813,13 @@ jen konkrétní provozní a vyhodnocovací scénář.
       a logu Agenta vyhledat stejný `correlationId` u operation/job událostí.
       OpenTelemetry exporter a produkční log collector zůstávají součástí
       budoucího SaaS provozního profilu, nikoli skrytou lokální závislostí.
-   - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
-     připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
+   - ◐ **8e-c — nezávislé vyhodnocení.** Reprodukovatelný protokol v
+     `docs/EVALUATION.md` odděluje role, infrastrukturu, aktivní čas od CI
+     fronty, zásahy facilitátora, promotion invariant, rollback a tenant
+     boundary. Obsahuje také pravidla férového porovnání s ručním postupem a
+     anonymizovaného vyhodnocení SUS. Zbývá, aby jej bez pomoci autora
+     skutečně provedl studentský tým a vyučující; teprve jejich naměřené
+     výsledky mohou podkrok uzavřít.
    - ◐ **8e-d — finální předání.**
      - ✅ **8e-d-a — instalační a distribuční kontrakt Agenta.** Běžící
        instance zveřejní kontrolní součet auditovaného Linux instalátoru a
@@ -850,9 +855,14 @@ jen konkrétní provozní a vyhodnocovací scénář.
          runtime je migrační legacy provider: existující vazby zůstávají
          provozovatelné, ale nelze vytvořit nový target, allocation ani na něj
          nově přiřadit prostředí (ADR-095).
-     - TODO **8e-d-d — dokumentace release kandidáta.** Podle skutečného
-       kandidáta aktualizovat architekturu, diagramy, provozní dokumentaci,
-       implementační kapitolu diplomky a seznam vědomých omezení.
+     - ◐ **8e-d-d — dokumentace release kandidáta.** Aktuální implementaci,
+       hranice edic, hlavní datové a delivery toky popisuje
+       `docs/ARCHITECTURE.md`; `docs/RELEASE_READINESS.md` otevřeně odděluje
+       ověřený self-hosted profil od blokátorů veřejného SaaS. Veřejné README,
+       instalační a provozní runbooky jsou vzájemně propojené a repository
+       gate jejich přítomnost vynucuje. Zbývá doplnit skutečný Agent digest,
+       release notes a naměřené výsledky a podle nich uzavřít implementační a
+       testovací kapitolu diplomové práce.
 
 ## Akceptační kritéria
 

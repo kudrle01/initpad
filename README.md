@@ -134,6 +134,11 @@ izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
 
 ## Dokumentace
 
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — skutečné komponenty a datové
+  toky;
+- [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) — známá omezení a
+  podmínky vydání;
+- [docs/EVALUATION.md](docs/EVALUATION.md) — nezávislý uživatelský test;
 - [deploy/README.md](deploy/README.md) — instalace;
 - [deploy/OPERATIONS.md](deploy/OPERATIONS.md) — provoz, zálohy a obnova;
 - [deploy/SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md) — živé ověření;
