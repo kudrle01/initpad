@@ -129,6 +129,7 @@ services:
       # Enables the public, checksum-bound Agent installer UX only when it is
       # an immutable digest reference. The enrollment token is never embedded.
       INITPAD_AGENT_IMAGE: ${INITPAD_AGENT_IMAGE:-}
+      INITPAD_AGENT_RELEASE_VERSION: ${INITPAD_AGENT_RELEASE_VERSION:-}
       # GitHub App (hosted edition, optional; inert when unset).
       INITPAD_GITHUB_APP_ID: ${INITPAD_GITHUB_APP_ID:-}
       INITPAD_GITHUB_CLIENT_ID: ${INITPAD_GITHUB_CLIENT_ID:-}

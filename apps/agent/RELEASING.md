@@ -23,9 +23,11 @@ and creates a GitHub release. It never publishes `latest`.
 3. The **Release InitPad Agent** workflow refuses a mismatched tag or an
    existing version tag before it builds. After it succeeds, copy the
    `immutableReference` from `initpad-agent-release.json` in the GitHub release.
-4. Set that full `ghcr.io/.../initpad-agent@sha256:...` value as
-   `INITPAD_AGENT_IMAGE` in the control-plane deployment and run
-   `deploy/install.sh`. The enrollment dialog will then offer the verified
+4. Set the manifest's full `ghcr.io/.../initpad-agent@sha256:...` value as
+   `INITPAD_AGENT_IMAGE` and its `version` as `INITPAD_AGENT_RELEASE_VERSION`
+   in the control-plane deployment, then run `deploy/install.sh`. Both values
+   are required together so the enrollment dialog cannot display the bundled
+   source version for a different image digest. It will then offer the verified
    one-command installer.
 
 For unauthenticated customer installation, the GHCR package must be public.

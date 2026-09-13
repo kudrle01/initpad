@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
+import { config } from '../config';
 import { AgentDistributionService } from './agent-distribution.service';
 
 describe('AgentDistributionService', () => {
+  const originalDistribution = { ...config.agentDistribution };
+
+  afterEach(() => Object.assign(config.agentDistribution, originalDistribution));
+
   it('publishes secret-free release metadata tied to the reviewed installer bytes', async () => {
     const service = new AgentDistributionService();
     const [metadata, installer] = await Promise.all([service.metadata(), service.installer()]);
@@ -21,5 +26,16 @@ describe('AgentDistributionService', () => {
     if (!metadata.available) {
       expect(metadata.unavailableReason).toContain('has not configured');
     }
+  });
+
+  it('labels a configured digest with its release version, not bundled source version', async () => {
+    config.agentDistribution.image = `ghcr.io/example/initpad-agent@sha256:${'a'.repeat(64)}`;
+    config.agentDistribution.releaseVersion = '0.10.0';
+
+    const metadata = await new AgentDistributionService().metadata();
+
+    expect(metadata.available).toBe(true);
+    expect(metadata.version).toBe('0.10.0');
+    expect(metadata.image).toBe(config.agentDistribution.image);
   });
 });

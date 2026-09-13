@@ -65,6 +65,10 @@ export const config = {
     // chooses the release image. Production images must be immutable: tags
     // alone could silently change the code granted access to Docker.
     image: (process.env.INITPAD_AGENT_IMAGE || '').trim(),
+    // A digest does not encode the application version. Keep the operator's
+    // release selection explicit so the UI never labels an older image with
+    // the version of the control plane's bundled Agent source.
+    releaseVersion: (process.env.INITPAD_AGENT_RELEASE_VERSION || '').trim(),
     installerPath:
       process.env.INITPAD_AGENT_INSTALLER_PATH ||
       resolve(process.cwd(), '../../apps/agent/install.sh'),
@@ -293,6 +297,19 @@ export function validateConfig(): void {
     throw new Error(
       'INITPAD_AGENT_IMAGE must be an immutable OCI reference ending in @sha256:<64 lowercase hex characters>',
     );
+  }
+  if (
+    Boolean(config.agentDistribution.image) !== Boolean(config.agentDistribution.releaseVersion)
+  ) {
+    throw new Error(
+      'INITPAD_AGENT_IMAGE and INITPAD_AGENT_RELEASE_VERSION must be configured together',
+    );
+  }
+  if (
+    config.agentDistribution.releaseVersion &&
+    !/^\d+\.\d+\.\d+$/.test(config.agentDistribution.releaseVersion)
+  ) {
+    throw new Error('INITPAD_AGENT_RELEASE_VERSION must be a stable semantic version');
   }
   if (
     !Number.isFinite(config.deployment.memoryBytes) ||

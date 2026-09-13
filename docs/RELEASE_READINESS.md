@@ -71,6 +71,8 @@ Zdrojový kód, instalátor a release workflow jsou připravené, ale dokud
 neexistuje neměnný veřejný digest a dokončená acceptance, UI nesmí vydávat
 lokální vývojový image za produkční download. Postup je v
 [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
+Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
+manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
 
 ### E-mail delivery není zapojená
 

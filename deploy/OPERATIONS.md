@@ -184,6 +184,12 @@ e-mail, login ani token; identita je součástí HMAC klíče. Rate limiter chr�
 jednotlivé účty a běžné automatizované pokusy, nenahrazuje firewall, connection
 limit ani DDoS ochranu na veřejném edge.
 
+Publikovaný Agent se zapíná vždy dvojicí z ověřeného
+`initpad-agent-release.json`: `INITPAD_AGENT_IMAGE` dostane
+`image.immutableReference` a `INITPAD_AGENT_RELEASE_VERSION` kořenové pole
+`version`. Samotný digest neobsahuje zobrazitelnou verzi; neúplnou dvojici API
+odmítne při startu, aby UI nemohlo vydávat starší image za novější Agent.
+
 ## Kapacita a škálování
 
 - Pro pohodlný self-hosted provoz včetně sestavování šablon počítej

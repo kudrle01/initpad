@@ -4490,3 +4490,35 @@ subjectu, změnu okna, cleanup, normalizaci identity, user-ID subject, `429` s
 hlavičkou, fail-closed `503` a povinnou policy na každém citlivém endpointu.
 Živý test spotřebuje login bucket, restartuje API a ověří, že další pokus
 zůstane omezený a databáze neobsahuje zadanou identitu ani IP.
+
+---
+
+## ADR-103 — Distribuovaný Agent release je svázaný s digestem i deklarovanou verzí
+
+**Kontext.** OCI digest jednoznačně určuje bajty image, ale sám neobsahuje
+uživatelsky čitelnou verzi. Distribuční endpoint dosud četl verzi z Agent
+package přibaleného ke control plane a spojil ji s administrátorem nastaveným
+`INITPAD_AGENT_IMAGE`. Pokud control plane obsahoval novější source než
+publikovaný image, enrollment dialog mohl starší digest mylně označit novější
+verzí. Samotná neměnnost image tak nezaručovala pravdivá metadata.
+
+**Rozhodnutí.** Produkční distribuce vyžaduje atomickou konfigurační dvojici:
+`INITPAD_AGENT_IMAGE` je `image.immutableReference` a
+`INITPAD_AGENT_RELEASE_VERSION` je stabilní kořenová `version` z ověřeného
+`initpad-agent-release.json`. Přítomnost pouze jedné hodnoty, mutable či
+neplatný digest nebo prerelease-like verze zastaví API s konkrétní chybou.
+Distribuční endpoint používá deklarovanou release verzi vždy, když nabízí
+image; lokální package verzi ukazuje jen v neaktivním source-build režimu.
+
+**Důsledky.** Správce kopíruje dvě hodnoty místo jedné, ale UI už nemůže
+zaměnit verzi control plane za verzi distribuovaného root-equivalentního
+Agenta. Tato vazba ověřuje konzistenci operátorem schváleného manifestu;
+nenahrazuje Cosign kontrolu podpisu ani clean-host acceptance. Záměrně není
+vyžadována shoda s lokálním package: control plane smí během řízeného upgradu
+dočasně distribuovat starší podporovaný Agent release.
+
+**Testování.** Konfigurační testy odmítají každou neúplnou dvojici a
+nestabilní verzi a přijímají digest se stabilním semver. Distribuční test
+nastaví starší release než lokální package a ověří, že veřejná metadata vrátí
+právě deklarovanou verzi i nezměněný immutable reference. Živá acceptance po
+prvním release musí totéž potvrdit v enrollment dialogu a příkazu ke stažení.

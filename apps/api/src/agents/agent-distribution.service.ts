@@ -63,11 +63,15 @@ export class AgentDistributionService {
     }
 
     const image = config.agentDistribution.image || null;
+    const sourceVersion = parseVersion(packageJson);
     return {
       installer,
       metadata: {
         available: image !== null,
-        version: parseVersion(packageJson),
+        // A configured release can intentionally lag the control-plane source.
+        // Its operator-confirmed version is therefore authoritative whenever
+        // the immutable image is offered to users.
+        version: config.agentDistribution.releaseVersion || sourceVersion,
         image,
         unavailableReason: image
           ? null

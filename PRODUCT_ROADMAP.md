@@ -853,6 +853,12 @@ jen konkrétní provozní a vyhodnocovací scénář.
          anonymní pull, nastavit vzniklý digest do release kandidáta a na
          samostatném čistém Linux hostu ověřit instalaci, reboot, update,
          rollback vadného obrazu a zachování workloadů po odpojení Agenta.
+         Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a
+         verze z podepsaného release manifestu; UI proto nemůže označit starší
+         image verzí lokálního source tree. **Uživatelský test:** bez jednoho
+         z obou údajů musí API odmítnout start s konkrétní konfigurační chybou;
+         po vložení obou hodnot musí enrollment dialog ukázat přesnou verzi z
+         release manifestu a příkaz se stejným digestem.
      - ✅ **8e-d-c — provider a informační architektura.**
        - ✅ **8e-d-c1 — navigace podle úloh a oddělené scope nastavení.**
          Hlavní navigace vede přes Overview, Projects, Deployments a Servers;
