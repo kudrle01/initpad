@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
@@ -33,12 +34,14 @@ import {
   CreateGatewayPreflightDto,
 } from './dto/agent-job.dto';
 import { AGENT_JOB_NEXT_POLL_SECONDS, AgentJobLeases } from './agent-job-leases';
+import { newCorrelationId } from '../common/request-context';
 
 const LIFECYCLE_TEST_IMAGE =
   'nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa';
 
 interface JobRow {
   id: string;
+  correlationId: string;
   targetId: string;
   kind: string;
   protocolVersion: number;
@@ -60,6 +63,7 @@ interface JobRow {
 
 export interface AgentJobSummary {
   id: string;
+  correlationId: string;
   kind: string;
   status: string;
   attempt: number;
@@ -93,6 +97,7 @@ export interface AgentArtifactDownload {
 @Injectable()
 export class AgentJobsService implements OnModuleInit {
   private readonly leases: AgentJobLeases;
+  private readonly logger = new Logger(AgentJobsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -171,6 +176,7 @@ export class AgentJobsService implements OnModuleInit {
       where: { dedupeKey: `probe:${targetId}:${dto.requestId}` },
       update: {},
       create: {
+        correlationId: newCorrelationId(),
         targetId,
         dedupeKey: `probe:${targetId}:${dto.requestId}`,
         kind: 'probe',
@@ -252,6 +258,7 @@ export class AgentJobsService implements OnModuleInit {
       where: { dedupeKey: `lifecycle-test:${targetId}:${dto.requestId}` },
       update: {},
       create: {
+        correlationId: newCorrelationId(),
         targetId,
         allocationId: allocation.id,
         dedupeKey: `lifecycle-test:${targetId}:${dto.requestId}`,
@@ -323,6 +330,7 @@ export class AgentJobsService implements OnModuleInit {
       row = await this.prisma.$transaction(async (transaction) => {
         const created = await transaction.agentJob.create({
           data: {
+            correlationId: newCorrelationId(),
             targetId,
             dedupeKey,
             kind: 'gateway-preflight',
@@ -375,6 +383,7 @@ export class AgentJobsService implements OnModuleInit {
       protocolVersion: number;
       payload: unknown;
       attempt: number;
+      correlationId: string;
       leaseToken: string;
       leaseExpiresAt: string;
       delivery?: AgentJobDelivery;
@@ -396,6 +405,14 @@ export class AgentJobsService implements OnModuleInit {
         });
       }
       await this.advanceDeploymentPhase(row.deploymentOperationId, 'assigned', 'Claimed by Agent');
+      this.logger.log({
+        event: 'agent.job.claimed',
+        correlationId: row.correlationId,
+        agentJobId: row.id,
+        targetId: row.targetId,
+        kind: row.kind,
+        attempt: row.attempt,
+      });
       let delivery: AgentJobDelivery | undefined;
       if (['deploy', 'rollback'].includes(row.kind)) {
         try {
@@ -418,6 +435,7 @@ export class AgentJobsService implements OnModuleInit {
           protocolVersion: row.protocolVersion,
           payload: row.payload,
           attempt: row.attempt,
+          correlationId: row.correlationId,
           leaseToken,
           leaseExpiresAt: leaseExpiresAt.toISOString(),
           ...(delivery ? { delivery } : {}),
@@ -603,7 +621,18 @@ export class AgentJobsService implements OnModuleInit {
     await this.reconcileGatewayPreflight(jobId);
     await this.reconcileGatewayRoute(jobId);
     await this.reconcileTerminalJob(jobId);
-    return this.summary(await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } }));
+    const current = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } });
+    this.logger[dto.status === 'failed' ? 'warn' : 'log']({
+      event: 'agent.job.completed',
+      correlationId: current.correlationId,
+      agentJobId: current.id,
+      targetId: current.targetId,
+      kind: current.kind,
+      attempt: current.attempt,
+      status: dto.status,
+      resultCode: dto.resultCode ?? null,
+    });
+    return this.summary(current);
   }
 
   private async mirrorDeploymentProgress(
@@ -913,6 +942,7 @@ export class AgentJobsService implements OnModuleInit {
     },
     operation: {
       id: string;
+      correlationId: string;
       environmentId: string;
       buildArtifactId: string | null;
       kind: string;
@@ -1025,6 +1055,7 @@ export class AgentJobsService implements OnModuleInit {
           activation: operation.kind === 'start' ? 'start' : 'deploy',
           deploymentOperationId: operation.id,
           operationStep: 2,
+          correlationId: operation.correlationId,
         });
         await this.publishManagedProgress(
           operation,
@@ -1471,6 +1502,7 @@ export class AgentJobsService implements OnModuleInit {
   private summary(row: JobRow): AgentJobSummary {
     return {
       id: row.id,
+      correlationId: row.correlationId,
       kind: row.kind,
       status: row.status,
       attempt: row.attempt,

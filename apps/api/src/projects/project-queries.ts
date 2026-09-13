@@ -112,6 +112,7 @@ export class ProjectQueries {
     });
     return operations.map((operation) => ({
       id: operation.id,
+      correlationId: operation.correlationId,
       environment: operation.environment.name as EnvName,
       target: operation.targetName,
       kind: operation.kind,

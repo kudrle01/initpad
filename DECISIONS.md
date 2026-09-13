@@ -1273,7 +1273,7 @@ sdílení hesel v plaintextu.
 5. **Ověření e-mailu, reset hesla, rate limiting.** `AuthToken` (kind
    `email_verify`/`password_reset`) je jednorázový, hashovaný a expirující; ukládá se
    jen SHA-256 hash a nový token zneplatní starší nepoužité téhož druhu. Reset
-   neenumeruje účty (vždy vrací ok; odkaz se bez SMTP loguje) a posune generaci
+   neenumeruje účty (vždy vrací ok; od ADR-101 se plaintext odkaz neloguje) a posune generaci
    session. Ověření e-mailu vydá odkaz pro vlastní adresu přihlášeného uživatele.
    Všechny veřejné auth endpointy jdou přes existující rate limiter.
 
@@ -4398,3 +4398,50 @@ allocation; HTTP helper odmítne ne-HTTP a privátní cíl ještě před sockete
 Regrese providerů ověřuje zachování SFTP/legacy SSH lifecycle. Živá SaaS
 acceptance použije řízený hostname, který po prvním veřejném výsledku přejde na
 privátní IP, a síťová telemetrie musí potvrdit, že API interní socket neotevřelo.
+
+---
+
+## ADR-101 — Workflow correlation je trvalá, request ID je serverové a logy jsou strukturované
+
+**Kontext.** Auditní timeline pravdivě popisuje uživatelské změny a deployment
+historie stav operací, ale provozní hledání chyby dosud vyžadovalo ručně spojit
+Nest textový log, ID operace, Agent job a Docker kontejner. Převzít
+`X-Request-Id` přímo od veřejného klienta by dovolilo kolize mezi tenanty.
+Ukládat request body, query nebo kompletní objekty do logu by naopak vytvořilo
+vedlejší archiv tokenů, hesel a aplikačních dat. Samotné zapnutí OpenTelemetry
+bez zvoleného collector backendu by přidalo závislosti, ale nezajistilo retenci,
+přístupová práva ani alerting.
+
+**Rozhodnutí.** API generuje pro každý request vlastní UUID a vrací jej jako
+`X-Request-Id`. Completion access log je jeden JSON objekt s metodou, cestou bez
+query, HTTP stavem a délkou; úspěšné health probe se záměrně nezapisují.
+`DeploymentOperation.correlationId` vznikne z ID iniciačního requestu, nebo z
+nového UUID pro background práci. Každý navázaný `AgentJob` hodnotu kopíruje a
+claim ji předá Agentovi, který ji přidá k událostem claim/completion. Agent job
+ID už je na workloadu jako `com.initpad.job`, takže korelace dosahuje až ke
+konkrétnímu kontejneru bez změny bezpečnostního payloadu nebo ukládání jeho
+stdout do deployment historie.
+
+Nest dál používá standardní `Logger` API, ale globální writer produkuje
+jednořádkový JSON. Rekurzivně rediguje citlivé názvy polí, známé InitPad/GitHub
+tokeny a credentials v URL, omezuje počet, hloubku a délku hodnot a chrání
+rezervovaná pole logu před přepsáním message objektem. Correlation i request ID
+jsou výhradně diagnostická metadata: nesmějí být použita pro autorizaci,
+idempotency ani lease fencing. Historické databázové řádky dostanou při migraci
+deterministicky své dosavadní operation/job UUID; nové řádky mají UUID default.
+
+**Důsledky.** Správce může jednou hodnotou spojit API request, durable operaci,
+Agent job a workload a JSON lze bezpečně předat běžnému log collector systému.
+Uživatel získá request ID i u chybové odpovědi. Log redakce je obrana do hloubky,
+nikoli oprávnění logovat secrets; kód je do loggeru nadále nesmí posílat.
+Lokální instalace nepotřebuje collector. Produkční SaaS musí samostatně zvolit
+OpenTelemetry collector/exporter, přístupová práva, retenci, metriky a alerty;
+tento ADR záměrně nepředstírá hotovou observability platformu.
+
+**Testování.** Jednotkové testy ověřují serverové UUID, propagaci do loggeru,
+jednořádkový JSON, redakci, cyklická data a rezervovaná pole. Deployment a Agent
+service testy kontrolují dědění correlation ID a API/Agent build chrání wire
+kontrakt. Migrace zachová všechny historické řádky. Živě se ověří response
+hlavička a jeden Agent deploy, jehož `correlationId` je shodný v API operation,
+job claim/completion a Agent logu; Docker label `com.initpad.job` musí odpovídat
+navázanému jobu.

@@ -25,7 +25,7 @@ test('creates a deterministic digest-bound Agent release bundle', () => {
   const { manifest } = prepareAgentRelease({
     root,
     outputDirectory,
-    tag: 'agent-v0.10.0',
+    tag: 'agent-v0.11.0',
     image: 'ghcr.io/example/initpad-agent',
     digest,
     sourceCommit: commit,
@@ -60,14 +60,14 @@ test('rejects a tag which does not exactly match the Agent package version', () 
       prepareAgentRelease({
         root,
         outputDirectory,
-        tag: 'agent-v0.10.1',
+        tag: 'agent-v0.11.1',
         image: 'ghcr.io/example/initpad-agent',
         digest,
         sourceCommit: commit,
         sourceRepository: 'https://github.com/example/initpad',
         sbomPath,
       }),
-    /release tag must be agent-v0\.10\.0/,
+    /release tag must be agent-v0\.11\.0/,
   );
 });
 
@@ -78,7 +78,7 @@ test('rejects mutable or malformed image identity', () => {
       prepareAgentRelease({
         root,
         outputDirectory,
-        tag: 'agent-v0.10.0',
+        tag: 'agent-v0.11.0',
         image: 'ghcr.io/example/initpad-agent:latest',
         digest,
         sourceCommit: commit,

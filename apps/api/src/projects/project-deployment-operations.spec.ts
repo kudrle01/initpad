@@ -17,7 +17,7 @@ describe('ProjectDeploymentOperations', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       deploymentOperation: {
-        create: jest.fn(async () => ({ id: 'operation-1' })),
+        create: jest.fn(async ({ data }) => ({ id: 'operation-1', ...data })),
         update: jest.fn(),
       },
     };
@@ -28,6 +28,7 @@ describe('ProjectDeploymentOperations', () => {
     ).resolves.toBe('operation-1');
     expect(prisma.deploymentOperation.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
+        correlationId: expect.stringMatching(/^[a-f0-9-]{36}$/),
         environmentId: 'env-1',
         phase: 'queued',
         targetIdSnapshot: 'target-1',
@@ -67,8 +68,8 @@ describe('ProjectDeploymentOperations', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       deploymentOperation: {
-        create: jest.fn(async () => ({ id: operationId })),
-        update: jest.fn(async () => ({})),
+        create: jest.fn(async ({ data }) => ({ id: operationId, ...data })),
+        update: jest.fn(async () => ({ id: operationId, correlationId: operationId })),
       },
     };
     const operations = new ProjectDeploymentOperations(prisma as never, audit);
@@ -100,7 +101,7 @@ describe('ProjectDeploymentOperations', () => {
         updateMany: jest.fn(async () => ({ count: 0 })),
       },
       deploymentOperation: {
-        create: jest.fn(async () => ({ id: 'operation-loser' })),
+        create: jest.fn(async ({ data }) => ({ id: 'operation-loser', ...data })),
         update,
       },
     };

@@ -4,6 +4,7 @@ import { ProjectAgentDelivery } from './project-agent-delivery';
 function operation(overrides: Record<string, unknown> = {}) {
   return {
     id: 'operation-1',
+    correlationId: '123e4567-e89b-42d3-a456-426614174099',
     status: 'running',
     finishedAt: null,
     version: 'a'.repeat(40),
@@ -93,6 +94,7 @@ describe('ProjectAgentDelivery', () => {
       where: { dedupeKey: 'deployment:operation-1' },
       update: {},
       create: expect.objectContaining({
+        correlationId: '123e4567-e89b-42d3-a456-426614174099',
         targetId: 'target-1',
         allocationId: 'allocation-1',
         deploymentOperationId: 'operation-1',
@@ -230,6 +232,7 @@ describe('ProjectAgentDelivery', () => {
       activation: null,
       deploymentOperationId: 'operation-1',
       operationStep: 1,
+      correlationId: '123e4567-e89b-42d3-a456-426614174099',
     });
   });
 

@@ -119,8 +119,10 @@ reset hesla. GitHub login/link a bezpečná vazba GitHub App jsou implementovan�
 ve Fázi 3; produkční SaaS profil stále čeká na Agenta a živý E2E test.
 
 Produkční odesílání e-mailů zatím není implementované: aktivační/verifikační
-odkazy se v self-hosted prototypu zobrazují nebo logují. To je vhodné pro demo a
-administrátorem řízenou instalaci, ne důkaz vlastnictví e-mailu ve veřejném SaaS;
+odkazy se v self-hosted prototypu zobrazují oprávněnému uživateli. Reset token se
+po ADR-101 z bezpečnostních důvodů neloguje; do zapojení e-mailu použije správce
+instance administrátorský reset. To je vhodné pro demo a administrátorem řízenou
+instalaci, ne důkaz vlastnictví e-mailu ve veřejném SaaS;
 SaaS proto přijímá pouze e-mail ověřený GitHubem a neověřený profilový e-mail
 neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
 
@@ -795,6 +797,22 @@ jen konkrétní provozní a vyhodnocovací scénář.
       skončit HTTP 400 před uložením, zatímco veřejný SFTP host projde
       konfigurací a **Test connection**. Produkční gate navíc vyžaduje egress
       firewall; aplikační kontrola jej nenahrazuje.
+    - ✅ **8e-b7 — strukturované logy a workflow correlation.** Každý HTTP
+      request dostane serverem generované `X-Request-Id`; neúspěšné i úspěšné
+      aplikační requesty kromě běžných health probe zapisují omezený JSON
+      záznam bez query stringu a request body. Deployment operace ukládá
+      stabilní `correlationId`, všechny její Agent joby jej dědí a Agent jej
+      zapisuje při claimu i dokončení. Workload nadále nese immutable
+      `com.initpad.job` label, takže cesta request → operation → job → kontejner
+      je dohledatelná bez kopírování logů aplikace. Centrální logger rediguje
+      citlivé klíče, známé tokeny a URL credentials, omezuje hloubku i velikost
+      metadat a nedovolí zprávě přepsat `timestamp`, `level` nebo `requestId`
+      (ADR-101). **Uživatelský test:** zavolat
+      `curl -i http://localhost:8080/api/health/ready` a ověřit UUID hlavičku
+      `X-Request-Id`; poté spustit Agent deploy a ve `docker compose logs api`
+      a logu Agenta vyhledat stejný `correlationId` u operation/job událostí.
+      OpenTelemetry exporter a produkční log collector zůstávají součástí
+      budoucího SaaS provozního profilu, nikoli skrytou lokální závislostí.
    - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
      připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
    - ◐ **8e-d — finální předání.**

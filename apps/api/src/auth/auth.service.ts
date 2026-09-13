@@ -359,9 +359,9 @@ export class AuthService implements OnModuleInit {
 
   /**
    * Starts a password reset. Always resolves the same way regardless of whether
-   * the account exists, so the endpoint cannot be used to enumerate users. When
-   * a matching local account is found the reset link is logged (stands in for
-   * SMTP delivery); it is never returned in the API response.
+   * the account exists, so the endpoint cannot be used to enumerate users. The
+   * plaintext link is never returned or logged; production e-mail delivery is
+   * a release gate and self-hosted administrators can use account reset meanwhile.
    */
   async requestPasswordReset(identity: string): Promise<void> {
     const id = identity.trim();
@@ -370,10 +370,12 @@ export class AuthService implements OnModuleInit {
       where: { OR: [{ username: id }, { email: id.toLowerCase() }] },
     });
     if (!user || !user.passwordHash) return;
-    const token = await this.issueAuthToken(user.id, 'password_reset', PASSWORD_RESET_TTL_MS);
-    this.logger.warn(
-      `Password reset link for ${user.username}: ${this.frontendBase()}/reset-password/${token}`,
-    );
+    await this.issueAuthToken(user.id, 'password_reset', PASSWORD_RESET_TTL_MS);
+    this.logger.warn({
+      event: 'auth.password_reset.delivery_pending',
+      username: user.username,
+      message: 'Password reset token issued; configure e-mail delivery before public use',
+    });
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {

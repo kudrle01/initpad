@@ -182,6 +182,7 @@ export interface ActivityEvent {
 
 export interface DeploymentOperationSummary {
   id: string;
+  correlationId: string;
   environment: EnvName;
   target: string;
   kind: string;

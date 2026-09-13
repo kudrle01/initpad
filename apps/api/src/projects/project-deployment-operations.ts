@@ -9,6 +9,7 @@ import { EnvName } from '../domain/types';
 import { AuditEventsService, auditOperationAction } from '../audit/audit-events.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ExpectedProductionState } from './project-production-approvals';
+import { newCorrelationId } from '../common/request-context';
 
 /**
  * Owns the durable operation lock shared by CI, deployment and environment
@@ -101,6 +102,7 @@ export class ProjectDeploymentOperations {
     }
     const operation = await this.prisma.deploymentOperation.create({
       data: {
+        correlationId: newCorrelationId(),
         environmentId: environment.id,
         kind,
         status: 'running',
@@ -140,6 +142,14 @@ export class ProjectDeploymentOperations {
       },
     });
     if (claimed.count === 1) {
+      this.logger.log({
+        event: 'deployment.operation.started',
+        correlationId: operation.correlationId,
+        operationId: operation.id,
+        projectId,
+        environment: envName,
+        kind,
+      });
       if (expectedProductionState) {
         const claimedState = await this.prisma.environment.findUnique({
           where: { id: environment.id },
@@ -201,6 +211,14 @@ export class ProjectDeploymentOperations {
         finishedAt: new Date(),
       },
     });
+    this.logger.warn({
+      event: 'deployment.operation.rejected',
+      correlationId: operation.correlationId,
+      operationId: operation.id,
+      projectId,
+      environment: envName,
+      reason: 'active-operation-conflict',
+    });
     throw new BadRequestException(`Environment '${envName}' already has an active operation`);
   }
 
@@ -219,13 +237,22 @@ export class ProjectDeploymentOperations {
           finishedAt: new Date(),
         },
       })
-      .then(() => true)
-      .catch(() => false);
+      .then((operation) => operation)
+      .catch(() => null);
     await this.prisma.environment.updateMany({
       where: { activeOperationId: operationId },
       data: { activeOperationId: null },
     });
-    if (updated) await this.recordResultSafely(operationId);
+    if (updated) {
+      this.logger[status === 'failed' ? 'warn' : 'log']({
+        event: 'deployment.operation.completed',
+        correlationId: updated.correlationId,
+        operationId,
+        status,
+        ...(message ? { message } : {}),
+      });
+      await this.recordResultSafely(operationId);
+    }
   }
 
   async advancePhase(

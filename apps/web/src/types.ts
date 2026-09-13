@@ -203,6 +203,7 @@ export interface AgentDistribution {
 
 export interface AgentJobSummary {
   id: string;
+  correlationId: string;
   kind: string;
   status: 'queued' | 'leased' | 'succeeded' | 'failed' | 'cancelled';
   attempt: number;
@@ -347,6 +348,7 @@ export interface ActivityEvent {
 
 export interface DeploymentOperation {
   id: string;
+  correlationId: string;
   environment: EnvName;
   target: string;
   kind: string;

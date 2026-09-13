@@ -19,6 +19,7 @@ const LEASE = `initpad_lease_${'b'.repeat(43)}`;
 function job(overrides: Record<string, unknown> = {}) {
   return {
     id: 'job-1',
+    correlationId: '123e4567-e89b-42d3-a456-426614174099',
     targetId: 'target-1',
     kind: 'probe',
     protocolVersion: 1,
@@ -575,6 +576,7 @@ describe('AgentJobsService durable lease protocol', () => {
       expect.objectContaining({
         id: 'job-1',
         targetId: 'target-1',
+        correlationId: '123e4567-e89b-42d3-a456-426614174099',
         leaseToken: expect.stringMatching(/^initpad_lease_/),
       }),
     );

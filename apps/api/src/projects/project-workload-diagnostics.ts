@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { repositoryRef } from '../scm/scm-provider';
 import { TemplatesService } from '../templates/templates.service';
 import { deploymentSlug } from './project-deployment-identity';
+import { newCorrelationId } from '../common/request-context';
 
 const ACTIVE_DIAGNOSTICS = ['queued', 'running'];
 
@@ -135,6 +136,7 @@ export class ProjectWorkloadDiagnostics {
         }
         const job = await transaction.agentJob.create({
           data: {
+            correlationId: newCorrelationId(),
             targetId: target.id,
             allocationId: allocation.id,
             dedupeKey,

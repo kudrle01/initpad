@@ -80,6 +80,10 @@ artifact and bounded in-memory configuration through the fenced job protocol.
   diagnostic cleanup preserves images that existed before the job.
 - Deployment operations atomically lock one environment. Cancellation is a
   persisted request; stale background work cannot publish over a newer state.
+- API zapisuje strukturované JSON logy se serverem generovaným request ID.
+  Deployment a Agent job sdílí stabilní correlation ID; Agent jej přebírá jen
+  jako diagnostická metadata. Centrální logger odstraňuje citlivé klíče, známé
+  formáty tokenů a URL credentials a HTTP access log neukládá query ani body.
 - App containers receive memory/CPU/PID/log limits, dropped capabilities and
   `no-new-privileges`. Platform web/API containers are read-only where possible.
 - Dependencies and actions are locked; npm and Composer audits are part of the
@@ -123,6 +127,9 @@ artifact and bounded in-memory configuration through the fenced job protocol.
   audit log are required before hosted production use.
 - Backups contain credentials. They must be encrypted, stored off-host and
   tested with periodic restore drills.
+- JSON výstup je pouze lokální stdout/stderr kontrakt. Hosted provoz stále
+  potřebuje přístupově omezený centrální collector, retenci, alerting, metriky a
+  OpenTelemetry export; correlation ID není autentizační údaj ani náhrada auditu.
 
 ## Production gates
 

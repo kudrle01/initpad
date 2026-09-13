@@ -52,6 +52,7 @@ export class ProjectAgentDelivery {
       where: { dedupeKey: `deployment:${operation.id}` },
       update: {},
       create: {
+        correlationId: operation.correlationId,
         targetId: target.id,
         allocationId: allocation.id,
         deploymentOperationId: operation.id,
@@ -97,6 +98,7 @@ export class ProjectAgentDelivery {
       where: { dedupeKey: `${kind}:${operation.id}` },
       update: {},
       create: {
+        correlationId: operation.correlationId,
         targetId: target.id,
         allocationId: allocation.id,
         deploymentOperationId: operation.id,
@@ -138,6 +140,7 @@ export class ProjectAgentDelivery {
           activation: null,
           deploymentOperationId: operation.id,
           operationStep: 1,
+          correlationId: operation.correlationId,
         });
       } catch (error) {
         await this.prisma.agentJob.updateMany({

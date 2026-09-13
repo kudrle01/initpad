@@ -163,6 +163,7 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
       log('info', 'job.claimed', {
         targetId: config.targetId,
         jobId: response.job.id,
+        correlationId: response.job.correlationId,
         kind: response.job.kind,
         attempt: response.job.attempt,
       });
@@ -183,6 +184,7 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
           log('info', 'job.completed', {
             targetId: config.targetId,
             jobId: response.job.id,
+            correlationId: response.job.correlationId,
             kind: response.job.kind,
             attempt: response.job.attempt,
           });
@@ -192,6 +194,7 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
           log('warn', 'job.lease_lost', {
             targetId: config.targetId,
             jobId: response.job.id,
+            correlationId: response.job.correlationId,
             attempt: response.job.attempt,
           });
         } else {

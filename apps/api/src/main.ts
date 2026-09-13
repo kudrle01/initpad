@@ -8,14 +8,21 @@ import { AppModule } from './app.module';
 import { config } from './config';
 import { validateConfig } from './config';
 import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
+import { requestContextMiddleware } from './common/request-context';
+import { StructuredLogger } from './common/structured-logger';
 
 async function bootstrap() {
   validateConfig();
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const logger = new StructuredLogger();
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+    logger,
+  });
   app.enableShutdownHooks();
   const express = app.getHttpAdapter().getInstance() as Express;
   express.disable('x-powered-by');
   express.set('trust proxy', 1);
+  app.use(requestContextMiddleware);
   app.use(
     (
       _req: unknown,
@@ -43,7 +50,7 @@ async function bootstrap() {
   app.useGlobalFilters(new PrismaExceptionFilter());
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   await app.listen(port);
-  console.log(`[platform-api] running at http://localhost:${port}/api`);
+  logger.log({ event: 'platform.started', port }, 'Bootstrap');
 }
 
 void bootstrap();

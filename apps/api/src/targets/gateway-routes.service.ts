@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { agentVersionAtLeast, MIN_GATEWAY_ROUTE_AGENT_VERSION } from '../agents/agent-version';
 import { PrismaService } from '../prisma/prisma.service';
 import { managedGatewayOrigin, stableGatewayHostname } from './managed-gateway';
+import { newCorrelationId } from '../common/request-context';
 
 export interface GatewayRouteReservation {
   id: string;
@@ -28,6 +29,8 @@ export interface GatewayRouteReconcileRequest {
   /** Internal workflow binding; both values must be supplied together. */
   deploymentOperationId?: string;
   operationStep?: number;
+  /** Stable workflow correlation copied from the parent operation when present. */
+  correlationId?: string;
 }
 
 export interface GatewayRouteReconcileJob {
@@ -226,6 +229,7 @@ export class GatewayRoutesService {
         });
         const job = await transaction.agentJob.create({
           data: {
+            correlationId: request.correlationId ?? newCorrelationId(),
             targetId: target.id,
             allocationId: allocation.id,
             deploymentOperationId: request.deploymentOperationId,
@@ -286,6 +290,9 @@ export class GatewayRoutesService {
   private validateRequest(request: GatewayRouteReconcileRequest): void {
     if (!UUID.test(request.requestId))
       throw new BadRequestException('Gateway route request id is invalid');
+    if (request.correlationId !== undefined && !UUID.test(request.correlationId)) {
+      throw new BadRequestException('Gateway route correlation id is invalid');
+    }
     if (!['active', 'stopped', 'absent'].includes(request.desiredState)) {
       throw new BadRequestException('Gateway route desired state is invalid');
     }

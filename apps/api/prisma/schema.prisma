@@ -346,8 +346,8 @@ model TargetAllocation {
   pidsLimit           Int          @default(256)
   // Optional lifetime for non-production workloads. Null keeps the environment
   // until a user removes it; production is never eligible for TTL cleanup.
-  devTtlHours         Int?
-  testTtlHours        Int?
+  devTtlHours        Int?
+  testTtlHours       Int?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   environments    Environment[]
@@ -595,6 +595,9 @@ model ProvisioningEffect {
 
 model DeploymentOperation {
   id                String                       @id @default(uuid())
+  // Stable workflow correlation seeded by the initiating HTTP request. It is
+  // safe diagnostic metadata, not an authentication or idempotency token.
+  correlationId     String                       @default(uuid())
   environment       Environment                  @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   environmentId     String
   buildArtifact     BuildArtifact?               @relation(fields: [buildArtifactId], references: [id], onDelete: SetNull)
@@ -620,6 +623,7 @@ model DeploymentOperation {
   @@index([environmentId, createdAt])
   @@index([status])
   @@index([buildArtifactId])
+  @@index([correlationId])
 }
 
 // Immutable intent to publish one exact verified build to production. The
@@ -679,6 +683,9 @@ model ProductionDeploymentRequest {
 // worker therefore cannot renew or publish after the lease is reassigned.
 model AgentJob {
   id                    String               @id @default(uuid())
+  // Shared with the parent operation when one exists and delivered to the
+  // Agent so control-plane and target logs can be searched as one workflow.
+  correlationId         String               @default(uuid())
   target                Target               @relation(fields: [targetId], references: [id], onDelete: Cascade)
   targetId              String
   allocation            TargetAllocation?    @relation(fields: [allocationId], references: [id], onDelete: SetNull)
@@ -723,6 +730,7 @@ model AgentJob {
 
   @@unique([deploymentOperationId, operationStep])
   @@index([targetId, status, createdAt])
+  @@index([correlationId])
   @@index([status, leaseExpiresAt])
   @@index([allocationId])
   @@index([deploymentOperationId, status])

@@ -1,4 +1,4 @@
-export const AGENT_VERSION = '0.10.0';
+export const AGENT_VERSION = '0.11.0';
 export const PROTOCOL_VERSION = 1;
 
 export interface AgentConfig {
@@ -45,6 +45,7 @@ export interface HeartbeatResponse {
 
 export interface AgentJobClaim {
   id: string;
+  correlationId?: string;
   targetId: string;
   kind: string;
   protocolVersion: number;
@@ -64,6 +65,7 @@ export interface AgentJobClaim {
 
 export interface AgentJobSummary {
   id: string;
+  correlationId?: string;
   kind: string;
   status: string;
   attempt: number;
