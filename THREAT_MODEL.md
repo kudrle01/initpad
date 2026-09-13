@@ -33,8 +33,11 @@ artifact and bounded in-memory configuration through the fenced job protocol.
 ## Main controls
 
 - Gitea self-registration is disabled. InitPad owns account creation and lets
-  the instance administrator choose open or admin-provisioned registration;
-  authentication endpoints are rate-limited.
+  the instance administrator choose open or admin-provisioned registration.
+  Authentication, GitHub OAuth/setup and Agent enrollment have explicit
+  operation-specific limits. Atomic PostgreSQL counters are shared by every API
+  replica and combine trusted client IP with an HMACed account/token subject;
+  the database never stores the source IP, username, e-mail or plaintext token.
 - Projects and user targets belong to a workspace. Every request resolves an
   authenticated membership server-side; `X-Workspace-Id` is only a selector,
   never proof of access. Viewer/member/maintainer/admin/owner roles separate
@@ -92,8 +95,11 @@ artifact and bounded in-memory configuration through the fenced job protocol.
 ## Residual risks
 
 - API remote-code execution can become host compromise through Docker control.
-- The in-memory login rate limiter is per replica; horizontal scale needs Redis
-  or an ingress/WAF limiter.
+- The application limiter covers targeted and small distributed attacks across
+  API replicas, but it deliberately does not replace edge connection limits or
+  volumetric DDoS protection. `INITPAD_TRUST_PROXY_HOPS` must match the fixed
+  reverse-proxy path; trusting more hops than actually exist lets a direct
+  client forge the address used by the IP dimension.
 - OIDC codes/tokens are in-memory, so API restart invalidates active SSO flows.
 - Registered SSH/SFTP hosts are powerful outbound destinations. Host syntax,
   reserved local/link-local addresses and URL credentials are rejected, while

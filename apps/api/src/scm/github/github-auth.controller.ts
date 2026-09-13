@@ -11,6 +11,8 @@ import { GitHubUserCredentialService } from './github-user-credential.service';
 import { GITHUB_OAUTH_NONCE_COOKIE, GitHubOAuthService, OAuthMode } from './github-oauth.service';
 import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
 import { readStringCookie } from '../../common/request-cookie';
+import { RateLimited } from '../../auth/rate-limited.decorator';
+import { RATE_LIMITS } from '../../auth/rate-limit.policy';
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 // "Sign in with GitHub" and account linking. Both are top-level browser
@@ -29,6 +31,7 @@ export class GitHubAuthController {
   ) {}
 
   @Get()
+  @RateLimited(RATE_LIMITS.githubAuthorize)
   authorize(@Query('mode') modeRaw: string, @Res() res: Response) {
     if (!this.oauth.isConfigured())
       return res.redirect(this.frontend('/login?error=github_unavailable'));
@@ -45,6 +48,7 @@ export class GitHubAuthController {
   }
 
   @Get('callback')
+  @RateLimited(RATE_LIMITS.githubCallback)
   async callback(
     @Query('code') code: string,
     @Query('state') state: string,

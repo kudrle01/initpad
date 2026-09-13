@@ -52,6 +52,12 @@ export const config = {
   edition,
   publicHost,
   deployHealthHost,
+  http: {
+    // Number of reverse-proxy hops between a client and the API. Client IP is
+    // a security input for rate limiting, so this must match the real topology
+    // instead of trusting an arbitrary X-Forwarded-For chain.
+    trustProxyHops: Number(process.env.INITPAD_TRUST_PROXY_HOPS ?? 1),
+  },
   templatesDir: process.env.INITPAD_TEMPLATES_DIR || resolve(process.cwd(), '../../templates'),
   workspaceDir: process.env.INITPAD_WORKSPACE_DIR || resolve(process.cwd(), '../../.workspace'),
   agentDistribution: {
@@ -247,6 +253,13 @@ export function validateConfig(): void {
     throw new Error(
       `INITPAD_EDITION must be one of ${EDITIONS.join(', ')} (received '${config.edition}')`,
     );
+  }
+  if (
+    !Number.isInteger(config.http.trustProxyHops) ||
+    config.http.trustProxyHops < 0 ||
+    config.http.trustProxyHops > 5
+  ) {
+    throw new Error('INITPAD_TRUST_PROXY_HOPS must be an integer between 0 and 5');
   }
   const acceptedModes = [...REGISTRATION_MODES, ...Object.keys(LEGACY_REGISTRATION_ALIASES)];
   if (!acceptedModes.includes(rawRegistrationMode)) {

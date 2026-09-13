@@ -5,7 +5,8 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { ScmModule } from '../scm/scm.module';
-import { AuthRateLimitGuard } from './auth-rate-limit.guard';
+import { RateLimitGuard } from './rate-limit.guard';
+import { RateLimitService } from './rate-limit.service';
 
 @Module({
   imports: [
@@ -15,8 +16,10 @@ import { AuthRateLimitGuard } from './auth-rate-limit.guard';
       signOptions: { expiresIn: '7d' },
     }),
   ],
-  providers: [AuthService, JwtAuthGuard, AuthRateLimitGuard],
+  providers: [AuthService, JwtAuthGuard, RateLimitService, RateLimitGuard],
   controllers: [AuthController],
-  exports: [AuthService, JwtAuthGuard, AuthRateLimitGuard, JwtModule],
+  // Consumers using @RateLimited() resolve the guard in their own module
+  // context, so its service dependency must cross the same module boundary.
+  exports: [AuthService, JwtAuthGuard, RateLimitService, RateLimitGuard, JwtModule],
 })
 export class AuthModule {}

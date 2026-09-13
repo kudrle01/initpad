@@ -813,6 +813,18 @@ jen konkrétní provozní a vyhodnocovací scénář.
       a logu Agenta vyhledat stejný `correlationId` u operation/job událostí.
       OpenTelemetry exporter a produkční log collector zůstávají součástí
       budoucího SaaS provozního profilu, nikoli skrytou lokální závislostí.
+    - ✅ **8e-b8 — distribuovaný aplikační rate limit.** Veřejné password
+      operace, GitHub OAuth/setup a Agent enrollment mají explicitní policy
+      podle rizika. Nejdříve se atomicky spotřebuje IP bucket a teprve potom
+      HMACovaný account/token bucket, takže jedna adresa nemůže neomezeně
+      zaplňovat databázi náhodnými identitami. PostgreSQL stav sdílejí všechny
+      API repliky, po restartu nezmizí a expirované řádky se průběžně uklízejí.
+      Vyčerpaný limit vrací `429` a `Retry-After`; nedostupný store citlivou
+      akci fail-closed odmítne. Proxy hop count je validovaná konfigurace, ne
+      bezpodmínečná důvěra v celé `X-Forwarded-For` hlavičce (ADR-102).
+      **Uživatelský test:** desetkrát zkusit chybné přihlášení ke stejné
+      identitě, restartovat API a zopakovat pokus; odpověď musí být `429` s
+      `Retry-After`, aniž DB obsahuje IP nebo zadaný login.
    - ◐ **8e-c — nezávislé vyhodnocení.** Reprodukovatelný protokol v
      `docs/EVALUATION.md` odděluje role, infrastrukturu, aktivní čas od CI
      fronty, zásahy facilitátora, promotion invariant, rollback a tenant

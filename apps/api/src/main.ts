@@ -21,7 +21,7 @@ async function bootstrap() {
   app.enableShutdownHooks();
   const express = app.getHttpAdapter().getInstance() as Express;
   express.disable('x-powered-by');
-  express.set('trust proxy', 1);
+  express.set('trust proxy', config.http.trustProxyHops || false);
   app.use(requestContextMiddleware);
   app.use(
     (

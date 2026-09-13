@@ -8,6 +8,7 @@ describe('validateConfig production secrets', () => {
     encryptionKey: config.security.encryptionKey,
     webhookToken: config.scm.webhookToken,
     oidcSecret: config.oidc.clientSecret,
+    trustProxyHops: config.http.trustProxyHops,
   };
 
   beforeEach(() => {
@@ -31,6 +32,7 @@ describe('validateConfig production secrets', () => {
     config.security.encryptionKey = originalSecrets.encryptionKey;
     config.scm.webhookToken = originalSecrets.webhookToken;
     config.oidc.clientSecret = originalSecrets.oidcSecret;
+    config.http.trustProxyHops = originalSecrets.trustProxyHops;
     Object.assign(config.artifactStore, originalArtifactStore);
   });
 
@@ -40,6 +42,16 @@ describe('validateConfig production secrets', () => {
   });
 
   it('does not treat a non-secret access-key identifier as a password', () => {
+    expect(() => validateConfig()).not.toThrow();
+  });
+
+  it.each([-1, 1.5, 6, Number.NaN])('rejects unsafe proxy hop configuration %s', (value) => {
+    config.http.trustProxyHops = value;
+    expect(() => validateConfig()).toThrow('INITPAD_TRUST_PROXY_HOPS');
+  });
+
+  it('accepts direct API topology with no trusted proxy', () => {
+    config.http.trustProxyHops = 0;
     expect(() => validateConfig()).not.toThrow();
   });
 });

@@ -10,6 +10,7 @@ import { GitHubWebhookController } from '../scm/github/github-webhook.controller
 import { TemplatesController } from '../templates/templates.controller';
 import { AuthController } from './auth.controller';
 import { PUBLIC_ENDPOINT, type PublicEndpointReason } from './public-endpoint.decorator';
+import { RATE_LIMIT_POLICY, RATE_LIMITS } from './rate-limit.policy';
 
 const classReason = (controller: object) =>
   Reflect.getMetadata(PUBLIC_ENDPOINT, controller) as PublicEndpointReason | undefined;
@@ -19,6 +20,12 @@ const methodReason = (controller: object, method: string) =>
     PUBLIC_ENDPOINT,
     (controller as Record<string, unknown>)[method] as object,
   ) as PublicEndpointReason | undefined;
+
+const methodRateLimit = (controller: object, method: string) =>
+  Reflect.getMetadata(
+    RATE_LIMIT_POLICY,
+    (controller as Record<string, unknown>)[method] as object,
+  ) as { name: string } | undefined;
 
 describe('public HTTP boundary contract', () => {
   it.each([
@@ -52,6 +59,29 @@ describe('public HTTP boundary contract', () => {
     expect(methodReason(AuthController.prototype, 'me')).toBeUndefined();
     expect(methodReason(AuthController.prototype, 'changePassword')).toBeUndefined();
     expect(methodReason(AuthController.prototype, 'requestEmailVerification')).toBeUndefined();
+  });
+
+  it.each([
+    [AuthController.prototype, 'register', RATE_LIMITS.register.name],
+    [AuthController.prototype, 'signin', RATE_LIMITS.signIn.name],
+    [AuthController.prototype, 'changePassword', RATE_LIMITS.changePassword.name],
+    [
+      AuthController.prototype,
+      'requestEmailVerification',
+      RATE_LIMITS.requestEmailVerification.name,
+    ],
+    [AuthController.prototype, 'verifyEmail', RATE_LIMITS.verifyEmail.name],
+    [AuthController.prototype, 'requestPasswordReset', RATE_LIMITS.requestPasswordReset.name],
+    [AuthController.prototype, 'resetPassword', RATE_LIMITS.resetPassword.name],
+    [AuthController.prototype, 'activate', RATE_LIMITS.activate.name],
+    [AgentEnrollmentController.prototype, 'enroll', RATE_LIMITS.agentEnroll.name],
+    [GitHubAuthController.prototype, 'authorize', RATE_LIMITS.githubAuthorize.name],
+    [GitHubAuthController.prototype, 'callback', RATE_LIMITS.githubCallback.name],
+    [GitHubSetupController.prototype, 'start', RATE_LIMITS.githubSetup.name],
+    [GitHubSetupController.prototype, 'recover', RATE_LIMITS.githubSetup.name],
+    [GitHubSetupController.prototype, 'callback', RATE_LIMITS.githubSetupCallback.name],
+  ] as const)('rate-limits %s.%s as %s', (controller, method, policyName) => {
+    expect(methodRateLimit(controller, method)?.name).toBe(policyName);
   });
 
   it('exposes only the signed setup callback, not GitHub installation mutations', () => {

@@ -19,6 +19,8 @@ služba připravená pro veřejný produkční provoz.
   připravená podepsaná multiarch release pipeline Agenta.
 - Strukturované redigované logy a korelace request → operation → Agent job
   → workload.
+- PostgreSQL-backed per-IP a per-account rate limit sdílený všemi API
+  replikami bez ukládání zdrojových identit.
 
 ## Blokátory veřejného SaaS
 
@@ -32,8 +34,8 @@ zákazníků musí být hotové alespoň:
 3. živé end-to-end ověření GitHub OAuth, GitHub App instalace, osobního i
    organizačního repozitáře, Actions artifactu, rename/suspend/uninstall;
 4. externí správa secretů a rotace produkčních credentials;
-5. distribuovaný per-account i per-IP rate limit a ochrana proti
-   automatizovanému zneužití více replik API;
+5. edge connection/volumetric ochrana a ověřená proxy topologie; aplikační
+   distribuovaný limiter není náhradou WAF nebo DDoS ochrany;
 6. produkční e-mail provider pro reset hesla tam, kde zůstane password login;
    SaaS přihlášení používá ověřenou GitHub identitu;
 7. egress firewall odpovídající aplikační SSRF/DNS-rebinding policy;

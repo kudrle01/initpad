@@ -1275,7 +1275,8 @@ sdílení hesel v plaintextu.
    jen SHA-256 hash a nový token zneplatní starší nepoužité téhož druhu. Reset
    neenumeruje účty (vždy vrací ok; od ADR-101 se plaintext odkaz neloguje) a posune generaci
    session. Ověření e-mailu vydá odkaz pro vlastní adresu přihlášeného uživatele.
-   Všechny veřejné auth endpointy jdou přes existující rate limiter.
+   Všechny citlivé auth endpointy jdou přes rate limiter; jeho pozdější
+   distribuovaný per-IP/per-subject kontrakt definuje ADR-102.
 
 **Důsledky.** Self-hosted edice má úplný identity onboarding bez druhé autorizační
 domény. Všechny tokeny (session, pozvánky, verifikace, reset) jsou konzistentně
@@ -4445,3 +4446,47 @@ kontrakt. Migrace zachová všechny historické řádky. Živě se ověří resp
 hlavička a jeden Agent deploy, jehož `correlationId` je shodný v API operation,
 job claim/completion a Agent logu; Docker label `com.initpad.job` musí odpovídat
 navázanému jobu.
+
+---
+
+## ADR-102 — Citlivé HTTP operace používají distribuovaný per-IP a per-subject limit
+
+**Kontext.** Původní `AuthRateLimitGuard` držel mapu pouze v paměti procesu,
+měl stejný limit pro registraci, login, reset i Agent enrollment a po restartu
+vše zapomněl. Dvě API repliky proto dovolily dvojnásobek pokusů a botnet mohl
+cílit jeden účet z mnoha adres. Bezpečný IP klíč navíc závisí na přesném
+počtu důvěryhodných reverse proxy; bezpodmínečné převzetí klientské
+`X-Forwarded-For` by umožnilo limit obejít.
+
+**Rozhodnutí.** Každá chráněná operace deklaruje vlastní fixed-window policy.
+Guard nejprve atomicky zvýší PostgreSQL bucket důvěryhodně odvozené klientské
+IP. Pokud není vyčerpaný, zvýší také subject bucket normalizovaného loginu,
+e-mailu, immutable user ID nebo opaque tokenu. Tím IP hranice omezuje počet
+nových subject řádků a subject hranice chrání jeden účet před pokusy z více
+adres. Registrace, password operace, ověření e-mailu, GitHub OAuth/setup a
+Agent enrollment mají oddělené scope a limity.
+
+Klíč řádku je HMAC-SHA-256 nad scope, dimenzí, začátkem okna a subjectem s
+aplikačním encryption key. Tabulka proto ukládá jen neprůhledný klíč, scope,
+dimenzí, count a expiraci, nikoli IP, e-mail, username nebo plaintext token.
+`upsert` s atomickým incrementem je společný všem replikám; expirované
+řádky se oportunisticky mažou. Vyčerpání vrací `429` s `Retry-After`.
+Nedostupnost databáze citlivou akci odmítne `503`, protože fail-open by přesně
+v době incidentu odstranil bezpečnostní hranici.
+
+Express důvěřuje pouze explicitnímu počtu proxy hopů
+`INITPAD_TRUST_PROXY_HOPS` v rozsahu 0–5. Bundled web proxy je jeden hop;
+přímé API použije nulu. Tato aplikační ochrana nenahrazuje omezení spojení,
+WAF ani volumetrickou DDoS ochranu na edge.
+
+**Důsledky.** Self-hosted instalace nepotřebuje další Redis službu a stejný
+kontrakt funguje i pro více API procesů. Každý chráněný request provede jeden
+nebo dva malé DB upserty, což je přijatelné pro citlivé nízkoobjemové operace,
+ale nikoli obecný limiter všech API readů. Fixed window může na hranici dvou
+oken propustit krátký burst; edge má proto vlastní jemnější ochranu.
+
+**Testování.** Unit testy kontrolují atomický increment, HMAC klíč bez
+subjectu, změnu okna, cleanup, normalizaci identity, user-ID subject, `429` s
+hlavičkou, fail-closed `503` a povinnou policy na každém citlivém endpointu.
+Živý test spotřebuje login bucket, restartuje API a ověří, že další pokus
+zůstane omezený a databáze neobsahuje zadanou identitu ani IP.

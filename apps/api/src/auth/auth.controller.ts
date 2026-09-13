@@ -13,9 +13,10 @@ import {
 } from './dto/password-reset.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AllowDuringPasswordChange } from './allow-password-change.decorator';
-import { AuthRateLimitGuard } from './auth-rate-limit.guard';
 import { config } from '../config';
 import { PublicEndpoint } from './public-endpoint.decorator';
+import { RateLimited } from './rate-limited.decorator';
+import { RATE_LIMITS } from './rate-limit.policy';
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
@@ -41,7 +42,7 @@ export class AuthController {
 
   @Post('register')
   @PublicEndpoint('authentication')
-  @UseGuards(AuthRateLimitGuard)
+  @RateLimited(RATE_LIMITS.register)
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.register(dto);
     this.setSession(res, token);
@@ -51,7 +52,7 @@ export class AuthController {
   // Sign-in with a platform-native account.
   @Post('signin')
   @PublicEndpoint('authentication')
-  @UseGuards(AuthRateLimitGuard)
+  @RateLimited(RATE_LIMITS.signIn)
   async signin(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.login(dto);
     this.setSession(res, token);
@@ -79,7 +80,8 @@ export class AuthController {
   // password change; re-issues the session cookie so the caller stays signed in
   // while all other sessions are invalidated.
   @Post('change-password')
-  @UseGuards(AuthRateLimitGuard, JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
+  @RateLimited(RATE_LIMITS.changePassword)
   @AllowDuringPasswordChange()
   async changePassword(
     @CurrentUser() userId: string,
@@ -97,7 +99,8 @@ export class AuthController {
 
   // Issues an e-mail verification link for the signed-in user's own address.
   @Post('email/request-verification')
-  @UseGuards(AuthRateLimitGuard, JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
+  @RateLimited(RATE_LIMITS.requestEmailVerification)
   requestEmailVerification(@CurrentUser() userId: string) {
     return this.auth.requestEmailVerification(userId);
   }
@@ -105,7 +108,7 @@ export class AuthController {
   @Post('email/verify')
   @PublicEndpoint('authentication')
   @HttpCode(204)
-  @UseGuards(AuthRateLimitGuard)
+  @RateLimited(RATE_LIMITS.verifyEmail)
   async verifyEmail(@Body() dto: VerifyEmailDto) {
     await this.auth.verifyEmail(dto.token);
   }
@@ -113,7 +116,7 @@ export class AuthController {
   // Starts a password reset. Always returns ok so accounts cannot be enumerated.
   @Post('password/request-reset')
   @PublicEndpoint('authentication')
-  @UseGuards(AuthRateLimitGuard)
+  @RateLimited(RATE_LIMITS.requestPasswordReset)
   async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
     await this.auth.requestPasswordReset(dto.identity);
     return { ok: true };
@@ -122,7 +125,7 @@ export class AuthController {
   @Post('password/reset')
   @PublicEndpoint('authentication')
   @HttpCode(204)
-  @UseGuards(AuthRateLimitGuard)
+  @RateLimited(RATE_LIMITS.resetPassword)
   async resetPassword(@Body() dto: ResetPasswordDto, @Res({ passthrough: true }) res: Response) {
     await this.auth.resetPassword(dto.token, dto.newPassword);
     // The reset revokes existing sessions; clear any cookie on this device too.
@@ -138,7 +141,7 @@ export class AuthController {
   // the link and is signed in immediately.
   @Post('activate')
   @PublicEndpoint('authentication')
-  @UseGuards(AuthRateLimitGuard)
+  @RateLimited(RATE_LIMITS.activate)
   async activate(@Body() dto: ActivateAccountDto, @Res({ passthrough: true }) res: Response) {
     const { token, user } = await this.auth.activate(dto.token, dto.newPassword);
     this.setSession(res, token);

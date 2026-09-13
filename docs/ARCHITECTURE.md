@@ -52,7 +52,7 @@ neobsahuje obecný vzdálený shell.
 ## Hlavní doménové objekty
 
 - **Workspace** je bezpečnostní a organizační hranice. Členství nese roli
-  `viewer`, `member`, `admin` nebo `owner`.
+  `viewer`, `member`, `maintainer`, `admin` nebo `owner`.
 - **Project** odkazuje na repozitář pomocí providera a immutable repository
   identity. Zobrazené jméno ani URL nejsou identitou repozitáře.
 - **Target** popisuje fyzický server nebo hosting a jeho management provider.

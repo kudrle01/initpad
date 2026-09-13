@@ -154,6 +154,22 @@ model AuthToken {
   @@index([userId, kind])
 }
 
+// Short-lived distributed fixed-window counters for public authentication and
+// enrollment boundaries (ADR-102). `key` is an HMAC over the scope, dimension,
+// window and subject, so IP addresses, e-mails, usernames and plaintext tokens
+// are never stored. Rows are operational state and expire automatically.
+model RateLimitBucket {
+  key             String   @id
+  scope           String
+  dimension       String // ip | subject
+  count           Int      @default(1)
+  windowStartedAt DateTime
+  expiresAt       DateTime
+
+  @@index([expiresAt])
+  @@index([scope, expiresAt])
+}
+
 model Workspace {
   id                         String                        @id @default(uuid())
   slug                       String                        @unique

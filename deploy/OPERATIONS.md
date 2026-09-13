@@ -173,6 +173,16 @@ selhal, obnov poslední zálohu (`./restore.sh …`).
 - Veřejně vystav jen porty **80/443** (zbytek za proxy); zbytek drž ve firewallu.
 - Registraci drž na `admin-provisioned`, pokud nemá být veřejná.
 - Zálohy šifruj a ukládej offsite.
+- `INITPAD_TRUST_PROXY_HOPS=1` odpovídá vestavěnému web proxy. Přímý
+  přístup klientů k API vyžaduje `0`; další edge proxy zvyšuje hodnotu pouze
+  tehdy, když je síťová cesta pevná a API nelze obejít napřímo. Klientská IP je
+  součástí rate-limit rozhodnutí.
+
+Citlivé auth, GitHub setup a Agent enrollment operace používají krátkodobé
+PostgreSQL buckety společné pro všechny API repliky. Tabulka neobsahuje IP,
+e-mail, login ani token; identita je součástí HMAC klíče. Rate limiter chrání
+jednotlivé účty a běžné automatizované pokusy, nenahrazuje firewall, connection
+limit ani DDoS ochranu na veřejném edge.
 
 ## Kapacita a škálování
 

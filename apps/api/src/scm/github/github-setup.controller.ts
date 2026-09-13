@@ -17,6 +17,8 @@ import { GitHubAppService } from './github-app.service';
 import { GitHubInstallationService } from './github-installation.service';
 import { GITHUB_OAUTH_NONCE_COOKIE, GitHubOAuthService } from './github-oauth.service';
 import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
+import { RateLimited } from '../../auth/rate-limited.decorator';
+import { RATE_LIMITS } from '../../auth/rate-limit.policy';
 
 /**
  * Starts and completes the GitHub App installation handshake (ADR-044). The
@@ -35,6 +37,7 @@ export class GitHubSetupController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
+  @RateLimited(RATE_LIMITS.githubSetup)
   async start(
     @CurrentUser() userId: string,
     @Headers('x-workspace-id') requestedWorkspaceId?: string,
@@ -53,6 +56,7 @@ export class GitHubSetupController {
 
   @Post('recover')
   @UseGuards(JwtAuthGuard)
+  @RateLimited(RATE_LIMITS.githubSetup)
   async recover(
     @CurrentUser() userId: string,
     @Headers('x-workspace-id') requestedWorkspaceId?: string,
@@ -71,6 +75,7 @@ export class GitHubSetupController {
 
   @Get('callback')
   @PublicEndpoint('authentication')
+  @RateLimited(RATE_LIMITS.githubSetupCallback)
   async callback(
     @Query('state') state: string,
     @Query('installation_id') installationId: string,

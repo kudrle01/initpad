@@ -1,16 +1,7 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Headers,
-  Param,
-  Post,
-  Res,
-  StreamableFile,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Res, StreamableFile } from '@nestjs/common';
 import type { Response } from 'express';
-import { AuthRateLimitGuard } from '../auth/auth-rate-limit.guard';
+import { RateLimited } from '../auth/rate-limited.decorator';
+import { RATE_LIMITS } from '../auth/rate-limit.policy';
 import { AgentsService } from './agents.service';
 import { AgentJobsService } from './agent-jobs.service';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
@@ -32,7 +23,7 @@ export class AgentEnrollmentController {
   ) {}
 
   @Post('enroll')
-  @UseGuards(AuthRateLimitGuard)
+  @RateLimited(RATE_LIMITS.agentEnroll)
   enroll(@Body() dto: EnrollAgentDto) {
     return this.agents.enroll(dto);
   }
