@@ -16,12 +16,17 @@ import { AuditEventsService } from '../audit/audit-events.service';
 import type { TargetUsage } from '../domain/types';
 import { environmentExpiry } from '../projects/environment-expiry';
 import { config } from '../config';
+import {
+  resolvePublicInternetHost,
+  UnsafeOutboundDestinationError,
+} from '../common/outbound-network-policy';
 
 const ALLOCATION_INCLUDE = {
   target: {
     select: {
       name: true,
       capabilities: true,
+      kind: true,
       scope: true,
       managementState: true,
     },
@@ -179,6 +184,7 @@ export class TargetAllocationsService {
         `Server '${target.name}' is ${target.managementState}; restore and reconnect it before enabling workspace access`,
       );
     }
+    await this.assertSafePublicUrl(target.kind, dto.publicUrl);
     if (
       await this.prisma.targetAllocation.findUnique({
         where: { workspaceId_targetId: { workspaceId, targetId: dto.targetId } },
@@ -249,6 +255,7 @@ export class TargetAllocationsService {
       dto.capabilities !== undefined
         ? this.resolveCapabilities(dto.capabilities, row.target.capabilities)
         : undefined;
+    await this.assertSafePublicUrl(row.target.kind, dto.publicUrl);
     if (
       dto.status === 'active' &&
       row.target.scope === 'user' &&
@@ -329,6 +336,31 @@ export class TargetAllocationsService {
       resourceName: row.target.name,
       details: { targetId: row.targetId },
     });
+  }
+
+  private async assertSafePublicUrl(targetKind: string, raw: string | undefined): Promise<void> {
+    if (raw === undefined) return;
+    let hostname: string;
+    try {
+      const url = new URL(raw);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+        throw new Error('unsafe');
+      }
+      hostname = url.hostname.replace(/^\[|\]$/g, '');
+    } catch {
+      throw new BadRequestException('Workspace public URL must be a clean HTTP(S) address');
+    }
+    if (config.edition !== 'saas' || !['sftp', 'ssh'].includes(targetKind)) return;
+    try {
+      await resolvePublicInternetHost(hostname);
+    } catch (error) {
+      if (error instanceof UnsafeOutboundDestinationError) {
+        throw new BadRequestException(
+          'Hosted SFTP public URLs must resolve only to public internet addresses',
+        );
+      }
+      throw error;
+    }
   }
 
   // Loads an allocation and enforces tenant + role rules. A missing allocation

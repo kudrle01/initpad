@@ -4269,7 +4269,7 @@ podmínkou produkční bezpečnosti.
 Negativní kontrola lze provést dočasným odebráním Hook dependency nebo
 neformátovanou změnou a ověřením, že příslušná gate selže. Uživatelsky se
 runtime nemění; po čistém `npm ci` musí `npm run check` sestavit API, web i
-Agenta a dokončit všech 710 automatizovaných testů.
+Agenta a dokončit všech 737 automatizovaných testů.
 
 ---
 
@@ -4357,3 +4357,44 @@ může stejný template gate cíleně spustit přes
 `./scripts/test-template-images.sh nette laravel symfony`; živá produkční
 acceptance navíc před veřejným provozem ověří externí privátní S3 bucket,
 upload, presigned download, redeploy a retention bez dostupného MinIO profilu.
+
+---
+
+## ADR-100 — Hosted egress znovu ověří DNS a připne schválenou IP
+
+**Kontext.** Target formulář odmítal přímý loopback, link-local a metadata host,
+ale syntakticky bezpečný hostname mohl při uložení nebo později ukazovat do
+privátní sítě control plane. Jednorázový DNS preflight s následným připojením na
+stejný hostname nestačí: útočník může mezi kontrolou a socketem změnit odpověď
+nebo vrátit současně veřejnou a interní adresu. Self-hosted instalace naopak
+legitimně potřebuje školní a firemní RFC1918 SFTP servery.
+
+**Rozhodnutí.** Síťová politika je edition-aware. Self-hosted zachovává
+důvěryhodné LAN cíle a dosavadní blokaci explicitně nebezpečných hostů. Hosted
+SFTP při create/update targetu a allocation předběžně vyhodnotí DNS pro rychlou
+chybu uživateli. Celý DNS výsledek musí být neprázdný a každý A/AAAA záznam
+globálně směrovatelný; smíšená public/private odpověď se odmítne celá.
+
+Rozhodující kontrola proběhne znovu při každé síťové operaci. SSH/SFTP dostane
+již přeloženou schválenou IP a identitu serveru dál ověřuje uloženým host-key
+fingerprintem. Omezený HTTP GET pro health a ochranu soukromých PHP souborů se
+připojí na stejným způsobem připnutou IP, ale zachová původní `Host` a TLS SNI,
+nesleduje redirect, nebufferuje response body a má krátký timeout. Agent target
+není touto SaaS egress politikou omezen: control plane na něj inbound spojení
+neotvírá a privátní firemní gateway ověřuje samotný outbound Agent.
+
+**Důsledky.** Tenant nemůže SFTP/legacy SSH konektorem nebo veřejným health URL
+proměnit hosted API v proxy k localhostu, cloud metadata endpointu či privátní
+VPC službě ani přes DNS rebinding. Privátní self-hosted školní targety se
+nemění. Hosted SFTP vyžaduje veřejně směrovatelný endpoint; privátní server má
+použít outbound Agenta. Aplikační kontrola nevidí nestandardní host routing ani
+chybu kernel/network vrstvy, proto veřejný produkční profil stále musí vynutit
+stejný zákaz egress firewallem.
+
+**Testování.** Jednotkové testy pokrývají globální IPv4/IPv6, privátní,
+loopback, link-local, CGNAT, dokumentační, mapped IPv6 a smíšenou DNS odpověď.
+Service test dokládá HTTP 400 a nulový DB zápis pro hosted privátní target i
+allocation; HTTP helper odmítne ne-HTTP a privátní cíl ještě před socketem.
+Regrese providerů ověřuje zachování SFTP/legacy SSH lifecycle. Živá SaaS
+acceptance použije řízený hostname, který po prvním veřejném výsledku přejde na
+privátní IP, a síťová telemetrie musí potvrdit, že API interní socket neotevřelo.

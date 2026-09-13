@@ -34,6 +34,10 @@ import {
 } from '../agents/agent-version';
 import { AuditEventsService } from '../audit/audit-events.service';
 import { allocationUsageDefaults } from './target-allocation-defaults';
+import {
+  resolvePublicInternetHost,
+  UnsafeOutboundDestinationError,
+} from '../common/outbound-network-policy';
 
 const TARGET_FIELD_LABELS: Partial<Record<keyof UpdateTargetDto, string>> = {
   name: 'name',
@@ -375,7 +379,7 @@ export class TargetsService implements OnModuleInit {
           'Managed gateway routing is available only for Docker Agent targets',
         );
       }
-      this.assertSafeEndpoint(dto.host!, dto.publicUrl);
+      await this.assertSafeEndpoint(dto.host!, dto.publicUrl);
     }
     if (await this.prisma.target.findFirst({ where: { workspaceId, name: dto.name } })) {
       throw new BadRequestException(`This workspace already has a target named '${dto.name}'`);
@@ -493,7 +497,10 @@ export class TargetsService implements OnModuleInit {
           'Managed gateway routing is available only for Docker Agent targets',
         );
       }
-      this.assertSafeEndpoint(dto.host ?? row.host ?? '', dto.publicUrl ?? row.publicUrl ?? '');
+      await this.assertSafeEndpoint(
+        dto.host ?? row.host ?? '',
+        dto.publicUrl ?? row.publicUrl ?? '',
+      );
     }
     if (dto.name && dto.name !== row.name) {
       const duplicate = await this.prisma.target.findFirst({
@@ -885,15 +892,32 @@ export class TargetsService implements OnModuleInit {
     return [...new Set(caps)].sort().join(',');
   }
 
-  private assertSafeEndpoint(host: string, publicUrl: string): void {
+  private async assertSafeEndpoint(host: string, publicUrl: string): Promise<void> {
     const normalizedHost = normalizeTargetHost(host);
     if (!hasValidTargetHostSyntax(normalizedHost) || isBlockedTargetHost(normalizedHost)) {
       throw new BadRequestException('This target host is reserved or unsafe');
     }
-    this.assertSafePublicUrl(publicUrl);
+    const publicHostname = this.assertSafePublicUrl(publicUrl);
+    if (config.edition !== 'saas') return;
+    try {
+      // This is an early UX check only. Providers repeat the lookup for every
+      // outbound socket and pin the approved address, so a later DNS change
+      // cannot turn this validation into a time-of-check/time-of-use bypass.
+      await Promise.all([
+        resolvePublicInternetHost(normalizedHost),
+        resolvePublicInternetHost(publicHostname),
+      ]);
+    } catch (error) {
+      if (error instanceof UnsafeOutboundDestinationError) {
+        throw new BadRequestException(
+          'Hosted SFTP targets must resolve only to public internet addresses',
+        );
+      }
+      throw error;
+    }
   }
 
-  private assertSafePublicUrl(publicUrl: string): void {
+  private assertSafePublicUrl(publicUrl: string): string {
     try {
       const url = new URL(publicUrl);
       const hostname = normalizeTargetHost(url.hostname);
@@ -905,6 +929,7 @@ export class TargetsService implements OnModuleInit {
       ) {
         throw new Error('unsafe');
       }
+      return hostname;
     } catch {
       throw new BadRequestException('Public URL must be a safe HTTP(S) address');
     }

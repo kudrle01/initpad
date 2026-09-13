@@ -110,6 +110,36 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
     expect(prisma.targetAllocation.create).not.toHaveBeenCalled();
   });
 
+  it('rejects a private SFTP allocation URL in the hosted edition', async () => {
+    const previousEdition = config.edition;
+    config.edition = 'saas';
+    const create = jest.fn();
+    const prisma = {
+      target: {
+        findUnique: jest.fn(async () => ({
+          id: 'tgt-1',
+          kind: 'sftp',
+          scope: 'user',
+          workspaceId: 'ws-1',
+          managementState: 'active',
+          capabilities: 'static',
+          remotePath: '/www',
+          publicUrl: 'https://8.8.8.8',
+        })),
+      },
+      targetAllocation: { findUnique: jest.fn(async () => null), create },
+    };
+    const service = makeService(prisma, 'owner');
+    try {
+      await expect(
+        service.create('u1', { targetId: 'tgt-1', publicUrl: 'http://192.168.1.20' }, 'ws-1'),
+      ).rejects.toThrow('resolve only to public internet addresses');
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      config.edition = previousEdition;
+    }
+  });
+
   it('rejects capabilities the target does not offer', async () => {
     const prisma = {
       target: {

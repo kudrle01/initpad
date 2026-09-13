@@ -32,6 +32,7 @@ import {
   uploadTar,
 } from './ssh-utils';
 import { PRIVATE_HTACCESS, PRIVATE_PROBE } from './sftp-layout';
+import { boundedHttpGet } from '../../common/outbound-network-policy';
 
 // Effective connection for one call: the user's custom target (prod), or the
 // platform's built-in demo target (fake-sftp + nginx).
@@ -354,9 +355,9 @@ export class SftpProvider implements DeploymentProvider {
 
   private async privateFilesProtected(url: string): Promise<boolean> {
     try {
-      const response = await fetch(url, {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(3_000),
+      const response = await boundedHttpGet(url, {
+        publicInternetOnly: config.edition === 'saas',
+        timeoutMs: 3_000,
       });
       return !response.ok;
     } catch {
@@ -369,12 +370,9 @@ export class SftpProvider implements DeploymentProvider {
   private async waitReachable(url: string): Promise<boolean> {
     for (let i = 0; i < 10; i++) {
       try {
-        const res = await fetch(url, {
-          // A redirect is not proof that the expected release is serving at
-          // this exact address, and must not turn a target probe into an
-          // unbounded cross-host fetch.
-          redirect: 'manual',
-          signal: AbortSignal.timeout(3_000),
+        const res = await boundedHttpGet(url, {
+          publicInternetOnly: config.edition === 'saas',
+          timeoutMs: 3_000,
         });
         if (res.ok) return true;
       } catch {

@@ -94,10 +94,15 @@ artifact and bounded in-memory configuration through the fenced job protocol.
 - Registered SSH/SFTP hosts are powerful outbound destinations. Host syntax,
   reserved local/link-local addresses and URL credentials are rejected, while
   RFC1918 targets remain allowed for the intended school/company LAN use case.
-  DNS rebinding and broader egress policy still require a network control or
-  per-tenant agent in a multi-tenant service; in this single-tenant product the
-  owner is trusted. The fingerprint must be verified over an independent admin
-  channel because accepting an attacker's first key would only pin the attack.
+  This exception applies only to the trusted self-hosted edition. The hosted
+  edition resolves every tenant-controlled SFTP hostname before configuration
+  and again before every SSH/SFTP/HTTP socket, rejects the whole DNS response
+  when any A/AAAA record is not globally routable and connects to the approved
+  IP without a second lookup. HTTP probes retain TLS hostname verification and
+  never follow redirects. A production network-level egress firewall remains
+  required as defence in depth. The SSH fingerprint must be verified over an
+  independent admin channel because accepting an attacker's first key would
+  only pin the attack.
 - Rootless DinD still requires a privileged outer container. It protects the
   host from ordinary workflow Docker control but is not equivalent to a
   dedicated runner VM.
@@ -125,5 +130,5 @@ Before calling InitPad hosted multi-tenant or enterprise-ready: remove the host
 Docker socket from the control plane, add production e-mail delivery,
 approval policy and complete quota enforcement, reconcile SCM permissions, use
 an external secret manager, persist OIDC grants, add centralized audit logs,
-metrics and traces, scan images/SBOMs, sign artifacts, enforce network egress
-and test disaster recovery.
+metrics and traces, scan images/SBOMs, sign artifacts, enforce the application
+egress policy again at the network/firewall layer and test disaster recovery.

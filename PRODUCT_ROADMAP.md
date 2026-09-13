@@ -721,7 +721,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
      Frontendová vrstva navíc interakčně ověřuje destruktivní project-delete
      potvrzení a stavový hook detailu projektu včetně autoritativního 404.
      **Uživatelský test:** po čistém `npm ci` spustit `npm run check`; lint,
-     format check, build a všech 710 testů musí projít bez ručního zásahu.
+     format check, build a všech 737 testů musí projít bez ručního zásahu.
    - ✅ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
      rozložit jen potvrzené hotspoty s více odpovědnostmi. Velikost souboru je
      signál pro review, ne automatický důvod k abstrakci.
@@ -780,6 +780,21 @@ jen konkrétní provozní a vyhodnocovací scénář.
       všech 12 health probes. Lokálně lze cíleně spustit
       `./scripts/test-template-images.sh nette laravel symfony`; test vyžaduje
       síť, Docker a dočasný prostor pro build cache.
+    - ✅ **8e-b6 — hosted egress a DNS-rebinding fence.** Self-hosted edice dál
+      smí připojit školní/firemní RFC1918 SFTP server. SaaS ale při vytvoření a
+      změně SFTP targetu či jeho allocation překládá hostname a odmítne celou
+      odpověď, pokud kterýkoli A/AAAA záznam míří na loopback, private,
+      link-local, metadata, dokumentační, multicast nebo jiný neglobální
+      rozsah. Stejná kontrola se opakuje těsně před každým hosted SSH/SFTP a
+      HTTP spojením; socket dostane přímo schválenou IP, takže nenastane druhý
+      DNS lookup. Health/protection probe má timeout, nestahuje body, nesleduje
+      redirect a u HTTPS stále ověřuje certifikát vůči původnímu hostname
+      (ADR-100). **Uživatelský test:** self-hosted regression znovu ověří
+      existující privátní LAN target. V budoucím SaaS staging profilu musí
+      SFTP host `192.168.x.x` i testovací hostname s public+private DNS odpovědí
+      skončit HTTP 400 před uložením, zatímco veřejný SFTP host projde
+      konfigurací a **Test connection**. Produkční gate navíc vyžaduje egress
+      firewall; aplikační kontrola jej nenahrazuje.
    - TODO **8e-c — nezávislé vyhodnocení.** Studentský tým a vyučující projdou
      připravený scénář; změří se čas, kroky, chyby a SUS bez pomoci autora.
    - ◐ **8e-d — finální předání.**

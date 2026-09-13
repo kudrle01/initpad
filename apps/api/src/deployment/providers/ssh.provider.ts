@@ -20,6 +20,7 @@ import {
   uploadTar,
   type ExecResult,
 } from './ssh-utils';
+import { boundedHttpGet } from '../../common/outbound-network-policy';
 
 const DEFAULT_START = 'node src/index.js';
 
@@ -345,7 +346,10 @@ export class SshProvider implements DeploymentProvider {
   private async pollOk(target: string): Promise<boolean> {
     for (let i = 0; i < 30; i++) {
       try {
-        const res = await fetch(target);
+        const res = await boundedHttpGet(target, {
+          publicInternetOnly: config.edition === 'saas',
+          timeoutMs: 3_000,
+        });
         if (res.ok) return true;
       } catch {
         // still starting — retry

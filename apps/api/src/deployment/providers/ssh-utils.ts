@@ -3,6 +3,8 @@ import { createHash, randomUUID } from 'crypto';
 import { readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import * as tar from 'tar-fs';
+import { config } from '../../config';
+import { resolvePublicInternetHost } from '../../common/outbound-network-policy';
 
 /**
  * Shared helpers for the SSH/SFTP providers: promisified connect/exec/SFTP,
@@ -35,6 +37,11 @@ export function shellQuote(value: string): string {
 }
 
 export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client> {
+  // A hosted control plane must not let a tenant-controlled DNS name reach its
+  // own VPC, metadata endpoint or another private tenant service. Resolve once
+  // per connection, verify every answer and pass the approved IP to ssh2.
+  const pinned =
+    config.edition === 'saas' ? await resolvePublicInternetHost(t.host) : { address: t.host };
   const conn = new Client();
   await new Promise<void>((resolve, reject) => {
     let observedFingerprint: string | null = null;
@@ -56,7 +63,7 @@ export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client
         reject(err);
       })
       .connect({
-        host: t.host,
+        host: pinned.address,
         port: t.port,
         username: t.username,
         ...(t.privateKey ? { privateKey: t.privateKey } : { password: t.password }),

@@ -286,6 +286,66 @@ describe('Agent-backed Docker target creation', () => {
     }
   });
 
+  it('rejects private SFTP destinations from the hosted control plane', async () => {
+    const previousEdition = config.edition;
+    config.edition = 'saas';
+    const { service, create } = setup();
+    try {
+      await expect(
+        service.create(
+          'owner-1',
+          {
+            name: 'Private network pivot',
+            kind: 'sftp',
+            capabilities: ['static'],
+            host: '10.20.30.40',
+            port: 22,
+            username: 'deploy',
+            auth: 'password',
+            secret: 'secret',
+            hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
+            remotePath: '/www',
+            publicUrl: 'http://10.20.30.40',
+          },
+          'workspace-1',
+        ),
+      ).rejects.toThrow('resolve only to public internet addresses');
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      config.edition = previousEdition;
+    }
+  });
+
+  it('keeps private LAN SFTP targets available in the self-hosted edition', async () => {
+    const previousEdition = config.edition;
+    config.edition = 'self-hosted';
+    const { service, create } = setup();
+    try {
+      await expect(
+        service.create(
+          'owner-1',
+          {
+            name: 'School LAN hosting',
+            kind: 'sftp',
+            capabilities: ['static', 'php'],
+            host: '192.168.1.50',
+            port: 22,
+            username: 'deploy',
+            auth: 'password',
+            secret: 'secret',
+            hostKeyFingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
+            remotePath: '/www',
+            publicUrl: 'http://192.168.1.50',
+          },
+          'workspace-1',
+        ),
+      ).resolves.toMatchObject({ kind: 'sftp', publicUrl: 'http://192.168.1.50' });
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {
+      config.edition = previousEdition;
+    }
+  });
+
   it('rejects a public target URL containing credentials', async () => {
     const { service, create } = setup();
 
