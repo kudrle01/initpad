@@ -6,7 +6,7 @@
 
 services:
   agent-lab-docker:
-    image: docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+    image: docker:29.8.0-dind@sha256:5efed980cba3fc126cf54e21a5a6ff8849d05b6e0623d6e7612f48e9cd6cd17e
     profiles: ["agent-lab"]
     privileged: true
     environment:
@@ -42,7 +42,7 @@ services:
   # isolated Docker daemon as project workloads, receives no Docker socket and
   # is connected to a workload network only by the enrolled Agent.
   agent-lab-gateway-bootstrap:
-    image: docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c
+    image: docker:29.8.0-cli@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66
     profiles: ["agent-lab"]
     environment:
       DOCKER_HOST: tcp://agent-lab-docker:2375
@@ -68,7 +68,7 @@ services:
   # Target-side wildcard DNS. Agent containers receive the edge's private
   # address; this resolver is deliberately not published to the host.
   agent-lab-dns:
-    image: coredns/coredns:1.14.6@sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea
+    image: coredns/coredns:1.14.7@sha256:7efd3c635b03efd68c4e8398fc45f0d993d0e9ab016f72c1cefb0fd6d01aa286
     profiles: ["agent-lab"]
     command: ["-conf", "/etc/coredns/Corefile"]
     environment:
@@ -92,7 +92,7 @@ services:
   # Docker publishes the TLS edge on 127.0.0.1; returning the private bridge
   # address here would make browser behavior runtime-dependent.
   agent-lab-host-dns:
-    image: coredns/coredns:1.14.6@sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea
+    image: coredns/coredns:1.14.7@sha256:7efd3c635b03efd68c4e8398fc45f0d993d0e9ab016f72c1cefb0fd6d01aa286
     profiles: ["agent-lab"]
     command: ["-conf", "/etc/coredns/Corefile"]
     environment:
@@ -117,7 +117,7 @@ services:
   # into the Agent, while the edge itself never receives the Docker socket or
   # the private Caddy admin socket.
   agent-lab-edge:
-    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    image: caddy:2.11-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     profiles: ["agent-lab"]
     environment:
       INITPAD_AGENT_LAB_GATEWAY_DOMAIN: ${INITPAD_AGENT_LAB_GATEWAY_DOMAIN:-apps.initpad.test}
@@ -153,7 +153,7 @@ services:
     restart: unless-stopped
 
   agent-lab-ports:
-    image: node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+    image: node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868
     profiles: ["agent-lab"]
     command: ["node", "/bridge/agent-lab-port-bridge.mjs"]
     environment:

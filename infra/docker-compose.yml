@@ -6,7 +6,7 @@ name: initpad
 
 services:
   postgres:
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
     environment:
       POSTGRES_USER: initpad
       POSTGRES_PASSWORD: initpad
@@ -18,7 +18,7 @@ services:
     networks: [platform]
 
   gitea:
-    image: gitea/gitea:1.22@sha256:538658de667c5d098a274f2f63aa6ec891d88f670cdd5282cf27221ba747dda4
+    image: gitea/gitea:1.27@sha256:87a67ee09d3ae0d1df5fda5dcda3e2a1f9236a45b0a59025d6e00e46adc43bef
     environment:
       GITEA__server__ROOT_URL: http://gitea.localhost:3001/
       # Enables Gitea Actions (CI). The runner registers below (profile "ci").
@@ -51,7 +51,7 @@ services:
   #   2) infra/register-runner.sh            # prints the token
   #   3) docker compose --profile ci up -d act_runner
   runner-docker:
-    image: docker:27.5.1-dind-rootless@sha256:e2ac8e8f66ae21a060b0a8e3005c70f6ed9441aabf409434463d1f6eecd38026
+    image: docker:29.8.0-dind-rootless@sha256:e17fa54c2ffd511d8407c746eec77f7814e6f74fe20caf822dad1870599984c0
     profiles: ["ci"]
     privileged: true
     environment:
@@ -78,7 +78,7 @@ services:
     restart: unless-stopped
 
   act_runner:
-    image: gitea/act_runner:0.2.11@sha256:c57233403eff970945cfb8b13f0e622d2124f4dbc623af3e2c74f061d05e8f60
+    image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
     profiles: ["ci"]
     depends_on:
       gitea: { condition: service_started }
@@ -106,7 +106,7 @@ services:
   # here over SFTP; the content (per-project symlinks) is served by the nginx
   # service below. The volume is shared with nginx.
   sftp-volume-init:
-    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    image: alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
     command:
       - /bin/sh
       - -ec
