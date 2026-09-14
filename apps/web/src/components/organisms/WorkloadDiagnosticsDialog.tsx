@@ -9,6 +9,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { api } from '@/api';
+import { createRequestId } from '@/lib/request-id';
 import { Spinner } from '@/components/atoms/Spinner';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -98,7 +99,7 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
     setError(null);
     try {
       setSnapshot(
-        await api.requestWorkloadDiagnostic(projectId, environmentName, crypto.randomUUID()),
+        await api.requestWorkloadDiagnostic(projectId, environmentName, createRequestId()),
       );
     } catch (requestError) {
       setError((requestError as Error).message);

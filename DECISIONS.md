@@ -4588,3 +4588,25 @@ v Agent job payloadu a nepřítomnost příkazu nebo secretu. Živě se na dvou
 targetech stejného workspace spustí **Test Docker**; oba joby musejí skončit
 `succeeded`, použít odlišné diagnostické sítě a cleanup nesmí změnit síť ani
 workload druhé allocation.
+
+---
+
+## ADR-106 — Browser request ID nesmí záviset jen na `crypto.randomUUID`
+
+**Kontext.** Agent testy a workload diagnostika vytvářejí klientské UUID jako
+idempotency key. `crypto.randomUUID()` je ale secure-context API a na některých
+prohlížečích při otevření self-hosted InitPadu přes prosté HTTP v LAN není
+dostupné. Kliknutí pak skončilo JavaScript chybou ještě před API requestem.
+
+**Rozhodnutí.** Web používá jediný helper pro browser-generated request ID.
+Pokud je nativní `randomUUID` dostupné, použije je. Jinak sestaví korektní
+UUIDv4 z `crypto.getRandomValues()`, které je dostupné i v tomto omezeném
+browser kontextu. Pokud chybí oba kryptografické zdroje, akce selže s jasnou
+zprávou; `Math.random()` se kvůli kolizím a předvídatelnosti nepoužije.
+
+**Důsledky.** Protocol, Docker, gateway i workload testy fungují na podporovaném
+HTTP LAN testu a na HTTPS zůstává nativní cesta. Tato kompatibilita nemění
+požadavek používat v produkci HTTPS.
+
+**Testování.** Jednotkové testy pokrývají nativní větev, deterministický
+fallback včetně UUIDv4 version/variant bitů a fail-closed stav bez Web Crypto.

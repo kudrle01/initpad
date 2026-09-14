@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/api';
+import { createRequestId } from '@/lib/request-id';
 import { useToast } from '@/toast';
 import type { AgentJobSummary, AgentStatus, Target } from '@/types';
 
@@ -54,7 +55,7 @@ export function useAgentProtocol(target: Target | null) {
     if (!targetId || testing) return;
     setTesting('protocol');
     try {
-      const created = await api.createAgentProbeJob(targetId, crypto.randomUUID());
+      const created = await api.createAgentProbeJob(targetId, createRequestId());
       setJobs((current) =>
         [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
       );
@@ -71,7 +72,7 @@ export function useAgentProtocol(target: Target | null) {
     if (!targetId || testing) return false;
     setTesting('lifecycle');
     try {
-      const created = await api.createAgentLifecycleTest(targetId, crypto.randomUUID());
+      const created = await api.createAgentLifecycleTest(targetId, createRequestId());
       setJobs((current) =>
         [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
       );
@@ -90,7 +91,7 @@ export function useAgentProtocol(target: Target | null) {
     if (!targetId || testing) return false;
     setTesting('gateway');
     try {
-      const created = await api.createGatewayPreflight(targetId, crypto.randomUUID());
+      const created = await api.createGatewayPreflight(targetId, createRequestId());
       setJobs((current) =>
         [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
       );
