@@ -308,7 +308,11 @@ function boundedDockerName(value: string): string {
   return `${value.slice(0, 115)}-${digest}`;
 }
 
-export function workloadContainerName(
+export function allocationDockerScope(allocationId: string): string {
+  return createHash('sha256').update(allocationId).digest('hex').slice(0, 12);
+}
+
+export function legacyWorkloadContainerName(
   payload: Pick<DockerLifecyclePayload, 'namespace' | 'projectSlug' | 'environment'>,
 ): string {
   return boundedDockerName(
@@ -316,12 +320,34 @@ export function workloadContainerName(
   );
 }
 
+export function workloadContainerName(
+  payload: Pick<
+    DockerLifecyclePayload,
+    'allocationId' | 'namespace' | 'projectSlug' | 'environment'
+  >,
+): string {
+  return boundedDockerName(
+    `initpad-${dockerNamePart(payload.namespace)}-a${allocationDockerScope(payload.allocationId)}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`,
+  );
+}
+
 export function managedWorkloadContainerName(
-  payload: Pick<DockerLifecyclePayload, 'namespace' | 'projectSlug' | 'environment'>,
+  payload: Pick<
+    DockerLifecyclePayload,
+    'allocationId' | 'namespace' | 'projectSlug' | 'environment'
+  >,
   slot: string,
 ): string {
   if (!/^[a-f0-9]{12}$/.test(slot)) throw new Error('Managed workload slot is invalid');
   return boundedDockerName(`${workloadContainerName(payload)}-rev-${slot}`);
+}
+
+export function legacyManagedWorkloadContainerName(
+  payload: Pick<DockerLifecyclePayload, 'namespace' | 'projectSlug' | 'environment'>,
+  slot: string,
+): string {
+  if (!/^[a-f0-9]{12}$/.test(slot)) throw new Error('Managed workload slot is invalid');
+  return boundedDockerName(`${legacyWorkloadContainerName(payload)}-rev-${slot}`);
 }
 
 export function managedWorkloadSlot(
@@ -334,6 +360,20 @@ export function managedWorkloadSlot(
 }
 
 export function workloadNetworkName(
+  payload: Pick<
+    DockerLifecyclePayload,
+    'allocationId' | 'namespace' | 'projectSlug' | 'environment' | 'routingMode'
+  >,
+): string {
+  const scope = `a${allocationDockerScope(payload.allocationId)}`;
+  const suffix =
+    payload.routingMode === 'managed-gateway'
+      ? `${dockerNamePart(payload.namespace)}-${scope}-${dockerNamePart(payload.projectSlug)}-${dockerNamePart(payload.environment)}`
+      : `${dockerNamePart(payload.namespace)}-${scope}-${dockerNamePart(payload.environment)}`;
+  return boundedDockerName(`net-${suffix}`);
+}
+
+export function legacyWorkloadNetworkName(
   payload: Pick<
     DockerLifecyclePayload,
     'namespace' | 'projectSlug' | 'environment' | 'routingMode'
@@ -592,7 +632,7 @@ export class DockerLifecycle {
     const current =
       desired.routingMode === 'managed-gateway'
         ? await this.desiredManagedContainer(desired, signal)
-        : await this.ownedContainer(baseName, desired, signal);
+        : await this.desiredDirectContainer(desired, signal);
     if (current && this.matches(current, desired)) {
       if (!current.State?.Running) await this.start(desired, signal);
       if (!(await this.healthy(desired, signal)))
@@ -601,6 +641,10 @@ export class DockerLifecycle {
     }
 
     await this.ensureNetwork(desired, signal);
+    for (const legacyCandidateName of this.legacyCandidateNames(desired)) {
+      const legacyCandidate = await this.legacyOwnedContainer(legacyCandidateName, desired, signal);
+      if (legacyCandidate) await this.removeContainer(legacyCandidate.Id, signal);
+    }
     const existingCandidate = await this.ownedContainer(candidateName, desired, signal);
     if (existingCandidate && !this.matches(existingCandidate, desired)) {
       await this.removeContainer(existingCandidate.Id, signal);
@@ -748,10 +792,12 @@ export class DockerLifecycle {
 
   async remove(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
     const desired = this.validatedPayload(payload);
-    const names = [this.containerName(desired), this.candidateName(desired)];
-    if (desired.routingMode === 'managed-gateway') names.push(workloadContainerName(desired));
-    for (const name of [...new Set(names)]) {
+    for (const name of [this.containerName(desired), this.candidateName(desired)]) {
       const container = await this.ownedContainer(name, desired, signal);
+      if (container) await this.removeContainer(container.Id, signal);
+    }
+    for (const name of this.legacyContainerNames(desired)) {
+      const container = await this.legacyOwnedContainer(name, desired, signal);
       if (container) await this.removeContainer(container.Id, signal);
     }
   }
@@ -812,7 +858,7 @@ export class DockerLifecycle {
       }
       container = matching[0] ? await this.ownedContainer(matching[0].Id, payload, signal) : null;
     } else {
-      container = await this.ownedContainer(workloadContainerName(payload), payload, signal);
+      container = await this.desiredDirectContainer(payload, signal);
     }
     if (!container) return { state: 'missing', health: 'missing', logs: '' };
 
@@ -927,7 +973,16 @@ export class DockerLifecycle {
     payload: DockerLifecyclePayload,
     signal: AbortSignal,
   ): Promise<void> {
-    const name = this.networkName(payload);
+    await this.removeNamedNetworkIfEmpty(this.networkName(payload), payload, signal, false);
+    await this.removeNamedNetworkIfEmpty(legacyWorkloadNetworkName(payload), payload, signal, true);
+  }
+
+  private async removeNamedNetworkIfEmpty(
+    name: string,
+    payload: DockerLifecyclePayload,
+    signal: AbortSignal,
+    legacy: boolean,
+  ): Promise<void> {
     const inspected = await this.request({
       method: 'GET',
       path: `/networks/${encodeURIComponent(name)}`,
@@ -935,6 +990,7 @@ export class DockerLifecycle {
     });
     if (inspected.statusCode === 404) return;
     const network = responseJson<NetworkInspect>(inspected, 'inspect network');
+    if (legacy && !this.networkBelongsToAllocation(network, payload)) return;
     this.assertNetworkOwnership(network, payload);
     if (!network.Containers || Object.keys(network.Containers).length > 0) return;
     await this.expect(
@@ -944,7 +1000,7 @@ export class DockerLifecycle {
         path: `/networks/${encodeURIComponent(name)}`,
         signal,
       },
-      'remove empty diagnostic network',
+      'remove empty workload network',
     );
   }
 
@@ -973,6 +1029,15 @@ export class DockerLifecycle {
       );
     }
     return container;
+  }
+
+  private async legacyOwnedContainer(
+    name: string,
+    payload: DockerLifecyclePayload | DockerDiagnosticPayload,
+    signal: AbortSignal,
+  ): Promise<ContainerInspect | null> {
+    const container = await this.inspectContainer(name, signal);
+    return container && this.belongsToWorkload(container, payload) ? container : null;
   }
 
   private async ownedManagedRevisions(
@@ -1101,8 +1166,17 @@ export class DockerLifecycle {
   }
 
   private assertNetworkOwnership(network: NetworkInspect, payload: DockerLifecyclePayload): void {
+    if (!this.networkBelongsToAllocation(network, payload)) {
+      throw new Error(`Docker network name collision outside allocation '${payload.allocationId}'`);
+    }
+  }
+
+  private networkBelongsToAllocation(
+    network: NetworkInspect,
+    payload: DockerLifecyclePayload,
+  ): boolean {
     const labels = network.Labels ?? {};
-    if (
+    return !(
       labels['com.initpad.managed'] !== 'true' ||
       labels['com.initpad.target'] !== this.targetId ||
       labels['com.initpad.allocation.id'] !== payload.allocationId ||
@@ -1114,9 +1188,7 @@ export class DockerLifecycle {
       (payload.routingMode === 'direct-port' &&
         labels['com.initpad.routing.mode'] !== undefined &&
         labels['com.initpad.routing.mode'] !== 'direct-port')
-    ) {
-      throw new Error(`Docker network name collision outside allocation '${payload.allocationId}'`);
-    }
+    );
   }
 
   private labels(payload: DockerLifecyclePayload, jobId: string): Record<string, string> {
@@ -1162,6 +1234,15 @@ export class DockerLifecycle {
       : workloadContainerName(payload);
   }
 
+  private async desiredDirectContainer(
+    payload: DockerLifecyclePayload | DockerDiagnosticPayload,
+    signal: AbortSignal,
+  ): Promise<ContainerInspect | null> {
+    const current = await this.ownedContainer(workloadContainerName(payload), payload, signal);
+    if (current) return current;
+    return this.legacyOwnedContainer(legacyWorkloadContainerName(payload), payload, signal);
+  }
+
   private async desiredContainer(
     payload: DockerLifecyclePayload,
     signal: AbortSignal,
@@ -1182,15 +1263,38 @@ export class DockerLifecycle {
       }
       return desired;
     }
-    // Agent 0.7 used the unsuffixed name. Keep start/stop/remove compatible
-    // across an in-place Agent upgrade; the next successful deploy migrates it.
-    const legacy = await this.ownedContainer(workloadContainerName(payload), payload, signal);
-    return legacy && this.matches(legacy, payload) ? legacy : null;
+    for (const name of [
+      legacyManagedWorkloadContainerName(payload, managedWorkloadSlot(payload)),
+      legacyWorkloadContainerName(payload),
+    ]) {
+      const legacy = await this.legacyOwnedContainer(name, payload, signal);
+      if (legacy && this.matches(legacy, payload)) return legacy;
+    }
+    return null;
   }
 
   private candidateName(payload: DockerLifecyclePayload): string {
     const suffix = dockerNamePart(payload.revision).slice(0, 12);
     return `${this.containerName(payload).slice(0, 108)}-next-${suffix}`;
+  }
+
+  private legacyContainerNames(payload: DockerLifecyclePayload): string[] {
+    const suffix = dockerNamePart(payload.revision).slice(0, 12);
+    const bases =
+      payload.routingMode === 'managed-gateway'
+        ? [
+            legacyManagedWorkloadContainerName(payload, managedWorkloadSlot(payload)),
+            legacyWorkloadContainerName(payload),
+          ]
+        : [legacyWorkloadContainerName(payload)];
+    return [...new Set(bases.flatMap((base) => [base, `${base.slice(0, 108)}-next-${suffix}`]))];
+  }
+
+  private legacyCandidateNames(payload: DockerLifecyclePayload): string[] {
+    const desired = this.candidateName(payload);
+    return this.legacyContainerNames(payload).filter(
+      (name) => name.includes('-next-') && name !== desired,
+    );
   }
 
   private request(input: Parameters<DockerTransport>[0]): Promise<DockerHttpResponse> {

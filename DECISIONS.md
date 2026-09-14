@@ -4610,3 +4610,35 @@ požadavek používat v produkci HTTPS.
 
 **Testování.** Jednotkové testy pokrývají nativní větev, deterministický
 fallback včetně UUIDv4 version/variant bitů a fail-closed stav bez Web Crypto.
+
+---
+
+## ADR-107 — Docker resource identity zahrnuje immutable allocation
+
+**Kontext.** Uživatel smí odpojit Agent target a ponechat na serveru jeho
+workloady. Pokud potom tentýž Docker daemon připojí jako nový target, vznikne
+nová allocation, ale Agent 0.11 odvozoval jména kontejnerů jen z workspace,
+projektu a prostředí a direct-port sítě pouze z workspace a prostředí. Nový
+deploy tak narazil na správnou ownership pojistku staré allocation. Smazání,
+adopce nebo přeznačení starého workloadu by porušilo zvolenou detach semantiku.
+
+**Rozhodnutí.** Agent 0.12 zahrne do každého nového workload container a network
+name dvanáctiznakový SHA-256 scope immutable allocation ID. Autoritativní
+kontrolou zůstává plný target, allocation a workload label; krátký hash slouží
+jen jako collision-resistant Docker namespace. Agent při čtení a lifecycle
+operací rozpozná také starší jméno, pouze pokud jeho plné labely patří stejné
+allocation. Při následujícím změněném deployi workload přirozeně přejde na
+nové jméno; cizí legacy jméno Agent ignoruje a nikdy nemutuje.
+
+**Důsledky.** Stará i nová allocation mohou bezpečně koexistovat na jednom
+Docker daemonu bez kolize jmen. In-place upgrade nepřeruší status, logy,
+start/stop, gateway routing ani odstranění vlastního staršího workloadu.
+Fyzický daemon přesto zůstává doporučeně spravovaný jedním aktivním Agentem;
+scope umožňuje bezpečné předání a zachovaný detach, nikoli sdílený root
+management bez provozní koordinace.
+
+**Testování.** Testy dokazují odlišná jména pro dvě allocation, zachování
+ownership fence na novém jménu, ignorování cizího legacy kontejneru, migraci
+vlastního legacy direct-port workloadu a kompatibilitu starší managed-gateway
+sítě i revision containeru. Živá acceptance musí po upgradu Agenta zopakovat
+deploy do nové allocation při současné existenci starého workloadu.

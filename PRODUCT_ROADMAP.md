@@ -302,6 +302,8 @@ nezobrazí falešný empty/error stav.
    Image přebírá podle ověřené identity/digestu a vynucuje allocation.
    Dočasná lifecycle diagnostika používá allocation-scoped jméno, takže dva
    targety stejného workspace nesdílejí síť ani při běhu na jednom daemonu.
+   Agent 0.12 rozšiřuje stejnou immutable allocation identitu na všechny
+   workload kontejnery a sítě a při dalším deployi migruje vlastní starší jméno.
 6. ✅ **Napojení delivery toku.** Agent-backed target použije stejné projektové
    akce jako dnešní Docker provider; SaaS nepotřebuje Docker socket control plane.
    Přímá self-hosted cesta zůstane kompatibilní pro diplomkový profil.

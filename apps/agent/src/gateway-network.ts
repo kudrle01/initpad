@@ -1,8 +1,10 @@
 import { dockerError, dockerHttpRequest } from './docker-http.js';
 import type { DockerHttpResponse, DockerTransport } from './docker-http.js';
 import {
+  legacyManagedWorkloadContainerName,
   managedWorkloadContainerName,
-  workloadContainerName,
+  legacyWorkloadContainerName,
+  legacyWorkloadNetworkName,
   workloadNetworkName,
 } from './docker-lifecycle.js';
 import type { GatewayRoutePayload } from './gateway-route.js';
@@ -68,7 +70,14 @@ export class GatewayDockerNetwork {
 
   async connect(payload: GatewayRoutePayload, signal: AbortSignal): Promise<void> {
     const gateway = await this.inspectGateway(signal);
-    const { name, network } = await this.inspectOwnedNetwork(payload, signal);
+    const workload = await this.activeWorkload(payload, signal);
+    const matches = (await this.ownedNetworks(payload, signal)).filter(({ network }) =>
+      containsContainer(network, workload.Id),
+    );
+    if (matches.length !== 1) {
+      throw new Error('Managed workload is not attached to exactly one owned allocation network');
+    }
+    const { name, network } = matches[0];
     if (containsContainer(network, gateway.Id)) return;
     const response = await this.request({
       method: 'POST',
@@ -80,29 +89,32 @@ export class GatewayDockerNetwork {
     if (response.statusCode !== 200 && response.statusCode !== 403) {
       throw dockerError(response, 'connect gateway to workload network');
     }
-    const verified = await this.inspectOwnedNetwork(payload, signal);
-    if (!containsContainer(verified.network, gateway.Id)) {
+    const verified = await this.inspectNetwork(name, payload, signal, false);
+    if (!verified || !containsContainer(verified.network, gateway.Id)) {
       throw new Error('Docker did not connect the configured gateway to the workload network');
     }
   }
 
   async disconnect(payload: GatewayRoutePayload, signal: AbortSignal): Promise<void> {
     const gateway = await this.inspectGateway(signal);
-    const { name, network } = await this.inspectOwnedNetwork(payload, signal);
-    if (!containsContainer(network, gateway.Id)) return;
-    const response = await this.request({
-      method: 'POST',
-      path: `/networks/${encodeURIComponent(name)}/disconnect`,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ Container: gateway.Id, Force: false }),
-      signal,
-    });
-    if (response.statusCode !== 200 && response.statusCode !== 403) {
-      throw dockerError(response, 'disconnect gateway from workload network');
-    }
-    const verified = await this.inspectOwnedNetwork(payload, signal);
-    if (containsContainer(verified.network, gateway.Id)) {
-      throw new Error('Docker did not disconnect the configured gateway from the workload network');
+    for (const { name, network } of await this.ownedNetworks(payload, signal)) {
+      if (!containsContainer(network, gateway.Id)) continue;
+      const response = await this.request({
+        method: 'POST',
+        path: `/networks/${encodeURIComponent(name)}/disconnect`,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ Container: gateway.Id, Force: false }),
+        signal,
+      });
+      if (response.statusCode !== 200 && response.statusCode !== 403) {
+        throw dockerError(response, 'disconnect gateway from workload network');
+      }
+      const verified = await this.inspectNetwork(name, payload, signal, false);
+      if (!verified || containsContainer(verified.network, gateway.Id)) {
+        throw new Error(
+          'Docker did not disconnect the configured gateway from the workload network',
+        );
+      }
     }
   }
 
@@ -194,14 +206,16 @@ export class GatewayDockerNetwork {
       throw new Error('Active managed route has no workload identity');
     }
     const expected = managedWorkloadContainerName(payload, payload.workloadSlot);
-    const legacy = workloadContainerName(payload);
+    const legacyRevision = legacyManagedWorkloadContainerName(payload, payload.workloadSlot);
+    const legacy = legacyWorkloadContainerName(payload);
     const matches = (await this.ownedWorkloads(payload, signal)).filter((container) => {
       const labels = container.Labels ?? {};
       const name = this.containerName(container);
       return (
         container.State === 'running' &&
         labels['com.initpad.revision'] === payload.revision &&
-        ((name === expected && labels['com.initpad.workload.slot'] === payload.workloadSlot) ||
+        (((name === expected || name === legacyRevision) &&
+          labels['com.initpad.workload.slot'] === payload.workloadSlot) ||
           (name === legacy && labels['com.initpad.workload.slot'] === undefined))
       );
     });
@@ -264,16 +278,31 @@ export class GatewayDockerNetwork {
     return names[0].slice(1);
   }
 
-  private async inspectOwnedNetwork(
+  private async ownedNetworks(
     payload: GatewayRoutePayload,
     signal: AbortSignal,
-  ): Promise<{ name: string; network: WorkloadNetworkInspect }> {
-    const name = workloadNetworkName({ ...payload, routingMode: 'managed-gateway' });
+  ): Promise<Array<{ name: string; network: WorkloadNetworkInspect }>> {
+    const scopedName = workloadNetworkName({ ...payload, routingMode: 'managed-gateway' });
+    const legacyName = legacyWorkloadNetworkName({ ...payload, routingMode: 'managed-gateway' });
+    const scoped = await this.inspectNetwork(scopedName, payload, signal, false);
+    const legacy = await this.inspectNetwork(legacyName, payload, signal, true);
+    return [scoped, legacy].filter(
+      (item): item is { name: string; network: WorkloadNetworkInspect } => item !== null,
+    );
+  }
+
+  private async inspectNetwork(
+    name: string,
+    payload: GatewayRoutePayload,
+    signal: AbortSignal,
+    legacy: boolean,
+  ): Promise<{ name: string; network: WorkloadNetworkInspect } | null> {
     const response = await this.request({
       method: 'GET',
       path: `/networks/${encodeURIComponent(name)}`,
       signal,
     });
+    if (response.statusCode === 404) return null;
     const network = responseJson<WorkloadNetworkInspect>(response, 'inspect workload network');
     const labels = network.Labels ?? {};
     if (
@@ -285,6 +314,7 @@ export class GatewayDockerNetwork {
       labels['com.initpad.environment'] !== payload.environment ||
       labels['com.initpad.routing.mode'] !== 'managed-gateway'
     ) {
+      if (legacy) return null;
       throw new Error(`Docker network name collision outside allocation '${payload.allocationId}'`);
     }
     return { name, network };

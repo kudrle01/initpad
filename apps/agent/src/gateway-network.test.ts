@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {
+  legacyWorkloadNetworkName,
+  managedWorkloadContainerName,
+  workloadNetworkName,
+} from './docker-lifecycle.js';
 import { GatewayDockerNetwork } from './gateway-network.js';
 import type { DockerHttpRequest, DockerHttpResponse, DockerTransport } from './docker-http.js';
 
@@ -28,8 +33,13 @@ function response(statusCode: number, body: unknown = ''): DockerHttpResponse {
   };
 }
 
-function fakeEngine(input: { gatewayLabel?: string; targetId?: string } = {}) {
+function fakeEngine(
+  input: { gatewayLabel?: string; targetId?: string; legacyNetwork?: boolean } = {},
+) {
   const gatewayId = 'gateway-container-id';
+  const scopedNetwork = workloadNetworkName({ ...payload, routingMode: 'managed-gateway' });
+  const legacyNetwork = legacyWorkloadNetworkName({ ...payload, routingMode: 'managed-gateway' });
+  const workloadId = 'managed-workload-id';
   let connected = false;
   const requests: DockerHttpRequest[] = [];
   const transport: DockerTransport = async (request) => {
@@ -42,9 +52,53 @@ function fakeEngine(input: { gatewayLabel?: string; targetId?: string } = {}) {
         State: { Running: true },
       });
     }
-    if (request.method === 'GET' && path === '/networks/net-team-alpha-customer-portal-dev') {
+    if (request.method === 'GET' && request.path.startsWith('/containers/json?')) {
+      return response(200, [
+        {
+          Id: workloadId,
+          Names: [`/${managedWorkloadContainerName(payload, payload.workloadSlot)}`],
+          Image: `registry.test/acme/customer-portal:${'a'.repeat(40)}`,
+          State: 'running',
+          Labels: {
+            'com.initpad.managed': 'true',
+            'com.initpad.target': 'target-1',
+            'com.initpad.allocation.id': payload.allocationId,
+            'com.initpad.allocation.namespace': payload.namespace,
+            'com.initpad.project': payload.projectSlug,
+            'com.initpad.environment': payload.environment,
+            'com.initpad.workload': `${payload.allocationId}:${payload.projectSlug}:${payload.environment}`,
+            'com.initpad.routing.mode': 'managed-gateway',
+            'com.initpad.revision': payload.revision,
+            'com.initpad.workload.slot': payload.workloadSlot,
+          },
+        },
+      ]);
+    }
+    if (request.method === 'GET' && path === `/networks/${scopedNetwork}`) {
+      if (input.legacyNetwork) return response(404);
       return response(200, {
-        Containers: connected ? { [gatewayId]: {} } : {},
+        Containers: {
+          [workloadId]: {},
+          ...(connected ? { [gatewayId]: {} } : {}),
+        },
+        Labels: {
+          'com.initpad.managed': 'true',
+          'com.initpad.target': input.targetId ?? 'target-1',
+          'com.initpad.allocation.id': payload.allocationId,
+          'com.initpad.allocation.namespace': payload.namespace,
+          'com.initpad.project': payload.projectSlug,
+          'com.initpad.environment': payload.environment,
+          'com.initpad.routing.mode': 'managed-gateway',
+        },
+      });
+    }
+    if (request.method === 'GET' && path === `/networks/${legacyNetwork}`) {
+      if (!input.legacyNetwork) return response(404);
+      return response(200, {
+        Containers: {
+          [workloadId]: {},
+          ...(connected ? { [gatewayId]: {} } : {}),
+        },
         Labels: {
           'com.initpad.managed': 'true',
           'com.initpad.target': input.targetId ?? 'target-1',
@@ -88,6 +142,27 @@ test('connects and disconnects only the configured gateway on the owned workload
   assert.equal(engine.connected(), false);
   await network.disconnect(payload, signal);
   assert.equal(engine.requests.filter((request) => request.path.endsWith('/disconnect')).length, 1);
+});
+
+test('keeps an owned pre-allocation-scope gateway network operable during upgrade', async () => {
+  const engine = fakeEngine({ legacyNetwork: true });
+  const network = new GatewayDockerNetwork(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'initpad-gateway',
+  );
+
+  await network.connect(payload, new AbortController().signal);
+
+  assert.equal(engine.connected(), true);
+  assert.equal(
+    engine.requests.some(
+      (request) =>
+        decodeURIComponent(request.path) === '/networks/net-team-alpha-customer-portal-dev',
+    ),
+    true,
+  );
 });
 
 test('refuses a foreign gateway or allocation network without mutating Docker', async () => {

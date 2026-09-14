@@ -2,11 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import {
+  allocationDockerScope,
   DockerLifecycle,
+  legacyWorkloadContainerName,
+  managedWorkloadContainerName,
   parseDiagnosticPayload,
   parseLifecyclePayload,
   parseProjectDelivery,
   parseProjectPayload,
+  workloadContainerName,
+  workloadNetworkName,
 } from './docker-lifecycle.js';
 import type { DockerHttpRequest, DockerHttpResponse, DockerTransport } from './docker-http.js';
 
@@ -208,6 +213,28 @@ function fakeEngine(initialImagePresent = false) {
         Id: 'foreign-1',
         name,
         Config: { Image: IMAGE_REF, Labels: {} },
+        State: { Running: true, ExitCode: 0 },
+        NetworkSettings: { Ports: { '80/tcp': [{ HostPort: '32000' }] } },
+      });
+    },
+    seedOwned: (name: string, payload: typeof PAYLOAD) => {
+      containers.set('owned-legacy-1', {
+        Id: 'owned-legacy-1',
+        name,
+        Config: {
+          Image: payload.imageRef,
+          Labels: {
+            'com.initpad.managed': 'true',
+            'com.initpad.target': 'target-1',
+            'com.initpad.allocation.id': payload.allocationId,
+            'com.initpad.allocation.namespace': payload.namespace,
+            'com.initpad.project': payload.projectSlug,
+            'com.initpad.environment': payload.environment,
+            'com.initpad.routing.mode': payload.routingMode,
+            'com.initpad.workload': `${payload.allocationId}:${payload.projectSlug}:${payload.environment}`,
+            'com.initpad.revision': payload.revision,
+          },
+        },
         State: { Running: true, ExitCode: 0 },
         NetworkSettings: { Ports: { '80/tcp': [{ HostPort: '32000' }] } },
       });
@@ -589,7 +616,7 @@ test('preserves an immutable diagnostic image that was already cached', async ()
 
 test('refuses to operate on a same-named container outside the allocation', async () => {
   const engine = fakeEngine();
-  engine.seedForeign('initpad-team-alpha-agent-lifecycle-check-diagnostic');
+  engine.seedForeign(workloadContainerName(PAYLOAD));
   const lifecycle = new DockerLifecycle(
     'target-1',
     'tcp://docker:2375',
@@ -601,6 +628,52 @@ test('refuses to operate on a same-named container outside the allocation', asyn
     lifecycle.remove(PAYLOAD, new AbortController().signal),
     /name collision outside allocation/,
   );
+  assert.equal(engine.containers.has('foreign-1'), true);
+});
+
+test('scopes Docker resource names by immutable allocation identity', () => {
+  const replacement = { ...PAYLOAD, allocationId: '223e4567-e89b-42d3-a456-426614174000' };
+
+  assert.match(allocationDockerScope(PAYLOAD.allocationId), /^[a-f0-9]{12}$/);
+  assert.notEqual(workloadContainerName(PAYLOAD), workloadContainerName(replacement));
+  assert.notEqual(workloadNetworkName(PAYLOAD), workloadNetworkName(replacement));
+  assert.match(workloadContainerName(PAYLOAD), /-a[a-f0-9]{12}-/);
+  assert.match(workloadNetworkName(PAYLOAD), /-a[a-f0-9]{12}-/);
+  assert.match(managedWorkloadContainerName(PAYLOAD, 'a1b2c3d4e5f6'), /-rev-a1b2c3d4e5f6$/);
+});
+
+test('migrates an owned legacy direct-port container on the next deployment', async () => {
+  const engine = fakeEngine(true);
+  const previous = { ...PAYLOAD, revision: 'previous' };
+  const desired = { ...PAYLOAD, revision: 'replacement' };
+  engine.seedOwned(legacyWorkloadContainerName(previous), previous);
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+
+  await lifecycle.deploy(desired, 'job-replacement', new AbortController().signal);
+
+  assert.equal(engine.containers.size, 1);
+  assert.equal([...engine.containers.values()][0].name, workloadContainerName(desired));
+  assert.equal(engine.containers.has('owned-legacy-1'), false);
+});
+
+test('ignores a foreign legacy name while removing the scoped allocation', async () => {
+  const engine = fakeEngine();
+  engine.seedForeign(legacyWorkloadContainerName(PAYLOAD));
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+  );
+
+  await lifecycle.remove(PAYLOAD, new AbortController().signal);
+
   assert.equal(engine.containers.has('foreign-1'), true);
 });
 
@@ -634,7 +707,7 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.equal(first.Entrypoint, undefined);
   assert.equal(host.Privileged, undefined);
   assert.equal(host.Binds, undefined);
-  assert.equal(host.NetworkMode, 'net-team-alpha-diagnostic');
+  assert.equal(host.NetworkMode, workloadNetworkName(PAYLOAD));
   assert.deepEqual((host.PortBindings as Record<string, unknown>)['80/tcp'], [
     { HostIp: '0.0.0.0', HostPort: '' },
   ]);
@@ -668,7 +741,7 @@ test('isolates a managed-gateway workload network and keeps its health port on l
   await lifecycle.deploy(managed, 'job-managed', new AbortController().signal);
 
   const host = engine.createdBodies[0].HostConfig as Record<string, unknown>;
-  assert.equal(host.NetworkMode, 'net-team-alpha-agent-lifecycle-check-diagnostic');
+  assert.equal(host.NetworkMode, workloadNetworkName(managed));
   assert.deepEqual((host.PortBindings as Record<string, unknown>)['80/tcp'], [
     { HostIp: '127.0.0.1', HostPort: '' },
   ]);
