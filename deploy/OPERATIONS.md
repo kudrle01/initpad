@@ -177,6 +177,10 @@ selhal, obnov poslední zálohu (`./restore.sh …`).
   přístup klientů k API vyžaduje `0`; další edge proxy zvyšuje hodnotu pouze
   tehdy, když je síťová cesta pevná a API nelze obejít napřímo. Klientská IP je
   součástí rate-limit rozhodnutí.
+- InitPad Agent má přes Docker socket oprávnění srovnatelné se správcem
+  cílového serveru. Enrollment proto smí spouštět jen správce workspace a
+  produkční control plane musí používat HTTPS. `--allow-insecure-http` je
+  pouze pro izolovaný lokální test, nikoli pro běžnou LAN nebo internet.
 
 Citlivé auth, GitHub setup a Agent enrollment operace používají krátkodobé
 PostgreSQL buckety společné pro všechny API repliky. Tabulka neobsahuje IP,

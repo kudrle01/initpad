@@ -279,6 +279,13 @@ export function AgentSetupDialog({
                       before installation. The token is requested through a hidden prompt and never
                       enters shell history.
                     </p>
+                    {window.location.protocol === 'http:' && (
+                      <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-foreground">
+                        <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                        HTTP enrollment is for a trusted local test only. Use HTTPS before exposing
+                        InitPad or this Agent connection outside an isolated network.
+                      </p>
+                    )}
                   </>
                 ) : (
                   <div

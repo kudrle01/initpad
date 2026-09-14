@@ -125,9 +125,14 @@ artifact and bounded in-memory configuration through the fenced job protocol.
   explicitly re-enrolled. Individual claims use short-lived fencing tokens.
   Allocation enforcement, verified artifact
   authorization, secret-safe config delivery and a non-shell Docker allow-list
-  exist. The release still needs a signed multi-arch image/SBOM and an
-  independent security review; read-only filesystems and dropped capabilities
-  do not reduce the authority conveyed by the mounted Docker socket.
+  exist. Agent 0.11.0 has a signed multi-arch image, SBOM, provenance and an
+  immutable reviewed release channel; clean-host lifecycle acceptance and an
+  independent security review are still required. The installer checksum
+  delivered by the same control-plane HTTPS origin detects corruption and binds
+  the UI to exact bytes, but it does not create an independent trust root.
+  Read-only filesystems and dropped capabilities do not reduce the authority
+  conveyed by the mounted Docker socket. HTTP enrollment is permitted only by
+  an explicit test flag and provides no protection against a hostile LAN.
 - Gitea collaborator synchronization spans two systems and therefore uses
   compensation rather than a distributed transaction. Reconciliation and an
   audit log are required before hosted production use.
