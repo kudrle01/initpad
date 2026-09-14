@@ -74,7 +74,9 @@ docker buildx imagetools inspect 'ghcr.io/OWNER/initpad-agent@sha256:DIGEST' \
   --format '{{ json (index .SBOM "linux/amd64").SPDX }}'
 ```
 
-Publishing is not the acceptance result. Before enabling a release for users,
-install it on a clean Linux host and verify first enrollment, restart after a
-host reboot, update to a newer digest, rollback from a deliberately unhealthy
-digest and preservation of existing workloads when the Agent is disconnected.
+Publishing is not the acceptance result. Follow the reproducible clean-host
+[`ACCEPTANCE.md`](./ACCEPTANCE.md) runbook before approving a release for
+production. It verifies first enrollment, restart after a host reboot,
+idempotent reinstall, rollback from a deliberately unhealthy digest and
+preservation of existing workloads when the Agent is disconnected. A genuine
+upgrade checkpoint closes only when a later signed release exists.

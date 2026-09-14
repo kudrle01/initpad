@@ -28,13 +28,14 @@ immutable `INITPAD_AGENT_IMAGE` digest and its explicit
 `INITPAD_AGENT_RELEASE_VERSION`. It installs and enrolls without cloning this
 repository, preserves the root-only identity across updates and restores the
 previous container when the replacement cannot heartbeat. The repository
-now contains a tag-gated, signed `amd64/arm64` release workflow; publishing its
-first image and completing clean-host acceptance remain release gates. The
-local lab below stays the supported source-build acceptance path.
+now publishes the signed, public `amd64/arm64` Agent 0.11.0 image. Clean-host
+lifecycle acceptance remains a release gate. The local lab below stays the
+supported source-build acceptance path.
 
-Release maintainers use [RELEASING.md](./RELEASING.md). The installer shown by
-a control plane remains disabled until that deployment is configured with the
-exact digest produced by a successful release.
+Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
+[release acceptance](./ACCEPTANCE.md). The installer shown by a control plane
+remains disabled until that deployment is configured with the exact digest
+produced by a successful release.
 
 The production installer itself is `apps/agent/install.sh`. It requires Docker
 Engine on Linux, uses host networking only for the Agent process, mounts the

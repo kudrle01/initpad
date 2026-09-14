@@ -54,6 +54,7 @@ const requiredPublicDocs = [
   'deploy/OPERATIONS.md',
   'deploy/SELF_HOSTED_ACCEPTANCE.md',
   'apps/agent/README.md',
+  'apps/agent/ACCEPTANCE.md',
   'apps/agent/RELEASING.md',
 ];
 

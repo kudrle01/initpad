@@ -81,8 +81,9 @@ immutable digest a OCI index pro `linux/amd64` i `linux/arm64`. Lokální releas
 kandidát používá dvojici tohoto digestu a verze `0.11.0`; distribuční API ji
 označuje jako dostupnou a servírovaný instalátor se shoduje s podepsaným
 checksumem release. Dokud neproběhne čistá Linux lifecycle acceptance, nejde
-vydání považovat za produkčně přijaté. Postup je v
-[`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
+vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
+[`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
+popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
 
