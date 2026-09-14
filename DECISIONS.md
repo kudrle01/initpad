@@ -4557,3 +4557,34 @@ semver. Komponentový test kontroluje dostupnou i nedostupnou distribuci a
 zakazuje regresi textu `sudo initpad-agent enroll`. Živě stačí po aktualizaci
 spustit `deploy/install.sh`, v **Infrastructure → Manage Agent** vygenerovat
 token a ověřit, že nabídnutý příkaz začíná stažením a kontrolou SHA-256.
+
+---
+
+## ADR-105 — Dočasná Docker diagnostika má allocation-scoped jméno
+
+**Kontext.** Lifecycle test používal pro každý Agent target ve stejném
+workspace shodnou dvojici `agent-lifecycle-check` / `diagnostic`. Agent 0.11
+správně odmítl síť se shodným odvozeným názvem, pokud její plné ownership
+labely patřily jinému targetu nebo allocation. To chránilo cizí workload, ale
+nový nebo náhradní target stejného workspace nemohl spustit ani neškodnou
+diagnostiku, dokud na stejném Docker daemonu existovala starší síť.
+
+**Rozhodnutí.** API ponechá skutečný allocation namespace, ale do názvu
+diagnostického environmentu přidá dvanáct hex znaků SHA-256 daného immutable
+allocation ID. Stávající Agent tento bezpečný řetězec už podporuje a zahrne jej
+do jména kontejneru i direct-port sítě. Plné target/allocation/workspace labely
+zůstávají autoritativní; hash je pouze collision-resistant jméno, nikoli
+autorizační kontrola. Agent nesmí automaticky adoptovat ani mazat síť jiné
+identity, i když je prázdná.
+
+**Důsledky.** Více targetů stejného workspace může na sdíleném testovacím
+Docker daemonu spustit lifecycle test bez falešné kolize. Opakování testu pro
+stejnou allocation zůstává idempotentní. Staré označené sítě se kvůli opravě
+tiše nemažou; administrátor je smí odstranit až po ověření, že neobsahují
+workload a jejich původní target už není používaný.
+
+**Testování.** Service test kontroluje deterministický allocation hash přímo
+v Agent job payloadu a nepřítomnost příkazu nebo secretu. Živě se na dvou
+targetech stejného workspace spustí **Test Docker**; oba joby musejí skončit
+`succeeded`, použít odlišné diagnostické sítě a cleanup nesmí změnit síť ani
+workload druhé allocation.

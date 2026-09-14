@@ -7,6 +7,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import type { Readable } from 'stream';
 import { ARTIFACT_STORE, type ArtifactStore } from '../artifacts/artifact-store';
 import { AuditEventsService } from '../audit/audit-events.service';
@@ -38,6 +39,11 @@ import { newCorrelationId } from '../common/request-context';
 
 const LIFECYCLE_TEST_IMAGE =
   'nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa';
+
+function lifecycleDiagnosticEnvironment(allocationId: string): string {
+  const scope = createHash('sha256').update(allocationId).digest('hex').slice(0, 12);
+  return `diagnostic-${scope}`;
+}
 
 interface JobRow {
   id: string;
@@ -268,7 +274,7 @@ export class AgentJobsService implements OnModuleInit {
           allocationId: allocation.id,
           namespace: allocation.namespace,
           projectSlug: 'agent-lifecycle-check',
-          environment: 'diagnostic',
+          environment: lifecycleDiagnosticEnvironment(allocation.id),
           revision,
           imageRef: LIFECYCLE_TEST_IMAGE,
           containerPort: 80,

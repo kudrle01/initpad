@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { Readable } from 'stream';
 import { encryptSecret } from '../common/secret';
 import { hashToken } from '../common/token';
@@ -284,6 +285,10 @@ describe('AgentJobsService durable lease protocol', () => {
       expect.objectContaining({
         allocationId: 'allocation-1',
         namespace: 'team-alpha',
+        environment: `diagnostic-${createHash('sha256')
+          .update('allocation-1')
+          .digest('hex')
+          .slice(0, 12)}`,
         imageRef: expect.stringMatching(/^nginx@sha256:[a-f0-9]{64}$/),
       }),
     );

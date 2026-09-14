@@ -300,6 +300,8 @@ nezobrazí falešný empty/error stav.
 5. ✅ **Docker lifecycle operace.** Agent implementuje verzované deploy, stop,
    start, remove, status, health, omezené logy a rollback bez obecného shellu.
    Image přebírá podle ověřené identity/digestu a vynucuje allocation.
+   Dočasná lifecycle diagnostika používá allocation-scoped jméno, takže dva
+   targety stejného workspace nesdílejí síť ani při běhu na jednom daemonu.
 6. ✅ **Napojení delivery toku.** Agent-backed target použije stejné projektové
    akce jako dnešní Docker provider; SaaS nepotřebuje Docker socket control plane.
    Přímá self-hosted cesta zůstane kompatibilní pro diplomkový profil.
