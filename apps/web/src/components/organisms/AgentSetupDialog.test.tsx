@@ -98,7 +98,13 @@ describe('AgentSetupDialog distribution', () => {
     expect(screen.getByText(/curl -fsSLo initpad-agent-install\.sh/)).toHaveTextContent(
       release.image!,
     );
-    expect(screen.getByRole('link', { name: /download installer/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/copy and run this command in an interactive terminal/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /download script only/i })).toHaveAttribute(
+      'title',
+      'Downloads the script without running it',
+    );
     expect(screen.queryByText(/sudo initpad-agent enroll/)).not.toBeInTheDocument();
   });
 
@@ -118,7 +124,7 @@ describe('AgentSetupDialog distribution', () => {
 
     expect(await screen.findByText('Agent installer is not configured')).toBeInTheDocument();
     expect(screen.getByText(/No reviewed Agent release is selected/)).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /download installer/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /download script only/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/sudo initpad-agent enroll/)).not.toBeInTheDocument();
   });
 });

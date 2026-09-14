@@ -265,19 +265,26 @@ export function AgentSetupDialog({
                   </p>
                   {installCommand && installerUrl && (
                     <Button asChild variant="ghost" size="sm">
-                      <a href={installerUrl} download="initpad-agent-install.sh">
-                        <Download className="h-3.5 w-3.5" /> Download installer
+                      <a
+                        href={installerUrl}
+                        download="initpad-agent-install.sh"
+                        title="Downloads the script without running it"
+                      >
+                        <Download className="h-3.5 w-3.5" /> Download script only
                       </a>
                     </Button>
                   )}
                 </div>
                 {installCommand ? (
                   <>
+                    <p className="mb-1.5 text-xs text-muted-foreground">
+                      Copy and run this command in an interactive terminal on the Docker server.
+                    </p>
                     <CopyField command={installCommand} />
                     <p className="mt-1.5 text-xs text-muted-foreground">
-                      The checksum and immutable Agent {distribution?.version} image are verified
-                      before installation. The token is requested through a hidden prompt and never
-                      enters shell history.
+                      It verifies the checksum and immutable Agent {distribution?.version} image,
+                      requests the token through a hidden prompt, then starts and health-checks the
+                      Agent. The token never enters shell history.
                     </p>
                     {window.location.protocol === 'http:' && (
                       <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-foreground">
