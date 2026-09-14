@@ -852,12 +852,13 @@ jen konkrétní provozní a vyhodnocovací scénář.
          aktivní GitHub ruleset a první release `agent-v0.11.0` úspěšně vydal
          podepsaný multiarch image
          `ghcr.io/kudrle01/initpad-agent@sha256:17dc933c507493e10d0e29c6c865c009c3bdc2b5c6a2d9806ccc89d8041e20e2`,
-         instalační skript, manifest, SBOM a kontrolní součty. Lokální
-         kontrola manifestu a `SHA256SUMS` prošla. Zbývá jednorázově zveřejnit
-         GHCR package pro anonymní pull, nastavit tuto release dvojici do
-         kandidáta a na samostatném čistém Linux hostu ověřit instalaci,
-         reboot, update, rollback vadného obrazu a zachování workloadů po
-         odpojení Agenta.
+         instalační skript, manifest, SBOM a kontrolní součty. Lokální kontrola
+         manifestu a `SHA256SUMS` prošla, GHCR package je veřejný a anonymní
+         registry probe potvrdil shodný digest i obě cílové platformy. Release
+         dvojice je nastavená v lokálním kandidátovi; distribuční API servíruje
+         Agent 0.11.0 a instalátor se shodným podepsaným checksumem. Zbývá na
+         samostatném čistém Linux hostu ověřit instalaci, reboot, update,
+         rollback vadného obrazu a zachování workloadů po odpojení Agenta.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a
          verze z podepsaného release manifestu; UI proto nemůže označit starší
          image verzí lokálního source tree. **Uživatelský test:** bez jednoho

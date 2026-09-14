@@ -27,8 +27,8 @@ služba připravená pro veřejný produkční provoz.
 Veřejný SaaS zatím není release profil. Před připojením nedůvěryhodných
 zákazníků musí být hotové alespoň:
 
-1. veřejný anonymní pull vydaného Agenta z GHCR a acceptance instalace,
-   rebootu, upgradu i rollbacku na čistém Linux hostu;
+1. acceptance instalace, rebootu, upgradu i rollbacku veřejně dostupného
+   Agenta na čistém Linux hostu;
 2. samostatný SaaS deployment profil bez vestavěné Gitey a lokálního
    object store;
 3. živé end-to-end ověření GitHub OAuth, GitHub App instalace, osobního i
@@ -65,7 +65,7 @@ Připnutý komunitní MinIO image zajišťuje reprodukovatelnost lokální insta
 ale není doporučenou veřejnou produkční hranicí. Produkce musí použít
 samostatně udržované privátní S3-compatible úložiště a nacvičenou obnovu.
 
-### Agent 0.11 je vydaný, ale zatím není veřejně instalovatelný
+### Agent 0.11 je veřejně distribuovaný, ale čeká na host acceptance
 
 Release [`agent-v0.11.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.11.0)
 vznikl z commitu `8108715085b65cfa9be64d2029fd30343bd2cd14` a obsahuje
@@ -76,10 +76,12 @@ i všech stažitelných souborů; následná lokální kontrola manifestu a
 `SHA256SUMS` prošla. Tag chrání aktivní ruleset před vytvořením, změnou nebo
 smazáním bez výjimky release správce.
 
-GHCR package je po prvním vydání stále privátní a anonymní registry požadavek
-vrací `401`. Dokud vlastník neprovede nevratnou změnu viditelnosti package a
-neproběhne čistá Linux acceptance, UI nesmí vydávat lokální vývojový image za
-produkční download. Postup je v
+GHCR package je veřejný. Anonymní registry požadavek vrátil `200`, shodný
+immutable digest a OCI index pro `linux/amd64` i `linux/arm64`. Lokální release
+kandidát používá dvojici tohoto digestu a verze `0.11.0`; distribuční API ji
+označuje jako dostupnou a servírovaný instalátor se shoduje s podepsaným
+checksumem release. Dokud neproběhne čistá Linux lifecycle acceptance, nejde
+vydání považovat za produkčně přijaté. Postup je v
 [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
