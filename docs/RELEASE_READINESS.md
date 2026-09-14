@@ -1,6 +1,6 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá vývojové verzi po zavedení InitPad Agentu 0.11.
+Stav dokumentu odpovídá vývojové verzi po zavedení InitPad Agentu 0.12.
 Seznam je záměrně otevřený: odděluje funkční prototyp od tvrzení, že je
 služba připravená pro veřejný produkční provoz.
 
@@ -16,7 +16,7 @@ služba připravená pro veřejný produkční provoz.
 - Outbound Agent protokol s enrollmentem, rotací credentials, lease fencingem,
   diagnostikou, resource limity a stabilní gateway routou.
 - Reprodukovatelná repository gate, immutable container references a první
-  podepsané multiarch vydání Agenta 0.11.0.
+  podepsané multiarch vydání Agenta 0.12.0.
 - Strukturované redigované logy a korelace request → operation → Agent job
   → workload.
 - PostgreSQL-backed per-IP a per-account rate limit sdílený všemi API
@@ -65,20 +65,21 @@ Připnutý komunitní MinIO image zajišťuje reprodukovatelnost lokální insta
 ale není doporučenou veřejnou produkční hranicí. Produkce musí použít
 samostatně udržované privátní S3-compatible úložiště a nacvičenou obnovu.
 
-### Agent 0.11 je veřejně distribuovaný, ale čeká na host acceptance
+### Agent 0.12 je veřejně distribuovaný, ale čeká na host acceptance
 
-Release [`agent-v0.11.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.11.0)
-vznikl z commitu `8108715085b65cfa9be64d2029fd30343bd2cd14` a obsahuje
+Release [`agent-v0.12.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.12.0)
+vznikl z commitu `845e55c9678e669f387795586053957a24b03b6d` a obsahuje
 image
-`ghcr.io/kudrle01/initpad-agent@sha256:17dc933c507493e10d0e29c6c865c009c3bdc2b5c6a2d9806ccc89d8041e20e2`
+`ghcr.io/kudrle01/initpad-agent@sha256:3ca94126304cf4989a5071e4226c064870c770e32c0d481574dba0e22c05e395`
 pro `linux/amd64` a `linux/arm64`. Release workflow ověřil Cosign podpis image
-i všech stažitelných souborů; následná lokální kontrola manifestu a
-`SHA256SUMS` prošla. Tag chrání aktivní ruleset před vytvořením, změnou nebo
-smazáním bez výjimky release správce.
+i všech stažitelných souborů; následná lokální kontrola manifestu a jeho GitHub
+checksumu prošla a samostatné Cosign ověření potvrdilo přesnou workflow
+identitu i záznam v transparentním logu. Tag chrání aktivní ruleset před
+vytvořením, změnou nebo smazáním bez výjimky release správce.
 
 GHCR package je veřejný. Anonymní registry požadavek vrátil `200`, shodný
 immutable digest a OCI index pro `linux/amd64` i `linux/arm64`. Lokální release
-kandidát používá dvojici tohoto digestu a verze `0.11.0`; distribuční API ji
+kandidát používá dvojici tohoto digestu a verze `0.12.0`; distribuční API ji
 označuje jako dostupnou a servírovaný instalátor se shoduje s podepsaným
 checksumem release. Dokud neproběhne čistá Linux lifecycle acceptance, nejde
 vydání považovat za produkčně přijaté. Postup je v clean-host runbooku

@@ -8,11 +8,17 @@ cd "$(dirname "$0")"
 
 ENV_FILE=${INITPAD_ENV_FILE:-.env}
 RELEASE_FILE=${INITPAD_AGENT_RELEASE_FILE:-agent-release.env}
+MODE=${1:-preserve}
 
 fail() {
   printf 'Agent release configuration failed: %s\n' "$*" >&2
   exit 1
 }
+
+case "$MODE" in
+  preserve|--update) ;;
+  *) fail "usage: $0 [--update]" ;;
+esac
 
 [ -f "$ENV_FILE" ] || fail "$ENV_FILE does not exist"
 [ -f "$RELEASE_FILE" ] || fail "$RELEASE_FILE does not exist"
@@ -21,18 +27,30 @@ get_value() {
   awk -F= -v key="$2" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$1"
 }
 
-set_value() {
+set_release_pair() {
   file=$1
-  key=$2
-  value=$3
+  image=$2
+  version=$3
   directory=$(dirname "$file")
   temporary=$(mktemp "$directory/.initpad-env.XXXXXX")
   trap 'rm -f "${temporary:-}"' EXIT HUP INT TERM
-  awk -v key="$key" -v value="$value" '
+  awk -v image="$image" -v version="$version" '
     BEGIN { FS = OFS = "=" }
-    $1 == key { $0 = key "=" value; found = 1 }
+    $1 == "INITPAD_AGENT_IMAGE" {
+      if (!image_found) print "INITPAD_AGENT_IMAGE=" image
+      image_found = 1
+      next
+    }
+    $1 == "INITPAD_AGENT_RELEASE_VERSION" {
+      if (!version_found) print "INITPAD_AGENT_RELEASE_VERSION=" version
+      version_found = 1
+      next
+    }
     { print }
-    END { if (!found) print key "=" value }
+    END {
+      if (!image_found) print "INITPAD_AGENT_IMAGE=" image
+      if (!version_found) print "INITPAD_AGENT_RELEASE_VERSION=" version
+    }
   ' "$file" > "$temporary"
   chmod 600 "$temporary"
   mv "$temporary" "$file"
@@ -51,9 +69,15 @@ printf '%s\n' "$release_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' ||
 current_image=$(get_value "$ENV_FILE" INITPAD_AGENT_IMAGE)
 current_version=$(get_value "$ENV_FILE" INITPAD_AGENT_RELEASE_VERSION)
 
-if [ -z "$current_image" ] && [ -z "$current_version" ]; then
-  set_value "$ENV_FILE" INITPAD_AGENT_IMAGE "$release_image"
-  set_value "$ENV_FILE" INITPAD_AGENT_RELEASE_VERSION "$release_version"
+if [ "$MODE" = "--update" ]; then
+  if [ "$current_image" = "$release_image" ] && [ "$current_version" = "$release_version" ]; then
+    printf 'Reviewed InitPad Agent %s is already configured.\n' "$release_version"
+  else
+    set_release_pair "$ENV_FILE" "$release_image" "$release_version"
+    printf 'Updated reviewed InitPad Agent release to %s.\n' "$release_version"
+  fi
+elif [ -z "$current_image" ] && [ -z "$current_version" ]; then
+  set_release_pair "$ENV_FILE" "$release_image" "$release_version"
   printf 'Configured reviewed InitPad Agent %s.\n' "$release_version"
 elif [ -z "$current_image" ] || [ -z "$current_version" ]; then
   fail "INITPAD_AGENT_IMAGE and INITPAD_AGENT_RELEASE_VERSION must be configured together"

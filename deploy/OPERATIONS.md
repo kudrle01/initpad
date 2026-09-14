@@ -15,6 +15,8 @@ test je samostatně v [`../apps/agent/README.md`](../apps/agent/README.md).
 
 ```bash
 ./install.sh                 # první instalace i idempotentní oprava/upgrade
+./install.sh --update-agent-release
+                             # výslovně nabídnout aktuální schválený Agent
 docker compose ps            # stav služeb
 docker compose logs -f api   # živé logy platformy
 docker compose stop          # zastavit vše (data zůstávají)
@@ -195,9 +197,11 @@ Publikovaný Agent se zapíná vždy dvojicí z ověřeného
 odmítne při startu, aby UI nemohlo vydávat starší image za novější Agent.
 Release schválený pro běžné self-hosted instalace je jediným zdrojem pravdy v
 `agent-release.env`. `install.sh` jej doplní jen tehdy, když jsou obě hodnoty
-v `.env` prázdné; kompletní explicitní pin zachová. Tím jde nová instalace
-Agenta spustit přímo příkazem z UI, zatímco rollback nebo postupný rollout
-zůstává pod kontrolou správce.
+v `.env` prázdné; kompletní explicitní pin zachová. Správce přijme novější
+schválenou dvojici příkazem `./install.sh --update-agent-release`; přepis obou
+hodnot proběhne atomicky a běžný instalátor vlastní pin nikdy tiše neposune.
+Tím jde nová instalace Agenta spustit přímo příkazem z UI, zatímco rollback
+nebo postupný rollout zůstává pod kontrolou správce.
 
 ## Kapacita a škálování
 

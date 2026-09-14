@@ -22,8 +22,8 @@ function fixture(env) {
   return { envFile, releaseFile };
 }
 
-function configure(files) {
-  return execFileSync(script, [], {
+function configure(files, args = []) {
+  return execFileSync(script, args, {
     cwd: root,
     encoding: 'utf8',
     env: {
@@ -51,6 +51,20 @@ test('preserves an explicitly configured complete Agent release pair', () => {
 
   assert.match(configure(files), /Keeping explicitly configured InitPad Agent 1\.1\.0/);
   assert.match(readFileSync(files.envFile, 'utf8'), new RegExp(oldDigest));
+});
+
+test('explicitly updates an existing pin to the reviewed Agent release pair', () => {
+  const oldDigest = `registry.example/initpad-agent@sha256:${'c'.repeat(64)}`;
+  const files = fixture(
+    `INITPAD_AGENT_IMAGE=${oldDigest}\nKEEP=value\nINITPAD_AGENT_RELEASE_VERSION=1.1.0\n`,
+  );
+
+  assert.match(configure(files, ['--update']), /Updated reviewed InitPad Agent release to 1\.2\.3/);
+  assert.equal(
+    readFileSync(files.envFile, 'utf8'),
+    `INITPAD_AGENT_IMAGE=${digest}\nKEEP=value\nINITPAD_AGENT_RELEASE_VERSION=1.2.3\n`,
+  );
+  assert.equal(statSync(files.envFile).mode & 0o777, 0o600);
 });
 
 test('rejects a partial Agent release pair instead of guessing', () => {

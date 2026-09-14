@@ -91,8 +91,10 @@ public SaaS delivery test yet.
   platform and all templates before merge.
 - **Agent release**: `./install.sh` fills an empty release pair from
   `agent-release.env`. It preserves a complete explicit pair, so a local pin or
-  rollback is never replaced silently. A half-configured or mutable pair fails
-  before the platform starts.
+  rollback is never replaced silently. Use `./install.sh --update-agent-release`
+  to explicitly adopt the current reviewed release and restart the platform
+  with that exact version and immutable digest. A half-configured or mutable
+  pair fails before the platform starts unless the explicit update repairs it.
 - **Logs**: `docker compose logs -f api` (or any other service).
 - Do not run this stack and the `infra/` development stack simultaneously;
   they intentionally share the compose project name.

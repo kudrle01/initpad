@@ -125,7 +125,7 @@ artifact and bounded in-memory configuration through the fenced job protocol.
   explicitly re-enrolled. Individual claims use short-lived fencing tokens.
   Allocation enforcement, verified artifact
   authorization, secret-safe config delivery and a non-shell Docker allow-list
-  exist. Agent 0.11.0 has a signed multi-arch image, SBOM, provenance and an
+  exist. Agent 0.12.0 has a signed multi-arch image, SBOM, provenance and an
   immutable reviewed release channel; clean-host lifecycle acceptance and an
   independent security review are still required. The installer checksum
   delivered by the same control-plane HTTPS origin detects corruption and binds

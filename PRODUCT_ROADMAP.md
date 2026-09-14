@@ -856,14 +856,16 @@ jen konkrétní provozní a vyhodnocovací scénář.
          Workflow nepoužívá `latest`, odmítne již existující verzi a všechny
          cizí Actions jsou připnuté na commit SHA.
        - ◐ **8e-d-b2 — publikace a živá acceptance.** Tagy `agent-v*` chrání
-         aktivní GitHub ruleset a první release `agent-v0.11.0` úspěšně vydal
+         aktivní GitHub ruleset; první release `agent-v0.11.0` ověřil proces a
+         aktuální release `agent-v0.12.0` úspěšně vydal
          podepsaný multiarch image
-         `ghcr.io/kudrle01/initpad-agent@sha256:17dc933c507493e10d0e29c6c865c009c3bdc2b5c6a2d9806ccc89d8041e20e2`,
+         `ghcr.io/kudrle01/initpad-agent@sha256:3ca94126304cf4989a5071e4226c064870c770e32c0d481574dba0e22c05e395`,
          instalační skript, manifest, SBOM a kontrolní součty. Lokální kontrola
-         manifestu a `SHA256SUMS` prošla, GHCR package je veřejný a anonymní
-         registry probe potvrdil shodný digest i obě cílové platformy. Release
-         dvojice je nastavená v lokálním kandidátovi; distribuční API servíruje
-         Agent 0.11.0 a instalátor se shodným podepsaným checksumem. Zbývá na
+         manifest checksumu a Cosign identity prošla, GHCR package je veřejný a
+         anonymní registry probe potvrdil shodný digest i obě cílové platformy.
+         Release dvojice je nastavená v lokálním kandidátovi; distribuční API
+         servíruje Agent 0.12.0 s allocation-scoped Docker prostředky a
+         instalátor se shodným podepsaným checksumem. Zbývá na
          samostatném čistém Linux hostu ověřit instalaci, reboot, update,
          rollback vadného obrazu a zachování workloadů po odpojení Agenta.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a

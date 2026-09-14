@@ -4539,24 +4539,29 @@ potřebuje pouze Linux, Docker a outbound spojení ke control plane.
 semver z jednoho podepsaného manifestu. `deploy/install.sh` doplní tuto dvojici
 do čerstvého nebo staršího `.env` pouze tehdy, když jsou obě hodnoty prázdné.
 Kompletní explicitní pin zachová a neúplnou nebo mutable konfiguraci odmítne
-před spuštěním služeb. Enrollment UI zobrazuje jen celý ověřený instalační
-příkaz. Pokud distribuce není dostupná, zobrazí správci nápravu a vývojáři
-lab cestu, nikdy smyšlený host CLI příkaz.
+před spuštěním služeb. Správce přijme novější reviewed release explicitním
+`./install.sh --update-agent-release`; helper v tom případě nahradí image i
+verzi jedním atomickým přepisem `.env`. Enrollment UI zobrazuje jen celý
+ověřený instalační příkaz. Pokud distribuce není dostupná, zobrazí správci
+nápravu a vývojáři lab cestu, nikdy smyšlený host CLI příkaz.
 
 **Důsledky.** Nový self-hosted správce po `./install.sh` připojí server jedním
 copy-paste příkazem bez Node.js, balíčkovacího repozitáře, Makefile nebo clone
 zdrojů na targetu. Release změna je viditelný code-review diff a upgrade
 nepřepíše vědomý rollback. Distribuční soubor není automatický pohyblivý
 kanál: každý nový Agent release se do něj povýší samostatným commitem a po
-release acceptance.
+release acceptance. Běžný upgrade platformy nemění zvolený Agent pin;
+povýšení distribuční nabídky je samostatná, auditovatelná operace.
 
 **Testování.** Release-config test ověřuje doplnění prázdného `.env` včetně
 práv `0600`, zachování staršího kompletního pinu a odmítnutí poloviční
-dvojice. Repozitářový audit hlídá existenci, spustitelnost helperu, digest a
-semver. Komponentový test kontroluje dostupnou i nedostupnou distribuci a
-zakazuje regresi textu `sudo initpad-agent enroll`. Živě stačí po aktualizaci
-spustit `deploy/install.sh`, v **Infrastructure → Manage Agent** vygenerovat
-token a ověřit, že nabídnutý příkaz začíná stažením a kontrolou SHA-256.
+dvojice. Samostatný test dokazuje, že explicitní update atomicky nahradí obě
+hodnoty, zachová ostatní konfiguraci a práva souboru. Repozitářový audit hlídá
+existenci, spustitelnost helperu, digest a semver. Komponentový test kontroluje
+dostupnou i nedostupnou distribuci a zakazuje regresi textu
+`sudo initpad-agent enroll`. Živě se na existující instalaci spustí
+`deploy/install.sh --update-agent-release`; **Infrastructure → Manage Agent**
+pak musí nabídnout přesnou novou verzi a příkaz se stejným immutable digestem.
 
 ---
 

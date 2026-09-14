@@ -2,6 +2,8 @@
 # InitPad one-command installer.
 #
 #   ./install.sh            local install  → http://localhost:8080
+#   ./install.sh --update-agent-release
+#                           explicitly adopt the current reviewed Agent release
 #   (set INITPAD_DOMAIN + INITPAD_GIT_DOMAIN in deploy/.env first for a
 #    server install with automatic HTTPS)
 #
@@ -16,6 +18,22 @@ fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 random_secret() {
   openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'
 }
+
+UPDATE_AGENT_RELEASE=no
+case "${1:-}" in
+  '') ;;
+  --update-agent-release)
+    UPDATE_AGENT_RELEASE=yes
+    shift
+    ;;
+  -h|--help)
+    printf 'Usage: %s [--update-agent-release]\n' "$0"
+    printf '  --update-agent-release  replace the configured Agent distribution with the reviewed repository release\n'
+    exit 0
+    ;;
+  *) fail "Unknown option: $1 (try --help)." ;;
+esac
+[ "$#" -eq 0 ] || fail "Unexpected arguments (try --help)."
 
 command -v docker >/dev/null || fail "Docker is not installed (https://docs.docker.com/get-docker/)."
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
@@ -49,7 +67,11 @@ set_env() {
 # A normal self-hosted installation should immediately offer the reviewed,
 # checksum-verified Agent installer. Preserve a complete operator override,
 # but populate blank fresh/legacy environments from the versioned release pair.
-./configure-agent-release.sh
+if [ "$UPDATE_AGENT_RELEASE" = yes ]; then
+  ./configure-agent-release.sh --update
+else
+  ./configure-agent-release.sh
+fi
 
 # Upgrade existing installations from the former global CI token. It is now
 # used only for the Gitea system webhook; repository CI credentials are
