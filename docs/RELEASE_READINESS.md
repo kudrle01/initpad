@@ -15,8 +15,8 @@ služba připravená pro veřejný produkční provoz.
 - Produkční approval, rollback, audit a bezpečné dialogy destruktivních akcí.
 - Outbound Agent protokol s enrollmentem, rotací credentials, lease fencingem,
   diagnostikou, resource limity a stabilní gateway routou.
-- Reprodukovatelná repository gate, immutable container references a
-  připravená podepsaná multiarch release pipeline Agenta.
+- Reprodukovatelná repository gate, immutable container references a první
+  podepsané multiarch vydání Agenta 0.11.0.
 - Strukturované redigované logy a korelace request → operation → Agent job
   → workload.
 - PostgreSQL-backed per-IP a per-account rate limit sdílený všemi API
@@ -27,8 +27,8 @@ služba připravená pro veřejný produkční provoz.
 Veřejný SaaS zatím není release profil. Před připojením nedůvěryhodných
 zákazníků musí být hotové alespoň:
 
-1. první podepsané vydání Agenta, veřejný anonymní pull z GHCR a acceptance
-   instalace, rebootu, upgradu i rollbacku na čistém Linux hostu;
+1. veřejný anonymní pull vydaného Agenta z GHCR a acceptance instalace,
+   rebootu, upgradu i rollbacku na čistém Linux hostu;
 2. samostatný SaaS deployment profil bez vestavěné Gitey a lokálního
    object store;
 3. živé end-to-end ověření GitHub OAuth, GitHub App instalace, osobního i
@@ -65,11 +65,21 @@ Připnutý komunitní MinIO image zajišťuje reprodukovatelnost lokální insta
 ale není doporučenou veřejnou produkční hranicí. Produkce musí použít
 samostatně udržované privátní S3-compatible úložiště a nacvičenou obnovu.
 
-### Agent image 0.11 nemusí být ještě publikovaný
+### Agent 0.11 je vydaný, ale zatím není veřejně instalovatelný
 
-Zdrojový kód, instalátor a release workflow jsou připravené, ale dokud
-neexistuje neměnný veřejný digest a dokončená acceptance, UI nesmí vydávat
-lokální vývojový image za produkční download. Postup je v
+Release [`agent-v0.11.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.11.0)
+vznikl z commitu `8108715085b65cfa9be64d2029fd30343bd2cd14` a obsahuje
+image
+`ghcr.io/kudrle01/initpad-agent@sha256:17dc933c507493e10d0e29c6c865c009c3bdc2b5c6a2d9806ccc89d8041e20e2`
+pro `linux/amd64` a `linux/arm64`. Release workflow ověřil Cosign podpis image
+i všech stažitelných souborů; následná lokální kontrola manifestu a
+`SHA256SUMS` prošla. Tag chrání aktivní ruleset před vytvořením, změnou nebo
+smazáním bez výjimky release správce.
+
+GHCR package je po prvním vydání stále privátní a anonymní registry požadavek
+vrací `401`. Dokud vlastník neprovede nevratnou změnu viditelnosti package a
+neproběhne čistá Linux acceptance, UI nesmí vydávat lokální vývojový image za
+produkční download. Postup je v
 [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.

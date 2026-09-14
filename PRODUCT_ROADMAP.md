@@ -848,11 +848,16 @@ jen konkrétní provozní a vyhodnocovací scénář.
          a vydá manifest s immutable digestem a `SHA256SUMS` (ADR-093).
          Workflow nepoužívá `latest`, odmítne již existující verzi a všechny
          cizí Actions jsou připnuté na commit SHA.
-       - TODO **8e-d-b2 — publikace a živá acceptance.** Ochraňovat tagy
-         `agent-v*`, spustit první release, zveřejnit GHCR package pro
-         anonymní pull, nastavit vzniklý digest do release kandidáta a na
-         samostatném čistém Linux hostu ověřit instalaci, reboot, update,
-         rollback vadného obrazu a zachování workloadů po odpojení Agenta.
+       - ◐ **8e-d-b2 — publikace a živá acceptance.** Tagy `agent-v*` chrání
+         aktivní GitHub ruleset a první release `agent-v0.11.0` úspěšně vydal
+         podepsaný multiarch image
+         `ghcr.io/kudrle01/initpad-agent@sha256:17dc933c507493e10d0e29c6c865c009c3bdc2b5c6a2d9806ccc89d8041e20e2`,
+         instalační skript, manifest, SBOM a kontrolní součty. Lokální
+         kontrola manifestu a `SHA256SUMS` prošla. Zbývá jednorázově zveřejnit
+         GHCR package pro anonymní pull, nastavit tuto release dvojici do
+         kandidáta a na samostatném čistém Linux hostu ověřit instalaci,
+         reboot, update, rollback vadného obrazu a zachování workloadů po
+         odpojení Agenta.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a
          verze z podepsaného release manifestu; UI proto nemůže označit starší
          image verzí lokálního source tree. **Uživatelský test:** bez jednoho
@@ -878,9 +883,9 @@ jen konkrétní provozní a vyhodnocovací scénář.
        `docs/ARCHITECTURE.md`; `docs/RELEASE_READINESS.md` otevřeně odděluje
        ověřený self-hosted profil od blokátorů veřejného SaaS. Veřejné README,
        instalační a provozní runbooky jsou vzájemně propojené a repository
-       gate jejich přítomnost vynucuje. Zbývá doplnit skutečný Agent digest,
-       release notes a naměřené výsledky a podle nich uzavřít implementační a
-       testovací kapitolu diplomové práce.
+       gate jejich přítomnost vynucuje. Skutečný Agent digest a release notes
+       jsou doložené; zbývá doplnit naměřené acceptance výsledky a podle nich
+       uzavřít implementační a testovací kapitolu diplomové práce.
 
 ## Akceptační kritéria
 
