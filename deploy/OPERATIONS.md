@@ -189,6 +189,11 @@ Publikovaný Agent se zapíná vždy dvojicí z ověřeného
 `image.immutableReference` a `INITPAD_AGENT_RELEASE_VERSION` kořenové pole
 `version`. Samotný digest neobsahuje zobrazitelnou verzi; neúplnou dvojici API
 odmítne při startu, aby UI nemohlo vydávat starší image za novější Agent.
+Release schválený pro běžné self-hosted instalace je jediným zdrojem pravdy v
+`agent-release.env`. `install.sh` jej doplní jen tehdy, když jsou obě hodnoty
+v `.env` prázdné; kompletní explicitní pin zachová. Tím jde nová instalace
+Agenta spustit přímo příkazem z UI, zatímco rollback nebo postupný rollout
+zůstává pod kontrolou správce.
 
 ## Kapacita a škálování
 

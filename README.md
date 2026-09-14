@@ -36,9 +36,10 @@ import repozitáře a převzetí ověřeného Actions artefaktu. Veřejný SaaS 
 není hotový produkční profil. InitPad Agent už umí bezpečný outbound enrollment,
 heartbeat, obnovitelné joby, diagnostiku a celý Docker lifecycle nad ověřeným
 artefaktem bez obecného shellu. Produkční gateway režim navíc poskytuje stabilní
-HTTPS adresu a health-gated přepnutí s rollbackem. Před veřejným provozem zbývá
-spustit připravené podepsané multi-arch vydání Agenta, jeho vzniklý digest
-zapnout v release kandidátu a ověřit celý SaaS profil se živou GitHub App.
+HTTPS adresu a health-gated přepnutí s rollbackem. Podepsaný multi-arch Agent
+0.11.0 je veřejně distribuovaný immutable digestem a self-hosted instalátor jej
+automaticky nabídne správci serveru. Před veřejným provozem zbývá dokončit
+čistý Linux acceptance a ověřit celý SaaS profil se živou GitHub App.
 Původní source-based SSH runtime je pouze migrační legacy konektor: existující
 deploymenty lze dál spravovat, ale nové servery ani prostředí se na něj
 nevážou.
@@ -60,7 +61,10 @@ Po dokončení otevři:
 
 Instalátor vygeneruje lokální secrety, spustí databázi a služby, aplikuje
 migrace, nastaví SSO a zaregistruje izolovaný CI runner. Je idempotentní, takže
-slouží i pro aktualizaci existující instalace.
+slouží i pro aktualizaci existující instalace. Současně zvolí auditovaný
+Agent release; vzdálený Docker server pak správce připojí jediným příkazem
+z dialogu **Infrastructure → Manage Agent**, bez instalace Node.js, `make` nebo
+klonování repozitáře na cílový server.
 
 Výchozí object storage je lokální kompatibilní služba určená pro vývoj a
 důvěryhodné single-node instalace. Veřejná produkce musí použít samostatně

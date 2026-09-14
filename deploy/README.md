@@ -14,6 +14,13 @@ git clone <this repo> && cd initpad/deploy
 Open http://localhost:8080, create the initial account and then create a project.
 The script is idempotent — re-run it anytime; it only fixes what's missing.
 
+It also selects the reviewed Agent release from `agent-release.env`. To attach
+a Docker server, create its target in **Infrastructure**, generate an enrollment
+and run the displayed checksum-verified installer command on that server. There
+is intentionally no prerequisite host command named `initpad-agent`, no
+Makefile and no repository checkout on the target; the installer only requires
+Docker and stores the Agent identity outside its replaceable container.
+
 The bundled S3-compatible object store is a pinned legacy MinIO binary for
 local evaluation and trusted single-node installations. It is not the
 recommended public-production storage boundary: configure the
@@ -82,6 +89,10 @@ public SaaS delivery test yet.
   digests, so a pull never silently changes a base service. Dependabot proposes
   reviewed digest updates and the image acceptance workflow builds the
   platform and all templates before merge.
+- **Agent release**: `./install.sh` fills an empty release pair from
+  `agent-release.env`. It preserves a complete explicit pair, so a local pin or
+  rollback is never replaced silently. A half-configured or mutable pair fails
+  before the platform starts.
 - **Logs**: `docker compose logs -f api` (or any other service).
 - Do not run this stack and the `infra/` development stack simultaneously;
   they intentionally share the compose project name.
@@ -98,3 +109,7 @@ public SaaS delivery test yet.
 - **fake-sftp platform warning on Apple Silicon** — the image is amd64-only
   and runs via emulation; the compose file declares `platform: linux/amd64`
   to make this explicit.
+- **`initpad-agent: command not found`** — do not install or invoke a host CLI.
+  Re-run `./install.sh` on the InitPad control-plane host, reopen **Manage
+  Agent**, and copy its complete `curl ... && sudo sh ...` command to the target
+  Docker server.

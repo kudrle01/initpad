@@ -102,8 +102,7 @@ export function AgentSetupDialog({
   const state = agent?.state ?? 'not-enrolled';
   const canQueueProbe = state === 'online' || state === 'offline';
   const insecureFlag = window.location.protocol === 'http:' ? ' --allow-insecure-http' : '';
-  const enrollCommand = `sudo initpad-agent enroll --url '${window.location.origin}'${insecureFlag}`;
-  const installerUrl = distribution
+  const installerUrl = distribution?.available
     ? new URL(distribution.installer.path, window.location.origin).toString()
     : null;
   const publishedHost =
@@ -262,11 +261,9 @@ export function AgentSetupDialog({
               <div className="min-w-0">
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {installCommand
-                      ? 'Install and enroll on the Docker server'
-                      : 'Enroll on the Docker server'}
+                    {installCommand ? 'Install and enroll on the Docker server' : 'Agent installer'}
                   </p>
-                  {installerUrl && (
+                  {installCommand && installerUrl && (
                     <Button asChild variant="ghost" size="sm">
                       <a href={installerUrl} download="initpad-agent-install.sh">
                         <Download className="h-3.5 w-3.5" /> Download installer
@@ -274,15 +271,37 @@ export function AgentSetupDialog({
                     </Button>
                   )}
                 </div>
-                <CopyField command={installCommand ?? enrollCommand} />
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {installCommand
-                    ? `The checksum and immutable Agent ${distribution?.version} image are verified before installation.`
-                    : (distribution?.unavailableReason ??
-                      distributionError ??
-                      'Loading Agent release information…')}{' '}
-                  The token is requested through a hidden prompt and never enters shell history.
-                </p>
+                {installCommand ? (
+                  <>
+                    <CopyField command={installCommand} />
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      The checksum and immutable Agent {distribution?.version} image are verified
+                      before installation. The token is requested through a hidden prompt and never
+                      enters shell history.
+                    </p>
+                  </>
+                ) : (
+                  <div
+                    className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm"
+                    role="status"
+                  >
+                    <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        {distribution || distributionError
+                          ? 'Agent installer is not configured'
+                          : 'Loading Agent release information…'}
+                      </p>
+                      {(distribution || distributionError) && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {distribution?.unavailableReason ?? distributionError}. Ask the instance
+                          administrator to run <code>deploy/install.sh</code>. Source-build lab
+                          users can enroll with <code>deploy/agent-lab.sh enroll</code>.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {currentTarget.routingMode === 'managed-gateway' && installCommand && (
                   <p className="mt-1.5 text-xs text-muted-foreground">
                     Managed gateway installations also need the target-local Caddy socket, gateway

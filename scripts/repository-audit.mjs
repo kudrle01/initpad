@@ -64,6 +64,7 @@ for (const path of requiredPublicDocs) {
 
 const executableOperations = [
   'deploy/install.sh',
+  'deploy/configure-agent-release.sh',
   'deploy/backup.sh',
   'deploy/restore.sh',
   'deploy/recovery-drill.sh',
@@ -204,11 +205,28 @@ for (const group of sourceGroups) {
   }
 }
 
-execFileSync('sh', ['-n', 'apps/agent/install.sh'], { cwd: root });
+for (const path of ['apps/agent/install.sh', 'deploy/configure-agent-release.sh']) {
+  execFileSync('sh', ['-n', path], { cwd: root });
+}
 const agentPackage = JSON.parse(readFileSync(resolve(root, 'apps/agent/package.json'), 'utf8'));
 for (const path of ['apps/agent/src/types.ts', 'apps/agent/Dockerfile']) {
   if (!(textFiles.get(path) ?? '').includes(agentPackage.version)) {
     failures.push(`${path}: does not carry Agent version ${agentPackage.version}`);
+  }
+}
+
+const agentReleaseChannelPath = 'deploy/agent-release.env';
+if (!tracked.has(agentReleaseChannelPath)) {
+  failures.push(`${agentReleaseChannelPath}: reviewed Agent release channel is missing`);
+} else {
+  const channel = textFiles.get(agentReleaseChannelPath) ?? '';
+  const image = channel.match(/^INITPAD_AGENT_IMAGE=(.+)$/m)?.[1] ?? '';
+  const version = channel.match(/^INITPAD_AGENT_RELEASE_VERSION=(.+)$/m)?.[1] ?? '';
+  if (!/^[^\s]+@sha256:[a-f0-9]{64}$/.test(image)) {
+    failures.push(`${agentReleaseChannelPath}: Agent image is not an immutable OCI digest`);
+  }
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    failures.push(`${agentReleaseChannelPath}: Agent version is not a stable semantic version`);
   }
 }
 

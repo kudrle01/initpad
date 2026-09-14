@@ -46,6 +46,11 @@ set_env() {
   chmod 600 .env
 }
 
+# A normal self-hosted installation should immediately offer the reviewed,
+# checksum-verified Agent installer. Preserve a complete operator override,
+# but populate blank fresh/legacy environments from the versioned release pair.
+./configure-agent-release.sh
+
 # Upgrade existing installations from the former global CI token. It is now
 # used only for the Gitea system webhook; repository CI credentials are
 # rotated independently by the API on startup.

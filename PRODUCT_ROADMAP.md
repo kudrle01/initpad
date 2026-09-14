@@ -839,7 +839,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
        OCI image, token čte jen skrytě z terminálu, zachovává `0600`
        identitu, instaluje omezený restartovatelný kontejner a při chybné
        aktualizaci obnoví předchozí verzi (ADR-092). Bez
-       `INITPAD_AGENT_IMAGE` se produkční instalace v UI záměrně neaktivuje.
+       Běžná self-hosted instalace přebírá schválenou release dvojici z
+       verzovaného `deploy/agent-release.env`; explicitní pin instalátor
+       nepřepisuje. UI nikdy nenabízí neexistující hostitelskou binárku a při
+       chybějící distribuci ukáže konkrétní postup pro správce nebo lab.
      - ◐ **8e-d-b — skutečné vydání.**
        - ✅ **8e-d-b1 — reprodukovatelná release pipeline.** Tag shodný s
          verzí Agenta spustí gate, sestaví jeden GHCR OCI index pro
