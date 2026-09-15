@@ -24,6 +24,7 @@ function environment(
     statusReason,
     deploymentRequired: false,
     artifact: null,
+    workspaceAccessStatus: null,
     target: null,
   };
 }

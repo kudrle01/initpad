@@ -11,7 +11,9 @@ import { ScmKind } from '../scm/scm-provider';
 import { withCurrentPublicHost } from '../common/public-url';
 
 export type ProjectRow = Prisma.ProjectGetPayload<{
-  include: { environments: { include: { target: true; buildArtifact: true } } };
+  include: {
+    environments: { include: { target: true; allocation: true; buildArtifact: true } };
+  };
 }>;
 
 /** Maps the persistence model to the stable project API contract. */
@@ -60,6 +62,11 @@ export function projectView(row: ProjectRow, publicHost: string): Project {
               runId: environment.buildArtifact.providerRunId,
             }
           : null,
+        workspaceAccessStatus:
+          environment.allocation?.status === 'active' ||
+          environment.allocation?.status === 'disabled'
+            ? environment.allocation.status
+            : null,
         target: environment.target
           ? {
               id: environment.target.id,

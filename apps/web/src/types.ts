@@ -294,6 +294,7 @@ export interface Environment {
   expiresAt?: string | null;
   expiryWarningAt?: string | null;
   artifact: { id: string; provider: string; digest: string; runId: string } | null;
+  workspaceAccessStatus: 'active' | 'disabled' | null;
   target: EnvTarget | null;
 }
 

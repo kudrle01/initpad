@@ -122,6 +122,10 @@ export interface Environment {
     digest: string;
     runId: string;
   } | null;
+  // Workspace permission to use the bound physical target. This is separate
+  // from target.managementState: pausing access blocks new publications but
+  // does not imply that the server or an existing workload disappeared.
+  workspaceAccessStatus: 'active' | 'disabled' | null;
   // The target this environment deploys to (built-in infra or the user's own
   // server). Null only for legacy rows created before a target was assigned.
   target: EnvTarget | null;

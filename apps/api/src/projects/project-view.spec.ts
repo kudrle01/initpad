@@ -34,6 +34,7 @@ function row(): ProjectRow {
           scope: 'user',
           host: 'sftp.example.test',
         },
+        allocation: { status: 'disabled' },
         buildArtifact: null,
       },
       {
@@ -52,6 +53,7 @@ function row(): ProjectRow {
           scope: 'builtin',
           host: null,
         },
+        allocation: { status: 'active' },
         buildArtifact: {
           id: 'artifact-1',
           sourceProvider: 'github-actions',
@@ -104,5 +106,16 @@ describe('projectView', () => {
       digest: 'd'.repeat(64),
       runId: '77',
     });
+  });
+
+  it('keeps workspace access separate from physical target management state', () => {
+    const project = projectView(row(), 'initpad.example.test');
+
+    expect(project.environments.find(({ name }) => name === 'dev')?.workspaceAccessStatus).toBe(
+      'active',
+    );
+    expect(project.environments.find(({ name }) => name === 'prod')?.workspaceAccessStatus).toBe(
+      'disabled',
+    );
   });
 });

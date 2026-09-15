@@ -107,6 +107,7 @@ export function EnvironmentPipeline({
           busy === null &&
           env.status === 'running' &&
           !synced &&
+          target?.workspaceAccessStatus !== 'disabled' &&
           !(
             target?.target?.scope === 'user' &&
             (target.target.managementState ?? 'active') !== 'active'
@@ -140,11 +141,13 @@ export function EnvironmentPipeline({
         const targetUnavailable = Boolean(
           env.target?.scope === 'user' && (env.target.managementState ?? 'active') !== 'active',
         );
+        const workspaceAccessPaused = env.workspaceAccessStatus === 'disabled';
         const targetAcceptsManagement = !targetUnavailable;
+        const targetAcceptsDeployments = targetAcceptsManagement && !workspaceAccessPaused;
         const canDeployToTarget =
-          targetAcceptsManagement && targetNeedsDeploy && (!!env.version || env.name === 'dev');
+          targetAcceptsDeployments && targetNeedsDeploy && (!!env.version || env.name === 'dev');
         const canRunAgain =
-          targetAcceptsManagement &&
+          targetAcceptsDeployments &&
           env.name === 'dev' &&
           !env.version &&
           (env.status === 'empty' || env.status === 'failed') &&
@@ -211,7 +214,7 @@ export function EnvironmentPipeline({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
-                          {hasFailedGitHubJobs && targetAcceptsManagement && (
+                          {hasFailedGitHubJobs && targetAcceptsDeployments && (
                             <DropdownMenuItem onSelect={onRerunFailedJobs}>
                               <RefreshCw className="h-4 w-4" /> Re-run failed GitHub jobs
                             </DropdownMenuItem>
@@ -229,7 +232,7 @@ export function EnvironmentPipeline({
                               <Play className="h-4 w-4" /> Deploy
                             </DropdownMenuItem>
                           )}
-                          {hasDeployment && targetAcceptsManagement && !targetNeedsDeploy && (
+                          {hasDeployment && targetAcceptsDeployments && !targetNeedsDeploy && (
                             <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
                               <RefreshCw className="h-4 w-4" />
                               {env.name === 'prod'
@@ -239,6 +242,7 @@ export function EnvironmentPipeline({
                           )}
                           {hasDeployment &&
                             targetAcceptsManagement &&
+                            !workspaceAccessPaused &&
                             canRollback &&
                             !targetNeedsDeploy && (
                               <DropdownMenuItem onSelect={() => onRollback(env.name)}>
@@ -342,10 +346,33 @@ export function EnvironmentPipeline({
                 </div>
               )}
 
+              {workspaceAccessPaused && (
+                <div className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-foreground">
+                  <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                  <span>
+                    Workspace access is paused. Existing workloads remain manageable, but deploy,
+                    redeploy and rollback are unavailable.{' '}
+                    <Link to="/infrastructure" className="text-link font-medium">
+                      Manage access
+                    </Link>
+                    .
+                  </span>
+                </div>
+              )}
+
               {targetNeedsDeploy && (
-                <div className="mt-2 flex items-start gap-1 text-xs text-primary">
+                <div
+                  className={cn(
+                    'mt-2 flex items-start gap-1 text-xs',
+                    workspaceAccessPaused ? 'text-warning' : 'text-primary',
+                  )}
+                >
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>Target changed — deploy to apply it.</span>
+                  <span>
+                    {workspaceAccessPaused
+                      ? 'Target change pending — resume workspace access before deploying.'
+                      : 'Target changed — deploy to apply it.'}
+                  </span>
                 </div>
               )}
 
@@ -406,15 +433,17 @@ export function EnvironmentPipeline({
                 </div>
               )}
 
-              {env.status === 'failed' && env.statusReason && (
-                <Link
-                  to={deploymentHistoryUrl}
-                  className="mt-2 flex items-center gap-1 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                >
-                  <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
-                  <History className="h-3 w-3 shrink-0" />
-                </Link>
-              )}
+              {env.status === 'failed' &&
+                env.statusReason &&
+                !(workspaceAccessPaused && /workspace access.+paused/i.test(env.statusReason)) && (
+                  <Link
+                    to={deploymentHistoryUrl}
+                    className="mt-2 flex items-center gap-1 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
+                    <History className="h-3 w-3 shrink-0" />
+                  </Link>
+                )}
 
               {expiryWarning && env.expiresAt && (
                 <div className="mt-2 flex items-start gap-1 text-xs text-warning">
@@ -460,7 +489,12 @@ export function EnvironmentPipeline({
                           ? next === 'prod'
                             ? `Request v${env.version} from ${env.name} for production`
                             : `Deploy v${env.version} from ${env.name} to ${next}`
-                          : `Deploy to ${env.name} first`
+                          : target?.workspaceAccessStatus === 'disabled'
+                            ? `Resume workspace access before deploying to ${next}`
+                            : target?.target?.scope === 'user' &&
+                                (target.target.managementState ?? 'active') !== 'active'
+                              ? `Reconnect the ${next} server before deploying`
+                              : `Deploy to ${env.name} first`
                       }
                       className={cn(
                         'flex h-9 w-9 items-center justify-center rounded-full border transition-colors',

@@ -311,7 +311,9 @@ export class ProjectsService {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const rows = await this.prisma.project.findMany({
       where: { workspaceId },
-      include: { environments: { include: { target: true, buildArtifact: true } } },
+      include: {
+        environments: { include: { target: true, allocation: true, buildArtifact: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
     // SCM reconciliation is maintenance, not part of the user-facing read.
@@ -331,7 +333,9 @@ export class ProjectsService {
   async get(id: string): Promise<Project> {
     const row = await this.prisma.project.findUnique({
       where: { id },
-      include: { environments: { include: { target: true, buildArtifact: true } } },
+      include: {
+        environments: { include: { target: true, allocation: true, buildArtifact: true } },
+      },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
     return projectView(row, config.publicHost);
