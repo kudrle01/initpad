@@ -37,7 +37,7 @@ není hotový produkční profil. InitPad Agent už umí bezpečný outbound enr
 heartbeat, obnovitelné joby, diagnostiku a celý Docker lifecycle nad ověřeným
 artefaktem bez obecného shellu. Produkční gateway režim navíc poskytuje stabilní
 HTTPS adresu a health-gated přepnutí s rollbackem. Podepsaný multi-arch Agent
-0.12.0 je veřejně distribuovaný immutable digestem a self-hosted instalátor jej
+0.12.1 je veřejně distribuovaný immutable digestem a self-hosted instalátor jej
 automaticky nabídne správci serveru. Před veřejným provozem zbývá dokončit
 čistý Linux acceptance a ověřit celý SaaS profil se živou GitHub App.
 Původní source-based SSH runtime je pouze migrační legacy konektor: existující

@@ -4679,3 +4679,26 @@ Agent testy musí projít. Živě se nejprve ověří úspěšný update s platn
 credentialem, potom zneplatněná testovací identita: defaultní příkaz nesmí
 změnit config ani kontejner a `--re-enroll` s novým tokenem musí target vrátit
 online.
+
+---
+
+## ADR-109 — Self-hosted distribuční kanál povyšuje Agent 0.12.1
+
+**Kontext.** Recovery odmítnuté identity z ADR-108 byla vydána tagem
+`agent-v0.12.1`. Samotný úspěšný workflow ani pohyblivý version tag nejsou
+dostatečný podklad pro změnu instalátoru nabízeného správcům targetů.
+
+**Rozhodnutí.** Distribuční dvojice se povyšuje na verzi `0.12.1` a immutable
+OCI index
+`ghcr.io/kudrle01/initpad-agent@sha256:5cdf2e08904138b3160bda808632fc1982f74750ef9d4c6840a29cba8c7c8c4f`.
+GitHub release vznikl z přesného commitu
+`f92a95829fecd3bb84196057d061d7c97e37ad5d`; lokální kontrola ověřila release
+manifest, všechny SHA-256 součty, Sigstore bundle manifestu i checksumů a
+Cosign podpis OCI digestu proti identitě tagového release workflow.
+
+**Důsledky.** Nové i aktualizované self-hosted instalace nabídnou 0.12.1 bez
+mutable tagu. Živě prošlo bezpečné odmítnutí starého credentialu, explicitní
+re-enrollment, heartbeat, Docker lifecycle i nasazení workloadu. Plný
+clean-host runbook včetně rebootu a rollbacku úmyslně vadného candidate image
+zůstává samostatným produkčním gate; tato propagace jej nepředstírá jako
+dokončený.

@@ -327,12 +327,14 @@ nezobrazí falešný empty/error stav.
    Docker socketu, deklarativní reconcile a health-gated atomické přepnutí
    routy. Podrobný kontrakt a bezpečnostní hranice jsou v ADR-073.
 
-10. ◐ **Bezpečná obnova odmítnuté identity.** Agent 0.12.1 před upgradem
+10. ✅ **Bezpečná obnova odmítnuté identity.** Agent 0.12.1 před upgradem
     ověří uložený credential novým image ještě před zastavením starého
     kontejneru. Odmítnutá identita se nikdy tiše nepřepíše; instalátor skončí
     beze změny a odkáže na explicitní `--re-enroll` s novým jednorázovým
-    tokenem. Implementace a automatické kontroly jsou hotové, zbývá vydat
-    podepsaný 0.12.1 image a živě ověřit defaultní fail-safe i recovery větev.
+    tokenem. Podepsaný multiarch release, checksum a Cosign identity byly
+    nezávisle ověřené. Živý test potvrdil defaultní fail-safe beze změny
+    kontejneru i configu, explicitní recovery, online heartbeat a následný
+    Docker lifecycle.
 
    ✅ **8a — explicitní režim targetu.** Databáze, API a UI rozlišují
    `direct-port` a `managed-gateway`. Existující instalace se migrují beze změny
@@ -864,14 +866,15 @@ jen konkrétní provozní a vyhodnocovací scénář.
          cizí Actions jsou připnuté na commit SHA.
        - ◐ **8e-d-b2 — publikace a živá acceptance.** Tagy `agent-v*` chrání
          aktivní GitHub ruleset; první release `agent-v0.11.0` ověřil proces a
-         aktuální release `agent-v0.12.0` úspěšně vydal
+         aktuální release `agent-v0.12.1` úspěšně vydal
          podepsaný multiarch image
-         `ghcr.io/kudrle01/initpad-agent@sha256:3ca94126304cf4989a5071e4226c064870c770e32c0d481574dba0e22c05e395`,
+         `ghcr.io/kudrle01/initpad-agent@sha256:5cdf2e08904138b3160bda808632fc1982f74750ef9d4c6840a29cba8c7c8c4f`,
          instalační skript, manifest, SBOM a kontrolní součty. Lokální kontrola
          manifest checksumu a Cosign identity prošla, GHCR package je veřejný a
          anonymní registry probe potvrdil shodný digest i obě cílové platformy.
          Release dvojice je nastavená v lokálním kandidátovi; distribuční API
-         servíruje Agent 0.12.0 s allocation-scoped Docker prostředky a
+         servíruje Agent 0.12.1 s allocation-scoped Docker prostředky,
+         bezpečným recovery neplatné identity a
          instalátor se shodným podepsaným checksumem. Zbývá na
          samostatném čistém Linux hostu ověřit instalaci, reboot, update,
          rollback vadného obrazu a zachování workloadů po odpojení Agenta.

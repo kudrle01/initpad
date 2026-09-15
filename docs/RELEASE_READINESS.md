@@ -16,7 +16,7 @@ služba připravená pro veřejný produkční provoz.
 - Outbound Agent protokol s enrollmentem, rotací credentials, lease fencingem,
   diagnostikou, resource limity a stabilní gateway routou.
 - Reprodukovatelná repository gate, immutable container references a první
-  podepsané multiarch vydání Agenta 0.12.0.
+  podepsané multiarch vydání Agenta 0.12.1.
 - Strukturované redigované logy a korelace request → operation → Agent job
   → workload.
 - PostgreSQL-backed per-IP a per-account rate limit sdílený všemi API
@@ -67,10 +67,10 @@ samostatně udržované privátní S3-compatible úložiště a nacvičenou obno
 
 ### Agent 0.12 je veřejně distribuovaný, ale čeká na host acceptance
 
-Release [`agent-v0.12.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.12.0)
-vznikl z commitu `845e55c9678e669f387795586053957a24b03b6d` a obsahuje
+Release [`agent-v0.12.1`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.12.1)
+vznikl z commitu `f92a95829fecd3bb84196057d061d7c97e37ad5d` a obsahuje
 image
-`ghcr.io/kudrle01/initpad-agent@sha256:3ca94126304cf4989a5071e4226c064870c770e32c0d481574dba0e22c05e395`
+`ghcr.io/kudrle01/initpad-agent@sha256:5cdf2e08904138b3160bda808632fc1982f74750ef9d4c6840a29cba8c7c8c4f`
 pro `linux/amd64` a `linux/arm64`. Release workflow ověřil Cosign podpis image
 i všech stažitelných souborů; následná lokální kontrola manifestu a jeho GitHub
 checksumu prošla a samostatné Cosign ověření potvrdilo přesnou workflow
@@ -79,9 +79,12 @@ vytvořením, změnou nebo smazáním bez výjimky release správce.
 
 GHCR package je veřejný. Anonymní registry požadavek vrátil `200`, shodný
 immutable digest a OCI index pro `linux/amd64` i `linux/arm64`. Lokální release
-kandidát používá dvojici tohoto digestu a verze `0.12.0`; distribuční API ji
+kandidát používá dvojici tohoto digestu a verze `0.12.1`; distribuční API ji
 označuje jako dostupnou a servírovaný instalátor se shoduje s podepsaným
-checksumem release. Dokud neproběhne čistá Linux lifecycle acceptance, nejde
+checksumem release. Živý recovery test nejprve potvrdil, že odmítnutý uložený
+credential nezmění config ani kontejner, a explicitní `--re-enroll` následně
+vrátil target online; protocol, Docker lifecycle a reálný workload poté prošly.
+Dokud neproběhne celý clean-host runbook včetně rebootu a vadného update image, nejde
 vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
