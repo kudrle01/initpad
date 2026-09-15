@@ -116,6 +116,9 @@ export function AgentSetupDialog({
   const currentTarget = target;
   const state = agent?.state ?? 'not-enrolled';
   const canQueueProbe = state === 'online' || state === 'offline';
+  const canUpdateExistingAgent = Boolean(
+    agent && agent.credentialGeneration > 0 && (state === 'online' || state === 'offline'),
+  );
   const insecureFlag = window.location.protocol === 'http:' ? ' --allow-insecure-http' : '';
   const installerUrl = distribution?.available
     ? new URL(distribution.installer.path, window.location.origin).toString()
@@ -129,6 +132,7 @@ export function AgentSetupDialog({
       ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${distribution.image}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
       : null;
   const reEnrollCommand = installCommand ? `${installCommand} --re-enroll` : null;
+  const desiredAgentVersion = distribution?.version ?? null;
 
   async function issueEnrollment() {
     if (enrollment || agent?.enrollmentPending) {
@@ -353,6 +357,73 @@ export function AgentSetupDialog({
                   </p>
                 )}
               </div>
+            </div>
+          ) : canUpdateExistingAgent ? (
+            <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-secondary/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {installCommand && desiredAgentVersion && agent?.version === desiredAgentVersion
+                      ? `Agent ${desiredAgentVersion} matches this instance's reviewed release`
+                      : `Update Agent${desiredAgentVersion ? ` to ${desiredAgentVersion}` : ''}`}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    The existing server identity is verified and preserved. No new enrollment token
+                    is required.
+                  </p>
+                </div>
+                {installCommand && installerUrl && (
+                  <Button asChild variant="ghost" size="sm">
+                    <a
+                      href={installerUrl}
+                      download="initpad-agent-install.sh"
+                      title="Downloads the script without running it"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Download script only
+                    </a>
+                  </Button>
+                )}
+              </div>
+              {installCommand ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Copy and run this command in an interactive terminal on the Docker server.
+                  </p>
+                  <CopyField command={installCommand} />
+                  <p className="text-xs text-muted-foreground">
+                    The installer verifies the checksum, immutable image and saved credential before
+                    replacing the running container. If the new Agent cannot heartbeat, it restores
+                    the previous container.
+                  </p>
+                  {window.location.protocol === 'http:' && (
+                    <p className="flex items-start gap-1.5 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-foreground">
+                      <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                      HTTP is suitable only for a trusted local test network. Use HTTPS in
+                      production.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div
+                  className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm"
+                  role="status"
+                >
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {distribution || distributionError
+                        ? 'Agent installer is not configured'
+                        : 'Loading Agent release information…'}
+                    </p>
+                    {(distribution || distributionError) && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {distribution?.unavailableReason ?? distributionError}. Ask the instance
+                        administrator to update the reviewed Agent release.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border border-border bg-secondary/20 p-3 text-sm text-muted-foreground">

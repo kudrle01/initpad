@@ -3,7 +3,13 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentDistribution, AgentEnrollment, AgentJobSummary, Target } from '@/types';
+import type {
+  AgentDistribution,
+  AgentEnrollment,
+  AgentJobSummary,
+  AgentStatus,
+  Target,
+} from '@/types';
 import { api } from '@/api';
 import { ConfirmationProvider } from '@/confirmation';
 import { AgentSetupDialog } from './AgentSetupDialog';
@@ -52,18 +58,22 @@ const enrollment: AgentEnrollment = {
   disabledAt: null,
 };
 
-function renderDialog(jobs: AgentJobSummary[] = []) {
+function renderDialog(
+  jobs: AgentJobSummary[] = [],
+  agentStatus: AgentStatus | null = enrollment,
+  currentEnrollment: AgentEnrollment | null = enrollment,
+) {
   render(
     <ConfirmationProvider>
       <AgentSetupDialog
         open
         target={target}
-        agent={enrollment}
+        agent={agentStatus}
         jobs={jobs}
         protocolError={null}
         testBusy={null}
         busy={false}
-        enrollment={enrollment}
+        enrollment={currentEnrollment}
         onOpenChange={() => undefined}
         onIssueEnrollment={() => undefined}
         onDisable={() => undefined}
@@ -109,6 +119,42 @@ describe('AgentSetupDialog distribution', () => {
       'Downloads the script without running it',
     );
     expect(screen.queryByText(/sudo initpad-agent enroll/)).not.toBeInTheDocument();
+  });
+
+  it('shows an identity-preserving update command without generating enrollment', async () => {
+    const release: AgentDistribution = {
+      available: true,
+      version: '0.12.1',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      unavailableReason: null,
+      installer: {
+        path: '/api/agent/distribution/install.sh',
+        sha256: 'd'.repeat(64),
+      },
+    };
+    vi.mocked(api.getAgentDistribution).mockResolvedValue(release);
+
+    renderDialog(
+      [],
+      {
+        ...enrollment,
+        state: 'online',
+        enrollmentPending: false,
+        credentialGeneration: 1,
+        credentialActivatedAt: '2026-09-15T12:00:00.000Z',
+        version: '0.12.0',
+        enrolledAt: '2026-09-15T12:00:00.000Z',
+        lastSeenAt: '2026-09-15T12:01:00.000Z',
+      },
+      null,
+    );
+
+    expect(await screen.findByText('Update Agent to 0.12.1')).toBeInTheDocument();
+    expect(screen.getByText(/No new enrollment token is required/i)).toBeInTheDocument();
+    const commands = screen.getAllByText(/curl -fsSLo initpad-agent-install\.sh/);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toHaveTextContent(release.image!);
+    expect(commands[0]).not.toHaveTextContent('--re-enroll');
   });
 
   it('never suggests a host binary when distribution is unavailable', async () => {
