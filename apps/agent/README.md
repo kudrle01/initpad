@@ -43,8 +43,12 @@ Agent**, not copy this source file and not invoke a host-level `initpad-agent`
 binary. The command requires only Docker Engine on Linux, uses host networking
 only for the Agent process, mounts the local Docker socket and stores identity
 in `/var/lib/initpad-agent`. The downloaded script accepts `--help` for optional
-direct-port hostname, private Caddy socket and private CA parameters. Those
-local gateway details deliberately do not come from a control-plane job.
+direct-port hostname, private Caddy socket, private CA and explicit
+`--re-enroll` recovery parameters. A normal update verifies the saved identity
+before stopping the old Agent. It never replaces a rejected credential
+silently; `--re-enroll` requires a new short-lived token and is reserved for a
+disconnected, recreated or restored target. Those local details deliberately
+do not come from a control-plane job.
 
 ## Local acceptance without a VM
 

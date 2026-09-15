@@ -113,6 +113,7 @@ export function AgentSetupDialog({
     distribution?.available && distribution.image && installerUrl
       ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${distribution.image}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
       : null;
+  const reEnrollCommand = installCommand ? `${installCommand} --re-enroll` : null;
 
   async function issueEnrollment() {
     if (enrollment || agent?.enrollmentPending) {
@@ -283,9 +284,23 @@ export function AgentSetupDialog({
                     <CopyField command={installCommand} />
                     <p className="mt-1.5 text-xs text-muted-foreground">
                       It verifies the checksum and immutable Agent {distribution?.version} image,
-                      requests the token through a hidden prompt, then starts and health-checks the
-                      Agent. The token never enters shell history.
+                      verifies any saved identity, then starts and health-checks the Agent. A new
+                      server requests the token through a hidden prompt, so it never enters shell
+                      history.
                     </p>
+                    {reEnrollCommand && (
+                      <details className="mt-2 rounded-md border border-border bg-secondary/20 p-2.5 text-xs">
+                        <summary className="cursor-pointer font-medium text-foreground">
+                          Replace an invalid existing identity
+                        </summary>
+                        <p className="mb-2 mt-1.5 text-muted-foreground">
+                          Use this only if verification says the saved credential was rejected, or
+                          when reconnecting a server from a deleted or restored target. It replaces
+                          the old identity using the enrollment token above.
+                        </p>
+                        <CopyField command={reEnrollCommand} />
+                      </details>
+                    )}
                     {window.location.protocol === 'http:' && (
                       <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-foreground">
                         <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />

@@ -95,9 +95,12 @@ describe('AgentSetupDialog distribution', () => {
     renderDialog();
 
     expect(await screen.findByText(/immutable Agent 0\.11\.0 image/i)).toBeInTheDocument();
-    expect(screen.getByText(/curl -fsSLo initpad-agent-install\.sh/)).toHaveTextContent(
-      release.image!,
-    );
+    const commands = screen.getAllByText(/curl -fsSLo initpad-agent-install\.sh/);
+    expect(commands).toHaveLength(2);
+    expect(commands[0]).toHaveTextContent(release.image!);
+    expect(commands[0]).not.toHaveTextContent('--re-enroll');
+    expect(commands[1]).toHaveTextContent('--re-enroll');
+    expect(screen.getByText(/replace an invalid existing identity/i)).toBeInTheDocument();
     expect(
       screen.getByText(/copy and run this command in an interactive terminal/i),
     ).toBeInTheDocument();

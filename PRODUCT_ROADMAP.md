@@ -327,6 +327,13 @@ nezobrazí falešný empty/error stav.
    Docker socketu, deklarativní reconcile a health-gated atomické přepnutí
    routy. Podrobný kontrakt a bezpečnostní hranice jsou v ADR-073.
 
+10. ◐ **Bezpečná obnova odmítnuté identity.** Agent 0.12.1 před upgradem
+    ověří uložený credential novým image ještě před zastavením starého
+    kontejneru. Odmítnutá identita se nikdy tiše nepřepíše; instalátor skončí
+    beze změny a odkáže na explicitní `--re-enroll` s novým jednorázovým
+    tokenem. Implementace a automatické kontroly jsou hotové, zbývá vydat
+    podepsaný 0.12.1 image a živě ověřit defaultní fail-safe i recovery větev.
+
    ✅ **8a — explicitní režim targetu.** Databáze, API a UI rozlišují
    `direct-port` a `managed-gateway`. Existující instalace se migrují beze změny
    chování; produkční režim vyžaduje čistý HTTPS DNS origin a do dokončení

@@ -11,6 +11,7 @@ PUBLISHED_HOST=
 GATEWAY_ADMIN_SOCKET=
 GATEWAY_CONTAINER=
 CA_FILE=
+REENROLL=false
 
 usage() {
   cat <<'EOF'
@@ -29,6 +30,7 @@ Options:
   --gateway-admin-socket PATH  Private local Caddy admin Unix socket
   --gateway-container NAME     Labeled local Caddy gateway container
   --ca-file PATH               Private CA certificate trusted by the Agent
+  --re-enroll                  Replace a stale/revoked identity using a new token
   -h, --help                   Show this help
 
 The enrollment token is requested by the Agent through a hidden terminal
@@ -81,6 +83,10 @@ while [ "$#" -gt 0 ]; do
       require_value "$@"
       CA_FILE=$2
       shift 2
+      ;;
+    --re-enroll)
+      REENROLL=true
+      shift
       ;;
     -h|--help)
       usage
@@ -187,7 +193,10 @@ run_agent_container() {
 }
 
 CONFIG_FILE=$DATA_DIR/agent.json
-if [ ! -f "$CONFIG_FILE" ]; then
+if [ ! -f "$CONFIG_FILE" ] || [ "$REENROLL" = true ]; then
+  if [ -f "$CONFIG_FILE" ]; then
+    printf '\nReplacing the existing Agent identity. The old credential will be revoked.\n'
+  fi
   printf '\nPaste the single-use enrollment token when prompted.\n'
   if [ "$ALLOW_INSECURE_HTTP" = true ]; then
     run_agent_container --rm -it "$IMAGE" \
@@ -198,6 +207,11 @@ if [ ! -f "$CONFIG_FILE" ]; then
   fi
 else
   printf 'Keeping the existing Agent identity in %s.\n' "$CONFIG_FILE"
+  if ! identity_check=$(run_agent_container --rm "$IMAGE" once 2>&1); then
+    printf '%s\n' "$identity_check" >&2
+    fail 'the existing Agent identity was rejected or could not reach its control plane; nothing was changed. If this target was disconnected, recreated or restored from another database, generate a new enrollment token and rerun this command with --re-enroll'
+  fi
+  printf 'Existing Agent identity verified.\n'
 fi
 
 PREVIOUS_CONTAINER=${CONTAINER_NAME}-previous

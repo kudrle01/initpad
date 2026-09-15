@@ -144,6 +144,13 @@ control plane and copy the newly generated installer command. Running it on the
 same host must preserve the identity and workloads, report the new version and
 remove the previous Agent container only after the first new heartbeat succeeds.
 
+Before stopping the old container, the installer must verify the saved identity
+with the candidate image. Test a revoked credential separately: the default
+update must stop without changing either container or config and must instruct
+the operator to issue a fresh enrollment and use `--re-enroll`. That explicit
+path must redeem a new token, replace the identity and return the target online;
+it is recovery evidence, not a successful identity-preserving upgrade.
+
 ## Acceptance result
 
 The release passes only when sections 1–4 pass on a clean host. Record section 5

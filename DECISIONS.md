@@ -4647,3 +4647,35 @@ ownership fence na novém jménu, ignorování cizího legacy kontejneru, migrac
 vlastního legacy direct-port workloadu a kompatibilitu starší managed-gateway
 sítě i revision containeru. Živá acceptance musí po upgradu Agenta zopakovat
 deploy do nové allocation při současné existenci starého workloadu.
+
+---
+
+## ADR-108 — Upgrade Agenta ověřuje identitu před zastavením a re-enrollment je explicitní
+
+**Kontext.** Instalátor při existenci `/var/lib/initpad-agent/agent.json`
+automaticky zachoval credential a zastavil starý kontejner ještě před prvním
+heartbeat kandidáta. To je správné pro platný upgrade, ale zrušený target,
+obnovená jiná databáze nebo přesun mezi control planes zanechá na hostu formálně
+platný, serverem však neznámý credential. Výsledkem byl až pozdní HTTP 401,
+obecná hláška a rollback na kontejner, jehož identita už také nemusí fungovat.
+
+**Rozhodnutí.** Běžný upgrade spustí candidate image jednorázově se stávajícím
+credentialem ještě před změnou kontejnerů. Při jakémkoli selhání preflightu
+instalátor vypíše omezenou chybu, ponechá config i starý kontejner nedotčený a
+skončí. Identitu smí nahradit pouze explicitní `--re-enroll`; tato větev znovu
+vyžádá krátkodobý token skrytým interaktivním promptem a po jeho redeem použije
+stejný health-gated container rollback. UI ji ukáže jako oddělenou recovery
+volbu, nikoli výchozí update.
+
+**Důsledky.** Síťový výpadek ani omylem použitý command z jiného targetu
+nezastaví funkčního Agenta a nikdy nepřepíše secret bez výslovného rozhodnutí
+správce. Re-enrollment záměrně revokuje předchozí credential generation; nejde
+proto vydávat za identity-preserving upgrade ani použít k obejití acceptance
+gatu. Starší workloady nejsou součástí změny a zůstávají nedotčené.
+
+**Testování.** CLI a komponentový kontrakt ověřují dostupnost pouze explicitní
+recovery volby a oddělené příkazy. Shell syntax, kompletní repository gate a
+Agent testy musí projít. Živě se nejprve ověří úspěšný update s platným
+credentialem, potom zneplatněná testovací identita: defaultní příkaz nesmí
+změnit config ani kontejner a `--re-enroll` s novým tokenem musí target vrátit
+online.
