@@ -55,6 +55,21 @@ function hasExpiredLease(job: AgentJobSummary, now = Date.now()): boolean {
   );
 }
 
+function agentJobMessage(job: AgentJobSummary, leaseExpired: boolean): string {
+  if (leaseExpired) {
+    return 'Lease expired. Waiting for the Agent to reconnect and retry automatically.';
+  }
+  if (
+    job.kind === 'lifecycle-test' &&
+    job.status === 'failed' &&
+    job.progressPercent <= 8 &&
+    job.message === 'Docker API timed out'
+  ) {
+    return 'The diagnostic image pull timed out. Docker may have cached partial layers; verify registry access and run Test Docker again.';
+  }
+  return job.message ?? job.progressStage;
+}
+
 function formatMemory(bytes: number): string {
   const gibibytes = bytes / 1024 ** 3;
   return `${gibibytes >= 10 ? gibibytes.toFixed(0) : gibibytes.toFixed(1)} GiB`;
@@ -525,9 +540,7 @@ export function AgentSetupDialog({
                 {jobs.slice(0, 3).map((job) => {
                   const leaseExpired = hasExpiredLease(job);
                   const displayStatus = leaseExpired ? 'waiting' : job.status;
-                  const displayMessage = leaseExpired
-                    ? 'Lease expired. Waiting for the Agent to reconnect and retry automatically.'
-                    : (job.message ?? job.progressStage);
+                  const displayMessage = agentJobMessage(job, leaseExpired);
                   return (
                     <div key={job.id} className="rounded-md bg-secondary/30 p-2.5">
                       <div className="flex items-center justify-between gap-2 text-xs">

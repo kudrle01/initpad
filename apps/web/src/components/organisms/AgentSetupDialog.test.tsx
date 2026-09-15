@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentDistribution, AgentEnrollment, Target } from '@/types';
+import type { AgentDistribution, AgentEnrollment, AgentJobSummary, Target } from '@/types';
 import { api } from '@/api';
 import { ConfirmationProvider } from '@/confirmation';
 import { AgentSetupDialog } from './AgentSetupDialog';
@@ -52,14 +52,14 @@ const enrollment: AgentEnrollment = {
   disabledAt: null,
 };
 
-function renderDialog() {
+function renderDialog(jobs: AgentJobSummary[] = []) {
   render(
     <ConfirmationProvider>
       <AgentSetupDialog
         open
         target={target}
         agent={enrollment}
-        jobs={[]}
+        jobs={jobs}
         protocolError={null}
         testBusy={null}
         busy={false}
@@ -129,5 +129,38 @@ describe('AgentSetupDialog distribution', () => {
     expect(screen.getByText(/No reviewed Agent release is selected/)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /download script only/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/sudo initpad-agent enroll/)).not.toBeInTheDocument();
+  });
+
+  it('turns a first diagnostic pull timeout into an actionable retry message', () => {
+    vi.mocked(api.getAgentDistribution).mockResolvedValue({
+      available: false,
+      version: '0.12.1',
+      image: null,
+      unavailableReason: 'Not relevant to this test',
+      installer: { path: '/api/agent/distribution/install.sh', sha256: 'b'.repeat(64) },
+    });
+
+    renderDialog([
+      {
+        id: 'job-1',
+        correlationId: 'correlation-1',
+        kind: 'lifecycle-test',
+        status: 'failed',
+        attempt: 1,
+        progressSequence: 1,
+        progressPercent: 8,
+        progressStage: 'working',
+        message: 'Docker API timed out',
+        resultCode: 'lifecycle_failed',
+        createdAt: '2026-09-15T12:00:00.000Z',
+        leasedAt: '2026-09-15T12:00:01.000Z',
+        leaseExpiresAt: null,
+        finishedAt: '2026-09-15T12:02:01.000Z',
+      },
+    ]);
+
+    expect(
+      screen.getByText(/diagnostic image pull timed out.+run Test Docker again/i),
+    ).toBeInTheDocument();
   });
 });
