@@ -341,7 +341,11 @@ nezobrazí falešný empty/error stav.
     identity-preserving swap odděleným updaterem a automatický rollback při
     chybějícím heartbeat. Update je serializovaný s ostatními target joby,
     auditovaný a spouštěný ručně; per-target ovládání dovolí canary
-    rollout. Přechod 0.12.1 → 0.13 zůstane posledním ručním updatem.
+    rollout. Implementace, fail-closed validace, idempotentní fronta,
+    potvrzovací UI, rollback a audit jsou hotové a kryté testy. Přechod
+    0.12.1 → 0.13 zůstane posledním ručním updatem; podkrok se uzavře
+    živým vydáním 0.13 a následným skutečným vzdáleným 0.13 → 0.14
+    acceptance.
 
    ✅ **8a — explicitní režim targetu.** Databáze, API a UI rozlišují
    `direct-port` a `managed-gateway`. Existující instalace se migrují beze změny

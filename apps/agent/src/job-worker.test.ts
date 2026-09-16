@@ -558,3 +558,75 @@ test('executes only explicit project stop/start/remove lifecycle methods', async
     );
   }
 });
+
+test('hands an Agent update to the local supervisor without completing it in the old process', async () => {
+  const progress: Array<{ sequence: number; percent: number }> = [];
+  let completions = 0;
+  const client: AgentJobClient = {
+    renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+    progress: async (_jobId, input) => {
+      progress.push({ sequence: input.sequence, percent: input.percent });
+      return summary({ sequence: input.sequence, percent: input.percent });
+    },
+    complete: async () => {
+      completions += 1;
+      return summary({ status: 'succeeded' });
+    },
+  };
+
+  const result = await executeClaimedJob(
+    claim({ kind: 'agent-update', payload: { signed: 'server-selected' } }),
+    new AbortController().signal,
+    client,
+    {
+      agentUpdate: {
+        handoff: async (_job, _signal, report) => {
+          await report({ percent: 8, stage: 'verifying', message: 'Verifying release' });
+          await report({ percent: 42, stage: 'working', message: 'Starting supervisor' });
+        },
+      },
+    },
+  );
+
+  assert.equal(result, 'handed-off');
+  assert.deepEqual(progress, [
+    { sequence: 1, percent: 8 },
+    { sequence: 2, percent: 42 },
+  ]);
+  assert.equal(completions, 0);
+});
+
+test('fails an Agent update job when verification or handoff fails before replacement', async () => {
+  const completions: Array<Record<string, unknown>> = [];
+  const client: AgentJobClient = {
+    renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+    progress: async (_jobId, input) =>
+      summary({ sequence: input.sequence, percent: input.percent }),
+    complete: async (_jobId, input) => {
+      completions.push(input as unknown as Record<string, unknown>);
+      return summary({ status: input.status });
+    },
+  };
+
+  await executeClaimedJob(
+    claim({ kind: 'agent-update', payload: { image: 'mutable:latest' } }),
+    new AbortController().signal,
+    client,
+    {
+      agentUpdate: {
+        handoff: async () => {
+          throw new Error('Agent update signature is invalid');
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(completions, [
+    {
+      leaseToken: LEASE,
+      status: 'failed',
+      message: 'Agent update signature is invalid',
+      resultCode: 'agent_update_failed',
+    },
+  ]);
+});

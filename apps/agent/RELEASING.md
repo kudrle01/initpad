@@ -13,8 +13,8 @@ and creates a GitHub release. It never publishes `latest`.
 2. Create and push an annotated tag matching the version exactly:
 
    ```sh
-   git tag -a agent-v0.12.1 -m 'InitPad Agent 0.12.1'
-   git push origin agent-v0.12.1
+   git tag -a agent-v0.13.0 -m 'InitPad Agent 0.13.0'
+   git push origin agent-v0.13.0
    ```
 
    Protect the `agent-v*` tag pattern so only release maintainers can create or
@@ -49,7 +49,7 @@ Replace the placeholders with the release values:
 
 ```sh
 cosign verify \
-  --certificate-identity 'https://github.com/OWNER/REPOSITORY/.github/workflows/release-agent.yml@refs/tags/agent-v0.12.1' \
+  --certificate-identity 'https://github.com/OWNER/REPOSITORY/.github/workflows/release-agent.yml@refs/tags/agent-v0.13.0' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   'ghcr.io/OWNER/initpad-agent@sha256:DIGEST'
 ```
@@ -61,7 +61,7 @@ the checksum signature:
 sha256sum --check SHA256SUMS
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity 'https://github.com/OWNER/REPOSITORY/.github/workflows/release-agent.yml@refs/tags/agent-v0.12.1' \
+  --certificate-identity 'https://github.com/OWNER/REPOSITORY/.github/workflows/release-agent.yml@refs/tags/agent-v0.13.0' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   SHA256SUMS
 ```

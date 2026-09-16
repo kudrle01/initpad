@@ -151,6 +151,22 @@ the operator to issue a fresh enrollment and use `--re-enroll`. That explicit
 path must redeem a new token, replace the identity and return the target online;
 it is recovery evidence, not a successful identity-preserving upgrade.
 
+Agent 0.13 is the remote-update bootstrap. Install 0.13 from 0.12.1 with the
+manual command above. Once a genuine 0.14 or newer signed release exists, open
+**Manage Agent** on the 0.13 target, review the release and choose **Install
+update**. Confirm all of the following:
+
+- one `agent-update` job advances through signature verification, immutable
+  pull, candidate preflight and heartbeat verification;
+- the target briefly reconnects with the new version while application
+  workloads and their container IDs stay unchanged;
+- the audit log contains accepted and terminal Agent update events without a
+  manifest, credential or runtime log;
+- a candidate that cannot heartbeat produces `agent_update_rolled_back`, the
+  old version returns online and no `initpad-agent-previous` container remains;
+- a second target is updated only after the first target passes **Test
+  protocol** and **Test Docker**. No fleet-wide automatic rollout occurs.
+
 ## Acceptance result
 
 The release passes only when sections 1–4 pass on a clean host. Record section 5

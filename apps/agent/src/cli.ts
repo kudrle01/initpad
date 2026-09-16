@@ -13,6 +13,7 @@ import { heartbeatOnce, runAgent } from './runtime.js';
 import { readSecret } from './secret-prompt.js';
 import { AGENT_VERSION, PROTOCOL_VERSION } from './types.js';
 import type { AgentConfig } from './types.js';
+import { runAgentUpdateHelper } from './agent-update.js';
 
 const HELP = `InitPad Agent ${AGENT_VERSION}
 
@@ -32,6 +33,7 @@ interface CliOptions {
   configPath: string;
   url?: string;
   allowInsecureHttp: boolean;
+  plan?: string;
 }
 
 function options(argv: string[]): CliOptions {
@@ -42,6 +44,7 @@ function options(argv: string[]): CliOptions {
       config: { type: 'string' },
       url: { type: 'string' },
       'allow-insecure-http': { type: 'boolean', default: false },
+      plan: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
     strict: true,
@@ -51,6 +54,7 @@ function options(argv: string[]): CliOptions {
     configPath: parsed.values.config || process.env.INITPAD_AGENT_CONFIG || DEFAULT_CONFIG_PATH,
     url: parsed.values.url,
     allowInsecureHttp: parsed.values['allow-insecure-http'] || false,
+    plan: parsed.values.plan,
   };
 }
 
@@ -92,6 +96,14 @@ async function main(): Promise<void> {
   }
   if (cli.command === 'enroll') {
     await enrollAgent(cli);
+    return;
+  }
+  if (cli.command === 'update-helper') {
+    if (!cli.plan) throw new Error('update-helper requires --plan');
+    const controller = new AbortController();
+    process.once('SIGINT', () => controller.abort());
+    process.once('SIGTERM', () => controller.abort());
+    await runAgentUpdateHelper(cli.plan, controller.signal);
     return;
   }
   const config = await loadConfig(cli.configPath);

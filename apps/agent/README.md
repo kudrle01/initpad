@@ -32,6 +32,18 @@ now publishes the signed, public `amd64/arm64` Agent 0.12.1 image. Clean-host
 lifecycle acceptance remains a release gate. The local lab below stays the
 supported source-build acceptance path.
 
+Agent 0.13 adds the remote update protocol. An owner/admin must explicitly
+confirm each target update in **Manage Agent**. The control plane selects a
+stable release from its bounded GitHub catalog and verifies the release
+manifest's exact Sigstore workflow identity. The Agent verifies the same
+manifest again, pulls only its immutable image digest and hands replacement to
+a short-lived updater running from the already trusted Agent image. The updater
+preflights the candidate with the existing identity, parks the old container,
+requires a successful new heartbeat and otherwise restores the old container.
+Application workloads are not restarted. There is no generic command, script
+URL or user-supplied image in the job. Updating 0.12.1 to 0.13 remains a final
+manual installer operation; remote updates apply from 0.13 onward.
+
 Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
 [release acceptance](./ACCEPTANCE.md). The installer shown by a control plane
 remains disabled until that deployment is configured with the exact digest
@@ -49,6 +61,11 @@ before stopping the old Agent. It never replaces a rejected credential
 silently; `--re-enroll` requires a new short-lived token and is reserved for a
 disconnected, recreated or restored target. Those local details deliberately
 do not come from a control-plane job.
+
+The manual installer remains the recovery and air-gap path after 0.13. Remote
+updates are deliberately per target: update one non-critical target first,
+observe its heartbeat, protocol and Docker tests, then approve the remaining
+targets. InitPad never silently rolls out an Agent release to every server.
 
 ## Local acceptance without a VM
 

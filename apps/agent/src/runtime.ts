@@ -168,7 +168,7 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
         attempt: response.job.attempt,
       });
       try {
-        await executeClaimedJob(
+        const outcome = await executeClaimedJob(
           response.job,
           signal,
           {
@@ -180,6 +180,15 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
           },
           { dockerHost: process.env.DOCKER_HOST },
         );
+        if (outcome === 'handed-off') {
+          log('info', 'agent.update_handed_off', {
+            targetId: config.targetId,
+            jobId: response.job.id,
+            correlationId: response.job.correlationId,
+          });
+          while (!signal.aborted) await delay(60_000, signal);
+          return;
+        }
         if (!signal.aborted) {
           log('info', 'job.completed', {
             targetId: config.targetId,

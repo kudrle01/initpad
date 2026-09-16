@@ -1,6 +1,6 @@
 {
   "name": "@initpad/agent",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "Outbound-only runtime agent for InitPad Docker targets",

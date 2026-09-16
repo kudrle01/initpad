@@ -2,6 +2,7 @@
 
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AgentDistribution,
@@ -18,6 +19,7 @@ vi.mock('@/api', () => ({
   api: {
     getAgentDistribution: vi.fn(),
     getAgentUpdateStatus: vi.fn(),
+    requestAgentUpdate: vi.fn(),
   },
 }));
 
@@ -63,6 +65,7 @@ function renderDialog(
   jobs: AgentJobSummary[] = [],
   agentStatus: AgentStatus | null = enrollment,
   currentEnrollment: AgentEnrollment | null = enrollment,
+  onUpdateAgent: () => void = () => undefined,
 ) {
   render(
     <ConfirmationProvider>
@@ -81,6 +84,7 @@ function renderDialog(
         onTestProtocol={() => undefined}
         onTestLifecycle={() => undefined}
         onTestGateway={() => undefined}
+        onUpdateAgent={onUpdateAgent}
       />
     </ConfirmationProvider>,
   );
@@ -218,6 +222,50 @@ describe('AgentSetupDialog distribution', () => {
       'target',
       '_blank',
     );
+  });
+
+  it('requires confirmation before queuing a supported remote update', async () => {
+    const user = userEvent.setup();
+    const onUpdateAgent = vi.fn();
+    vi.mocked(api.getAgentDistribution).mockResolvedValue({
+      available: true,
+      version: '0.13.0',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      unavailableReason: null,
+      installer: { path: '/api/agent/distribution/install.sh', sha256: 'd'.repeat(64) },
+    });
+    vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
+      enabled: true,
+      checkedAt: '2026-09-16T10:00:00.000Z',
+      stale: false,
+      currentVersion: '0.13.0',
+      latestVersion: '0.14.0',
+      updateAvailable: true,
+      updateMethod: 'remote',
+      image: `ghcr.io/example/initpad-agent@sha256:${'e'.repeat(64)}`,
+      releaseUrl: 'https://github.com/example/initpad/releases/tag/agent-v0.14.0',
+      publishedAt: '2026-09-16T09:00:00.000Z',
+      error: null,
+    });
+
+    renderDialog(
+      [],
+      {
+        ...enrollment,
+        state: 'online',
+        enrollmentPending: false,
+        credentialGeneration: 1,
+        version: '0.13.0',
+      },
+      null,
+      onUpdateAgent,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Install update' }));
+    expect(await screen.findByText('Install Agent 0.14.0?')).toBeInTheDocument();
+    expect(onUpdateAgent).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Install update' }));
+    expect(onUpdateAgent).toHaveBeenCalledTimes(1);
   });
 
   it('never suggests a host binary when distribution is unavailable', async () => {

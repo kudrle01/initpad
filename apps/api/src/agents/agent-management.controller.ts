@@ -6,6 +6,7 @@ import { AgentJobsService } from './agent-jobs.service';
 import {
   CreateAgentLifecycleTestDto,
   CreateAgentProbeJobDto,
+  CreateAgentUpdateDto,
   CreateGatewayPreflightDto,
 } from './dto/agent-job.dto';
 import { AgentUpdatesService } from './agent-updates.service';
@@ -27,6 +28,15 @@ export class AgentManagementController {
   @Get('update')
   updateStatus(@Param('targetId') targetId: string, @CurrentUser() userId: string) {
     return this.updates.status(targetId, userId);
+  }
+
+  @Post('update')
+  requestUpdate(
+    @Param('targetId') targetId: string,
+    @CurrentUser() userId: string,
+    @Body() dto: CreateAgentUpdateDto,
+  ) {
+    return this.updates.requestUpdate(targetId, userId, dto);
   }
 
   @Post('enrollment')

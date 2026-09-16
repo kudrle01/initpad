@@ -421,6 +421,7 @@ export default function Infrastructure() {
             if (queued) void infrastructure.reload();
           });
         }}
+        onUpdateAgent={() => void agentProtocol.updateAgent()}
       />
     </div>
   );

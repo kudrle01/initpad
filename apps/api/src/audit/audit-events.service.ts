@@ -5,7 +5,7 @@ import { ListAuditEventsDto } from './dto/list-audit-events.dto';
 
 export type AuditOutcome = 'accepted' | 'succeeded' | 'failed' | 'cancelled';
 export type AuditDetailValue = string | number | boolean;
-export type AuditOperationType = 'deployment' | 'provisioning';
+export type AuditOperationType = 'deployment' | 'provisioning' | 'agent-job';
 
 export interface AuditOperationRef {
   type: AuditOperationType;
@@ -132,6 +132,43 @@ export class AuditEventsService {
 
   async recordOperationResult(type: AuditOperationType, operationId: string): Promise<void> {
     if (!UUID.test(operationId)) throw new Error(`Invalid audit operation id '${operationId}'`);
+    if (type === 'agent-job') {
+      const job = await this.prisma.agentJob.findUnique({
+        where: { id: operationId },
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          payload: true,
+          target: { select: { workspaceId: true, name: true } },
+        },
+      });
+      if (
+        !job ||
+        job.kind !== 'agent-update' ||
+        !job.target.workspaceId ||
+        !['succeeded', 'failed', 'cancelled'].includes(job.status)
+      )
+        return;
+      const payload =
+        job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload)
+          ? (job.payload as Record<string, unknown>)
+          : {};
+      await this.recordTerminal({
+        type,
+        operationId,
+        workspaceId: job.target.workspaceId,
+        action: 'agent.update_completed',
+        outcome: job.status as Exclude<AuditOutcome, 'accepted'>,
+        resourceType: 'agent',
+        resourceId: job.id,
+        resourceName: job.target.name,
+        details: {
+          toVersion: typeof payload.version === 'string' ? payload.version : 'unknown',
+        },
+      });
+      return;
+    }
     if (type === 'deployment') {
       const operation = await this.prisma.deploymentOperation.findUnique({
         where: { id: operationId },
@@ -221,7 +258,10 @@ export class AuditEventsService {
     const provisioningIds = items
       .filter((row) => row.operationType === 'provisioning' && row.operationId)
       .map((row) => row.operationId!);
-    const [deployments, provisioning] = await Promise.all([
+    const agentJobIds = items
+      .filter((row) => row.operationType === 'agent-job' && row.operationId)
+      .map((row) => row.operationId!);
+    const [deployments, provisioning, agentJobs] = await Promise.all([
       deploymentIds.length
         ? this.prisma.deploymentOperation.findMany({
             where: { id: { in: deploymentIds } },
@@ -238,6 +278,12 @@ export class AuditEventsService {
         ? this.prisma.provisioningOperation.findMany({
             where: { id: { in: provisioningIds } },
             select: { id: true, kind: true, status: true, step: true, projectId: true },
+          })
+        : [],
+      agentJobIds.length
+        ? this.prisma.agentJob.findMany({
+            where: { id: { in: agentJobIds } },
+            select: { id: true, kind: true, status: true, progressStage: true },
           })
         : [],
     ]);
@@ -271,6 +317,18 @@ export class AuditEventsService {
               status: operation.status,
               phase: operation.step,
               projectId: operation.projectId,
+            },
+          ] as const,
+      ),
+      ...agentJobs.map(
+        (job) =>
+          [
+            `agent-job:${job.id}`,
+            {
+              kind: job.kind,
+              status: job.status,
+              phase: job.progressStage,
+              projectId: null,
             },
           ] as const,
       ),

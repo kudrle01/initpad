@@ -622,12 +622,18 @@ export class AgentJobsService implements OnModuleInit {
       await this.reconcileGatewayPreflight(jobId);
       await this.reconcileGatewayRoute(jobId);
       await this.reconcileTerminalJob(jobId);
+      if (current.kind === 'agent-update') {
+        await this.auditEvents?.recordOperationResult('agent-job', jobId);
+      }
       return this.summary(current);
     }
     await this.reconcileGatewayPreflight(jobId);
     await this.reconcileGatewayRoute(jobId);
     await this.reconcileTerminalJob(jobId);
     const current = await this.prisma.agentJob.findUniqueOrThrow({ where: { id: jobId } });
+    if (current.kind === 'agent-update') {
+      await this.auditEvents?.recordOperationResult('agent-job', jobId);
+    }
     this.logger[dto.status === 'failed' ? 'warn' : 'log']({
       event: 'agent.job.completed',
       correlationId: current.correlationId,
