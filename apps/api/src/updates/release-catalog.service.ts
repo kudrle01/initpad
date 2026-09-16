@@ -224,7 +224,7 @@ export class ReleaseCatalogService {
         prerelease: release.prerelease,
         published_at: release.published_at,
         assets,
-      } as GitHubRelease;
+      };
     });
   }
 

@@ -36,6 +36,11 @@ export class CreateGatewayPreflightDto {
   requestId!: string;
 }
 
+export class CreateAgentUpdateDto {
+  @IsUUID('4')
+  requestId!: string;
+}
+
 export class AgentClaimJobDto {
   @IsString()
   @MinLength(1)

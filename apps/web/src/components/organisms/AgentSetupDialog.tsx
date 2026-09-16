@@ -40,7 +40,7 @@ interface Props {
   agent: AgentStatus | null;
   jobs: AgentJobSummary[];
   protocolError: string | null;
-  testBusy: 'protocol' | 'lifecycle' | 'gateway' | null;
+  testBusy: 'protocol' | 'lifecycle' | 'gateway' | 'update' | null;
   busy: boolean;
   enrollment: AgentEnrollment | null;
   onOpenChange: (open: boolean) => void;
@@ -49,6 +49,7 @@ interface Props {
   onTestProtocol: () => void;
   onTestLifecycle: () => void;
   onTestGateway: () => void;
+  onUpdateAgent: () => void;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -101,6 +102,7 @@ export function AgentSetupDialog({
   onTestProtocol,
   onTestLifecycle,
   onTestGateway,
+  onUpdateAgent,
 }: Props) {
   const confirmAction = useConfirmation();
   const [distribution, setDistribution] = useState<AgentDistribution | null>(null);
@@ -131,7 +133,7 @@ export function AgentSetupDialog({
     return () => {
       current = false;
     };
-  }, [open, target?.id]);
+  }, [agent?.version, open, target?.id]);
 
   if (!target) return null;
   const currentTarget = target;
@@ -190,6 +192,24 @@ export function AgentSetupDialog({
       ],
     });
     if (confirmed) onDisable();
+  }
+
+  async function updateAgent() {
+    const nextVersion = updateStatus?.latestVersion;
+    if (!nextVersion) return;
+    const confirmed = await confirmAction({
+      title: `Install Agent ${nextVersion}?`,
+      description:
+        'InitPad will send the signed release manifest to this Agent and replace only the Agent container.',
+      confirmLabel: 'Install update',
+      tone: 'warning',
+      consequences: [
+        'Application workloads keep running while the Agent restarts.',
+        'New jobs wait briefly until the updated Agent reconnects.',
+        'If the new Agent cannot authenticate, the previous container is restored automatically.',
+      ],
+    });
+    if (confirmed) onUpdateAgent();
   }
 
   return (
@@ -286,7 +306,22 @@ export function AgentSetupDialog({
                     ? 'This is the final manual, identity-preserving update. Agent 0.13 and newer can install later verified releases remotely.'
                     : 'The release manifest and immutable image identity were verified. Installation still requires your confirmation.'}
                 </p>
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                  {updateStatus.updateMethod === 'remote' && (
+                    <Button
+                      size="sm"
+                      disabled={busy || testBusy !== null || state !== 'online'}
+                      title={
+                        state === 'online'
+                          ? 'Install the verified update on this Agent'
+                          : 'The Agent must be online before it can update itself'
+                      }
+                      onClick={() => void updateAgent()}
+                    >
+                      {testBusy === 'update' ? <Spinner className="h-4 w-4" /> : <Sparkles />}
+                      Install update
+                    </Button>
+                  )}
                   {updateStatus.releaseUrl && (
                     <a
                       className="app-link"

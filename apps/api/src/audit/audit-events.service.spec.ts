@@ -179,6 +179,44 @@ describe('AuditEventsService', () => {
     expect(JSON.stringify(create.mock.calls)).not.toContain('sensitive provider output');
   });
 
+  it('records a bounded terminal event for a completed Agent update', async () => {
+    const operationId = '123e4567-e89b-42d3-a456-426614174000';
+    const create = jest.fn(async () => ({}));
+    const prisma = {
+      auditEvent: {
+        findFirst: jest.fn(async () => ({
+          actorUserId: 'user-1',
+          actorUsername: 'alice',
+          actorDisplayName: 'Alice',
+        })),
+        create,
+      },
+      agentJob: {
+        findUnique: jest.fn(async () => ({
+          id: operationId,
+          kind: 'agent-update',
+          status: 'succeeded',
+          payload: { version: '0.14.0', manifestBase64: 'must-not-enter-the-audit-log' },
+          target: { workspaceId: 'workspace-1', name: 'Application server' },
+        })),
+      },
+    };
+
+    await new AuditEventsService(prisma as never).recordOperationResult('agent-job', operationId);
+
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorUserId: 'user-1',
+        action: 'agent.update_completed',
+        outcome: 'succeeded',
+        operationType: 'agent-job',
+        operationId,
+        details: { toVersion: '0.14.0' },
+      }),
+    });
+    expect(JSON.stringify(create.mock.calls)).not.toContain('manifestBase64');
+  });
+
   it('enriches audit rows from the authoritative operation instead of copied status', async () => {
     const operationId = '123e4567-e89b-42d3-a456-426614174000';
     const operationRow = {

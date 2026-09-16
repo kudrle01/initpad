@@ -62,7 +62,7 @@ export interface AuditEvent {
     name: string | null;
   };
   operation: {
-    type: 'deployment' | 'provisioning';
+    type: 'deployment' | 'provisioning' | 'agent-job';
     id: string;
     kind: string;
     status: string;

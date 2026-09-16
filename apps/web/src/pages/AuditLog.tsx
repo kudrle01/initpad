@@ -64,6 +64,8 @@ const ACTION_LABELS: Record<string, string> = {
   'allocation.deleted': 'Allocation deleted',
   'agent.enrollment_issued': 'Agent enrollment issued',
   'agent.disabled': 'Agent disabled',
+  'agent.update_requested': 'Agent update requested',
+  'agent.update_completed': 'Agent update completed',
 };
 
 function label(value: string): string {

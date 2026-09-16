@@ -719,7 +719,7 @@ model AgentJob {
   leasedByAgentId       String?
 
   dedupeKey       String @unique
-  kind            String // probe | lifecycle-test | gateway-preflight | gateway-route | deploy | start | stop | remove | status | logs | rollback
+  kind            String // probe | lifecycle-test | gateway-preflight | gateway-route | deploy | start | stop | remove | status | logs | rollback | agent-update
   protocolVersion Int    @default(1)
   payload         Json
   status          String @default("queued") // blocked | queued | leased | succeeded | failed | cancelled

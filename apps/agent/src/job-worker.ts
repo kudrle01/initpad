@@ -17,6 +17,8 @@ import { GatewayPreflight, parseGatewayPreflightPayload } from './gateway-prefli
 import type { GatewayPreflightProgress } from './gateway-preflight.js';
 import { GatewayRouteReconciler, parseGatewayRoutePayload } from './gateway-route.js';
 import type { GatewayRouteProgress, GatewayRouteRunResult } from './gateway-route.js';
+import { AgentUpdateCoordinator } from './agent-update.js';
+import type { AgentUpdateHandoffRunner } from './agent-update.js';
 
 const RENEW_EVERY_MS = 10_000;
 const PROGRESS_EVERY_MS = 5_000;
@@ -130,6 +132,7 @@ export interface JobExecutionOptions {
   lifecycle?: LifecycleRunner;
   gateway?: GatewayPreflightRunner;
   gatewayRoute?: GatewayRouteRunner;
+  agentUpdate?: AgentUpdateHandoffRunner;
   dockerHost?: string;
 }
 
@@ -173,7 +176,7 @@ export async function executeClaimedJob(
   signal: AbortSignal,
   client: AgentJobClient,
   options: JobExecutionOptions = {},
-): Promise<void> {
+): Promise<'handed-off' | void> {
   const timing = options.timing ?? REAL_TIMING;
   let leaseDeadline = Date.parse(job.leaseExpiresAt);
   if (!Number.isFinite(leaseDeadline)) throw new Error('Agent job lease expiry is invalid');
@@ -198,6 +201,7 @@ export async function executeClaimedJob(
       'stop',
       'remove',
       'logs',
+      'agent-update',
     ].includes(job.kind)
   ) {
     await complete({
@@ -207,6 +211,68 @@ export async function executeClaimedJob(
       resultCode: 'unsupported_job',
     });
     return;
+  }
+
+  if (job.kind === 'agent-update') {
+    const update = options.agentUpdate ?? new AgentUpdateCoordinator();
+    const localController = new AbortController();
+    const combinedSignal = AbortSignal.any([signal, localController.signal]);
+    let renewalError: unknown;
+    const renewal = renewLeaseLoop(
+      job,
+      client,
+      timing,
+      combinedSignal,
+      localController,
+      () => leaseDeadline,
+      (deadline) => {
+        leaseDeadline = deadline;
+      },
+      (error) => {
+        renewalError = error;
+      },
+    );
+    let sequence = 0;
+    let updateError: unknown;
+    try {
+      await update.handoff(job, combinedSignal, async (progress) => {
+        sequence += 1;
+        await retryProtocolCall(
+          () =>
+            client.progress(job.id, {
+              leaseToken: job.leaseToken,
+              sequence,
+              percent: progress.percent,
+              stage: progress.stage,
+              message: progress.message,
+            }),
+          () => leaseDeadline,
+          combinedSignal,
+          timing,
+        );
+      });
+    } catch (error) {
+      updateError = error;
+    } finally {
+      localController.abort();
+      await renewal;
+    }
+    if (signal.aborted) return;
+    if (renewalError) throw asError(renewalError, 'Agent update lease renewal failed');
+    if (updateError instanceof ControlPlaneError) throw updateError;
+    if (updateError) {
+      await complete({
+        leaseToken: job.leaseToken,
+        status: 'failed',
+        message: (updateError instanceof Error ? updateError.message : 'Agent update failed').slice(
+          0,
+          240,
+        ),
+        resultCode: 'agent_update_failed',
+      });
+      return;
+    }
+    return 'handed-off';
   }
 
   if (job.kind === 'gateway-preflight') {
