@@ -335,6 +335,13 @@ nezobrazí falešný empty/error stav.
     nezávisle ověřené. Živý test potvrdil defaultní fail-safe beze změny
     kontejneru i configu, explicitní recovery, online heartbeat a následný
     Docker lifecycle.
+11. ◐ **Podepsané aktualizace Agenta.** Ověřený release katalog upozorní
+    ownera/admina na novou stabilní verzi. Agent 0.13 zavede typovaný
+    `agent-update` job, lokální opětovné ověření Sigstore identity,
+    identity-preserving swap odděleným updaterem a automatický rollback při
+    chybějícím heartbeat. Update je serializovaný s ostatními target joby,
+    auditovaný a spouštěný ručně; per-target ovládání dovolí canary
+    rollout. Přechod 0.12.1 → 0.13 zůstane posledním ručním updatem.
 
    ✅ **8a — explicitní režim targetu.** Databáze, API a UI rozlišují
    `direct-port` a `managed-gateway`. Existující instalace se migrují beze změny
@@ -906,6 +913,13 @@ jen konkrétní provozní a vyhodnocovací scénář.
        gate jejich přítomnost vynucuje. Skutečný Agent digest a release notes
        jsou doložené; zbývá doplnit naměřené acceptance výsledky a podle nich
        uzavřít implementační a testovací kapitolu diplomové práce.
+     - ◐ **8e-d-e — aktualizace self-hosted platformy.** Tag `initpad-v*`
+       vydá podepsaný bundle s immutable API/web/Supervisor images, Compose
+       descriptorem, SBOM, provenance a migračním kontraktem. Oddělený
+       least-privilege Supervisor před explicitně schválenou aktualizací ověří
+       podpis, vytvoří backup, provede preflight a migrace, počká na readiness
+       a při bezpečném selhání obnoví původní images. CLI bundle zůstane
+       fallbackem pro první instalaci, recovery a air-gap.
 
 ## Akceptační kritéria
 
