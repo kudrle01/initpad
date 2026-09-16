@@ -76,6 +76,13 @@ export const config = {
       process.env.INITPAD_AGENT_PACKAGE_PATH ||
       resolve(process.cwd(), '../../apps/agent/package.json'),
   },
+  updates: {
+    enabled: process.env.INITPAD_UPDATE_CHECKS_ENABLED !== 'false',
+    githubApiUrl: process.env.INITPAD_UPDATE_GITHUB_API_URL || 'https://api.github.com',
+    repository: process.env.INITPAD_UPDATE_REPOSITORY || 'kudrle01/initpad',
+    cacheSeconds: Number(process.env.INITPAD_UPDATE_CACHE_SECONDS || 900),
+    requestTimeoutMs: Number(process.env.INITPAD_UPDATE_TIMEOUT_MS || 8_000),
+  },
   gitea: {
     // Browser-facing URL (repository links shown to users, OAuth redirects).
     url: process.env.INITPAD_GITEA_URL || '',
@@ -310,6 +317,32 @@ export function validateConfig(): void {
     !/^\d+\.\d+\.\d+$/.test(config.agentDistribution.releaseVersion)
   ) {
     throw new Error('INITPAD_AGENT_RELEASE_VERSION must be a stable semantic version');
+  }
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.updates.repository)) {
+    throw new Error('INITPAD_UPDATE_REPOSITORY must be an owner/repository pair');
+  }
+  let updateApiUrl: URL;
+  try {
+    updateApiUrl = new URL(config.updates.githubApiUrl);
+  } catch {
+    throw new Error('INITPAD_UPDATE_GITHUB_API_URL must be a valid URL');
+  }
+  if (updateApiUrl.protocol !== 'https:') {
+    throw new Error('INITPAD_UPDATE_GITHUB_API_URL must use HTTPS');
+  }
+  if (
+    !Number.isInteger(config.updates.cacheSeconds) ||
+    config.updates.cacheSeconds < 60 ||
+    config.updates.cacheSeconds > 86_400
+  ) {
+    throw new Error('INITPAD_UPDATE_CACHE_SECONDS must be between 60 and 86400');
+  }
+  if (
+    !Number.isInteger(config.updates.requestTimeoutMs) ||
+    config.updates.requestTimeoutMs < 1_000 ||
+    config.updates.requestTimeoutMs > 30_000
+  ) {
+    throw new Error('INITPAD_UPDATE_TIMEOUT_MS must be between 1000 and 30000');
   }
   if (
     !Number.isFinite(config.deployment.memoryBytes) ||

@@ -18,6 +18,7 @@ import { ArtifactsModule } from './artifacts/artifacts.module';
 import { AgentsModule } from './agents/agents.module';
 import { AuditEventsModule } from './audit/audit-events.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { UpdatesModule } from './updates/updates.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
     ArtifactsModule,
     AgentsModule,
     AuditEventsModule,
+    UpdatesModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],

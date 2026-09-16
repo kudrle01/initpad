@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Activity, Bot, Container, Download, Globe2, ShieldAlert, WifiOff } from 'lucide-react';
+import {
+  Activity,
+  Bot,
+  Container,
+  Download,
+  ExternalLink,
+  Globe2,
+  ShieldAlert,
+  Sparkles,
+  WifiOff,
+} from 'lucide-react';
 import type {
   AgentDistribution,
   AgentEnrollment,
   AgentJobSummary,
   AgentStatus,
+  AgentUpdateStatus,
   Target,
 } from '@/types';
 import { api } from '@/api';
@@ -94,23 +105,33 @@ export function AgentSetupDialog({
   const confirmAction = useConfirmation();
   const [distribution, setDistribution] = useState<AgentDistribution | null>(null);
   const [distributionError, setDistributionError] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<AgentUpdateStatus | null>(null);
 
   useEffect(() => {
     if (!open) return;
     let current = true;
     setDistributionError(null);
-    void api
-      .getAgentDistribution()
-      .then((release) => {
-        if (current) setDistribution(release);
-      })
-      .catch((cause: unknown) => {
-        if (current) setDistributionError((cause as Error).message);
-      });
+    void Promise.allSettled([
+      api.getAgentDistribution(),
+      api.getAgentUpdateStatus(target?.id ?? ''),
+    ]).then(([releaseResult, updateResult]) => {
+      if (!current) return;
+      if (releaseResult.status === 'fulfilled') setDistribution(releaseResult.value);
+      else {
+        setDistributionError(
+          releaseResult.reason instanceof Error
+            ? releaseResult.reason.message
+            : 'Agent release information is unavailable',
+        );
+      }
+      if (updateResult.status === 'fulfilled') {
+        setUpdateStatus(updateResult.value);
+      }
+    });
     return () => {
       current = false;
     };
-  }, [open]);
+  }, [open, target?.id]);
 
   if (!target) return null;
   const currentTarget = target;
@@ -127,12 +148,16 @@ export function AgentSetupDialog({
     currentTarget.routingMode === 'direct-port' && currentTarget.publicUrl
       ? new URL(currentTarget.publicUrl).hostname
       : null;
+  const desiredImage =
+    updateStatus?.updateAvailable && updateStatus.image ? updateStatus.image : distribution?.image;
   const installCommand =
-    distribution?.available && distribution.image && installerUrl
-      ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${distribution.image}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
+    distribution?.available && desiredImage && installerUrl
+      ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${desiredImage}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
       : null;
   const reEnrollCommand = installCommand ? `${installCommand} --re-enroll` : null;
-  const desiredAgentVersion = distribution?.version ?? null;
+  const desiredAgentVersion = updateStatus?.updateAvailable
+    ? updateStatus.latestVersion
+    : (distribution?.version ?? null);
 
   async function issueEnrollment() {
     if (enrollment || agent?.enrollmentPending) {
@@ -242,6 +267,48 @@ export function AgentSetupDialog({
                 remains valid, so reconnecting the Agent is safe.
               </p>
             </div>
+          )}
+
+          {updateStatus?.updateAvailable && (
+            <div
+              className="flex items-start gap-3 rounded-lg border border-primary/35 bg-primary/5 p-4"
+              role="status"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">
+                  Agent {updateStatus.latestVersion} is available
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {updateStatus.updateMethod === 'manual'
+                    ? 'This is the final manual, identity-preserving update. Agent 0.13 and newer can install later verified releases remotely.'
+                    : 'The release manifest and immutable image identity were verified. Installation still requires your confirmation.'}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                  {updateStatus.releaseUrl && (
+                    <a
+                      className="app-link"
+                      href={updateStatus.releaseUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Release details <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                  {updateStatus.stale && (
+                    <span className="text-warning">Showing the last verified check</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {updateStatus?.error && !updateStatus.releaseUrl && (
+            <p className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs text-muted-foreground">
+              {updateStatus.error} Agent management remains available.
+            </p>
           )}
 
           {agent?.capabilities && (

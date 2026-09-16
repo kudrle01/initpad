@@ -201,6 +201,20 @@ export interface AgentDistribution {
   };
 }
 
+export interface AgentUpdateStatus {
+  enabled: boolean;
+  checkedAt: string | null;
+  stale: boolean;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  updateMethod: 'none' | 'manual' | 'remote';
+  image: string | null;
+  releaseUrl: string | null;
+  publishedAt: string | null;
+  error: string | null;
+}
+
 export interface AgentJobSummary {
   id: string;
   correlationId: string;

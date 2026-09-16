@@ -8,6 +8,7 @@ import {
   CreateAgentProbeJobDto,
   CreateGatewayPreflightDto,
 } from './dto/agent-job.dto';
+import { AgentUpdatesService } from './agent-updates.service';
 
 @Controller('targets/:targetId/agent')
 @UseGuards(JwtAuthGuard)
@@ -15,11 +16,17 @@ export class AgentManagementController {
   constructor(
     private readonly agents: AgentsService,
     private readonly jobs: AgentJobsService,
+    private readonly updates: AgentUpdatesService,
   ) {}
 
   @Get()
   get(@Param('targetId') targetId: string, @CurrentUser() userId: string) {
     return this.agents.getForTarget(targetId, userId);
+  }
+
+  @Get('update')
+  updateStatus(@Param('targetId') targetId: string, @CurrentUser() userId: string) {
+    return this.updates.status(targetId, userId);
   }
 
   @Post('enrollment')
