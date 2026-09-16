@@ -10,11 +10,20 @@ import { AgentsService } from './agents.service';
 import { AuditEventsModule } from '../audit/audit-events.module';
 import { AgentDistributionController } from './agent-distribution.controller';
 import { AgentDistributionService } from './agent-distribution.service';
+import { UpdatesModule } from '../updates/updates.module';
+import { AgentUpdatesService } from './agent-updates.service';
 
 @Module({
-  imports: [AuthModule, WorkspacesModule, ArtifactsModule, TargetsModule, AuditEventsModule],
+  imports: [
+    AuthModule,
+    WorkspacesModule,
+    ArtifactsModule,
+    TargetsModule,
+    AuditEventsModule,
+    UpdatesModule,
+  ],
   controllers: [AgentDistributionController, AgentEnrollmentController, AgentManagementController],
-  providers: [AgentDistributionService, AgentsService, AgentJobsService],
+  providers: [AgentDistributionService, AgentsService, AgentJobsService, AgentUpdatesService],
   exports: [AgentsService, AgentJobsService],
 })
 export class AgentsModule {}
