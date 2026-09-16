@@ -4702,3 +4702,69 @@ re-enrollment, heartbeat, Docker lifecycle i nasazení workloadu. Plný
 clean-host runbook včetně rebootu a rollbacku úmyslně vadného candidate image
 zůstává samostatným produkčním gate; tato propagace jej nepředstírá jako
 dokončený.
+
+---
+
+## ADR-110 — Vzdálený update Agenta je podepsaný, typovaný job bez shellu
+
+**Kontext.** Ruční instalační skript bezpečně zachovává identitu a při
+neúspěchu obnoví původní kontejner, ale správce jej musí zkopírovat a
+spustit na každém serveru. Přímý Docker nebo SSH přístup z control plane by
+popřel outbound-only bezpečnostní hranici Agenta. Přijetí image reference
+nebo příkazu z browseru by zase vytvořilo vzdálený root execution kanál.
+
+**Rozhodnutí.** Veřejný katalog smí nabídnout pouze stabilní GitHub Release
+tagy `agent-v*`. Control plane i Agent nezávisle ověří Sigstore bundle
+manifestu proti přesnému repozitáři, tagu, issueru GitHub Actions a release
+workflow. Manifest obsahuje verzi, immutable OCI digest, platformy a checksum
+instalátoru; nejvyšší ověřená semver je pouze nabídka, nikdy automatické
+schválení.
+
+Owner/admin spustí typovaný `agent-update` job. Payload obsahuje přesné
+podepsané release materiály, nikoli shell, URL ani uživatelskou image. Agent
+nejprve znovu ověří podpis a digest, stáhne candidate a spustí jeho read-only
+preflight se stávající identitou. Jednorázový updater z dosavadní důvěryhodné
+Agent image potom převezme job lease, nahradí pouze pevně pojmenovaný a
+označený Agent kontejner, ověří heartbeat a při neúspěchu obnoví původní
+verzi. Plán a fencing credential jsou krátkodobé soubory s režimem `0600`.
+
+Agent 0.13 je první verzí s tímto protokolem. Přechod z 0.12.1 na 0.13 proto
+zůstává posledním ručním identity-preserving updatem; teprve další verze
+lze aktualizovat vzdáleně. Ruční digest-pinned instalátor zůstává recovery a
+air-gap cestou.
+
+**Důsledky.** Control plane nezíská inbound správu hostu ani obecný root
+shell. Kompromitovaný browser nemůže vybrat libovolný image a kompromitovaný
+release mirror nestačí bez platného podpisu. Update se nespustí souběžně s
+jiným target jobem, každý přechod má audit a správce může nejprve aktualizovat
+canary server. Automatická unattended instalace zůstává vypnutá.
+
+---
+
+## ADR-111 — On-prem platformu aktualizuje oddělený Supervisor z release bundle
+
+**Kontext.** API ani web nemají bezpečně přepisovat samy sebe. Poskytnout jim
+Docker socket nebo možnost spouštět `docker compose` by z běžné aplikační
+zranitelnosti udělalo kompromitaci hostu. Současné instalace navíc sestavují
+platformu ze source tree, což není vhodný update artefakt pro cizího správce.
+
+**Rozhodnutí.** Platformní tag `initpad-v*` vytvoří verzovaný release bundle:
+podepsaný manifest, digest-pinned API, web a Supervisor images, Compose
+descriptor, databázový migrační kontrakt, SBOM, provenance a checksums.
+Samostatný minimalistický Supervisor je jediná komponenta s oprávněním měnit
+platformní kontejnery. Přijímá jen serverem ověřenou verzi z důvěryhodného
+katalogu a explicitní souhlas platform admina; nepřijímá shell, Compose text,
+registry credentials ani image reference z browseru.
+
+Před změnou Supervisor vytvoří a ověří backup, stáhne immutable images,
+provede deklarovaný preflight a kompatibilní migraci, atomicky přepne služby
+a čeká na readiness. Při selhání vrátí původní image; databázi automaticky
+vrací pouze tehdy, když manifest výslovně deklaruje bezpečný rollback.
+Destruktivní migrace vyžaduje expand/contract nebo ruční obnovu z backupu.
+
+**Důsledky.** Self-hosted instance může ukázat dostupnou verzi a tlačítko
+`Install update`, aniž by webová aplikace vlastnila host. Update je
+health-gated, auditovaný a obnovitelný. CLI instalace z podepsaného bundle
+zůstává povinný fallback pro první instalaci, recovery a offline prostředí.
+SaaS nasazuje stejné images vlastním provozním procesem a Supervisor
+nepotřebuje.
