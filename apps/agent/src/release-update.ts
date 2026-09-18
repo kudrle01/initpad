@@ -153,6 +153,7 @@ export async function verifyAgentUpdatePayload(
     tlogThreshold: 1,
     ctLogThreshold: 1,
     timeout: 8_000,
+    tufCachePath: join(PLAN_DIRECTORY, 'sigstore-js'),
   });
   return update;
 }
