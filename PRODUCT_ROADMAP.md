@@ -60,7 +60,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 ### P0 — veřejný a obnovitelný self-hosted release
 
 - [x] Vydat podepsaný multiarch Agent `0.13.0` a platformu `0.2.0`.
-- [ ] Dokončit public-readiness: licence, contribution/security policy, scan
+- [x] Dokončit public-readiness: licence, contribution/security policy, scan
   celé Git historie, veřejný repozitář a anonymně dostupné release assets a
   OCI images.
 - [ ] Na čistém Linux hostu ověřit instalaci, reboot, backup/restore a
@@ -303,7 +303,7 @@ přepis fungujícího produktu.
 
 1. ✅ **Dokumentace a repository hygiene.** README je uživatelský vstupní bod;
    roadmapa popisuje budoucí práci, ADR rozhodnutí, runbook provoz a acceptance
-   ověření. Osobní vysvětlení a handoffy zůstávají lokální. Dokončené
+   ověření. Pracovní revizní poznámky zůstávají lokální. Dokončené
    migrační deníky, mrtvé soubory a zastaralé duplicity se odstraní.
 2. ✅ **Charakterizační testy a modulární backend.** Nejdřív se uzamkne chování
    kritických toků. Potom se `ProjectsService` rozdělí podle odpovědností na
@@ -396,10 +396,10 @@ nezobrazí falešný empty/error stav.
     auditovaný a spouštěný ručně; per-target ovládání dovolí canary
     rollout. Implementace, perzistentní Sigstore trust cache pro read-only
     kontejner, fail-closed validace, idempotentní fronta, potvrzovací UI,
-    rollback a audit jsou hotové a kryté testy. Přechod
-    0.12.1 → 0.13 zůstane posledním ručním updatem; podkrok se uzavře
-    živým vydáním 0.13 a následným skutečným vzdáleným 0.13 → 0.14
-    acceptance.
+    rollback a audit jsou hotové a kryté testy. Ruční přechod 0.12.1 → 0.13
+    byl poslední bootstrap bez tohoto protokolu;
+    vydání 0.13 je veřejné a podkrok se uzavře skutečným vzdáleným
+    0.13 → 0.14 acceptance.
 
    ✅ **8a — explicitní režim targetu.** Databáze, API a UI rozlišují
    `direct-port` a `managed-gateway`. Existující instalace se migrují beze změny
@@ -930,19 +930,17 @@ jen konkrétní provozní a vyhodnocovací scénář.
          Workflow nepoužívá `latest`, odmítne již existující verzi a všechny
          cizí Actions jsou připnuté na commit SHA.
        - ◐ **8e-d-b2 — publikace a živá acceptance.** Tagy `agent-v*` chrání
-         aktivní GitHub ruleset; první release `agent-v0.11.0` ověřil proces a
-         aktuální release `agent-v0.12.1` úspěšně vydal
+         aktivní GitHub ruleset. Aktuální release `agent-v0.13.0` zveřejnil
          podepsaný multiarch image
-         `ghcr.io/kudrle01/initpad-agent@sha256:5cdf2e08904138b3160bda808632fc1982f74750ef9d4c6840a29cba8c7c8c4f`,
-         instalační skript, manifest, SBOM a kontrolní součty. Lokální kontrola
-         manifest checksumu a Cosign identity prošla, GHCR package je veřejný a
-         anonymní registry probe potvrdil shodný digest i obě cílové platformy.
-         Release dvojice je nastavená v lokálním kandidátovi; distribuční API
-         servíruje Agent 0.12.1 s allocation-scoped Docker prostředky,
-         bezpečným recovery neplatné identity a
-         instalátor se shodným podepsaným checksumem. Zbývá na
-         samostatném čistém Linux hostu ověřit instalaci, reboot, update,
-         rollback vadného obrazu a zachování workloadů po odpojení Agenta.
+         `ghcr.io/kudrle01/initpad-agent@sha256:d66470008525f6e6dd3180dd86ae062e35a3109717614b09666c8dfc43296663`,
+         instalační skript, manifest, SBOM a kontrolní součty. Kontrola
+         manifest checksumu a Sigstore identity prošla, GHCR package je veřejný
+         a anonymní registry probe potvrdil shodný digest i obě cílové
+         platformy. Distribuční API servíruje Agent 0.13.0 s
+         allocation-scoped Docker prostředky, bezpečným recovery identity a
+         vzdáleným update protokolem. Zbývá na samostatném čistém Linux hostu
+         ověřit instalaci, reboot, skutečný update na 0.14, rollback vadného
+         obrazu a zachování workloadů po odpojení Agenta.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a
          verze z podepsaného release manifestu; UI proto nemůže označit starší
          image verzí lokálního source tree. **Uživatelský test:** bez jednoho

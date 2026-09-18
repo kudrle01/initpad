@@ -11,3 +11,9 @@ deploy/backups/
 deploy/.runtime/
 vendor/
 .phpunit.cache/
+
+# Local review, explanatory and machine-specific notes
+/AUDIT_RESOLUTION_*.md
+/VYSVETLENI_*.md
+/*_HANDOFF.md
+/deploy/DEPLOYMENT_RASPBERRY_PI.md

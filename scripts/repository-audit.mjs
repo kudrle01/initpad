@@ -25,8 +25,10 @@ const forbiddenTrackedPaths = [
   { pattern: /^\.workspace\//, reason: 'generated project workspaces' },
   { pattern: /^deploy\/(?:backups|\.runtime)\//, reason: 'runtime or backup data' },
   { pattern: /(^|\/)\.env$/, reason: 'unreviewed environment values' },
-  { pattern: /(^|\/)(?:CLAUDE|SESSION)_HANDOFF\.md$/, reason: 'temporary handoff notes' },
+  { pattern: /(^|\/)[A-Z0-9_-]*HANDOFF\.md$/i, reason: 'temporary internal notes' },
+  { pattern: /(^|\/)AUDIT_RESOLUTION_.*\.md$/i, reason: 'local audit working notes' },
   { pattern: /^VYSVETLENI_.*\.md$/, reason: 'personal explanation notes' },
+  { pattern: /(^|\/)AGENTS\.md$/i, reason: 'local tool instructions' },
   {
     pattern: /^deploy\/DEPLOYMENT_RASPBERRY_PI\.md$/,
     reason: 'machine-specific deployment notes',

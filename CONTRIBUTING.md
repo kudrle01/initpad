@@ -61,8 +61,10 @@ or the relevant local image probes.
 
 Use small commits with an imperative subject such as `fix(agent): ...` or
 `docs(release): ...`. Update the relevant ADR or roadmap entry when a decision
-or milestone changes. Personal handoff notes and generated runtime files do not
-belong in the repository.
+or milestone changes. Local review notes, editor instructions, scratch files
+and generated runtime data do not belong in the repository. Comments should
+explain an invariant, security boundary or non-obvious trade-off; do not narrate
+code that is already clear from its names and types.
 
 By contributing, you agree that your contribution is licensed under the
 Apache License 2.0 used by this project.

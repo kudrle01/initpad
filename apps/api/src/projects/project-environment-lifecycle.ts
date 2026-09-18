@@ -259,7 +259,7 @@ export class ProjectEnvironmentLifecycle {
         return port;
       } catch (error) {
         if (!isUniqueConstraint(error)) throw error;
-        // Another deployment acquired this port after our initial read.
+        // Another deployment acquired this port after the initial read.
       }
     }
     throw new Error(

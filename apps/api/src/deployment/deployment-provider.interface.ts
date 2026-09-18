@@ -1,7 +1,7 @@
 import { ProviderKind } from '../domain/types';
 
-// Connection to a user-provided deployment target (typically prod: your own
-// server, e.g. a school SFTP host or a VPS over SSH). When absent, the provider
+// Connection to a user-provided deployment target (typically prod: an externally
+// managed server, e.g. a school SFTP host or a VPS over SSH). When absent, the provider
 // uses the platform's built-in demo target (fake-vps / fake-sftp).
 export interface ProviderConnection {
   host: string;

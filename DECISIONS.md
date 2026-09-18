@@ -1382,7 +1382,7 @@ selže. SaaS onboarding se ověřuje samostatně přes GitHub podle ADR-043.
 
 ## ADR-043 — Edice jsou bezpečnostní hranice a GitHub vyžaduje explicitní repository contract
 
-**Kontext.** Revize implementace převzaté po handoffu odhalila, že některé
+**Kontext.** Následná revize implementace odhalila, že některé
 hotové stavební bloky byly v dokumentaci zaměněné za dokončený SaaS tok.
 `ScmRegistry` existoval, ale nikdo jej nepoužíval; `Project` ukládal jen URL a
 název a GitHub installation jen mutable login. Zároveň SaaS stále zpřístupňoval
@@ -3998,7 +3998,7 @@ zkontroluje databázové i Docker invarianty.
 ## ADR-091 — Lokální gate je deterministický, supply-chain kontrola síťová
 
 **Kontext.** Produkční build a testy samy neodhalí omylem commitovaný backup,
-osobní handoff, lokální absolutní cestu nebo zdrojový modul odpojený od aplikace.
+lokální revizní poznámky, absolutní cestu nebo zdrojový modul odpojený od aplikace.
 Naopak `npm audit` závisí na dostupnosti a aktuálním stavu externí advisory služby.
 Kdyby byl součástí každé lokální kontroly, síťový výpadek by se tvářil jako
 vada zdrojového kódu. Dosavadní tvrzení roadmapy o kontrole osiřelých modulů

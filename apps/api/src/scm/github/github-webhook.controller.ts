@@ -21,8 +21,8 @@ interface GitHubAuthorizationRevokedEvent {
 }
 
 // Receives GitHub App webhooks (installation and user-authorization lifecycle). GitHub signs the exact
-// body with the App's webhook secret (X-Hub-Signature-256); we verify it before
-// touching any state, and refuse everything when no secret is configured.
+// body with the App's webhook secret (X-Hub-Signature-256). Signature validation
+// precedes all state changes, and requests are rejected when no secret is configured.
 @Controller('scm/github')
 @PublicEndpoint('scm-signature')
 export class GitHubWebhookController {

@@ -274,7 +274,7 @@ model Target {
   scope                    String // 'builtin' | 'user'
   // What runtimes this target can execute (comma-separated): a subset of
   // 'static','node','php','python'. An environment can bind to a target only
-  // when its template's runtime is in this set (e.g. our static nginx host
+  // when its template's runtime is in this set (e.g. the static nginx host
   // cannot run PHP, but a real PHP-capable SFTP host can).
   capabilities             String
   host                     String?

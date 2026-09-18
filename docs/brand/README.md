@@ -1,16 +1,16 @@
-# InitPad — přesný brand balíček
+# InitPad brand assets
 
-Balíček je postavený přímo ze schváleného PNG masteru, tedy bez změny siluety.
+Tato složka obsahuje kanonické zdroje a exporty vizuální identity InitPadu.
 
 ## Obsah
 
-- `approved-master.png` — jediný kanonický zdroj siluety
+- `approved-master.png` — kanonický zdroj symbolu
 - PNG exporty 16, 32, 64, 128, 256 a 512 px
 - `favicon.ico`
 - `initpad-maskable-512.png`
 - PNG varianty symbolu a horizontálního wordmarku
 - `initpad-brand-preview.png`
-- `VECTOR_NOTE.txt`
+- `VECTOR_POLICY.md` — pravidla pro případný budoucí vektorový master
 
 ## Barvy
 
@@ -21,11 +21,7 @@ Balíček je postavený přímo ze schváleného PNG masteru, tedy bez změny si
 
 ## Použití v repozitáři
 
-Tato složka je zdrojový balíček. Web do produkčního buildu přebírá pouze
-potřebné velikosti z `apps/web/public/brand` a `favicon.ico` z
-`apps/web/public`. Rozhraní nepoužívá dřívější SVG rekonstrukci; zobrazuje
-přímo schválené PNG exporty.
-
-Tři původní soubory `approved-master.png`, `initpad-icon-primary-1254.png` a
-`initpad-icon-primary-master.png` byly bajtově totožné. V repozitáři proto zůstává
-jen jednoznačně pojmenovaný `approved-master.png`.
+Web do produkčního buildu přebírá potřebné velikosti z
+`apps/web/public/brand` a `favicon.ico` z `apps/web/public`. Nové exporty musí
+vycházet z `approved-master.png`, aby symbol zůstal konzistentní napříč UI,
+instalátorem a dokumentací.

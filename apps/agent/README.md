@@ -28,8 +28,8 @@ immutable `INITPAD_AGENT_IMAGE` digest and its explicit
 `INITPAD_AGENT_RELEASE_VERSION`. It installs and enrolls without cloning this
 repository, preserves the root-only identity across updates and restores the
 previous container when the replacement cannot heartbeat. The repository
-now publishes the signed, public `amd64/arm64` Agent 0.12.1 image. Clean-host
-lifecycle acceptance remains a release gate. The local lab below stays the
+publishes the signed, public `amd64/arm64` Agent 0.13.0 image. Clean-host update
+and rollback acceptance remains a release gate. The local lab below stays the
 supported source-build acceptance path.
 
 Agent 0.13 adds the remote update protocol. An owner/admin must explicitly

@@ -224,7 +224,7 @@ $COMPOSE up -d postgres gitea fake-vps fake-sftp static-web
 say "Waiting for PostgreSQL"
 wait_healthy postgres 30
 # A pre-existing database volume keeps the password it was initialized with.
-# Verify our .env matches it, otherwise the API could not connect later.
+# Verify that .env matches it; otherwise the API cannot connect later.
 if ! $COMPOSE exec -T -e PGPASSWORD="$DB_PASSWORD" postgres \
     psql -h 127.0.0.1 -U initpad -d initpad -c 'select 1' >/dev/null 2>&1; then
   fail "The existing database volume was initialized with a different password

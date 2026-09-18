@@ -7,7 +7,8 @@ with the compose plugin.
 ## Local install
 
 ```bash
-git clone <this repo> && cd initpad/deploy
+git clone https://github.com/kudrle01/initpad.git
+cd initpad/deploy
 ./install.sh
 ```
 

@@ -17,7 +17,7 @@ import {
 const SETUP_TTL_MS = 10 * 60 * 1000;
 const WORKSPACE_ADMINS = new Set(['owner', 'admin']);
 
-// Shape of the parts of a GitHub `installation` webhook payload we consume.
+// Shape of the GitHub `installation` webhook fields consumed by InitPad.
 export interface InstallationEvent {
   action?: string;
   installation?: {
@@ -151,8 +151,8 @@ export class GitHubInstallationService {
     if (!membership || !WORKSPACE_ADMINS.has(membership.role)) {
       throw new ForbiddenException('Workspace admin access is required to finish GitHub setup');
     }
-    // For personal GitHub accounts we can prove that the installer and target
-    // are the same immutable account. Organization installs are authorized by
+    // For personal GitHub accounts, the installer and target can be matched as
+    // the same immutable account. Organization installs are authorized by
     // GitHub's own installation UI and the bound one-time workspace state.
     if (verified.accountType === 'User' && identity.providerUserId !== verified.accountId) {
       throw new ForbiddenException(

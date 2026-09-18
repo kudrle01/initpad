@@ -94,7 +94,7 @@ popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
 
-### Platformní release 0.2.0 čeká na veřejnou distribuci a živý update
+### Platformní release 0.2.0 je veřejný a čeká na živý update
 
 Workflow `initpad-v*` lokálně prochází release gate a vytváří tři podepsané
 multiarch images, SBOM, provenance, Compose descriptor, checksums a recovery
@@ -102,15 +102,16 @@ instalátor. Admin UI přijímá jen novější ověřenou verzi a Supervisor p�
 přepnutím ověří PostgreSQL dump i readiness každé komponenty. Tag
 `initpad-v0.2.0` vznikl z commitu
 `fb5c4be7632e58a1fb37439c70ceecf09120e40a` a release workflow prošel. GitHub
-repozitář a tři nové GHCR packages jsou ale zatím soukromé; anonymní klient
-proto release katalog ani images nestáhne. Implementace nebude označena za
-provozně přijatou, dokud nebudou veřejně čitelné a čistý Linux host neprojde
-bootstrapem, rebootem, úspěšným `0.2.0 → 0.2.1` updatem, vadným
-candidate rollbackem a přerušením uprostřed cutoveru. Docker socket
-Supervisoru je root-equivalent oprávnění, nikoli rootless sandbox.
+repozitář, release assets i GHCR packages `initpad-api`, `initpad-web` a
+`initpad-supervisor` jsou veřejně čitelné. Anonymní audit 18. září 2026 ověřil
+Sigstore identity manifestu a checksumů, SHA-256 vazby i OCI indexy pro
+`linux/amd64` a `linux/arm64`. Implementace nebude označena za provozně
+přijatou, dokud čistý Linux host neprojde bootstrapem, rebootem, úspěšným
+`0.2.0 → 0.2.1` updatem, vadným candidate rollbackem a přerušením uprostřed
+cutoveru. Docker socket Supervisoru je root-equivalent oprávnění, nikoli
+rootless sandbox.
 
-Po zveřejnění repozitáře a packages se anonymní distribuční hranice ověří
-bez GitHub credentials:
+Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
 npm run audit:public-release -- --tag initpad-v0.2.0

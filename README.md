@@ -4,6 +4,10 @@
 
 <h1 align="center">InitPad</h1>
 
+<p align="center">
+  <a href="https://github.com/kudrle01/initpad/actions/workflows/ci.yml"><img src="https://github.com/kudrle01/initpad/actions/workflows/ci.yml/badge.svg" alt="Repository checks"></a>
+</p>
+
 InitPad je interní vývojářská platforma pro školy, menší týmy a firemní
 sandboxy. Z jednoho formuláře připraví soukromý Git repozitář, výchozí kód,
 CI pipeline a prostředí `dev → test → prod`. Vývojář tak nemusí pro každý
@@ -14,7 +18,19 @@ v Praze. Cílem není nahradit Kubernetes nebo velké platform-engineering
 produkty. InitPad zkoumá, jak lze jejich hlavní principy zpřístupnit v menším,
 srozumitelném a samostatně nasaditelném systému.
 
-## Co lze vyzkoušet
+## Stav projektu
+
+| Část | Stav |
+|---|---|
+| Self-hosted platforma | Veřejný podepsaný release `0.2.0`; funkční single-node profil, probíhá finální ověření na čistém hostu |
+| InitPad Agent | Veřejný podepsaný multi-arch release `0.13.0` pro `linux/amd64` a `linux/arm64` |
+| Hosted SaaS | Ve vývoji; nejde zatím o produkční deployment profil |
+
+Release assets, checksumy a OCI images jsou veřejné a ověřitelné bez GitHub
+credentials. Aktuální omezení a podmínky produkčního použití jsou v
+[release readiness](docs/RELEASE_READINESS.md).
+
+## Hlavní funkce
 
 - registraci nebo administrátorem spravované účty;
 - osobní a týmové workspaces s rolemi;
@@ -24,24 +40,15 @@ srozumitelném a samostatně nasaditelném systému.
 - povýšení stejného buildu do testu a produ;
 - Docker targety připojené přes InitPad Agent a kompatibilní SFTP hosting pro
   statické a PHP aplikace;
-- outbound enrollment, heartbeat a durable job protokol vzdáleného Docker
-  targetu přes InitPad Agent včetně izolovaného Docker lifecycle testu a
-  checksum-bound Linux instalátoru bez klonování repozitáře;
+- bezpečný outbound enrollment, heartbeat a obnovitelné Agent joby bez
+  příchozího SSH nebo obecného vzdáleného shellu;
 - historii commitů, CI jobů a deployment operací;
-- bezpečné odstranění deploymentu i celého projektu.
+- produkční approval, rollback a bezpečné odstranění deploymentu i projektu.
 
 Self-hosted edice používá vestavěnou Giteu, Gitea Actions a privátní OCI
 registry. GitHub varianta umí přihlášení, instalaci GitHub App, založení nebo
-import repozitáře a převzetí ověřeného Actions artefaktu. Veřejný SaaS zatím
-není hotový produkční profil. InitPad Agent už umí bezpečný outbound enrollment,
-heartbeat, obnovitelné joby, diagnostiku a celý Docker lifecycle nad ověřeným
-artefaktem bez obecného shellu. Produkční gateway režim navíc poskytuje stabilní
-HTTPS adresu a health-gated přepnutí s rollbackem. Podepsaný multi-arch Agent
-0.13.0 je veřejně distribuovaný immutable digestem a self-hosted instalátor jej
-automaticky nabídne správci serveru. Před veřejným provozem zbývá dokončit
-čistý Linux acceptance, vzdálený update na následující verzi a ověřit
-celý SaaS profil se živou GitHub App. Podepsaný platformní release `0.2.0`
-je první kandidát pro recovery instalaci a následné aktualizace z UI.
+import repozitáře a převzetí ověřeného Actions artefaktu. Produkční gateway
+režim poskytuje stabilní HTTPS adresu a health-gated přepnutí s rollbackem.
 Původní source-based SSH runtime je pouze migrační legacy konektor: existující
 deploymenty lze dál spravovat, ale nové servery ani prostředí se na něj
 nevážou.
@@ -94,7 +101,7 @@ health endpoint a CI workflow. PHP frameworky mají verzovaný skeleton i
 Požadavky: Node.js 22.12+ a Docker.
 
 ```bash
-npm install
+npm ci
 docker compose -f infra/docker-compose.yml up -d postgres gitea
 cp apps/api/.env.example apps/api/.env
 npm run db:migrate --workspace @initpad/api
@@ -122,6 +129,12 @@ docker compose -f deploy/docker-compose.yml --profile runner config --quiet
 lokální cesty a tokeny, osiřelé produkční moduly, sestavení i testy.
 `check:release` navíc porovná produkční závislosti s aktuální databází
 zranitelností, a proto vyžaduje přístup k internetu.
+
+Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
+
+```bash
+npm run audit:public-release -- --tag initpad-v0.2.0
+```
 
 Změna šablony nebo kontejnerové image navíc spouští samostatný GitHub Actions
 gate, který sestaví platformu, vyrenderuje všech dvanáct šablon, ověří jejich
@@ -154,12 +167,14 @@ izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
 - [DECISIONS.md](DECISIONS.md) — architektonická rozhodnutí;
 - [THREAT_MODEL.md](THREAT_MODEL.md) — hranice důvěry a produkční podmínky.
 
-## Licence a přispívání
+## Autor, licence a přispívání
 
-InitPad je dostupný pod [Apache License 2.0](LICENSE). Postup pro lokální
-vývoj, testy a pull requesty je v [CONTRIBUTING.md](CONTRIBUTING.md).
+Projekt zpracovává Jan Kudrlička jako praktickou část diplomové práce na
+Vysoké škole ekonomické v Praze. Repozitář slouží jako reprodukovatelný
+implementační artefakt; tvrzení o funkčnosti se vztahují ke konkrétním
+releaseům a zdokumentovaným acceptance testům.
+
+InitPad je dostupný pod [Apache License 2.0](LICENSE). Postup pro lokální vývoj,
+testy a pull requesty je v [CONTRIBUTING.md](CONTRIBUTING.md).
 Bezpečnostní problémy se nehlásí veřejným issue; použij
 [SECURITY.md](SECURITY.md). Copyright © 2026 Jan Kudrlička.
-
-Osobní poznámky, handoffy a jednorázová vysvětlení nejsou součástí
-produktové dokumentace a do repozitáře se necommitují.

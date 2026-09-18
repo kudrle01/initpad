@@ -83,10 +83,11 @@ artifact and bounded in-memory configuration through the fenced job protocol.
   diagnostic cleanup preserves images that existed before the job.
 - Deployment operations atomically lock one environment. Cancellation is a
   persisted request; stale background work cannot publish over a newer state.
-- API zapisuje strukturované JSON logy se serverem generovaným request ID.
-  Deployment a Agent job sdílí stabilní correlation ID; Agent jej přebírá jen
-  jako diagnostická metadata. Centrální logger odstraňuje citlivé klíče, známé
-  formáty tokenů a URL credentials a HTTP access log neukládá query ani body.
+- The API writes structured JSON logs with a server-generated request ID.
+  Deployments and Agent jobs share a stable correlation ID; the Agent accepts
+  it only as diagnostic metadata. The centralized logger removes sensitive
+  keys, known token formats and URL credentials, while the HTTP access log
+  stores neither query strings nor request bodies.
 - App containers receive memory/CPU/PID/log limits, dropped capabilities and
   `no-new-privileges`. Platform web/API containers are read-only where possible.
 - Dependencies and actions are locked; npm and Composer audits are part of the
@@ -125,9 +126,10 @@ artifact and bounded in-memory configuration through the fenced job protocol.
   explicitly re-enrolled. Individual claims use short-lived fencing tokens.
   Allocation enforcement, verified artifact
   authorization, secret-safe config delivery and a non-shell Docker allow-list
-  exist. Agent 0.12.1 has a signed multi-arch image, SBOM, provenance and an
-  immutable reviewed release channel; clean-host lifecycle acceptance and an
-  independent security review are still required. The installer checksum
+  exist. Agent 0.13.0 has a signed public multi-arch image, SBOM, provenance
+  and an immutable reviewed release channel; clean-host update and rollback
+  acceptance and an independent security review are still required. The
+  installer checksum
   delivered by the same control-plane HTTPS origin detects corruption and binds
   the UI to exact bytes, but it does not create an independent trust root.
   Read-only filesystems and dropped capabilities do not reduce the authority
@@ -138,9 +140,10 @@ artifact and bounded in-memory configuration through the fenced job protocol.
   audit log are required before hosted production use.
 - Backups contain credentials. They must be encrypted, stored off-host and
   tested with periodic restore drills.
-- JSON výstup je pouze lokální stdout/stderr kontrakt. Hosted provoz stále
-  potřebuje přístupově omezený centrální collector, retenci, alerting, metriky a
-  OpenTelemetry export; correlation ID není autentizační údaj ani náhrada auditu.
+- JSON output is only a local stdout/stderr contract. Hosted operation still
+  requires an access-controlled central collector, retention, alerting,
+  metrics and OpenTelemetry export; a correlation ID is neither an
+  authentication credential nor a replacement for an audit trail.
 
 ## Production gates
 
