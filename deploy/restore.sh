@@ -8,6 +8,15 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+RUNTIME_UPDATE_DIR=.runtime/platform-update
+RUNTIME_OVERRIDE=$RUNTIME_UPDATE_DIR/platform-release.override.yml
+mkdir -p "$RUNTIME_UPDATE_DIR"
+chmod 700 "$RUNTIME_UPDATE_DIR"
+if [ ! -f "$RUNTIME_OVERRIDE" ]; then
+  printf 'services: {}\n' > "$RUNTIME_OVERRIDE"
+  chmod 600 "$RUNTIME_OVERRIDE"
+fi
+
 say()  { printf '\033[1;32m›\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 [ -f ./restore-reconcile.sql ] || fail "deploy/restore-reconcile.sql is missing."
@@ -52,6 +61,18 @@ if [ -f "$src/caddy-data.tar.gz" ]; then
   [ "$entries" -eq 1 ] || \
     fail "Optional caddy-data.tar.gz is not covered by the checksum manifest."
 fi
+if [ -f "$src/supervisor-data.tar.gz" ]; then
+  entries=$(awk '$2 == "supervisor-data.tar.gz" { count++ } END { print count + 0 }' \
+    "$src/SHA256SUMS")
+  [ "$entries" -eq 1 ] || \
+    fail "Optional supervisor-data.tar.gz is not covered by the checksum manifest."
+fi
+if [ -f "$src/platform-release.override.yml" ]; then
+  entries=$(awk '$2 == "platform-release.override.yml" { count++ } END { print count + 0 }' \
+    "$src/SHA256SUMS")
+  [ "$entries" -eq 1 ] || \
+    fail "Optional platform-release.override.yml is not covered by the checksum manifest."
+fi
 
 # Verify every archive before stopping or overwriting the live stack.
 say "Verifying backup checksums"
@@ -63,6 +84,8 @@ else
   fail "Neither sha256sum nor shasum is installed."
 fi
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
+[ -z "$(docker ps -q --filter label=com.initpad.platform-update)" ] || \
+  fail "A signed platform update is currently running; wait before restoring a backup."
 docker run --rm -i postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 pg_restore --list \
   < "$src/postgres.dump" >/dev/null || fail "PostgreSQL dump is not readable."
 
@@ -76,7 +99,9 @@ COMPOSE=(docker compose)
 COMPOSE_ALL=(docker compose --profile runner --profile server)
 
 say "Stopping the complete stack, including optional profiles"
-"${COMPOSE_ALL[@]}" stop >/dev/null 2>&1 || true
+INITPAD_INSTALL_ROOT=$(cd .. && pwd -P) \
+INITPAD_SUPERVISOR_SHARED_SECRET=restore-compatibility-only-00000000000000 \
+  "${COMPOSE_ALL[@]}" stop >/dev/null 2>&1 || true
 
 if [ -f .env ]; then
   previous_env=".env.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -87,9 +112,31 @@ fi
 cp "$src/initpad.env" .env
 chmod 600 .env
 
+set_env() {
+  local tmp; tmp=$(mktemp)
+  awk -v k="$1" -v v="$2" 'BEGIN{FS=OFS="="} $1==k {$0=k"="v; done=1} {print} END{if(!done) print k"="v}' .env > "$tmp"
+  mv "$tmp" .env
+  chmod 600 .env
+}
 get_env() {
   awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/, ""); print; exit}' .env
 }
+install_root=$(cd .. && pwd -P)
+case "$install_root" in *$'\n'*|*$'\r'*) fail "Install path contains a newline.";; esac
+set_env INITPAD_INSTALL_ROOT "$install_root"
+set_env COMPOSE_FILE "docker-compose.yml:.runtime/platform-update/platform-release.override.yml"
+if [ -z "$(get_env INITPAD_SUPERVISOR_SHARED_SECRET)" ]; then
+  command -v openssl >/dev/null || \
+    fail "openssl is required to initialize the release Supervisor secret."
+  set_env INITPAD_SUPERVISOR_SHARED_SECRET "$(openssl rand -hex 32)"
+fi
+if [ -f "$src/platform-release.override.yml" ]; then
+  cp "$src/platform-release.override.yml" "$RUNTIME_OVERRIDE"
+else
+  printf 'services: {}\n' > "$RUNTIME_OVERRIDE"
+fi
+chmod 600 "$RUNTIME_OVERRIDE"
+
 restore_db_password=$(get_env INITPAD_DB_PASSWORD)
 [ -n "$restore_db_password" ] || fail "Backup configuration has no INITPAD_DB_PASSWORD."
 ./render-runner-config.sh
@@ -164,6 +211,7 @@ say "Restoring data volumes"
 restore_volume initpad_gitea-data gitea-data.tar.gz
 restore_volume initpad_minio-data minio-data.tar.gz
 restore_volume initpad_api-data api-data.tar.gz
+restore_volume initpad_supervisor-data supervisor-data.tar.gz no
 restore_volume initpad_sftp-www sftp-www.tar.gz
 restore_volume initpad_caddy-data caddy-data.tar.gz no
 restore_volume initpad_runner-data runner-data.tar.gz
@@ -195,6 +243,7 @@ say "Verifying restored services"
 wait_healthy minio 60
 wait_healthy gitea 60
 wait_healthy api 60
+wait_healthy supervisor 60
 wait_healthy runner-docker 60
 runner_id=$("${COMPOSE[@]}" --profile runner ps -q act_runner)
 [ -n "$runner_id" ] && [ "$(docker inspect --format '{{.State.Running}}' "$runner_id")" = true ] || \

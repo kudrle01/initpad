@@ -38,6 +38,8 @@ esac
 command -v docker >/dev/null || fail "Docker is not installed (https://docs.docker.com/get-docker/)."
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
 docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is missing."
+[ -z "$(docker ps -q --filter label=com.initpad.platform-update)" ] || \
+  fail "A signed platform update is currently running; wait for it to finish."
 
 # ---- 1. configuration + secrets --------------------------------------------
 if [ ! -f .env ]; then
@@ -63,6 +65,27 @@ set_env() {
   mv "$tmp" .env
   chmod 600 .env
 }
+
+# The Supervisor mounts this checkout read-only at the same absolute path so
+# its separately launched helper can use the reviewed Compose file. Recompute
+# it on every install because a checkout may have been moved.
+install_root=$(cd .. && pwd -P)
+case "$install_root" in *$'\n'*|*$'\r'*) fail "Install path contains a newline.";; esac
+set_env INITPAD_INSTALL_ROOT "$install_root"
+set_env COMPOSE_FILE "docker-compose.yml:.runtime/platform-update/platform-release.override.yml"
+runtime_update_dir=.runtime/platform-update
+runtime_override=$runtime_update_dir/platform-release.override.yml
+mkdir -p "$runtime_update_dir"
+chmod 700 "$runtime_update_dir"
+if [ ! -f "$runtime_override" ]; then
+  printf 'services: {}\n' > "$runtime_override"
+  chmod 600 "$runtime_override"
+fi
+platform_version=$(awk -F'"' '/"version"[[:space:]]*:/ { print $4; exit }' platform-version.json)
+printf '%s\n' "$platform_version" | \
+  grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || \
+  fail "deploy/platform-version.json contains an invalid version."
+set_env INITPAD_PLATFORM_VERSION "$platform_version"
 
 # A normal self-hosted installation should immediately offer the reviewed,
 # checksum-verified Agent installer. Preserve a complete operator override,
@@ -251,10 +274,17 @@ else
 fi
 
 # ---- 4. platform ------------------------------------------------------------
-say "Building and starting the platform (api, web) — first build takes a few minutes"
-$COMPOSE up -d --build api web
+if grep -qx 'services: {}' "$runtime_override"; then
+  say "Building and starting the platform (API, web, release Supervisor) — first build takes a few minutes"
+  $COMPOSE up -d --build supervisor api web
+else
+  say "Starting the installed signed platform release"
+  $COMPOSE up -d --no-build supervisor api web
+fi
 say "Waiting for the platform API"
 wait_healthy api 60
+say "Waiting for the release Supervisor"
+wait_healthy supervisor 60
 
 # ---- 5. SSO — MUST run after the API is up: Gitea validates the discovery
 # URL immediately when the auth source is registered.

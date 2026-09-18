@@ -1,0 +1,18 @@
+{
+  "name": "@initpad/supervisor",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal release supervisor for self-hosted InitPad",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test dist/*.test.js"
+  },
+  "dependencies": {
+    "sigstore": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4"
+  }
+}

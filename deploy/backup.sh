@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 
 COMPOSE=(docker compose --profile runner --profile server)
 WRITER_SERVICES=(
-  api web act_runner runner-docker
+  api web supervisor act_runner runner-docker
   gitea minio fake-sftp static-web caddy
 )
 running_services=()
@@ -17,6 +17,20 @@ working_destination=""
 
 say()  { printf '\033[1;32m›\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+
+[ -f .env ] || fail "deploy/.env is missing. Run ./install.sh first."
+# A user may deliberately back up an older installation immediately after
+# pulling a release that introduced the Supervisor. Supply parse-only values
+# for the new required Compose fields without mutating the checkpointed .env.
+if ! grep -q '^INITPAD_INSTALL_ROOT=.' .env; then
+  export INITPAD_INSTALL_ROOT
+  INITPAD_INSTALL_ROOT=$(cd .. && pwd -P)
+fi
+if ! grep -q '^INITPAD_SUPERVISOR_SHARED_SECRET=.' .env; then
+  export INITPAD_SUPERVISOR_SHARED_SECRET=backup-compatibility-only-0000000000000000
+fi
+[ -z "$(docker ps -q --filter label=com.initpad.platform-update)" ] || \
+  fail "A signed platform update is currently running; wait before creating a backup."
 
 while IFS= read -r service; do
   [ -n "$service" ] && running_services+=("$service")
@@ -110,11 +124,18 @@ say "Archiving inactive data volumes"
 archive_volume initpad_gitea-data gitea-data.tar.gz
 archive_volume initpad_minio-data minio-data.tar.gz
 archive_volume initpad_api-data api-data.tar.gz
+archive_volume initpad_supervisor-data supervisor-data.tar.gz no
 archive_volume initpad_sftp-www sftp-www.tar.gz
 archive_volume initpad_caddy-data caddy-data.tar.gz no
 archive_volume initpad_runner-data runner-data.tar.gz
 
-[ -f .env ] || fail "deploy/.env is missing. Run ./install.sh first."
+if [ -f .runtime/platform-update/platform-release.override.yml ]; then
+  cp .runtime/platform-update/platform-release.override.yml \
+    "$working_destination/platform-release.override.yml"
+  chmod 600 "$working_destination/platform-release.override.yml"
+  backup_files+=(platform-release.override.yml)
+fi
+
 cp .env "$working_destination/initpad.env"
 chmod 600 "$working_destination/initpad.env"
 backup_files+=(initpad.env)

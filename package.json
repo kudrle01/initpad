@@ -9,12 +9,12 @@
   "scripts": {
     "dev:api": "npm run start:dev --workspace @initpad/api",
     "dev:web": "npm run dev --workspace @initpad/web",
-    "build": "npm run build --workspace @initpad/api && npm run build --workspace @initpad/web && npm run build --workspace @initpad/agent",
-    "test": "npm run test:release-tools && npm run test --workspace @initpad/api -- --runInBand && npm run test --workspace @initpad/web && npm run test --workspace @initpad/agent",
+    "build": "npm run build --workspace @initpad/api && npm run build --workspace @initpad/web && npm run build --workspace @initpad/agent && npm run build --workspace @initpad/supervisor",
+    "test": "npm run test:release-tools && npm run test --workspace @initpad/api -- --runInBand && npm run test --workspace @initpad/web && npm run test --workspace @initpad/agent && npm run test --workspace @initpad/supervisor",
     "test:release-tools": "node --test scripts/*.test.mjs",
-    "lint": "eslint 'apps/{api,agent}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs",
-    "format": "prettier --write 'apps/{api,agent}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs package.json 'apps/*/package.json'",
-    "format:check": "prettier --check 'apps/{api,agent}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs package.json 'apps/*/package.json'",
+    "lint": "eslint 'apps/{api,agent,supervisor}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs",
+    "format": "prettier --write 'apps/{api,agent,supervisor}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs package.json 'apps/*/package.json'",
+    "format:check": "prettier --check 'apps/{api,agent,supervisor}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs package.json 'apps/*/package.json'",
     "audit:repo": "node scripts/repository-audit.mjs",
     "check": "npm run audit:repo && npm run lint && npm run format:check && npm run build && npm run test",
     "check:release": "npm run check && npm audit --omit=dev --audit-level=low"

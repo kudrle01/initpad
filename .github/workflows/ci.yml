@@ -40,4 +40,10 @@ jobs:
 
       - name: Validate self-hosted Compose configuration
         working-directory: deploy
-        run: docker compose --env-file .env.example config --quiet
+        env:
+          INITPAD_INSTALL_ROOT: ${{ github.workspace }}
+          INITPAD_SUPERVISOR_SHARED_SECRET: ci-only-supervisor-secret-000000000000
+        run: |
+          mkdir -p .runtime/platform-update
+          printf 'services: {}\n' > .runtime/platform-update/platform-release.override.yml
+          docker compose --env-file .env.example config --quiet

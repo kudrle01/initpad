@@ -3,7 +3,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-const sourceFiles = ['apps/{api,agent}/src/**/*.ts', 'apps/web/src/**/*.{ts,tsx}'];
+const sourceFiles = ['apps/{api,agent,supervisor}/src/**/*.ts', 'apps/web/src/**/*.{ts,tsx}'];
 
 export default tseslint.config(
   {
@@ -56,7 +56,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/{api,agent}/src/**/*.ts'],
+    files: ['apps/{api,agent,supervisor}/src/**/*.ts'],
     languageOptions: {
       globals: globals.node,
     },

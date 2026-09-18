@@ -288,7 +288,14 @@ for (const path of trackedFiles.filter((path) => /(^|\/)Dockerfile$/.test(path))
   }
 }
 
-const localComposeImages = new Set(['initpad-agent-lab:dev']);
+const localComposeImages = new Set([
+  'initpad-agent-lab:dev',
+  // The self-hosted source install builds these local tags in place. Signed
+  // releases replace all three through the generated digest-only override.
+  '${INITPAD_API_IMAGE:-initpad-api:source}',
+  '${INITPAD_WEB_IMAGE:-initpad-web:source}',
+  '${INITPAD_SUPERVISOR_IMAGE:-initpad-supervisor:source}',
+]);
 for (const path of trackedFiles.filter((path) => /\.ya?ml$/.test(path))) {
   const content = textFiles.get(path) ?? '';
   for (const match of content.matchAll(/^\s*image:\s*["']?([^\s"']+)/gm)) {

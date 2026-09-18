@@ -18,7 +18,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U initpad"]
+      test: ['CMD-SHELL', 'pg_isready -U initpad']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -41,7 +41,7 @@ services:
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/ready"]
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:9000/minio/health/ready']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -72,31 +72,31 @@ services:
         mc anonymous set none "local/$$ARTIFACT_BUCKET"
         echo "artifact bucket ready: $$ARTIFACT_BUCKET"
     networks: [platform]
-    restart: "no"
+    restart: 'no'
 
   gitea:
     image: gitea/gitea:1.22@sha256:538658de667c5d098a274f2f63aa6ec891d88f670cdd5282cf27221ba747dda4
     environment:
       # INSTALL_LOCK skips the web install wizard — the instance is configured
       # entirely from here and from install.sh (no manual clicking).
-      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__INSTALL_LOCK: 'true'
       GITEA__server__ROOT_URL: ${INITPAD_GITEA_PUBLIC_URL:-http://gitea.localhost:3001/}
-      GITEA__actions__ENABLED: "true"
+      GITEA__actions__ENABLED: 'true'
       # SSO: sign-in through the platform (OIDC) auto-links to an existing
       # account by e-mail; unknown e-mails get a new account.
       GITEA__oauth2_client__ACCOUNT_LINKING: auto
-      GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
+      GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: 'true'
       GITEA__oauth2_client__USERNAME: nickname
-      GITEA__service__DISABLE_REGISTRATION: "true"
-      GITEA__webhook__ALLOWED_HOST_LIST: "api"
+      GITEA__service__DISABLE_REGISTRATION: 'true'
+      GITEA__webhook__ALLOWED_HOST_LIST: 'api'
     ports:
       # Must stay published on the host: the host Docker daemon pushes/pulls
       # registry images through this port (build once, deploy many).
-      - "${INITPAD_GITEA_HTTP_PORT:-3001}:3000"
+      - '${INITPAD_GITEA_HTTP_PORT:-3001}:3000'
     volumes:
       - gitea-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:3000/api/healthz']
       interval: 3s
       timeout: 3s
       retries: 40
@@ -107,6 +107,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: ${INITPAD_API_IMAGE:-initpad-api:source}
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
@@ -126,6 +127,11 @@ services:
       INITPAD_SCM_WEBHOOK_URL: http://api:3000
       INITPAD_REGISTRATION_MODE: ${INITPAD_REGISTRATION_MODE:-open}
       INITPAD_EDITION: ${INITPAD_EDITION:-self-hosted}
+      INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:-0.2.0}
+      INITPAD_UPDATE_REPOSITORY: ${INITPAD_UPDATE_REPOSITORY:-kudrle01/initpad}
+      INITPAD_SIGSTORE_CACHE_DIR: /data/sigstore-js
+      INITPAD_SUPERVISOR_URL: http://supervisor:7070
+      INITPAD_SUPERVISOR_SHARED_SECRET: ${INITPAD_SUPERVISOR_SHARED_SECRET:?run install.sh to generate secrets}
       # Enables the public, checksum-bound Agent installer UX only when it is
       # an immutable digest reference. The enrollment token is never embedded.
       INITPAD_AGENT_IMAGE: ${INITPAD_AGENT_IMAGE:-}
@@ -160,11 +166,11 @@ services:
       # The credentials MUST match how fake-vps/fake-sftp were created below,
       # otherwise the API authenticates with the wrong password.
       INITPAD_SSH_HOST: fake-vps
-      INITPAD_SSH_PORT: "2222"
+      INITPAD_SSH_PORT: '2222'
       INITPAD_SSH_USER: deploy
       INITPAD_SSH_PASSWORD: ${INITPAD_SSH_PASSWORD:-deploy}
       INITPAD_SFTP_HOST: fake-sftp
-      INITPAD_SFTP_PORT: "22"
+      INITPAD_SFTP_PORT: '22'
       INITPAD_SFTP_USER: deploy
       INITPAD_SFTP_PASSWORD: ${INITPAD_SFTP_PASSWORD:-deploy}
       INITPAD_SFTP_INTERNAL_URL: http://static-web
@@ -184,7 +190,7 @@ services:
       INITPAD_ARTIFACT_S3_BUCKET: ${INITPAD_ARTIFACT_S3_BUCKET:-initpad-artifacts}
       INITPAD_ARTIFACT_S3_ACCESS_KEY_ID: ${INITPAD_ARTIFACT_S3_ACCESS_KEY_ID:-initpad}
       INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY: ${INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY:-initpad-artifacts}
-      INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE: "true"
+      INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE: 'true'
     volumes:
       # The API drives deployments through the host Docker daemon. The :ro
       # suffix protects only the socket inode; Docker API access is inherently
@@ -195,10 +201,10 @@ services:
     extra_hosts:
       # Works on Docker Desktop out of the box; this line makes it work on
       # plain Linux too (health checks of host-published app ports).
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     healthcheck:
       # busybox wget is available in node:alpine.
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health/ready"]
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health/ready']
       interval: 3s
       timeout: 3s
       retries: 40
@@ -207,7 +213,7 @@ services:
       postgres: { condition: service_healthy }
       gitea: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
-    networks: [platform, net-prod]
+    networks: [platform, update-control, net-prod]
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -217,13 +223,20 @@ services:
     restart: unless-stopped
 
   web:
+    image: ${INITPAD_WEB_IMAGE:-initpad-web:source}
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
     ports:
-      - "${INITPAD_WEB_PORT:-8080}:80"
+      - '${INITPAD_WEB_PORT:-8080}:80'
     depends_on: [api]
     networks: [platform]
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
     read_only: true
     tmpfs:
       - /var/cache/nginx:size=32m
@@ -234,6 +247,49 @@ services:
     pids_limit: 100
     restart: unless-stopped
 
+  # Minimal privileged updater (ADR-111). It has no published port and accepts
+  # only short-lived HMAC-authenticated requests from the API. The Docker
+  # socket is intentionally isolated here; browser input never becomes a
+  # command, image reference or Compose fragment.
+  supervisor:
+    image: ${INITPAD_SUPERVISOR_IMAGE:-initpad-supervisor:source}
+    build:
+      context: ..
+      dockerfile: apps/supervisor/Dockerfile
+    container_name: initpad-supervisor
+    environment:
+      INITPAD_INSTALL_ROOT: ${INITPAD_INSTALL_ROOT:?run install.sh to configure the install root}
+      INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:-0.2.0}
+      INITPAD_SUPERVISOR_CONTAINER_NAME: initpad-supervisor
+      INITPAD_SUPERVISOR_SHARED_SECRET: ${INITPAD_SUPERVISOR_SHARED_SECRET:?run install.sh to generate secrets}
+      INITPAD_UPDATE_REPOSITORY: ${INITPAD_UPDATE_REPOSITORY:-kudrle01/initpad}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - supervisor-data:/var/lib/initpad-supervisor
+      # Host Compose commands read the same signed-release override so the
+      # selected release survives maintenance and re-running install.sh.
+      - ./.runtime/platform-update:/var/lib/initpad-supervisor/runtime
+      - type: bind
+        source: ${INITPAD_INSTALL_ROOT:?run install.sh to configure the install root}
+        target: ${INITPAD_INSTALL_ROOT:?run install.sh to configure the install root}
+        read_only: true
+    networks: [update-control, release-egress]
+    healthcheck:
+      test: ['CMD', 'node', 'dist/cli.js', 'health']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    mem_limit: 192m
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+
   # Dedicated rootless Docker daemon for untrusted CI jobs. It is privileged
   # only inside this container so rootless Docker can create namespaces; the
   # physical host socket and filesystem are never mounted into a workflow.
@@ -241,21 +297,21 @@ services:
   # build container, so CI cannot starve the platform control plane.
   runner-docker:
     image: docker:27.5.1-dind-rootless@sha256:e2ac8e8f66ae21a060b0a8e3005c70f6ed9441aabf409434463d1f6eecd38026
-    profiles: ["runner"]
+    profiles: ['runner']
     privileged: true
     environment:
-      DOCKER_TLS_CERTDIR: ""
+      DOCKER_TLS_CERTDIR: ''
       DOCKER_HOST: tcp://127.0.0.1:2375
     command:
-      - "--host=tcp://0.0.0.0:2375"
-      - "--tls=false"
+      - '--host=tcp://0.0.0.0:2375'
+      - '--tls=false'
       # Only the same-host, non-public alias is HTTP. A configured public CI
       # registry still uses verified TLS and is not placed on this allow-list.
-      - "--insecure-registry=host.docker.internal:${INITPAD_GITEA_HTTP_PORT:-3001}"
+      - '--insecure-registry=host.docker.internal:${INITPAD_GITEA_HTTP_PORT:-3001}'
     volumes:
       - runner-docker-data:/home/rootless/.local/share/docker
     healthcheck:
-      test: ["CMD", "docker", "info"]
+      test: ['CMD', 'docker', 'info']
       interval: 3s
       timeout: 3s
       retries: 40
@@ -265,8 +321,8 @@ services:
       # bridge (usually 172.17.0.1). This service only joins ci-control, whose
       # fixed gateway is the reachable outer host address used by CI jobs.
       # Gitea's auth challenge may use its canonical gitea.localhost realm.
-      - "host.docker.internal:172.31.250.1"
-      - "gitea.localhost:172.31.250.1"
+      - 'host.docker.internal:172.31.250.1'
+      - 'gitea.localhost:172.31.250.1'
     networks: [ci-control]
     mem_limit: ${INITPAD_RUNNER_MEMORY_LIMIT:-1536m}
     cpus: ${INITPAD_RUNNER_CPU_LIMIT:-1.0}
@@ -276,20 +332,20 @@ services:
   # Gitea Actions runner — registered automatically by install.sh.
   act_runner:
     image: gitea/act_runner:0.2.11@sha256:c57233403eff970945cfb8b13f0e622d2124f4dbc623af3e2c74f061d05e8f60
-    profiles: ["runner"]
+    profiles: ['runner']
     environment:
       # Persisted by act_runner and passed to checkout jobs. Keep it separate
       # from the browser URL: glibc treats *.localhost as IPv6 loopback.
       GITEA_INSTANCE_URL: ${INITPAD_GITEA_RUNNER_URL:-http://host.docker.internal:3001}
       GITEA_RUNNER_REGISTRATION_TOKEN: ${INITPAD_RUNNER_TOKEN:-}
       GITEA_RUNNER_NAME: initpad-runner
-      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43"
+      GITEA_RUNNER_LABELS: 'ubuntu-latest:docker://catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43'
       CONFIG_FILE: /config.yaml
     volumes:
       - ./.runtime/act-runner-config.yaml:/config.yaml:ro
       - runner-data:/data
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     depends_on:
       gitea: { condition: service_healthy }
       api: { condition: service_healthy }
@@ -316,7 +372,7 @@ services:
         chmod 0755 /data
     volumes:
       - sftp-www:/data
-    restart: "no"
+    restart: 'no'
 
   fake-sftp:
     image: atmoz/sftp:latest@sha256:0960390462a4441dbb63698d7c185b76a41ffcee7b78ff4adf275f3e66f9c475
@@ -335,7 +391,7 @@ services:
     image: nginx:alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
     depends_on: [fake-sftp]
     ports:
-      - "8085:80"
+      - '8085:80'
     volumes:
       - sftp-www:/usr/share/nginx/html:ro
       - ../infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
@@ -353,15 +409,15 @@ services:
   fake-vps:
     build: ../infra/fake-vps
     environment:
-      PUID: "1000"
-      PGID: "1000"
+      PUID: '1000'
+      PGID: '1000'
       USER_NAME: deploy
       USER_PASSWORD: ${INITPAD_SSH_PASSWORD:-deploy}
-      PASSWORD_ACCESS: "true"
-      SUDO_ACCESS: "false"
+      PASSWORD_ACCESS: 'true'
+      SUDO_ACCESS: 'false'
     ports:
       # App ports published 1:1 — must match INITPAD_SSH_APP_PORT_* config.
-      - "8090-8189:8090-8189"
+      - '8090-8189:8090-8189'
     networks: [net-prod]
     restart: unless-stopped
 
@@ -369,10 +425,10 @@ services:
 
   caddy:
     image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
-    profiles: ["server"]
+    profiles: ['server']
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     environment:
       INITPAD_DOMAIN: ${INITPAD_DOMAIN:-}
       INITPAD_GIT_DOMAIN: ${INITPAD_GIT_DOMAIN:-}
@@ -394,10 +450,16 @@ volumes:
   runner-docker-data: {}
   sftp-www: {}
   api-data: {}
+  supervisor-data: {}
   caddy-data: {}
 
 networks:
   platform: {}
+  # API-to-Supervisor management plane. The Supervisor gets outbound release
+  # verification access through its separate release-egress network.
+  update-control:
+    internal: true
+  release-egress: {}
   ci-control:
     ipam:
       config:
