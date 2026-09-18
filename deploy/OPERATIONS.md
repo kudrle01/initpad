@@ -7,9 +7,11 @@ adresáře `deploy/`.
 
 Kompletní instalační a uživatelský test na Ubuntu VM je v
 [`SELF_HOSTED_ACCEPTANCE.md`](./SELF_HOSTED_ACCEPTANCE.md). Je to závazný živý
-gate, který proběhl před implementací Agenta; samotné unit testy tenant izolaci
-na skutečném Docker hostu neprokazují. Izolovaný Agent enrollment/heartbeat
-test je samostatně v [`../apps/agent/README.md`](../apps/agent/README.md).
+gate; samotné unit testy tenant izolaci ani obnovu po rebootu na skutečném
+Docker hostu neprokazují. Nedestruktivní checkpointy automatizuje
+`./self-hosted-check.sh`. Clean-host Agent enrollment, reboot a zachování
+workloadu při odpojení jsou samostatně v
+[`../apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md).
 
 ## Start / stop / stav
 
@@ -21,6 +23,8 @@ docker compose ps            # stav služeb
 docker compose logs -f api   # živé logy platformy
 docker compose stop          # zastavit vše (data zůstávají)
 docker compose up -d         # znovu nastartovat
+./self-hosted-check.sh running
+                             # nedestruktivní health/restart/CI kontrola
 ```
 
 Kontejnery mají `restart: unless-stopped`, takže po restartu hosta naběhnou samy

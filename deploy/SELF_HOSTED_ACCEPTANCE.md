@@ -1,8 +1,9 @@
 # Self-hosted acceptance na Ubuntu VM
 
 Tento scénář ověřuje **self-hosted edici** InitPadu s vestavěnou Giteou,
-Gitea Actions runnerem, MinIO a simulovanými Docker/SSH/SFTP targety. Neověřuje
-veřejný SaaS ani InitPad Agenta; ty jsou samostatné pozdější milníky.
+Gitea Actions runnerem, object storem a simulovanými Docker/SSH/SFTP targety.
+Agent běží na odděleném Docker hostu a má vlastní clean-host runbook, na který
+tento scénář v závěru odkazuje. Veřejný SaaS se zde neověřuje.
 
 Výsledky testu ukládej (screenshoty, časy a případné chyby). Jsou použitelné
 jako důkaz pro testovací kapitolu diplomové práce.
@@ -54,7 +55,7 @@ df -h /
 Naklonuj repozitář a připrav konfiguraci:
 
 ```bash
-git clone <URL_REPOZITARE>
+git clone https://github.com/kudrle01/initpad.git
 cd initpad/deploy
 cp .env.example .env
 ```
@@ -78,6 +79,17 @@ INITPAD_CI_REGISTRY_HOST=host.docker.internal:3001
 
 Tyto tři adresy jsou určeny pro runner a Docker démon uvnitř VM, nikoli pro
 prohlížeč ve Windows.
+
+Ještě před první instalací spusť kontrolu čistého Linux hostu:
+
+```bash
+./self-hosted-check.sh preflight
+```
+
+Kontrola odmítne existující InitPad kontejnery nebo volumes, chybějící Docker
+Compose a nedostatečnou minimální kapacitu. Doporučených 4 CPU, 8 GB RAM a
+40 GB volného místa vyhodnotí jako kapacitní doporučení, nikoli jako skrytou
+změnu instalace.
 
 Po startu ověř, že izolovaný Docker daemon překládá interní registry alias na
 gateway vyhrazené `ci-control` sítě, nikoli na výchozí Docker bridge:
@@ -109,6 +121,7 @@ sudo ufw allow 8090:8189/tcp
 ./install.sh
 docker compose --profile runner ps
 curl -fsS http://localhost:8080/api/health/ready
+./self-hosted-check.sh running
 ```
 
 Ve Windows otevři:
@@ -117,13 +130,24 @@ Ve Windows otevři:
 - Giteu: `http://<VM_IP>:3001`.
 
 Výsledek je **PASS**, když je API healthy, web se otevře, lze založit první účet
-a `act_runner` i `runner-docker` běží. Potom VM restartuj:
+a `act_runner` i `runner-docker` běží. Po založení prvního účtu ulož checkpoint
+a potom restartuj celý host:
 
 ```bash
+./self-hosted-check.sh before-reboot
 sudo reboot
 ```
 
-Po restartu musí platforma i data naběhnout bez nového `install.sh`.
+Po přihlášení nespouštěj `install.sh`; ověř automatickou obnovu:
+
+```bash
+cd initpad/deploy
+./self-hosted-check.sh after-reboot
+```
+
+Kontrola vyžaduje změněný Linux boot ID, zdravé služby, stejné kontejnery,
+stejný počet účtů, správnou restart policy a funkční spojení izolovaného runneru
+s Giteou. Restart pouhého kontejneru proto nelze vydávat za reboot hosta.
 
 ## 5. Ověř účty, workspace a role
 
@@ -290,6 +314,7 @@ Tento krok dělej pouze na této jednorázové VM:
 cd initpad/deploy
 ./backup.sh ./backups/acceptance
 ls -1 ./backups/acceptance | sort
+./self-hosted-check.sh backup ./backups/acceptance
 ```
 
 Výpis musí obsahovat `SHA256SUMS`, `postgres.dump`, `initpad.env` a archivy
@@ -361,7 +386,20 @@ Musí vzniknout nový repozitář a scaffold, CI i dev deployment musí projít
 bez konfliktu se starým workloadem. Výsledný Docker výpis smí pro kombinaci
 `alice-delete-recreate` / `team-alpha` / `dev` obsahovat právě jeden kontejner.
 
-## 11. Výsledek milníku
+## 11. Ověř samostatný Agent host
+
+Na druhém čistém Linux Docker hostu projdi části 1–3 v
+[`../apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md): první instalaci,
+reboot a zachování workloadu při zastaveném Agentu. Nesmí jít o control-plane
+VM ani o lokální nested-Docker lab.
+
+Po zastavení Agenta musí již nasazená aplikace zůstat dostupná. Nový deploy
+zůstane ve frontě a po opětovném připojení se vykoná právě jednou. Identita
+targetu, credential generation a workload container ID se rebootem ani
+odpojením nesmějí změnit. Výsledek zaznamenej bez enrollment tokenu a bez
+obsahu `/var/lib/initpad-agent/agent.json`.
+
+## 12. Výsledek milníku
 
 Fáze TargetAllocation je živě **PASS**, jen pokud současně platí:
 
@@ -374,6 +412,10 @@ Fáze TargetAllocation je živě **PASS**, jen pokud současně platí:
   rozliší frontu od běhu a čekající workflow se samo rozběhne;
 - built-in karty používají aktuální LAN host a redeploy/remove nehromadí
   kontejnery ani nepoužívané lokální image.
+- samostatný Agent host obnoví po rebootu tutéž identitu a odpojení Agenta
+  nezastaví existující workload ani nevykoná queued deploy vícekrát;
+- `self-hosted-check.sh` má PASS záznamy pro `preflight`, `running`,
+  `before-reboot`, `after-reboot` a `backup`.
 
 Po testu můžeš bezpečně uvolnit build cache:
 

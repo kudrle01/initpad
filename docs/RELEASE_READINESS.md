@@ -161,6 +161,11 @@ Self-hosted release kandidát lze označit až tehdy, když:
   následným UI updatem, rollbackem a restartem hosta uprostřed operace;
 - známá omezení jsou uvedena v release notes a provozovatel je přijme.
 
+Control-plane preflight, stav služeb, restart policy, změnu Linux boot ID,
+zachování kontejnerů a strukturu backupu ověřuje nedestruktivní
+[`self-hosted-check.sh`](../deploy/self-hosted-check.sh). Jeho lokální PASS
+záznam není náhradou ručního multi-user scénáře ani samostatného Agent hostu.
+
 Pro nezávislý test použij [`EVALUATION.md`](./EVALUATION.md). Detailní
 self-hosted acceptance je v
 [`deploy/SELF_HOSTED_ACCEPTANCE.md`](../deploy/SELF_HOSTED_ACCEPTANCE.md).

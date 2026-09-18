@@ -65,6 +65,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   OCI images.
 - [ ] Na čistém Linux hostu ověřit instalaci, reboot, backup/restore a
   zachování workloadů při odpojeném Agentu.
+  Nedestruktivní checker už ukládá oddělené PASS checkpointy pro preflight,
+  běžící stack, skutečný host reboot a strukturu backupu; bod zůstává otevřený
+  do reálného průchodu na control-plane VM a samostatném Agent hostu.
 - [ ] Vydat Agent `0.14.0` a živě ověřit vzdálený update `0.13 → 0.14`,
   vadný candidate a automatický rollback.
 - [ ] Vydat platformu `0.2.1` a živě ověřit UI update, vadný candidate,

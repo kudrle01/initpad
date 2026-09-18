@@ -68,9 +68,11 @@ database migrations and container builds.
 For a reproducible self-hosted verification on Windows + VirtualBox, follow
 [SELF_HOSTED_ACCEPTANCE.md](./SELF_HOSTED_ACCEPTANCE.md). It covers a bridged
 Ubuntu VM, two-workspace tenant isolation, all PHP variants, backup/restore and
-delete/recreate. Agent enrollment and heartbeat use the separate isolated lab in
-[apps/agent/README.md](../apps/agent/README.md); neither procedure is a complete
-public SaaS delivery test yet.
+delete/recreate. The non-destructive `self-hosted-check.sh` records the host
+preflight, running stack, real reboot and backup checkpoints without exposing
+secrets. Agent enrollment and workload preservation use the separate clean-host
+acceptance in [apps/agent/ACCEPTANCE.md](../apps/agent/ACCEPTANCE.md); neither
+procedure is a complete public SaaS delivery test yet.
 
 ## Operations
 
