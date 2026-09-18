@@ -17,6 +17,7 @@
     "format": "prettier --write 'apps/{api,agent,supervisor}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs package.json 'apps/*/package.json'",
     "format:check": "prettier --check 'apps/{api,agent,supervisor}/src/**/*.ts' 'apps/web/src/**/*.{ts,tsx}' 'scripts/**/*.mjs' eslint.config.mjs package.json 'apps/*/package.json'",
     "audit:repo": "node scripts/repository-audit.mjs",
+    "audit:public-release": "node scripts/audit-public-release.mjs",
     "check": "npm run audit:repo && npm run lint && npm run format:check && npm run build && npm run test",
     "check:release": "npm run check && npm audit --omit=dev --audit-level=low"
   },

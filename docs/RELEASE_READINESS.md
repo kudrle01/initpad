@@ -109,6 +109,16 @@ bootstrapem, rebootem, úspěšným `0.2.0 → 0.2.1` updatem, vadným
 candidate rollbackem a přerušením uprostřed cutoveru. Docker socket
 Supervisoru je root-equivalent oprávnění, nikoli rootless sandbox.
 
+Po zveřejnění repozitáře a packages se anonymní distribuční hranice ověří
+bez GitHub credentials:
+
+```bash
+npm run audit:public-release -- --tag initpad-v0.2.0
+```
+
+Audit odmítne soukromý repozitář, neúplné nebo nedostupné assets, chybné
+Sigstore identity a OCI digesty i image bez `linux/amd64` a `linux/arm64`.
+
 ### E-mail delivery není zapojená
 
 Self-hosted uživatel si může bezpečně ověřit vlastní e-mail odkazem
