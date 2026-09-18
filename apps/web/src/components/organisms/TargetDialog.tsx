@@ -317,10 +317,10 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                     onChange={(e) => setSecret(e.target.value)}
                     placeholder={
                       requiresReconnectCredential
-                        ? '-----BEGIN OPENSSH PRIVATE KEY-----'
+                        ? 'Paste the replacement OpenSSH private key'
                         : editing
                           ? 'Leave blank to keep the existing key'
-                          : '-----BEGIN OPENSSH PRIVATE KEY-----'
+                          : 'Paste an OpenSSH private key'
                     }
                     className="min-h-[84px] w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   />

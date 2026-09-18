@@ -43,7 +43,10 @@ for (const path of trackedFiles) {
 }
 
 const requiredPublicDocs = [
+  'LICENSE',
   'README.md',
+  'SECURITY.md',
+  'CONTRIBUTING.md',
   'PRODUCT_ROADMAP.md',
   'DECISIONS.md',
   'THREAT_MODEL.md',
@@ -239,6 +242,8 @@ if (!tracked.has(agentReleaseChannelPath)) {
 }
 
 const requiredAutomation = [
+  '.gitleaks.toml',
+  '.gitleaksignore',
   '.github/dependabot.yml',
   '.github/workflows/container-images.yml',
   '.github/workflows/release-agent.yml',

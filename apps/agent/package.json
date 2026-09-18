@@ -2,6 +2,7 @@
   "name": "@initpad/agent",
   "version": "0.13.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Outbound-only runtime agent for InitPad Docker targets",
   "bin": {

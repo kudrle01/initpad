@@ -2,6 +2,7 @@
   "name": "@initpad/supervisor",
   "version": "0.2.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Minimal release supervisor for self-hosted InitPad",
   "scripts": {

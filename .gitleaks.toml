@@ -1,0 +1,10 @@
+title = "InitPad secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "initpad-agent-enrollment-token"
+description = "InitPad Agent enrollment token"
+regex = '''initpad_enroll_[A-Za-z0-9_-]{24,}'''
+keywords = ["initpad_enroll_"]

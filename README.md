@@ -37,9 +37,11 @@ není hotový produkční profil. InitPad Agent už umí bezpečný outbound enr
 heartbeat, obnovitelné joby, diagnostiku a celý Docker lifecycle nad ověřeným
 artefaktem bez obecného shellu. Produkční gateway režim navíc poskytuje stabilní
 HTTPS adresu a health-gated přepnutí s rollbackem. Podepsaný multi-arch Agent
-0.12.1 je veřejně distribuovaný immutable digestem a self-hosted instalátor jej
+0.13.0 je veřejně distribuovaný immutable digestem a self-hosted instalátor jej
 automaticky nabídne správci serveru. Před veřejným provozem zbývá dokončit
-čistý Linux acceptance a ověřit celý SaaS profil se živou GitHub App.
+čistý Linux acceptance, vzdálený update na následující verzi a ověřit
+celý SaaS profil se živou GitHub App. Podepsaný platformní release `0.2.0`
+je první kandidát pro recovery instalaci a následné aktualizace z UI.
 Původní source-based SSH runtime je pouze migrační legacy konektor: existující
 deploymenty lze dál spravovat, ale nové servery ani prostředí se na něj
 nevážou.
@@ -49,7 +51,7 @@ nevážou.
 Jediným požadavkem je Docker s Compose pluginem:
 
 ```bash
-git clone <adresa-repozitare> initpad
+git clone https://github.com/kudrle01/initpad.git initpad
 cd initpad/deploy
 ./install.sh
 ```
@@ -151,6 +153,13 @@ izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
 - [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) — stav a další milníky;
 - [DECISIONS.md](DECISIONS.md) — architektonická rozhodnutí;
 - [THREAT_MODEL.md](THREAT_MODEL.md) — hranice důvěry a produkční podmínky.
+
+## Licence a přispívání
+
+InitPad je dostupný pod [Apache License 2.0](LICENSE). Postup pro lokální
+vývoj, testy a pull requesty je v [CONTRIBUTING.md](CONTRIBUTING.md).
+Bezpečnostní problémy se nehlásí veřejným issue; použij
+[SECURITY.md](SECURITY.md). Copyright © 2026 Jan Kudrlička.
 
 Osobní poznámky, handoffy a jednorázová vysvětlení nejsou součástí
 produktové dokumentace a do repozitáře se necommitují.
