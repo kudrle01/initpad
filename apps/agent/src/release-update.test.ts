@@ -51,6 +51,7 @@ test('accepts only a newer release with the exact workflow signing identity', as
     tlogThreshold: 1,
     ctLogThreshold: 1,
     timeout: 8_000,
+    tufCachePath: '/var/lib/initpad-agent/sigstore-js',
   });
 });
 
