@@ -341,8 +341,9 @@ nezobrazí falešný empty/error stav.
     identity-preserving swap odděleným updaterem a automatický rollback při
     chybějícím heartbeat. Update je serializovaný s ostatními target joby,
     auditovaný a spouštěný ručně; per-target ovládání dovolí canary
-    rollout. Implementace, fail-closed validace, idempotentní fronta,
-    potvrzovací UI, rollback a audit jsou hotové a kryté testy. Přechod
+    rollout. Implementace, perzistentní Sigstore trust cache pro read-only
+    kontejner, fail-closed validace, idempotentní fronta, potvrzovací UI,
+    rollback a audit jsou hotové a kryté testy. Přechod
     0.12.1 → 0.13 zůstane posledním ručním updatem; podkrok se uzavře
     živým vydáním 0.13 a následným skutečným vzdáleným 0.13 → 0.14
     acceptance.
@@ -862,8 +863,8 @@ jen konkrétní provozní a vyhodnocovací scénář.
        nabídne jej v enrollment dialogu. Instalátor vyžaduje digestem připnutý
        OCI image, token čte jen skrytě z terminálu, zachovává `0600`
        identitu, instaluje omezený restartovatelný kontejner a při chybné
-       aktualizaci obnoví předchozí verzi (ADR-092). Bez
-       Běžná self-hosted instalace přebírá schválenou release dvojici z
+       aktualizaci obnoví předchozí verzi (ADR-092). Běžná self-hosted
+       instalace přebírá schválenou release dvojici z
        verzovaného `deploy/agent-release.env`; explicitní pin instalátor
        nepřepisuje. UI nikdy nenabízí neexistující hostitelskou binárku a při
        chybějící distribuci ukáže konkrétní postup pro správce nebo lab.
@@ -919,11 +920,17 @@ jen konkrétní provozní a vyhodnocovací scénář.
        uzavřít implementační a testovací kapitolu diplomové práce.
      - ◐ **8e-d-e — aktualizace self-hosted platformy.** Tag `initpad-v*`
        vydá podepsaný bundle s immutable API/web/Supervisor images, Compose
-       descriptorem, SBOM, provenance a migračním kontraktem. Oddělený
-       least-privilege Supervisor před explicitně schválenou aktualizací ověří
+       descriptorem, SBOM, provenance a migračním kontraktem. Oddělený úzce
+       omezený, ale host-privileged Supervisor před schválenou aktualizací ověří
        podpis, vytvoří backup, provede preflight a migrace, počká na readiness
        a při bezpečném selhání obnoví původní images. CLI bundle zůstane
-       fallbackem pro první instalaci, recovery a air-gap.
+       fallbackem pro recovery a air-gap. Implementovaný je striktní release
+       manifest, tři podepsané multiarch images, SBOM/provenance, izolovaný
+       HMAC Supervisor, databázový backup gate, postupný API/web/Supervisor
+       cutover, readiness, rollback, obnova přerušené operace, trvalý Compose
+       override, audit administrátora a potvrzovací/progress UI. Podkrok zůstává
+       částečný pouze do vydání `initpad-v0.2.0` a živého testu
+       úspěchu, vadného candidate rollbacku a restartu hosta uprostřed update.
 
 ## Akceptační kritéria
 

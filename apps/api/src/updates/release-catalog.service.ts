@@ -144,6 +144,7 @@ export class ReleaseCatalogService {
       tlogThreshold: 1,
       ctLogThreshold: 1,
       timeout: config.updates.requestTimeoutMs,
+      tufCachePath: config.updates.sigstoreCachePath,
     });
 
     return {

@@ -1,8 +1,9 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá vývojové verzi po zavedení InitPad Agentu 0.12.
-Seznam je záměrně otevřený: odděluje funkční prototyp od tvrzení, že je
-služba připravená pro veřejný produkční provoz.
+Stav dokumentu odpovídá vývojové verzi s kandidátem Agenta 0.13 a podepsaným
+aktualizačním kanálem self-hosted platformy. Poslední veřejně přijatý Agent
+zůstává 0.12.1. Seznam je záměrně otevřený: odděluje funkční prototyp od
+tvrzení, že je služba připravená pro veřejný produkční provoz.
 
 ## Co je připravené
 
@@ -17,6 +18,8 @@ služba připravená pro veřejný produkční provoz.
   diagnostikou, resource limity a stabilní gateway routou.
 - Reprodukovatelná repository gate, immutable container references a první
   podepsané multiarch vydání Agenta 0.12.1.
+- Podepsaný platformní release bundle, oddělený Supervisor, ověřený backup,
+  postupný health-gated cutover a image rollback pro self-hosted instalaci.
 - Strukturované redigované logy a korelace request → operation → Agent job
   → workload.
 - PostgreSQL-backed per-IP a per-account rate limit sdílený všemi API
@@ -91,6 +94,18 @@ popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
 
+### Platformní update čeká na první veřejný release a živý rollback test
+
+Workflow `initpad-v*` lokálně prochází release gate a vytváří tři podepsané
+multiarch images, SBOM, provenance, Compose descriptor, checksums a recovery
+instalátor. Admin UI přijímá jen novější ověřenou verzi a Supervisor před
+přepnutím ověří PostgreSQL dump i readiness každé komponenty. Implementace
+ale nebude označena za provozně přijatou, dokud `initpad-v0.2.0` nevznikne z
+chráněného tagu, všechny tři GHCR packages nebudou veřejně čitelné a čistý
+Linux host neprojde bootstrapem, rebootem, úspěšným `0.2.x` updatem, vadným
+candidate rollbackem a přerušením uprostřed cutoveru. Docker socket
+Supervisoru je root-equivalent oprávnění, nikoli rootless sandbox.
+
 ### E-mail delivery není zapojená
 
 Self-hosted uživatel si může bezpečně ověřit vlastní e-mail odkazem
@@ -128,6 +143,8 @@ Self-hosted release kandidát lze označit až tehdy, když:
   nacvičená na jednorázovém hostu;
 - dva workspace projdou isolation acceptance;
 - Agent release projde ověřením podpisu a živým lifecycle testem;
+- platform release projde anonymním GHCR pull testem, recovery bootstrapem,
+  následným UI updatem, rollbackem a restartem hosta uprostřed operace;
 - známá omezení jsou uvedena v release notes a provozovatel je přijme.
 
 Pro nezávislý test použij [`EVALUATION.md`](./EVALUATION.md). Detailní

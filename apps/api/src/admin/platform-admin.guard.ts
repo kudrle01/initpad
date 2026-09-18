@@ -14,7 +14,7 @@ export class PlatformAdminGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     if (config.edition !== 'self-hosted') {
       throw new ForbiddenException(
-        'Instance user administration is only available in the self-hosted edition',
+        'Instance administration is only available in the self-hosted edition',
       );
     }
     const req = ctx.switchToHttp().getRequest<Request & { userId?: string }>();

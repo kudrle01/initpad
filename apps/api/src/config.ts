@@ -1,4 +1,4 @@
-import { resolve } from 'path';
+import { isAbsolute, resolve } from 'path';
 import { builtInPublicHost } from './common/public-url';
 
 const configuredPublicUrl =
@@ -82,6 +82,12 @@ export const config = {
     repository: process.env.INITPAD_UPDATE_REPOSITORY || 'kudrle01/initpad',
     cacheSeconds: Number(process.env.INITPAD_UPDATE_CACHE_SECONDS || 900),
     requestTimeoutMs: Number(process.env.INITPAD_UPDATE_TIMEOUT_MS || 8_000),
+    sigstoreCachePath:
+      process.env.INITPAD_SIGSTORE_CACHE_DIR ||
+      resolve(process.cwd(), '../../.runtime/sigstore-js'),
+    platformVersion: (process.env.INITPAD_PLATFORM_VERSION || '0.2.0').trim(),
+    supervisorUrl: (process.env.INITPAD_SUPERVISOR_URL || '').trim(),
+    supervisorSharedSecret: process.env.INITPAD_SUPERVISOR_SHARED_SECRET || '',
   },
   gitea: {
     // Browser-facing URL (repository links shown to users, OAuth redirects).
@@ -343,6 +349,34 @@ export function validateConfig(): void {
     config.updates.requestTimeoutMs > 30_000
   ) {
     throw new Error('INITPAD_UPDATE_TIMEOUT_MS must be between 1000 and 30000');
+  }
+  if (!/^\d+\.\d+\.\d+$/.test(config.updates.platformVersion)) {
+    throw new Error('INITPAD_PLATFORM_VERSION must be a stable semantic version');
+  }
+  if (
+    !isAbsolute(config.updates.sigstoreCachePath) ||
+    /[\0\r\n]/.test(config.updates.sigstoreCachePath)
+  ) {
+    throw new Error('INITPAD_SIGSTORE_CACHE_DIR must be an absolute path');
+  }
+  if (Boolean(config.updates.supervisorUrl) !== Boolean(config.updates.supervisorSharedSecret)) {
+    throw new Error(
+      'INITPAD_SUPERVISOR_URL and INITPAD_SUPERVISOR_SHARED_SECRET must be configured together',
+    );
+  }
+  if (config.updates.supervisorUrl) {
+    let supervisorUrl: URL;
+    try {
+      supervisorUrl = new URL(config.updates.supervisorUrl);
+    } catch {
+      throw new Error('INITPAD_SUPERVISOR_URL must be a valid URL');
+    }
+    if (!['http:', 'https:'].includes(supervisorUrl.protocol) || supervisorUrl.pathname !== '/') {
+      throw new Error('INITPAD_SUPERVISOR_URL must be an HTTP(S) origin without a path');
+    }
+    if (config.updates.supervisorSharedSecret.length < 32) {
+      throw new Error('INITPAD_SUPERVISOR_SHARED_SECRET must contain at least 32 characters');
+    }
   }
   if (
     !Number.isFinite(config.deployment.memoryBytes) ||

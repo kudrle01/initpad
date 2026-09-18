@@ -34,7 +34,8 @@ Kontejnery mají `restart: unless-stopped`, takže po restartu hosta naběhnou s
 ## Zálohy
 
 Automatická záloha databáze (pg_dump) + datových volumes (Gitea repozitáře,
-MinIO artefakty, workspace) do `./backups/<časové-razítko>/`:
+MinIO artefakty, workspace a Supervisor state) včetně aktivního release
+descriptoru do `./backups/<časové-razítko>/`:
 
 ```bash
 ./backup.sh
@@ -160,14 +161,48 @@ samostatným release rozhodnutím.
 
 ## Aktualizace
 
+### Běžná podepsaná aktualizace
+
+Platform administrator otevře **Instance administration → Platform updates**,
+zkontroluje odkaz na release a potvrdí **Install update**. API pouze vybere
+nejnovější ověřený stabilní release a zaznamená aktéra. Oddělený Supervisor:
+
+1. znovu ověří Sigstore identitu přesného tagového workflow a odmítne
+   downgrade, cizí repozitář i neznámá pole;
+2. vytvoří PostgreSQL dump, ověří jeho čitelnost a stáhne tři immutable
+   digest-pinned images;
+3. postupně přepne API, web a nakonec samotný Supervisor; každý krok čeká
+   na health check;
+4. teprve potom uloží novou verzi. Chyba vrátí původní images a UI ji
+   zachová v historii.
+
+Běžící projektové workloady se nerestartují. V jednu chvíli smí běžet
+jen jedna platformní aktualizace. Aktivní release descriptor leží v
+`.runtime/platform-update/platform-release.override.yml`, je součástí backupu
+a Compose jej načítá i po rebootu. Tento soubor neupravuj ručně.
+
+### Source checkout a recovery
+
+Bez aktivního release override zůstává vývojový/self-contained postup:
+
 ```bash
-./backup.sh                       # 1) vždy nejdřív záloha
-git pull                          # 2) nový kód
-./install.sh                      # 3) idempotentní upgrade (přestaví api/web)
+git pull
+./install.sh
 ```
 
-Migrace databáze jsou aditivní; instalátor je idempotentní. Kdyby upgrade
-selhal, obnov poslední zálohu (`./restore.sh …`).
+Je-li podepsaný release aktivní, `./install.sh` jej zachová a source images
+nepřestavuje. Když UI nebo API neběží, stáhni všechny soubory jednoho
+`initpad-v*` GitHub Release do prázdného adresáře a odtud spusť:
+
+```bash
+./initpad-install-release.sh --project-root /absolutni/cesta/k/initpad
+```
+
+Fallback vyžaduje Docker, Compose a Cosign, ověří podpis `SHA256SUMS` i
+všechny assets, vytvoří kompletní `backup.sh` checkpoint a použije stejný
+health-gated rollback. Automaticky se nevrací destruktivně změněná databáze;
+release kanál proto přijímá pouze expand/contract, image-compatible migrace.
+Pro plný návrat použij explicitní `./restore.sh <záloha>`.
 
 ## Bezpečnost
 
@@ -183,6 +218,10 @@ selhal, obnov poslední zálohu (`./restore.sh …`).
   cílového serveru. Enrollment proto smí spouštět jen správce workspace a
   produkční control plane musí používat HTTPS. `--allow-insecure-http` je
   pouze pro izolovaný lokální test, nikoli pro běžnou LAN nebo internet.
+- Release Supervisor má ze stejného důvodu root-equivalent oprávnění na
+  self-hosted hostu. Nemá veřejný port, přijímá jen HMAC requesty z interní
+  management sítě a request nikdy neurčuje shell, image ani Compose obsah.
+  Jeho sdílený secret ani Docker socket nezpřístupňuj mimo host.
 
 Citlivé auth, GitHub setup a Agent enrollment operace používají krátkodobé
 PostgreSQL buckety společné pro všechny API repliky. Tabulka neobsahuje IP,

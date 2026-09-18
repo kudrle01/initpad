@@ -4743,10 +4743,12 @@ canary server. Automatická unattended instalace zůstává vypnutá.
 
 ## ADR-111 — On-prem platformu aktualizuje oddělený Supervisor z release bundle
 
-**Kontext.** API ani web nemají bezpečně přepisovat samy sebe. Poskytnout jim
-Docker socket nebo možnost spouštět `docker compose` by z běžné aplikační
-zranitelnosti udělalo kompromitaci hostu. Současné instalace navíc sestavují
-platformu ze source tree, což není vhodný update artefakt pro cizího správce.
+**Kontext.** API ani web nemají bezpečně přepisovat samy sebe. Lokální
+self-hosted profil sice kvůli vestavěnému Docker targetu stále používá host
+Docker socket, ale nesmí se z něj stát obecný updater řízený browserem;
+produkční Agent-first profil jej z API odstraní. Současné instalace navíc
+sestavují platformu ze source tree, což není vhodný update artefakt pro cizího
+správce.
 
 **Rozhodnutí.** Platformní tag `initpad-v*` vytvoří verzovaný release bundle:
 podepsaný manifest, digest-pinned API, web a Supervisor images, Compose
@@ -4762,9 +4764,21 @@ a čeká na readiness. Při selhání vrátí původní image; databázi automat
 vrací pouze tehdy, když manifest výslovně deklaruje bezpečný rollback.
 Destruktivní migrace vyžaduje expand/contract nebo ruční obnovu z backupu.
 
+Aktivní release se ukládá jako omezený Compose override v necommitovaném
+`deploy/.runtime/platform-update`; stejný soubor používá Supervisor, běžné
+hostitelské `docker compose` příkazy, instalátor i backup/restore. Aktualizace tak
+nezanikne po rebootu ani po provozním `compose up`. Supervisor označí operaci
+za úspěšnou až po health checku své nové verze; při restartu uprostřed
+cutoveru rozpozná oddělený helper podle immutable operation labelu a bez něj
+obnoví poslední dokončenou konfiguraci. Recovery instalátor přijme novou
+verzi stavu pouze explicitním příkazem uvnitř již ověřeného Supervisor image.
+
 **Důsledky.** Self-hosted instance může ukázat dostupnou verzi a tlačítko
 `Install update`, aniž by webová aplikace vlastnila host. Update je
 health-gated, auditovaný a obnovitelný. CLI instalace z podepsaného bundle
 zůstává povinný fallback pro první instalaci, recovery a offline prostředí.
-SaaS nasazuje stejné images vlastním provozním procesem a Supervisor
-nepotřebuje.
+Docker socket dává Supervisoru oprávnění srovnatelné s rootem hosta; nejde tedy
+o rootless sandbox. Riziko se omezuje interní sítí bez publikovaného portu,
+HMAC autentizací, read-only filesystemem, odebranými capabilities a pevnými
+typovanými operacemi bez shellu z requestu. SaaS nasazuje stejné images vlastním
+provozním procesem a Supervisor nepotřebuje.

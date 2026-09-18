@@ -11,6 +11,8 @@ import type {
   WorkspaceMember,
   WorkspaceRole,
   AdminUser,
+  PlatformUpdateOperation,
+  PlatformUpdateStatus,
   LinkedIdentity,
   ImportableRepo,
   ImportPreflight,
@@ -554,6 +556,12 @@ export const api = {
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).
   adminListUsers: () => http<AdminUser[]>('/admin/users'),
+  adminPlatformUpdateStatus: () => http<PlatformUpdateStatus>('/admin/updates'),
+  adminInstallPlatformUpdate: (requestId: string) =>
+    http<PlatformUpdateOperation>('/admin/updates', {
+      method: 'POST',
+      body: JSON.stringify({ requestId }),
+    }),
   adminCreateUser: (body: {
     username: string;
     email: string;

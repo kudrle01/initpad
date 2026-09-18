@@ -25,6 +25,39 @@ export interface AdminUser {
   createdAt: string;
 }
 
+export interface PlatformUpdateOperation {
+  id: string;
+  requestId: string;
+  supervisorOperationId?: string | null;
+  requestedByUsername?: string;
+  requestedByDisplayName?: string | null;
+  fromVersion: string;
+  toVersion: string;
+  status: 'requesting' | 'accepted' | 'running' | 'succeeded' | 'failed' | 'rolled-back';
+  stage: string;
+  message: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface PlatformUpdateStatus {
+  enabled: boolean;
+  supervisorConfigured: boolean;
+  supervisorOnline: boolean;
+  supervisorError: string | null;
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  canInstall: boolean;
+  releaseUrl: string | null;
+  publishedAt: string | null;
+  catalogCheckedAt: string | null;
+  catalogStale: boolean;
+  catalogError: string | null;
+  operation: PlatformUpdateOperation | null;
+  history: PlatformUpdateOperation[];
+}
+
 export type WorkspaceRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
 export type WorkspaceType = 'personal' | 'team';
 

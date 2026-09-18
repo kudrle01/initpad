@@ -75,8 +75,9 @@ public SaaS delivery test yet.
 
 - **Backup**: run `./backup.sh /secure/path/initpad-backup`. It creates a
   consistent checkpoint by briefly stopping writers, dumping PostgreSQL,
-  archiving Gitea, MinIO artifacts, API data, published static files, optional
-  Caddy data and runner registration, and copying `.env`. Services that were
+  archiving Gitea, MinIO artifacts, API/Supervisor data, the active signed
+  release descriptor, published static files, optional Caddy data and runner
+  registration, and copying `.env`. Services that were
   running are restarted even when the backup fails. The backup contains
   credentials; encrypt it and keep an off-host copy.
 - **Restore drill**: run `./restore.sh <backup-directory>` on a disposable
@@ -84,11 +85,21 @@ public SaaS delivery test yet.
   backed-up `.env`, database and inactive volumes, and then starts the base
   stack, runner and configured HTTPS profile. Always test this on a disposable
   host before relying on a backup.
-- **Upgrade**: create a backup, review the dependency/image update, then run
-  `git pull && ./install.sh`. Container tags are also pinned to immutable
-  digests, so a pull never silently changes a base service. Dependabot proposes
-  reviewed digest updates and the image acceptance workflow builds the
-  platform and all templates before merge.
+- **Platform update**: a platform administrator uses **Instance administration
+  → Platform updates**. InitPad accepts only the newest manifest signed by the
+  exact tagged release workflow, backs up and verifies PostgreSQL, switches
+  digest-pinned API/web/Supervisor images one at a time and restores the prior
+  release when readiness fails. The selected release is persisted in
+  `.runtime/platform-update`, so `docker compose up` and `./install.sh` do not
+  silently replace it with a source build.
+- **Source installation**: when no signed release is active, `git pull &&
+  ./install.sh` rebuilds the checked-out API, web and Supervisor. Once a signed
+  release is installed, a source pull updates operating files but preserves the
+  installed images; use the release UI for the next platform version.
+- **Recovery / air-gap**: download one platform release directory, verify it on
+  the server and run its `initpad-install-release.sh --project-root
+  /absolute/path/to/initpad`. This explicit fallback additionally requires
+  Cosign and creates a complete pre-update backup.
 - **Agent release**: `./install.sh` fills an empty release pair from
   `agent-release.env`. It preserves a complete explicit pair, so a local pin or
   rollback is never replaced silently. Use `./install.sh --update-agent-release`

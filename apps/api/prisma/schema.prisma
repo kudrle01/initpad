@@ -170,6 +170,31 @@ model RateLimitBucket {
   @@index([scope, expiresAt])
 }
 
+// Instance-wide audit trail for signed self-hosted platform updates (ADR-111).
+// The Supervisor is authoritative for execution; this row preserves who asked
+// for it and mirrors bounded progress without storing release bundles, secrets
+// or database backup contents.
+model PlatformUpdateOperation {
+  id                     String    @id @default(uuid())
+  requestId              String    @unique
+  supervisorOperationId  String?   @unique
+  requestedById          String?
+  requestedByUsername    String
+  requestedByDisplayName String?
+  fromVersion            String
+  toVersion              String
+  status                 String    @default("requesting") // requesting | accepted | running | succeeded | failed | rolled-back
+  stage                  String    @default("requesting")
+  message                String?
+  startedAt              DateTime  @default(now())
+  finishedAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
 model Workspace {
   id                         String                        @id @default(uuid())
   slug                       String                        @unique
