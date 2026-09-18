@@ -1,8 +1,8 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá vývojové verzi s kandidátem Agenta 0.13 a podepsaným
-aktualizačním kanálem self-hosted platformy. Poslední veřejně přijatý Agent
-zůstává 0.12.1. Seznam je záměrně otevřený: odděluje funkční prototyp od
+Stav dokumentu odpovídá vydanému kandidátu Agenta 0.13.0 a prvnímu
+podepsanému platformnímu releasu 0.2.0. Seznam je záměrně otevřený:
+odděluje funkční prototyp od
 tvrzení, že je služba připravená pro veřejný produkční provoz.
 
 ## Co je připravené
@@ -16,8 +16,8 @@ tvrzení, že je služba připravená pro veřejný produkční provoz.
 - Produkční approval, rollback, audit a bezpečné dialogy destruktivních akcí.
 - Outbound Agent protokol s enrollmentem, rotací credentials, lease fencingem,
   diagnostikou, resource limity a stabilní gateway routou.
-- Reprodukovatelná repository gate, immutable container references a první
-  podepsané multiarch vydání Agenta 0.12.1.
+- Reprodukovatelná repository gate, immutable container references a
+  podepsané multiarch vydání Agenta 0.13.0.
 - Podepsaný platformní release bundle, oddělený Supervisor, ověřený backup,
   postupný health-gated cutover a image rollback pro self-hosted instalaci.
 - Strukturované redigované logy a korelace request → operation → Agent job
@@ -68,12 +68,12 @@ Připnutý komunitní MinIO image zajišťuje reprodukovatelnost lokální insta
 ale není doporučenou veřejnou produkční hranicí. Produkce musí použít
 samostatně udržované privátní S3-compatible úložiště a nacvičenou obnovu.
 
-### Agent 0.12 je veřejně distribuovaný, ale čeká na host acceptance
+### Agent 0.13 je veřejně distribuovaný, ale čeká na update acceptance
 
-Release [`agent-v0.12.1`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.12.1)
-vznikl z commitu `f92a95829fecd3bb84196057d061d7c97e37ad5d` a obsahuje
+Release [`agent-v0.13.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.13.0)
+vznikl z commitu `e43f57fa78b5d8b633f3e223273b2efb5ddfc287` a obsahuje
 image
-`ghcr.io/kudrle01/initpad-agent@sha256:5cdf2e08904138b3160bda808632fc1982f74750ef9d4c6840a29cba8c7c8c4f`
+`ghcr.io/kudrle01/initpad-agent@sha256:d66470008525f6e6dd3180dd86ae062e35a3109717614b09666c8dfc43296663`
 pro `linux/amd64` a `linux/arm64`. Release workflow ověřil Cosign podpis image
 i všech stažitelných souborů; následná lokální kontrola manifestu a jeho GitHub
 checksumu prošla a samostatné Cosign ověření potvrdilo přesnou workflow
@@ -82,27 +82,30 @@ vytvořením, změnou nebo smazáním bez výjimky release správce.
 
 GHCR package je veřejný. Anonymní registry požadavek vrátil `200`, shodný
 immutable digest a OCI index pro `linux/amd64` i `linux/arm64`. Lokální release
-kandidát používá dvojici tohoto digestu a verze `0.12.1`; distribuční API ji
+kandidát používá dvojici tohoto digestu a verze `0.13.0`; distribuční API ji
 označuje jako dostupnou a servírovaný instalátor se shoduje s podepsaným
-checksumem release. Živý recovery test nejprve potvrdil, že odmítnutý uložený
-credential nezmění config ani kontejner, a explicitní `--re-enroll` následně
-vrátil target online; protocol, Docker lifecycle a reálný workload poté prošly.
-Dokud neproběhne celý clean-host runbook včetně rebootu a vadného update image, nejde
-vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
+checksumem release. Předchozí 0.12.1 prošel recovery identity a reálným
+Docker lifecycle; nový 0.13.0 přidává podepsaný vzdálený update s
+identity-preserving swapem a rollbackem. Dokud neproběhne celý clean-host
+runbook a skutečný update `0.13 → 0.14` včetně rebootu a vadného candidate,
+nejde vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
 
-### Platformní update čeká na první veřejný release a živý rollback test
+### Platformní release 0.2.0 čeká na veřejnou distribuci a živý update
 
 Workflow `initpad-v*` lokálně prochází release gate a vytváří tři podepsané
 multiarch images, SBOM, provenance, Compose descriptor, checksums a recovery
 instalátor. Admin UI přijímá jen novější ověřenou verzi a Supervisor před
-přepnutím ověří PostgreSQL dump i readiness každé komponenty. Implementace
-ale nebude označena za provozně přijatou, dokud `initpad-v0.2.0` nevznikne z
-chráněného tagu, všechny tři GHCR packages nebudou veřejně čitelné a čistý
-Linux host neprojde bootstrapem, rebootem, úspěšným `0.2.x` updatem, vadným
+přepnutím ověří PostgreSQL dump i readiness každé komponenty. Tag
+`initpad-v0.2.0` vznikl z commitu
+`fb5c4be7632e58a1fb37439c70ceecf09120e40a` a release workflow prošel. GitHub
+repozitář a tři nové GHCR packages jsou ale zatím soukromé; anonymní klient
+proto release katalog ani images nestáhne. Implementace nebude označena za
+provozně přijatou, dokud nebudou veřejně čitelné a čistý Linux host neprojde
+bootstrapem, rebootem, úspěšným `0.2.0 → 0.2.1` updatem, vadným
 candidate rollbackem a přerušením uprostřed cutoveru. Docker socket
 Supervisoru je root-equivalent oprávnění, nikoli rootless sandbox.
 

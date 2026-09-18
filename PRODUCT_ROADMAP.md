@@ -52,6 +52,59 @@ MVP je hotové, když lze na jedné veřejně dostupné instalaci prokázat tent
 
 Tyto body patří do návrhu a diskuze, ne do implementačního slibu diplomky.
 
+## Dokončovací priority
+
+Tento seznam je autoritativní pořadí zbývající práce. Nižší detailní fáze
+vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
+
+### P0 — veřejný a obnovitelný self-hosted release
+
+- [x] Vydat podepsaný multiarch Agent `0.13.0` a platformu `0.2.0`.
+- [ ] Dokončit public-readiness: licence, contribution/security policy, scan
+  celé Git historie, veřejný repozitář a anonymně dostupné release assets a
+  OCI images.
+- [ ] Na čistém Linux hostu ověřit instalaci, reboot, backup/restore a
+  zachování workloadů při odpojeném Agentu.
+- [ ] Vydat Agent `0.14.0` a živě ověřit vzdálený update `0.13 → 0.14`,
+  vadný candidate a automatický rollback.
+- [ ] Vydat platformu `0.2.1` a živě ověřit UI update, vadný candidate,
+  rollback a restart hosta uprostřed cutoveru.
+
+### P1 — uzavření diplomkového MVP
+
+- [ ] Dokončit živé multi-user acceptance auditu, prod approval, TTL,
+  read-only portfolia a evaluation exportu z Fáze 7.
+- [ ] Projít GitHub App E2E pro osobní i organizační instalaci: login,
+  create/import, Actions artifact, Agent deploy, rename, suspend a uninstall.
+- [ ] Provést finální bezpečnostní, maintainability, dependency,
+  responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
+  části.
+- [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
+  čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
+- [ ] Sjednotit release notes, README, provozní dokumentaci, ADR index a
+  finální diagramy se skutečně ověřeným stavem.
+
+### P2 — produkční public SaaS
+
+- [ ] Vytvořit SaaS deployment profil bez Gitey a bundled object storu;
+  použít externí udržované S3-compatible úložiště a secret manager.
+- [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
+  SSRF a rate-limit vrstvou.
+- [ ] Doplnit persistentní OAuth/OIDC stav, kompletní tenant/capacity kvóty,
+  produkční e-mail delivery a load test.
+- [ ] Zapojit OpenTelemetry/log collector, metriky, retenci, alerting a incident
+  runbook; rozhodnout scheduler a topologii pro více API replik.
+- [ ] Nasadit staging, zopakovat GitHub/Agent/tenant/recovery acceptance a až
+  potom povolit nedůvěryhodné zákazníky.
+
+### P3 — následná produktová rozšíření
+
+- [ ] Dark mode a první lokalizace až po společném design/i18n boundary.
+- [ ] Prisma major upgrade jako samostatný migrační a restore projekt.
+- [ ] SSE pouze pokud naměřená polling zátěž ospravedlní stateful vrstvu.
+- [ ] GitLab, Kubernetes/microVM, marketplace a enterprise HA zůstávají mimo
+  aktuální dokončovací scope.
+
 ## Topologie prostředí ve škole
 
 | Prostředí | Výchozí target | Alternativa | Omezení |
