@@ -208,6 +208,14 @@ for (const group of sourceGroups) {
 for (const path of ['apps/agent/install.sh', 'deploy/configure-agent-release.sh']) {
   execFileSync('sh', ['-n', path], { cwd: root });
 }
+for (const path of [
+  'deploy/install.sh',
+  'deploy/install-release.sh',
+  'deploy/backup.sh',
+  'deploy/restore.sh',
+]) {
+  execFileSync('bash', ['-n', path], { cwd: root });
+}
 const agentPackage = JSON.parse(readFileSync(resolve(root, 'apps/agent/package.json'), 'utf8'));
 for (const path of ['apps/agent/src/types.ts', 'apps/agent/Dockerfile']) {
   if (!(textFiles.get(path) ?? '').includes(agentPackage.version)) {
@@ -234,6 +242,7 @@ const requiredAutomation = [
   '.github/dependabot.yml',
   '.github/workflows/container-images.yml',
   '.github/workflows/release-agent.yml',
+  '.github/workflows/release-platform.yml',
 ];
 for (const path of requiredAutomation) {
   if (!tracked.has(path)) failures.push(`${path}: required dependency automation is missing`);
@@ -249,20 +258,36 @@ for (const path of trackedFiles.filter((path) => /^\.github\/workflows\/.*\.ya?m
   }
 }
 
-const releaseWorkflowPath = '.github/workflows/release-agent.yml';
-if (tracked.has(releaseWorkflowPath)) {
+for (const [releaseWorkflowPath, contracts] of [
+  [
+    '.github/workflows/release-agent.yml',
+    [
+      'platforms: linux/amd64,linux/arm64',
+      'sbom: true',
+      'provenance: mode=max',
+      'cosign sign --yes',
+      'subject-checksums:',
+      'Refuse an existing version tag',
+    ],
+  ],
+  [
+    '.github/workflows/release-platform.yml',
+    [
+      'platforms: linux/amd64,linux/arm64',
+      'sbom: true',
+      'provenance: mode=max',
+      'cosign sign --yes',
+      'subject-checksums:',
+      'Refuse existing immutable version tags',
+      'initpad-supervisor',
+    ],
+  ],
+]) {
   const workflow = textFiles.get(releaseWorkflowPath) ?? '';
   if (![...workflow.matchAll(/^\s*uses:\s*[^\s@]+@([^\s#]+)/gm)].length) {
     failures.push(`${releaseWorkflowPath}: does not invoke any pinned actions`);
   }
-  for (const contract of [
-    'platforms: linux/amd64,linux/arm64',
-    'sbom: true',
-    'provenance: mode=max',
-    'cosign sign --yes',
-    'subject-checksums:',
-    'Refuse an existing version tag',
-  ]) {
+  for (const contract of contracts) {
     if (!workflow.includes(contract)) {
       failures.push(`${releaseWorkflowPath}: missing release contract ${contract}`);
     }
