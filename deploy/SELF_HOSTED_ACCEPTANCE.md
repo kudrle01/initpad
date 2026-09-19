@@ -89,7 +89,10 @@ Ještě před první instalací spusť kontrolu čistého Linux hostu:
 Kontrola odmítne existující InitPad kontejnery nebo volumes, chybějící Docker
 Compose a nedostatečnou minimální kapacitu. Doporučených 4 CPU, 8 GB RAM a
 40 GB volného místa vyhodnotí jako kapacitní doporučení, nikoli jako skrytou
-změnu instalace.
+změnu instalace. Volné místo se měří na filesystému, kde Docker skutečně
+ukládá data (`DockerRootDir`), ne podle nominální velikosti virtuálního disku.
+Po zvětšení disku ve VMware proto může být ještě nutné uvnitř Linuxu
+rozšířit oddíl, LVM volume a filesystém.
 
 Po startu ověř, že izolovaný Docker daemon překládá interní registry alias na
 gateway vyhrazené `ci-control` sítě, nikoli na výchozí Docker bridge:

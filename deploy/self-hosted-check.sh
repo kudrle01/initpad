@@ -78,7 +78,8 @@ check_preflight() {
   docker info >/dev/null 2>&1 || fail "Docker Engine is not running."
   docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is missing."
 
-  local existing volumes cpus memory_kib disk_kib install_root env_file
+  local existing volumes cpus memory_kib docker_root docker_disk_kib
+  local checkout_disk_kib install_root env_file docker_free_gib
   existing=$(docker ps -aq --filter label=com.docker.compose.project=initpad)
   [ -z "$existing" ] || fail "An InitPad Compose stack already exists on this host."
   volumes=$(docker volume ls --format '{{.Name}}' | grep '^initpad_' || true)
@@ -86,13 +87,28 @@ check_preflight() {
 
   cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc)
   memory_kib=$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo)
-  disk_kib=$(df -Pk .. | awk 'NR == 2 { print $4 }')
+  docker_root=$(docker info --format '{{.DockerRootDir}}')
+  case "$docker_root" in
+    /*) ;;
+    *) fail "Docker reported an invalid storage directory." ;;
+  esac
+  docker_disk_kib=$(df -Pk "$docker_root" | awk 'NR == 2 { print $4 }')
+  checkout_disk_kib=$(df -Pk .. | awk 'NR == 2 { print $4 }')
+  case "$docker_disk_kib" in
+    ''|*[!0-9]*) fail "Could not determine free space for Docker storage '$docker_root'." ;;
+  esac
+  case "$checkout_disk_kib" in
+    ''|*[!0-9]*) fail "Could not determine free space for the InitPad checkout." ;;
+  esac
+  docker_free_gib=$((docker_disk_kib / 1024 / 1024))
   [ "$cpus" -ge 2 ] || fail "At least 2 CPU cores are required (4 recommended)."
   [ "$memory_kib" -ge 6291456 ] || fail "At least 6 GiB RAM is required (8 GiB recommended)."
-  [ "$disk_kib" -ge 20971520 ] || fail "At least 20 GiB free disk is required."
+  [ "$docker_disk_kib" -ge 20971520 ] || \
+    fail "Docker storage '$docker_root' has ${docker_free_gib} GiB free; at least 20 GiB is required. Expand the guest partition/filesystem or free Docker storage."
   [ "$cpus" -ge 4 ] || warn "Only $cpus CPU cores are available; CI builds will be slower."
   [ "$memory_kib" -ge 8388608 ] || warn "Less than 8 GiB RAM is available."
-  [ "$disk_kib" -ge 41943040 ] || warn "Less than 40 GiB disk is free; monitor build cache."
+  [ "$docker_disk_kib" -ge 41943040 ] || \
+    warn "Docker storage has ${docker_free_gib} GiB free; monitor image and build-cache growth."
 
   install_root=$(cd .. && pwd -P)
   env_file=.env
@@ -100,7 +116,7 @@ check_preflight() {
   INITPAD_INSTALL_ROOT="$install_root" \
   INITPAD_SUPERVISOR_SHARED_SECRET=acceptance-preflight-only-000000000000 \
     docker compose --env-file "$env_file" -f docker-compose.yml config --quiet
-  record preflight "linux=$(uname -m) cpus=$cpus memory_kib=$memory_kib disk_kib=$disk_kib"
+  record preflight "linux=$(uname -m) cpus=$cpus memory_kib=$memory_kib docker_disk_kib=$docker_disk_kib checkout_disk_kib=$checkout_disk_kib"
   pass "Clean-host preflight passed."
 }
 
