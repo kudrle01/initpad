@@ -73,6 +73,11 @@ silently; `--re-enroll` requires a new short-lived token and is reserved for a
 disconnected, recreated or restored target. Those local details deliberately
 do not come from a control-plane job.
 
+The generated command also carries the intended target's non-secret ID. Before
+preserving an existing host identity, the installer verifies that it belongs to
+that exact target. This prevents a host from successfully reconnecting an older
+target while a newly created server card remains `not enrolled`.
+
 The manual installer remains the recovery and air-gap path after 0.13. Remote
 updates are deliberately per target: update one non-critical target first,
 observe its heartbeat, protocol and Docker tests, then approve the remaining

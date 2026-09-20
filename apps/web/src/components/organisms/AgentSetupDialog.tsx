@@ -154,7 +154,7 @@ export function AgentSetupDialog({
     updateStatus?.updateAvailable && updateStatus.image ? updateStatus.image : distribution?.image;
   const installCommand =
     distribution?.available && desiredImage && installerUrl
-      ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${desiredImage}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
+      ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${desiredImage}' --expected-target-id '${currentTarget.id}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
       : null;
   const reEnrollCommand = installCommand ? `${installCommand} --re-enroll` : null;
   const desiredAgentVersion = updateStatus?.updateAvailable
@@ -405,9 +405,9 @@ export function AgentSetupDialog({
                     <CopyField command={installCommand} />
                     <p className="mt-1.5 text-xs text-muted-foreground">
                       It verifies the checksum and immutable Agent {distribution?.version} image,
-                      verifies any saved identity, then starts and health-checks the Agent. A new
-                      server requests the token through a hidden prompt, so it never enters shell
-                      history.
+                      verifies that any saved identity belongs to this target, then starts and
+                      health-checks the Agent. A new server requests the token through a hidden
+                      prompt, so it never enters shell history.
                     </p>
                     {reEnrollCommand && (
                       <details className="mt-2 rounded-md border border-border bg-secondary/20 p-2.5 text-xs">
@@ -493,9 +493,9 @@ export function AgentSetupDialog({
                   </p>
                   <CopyField command={installCommand} />
                   <p className="text-xs text-muted-foreground">
-                    The installer verifies the checksum, immutable image and saved credential before
-                    replacing the running container. If the new Agent cannot heartbeat, it restores
-                    the previous container.
+                    The installer verifies the checksum, immutable image, target binding and saved
+                    credential before replacing the running container. If the new Agent cannot
+                    heartbeat, it restores the previous container.
                   </p>
                   {window.location.protocol === 'http:' && (
                     <p className="flex items-start gap-1.5 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-foreground">

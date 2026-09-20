@@ -12,6 +12,7 @@ GATEWAY_ADMIN_SOCKET=
 GATEWAY_CONTAINER=
 CA_FILE=
 REENROLL=false
+EXPECTED_TARGET_ID=
 
 usage() {
   cat <<'EOF'
@@ -30,6 +31,7 @@ Options:
   --gateway-admin-socket PATH  Private local Caddy admin Unix socket
   --gateway-container NAME     Labeled local Caddy gateway container
   --ca-file PATH               Private CA certificate trusted by the Agent
+  --expected-target-id ID      Refuse an identity belonging to another target
   --re-enroll                  Replace a stale/revoked identity using a new token
   -h, --help                   Show this help
 
@@ -84,6 +86,11 @@ while [ "$#" -gt 0 ]; do
       CA_FILE=$2
       shift 2
       ;;
+    --expected-target-id)
+      require_value "$@"
+      EXPECTED_TARGET_ID=$2
+      shift 2
+      ;;
     --re-enroll)
       REENROLL=true
       shift
@@ -113,6 +120,10 @@ esac
 
 printf '%s\n' "$IMAGE" | grep -Eq '^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$' \
   || fail '--image must be an immutable OCI reference ending in @sha256:<64 lowercase hex characters>'
+
+case "$EXPECTED_TARGET_ID" in
+  *[!A-Za-z0-9_-]*) fail '--expected-target-id contains unsupported characters' ;;
+esac
 
 command -v docker >/dev/null 2>&1 || fail 'Docker Engine is required'
 [ -S /var/run/docker.sock ] || fail '/var/run/docker.sock is not available'
@@ -193,6 +204,18 @@ run_agent_container() {
 }
 
 CONFIG_FILE=$DATA_DIR/agent.json
+
+verify_identity_binding() {
+  [ -n "$EXPECTED_TARGET_ID" ] || return 0
+  [ -f "$CONFIG_FILE" ] || fail 'the Agent identity was not written after enrollment'
+
+  saved_target_id=$(sed -n 's/^[[:space:]]*"targetId":[[:space:]]*"\([^"]*\)"[,]*[[:space:]]*$/\1/p' "$CONFIG_FILE")
+  [ -n "$saved_target_id" ] || fail 'the saved Agent identity does not contain a readable target ID'
+  if [ "$saved_target_id" != "$EXPECTED_TARGET_ID" ]; then
+    fail "the saved Agent identity belongs to target '$saved_target_id', not intended target '$EXPECTED_TARGET_ID'; generate an enrollment token for the intended target and rerun this command with --re-enroll"
+  fi
+}
+
 if [ ! -f "$CONFIG_FILE" ] || [ "$REENROLL" = true ]; then
   if [ -f "$CONFIG_FILE" ]; then
     printf '\nReplacing the existing Agent identity. The old credential will be revoked.\n'
@@ -205,8 +228,10 @@ if [ ! -f "$CONFIG_FILE" ] || [ "$REENROLL" = true ]; then
     run_agent_container --rm -it "$IMAGE" \
       enroll --url "$CONTROL_PLANE_URL"
   fi
+  verify_identity_binding
 else
   printf 'Keeping the existing Agent identity in %s.\n' "$CONFIG_FILE"
+  verify_identity_binding
   if ! identity_check=$(run_agent_container --rm "$IMAGE" once 2>&1); then
     printf '%s\n' "$identity_check" >&2
     fail 'the candidate Agent could not verify the existing identity; nothing was changed. Inspect the error above. If the identity was rejected because this target was disconnected, recreated or restored from another database, generate a new enrollment token and rerun this command with --re-enroll'

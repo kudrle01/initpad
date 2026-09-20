@@ -12,6 +12,7 @@ test('documents explicit re-enrollment without making it the default', () => {
   const help = execFileSync(installer, ['--help'], { encoding: 'utf8' });
 
   assert.match(help, /--re-enroll\s+Replace a stale\/revoked identity using a new token/);
+  assert.match(help, /--expected-target-id ID\s+Refuse an identity belonging to another target/);
   assert.doesNotMatch(help, /automatically re-enroll/i);
 });
 
@@ -22,5 +23,10 @@ test('verifies a saved identity before parking the running Agent', () => {
 
   assert.ok(preflight > 0, 'identity preflight is missing');
   assert.ok(park > preflight, 'the old Agent is stopped before identity verification');
+  assert.ok(
+    source.indexOf('verify_identity_binding') < preflight,
+    'target binding is not verified before the running Agent is parked',
+  );
+  assert.match(source, /not intended target/);
   assert.match(source, /rerun this command with --re-enroll/);
 });
