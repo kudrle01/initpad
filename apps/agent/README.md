@@ -44,6 +44,11 @@ Application workloads are not restarted. There is no generic command, script
 URL or user-supplied image in the job. Updating 0.12.1 to 0.13 remains a final
 manual installer operation; remote updates apply from 0.13 onward.
 
+Agent 0.14 is the first protocol-compatible successor intended for the live
+remote-update acceptance. It deliberately keeps protocol version 1: the new
+signed immutable image proves update, identity preservation and rollback
+without coupling the test to a wire-protocol migration.
+
 Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
 [release acceptance](./ACCEPTANCE.md). The installer shown by a control plane
 remains disabled until that deployment is configured with the exact digest

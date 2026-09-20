@@ -13,8 +13,9 @@ and creates a GitHub release. It never publishes `latest`.
 2. Create and push an annotated tag matching the version exactly:
 
    ```sh
-   git tag -a agent-v0.13.0 -m 'InitPad Agent 0.13.0'
-   git push origin agent-v0.13.0
+   version=$(node -p "require('./apps/agent/package.json').version")
+   git tag -a "agent-v${version}" -m "InitPad Agent ${version}"
+   git push origin "agent-v${version}"
    ```
 
    Protect the `agent-v*` tag pattern so only release maintainers can create or
@@ -48,8 +49,9 @@ portable release signature in every case.
 Replace the placeholders with the release values:
 
 ```sh
+TAG=agent-vX.Y.Z
 cosign verify \
-  --certificate-identity 'https://github.com/OWNER/REPOSITORY/.github/workflows/release-agent.yml@refs/tags/agent-v0.13.0' \
+  --certificate-identity "https://github.com/OWNER/REPOSITORY/.github/workflows/release-agent.yml@refs/tags/${TAG}" \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   'ghcr.io/OWNER/initpad-agent@sha256:DIGEST'
 ```
@@ -58,10 +60,11 @@ Download the release assets into one directory, then verify their checksums and
 the checksum signature:
 
 ```sh
+TAG=agent-vX.Y.Z
 sha256sum --check SHA256SUMS
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity 'https://github.com/OWNER/REPOSITORY/.github/workflows/release-agent.yml@refs/tags/agent-v0.13.0' \
+  --certificate-identity "https://github.com/OWNER/REPOSITORY/.github/workflows/release-agent.yml@refs/tags/${TAG}" \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   SHA256SUMS
 ```

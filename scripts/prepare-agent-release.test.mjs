@@ -11,6 +11,10 @@ import { prepareAgentRelease } from './prepare-agent-release.mjs';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const digest = `sha256:${'a'.repeat(64)}`;
 const commit = 'b'.repeat(40);
+const agentVersion = JSON.parse(
+  readFileSync(resolve(root, 'apps/agent/package.json'), 'utf8'),
+).version;
+const agentTag = `agent-v${agentVersion}`;
 
 function fixture() {
   const directory = mkdtempSync(resolve(tmpdir(), 'initpad-agent-release-'));
@@ -25,7 +29,7 @@ test('creates a deterministic digest-bound Agent release bundle', () => {
   const { manifest } = prepareAgentRelease({
     root,
     outputDirectory,
-    tag: 'agent-v0.13.0',
+    tag: agentTag,
     image: 'ghcr.io/example/initpad-agent',
     digest,
     sourceCommit: commit,
@@ -60,14 +64,14 @@ test('rejects a tag which does not exactly match the Agent package version', () 
       prepareAgentRelease({
         root,
         outputDirectory,
-        tag: 'agent-v0.13.1',
+        tag: 'agent-v999.0.0',
         image: 'ghcr.io/example/initpad-agent',
         digest,
         sourceCommit: commit,
         sourceRepository: 'https://github.com/example/initpad',
         sbomPath,
       }),
-    /release tag must be agent-v0\.13\.0/,
+    new RegExp(`release tag must be agent-v${agentVersion.replaceAll('.', '\\.')}`),
   );
 });
 
@@ -78,7 +82,7 @@ test('rejects mutable or malformed image identity', () => {
       prepareAgentRelease({
         root,
         outputDirectory,
-        tag: 'agent-v0.13.0',
+        tag: agentTag,
         image: 'ghcr.io/example/initpad-agent:latest',
         digest,
         sourceCommit: commit,

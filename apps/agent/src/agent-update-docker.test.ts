@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { DockerHttpRequest, DockerHttpResponse, DockerTransport } from './docker-http.js';
 import { AgentUpdateDocker } from './agent-update-docker.js';
 import type { AgentUpdatePlan } from './release-update.js';
+import { AGENT_VERSION } from './types.js';
 
 const targetId = '63ec310e-0fd1-48fd-b9e0-f58f77c7a295';
 const jobId = '5c7ed49a-c24e-4cb2-a530-161425907048';
@@ -15,7 +16,7 @@ const plan: AgentUpdatePlan = {
   attempt: 1,
   leaseToken: `initpad_lease_${'c'.repeat(43)}`,
   targetId,
-  version: '0.14.0',
+  version: AGENT_VERSION,
   image: newImage,
   createdAt: '2026-09-16T10:00:00.000Z',
 };

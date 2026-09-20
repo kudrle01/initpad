@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Bundle } from 'sigstore';
 import { verifyAgentUpdatePayload } from './release-update.js';
+import { AGENT_VERSION } from './types.js';
 
 const repository = 'example/initpad';
 const digest = `sha256:${'a'.repeat(64)}`;
 const image = `ghcr.io/example/initpad-agent@${digest}`;
+const [major, minor] = AGENT_VERSION.split('.').map(Number);
+const newerVersion = `${major}.${minor + 1}.0`;
 
-function payload(version = '0.14.0') {
+function payload(version = newerVersion) {
   const manifest = {
     schemaVersion: 1,
     component: 'initpad-agent',
@@ -41,13 +44,12 @@ test('accepts only a newer release with the exact workflow signing identity', as
 
   await assert.doesNotReject(async () => {
     const update = await verifyAgentUpdatePayload(payload(), repository, verifier);
-    assert.deepEqual(update, { version: '0.14.0', image });
+    assert.deepEqual(update, { version: newerVersion, image });
   });
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0]?.[2], {
     certificateIssuer: 'https://token.actions.githubusercontent.com',
-    certificateIdentityURI:
-      'https://github.com/example/initpad/.github/workflows/release-agent.yml@refs/tags/agent-v0.14.0',
+    certificateIdentityURI: `https://github.com/example/initpad/.github/workflows/release-agent.yml@refs/tags/agent-v${newerVersion}`,
     tlogThreshold: 1,
     ctLogThreshold: 1,
     timeout: 8_000,
@@ -63,7 +65,11 @@ test('rejects downgrade and same-version requests before signature verification'
   }) as never;
 
   await assert.rejects(
-    verifyAgentUpdatePayload(payload('0.13.0'), repository, verifier),
+    verifyAgentUpdatePayload(payload(AGENT_VERSION), repository, verifier),
+    /must be newer/,
+  );
+  await assert.rejects(
+    verifyAgentUpdatePayload(payload('0.0.0'), repository, verifier),
     /must be newer/,
   );
   assert.equal(called, false);
