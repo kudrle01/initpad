@@ -68,8 +68,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   Nedestruktivní checker už ukládá oddělené PASS checkpointy pro preflight,
   běžící stack, skutečný host reboot a strukturu backupu; bod zůstává otevřený
   do reálného průchodu na control-plane VM a samostatném Agent hostu.
-- [ ] Vydat Agent `0.14.0` a živě ověřit vzdálený update `0.13 → 0.14`,
-  vadný candidate a automatický rollback.
+- [x] Vydat podepsaný multiarch Agent `0.14.0` a nezávisle ověřit jeho
+  veřejné assets, Sigstore identitu a OCI index.
+- [ ] Živě ověřit vzdálený update `0.13 → 0.14`, vadný candidate a
+  automatický rollback.
 - [ ] Vydat platformu `0.2.1` a živě ověřit UI update, vadný candidate,
   rollback a restart hosta uprostřed cutoveru.
 
@@ -933,17 +935,18 @@ jen konkrétní provozní a vyhodnocovací scénář.
          Workflow nepoužívá `latest`, odmítne již existující verzi a všechny
          cizí Actions jsou připnuté na commit SHA.
        - ◐ **8e-d-b2 — publikace a živá acceptance.** Tagy `agent-v*` chrání
-         aktivní GitHub ruleset. Aktuální release `agent-v0.13.0` zveřejnil
+         aktivní GitHub ruleset. Aktuální release `agent-v0.14.0` zveřejnil
          podepsaný multiarch image
-         `ghcr.io/kudrle01/initpad-agent@sha256:d66470008525f6e6dd3180dd86ae062e35a3109717614b09666c8dfc43296663`,
+         `ghcr.io/kudrle01/initpad-agent@sha256:833363e31a724d1faf228ab64bc871a3641fb112d0ac69f8f982f2b75120caf1`,
          instalační skript, manifest, SBOM a kontrolní součty. Kontrola
          manifest checksumu a Sigstore identity prošla, GHCR package je veřejný
          a anonymní registry probe potvrdil shodný digest i obě cílové
-         platformy. Distribuční API servíruje Agent 0.13.0 s
+         platformy. Distribuční API servíruje Agent 0.14.0 s
          allocation-scoped Docker prostředky, bezpečným recovery identity a
-         vzdáleným update protokolem. Zbývá na samostatném čistém Linux hostu
-         ověřit instalaci, reboot, skutečný update na 0.14, rollback vadného
-         obrazu a zachování workloadů po odpojení Agenta.
+         vzdáleným update protokolem. Agent 0.13 zůstává bootstrap verzí pro
+         živý update test. Zbývá na samostatném čistém Linux hostu ověřit
+         skutečný update `0.13 → 0.14`, rollback vadného obrazu a zachování
+         workloadů po odpojení Agenta.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a
          verze z podepsaného release manifestu; UI proto nemůže označit starší
          image verzí lokálního source tree. **Uživatelský test:** bez jednoho

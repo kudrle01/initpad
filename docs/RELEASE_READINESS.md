@@ -1,6 +1,6 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá vydanému kandidátu Agenta 0.13.0 a prvnímu
+Stav dokumentu odpovídá vydanému kandidátu Agenta 0.14.0 a prvnímu
 podepsanému platformnímu releasu 0.2.0. Seznam je záměrně otevřený:
 odděluje funkční prototyp od
 tvrzení, že je služba připravená pro veřejný produkční provoz.
@@ -17,7 +17,7 @@ tvrzení, že je služba připravená pro veřejný produkční provoz.
 - Outbound Agent protokol s enrollmentem, rotací credentials, lease fencingem,
   diagnostikou, resource limity a stabilní gateway routou.
 - Reprodukovatelná repository gate, immutable container references a
-  podepsané multiarch vydání Agenta 0.13.0.
+  podepsané multiarch vydání Agenta 0.14.0.
 - Podepsaný platformní release bundle, oddělený Supervisor, ověřený backup,
   postupný health-gated cutover a image rollback pro self-hosted instalaci.
 - Strukturované redigované logy a korelace request → operation → Agent job
@@ -68,27 +68,28 @@ Připnutý komunitní MinIO image zajišťuje reprodukovatelnost lokální insta
 ale není doporučenou veřejnou produkční hranicí. Produkce musí použít
 samostatně udržované privátní S3-compatible úložiště a nacvičenou obnovu.
 
-### Agent 0.13 je veřejně distribuovaný, ale čeká na update acceptance
+### Agent 0.14 je veřejně distribuovaný, ale čeká na update acceptance
 
-Release [`agent-v0.13.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.13.0)
-vznikl z commitu `e43f57fa78b5d8b633f3e223273b2efb5ddfc287` a obsahuje
+Release [`agent-v0.14.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.14.0)
+vznikl z commitu `9a5cf51a009a0d492abbeb945ed8a164567ed35f` a obsahuje
 image
-`ghcr.io/kudrle01/initpad-agent@sha256:d66470008525f6e6dd3180dd86ae062e35a3109717614b09666c8dfc43296663`
+`ghcr.io/kudrle01/initpad-agent@sha256:833363e31a724d1faf228ab64bc871a3641fb112d0ac69f8f982f2b75120caf1`
 pro `linux/amd64` a `linux/arm64`. Release workflow ověřil Cosign podpis image
 i všech stažitelných souborů; následná lokální kontrola manifestu a jeho GitHub
-checksumu prošla a samostatné Cosign ověření potvrdilo přesnou workflow
-identitu i záznam v transparentním logu. Tag chrání aktivní ruleset před
-vytvořením, změnou nebo smazáním bez výjimky release správce.
+checksumu prošla. Nezávislý anonymní audit ověřil přesnou Sigstore
+workflow identitu, záznam v transparentním logu, shodný OCI digest i obě
+cílové platformy. Tag chrání aktivní ruleset před vytvořením, změnou nebo
+smazáním bez výjimky release správce.
 
 GHCR package je veřejný. Anonymní registry požadavek vrátil `200`, shodný
 immutable digest a OCI index pro `linux/amd64` i `linux/arm64`. Lokální release
-kandidát používá dvojici tohoto digestu a verze `0.13.0`; distribuční API ji
+kandidát používá dvojici tohoto digestu a verze `0.14.0`; distribuční API ji
 označuje jako dostupnou a servírovaný instalátor se shoduje s podepsaným
-checksumem release. Předchozí 0.12.1 prošel recovery identity a reálným
-Docker lifecycle; nový 0.13.0 přidává podepsaný vzdálený update s
-identity-preserving swapem a rollbackem. Dokud neproběhne celý clean-host
-runbook a skutečný update `0.13 → 0.14` včetně rebootu a vadného candidate,
-nejde vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
+checksumem release. Agent 0.13 zavedl podepsaný vzdálený update s
+identity-preserving swapem a rollbackem; 0.14 je jeho první skutečný
+protokolově kompatibilní nástupce. Dokud neproběhne celý clean-host runbook a
+skutečný update `0.13 → 0.14` včetně vadného candidate, nejde vydání
+považovat za produkčně přijaté. Postup je v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
@@ -115,6 +116,7 @@ Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
 npm run audit:public-release -- --tag initpad-v0.2.0
+npm run audit:public-release -- --tag agent-v0.14.0
 ```
 
 Audit odmítne soukromý repozitář, neúplné nebo nedostupné assets, chybné

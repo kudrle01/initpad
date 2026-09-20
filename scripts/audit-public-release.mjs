@@ -9,13 +9,19 @@ const ASSET_LIMIT = 2 * 1024 * 1024;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const COMPONENTS = ['api', 'web', 'supervisor'];
-const RELEASE_FILES = [
+const PLATFORM_RELEASE_FILES = [
   'initpad-api-sbom.json',
   'initpad-install-release.sh',
   'initpad-platform-release.json',
   'initpad-release.override.yml',
   'initpad-supervisor-sbom.json',
   'initpad-web-sbom.json',
+  'SHA256SUMS',
+];
+const AGENT_RELEASE_FILES = [
+  'initpad-agent-install.sh',
+  'initpad-agent-release.json',
+  'initpad-agent-sbom.json',
   'SHA256SUMS',
 ];
 
@@ -62,7 +68,7 @@ function request(fetchImpl, url, options = {}) {
   });
 }
 
-function validateManifest(value, repository, tag) {
+function validatePlatformManifest(value, repository, tag) {
   const manifest = object(value, 'platform release manifest');
   const version = tag.startsWith('initpad-v') ? tag.slice(9) : '';
   const source = object(manifest.source, 'platform release source');
@@ -95,6 +101,40 @@ function validateManifest(value, repository, tag) {
     ) {
       throw new Error(`${component} image identity is invalid`);
     }
+  }
+  return manifest;
+}
+
+function validateAgentManifest(value, repository, tag) {
+  const manifest = object(value, 'Agent release manifest');
+  const version = tag.startsWith('agent-v') ? tag.slice(7) : '';
+  const source = object(manifest.source, 'Agent release source');
+  const image = object(manifest.image, 'Agent image');
+  const installer = object(manifest.installer, 'Agent installer');
+  const owner = repository.split('/')[0]?.toLowerCase();
+  const expectedName = `ghcr.io/${owner}/initpad-agent`;
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.component !== 'initpad-agent' ||
+    manifest.version !== version ||
+    !VERSION.test(version) ||
+    source.repository !== `https://github.com/${repository}` ||
+    source.tag !== tag ||
+    typeof source.commit !== 'string' ||
+    !/^[a-f0-9]{40}$/.test(source.commit) ||
+    image.name !== expectedName ||
+    typeof image.digest !== 'string' ||
+    !DIGEST.test(image.digest) ||
+    image.immutableReference !== `${image.name}@${image.digest}` ||
+    !Array.isArray(image.platforms) ||
+    !image.platforms.includes('linux/amd64') ||
+    !image.platforms.includes('linux/arm64') ||
+    image.sbom !== 'initpad-agent-sbom.json' ||
+    installer.file !== 'initpad-agent-install.sh' ||
+    typeof installer.sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(installer.sha256)
+  ) {
+    throw new Error('Agent release manifest identity is invalid');
   }
   return manifest;
 }
@@ -160,20 +200,7 @@ async function inspectPublicImage(fetchImpl, image) {
   }
 }
 
-export async function auditPublicPlatformRelease({
-  repository = 'kudrle01/initpad',
-  tag,
-  fetchImpl = fetch,
-  verifyBundle = defaultVerifyBundle,
-  log = console.log,
-}) {
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
-    throw new Error('repository must use owner/name format');
-  }
-  if (!/^initpad-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag)) {
-    throw new Error('tag must use initpad-vMAJOR.MINOR.PATCH format');
-  }
-
+async function publicReleaseAssets(fetchImpl, repository, tag, releaseFiles) {
   const api = 'https://api.github.com';
   const repositoryInfo = object(
     await json(
@@ -217,14 +244,25 @@ export async function auditPublicPlatformRelease({
       return [asset.name, asset];
     }),
   );
-  const expectedAssets = RELEASE_FILES.flatMap((name) => [name, `${name}.sigstore.json`]);
+  const expectedAssets = releaseFiles.flatMap((name) => [name, `${name}.sigstore.json`]);
   for (const name of expectedAssets) {
     const asset = assets.get(name);
     if (!asset) throw new Error(`GitHub release is missing ${name}`);
     const response = await request(fetchImpl, asset.browser_download_url, { method: 'HEAD' });
     if (!response.ok) throw new Error(`${name} is not anonymously downloadable`);
   }
+  return assets;
+}
 
+async function verifyReleaseEnvelope({
+  fetchImpl,
+  assets,
+  releaseFiles,
+  manifestFile,
+  identity,
+  validate,
+  verifyBundle,
+}) {
   const download = async (name) =>
     boundedBytes(
       await request(fetchImpl, assets.get(name).browser_download_url),
@@ -233,28 +271,94 @@ export async function auditPublicPlatformRelease({
     );
   const [manifestBytes, manifestBundleBytes, checksumBytes, checksumBundleBytes] =
     await Promise.all([
-      download('initpad-platform-release.json'),
-      download('initpad-platform-release.json.sigstore.json'),
+      download(manifestFile),
+      download(`${manifestFile}.sigstore.json`),
       download('SHA256SUMS'),
       download('SHA256SUMS.sigstore.json'),
     ]);
-  const manifest = validateManifest(JSON.parse(manifestBytes.toString('utf8')), repository, tag);
-  const identity = `https://github.com/${repository}/.github/workflows/release-platform.yml@refs/tags/${tag}`;
+  const manifest = validate(JSON.parse(manifestBytes.toString('utf8')));
   await verifyBundle(JSON.parse(manifestBundleBytes.toString('utf8')), manifestBytes, identity);
   await verifyBundle(JSON.parse(checksumBundleBytes.toString('utf8')), checksumBytes, identity);
   const checksums = parseChecksums(checksumBytes);
-  for (const name of RELEASE_FILES.filter((value) => value !== 'SHA256SUMS')) {
+  for (const name of releaseFiles.filter((value) => value !== 'SHA256SUMS')) {
     if (!checksums.has(name)) throw new Error(`SHA256SUMS does not cover ${name}`);
   }
-  if (checksums.get('initpad-platform-release.json') !== sha256(manifestBytes).slice(7)) {
-    throw new Error('platform release manifest checksum does not match');
+  if (checksums.get(manifestFile) !== sha256(manifestBytes).slice(7)) {
+    throw new Error(`${manifestFile} checksum does not match`);
   }
+  return { manifest, checksums };
+}
+
+export async function auditPublicPlatformRelease({
+  repository = 'kudrle01/initpad',
+  tag,
+  fetchImpl = fetch,
+  verifyBundle = defaultVerifyBundle,
+  log = console.log,
+}) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+    throw new Error('repository must use owner/name format');
+  }
+  if (!/^initpad-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag)) {
+    throw new Error('tag must use initpad-vMAJOR.MINOR.PATCH format');
+  }
+
+  const assets = await publicReleaseAssets(fetchImpl, repository, tag, PLATFORM_RELEASE_FILES);
+  const identity = `https://github.com/${repository}/.github/workflows/release-platform.yml@refs/tags/${tag}`;
+  const { manifest } = await verifyReleaseEnvelope({
+    fetchImpl,
+    assets,
+    releaseFiles: PLATFORM_RELEASE_FILES,
+    manifestFile: 'initpad-platform-release.json',
+    identity,
+    validate: (value) => validatePlatformManifest(value, repository, tag),
+    verifyBundle,
+  });
 
   for (const component of COMPONENTS) {
     await inspectPublicImage(fetchImpl, manifest.images[component]);
   }
   log(`Public release ${tag} is anonymously readable, signed and multiarch.`);
   return { repository, tag, version: manifest.version, sourceCommit: manifest.source.commit };
+}
+
+export async function auditPublicAgentRelease({
+  repository = 'kudrle01/initpad',
+  tag,
+  fetchImpl = fetch,
+  verifyBundle = defaultVerifyBundle,
+  log = console.log,
+}) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+    throw new Error('repository must use owner/name format');
+  }
+  if (!/^agent-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag)) {
+    throw new Error('tag must use agent-vMAJOR.MINOR.PATCH format');
+  }
+
+  const assets = await publicReleaseAssets(fetchImpl, repository, tag, AGENT_RELEASE_FILES);
+  const identity = `https://github.com/${repository}/.github/workflows/release-agent.yml@refs/tags/${tag}`;
+  const { manifest, checksums } = await verifyReleaseEnvelope({
+    fetchImpl,
+    assets,
+    releaseFiles: AGENT_RELEASE_FILES,
+    manifestFile: 'initpad-agent-release.json',
+    identity,
+    validate: (value) => validateAgentManifest(value, repository, tag),
+    verifyBundle,
+  });
+  if (checksums.get(manifest.installer.file) !== manifest.installer.sha256) {
+    throw new Error('Agent installer checksum does not match its manifest');
+  }
+  await inspectPublicImage(fetchImpl, manifest.image);
+  log(`Public release ${tag} is anonymously readable, signed and multiarch.`);
+  return {
+    repository,
+    tag,
+    version: manifest.version,
+    sourceCommit: manifest.source.commit,
+    immutableReference: manifest.image.immutableReference,
+  };
 }
 
 function argument(name) {
@@ -267,10 +371,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const version = JSON.parse(
     readFileSync(resolve(root, 'deploy/platform-version.json'), 'utf8'),
   ).version;
-  auditPublicPlatformRelease({
-    repository: argument('--repository') ?? 'kudrle01/initpad',
-    tag: argument('--tag') ?? `initpad-v${version}`,
-  }).catch((error) => {
+  const tag = argument('--tag') ?? `initpad-v${version}`;
+  const audit = tag.startsWith('agent-v') ? auditPublicAgentRelease : auditPublicPlatformRelease;
+  audit({ repository: argument('--repository') ?? 'kudrle01/initpad', tag }).catch((error) => {
     console.error(`Public release audit failed: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
   });

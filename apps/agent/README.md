@@ -28,7 +28,7 @@ immutable `INITPAD_AGENT_IMAGE` digest and its explicit
 `INITPAD_AGENT_RELEASE_VERSION`. It installs and enrolls without cloning this
 repository, preserves the root-only identity across updates and restores the
 previous container when the replacement cannot heartbeat. The repository
-publishes the signed, public `amd64/arm64` Agent 0.13.0 image. Clean-host update
+publishes the signed, public `amd64/arm64` Agent 0.14.0 image. Clean-host update
 and rollback acceptance remains a release gate. The local lab below stays the
 supported source-build acceptance path.
 
@@ -47,7 +47,9 @@ manual installer operation; remote updates apply from 0.13 onward.
 Agent 0.14 is the first protocol-compatible successor intended for the live
 remote-update acceptance. It deliberately keeps protocol version 1: the new
 signed immutable image proves update, identity preservation and rollback
-without coupling the test to a wire-protocol migration.
+without coupling the test to a wire-protocol migration. The release is public;
+production acceptance remains open until a real 0.13 target completes the
+remote update and failed-candidate rollback checkpoints.
 
 Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
 [release acceptance](./ACCEPTANCE.md). The installer shown by a control plane
