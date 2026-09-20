@@ -179,6 +179,39 @@ describe('AgentSetupDialog distribution', () => {
     expect(commands[0]).not.toHaveTextContent('--re-enroll');
   });
 
+  it('keeps a current online Agent compact without reinstall controls', async () => {
+    const release: AgentDistribution = {
+      available: true,
+      version: '0.14.1',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      unavailableReason: null,
+      installer: {
+        path: '/api/agent/distribution/install.sh',
+        sha256: 'd'.repeat(64),
+      },
+    };
+    vi.mocked(api.getAgentDistribution).mockResolvedValue(release);
+
+    renderDialog(
+      [],
+      {
+        ...enrollment,
+        state: 'online',
+        enrollmentPending: false,
+        credentialGeneration: 1,
+        version: '0.14.1',
+        enrolledAt: '2026-09-15T12:00:00.000Z',
+        lastSeenAt: '2026-09-15T12:01:00.000Z',
+      },
+      null,
+    );
+
+    expect(await screen.findByText('Agent 0.14.1 is current')).toBeInTheDocument();
+    expect(screen.getByText(/ready to receive jobs/i)).toBeInTheDocument();
+    expect(screen.queryByText(/curl -fsSLo initpad-agent-install\.sh/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /download script only/i })).not.toBeInTheDocument();
+  });
+
   it('shows a verified newer release and uses its immutable image for the manual bootstrap', async () => {
     const latestImage = `ghcr.io/example/initpad-agent@sha256:${'e'.repeat(64)}`;
     vi.mocked(api.getAgentDistribution).mockResolvedValue({

@@ -160,6 +160,16 @@ export function AgentSetupDialog({
   const desiredAgentVersion = updateStatus?.updateAvailable
     ? updateStatus.latestVersion
     : (distribution?.version ?? null);
+  const isCurrentOnline = Boolean(
+    state === 'online' &&
+    agent?.version &&
+    desiredAgentVersion &&
+    agent.version === desiredAgentVersion &&
+    !updateStatus?.updateAvailable,
+  );
+  const hasRemoteUpdateOnline = Boolean(
+    state === 'online' && updateStatus?.updateAvailable && updateStatus.updateMethod === 'remote',
+  );
 
   async function issueEnrollment() {
     if (enrollment || agent?.enrollmentPending) {
@@ -460,18 +470,26 @@ export function AgentSetupDialog({
                 )}
               </div>
             </div>
-          ) : canUpdateExistingAgent ? (
+          ) : isCurrentOnline ? (
+            <div className="rounded-lg border border-success/35 bg-success/5 p-3">
+              <p className="text-sm font-medium">Agent {desiredAgentVersion} is current</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Connected to this target and ready to receive jobs. No action is required.
+              </p>
+            </div>
+          ) : hasRemoteUpdateOnline ? null : canUpdateExistingAgent ? (
             <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-secondary/20 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">
-                    {installCommand && desiredAgentVersion && agent?.version === desiredAgentVersion
-                      ? `Agent ${desiredAgentVersion} is current`
+                    {state === 'offline'
+                      ? `Reconnect Agent${agent?.version ? ` ${agent.version}` : ''}`
                       : `Update Agent${desiredAgentVersion ? ` to ${desiredAgentVersion}` : ''}`}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    The existing server identity is verified and preserved. No new enrollment token
-                    is required.
+                    {state === 'offline'
+                      ? 'Run the verified installer on the Docker server to restore this connection while preserving its identity.'
+                      : 'The existing server identity is verified and preserved. No new enrollment token is required.'}
                   </p>
                 </div>
                 {installCommand && installerUrl && (
