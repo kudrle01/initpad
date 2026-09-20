@@ -23,7 +23,7 @@ srozumitelném a samostatně nasaditelném systému.
 | Část | Stav |
 |---|---|
 | Self-hosted platforma | Veřejný podepsaný release `0.2.0`; funkční single-node profil, probíhá finální ověření na čistém hostu |
-| InitPad Agent | Veřejný podepsaný multi-arch release `0.14.0` pro `linux/amd64` a `linux/arm64`; probíhá živá update acceptance |
+| InitPad Agent | Doporučený release `0.13.0`; kandidát `0.14.0` byl odmítnut runtime kontrolou a připravuje se oprava `0.14.1` |
 | Hosted SaaS | Ve vývoji; nejde zatím o produkční deployment profil |
 
 Release assets, checksumy a OCI images jsou veřejné a ověřitelné bez GitHub
@@ -134,7 +134,7 @@ Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
 npm run audit:public-release -- --tag initpad-v0.2.0
-npm run audit:public-release -- --tag agent-v0.14.0
+npm run audit:public-release -- --tag agent-v0.13.0
 ```
 
 Změna šablony nebo kontejnerové image navíc spouští samostatný GitHub Actions

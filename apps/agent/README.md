@@ -28,9 +28,12 @@ immutable `INITPAD_AGENT_IMAGE` digest and its explicit
 `INITPAD_AGENT_RELEASE_VERSION`. It installs and enrolls without cloning this
 repository, preserves the root-only identity across updates and restores the
 previous container when the replacement cannot heartbeat. The repository
-publishes the signed, public `amd64/arm64` Agent 0.14.0 image. Clean-host update
-and rollback acceptance remains a release gate. The local lab below stays the
-supported source-build acceptance path.
+publishes signed, public `amd64/arm64` images. Agent 0.13.0 remains the reviewed
+bootstrap release. Candidate 0.14.0 was rejected because its final runtime
+image omitted the production `sigstore` dependency; it never replaced the
+existing Agent during acceptance. Clean-host update and rollback acceptance
+remains a release gate. The local lab below stays the supported source-build
+acceptance path.
 
 Agent 0.13 adds the remote update protocol. An owner/admin must explicitly
 confirm each target update in **Manage Agent**. The control plane selects a
@@ -44,12 +47,12 @@ Application workloads are not restarted. There is no generic command, script
 URL or user-supplied image in the job. Updating 0.12.1 to 0.13 remains a final
 manual installer operation; remote updates apply from 0.13 onward.
 
-Agent 0.14 is the first protocol-compatible successor intended for the live
-remote-update acceptance. It deliberately keeps protocol version 1: the new
-signed immutable image proves update, identity preservation and rollback
-without coupling the test to a wire-protocol migration. The release is public;
-production acceptance remains open until a real 0.13 target completes the
-remote update and failed-candidate rollback checkpoints.
+Agent 0.14.1 is the corrected protocol-compatible successor intended for the
+live remote-update acceptance. It includes production dependencies in the
+runtime image and adds a container CLI smoke test before a release can be
+signed. It deliberately keeps protocol version 1 so the new immutable image
+proves update, identity preservation and rollback without coupling the test to
+a wire-protocol migration.
 
 Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
 [release acceptance](./ACCEPTANCE.md). The installer shown by a control plane

@@ -12,6 +12,9 @@ const RELEASE_LIST_BYTES = 512 * 1024;
 const RELEASE_ASSET_BYTES = 2 * 1024 * 1024;
 const AGENT_MANIFEST = 'initpad-agent-release.json';
 const AGENT_BUNDLE = `${AGENT_MANIFEST}.sigstore.json`;
+// Published tags remain immutable for auditability. Releases that passed the
+// distribution checks but failed runtime acceptance are explicitly revoked.
+const REVOKED_AGENT_RELEASES = new Set(['0.14.0']);
 
 interface GitHubAsset {
   name: string;
@@ -96,7 +99,10 @@ export class ReleaseCatalogService {
     const candidate = releases
       .filter((release) => !release.draft && !release.prerelease)
       .filter((release) => release.tag_name.startsWith('agent-v'))
-      .filter((release) => parseStableVersion(release.tag_name.slice(7)))
+      .filter((release) => {
+        const version = release.tag_name.slice(7);
+        return parseStableVersion(version) && !REVOKED_AGENT_RELEASES.has(version);
+      })
       .sort((left, right) =>
         compareStableVersions(right.tag_name.slice(7), left.tag_name.slice(7)),
       )[0];

@@ -115,6 +115,22 @@ describe('ReleaseCatalogService', () => {
     expect(verify).not.toHaveBeenCalled();
   });
 
+  it('skips a published release that failed runtime acceptance', async () => {
+    const revoked = releaseList('0.14.0')[0];
+    const accepted = releaseList('0.13.0')[0];
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([revoked, accepted]))
+      .mockResolvedValueOnce(jsonResponse(manifest('0.13.0')))
+      .mockResolvedValueOnce(jsonResponse({}));
+
+    const result = await new ReleaseCatalogService().latestAgentRelease();
+
+    expect(result.error).toBeNull();
+    expect(result.release?.manifest.version).toBe('0.13.0');
+    expect(verify).toHaveBeenCalledTimes(1);
+  });
+
   it('serves the last verified result as stale after a refresh failure', async () => {
     jest
       .spyOn(global, 'fetch')

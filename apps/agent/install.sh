@@ -209,7 +209,7 @@ else
   printf 'Keeping the existing Agent identity in %s.\n' "$CONFIG_FILE"
   if ! identity_check=$(run_agent_container --rm "$IMAGE" once 2>&1); then
     printf '%s\n' "$identity_check" >&2
-    fail 'the existing Agent identity was rejected or could not reach its control plane; nothing was changed. If this target was disconnected, recreated or restored from another database, generate a new enrollment token and rerun this command with --re-enroll'
+    fail 'the candidate Agent could not verify the existing identity; nothing was changed. Inspect the error above. If the identity was rejected because this target was disconnected, recreated or restored from another database, generate a new enrollment token and rerun this command with --re-enroll'
   fi
   printf 'Existing Agent identity verified.\n'
 fi

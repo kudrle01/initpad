@@ -55,5 +55,13 @@ jobs:
           docker build --pull -f apps/agent/Dockerfile -t initpad-agent:acceptance .
           docker build --pull -f apps/supervisor/Dockerfile -t initpad-supervisor:acceptance .
 
+      - name: Probe Agent runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(node -p "require('./apps/agent/package.json').version")"
+          actual="$(docker run --rm initpad-agent:acceptance version)"
+          test "${actual}" = "${expected}"
+
       - name: Build and probe every project template
         run: ./scripts/test-template-images.sh
