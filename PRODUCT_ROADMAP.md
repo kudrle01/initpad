@@ -71,8 +71,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Vydat Agent `0.14.0`, nezávisle ověřit jeho distribuční obálku a při
   acceptance odhalit chybějící produkční závislost dříve, než nahradil
   stávající Agent.
-- [ ] Vydat opravený Agent `0.14.1` a živě ověřit vzdálený update
-  `0.13 → 0.14.1`, vadný candidate a
+- [x] Vydat opravený Agent `0.14.1`, ověřit runtime výsledné image, podpis,
+  veřejnou dostupnost a multiarch manifest.
+- [ ] Živě ověřit vzdálený update `0.13 → 0.14.1`, vadný candidate a
   automatický rollback.
 - [ ] Vydat platformu `0.2.1` a živě ověřit UI update, vadný candidate,
   rollback a restart hosta uprostřed cutoveru.
@@ -942,9 +943,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
          acceptance běh odhalil, že finální image neobsahoval produkční
          `sigstore` dependency. Candidate preflight skončil před odstavením
          starého Agenta, takže identita i workloady zůstaly zachované. Release
-         channel se vrátil na 0.13.0 a oprava 0.14.1 kopíruje production
-         dependencies do runtime image a spouští CLI smoke test po každém buildu
-         i před podpisem releasu. Zbývá vydat opravu a na samostatném Linux
+         channel se dočasně vrátil na 0.13.0. Opravený release 0.14.1 kopíruje
+         production dependencies do runtime image, spouští CLI smoke test po
+         každém buildu i před podpisem a prošel nezávislým anonymním auditem
+         podpisu, assets i multiarch OCI indexu. Zbývá na samostatném Linux
          hostu ověřit skutečný update `0.13 → 0.14.1`, rollback vadného
          obrazu a zachování workloadů po odpojení Agenta.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a

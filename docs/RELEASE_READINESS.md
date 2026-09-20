@@ -1,10 +1,9 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá doporučenému Agentu 0.13.0, odmítnutému kandidátu
-0.14.0 a prvnímu
-podepsanému platformnímu releasu 0.2.0. Seznam je záměrně otevřený:
-odděluje funkční prototyp od
-tvrzení, že je služba připravená pro veřejný produkční provoz.
+Stav dokumentu odpovídá doporučenému Agentu 0.14.1, odmítnutému kandidátu
+0.14.0 a prvnímu podepsanému platformnímu releasu 0.2.0. Seznam je záměrně
+otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
+veřejný produkční provoz.
 
 ## Co je připravené
 
@@ -18,7 +17,7 @@ tvrzení, že je služba připravená pro veřejný produkční provoz.
 - Outbound Agent protokol s enrollmentem, rotací credentials, lease fencingem,
   diagnostikou, resource limity a stabilní gateway routou.
 - Reprodukovatelná repository gate, immutable container references a
-  podepsané multiarch vydání Agenta 0.13.0.
+  podepsané multiarch vydání Agenta 0.14.1 s runtime probem výsledné image.
 - Podepsaný platformní release bundle, oddělený Supervisor, ověřený backup,
   postupný health-gated cutover a image rollback pro self-hosted instalaci.
 - Strukturované redigované logy a korelace request → operation → Agent job
@@ -85,9 +84,12 @@ smazáním bez výjimky release správce.
 Distribuční integrita tedy byla v pořádku, ale runtime preflight odhalil, že
 finální image nekopíroval produkční `node_modules` a nemohl načíst balíček
 `sigstore`. Instalátor chybu zachytil před odstavením starého Agenta; identita
-a workloady zůstaly beze změny. Release channel proto nadále ukazuje na 0.13.0.
-Oprava 0.14.1 přidává produkční dependency stage a povinný CLI smoke test
-sestaveného image v běžném i release workflow. Dokud neproběhne celý
+a workloady zůstaly beze změny. Oprava 0.14.1 přidala produkční dependency
+stage a povinný CLI smoke test sestaveného image v běžném i release workflow.
+Podepsaná multiarch image
+`ghcr.io/kudrle01/initpad-agent@sha256:08b7829c02a06d343b825557df2e79abf2d6a745c591b6ae523a0605942948a9`
+prošla 20. září 2026 runtime probem i nezávislým anonymním distribučním
+auditem a je aktuálním release channel candidate. Dokud neproběhne celý
 clean-host runbook a skutečný update `0.13 → 0.14.1` včetně vadného
 candidate, nejde vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
@@ -116,7 +118,7 @@ Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
 npm run audit:public-release -- --tag initpad-v0.2.0
-npm run audit:public-release -- --tag agent-v0.13.0
+npm run audit:public-release -- --tag agent-v0.14.1
 ```
 
 Audit odmítne soukromý repozitář, neúplné nebo nedostupné assets, chybné

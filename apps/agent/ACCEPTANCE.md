@@ -153,10 +153,10 @@ it is recovery evidence, not a successful identity-preserving upgrade.
 
 Agent 0.13 is the remote-update bootstrap. Install 0.13 from 0.12.1 with the
 manual command above. Candidate 0.14.0 was rejected because its runtime image
-did not contain its production signature-verification dependency. Once a
-corrected 0.14.1 or newer signed release exists, open
-**Manage Agent** on the 0.13 target, review the release and choose **Install
-update**. Confirm all of the following:
+did not contain its production signature-verification dependency. Corrected
+release 0.14.1 is public, signed and passed its final-image runtime probe and
+anonymous distribution audit. Open **Manage Agent** on the 0.13 target, review
+release 0.14.1 and choose **Install update**. Confirm all of the following:
 
 - one `agent-update` job advances through signature verification, immutable
   pull, candidate preflight and heartbeat verification;
