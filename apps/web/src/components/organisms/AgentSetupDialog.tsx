@@ -146,15 +146,11 @@ export function AgentSetupDialog({
   const installerUrl = distribution?.available
     ? new URL(distribution.installer.path, window.location.origin).toString()
     : null;
-  const publishedHost =
-    currentTarget.routingMode === 'direct-port' && currentTarget.publicUrl
-      ? new URL(currentTarget.publicUrl).hostname
-      : null;
   const desiredImage =
     updateStatus?.updateAvailable && updateStatus.image ? updateStatus.image : distribution?.image;
   const installCommand =
     distribution?.available && desiredImage && installerUrl
-      ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${desiredImage}' --expected-target-id '${currentTarget.id}'${publishedHost ? ` --published-host '${publishedHost}'` : ''}${insecureFlag}`
+      ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${desiredImage}' --expected-target-id '${currentTarget.id}'${insecureFlag}`
       : null;
   const reEnrollCommand = installCommand ? `${installCommand} --re-enroll` : null;
   const desiredAgentVersion = updateStatus?.updateAvailable

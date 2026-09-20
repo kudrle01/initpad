@@ -129,6 +129,7 @@ describe('AgentSetupDialog distribution', () => {
     expect(commands).toHaveLength(2);
     expect(commands[0]).toHaveTextContent(release.image!);
     expect(commands[0]).toHaveTextContent("--expected-target-id 'target-1'");
+    expect(commands[0]).not.toHaveTextContent('--published-host');
     expect(commands[0]).not.toHaveTextContent('--re-enroll');
     expect(commands[1]).toHaveTextContent('--re-enroll');
     expect(screen.getByText(/replace an invalid existing identity/i)).toBeInTheDocument();
@@ -176,6 +177,7 @@ describe('AgentSetupDialog distribution', () => {
     expect(commands).toHaveLength(1);
     expect(commands[0]).toHaveTextContent(release.image!);
     expect(commands[0]).toHaveTextContent("--expected-target-id 'target-1'");
+    expect(commands[0]).not.toHaveTextContent('--published-host');
     expect(commands[0]).not.toHaveTextContent('--re-enroll');
   });
 

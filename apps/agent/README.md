@@ -78,6 +78,12 @@ preserving an existing host identity, the installer verifies that it belongs to
 that exact target. This prevents a host from successfully reconnecting an older
 target while a newly created server card remains `not enrolled`.
 
+The target `publicUrl` is used by the control plane to construct browser links;
+it is not an Agent health-check address. A production Agent using the local
+Docker socket and host networking checks published ports through loopback.
+`--published-host` remains an explicit lab option only for an Agent controlling
+a remote Docker daemon, such as the isolated Docker-in-Docker acceptance stack.
+
 The manual installer remains the recovery and air-gap path after 0.13. Remote
 updates are deliberately per target: update one non-critical target first,
 observe its heartbeat, protocol and Docker tests, then approve the remaining

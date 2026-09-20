@@ -27,7 +27,7 @@ Required:
 
 Options:
   --allow-insecure-http        Permit HTTP for a trusted local test only
-  --published-host HOST        Browser-facing host for direct-port workloads
+  --published-host HOST        Health-check host for a remote Docker daemon
   --gateway-admin-socket PATH  Private local Caddy admin Unix socket
   --gateway-container NAME     Labeled local Caddy gateway container
   --ca-file PATH               Private CA certificate trusted by the Agent
