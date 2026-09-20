@@ -41,6 +41,18 @@ docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is missing
 [ -z "$(docker ps -q --filter label=com.initpad.platform-update)" ] || \
   fail "A signed platform update is currently running; wait for it to finish."
 
+rootless_restriction=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+rootless_profile=/etc/apparmor.d/usr.local.bin.rootlesskit
+if [ -e "$rootless_restriction" ] && [ "$(cat "$rootless_restriction")" = 1 ]; then
+  if [ ! -f "$rootless_profile" ] ||
+    ! grep -Eq '^[[:space:]]*/usr/local/bin/rootlesskit[[:space:]]+flags=\(unconfined\)' "$rootless_profile" ||
+    ! grep -Eq '^[[:space:]]*userns,[[:space:]]*$' "$rootless_profile"; then
+    fail "Ubuntu AppArmor blocks the isolated rootless CI daemon.
+Run:  sudo ./prepare-rootless-runner.sh
+Then re-run ./install.sh. The global user-namespace restriction will stay enabled."
+  fi
+fi
+
 # ---- 1. configuration + secrets --------------------------------------------
 if [ ! -f .env ]; then
   say "Creating .env from .env.example"
@@ -161,6 +173,13 @@ wait_healthy() { # <service> [attempts]
     [ "$state" = healthy ] && return 0
     sleep 2
   done
+  if [ "$svc" = runner-docker ] &&
+    $COMPOSE --profile runner logs --no-color runner-docker 2>&1 | \
+      grep -q 'rootlesskit.*operation not permitted'; then
+    fail "runner-docker is blocked by the host AppArmor user-namespace policy.
+Run:  sudo ./prepare-rootless-runner.sh
+Then re-run ./install.sh."
+  fi
   fail "$svc did not become healthy — check: docker compose logs $svc"
 }
 
@@ -299,6 +318,9 @@ fi
 
 # ---- 6. runner (+ optional HTTPS proxy) --------------------------------------
 rotate_runner_if_address_changed
+say "Starting the isolated CI Docker daemon"
+$COMPOSE --profile runner up -d runner-docker
+wait_healthy runner-docker 60
 say "Starting the CI runner"
 if [ "$runner_config_changed" = yes ]; then
   # Bind-mounted config content is not part of Compose's service hash. Recreate

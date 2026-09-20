@@ -66,6 +66,17 @@ database_scalar() {
     psql -v ON_ERROR_STOP=1 -Atqc "$1" -U initpad -d initpad
 }
 
+check_rootless_runner_prerequisite() {
+  local restriction=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+  local profile=/etc/apparmor.d/usr.local.bin.rootlesskit
+  [ -e "$restriction" ] || return 0
+  [ "$(cat "$restriction")" = 1 ] || return 0
+  [ -f "$profile" ] &&
+    grep -Eq '^[[:space:]]*/usr/local/bin/rootlesskit[[:space:]]+flags=\(unconfined\)' "$profile" &&
+    grep -Eq '^[[:space:]]*userns,[[:space:]]*$' "$profile" && return 0
+  fail "Ubuntu AppArmor blocks the rootless CI daemon. Run 'sudo ./prepare-rootless-runner.sh', then repeat preflight."
+}
+
 check_preflight() {
   [ "$(uname -s)" = Linux ] || fail "Clean-host acceptance requires Linux."
   case "$(uname -m)" in
@@ -77,6 +88,7 @@ check_preflight() {
   done
   docker info >/dev/null 2>&1 || fail "Docker Engine is not running."
   docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is missing."
+  check_rootless_runner_prerequisite
 
   local existing volumes cpus memory_kib docker_root docker_disk_kib
   local checkout_disk_kib install_root env_file docker_free_gib

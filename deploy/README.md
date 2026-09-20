@@ -15,6 +15,12 @@ cd initpad/deploy
 Open http://localhost:8080, create the initial account and then create a project.
 The script is idempotent — re-run it anytime; it only fixes what's missing.
 
+Ubuntu 24.04 and newer restrict unprivileged user namespaces by default. Before
+the first install on such a host, run `sudo ./prepare-rootless-runner.sh`. It
+loads a path-scoped AppArmor allowance for the rootless CI daemon without
+disabling the host-wide restriction. The installer stops with this exact
+instruction when the prerequisite is missing.
+
 It also selects the reviewed Agent release from `agent-release.env`. To attach
 a Docker server, create its target in **Infrastructure**, generate an enrollment
 and run the displayed checksum-verified installer command on that server. There
@@ -129,3 +135,6 @@ procedure is a complete public SaaS delivery test yet.
   Re-run `./install.sh` on the InitPad control-plane host, reopen **Manage
   Agent**, and copy its complete `curl ... && sudo sh ...` command to the target
   Docker server.
+- **`rootlesskit ... operation not permitted` on Ubuntu** — run
+  `sudo ./prepare-rootless-runner.sh` and then repeat `./install.sh`. Do not
+  disable `kernel.apparmor_restrict_unprivileged_userns` globally.

@@ -69,6 +69,7 @@ for (const path of requiredPublicDocs) {
 
 const executableOperations = [
   'deploy/install.sh',
+  'deploy/prepare-rootless-runner.sh',
   'deploy/configure-agent-release.sh',
   'deploy/self-hosted-check.sh',
   'deploy/backup.sh',
@@ -216,6 +217,7 @@ for (const path of ['apps/agent/install.sh', 'deploy/configure-agent-release.sh'
 }
 for (const path of [
   'deploy/install.sh',
+  'deploy/prepare-rootless-runner.sh',
   'deploy/install-release.sh',
   'deploy/self-hosted-check.sh',
   'deploy/backup.sh',

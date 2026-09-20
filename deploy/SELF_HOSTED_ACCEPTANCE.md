@@ -50,6 +50,15 @@ docker compose version
 df -h /
 ```
 
+Na Ubuntu 24.04 a novějším připrav cílený AppArmor profil pro rootless
+CI daemon. Skript je idempotentní a globální omezení user namespaces
+nevypíná:
+
+```bash
+cd initpad/deploy
+sudo ./prepare-rootless-runner.sh
+```
+
 ## 3. Nakonfiguruj LAN instalaci
 
 Naklonuj repozitář a připrav konfiguraci:
