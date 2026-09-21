@@ -75,7 +75,7 @@ services:
     restart: 'no'
 
   gitea:
-    image: gitea/gitea:1.22@sha256:538658de667c5d098a274f2f63aa6ec891d88f670cdd5282cf27221ba747dda4
+    image: gitea/gitea:1.27@sha256:87a67ee09d3ae0d1df5fda5dcda3e2a1f9236a45b0a59025d6e00e46adc43bef
     environment:
       # INSTALL_LOCK skips the web install wizard — the instance is configured
       # entirely from here and from install.sh (no manual clicking).
@@ -296,7 +296,7 @@ services:
   # The outer cgroup is also the aggregate resource envelope for every nested
   # build container, so CI cannot starve the platform control plane.
   runner-docker:
-    image: docker:27.5.1-dind-rootless@sha256:e2ac8e8f66ae21a060b0a8e3005c70f6ed9441aabf409434463d1f6eecd38026
+    image: docker:29.8.1-dind-rootless@sha256:1f029db43a32fbb1465fe8ff4327d405154876946986170e97d7861232a8227a
     profiles: ['runner']
     privileged: true
     environment:
@@ -331,7 +331,7 @@ services:
 
   # Gitea Actions runner — registered automatically by install.sh.
   act_runner:
-    image: gitea/act_runner:0.2.11@sha256:c57233403eff970945cfb8b13f0e622d2124f4dbc623af3e2c74f061d05e8f60
+    image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
     profiles: ['runner']
     environment:
       # Persisted by act_runner and passed to checkout jobs. Keep it separate
@@ -424,7 +424,7 @@ services:
   # --- reverse proxy with automatic HTTPS (server installs only) -----------
 
   caddy:
-    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    image: caddy:2-alpine@sha256:de23def33b17fb5d1290b0f6c2add1d70780e52341896c00a4c8a2a2fe9d355e
     profiles: ['server']
     ports:
       - '80:80'
