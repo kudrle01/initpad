@@ -65,17 +65,17 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   OCI images.
 - [ ] Na čistém Linux hostu ověřit instalaci, reboot, backup/restore a
   zachování workloadů při odpojeném Agentu.
-  Nedestruktivní checker už ukládá oddělené PASS checkpointy pro preflight,
-  běžící stack, skutečný host reboot a strukturu backupu. Samostatný Agent-host
-  checker navíc ověřuje identitu a workloady před odpojením, během něj a po
-  návratu; bod zůstává otevřený do reálného restore a Agent průchodu.
+  - [x] Čistá instalace, běžící stack a skutečný reboot hosta.
+  - [x] Strukturální kontrola checksummované zálohy.
+  - [x] Zachování identity, fronty a workloadů při odpojeném Agentu.
+  - [ ] Destruktivní restore drill na disposable instalaci.
 - [x] Vydat Agent `0.14.0`, nezávisle ověřit jeho distribuční obálku a při
   acceptance odhalit chybějící produkční závislost dříve, než nahradil
   stávající Agent.
 - [x] Vydat opravený Agent `0.14.1`, ověřit runtime výsledné image, podpis,
   veřejnou dostupnost a multiarch manifest.
-- [ ] Živě ověřit vzdálený update `0.13 → 0.14.1`, vadný candidate a
-  automatický rollback.
+- [ ] Živě ověřit vzdálený update `0.13 → 0.14.1`, odmítnutí vadného
+  candidate a automatický rollback při selhání replacement instance.
 - [ ] Vydat platformu `0.2.1` a živě ověřit UI update, vadný candidate,
   rollback a restart hosta uprostřed cutoveru.
 
