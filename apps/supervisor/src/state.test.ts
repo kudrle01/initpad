@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { adoptCurrentRelease, loadState, saveState, statePath } from './state.js';
+import { SUPERVISOR_VERSION } from './types.js';
 
 test('state is not advanced merely because a newer Supervisor process started', async () => {
   const directory = await mkdtemp(resolve(tmpdir(), 'initpad-supervisor-state-'));
@@ -29,7 +30,7 @@ test('state is not advanced merely because a newer Supervisor process started', 
 test('the verified recovery installer can explicitly adopt its exact release', async () => {
   const directory = await mkdtemp(resolve(tmpdir(), 'initpad-supervisor-state-'));
   process.env.INITPAD_SUPERVISOR_STATE_DIR = directory;
-  process.env.INITPAD_PLATFORM_VERSION = '0.2.0';
+  process.env.INITPAD_PLATFORM_VERSION = SUPERVISOR_VERSION;
   try {
     await saveState({
       schemaVersion: 1,
@@ -37,8 +38,8 @@ test('the verified recovery installer can explicitly adopt its exact release', a
       currentImages: null,
       operation: null,
     });
-    await adoptCurrentRelease('0.2.0');
-    assert.equal((await loadState()).currentVersion, '0.2.0');
+    await adoptCurrentRelease(SUPERVISOR_VERSION);
+    assert.equal((await loadState()).currentVersion, SUPERVISOR_VERSION);
     await assert.rejects(adoptCurrentRelease('0.3.0'), /does not match/);
   } finally {
     delete process.env.INITPAD_PLATFORM_VERSION;

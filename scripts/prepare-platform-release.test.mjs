@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { preparePlatformRelease } from './prepare-platform-release.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const platformVersion = JSON.parse(
+  readFileSync(resolve(root, 'deploy/platform-version.json'), 'utf8'),
+).version;
 const digest = (letter) => `sha256:${letter.repeat(64)}`;
 
 function fixture() {
@@ -27,7 +30,7 @@ function options() {
   return {
     root,
     outputDirectory,
-    tag: 'initpad-v0.2.0',
+    tag: `initpad-v${platformVersion}`,
     sourceCommit: 'd'.repeat(40),
     sourceRepository: 'https://github.com/kudrle01/initpad',
     images: {
@@ -42,12 +45,12 @@ function options() {
 test('creates a deterministic signed-platform bundle input', () => {
   const input = options();
   const { manifest, override } = preparePlatformRelease(input);
-  assert.equal(manifest.version, '0.2.0');
+  assert.equal(manifest.version, platformVersion);
   assert.equal(
     manifest.images.api.immutableReference,
     `ghcr.io/kudrle01/initpad-api@${digest('a')}`,
   );
-  assert.match(override, /INITPAD_PLATFORM_VERSION: "0\.2\.0"/);
+  assert.ok(override.includes(`INITPAD_PLATFORM_VERSION: "${platformVersion}"`));
   assert.equal(manifest.compose.sha256, createHash('sha256').update(override).digest('hex'));
   assert.equal(
     statSync(resolve(input.outputDirectory, 'initpad-install-release.sh')).mode & 0o777,
@@ -66,8 +69,8 @@ test('creates a deterministic signed-platform bundle input', () => {
 
 test('rejects a mismatched tag, mutable image or foreign repository', () => {
   assert.throws(
-    () => preparePlatformRelease({ ...options(), tag: 'initpad-v0.2.1' }),
-    /release tag must be initpad-v0\.2\.0/,
+    () => preparePlatformRelease({ ...options(), tag: 'initpad-v9.9.9' }),
+    /release tag must be initpad-v/,
   );
   const mutable = options();
   mutable.images.api.name = 'ghcr.io/kudrle01/initpad-api:latest';

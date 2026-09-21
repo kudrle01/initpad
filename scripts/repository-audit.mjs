@@ -72,6 +72,7 @@ const executableOperations = [
   'deploy/prepare-rootless-runner.sh',
   'deploy/configure-agent-release.sh',
   'deploy/self-hosted-check.sh',
+  'deploy/platform-update-acceptance.sh',
   'deploy/backup.sh',
   'deploy/restore.sh',
   'deploy/recovery-drill.sh',
@@ -220,6 +221,7 @@ for (const path of [
   'deploy/prepare-rootless-runner.sh',
   'deploy/install-release.sh',
   'deploy/self-hosted-check.sh',
+  'deploy/platform-update-acceptance.sh',
   'deploy/backup.sh',
   'deploy/restore.sh',
   'deploy/recovery-drill.sh',
@@ -230,6 +232,33 @@ const agentPackage = JSON.parse(readFileSync(resolve(root, 'apps/agent/package.j
 for (const path of ['apps/agent/src/types.ts', 'apps/agent/Dockerfile']) {
   if (!(textFiles.get(path) ?? '').includes(agentPackage.version)) {
     failures.push(`${path}: does not carry Agent version ${agentPackage.version}`);
+  }
+}
+
+const platformRelease = JSON.parse(
+  readFileSync(resolve(root, 'deploy/platform-version.json'), 'utf8'),
+);
+const supervisorPackage = JSON.parse(
+  readFileSync(resolve(root, 'apps/supervisor/package.json'), 'utf8'),
+);
+if (!/^\d+\.\d+\.\d+$/.test(platformRelease.version ?? '')) {
+  failures.push('deploy/platform-version.json: platform version is not stable semantic version');
+} else {
+  if (supervisorPackage.version !== platformRelease.version) {
+    failures.push(
+      `apps/supervisor/package.json: version ${supervisorPackage.version} does not match platform ${platformRelease.version}`,
+    );
+  }
+  for (const path of [
+    'apps/supervisor/src/types.ts',
+    'apps/supervisor/Dockerfile',
+    'apps/api/src/config.ts',
+    'deploy/docker-compose.yml',
+    'deploy/.env.example',
+  ]) {
+    if (!(textFiles.get(path) ?? '').includes(platformRelease.version)) {
+      failures.push(`${path}: does not carry platform version ${platformRelease.version}`);
+    }
   }
 }
 

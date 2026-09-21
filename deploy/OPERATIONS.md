@@ -192,6 +192,14 @@ jen jedna platformní aktualizace. Aktivní release descriptor leží v
 `.runtime/platform-update/platform-release.override.yml`, je součástí backupu
 a Compose jej načítá i po rebootu. Tento soubor neupravuj ručně.
 
+Před přijetím nového release kanálu se na disposable hostu provádí živý
+success, rollback i restart uprostřed cutoveru. Reprodukovatelný postup a
+bezpečný fault-injection helper jsou v
+[`SELF_HOSTED_ACCEPTANCE.md`](SELF_HOSTED_ACCEPTANCE.md#10-ověř-podepsanou-aktualizaci-platformy).
+Helper nikdy nestahuje neověřený release ani nemění databázi; pouze na
+disposable hostu zastaví již ověřený candidate kontejner nebo pozastaví
+izolovaný updater těsně před restartem hosta.
+
 ### Source checkout a recovery
 
 Bez aktivního release override zůstává vývojový/self-contained postup:

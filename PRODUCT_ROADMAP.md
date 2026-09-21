@@ -1008,9 +1008,11 @@ jen konkrétní provozní a vyhodnocovací scénář.
        manifest, tři podepsané multiarch images, SBOM/provenance, izolovaný
        HMAC Supervisor, databázový backup gate, postupný API/web/Supervisor
        cutover, readiness, rollback, obnova přerušené operace, trvalý Compose
-       override, audit administrátora a potvrzovací/progress UI. Podkrok zůstává
-       částečný pouze do vydání `initpad-v0.2.0` a živého testu
-       úspěchu, vadného candidate rollbacku a restartu hosta uprostřed update.
+       override, audit administrátora a potvrzovací/progress UI. Release
+       `initpad-v0.2.0` je veřejný a distribučně ověřený. Pro `0.2.1` je
+       připraven reprodukovatelný acceptance helper; podkrok zůstává částečný
+       do živého testu úspěchu, vadného candidate rollbacku a restartu hosta
+       uprostřed update.
 
 ## Akceptační kritéria
 

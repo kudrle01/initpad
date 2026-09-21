@@ -382,7 +382,79 @@ gateway/diagnostické projekce a nulový počet lokálních InitPad-managed
 workloadů. Starý Agent job se po reconnectu nesmí vykonat. Úspěch přidá
 `before-restore` a `after-restore` do lokálního `results.tsv`.
 
-## 10. Ověř smazání a opětovné použití názvu
+## 10. Ověř podepsanou aktualizaci platformy
+
+Tento drill patří na disposable control-plane VM, která stále skutečně běží
+na podepsané platformě `0.2.0`. Release `initpad-v0.2.1` musí být veřejný a
+jeho workflow zelené. Nový checkout lze stáhnout kvůli acceptance skriptu,
+ale mezi checkpointem a testem **nespouštěj `install.sh`**: aktualizaci musí
+provést podepsaný release Supervisor, ne source build.
+
+Nejprve anonymně ověř distribuční obálku a ulož baseline:
+
+```bash
+cd ~/Projects/initpad
+git pull --ff-only
+npm run audit:public-release -- --tag initpad-v0.2.1
+cd deploy
+./platform-update-acceptance.sh prepare 0.2.0 0.2.1
+```
+
+Checkpoint ukládá pouze verze, fingerprint trvalých identit a identity
+managed workloadů; neobsahuje credentials. Do dokončení celého drillu
+nevytvářej ani nemaž uživatele, workspaces, projekty nebo deploymenty.
+
+### Vadný candidate a rollback
+
+V terminálu spusť:
+
+```bash
+./platform-update-acceptance.sh fault-rollback
+```
+
+Teprve když skript čeká, otevři **Instance administration → Platform
+updates** a potvrď **Install update**. Skript po startu podepsaného candidate
+API pozastaví pouze izolovaný updater, zastaví candidate a updater znovu
+uvolní. Tím deterministicky ověří health-gated rollback bez poškození DB
+nebo projektových workloadů. Potom spusť:
+
+```bash
+./platform-update-acceptance.sh after-rollback
+```
+
+### Restart hosta uprostřed cutoveru
+
+Spusť následující příkaz a po jeho výzvě znovu potvrď update v UI:
+
+```bash
+./platform-update-acceptance.sh interrupt-reboot
+```
+
+Skript ověří `sudo` předem, po startu candidate API pozastaví updater,
+zapíše checkpoint a sám restartuje host. Po přihlášení nespouštěj
+`install.sh`; ověř automatickou recovery:
+
+```bash
+cd ~/Projects/initpad/deploy
+./platform-update-acceptance.sh after-reboot
+```
+
+### Čistá aktualizace
+
+Naposledy potvrď **Install update** bez fault-injection skriptu. Po stavu
+`succeeded` spusť:
+
+```bash
+./platform-update-acceptance.sh after-success
+```
+
+Finální kontrola vyžaduje platformu `0.2.1`, tři immutable image reference,
+stejné identity v DB a přesně stejné managed workload kontejnery jako před
+prvním pokusem. `results.tsv` musí obsahovat PASS pro `platform-update-prepare`,
+`platform-update-rollback`, `platform-update-reboot-recovery` a
+`platform-update-success`.
+
+## 11. Ověř smazání a opětovné použití názvu
 
 V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení
 CI a dev deploymentu. Potom jej v dialogu smaž včetně zdrojového repozitáře.
@@ -407,7 +479,7 @@ Musí vzniknout nový repozitář a scaffold, CI i dev deployment musí projít
 bez konfliktu se starým workloadem. Výsledný Docker výpis smí pro kombinaci
 `alice-delete-recreate` / `team-alpha` / `dev` obsahovat právě jeden kontejner.
 
-## 11. Ověř samostatný Agent host
+## 12. Ověř samostatný Agent host
 
 Na druhém čistém Linux Docker hostu projdi části 1–3 v
 [`../apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md): první instalaci,
@@ -420,7 +492,7 @@ targetu, credential generation a workload container ID se rebootem ani
 odpojením nesmějí změnit. Výsledek zaznamenej bez enrollment tokenu a bez
 obsahu `/var/lib/initpad-agent/agent.json`.
 
-## 12. Výsledek milníku
+## 13. Výsledek milníku
 
 Fáze TargetAllocation je živě **PASS**, jen pokud současně platí:
 
