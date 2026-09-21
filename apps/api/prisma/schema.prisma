@@ -245,7 +245,7 @@ model AuditEvent {
   resourceType     String
   resourceId       String?
   resourceName     String?
-  operationType    String? // deployment | provisioning
+  operationType    String? // deployment | provisioning | agent-job
   operationId      String?
   details          Json?
   createdAt        DateTime  @default(now())
