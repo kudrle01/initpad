@@ -37,7 +37,8 @@ test('documents the rollback, interrupted reboot and successful update sequence'
 });
 
 test('fault injection is fixed to the candidate API and always has an unpause fallback', () => {
-  assert.match(script, /candidate=\$\(override_image api\)/);
+  assert.match(script, /candidate_version=\$\(checkpoint_value next_version\)/);
+  assert.match(script, /current_version=\$\(container_platform_version api/);
   assert.match(script, /docker pause "\$helper"/);
   assert.match(script, /docker stop -t 0 "\$api_id"/);
   assert.match(script, /trap unpause_on_exit EXIT/);
@@ -66,7 +67,19 @@ test('final acceptance binds version, durable identities and exact managed workl
 test('requires and hashes an operator-readable runtime override', () => {
   assert.match(script, /\[ -r "\$OVERRIDE" \]/);
   assert.match(script, /sha256sum "\$OVERRIDE"/);
-  assert.doesNotMatch(script, /sudo (?:chown|chmod)|docker exec initpad-supervisor cat/);
+  assert.doesNotMatch(script, /docker exec initpad-supervisor cat/);
+});
+
+test('restores descriptor ownership captured before the legacy updater runs', () => {
+  assert.match(script, /override_uid=/);
+  assert.match(script, /override_gid=/);
+  assert.match(script, /override_mode=/);
+  assert.match(script, /sudo chown "\$expected_uid:\$expected_gid" "\$OVERRIDE"/);
+  assert.match(script, /sudo chmod "\$expected_mode" "\$OVERRIDE"/);
+  assert.ok(
+    script.indexOf('restore_override_ownership', script.indexOf('fault_rollback()')) <
+      script.indexOf('pass "Candidate failure', script.indexOf('fault_rollback()')),
+  );
 });
 
 test('refuses fault injection when the running Supervisor helper image is unavailable', () => {

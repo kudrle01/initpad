@@ -68,7 +68,7 @@ validate_transition() {
 
 ensure_runtime() {
   [ "$(uname -s)" = Linux ] || fail "Platform update acceptance requires Linux."
-  for command in docker curl awk grep sed sha256sum sort sudo; do
+  for command in docker curl awk grep sed sha256sum sort stat sudo; do
     require_command "$command"
   done
   [ -f .env ] || fail "deploy/.env is missing; install InitPad first."
@@ -114,6 +114,12 @@ container_image() {
   docker inspect --format '{{.Config.Image}}' "$(container_id "$1")"
 }
 
+container_platform_version() {
+  docker inspect "$(container_id "$1")" \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' | \
+    awk -F= '$1 == "INITPAD_PLATFORM_VERSION" { print $2; exit }'
+}
+
 runtime_override_sha256() {
   sha256sum "$OVERRIDE" | awk '{ print $1 }'
 }
@@ -138,15 +144,6 @@ assert_supervisor_helper_image_available() {
       fail "The running Supervisor image record '$image_id' is missing; restore its exact image before this drill."
       ;;
   esac
-}
-
-override_image() {
-  local service=$1
-  awk -v section="  $service:" '
-    $0 == section { active=1; next }
-    active && /^  [A-Za-z0-9_-]+:/ { exit }
-    active && $1 == "image:" { gsub(/^"|"$/, "", $2); print $2; exit }
-  ' "$OVERRIDE"
 }
 
 database_scalar() {
@@ -194,6 +191,29 @@ assert_checkpoint() {
   [ -f "$CHECKPOINT" ] || fail "No platform update checkpoint exists; run prepare first."
   stable_version "$(checkpoint_value current_version)" || fail "Checkpoint current version is invalid."
   stable_version "$(checkpoint_value next_version)" || fail "Checkpoint next version is invalid."
+}
+
+restore_override_ownership() {
+  [ -f "$CHECKPOINT" ] || return 0
+  local expected_uid expected_gid expected_mode actual
+  require_command stat
+  require_command sudo
+  [ -f "$OVERRIDE" ] || fail "The platform release override is missing."
+  expected_uid=$(checkpoint_value override_uid)
+  expected_gid=$(checkpoint_value override_gid)
+  expected_mode=$(checkpoint_value override_mode)
+  case "$expected_uid:$expected_gid:$expected_mode" in
+    *[!0-9:]*|*:*:*:*) fail "Checkpoint release descriptor ownership is invalid." ;;
+  esac
+  [ "$expected_mode" = 600 ] || fail "Checkpoint release descriptor mode is invalid."
+  actual=$(stat -c '%u:%g:%a' "$OVERRIDE" 2>/dev/null || true)
+  [ "$actual" = "$expected_uid:$expected_gid:$expected_mode" ] && return 0
+  say "Restoring release descriptor ownership changed by the legacy 0.2.1 updater."
+  sudo chown "$expected_uid:$expected_gid" "$OVERRIDE" || \
+    fail "Could not restore release descriptor ownership."
+  sudo chmod "$expected_mode" "$OVERRIDE" || \
+    fail "Could not restore release descriptor mode."
+  [ -r "$OVERRIDE" ] || fail "The restored platform release override is not readable."
 }
 
 assert_baseline_invariants() {
@@ -246,6 +266,9 @@ write_checkpoint() {
     printf 'workload_count=%s\n' "$(managed_workload_count)"
     printf 'workload_snapshot=%s\n' "$(managed_workload_snapshot)"
     printf 'override_sha256=%s\n' "$(runtime_override_sha256)"
+    printf 'override_uid=%s\n' "$(stat -c '%u' "$OVERRIDE")"
+    printf 'override_gid=%s\n' "$(stat -c '%g' "$OVERRIDE")"
+    printf 'override_mode=%s\n' "$(stat -c '%a' "$OVERRIDE")"
   } > "$temporary"
   mv "$temporary" "$CHECKPOINT"
   rm -f "$REBOOT_CHECKPOINT"
@@ -255,8 +278,9 @@ write_checkpoint() {
 }
 
 wait_for_candidate_api() {
-  local previous_id operation_id status stage candidate current helper deadline
+  local previous_id operation_id status stage candidate_version current_version helper deadline
   previous_id=$(state_value operation.id || true)
+  candidate_version=$(checkpoint_value next_version)
   deadline=$((SECONDS + 900))
   say "Waiting for a new update. Click Install update in InitPad now." >&2
   while [ "$SECONDS" -lt "$deadline" ]; do
@@ -268,10 +292,9 @@ wait_for_candidate_api() {
         fail "Update reached terminal status '$status' before fault injection." ;;
       esac
       if [ "$stage" = api ]; then
-        candidate=$(override_image api)
-        current=$(container_image api 2>/dev/null || true)
+        current_version=$(container_platform_version api 2>/dev/null || true)
         helper=$(active_helper "$operation_id")
-        if [ -n "$candidate" ] && [ "$current" = "$candidate" ] && [ -n "$helper" ]; then
+        if [ "$current_version" = "$candidate_version" ] && [ -n "$helper" ]; then
           printf '%s\n' "$operation_id"
           return 0
         fi
@@ -317,6 +340,8 @@ fault_rollback() {
   local operation_id helper api_id
   assert_checkpoint
   assert_previous_release_restored
+  say "Validating sudo for legacy descriptor ownership recovery."
+  sudo -v || fail "sudo authentication failed."
   operation_id=$(wait_for_candidate_api)
   helper=$(pause_helper_at_api "$operation_id")
   PAUSED_HELPER=$helper
@@ -329,6 +354,7 @@ fault_rollback() {
   docker unpause "$helper" >/dev/null || fail "Could not resume the update helper."
   PAUSED_HELPER=
   wait_for_terminal_operation "$operation_id" rolled-back
+  restore_override_ownership
   pass "Candidate failure was detected and automatic rollback completed."
 }
 
@@ -422,10 +448,10 @@ check_after_success() {
 case "${1:-}" in
   prepare) [ "$#" -eq 3 ] || { usage >&2; exit 1; }; write_checkpoint "$2" "$3" ;;
   fault-rollback) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; ensure_runtime; fault_rollback ;;
-  after-rollback) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; ensure_runtime; check_after_rollback ;;
+  after-rollback) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; restore_override_ownership; ensure_runtime; check_after_rollback ;;
   interrupt-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; ensure_runtime; interrupt_reboot ;;
-  after-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; ensure_runtime; check_after_reboot ;;
-  after-success) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; ensure_runtime; check_after_success ;;
+  after-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; restore_override_ownership; ensure_runtime; check_after_reboot ;;
+  after-success) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; restore_override_ownership; ensure_runtime; check_after_success ;;
   -h|--help|'') usage ;;
   *) usage >&2; exit 1 ;;
 esac
