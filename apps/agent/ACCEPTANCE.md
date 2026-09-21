@@ -89,8 +89,9 @@ sudo docker stop initpad-agent
 sudo ./initpad-agent-host-acceptance.sh disconnected
 ```
 
-The workload must remain running. A new deployment requested while the Agent is
-offline remains queued and must not execute locally. Restore the Agent:
+The workload must remain running. Request **Test protocol** while the Agent is
+offline; the job must remain queued and must not execute locally. Restore the
+Agent:
 
 ```sh
 sudo docker start initpad-agent
@@ -98,11 +99,11 @@ sudo ./initpad-agent-host-acceptance.sh after-reconnect
 sudo cat /var/lib/initpad-agent/acceptance/results.tsv
 ```
 
-The queued operation must complete exactly once and the original target must
-return online. The report must contain `before-disconnect`, `disconnected` and
-`after-reconnect` PASS rows. The helper also proves that the target identity,
-credential generation, Agent container and every existing workload container
-were preserved.
+The queued protocol test must complete exactly once and the original target
+must return online. The report must contain `before-disconnect`, `disconnected`
+and `after-reconnect` PASS rows. The helper also proves that the target
+identity, credential generation, Agent container and every existing workload
+container were preserved.
 
 ## 4. Idempotent reinstall and failed-update rollback
 

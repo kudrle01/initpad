@@ -174,7 +174,7 @@ check_disconnected() {
   assert_workloads_preserved
   record disconnected "agent_stopped=true workloads_preserved=true"
   pass "Workloads remain running with the Agent disconnected."
-  printf 'Now request one disposable deployment in InitPad; it must remain queued.\n'
+  printf 'Now request Test protocol in InitPad; it must remain queued.\n'
   printf 'Then run: sudo docker start %s\n' "$AGENT_CONTAINER"
 }
 
@@ -191,7 +191,7 @@ check_after_reconnect() {
   rm -f "$CHECKPOINT"
   record after-reconnect "identity_preserved=true workloads_preserved=true heartbeat=true"
   pass "Agent reconnected with the same identity and workloads."
-  printf 'Confirm in InitPad that the queued deployment completed exactly once.\n'
+  printf 'Confirm in InitPad that the queued protocol test completed exactly once.\n'
 }
 
 case "${1:-}" in
