@@ -84,8 +84,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   při selhání replacement instance. Podepsané image `0.13.0` i `0.14.0`
   jsou runtime-revoked kvůli chybějící produkční závislosti a nesmějí
   sloužit jako výchozí funkční verze acceptance.
-- [ ] Vydat platformu `0.2.1` a živě ověřit UI update, vadný candidate,
-  rollback a restart hosta uprostřed cutoveru.
+- [x] Vydat platformu `0.2.1` a živě ověřit čistý UI update ze source
+  instalace `0.2.0` se zachováním identit a projektových workloadů.
+- [ ] Vydat platformu `0.2.2` a na přechodu z podepsané `0.2.1` dokončit
+  vadný candidate rollback a restart hosta uprostřed cutoveru.
 
 ### P1 — uzavření diplomkového MVP
 
@@ -1009,10 +1011,13 @@ jen konkrétní provozní a vyhodnocovací scénář.
        HMAC Supervisor, databázový backup gate, postupný API/web/Supervisor
        cutover, readiness, rollback, obnova přerušené operace, trvalý Compose
        override, audit administrátora a potvrzovací/progress UI. Release
-       `initpad-v0.2.0` je veřejný a distribučně ověřený. Pro `0.2.1` je
-       připraven reprodukovatelný acceptance helper; podkrok zůstává částečný
-       do živého testu úspěchu, vadného candidate rollbacku a restartu hosta
-       uprostřed update.
+       `initpad-v0.2.0` i `initpad-v0.2.1` jsou veřejné a distribučně
+       ověřené. Živý čistý update `0.2.0 → 0.2.1` dne 21. září 2026
+       zachoval identity i přesně stejnou sadu managed workloadů a skončil
+       na třech immutable signed images. Přitom odhalil ztracený lokální
+       source image a vlastnictví runtime descriptoru; ochrany jsou součástí
+       `0.2.2`. Podkrok zůstává částečný do živého testu vadného
+       candidate rollbacku a restartu hosta při `0.2.1 → 0.2.2`.
 
 ## Akceptační kritéria
 

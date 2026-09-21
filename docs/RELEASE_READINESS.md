@@ -1,8 +1,7 @@
 # Release readiness a známá omezení
 
 Stav dokumentu odpovídá doporučenému Agentu 0.14.2, odmítnutým release
-0.13.0 a 0.14.0 a prvnímu
-podepsanému platformnímu releasu 0.2.0. Seznam je záměrně
+0.13.0 a 0.14.0 a podepsanému platformnímu releasu 0.2.1. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
 
@@ -103,27 +102,28 @@ popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
 
-### Platformní release 0.2.0 je veřejný a čeká na živý update
+### Platformní release 0.2.1 prošel čistým živým updatem
 
 Workflow `initpad-v*` lokálně prochází release gate a vytváří tři podepsané
 multiarch images, SBOM, provenance, Compose descriptor, checksums a recovery
 instalátor. Admin UI přijímá jen novější ověřenou verzi a Supervisor před
 přepnutím ověří PostgreSQL dump i readiness každé komponenty. Tag
-`initpad-v0.2.0` vznikl z commitu
-`fb5c4be7632e58a1fb37439c70ceecf09120e40a` a release workflow prošel. GitHub
-repozitář, release assets i GHCR packages `initpad-api`, `initpad-web` a
-`initpad-supervisor` jsou veřejně čitelné. Anonymní audit 18. září 2026 ověřil
-Sigstore identity manifestu a checksumů, SHA-256 vazby i OCI indexy pro
-`linux/amd64` a `linux/arm64`. Implementace nebude označena za provozně
-přijatou, dokud nyní ověřený bootstrap, reboot a destruktivní restore
-nedoplní úspěšný `0.2.0 → 0.2.1` update, vadný candidate rollback a
-přerušení uprostřed cutoveru. Docker socket Supervisoru je root-equivalent
-oprávnění, nikoli rootless sandbox.
+GitHub repozitář, release assets i GHCR packages `initpad-api`, `initpad-web`
+a `initpad-supervisor` jsou veřejně čitelné. Anonymní audit release 0.2.1
+ověřil Sigstore identity manifestu a checksumů, SHA-256 vazby i OCI indexy
+pro `linux/amd64` a `linux/arm64`. Dne 21. září 2026 prošel na disposable
+Ubuntu VM čistý update `0.2.0 → 0.2.1`: skončil na podepsaném release,
+zachoval identity v databázi i přesnou sadu managed workloadů. Acceptance
+přitom odhalila dvě provozní vady — chybějící source image záznam a
+root-owned release descriptor — a obě mají regresní ochranu v kandidátu
+0.2.2. Provozní přijetí stále vyžaduje fault-injected rollback a přerušení
+uprostřed `0.2.1 → 0.2.2` cutoveru. Docker socket Supervisoru je
+root-equivalent oprávnění, nikoli rootless sandbox.
 
 Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.0
+npm run audit:public-release -- --tag initpad-v0.2.1
 npm run audit:public-release -- --tag agent-v0.14.2
 ```
 
