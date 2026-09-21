@@ -77,7 +77,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   veřejnou dostupnost a multiarch manifest.
 - [x] Vydat Agent `0.14.2` a anonymně ověřit podpisy, release assets,
   finální runtime image a multiarch OCI index.
-- [ ] Živě ověřit vzdálený update `0.14.1 → 0.14.2`, odmítnutí
+- [x] Živě ověřit vzdálený update `0.14.1 → 0.14.2`, odmítnutí
   vadného candidate a automatický rollback
   při selhání replacement instance. Podepsané image `0.13.0` i `0.14.0`
   jsou runtime-revoked kvůli chybějící produkční závislosti a nesmějí
@@ -937,7 +937,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
        verzovaného `deploy/agent-release.env`; explicitní pin instalátor
        nepřepisuje. UI nikdy nenabízí neexistující hostitelskou binárku a při
        chybějící distribuci ukáže konkrétní postup pro správce nebo lab.
-     - ◐ **8e-d-b — skutečné vydání.**
+     - ✅ **8e-d-b — skutečné vydání.**
        - ✅ **8e-d-b1 — reprodukovatelná release pipeline.** Tag shodný s
          verzí Agenta spustí gate, sestaví jeden GHCR OCI index pro
          `linux/amd64` a `linux/arm64`, připojí SBOM a maximální build
@@ -945,7 +945,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
          a vydá manifest s immutable digestem a `SHA256SUMS` (ADR-093).
          Workflow nepoužívá `latest`, odmítne již existující verzi a všechny
          cizí Actions jsou připnuté na commit SHA.
-       - ◐ **8e-d-b2 — publikace a živá acceptance.** Tagy `agent-v*` chrání
+       - ✅ **8e-d-b2 — publikace a živá acceptance.** Tagy `agent-v*` chrání
          aktivní GitHub ruleset. Release `agent-v0.13.0` i `agent-v0.14.0`
          měly platně podepsaný multiarch image, manifest, SBOM a kontrolní
          součty, ale runtime acceptance odhalila, že finální image neobsahovaly
@@ -959,9 +959,12 @@ jen konkrétní provozní a vyhodnocovací scénář.
          `8c27c105654b4b4ee2e0f1d4e70bb3c947e14465` prošel 21. září 2026
          stejným anonymním auditem a publikoval immutable OCI digest
          `sha256:a18337584dbd6b89bc6449a529562a5a948e8a317d5ef1f93895806e6e4e1fb0`.
-         Na samostatném Linux hostu se ještě ověří skutečný update
-         `0.14.1 → 0.14.2` a automatický rollback replacement instance.
-         Zachování workloadů po odpojení Agenta již prošlo.
+         Na samostatném Linux hostu 21. září 2026 prošel skutečný update
+         `0.14.1 → 0.14.2`, fault-injected selhání replacement instance se
+         automaticky vrátilo na 0.14.1 a následný čistý pokus zachoval identitu
+         i workloady a připojil 0.14.2. Starší vadné candidate byly odmítnuty
+         ještě před cutoverem. Zachování workloadů po odpojení Agenta rovněž
+         prošlo.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a
          verze z podepsaného release manifestu; UI proto nemůže označit starší
          image verzí lokálního source tree. **Uživatelský test:** bez jednoho

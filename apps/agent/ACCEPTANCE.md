@@ -163,9 +163,10 @@ of this test. Their candidate preflight failure is valid rejection evidence:
 the installer stopped before replacing the existing Agent.
 
 Corrected release 0.14.1 is public, signed and passed its final-image runtime
-probe and anonymous distribution audit. Keep 0.14.1 installed on the disposable
-target. Release 0.14.2 is also public, signed, runtime-probed and anonymously
-audited. Open **Manage Agent** on the 0.14.1 target, review 0.14.2 and choose
+probe and anonymous distribution audit. Release 0.14.2 is also public, signed,
+runtime-probed and anonymously audited. To reproduce the accepted transition,
+keep 0.14.1 installed on the disposable target, open **Manage Agent**, review
+0.14.2 and choose
 **Install update**. Do not use `--re-enroll`: retaining the same target identity
 is part of this test. Confirm all of the following:
 
@@ -191,7 +192,10 @@ with `after-update 0.14.2`.
 
 ## Acceptance result
 
-The release passes only when sections 1–4 pass on a clean host. Record section 5
-as pending until a genuine next release exists; close it during that release's
-acceptance. Any manual repair, new enrollment, lost workload or mutable image
+Sections 1–4 and the real `0.14.1 → 0.14.2` transition in section 5 passed on
+separate Linux hosts by 21 September 2026. A fault-injected replacement failed
+closed and restored 0.14.1; the subsequent clean update preserved the target
+identity and application workloads and connected as 0.14.2. Releases 0.13.0
+and 0.14.0 remain documented runtime rejections rather than accepted baselines.
+Any future manual repair, new enrollment, lost workload or mutable image
 reference is a failure and must be documented rather than worked around.

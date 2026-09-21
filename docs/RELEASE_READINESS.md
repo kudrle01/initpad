@@ -1,7 +1,7 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá doporučenému Agentu 0.14.1, podepsanému
-acceptance candidate 0.14.2, odmítnutým release 0.13.0 a 0.14.0 a prvnímu
+Stav dokumentu odpovídá doporučenému Agentu 0.14.2, odmítnutým release
+0.13.0 a 0.14.0 a prvnímu
 podepsanému platformnímu releasu 0.2.0. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
@@ -18,7 +18,8 @@ veřejný produkční provoz.
 - Outbound Agent protokol s enrollmentem, rotací credentials, lease fencingem,
   diagnostikou, resource limity a stabilní gateway routou.
 - Reprodukovatelná repository gate, immutable container references a
-  podepsané multiarch vydání Agenta 0.14.1 s runtime probem výsledné image.
+  podepsané multiarch vydání Agenta 0.14.2 s runtime probem výsledné image,
+  živým identity-preserving updatem a ověřeným automatickým rollbackem.
 - Podepsaný platformní release bundle, oddělený Supervisor, ověřený backup,
   postupný health-gated cutover a image rollback pro self-hosted instalaci.
 - Strukturované redigované logy a korelace request → operation → Agent job
@@ -31,8 +32,8 @@ veřejný produkční provoz.
 Veřejný SaaS zatím není release profil. Před připojením nedůvěryhodných
 zákazníků musí být hotové alespoň:
 
-1. acceptance instalace, rebootu, upgradu i rollbacku veřejně dostupného
-   Agenta na čistém Linux hostu;
+1. dokončení destruktivního restore drillu celé self-hosted platformy na
+   disposable Linux instalaci;
 2. samostatný SaaS deployment profil bez vestavěné Gitey a lokálního
    object store;
 3. živé end-to-end ověření GitHub OAuth, GitHub App instalace, osobního i
@@ -92,12 +93,12 @@ stage a povinný CLI smoke test sestaveného image v běžném i release workflo
 Podepsaná multiarch image
 `ghcr.io/kudrle01/initpad-agent@sha256:08b7829c02a06d343b825557df2e79abf2d6a745c591b6ae523a0605942948a9`
 prošla 20. září 2026 runtime probem i nezávislým anonymním distribučním
-auditem a je aktuálním doporučeným releasem. Podepsaná image 0.14.2 se
-stejnou opravou prošla 21. září 2026 anonymním auditem release assets,
-runtime probe i multiarch OCI indexu a slouží jako acceptance candidate.
-Dokud neproběhne celý clean-host runbook a skutečný update
-`0.14.1 → 0.14.2` včetně vadného
-candidate, nejde vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
+auditem. Podepsaná image 0.14.2 se stejnou opravou prošla 21. září 2026
+anonymním auditem release assets, runtime probe i multiarch OCI indexu.
+Na samostatném Linux hostu poté prošel živý update `0.14.1 → 0.14.2` se
+zachováním identity a workloadů; fault-injected selhání replacement instance
+obnovilo 0.14.1 a následný čistý pokus připojil 0.14.2. Verze 0.14.2 je proto
+aktuálním doporučeným releasem. Reprodukovatelný postup zůstává v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
