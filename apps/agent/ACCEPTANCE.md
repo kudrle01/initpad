@@ -156,31 +156,18 @@ the operator to issue a fresh enrollment and use `--re-enroll`. That explicit
 path must redeem a new token, replace the identity and return the target online;
 it is recovery evidence, not a successful identity-preserving upgrade.
 
-Agent 0.13 is the remote-update bootstrap. On the disposable acceptance target
-only, install its signed immutable release while preserving the existing
-identity. This is test setup, not a production downgrade recommendation:
+Agent 0.13 introduced the remote-update protocol in source, but the published
+0.13.0 image and candidate 0.14.0 both omitted the production `sigstore`
+dependency. They are runtime-revoked and must not be used as the working side
+of this test. Their candidate preflight failure is valid rejection evidence:
+the installer stopped before replacing the existing Agent.
 
-```sh
-curl -fsSLo initpad-agent-install-0.13.0.sh \
-  https://github.com/kudrle01/initpad/releases/download/agent-v0.13.0/initpad-agent-install.sh
-printf '%s  %s\n' \
-  '01e3da4a0cbee7f1c9b9d7ef090f8ed00c80cbf42e1e10ecbed4c220bd1c33ae' \
-  initpad-agent-install-0.13.0.sh | sha256sum -c -
-sudo sh ./initpad-agent-install-0.13.0.sh \
-  --url 'https://CONTROL_PLANE' \
-  --image 'ghcr.io/kudrle01/initpad-agent@sha256:d66470008525f6e6dd3180dd86ae062e35a3109717614b09666c8dfc43296663'
-```
-
-Verify the downloaded release checksum/signature as described in
-`RELEASING.md`. Add `--allow-insecure-http` only for the trusted LAN setup used
-by the generated installer. Do not use `--re-enroll`: retaining the same target
-identity is part of this test.
-
-Candidate 0.14.0 was rejected because its runtime image did not contain its
-production signature-verification dependency. Corrected release 0.14.1 is
-public, signed and passed its final-image runtime probe and anonymous
-distribution audit. Open **Manage Agent** on the 0.13 target, review release
-0.14.1 and choose **Install update**. Confirm all of the following:
+Corrected release 0.14.1 is public, signed and passed its final-image runtime
+probe and anonymous distribution audit. Keep 0.14.1 installed on the disposable
+target. Publish and audit the genuine 0.14.2 release, then open **Manage Agent**
+on the 0.14.1 target, review 0.14.2 and choose **Install update**. Do not use
+`--re-enroll`: retaining the same target identity is part of this test. Confirm
+all of the following:
 
 - one `agent-update` job advances through signature verification, immutable
   pull, candidate preflight and heartbeat verification;
@@ -194,13 +181,13 @@ distribution audit. Open **Manage Agent** on the 0.13 target, review release
   protocol** and **Test Docker**. No fleet-wide automatic rollout occurs.
 
 Use the signed host helper to capture reproducible evidence. First run
-`before-update 0.13.0`. For the rollback pass, run `inject-failure` in a second
+`before-update 0.14.1`. For the rollback pass, run `inject-failure` in a second
 terminal before choosing **Install update**, then verify the failed operation
-with `after-rollback 0.13.0`. The fault injector waits for a different running
+with `after-rollback 0.14.1`. The fault injector waits for a different running
 `initpad-agent` container and pauses only that replacement; it does not alter
 the release, identity, control plane or application workload. Repeat
-`before-update 0.13.0`, install the update without fault injection and finish
-with `after-update 0.14.1`.
+`before-update 0.14.1`, install the update without fault injection and finish
+with `after-update 0.14.2`.
 
 ## Acceptance result
 

@@ -14,7 +14,7 @@ const AGENT_MANIFEST = 'initpad-agent-release.json';
 const AGENT_BUNDLE = `${AGENT_MANIFEST}.sigstore.json`;
 // Published tags remain immutable for auditability. Releases that passed the
 // distribution checks but failed runtime acceptance are explicitly revoked.
-const REVOKED_AGENT_RELEASES = new Set(['0.14.0']);
+const REVOKED_AGENT_RELEASES = new Set(['0.13.0', '0.14.0']);
 
 interface GitHubAsset {
   name: string;

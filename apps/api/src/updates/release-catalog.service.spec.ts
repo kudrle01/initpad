@@ -6,7 +6,7 @@ jest.mock('sigstore', () => ({ verify: jest.fn(async () => ({})) }));
 
 const originalUpdates = { ...config.updates };
 
-function manifest(version = '0.13.0'): Record<string, unknown> {
+function manifest(version = '0.14.1'): Record<string, unknown> {
   return {
     schemaVersion: 1,
     component: 'initpad-agent',
@@ -27,7 +27,7 @@ function manifest(version = '0.13.0'): Record<string, unknown> {
   };
 }
 
-function releaseList(version = '0.13.0') {
+function releaseList(version = '0.14.1') {
   return [
     {
       tag_name: `agent-v${version}`,
@@ -85,7 +85,7 @@ describe('ReleaseCatalogService', () => {
     const result = await new ReleaseCatalogService().latestAgentRelease();
 
     expect(result.error).toBeNull();
-    expect(result.release?.manifest.version).toBe('0.13.0');
+    expect(result.release?.manifest.version).toBe('0.14.1');
     expect(result.release?.manifest.image.immutableReference).toContain('@sha256:');
     expect(verify).toHaveBeenCalledWith(
       expect.any(Object),
@@ -93,7 +93,7 @@ describe('ReleaseCatalogService', () => {
       expect.objectContaining({
         certificateIssuer: 'https://token.actions.githubusercontent.com',
         certificateIdentityURI:
-          'https://github.com/kudrle01/initpad/.github/workflows/release-agent.yml@refs/tags/agent-v0.13.0',
+          'https://github.com/kudrle01/initpad/.github/workflows/release-agent.yml@refs/tags/agent-v0.14.1',
         tlogThreshold: 1,
         ctLogThreshold: 1,
       }),
@@ -115,21 +115,24 @@ describe('ReleaseCatalogService', () => {
     expect(verify).not.toHaveBeenCalled();
   });
 
-  it('skips a published release that failed runtime acceptance', async () => {
-    const revoked = releaseList('0.14.0')[0];
-    const accepted = releaseList('0.13.0')[0];
-    jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValueOnce(jsonResponse([revoked, accepted]))
-      .mockResolvedValueOnce(jsonResponse(manifest('0.13.0')))
-      .mockResolvedValueOnce(jsonResponse({}));
+  it.each(['0.13.0', '0.14.0'])(
+    'skips published release %s after failed runtime acceptance',
+    async (revokedVersion) => {
+      const revoked = releaseList(revokedVersion)[0];
+      const accepted = releaseList('0.14.1')[0];
+      jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValueOnce(jsonResponse([revoked, accepted]))
+        .mockResolvedValueOnce(jsonResponse(manifest('0.14.1')))
+        .mockResolvedValueOnce(jsonResponse({}));
 
-    const result = await new ReleaseCatalogService().latestAgentRelease();
+      const result = await new ReleaseCatalogService().latestAgentRelease();
 
-    expect(result.error).toBeNull();
-    expect(result.release?.manifest.version).toBe('0.13.0');
-    expect(verify).toHaveBeenCalledTimes(1);
-  });
+      expect(result.error).toBeNull();
+      expect(result.release?.manifest.version).toBe('0.14.1');
+      expect(verify).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('serves the last verified result as stale after a refresh failure', async () => {
     jest
@@ -143,7 +146,7 @@ describe('ReleaseCatalogService', () => {
     await expect(service.latestAgentRelease()).resolves.toMatchObject({ stale: false });
     await expect(service.latestAgentRelease(true)).resolves.toMatchObject({
       stale: true,
-      release: { manifest: { version: '0.13.0' } },
+      release: { manifest: { version: '0.14.1' } },
       error: expect.stringContaining('last verified'),
     });
   });

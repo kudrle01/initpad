@@ -1,7 +1,7 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá doporučenému Agentu 0.14.1, odmítnutému kandidátu
-0.14.0 a prvnímu podepsanému platformnímu releasu 0.2.0. Seznam je záměrně
+Stav dokumentu odpovídá doporučenému Agentu 0.14.1, odmítnutým release
+0.13.0 a 0.14.0 a prvnímu podepsanému platformnímu releasu 0.2.0. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
 
@@ -68,7 +68,7 @@ Připnutý komunitní MinIO image zajišťuje reprodukovatelnost lokální insta
 ale není doporučenou veřejnou produkční hranicí. Produkce musí použít
 samostatně udržované privátní S3-compatible úložiště a nacvičenou obnovu.
 
-### Agent 0.14.0 byl při acceptance odmítnut
+### Agenty 0.13.0 a 0.14.0 byly při runtime acceptance odmítnuty
 
 Release [`agent-v0.14.0`](https://github.com/kudrle01/initpad/releases/tag/agent-v0.14.0)
 vznikl z commitu `9a5cf51a009a0d492abbeb945ed8a164567ed35f` a obsahuje
@@ -81,16 +81,18 @@ workflow identitu, záznam v transparentním logu, shodný OCI digest i obě
 cílové platformy. Tag chrání aktivní ruleset před vytvořením, změnou nebo
 smazáním bez výjimky release správce.
 
-Distribuční integrita tedy byla v pořádku, ale runtime preflight odhalil, že
-finální image nekopíroval produkční `node_modules` a nemohl načíst balíček
-`sigstore`. Instalátor chybu zachytil před odstavením starého Agenta; identita
-a workloady zůstaly beze změny. Oprava 0.14.1 přidala produkční dependency
+Stejnou vadu obsahuje starší podepsaný release `agent-v0.13.0`: jeho image
+rovněž nekopíroval produkční `node_modules`. Distribuční integrita obou verzí
+tedy byla v pořádku, ale runtime preflight nemohl načíst balíček `sigstore`.
+Instalátor chybu v obou případech zachytil před odstavením stávajícího
+Agenta; identita a workloady zůstaly beze změny. Release katalog obě verze
+explicitně vynechává. Oprava 0.14.1 přidala produkční dependency
 stage a povinný CLI smoke test sestaveného image v běžném i release workflow.
 Podepsaná multiarch image
 `ghcr.io/kudrle01/initpad-agent@sha256:08b7829c02a06d343b825557df2e79abf2d6a745c591b6ae523a0605942948a9`
 prošla 20. září 2026 runtime probem i nezávislým anonymním distribučním
-auditem a je aktuálním release channel candidate. Dokud neproběhne celý
-clean-host runbook a skutečný update `0.13 → 0.14.1` včetně vadného
+auditem a je aktuálním doporučeným releasem. Dokud neproběhne celý
+clean-host runbook a skutečný update `0.14.1 → 0.14.2` včetně vadného
 candidate, nejde vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).

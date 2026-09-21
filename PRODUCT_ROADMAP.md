@@ -59,7 +59,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 
 ### P0 — veřejný a obnovitelný self-hosted release
 
-- [x] Vydat podepsaný multiarch Agent `0.13.0` a platformu `0.2.0`.
+- [x] Vydat podepsaný multiarch Agent `0.13.0` a platformu `0.2.0`;
+  následnou runtime acceptance Agenta evidovat odděleně od integrity distribuce.
 - [x] Dokončit public-readiness: licence, contribution/security policy, scan
   celé Git historie, veřejný repozitář a anonymně dostupné release assets a
   OCI images.
@@ -74,8 +75,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   stávající Agent.
 - [x] Vydat opravený Agent `0.14.1`, ověřit runtime výsledné image, podpis,
   veřejnou dostupnost a multiarch manifest.
-- [ ] Živě ověřit vzdálený update `0.13 → 0.14.1`, odmítnutí vadného
-  candidate a automatický rollback při selhání replacement instance.
+- [ ] Vydat Agent `0.14.2` a živě ověřit vzdálený update
+  `0.14.1 → 0.14.2`, odmítnutí vadného candidate a automatický rollback
+  při selhání replacement instance. Podepsané image `0.13.0` i `0.14.0`
+  jsou runtime-revoked kvůli chybějící produkční závislosti a nesmějí
+  sloužit jako výchozí funkční verze acceptance.
 - [ ] Vydat platformu `0.2.1` a živě ověřit UI update, vadný candidate,
   rollback a restart hosta uprostřed cutoveru.
 
@@ -407,8 +411,9 @@ nezobrazí falešný empty/error stav.
     kontejner, fail-closed validace, idempotentní fronta, potvrzovací UI,
     rollback a audit jsou hotové a kryté testy. Ruční přechod 0.12.1 → 0.13
     byl poslední bootstrap bez tohoto protokolu;
-    vydání 0.13 je veřejné a podkrok se uzavře skutečným vzdáleným
-    0.13 → 0.14 acceptance.
+    protokol 0.13 je veřejný, ale release image 0.13.0 při runtime
+    acceptance selhala; podkrok se uzavře skutečným vzdáleným
+    `0.14.1 → 0.14.2` acceptance mezi dvěma funkčními image.
 
    ✅ **8a — explicitní režim targetu.** Databáze, API a UI rozlišují
    `direct-port` a `managed-gateway`. Existující instalace se migrují beze změny
@@ -939,17 +944,19 @@ jen konkrétní provozní a vyhodnocovací scénář.
          Workflow nepoužívá `latest`, odmítne již existující verzi a všechny
          cizí Actions jsou připnuté na commit SHA.
        - ◐ **8e-d-b2 — publikace a živá acceptance.** Tagy `agent-v*` chrání
-         aktivní GitHub ruleset. Release `agent-v0.14.0` měl platně podepsaný
-         multiarch image, manifest, SBOM a kontrolní součty, ale první
-         acceptance běh odhalil, že finální image neobsahoval produkční
-         `sigstore` dependency. Candidate preflight skončil před odstavením
-         starého Agenta, takže identita i workloady zůstaly zachované. Release
-         channel se dočasně vrátil na 0.13.0. Opravený release 0.14.1 kopíruje
+         aktivní GitHub ruleset. Release `agent-v0.13.0` i `agent-v0.14.0`
+         měly platně podepsaný multiarch image, manifest, SBOM a kontrolní
+         součty, ale runtime acceptance odhalila, že finální image neobsahovaly
+         produkční `sigstore` dependency. Candidate preflight v obou případech
+         skončil před odstavením stávajícího Agenta, takže identita i
+         workloady zůstaly zachované. Obě verze jsou v release katalogu
+         explicitně revoked. Opravený release 0.14.1 kopíruje
          production dependencies do runtime image, spouští CLI smoke test po
          každém buildu i před podpisem a prošel nezávislým anonymním auditem
-         podpisu, assets i multiarch OCI indexu. Zbývá na samostatném Linux
-         hostu ověřit skutečný update `0.13 → 0.14.1`, rollback vadného
-         obrazu a zachování workloadů po odpojení Agenta.
+         podpisu, assets i multiarch OCI indexu. Další funkční release musí
+         být 0.14.2; na samostatném Linux hostu se ověří skutečný update
+         `0.14.1 → 0.14.2` a automatický rollback replacement instance.
+         Zachování workloadů po odpojení Agenta již prošlo.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a
          verze z podepsaného release manifestu; UI proto nemůže označit starší
          image verzí lokálního source tree. **Uživatelský test:** bez jednoho
