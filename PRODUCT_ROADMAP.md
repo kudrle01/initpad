@@ -64,12 +64,14 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Dokončit public-readiness: licence, contribution/security policy, scan
   celé Git historie, veřejný repozitář a anonymně dostupné release assets a
   OCI images.
-- [ ] Na čistém Linux hostu ověřit instalaci, reboot, backup/restore a
+- [x] Na čistém Linux hostu ověřit instalaci, reboot, backup/restore a
   zachování workloadů při odpojeném Agentu.
   - [x] Čistá instalace, běžící stack a skutečný reboot hosta.
   - [x] Strukturální kontrola checksummované zálohy.
   - [x] Zachování identity, fronty a workloadů při odpojeném Agentu.
-  - [ ] Destruktivní restore drill na disposable instalaci.
+  - [x] Destruktivní restore drill na disposable instalaci. Obnova 21. září
+    2026 zachovala identity uživatelů, workspaceů a projektů, odstranila
+    marker vytvořený po záloze a prošla health i recovery invarianty.
 - [x] Vydat Agent `0.14.0`, nezávisle ověřit jeho distribuční obálku a při
   acceptance odhalit chybějící produkční závislost dříve, než nahradil
   stávající Agent.
@@ -804,6 +806,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
      a ihned zavolat `./self-hosted-check.sh after-restore <backup>`. Checkpoint
      porovná identity uživatelů, workspaces a projektů, vyžádá zmizení marker
      projektu vytvořeného po záloze a zahrne i `verify-restore` invarianty.
+     Tento destruktivní drill prošel 21. září 2026 na disposable Ubuntu VM.
 5. ◐ **8e — release audit, vyhodnocení a předání.**
 
    - ✅ **8e-a — reprodukovatelný repository gate.** `npm run check` nejdřív

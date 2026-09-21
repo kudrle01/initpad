@@ -9,7 +9,8 @@ veřejný produkční provoz.
 ## Co je připravené
 
 - Self-hosted instalace na jednom důvěryhodném hostu včetně Gitey, CI,
-  databáze, artifact storage a zálohy/obnovy.
+  databáze, artifact storage a zálohy/obnovy. Čistá instalace, skutečný
+  reboot a destruktivní restore drill prošly na disposable Ubuntu VM.
 - Workspace RBAC, role synchronizované do SCM a automatizovaná dvou-workspace
   isolation matice.
 - Dvanáct verzovaných šablon včetně Laravelu, Nette a Symfony.
@@ -32,22 +33,20 @@ veřejný produkční provoz.
 Veřejný SaaS zatím není release profil. Před připojením nedůvěryhodných
 zákazníků musí být hotové alespoň:
 
-1. dokončení destruktivního restore drillu celé self-hosted platformy na
-   disposable Linux instalaci;
-2. samostatný SaaS deployment profil bez vestavěné Gitey a lokálního
+1. samostatný SaaS deployment profil bez vestavěné Gitey a lokálního
    object store;
-3. živé end-to-end ověření GitHub OAuth, GitHub App instalace, osobního i
+2. živé end-to-end ověření GitHub OAuth, GitHub App instalace, osobního i
    organizačního repozitáře, Actions artifactu, rename/suspend/uninstall;
-4. externí správa secretů a rotace produkčních credentials;
-5. edge connection/volumetric ochrana a ověřená proxy topologie; aplikační
+3. externí správa secretů a rotace produkčních credentials;
+4. edge connection/volumetric ochrana a ověřená proxy topologie; aplikační
    distribuovaný limiter není náhradou WAF nebo DDoS ochrany;
-6. produkční e-mail provider pro reset hesla tam, kde zůstane password login;
+5. produkční e-mail provider pro reset hesla tam, kde zůstane password login;
    SaaS přihlášení používá ověřenou GitHub identitu;
-7. egress firewall odpovídající aplikační SSRF/DNS-rebinding policy;
-8. centrální log collector nebo OpenTelemetry pipeline s definovanou retencí,
+6. egress firewall odpovídající aplikační SSRF/DNS-rebinding policy;
+7. centrální log collector nebo OpenTelemetry pipeline s definovanou retencí,
    přístupovými rolemi, metrikami, alerty a incident runbookem;
-9. load test, kapacitní limity a rozhodnutí o scheduleru pro více API replik;
-10. nezávislé uživatelské a provozní ověření release kandidáta.
+8. load test, kapacitní limity a rozhodnutí o scheduleru pro více API replik;
+9. nezávislé uživatelské a provozní ověření release kandidáta.
 
 ## Známá provozní omezení
 
@@ -116,10 +115,10 @@ repozitář, release assets i GHCR packages `initpad-api`, `initpad-web` a
 `initpad-supervisor` jsou veřejně čitelné. Anonymní audit 18. září 2026 ověřil
 Sigstore identity manifestu a checksumů, SHA-256 vazby i OCI indexy pro
 `linux/amd64` a `linux/arm64`. Implementace nebude označena za provozně
-přijatou, dokud čistý Linux host neprojde bootstrapem, rebootem, úspěšným
-`0.2.0 → 0.2.1` updatem, vadným candidate rollbackem a přerušením uprostřed
-cutoveru. Docker socket Supervisoru je root-equivalent oprávnění, nikoli
-rootless sandbox.
+přijatou, dokud nyní ověřený bootstrap, reboot a destruktivní restore
+nedoplní úspěšný `0.2.0 → 0.2.1` update, vadný candidate rollback a
+přerušení uprostřed cutoveru. Docker socket Supervisoru je root-equivalent
+oprávnění, nikoli rootless sandbox.
 
 Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 

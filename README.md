@@ -22,7 +22,7 @@ srozumitelném a samostatně nasaditelném systému.
 
 | Část | Stav |
 |---|---|
-| Self-hosted platforma | Veřejný podepsaný release `0.2.0`; funkční single-node profil, probíhá finální ověření na čistém hostu |
+| Self-hosted platforma | Veřejný podepsaný release `0.2.0`; instalace, reboot a obnova single-node profilu ověřeny, zbývá živý update na `0.2.1` |
 | InitPad Agent | Doporučený release `0.14.2`; podepsaná multiarch image prošla distribučním a runtime auditem i živým updatem a rollbackem |
 | Hosted SaaS | Ve vývoji; nejde zatím o produkční deployment profil |
 
