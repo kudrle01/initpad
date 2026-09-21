@@ -26,6 +26,8 @@ test('documents an identity-bound destructive restore acceptance sequence', () =
 test('binds restore evidence to the backup manifest, durable identities and marker', () => {
   assert.match(acceptance, /manifest_sha256=/);
   assert.match(acceptance, /identity_fingerprint=/);
+  assert.match(acceptance, /save_restore_checkpoint_from_dump/);
+  assert.match(acceptance, /temporary backup inspection database/);
   assert.match(acceptance, /Post-backup marker project/);
   assert.match(acceptance, /\.\/recovery-drill\.sh verify-restore/);
   assert.match(acceptance, /rm -f "\$RESTORE_CHECKPOINT"/);

@@ -332,7 +332,11 @@ ls -1 ./backups/acceptance | sort
 Výpis musí obsahovat `SHA256SUMS`, `postgres.dump`, `initpad.env` a archivy
 Gitey, MinIO, API, SFTP a runneru; nesmí zůstat adresář
 `acceptance.partial-*`. Stejný příkaz se stejným cílem se musí bezpečně
-odmítnout, nikoli zálohu přepsat.
+odmítnout, nikoli zálohu přepsat. Kontrola obnoví dump pouze do krátkodobé
+izolované databáze, uloží fingerprint zálohovaných identit a databázi zase
+odstraní. Pokud tento kontrolní příkaz operátor přehlédne, `before-restore` jej
+bezpečně provede automaticky přímo nad dumpem; fingerprint nikdy neodvozuje z
+pozdějšího živého stavu.
 
 Po záloze vytvoř v UI projekt `after-backup` a ověř, že existuje. Potom spusť:
 

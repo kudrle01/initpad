@@ -67,12 +67,18 @@ container_id() {
 }
 
 database_scalar() {
+  database_scalar_in initpad "$1"
+}
+
+database_scalar_in() {
+  local database=$1 query=$2
   docker compose exec -T postgres \
-    psql -v ON_ERROR_STOP=1 -Atqc "$1" -U initpad -d initpad
+    psql -v ON_ERROR_STOP=1 -Atqc "$query" -U initpad -d "$database"
 }
 
 database_identity() {
-  database_scalar '
+  local database=${1:-initpad}
+  database_scalar_in "$database" '
     SELECT md5(
       COALESCE((SELECT string_agg("id", $q$,$q$ ORDER BY "id") FROM "User"), $q$$q$) ||
       $q$|$q$ ||
@@ -98,6 +104,46 @@ canonical_directory() {
 
 manifest_digest() {
   sha256sum "$1/SHA256SUMS" | awk '{ print $1 }'
+}
+
+save_restore_checkpoint_from_dump() {
+  local directory=$1 path probe users workspaces projects identity temporary
+  path=$(canonical_directory "$directory")
+  probe=initpad_acceptance_probe
+  # The reserved name makes an interrupted inspection self-cleaning on retry.
+  docker compose exec -T postgres \
+    dropdb -U initpad --if-exists --force "$probe" >/dev/null 2>&1 || \
+    fail "Could not clear an earlier backup inspection database."
+  docker compose exec -T postgres createdb -U initpad "$probe" >/dev/null || \
+    fail "Could not create the temporary backup inspection database."
+  if ! docker compose exec -T postgres \
+    pg_restore -U initpad -d "$probe" --no-owner --no-privileges \
+      < "$path/postgres.dump" >/dev/null; then
+    docker compose exec -T postgres dropdb -U initpad --if-exists "$probe" >/dev/null 2>&1 || true
+    fail "Could not inspect the PostgreSQL backup in an isolated database."
+  fi
+  if ! users=$(database_scalar_in "$probe" 'SELECT count(*) FROM "User";') ||
+     ! workspaces=$(database_scalar_in "$probe" 'SELECT count(*) FROM "Workspace";') ||
+     ! projects=$(database_scalar_in "$probe" 'SELECT count(*) FROM "Project";') ||
+     ! identity=$(database_identity "$probe"); then
+    docker compose exec -T postgres dropdb -U initpad --if-exists "$probe" >/dev/null 2>&1 || true
+    fail "Could not read durable identities from the backup inspection database."
+  fi
+  docker compose exec -T postgres dropdb -U initpad "$probe" >/dev/null || \
+    fail "Could not remove the temporary backup inspection database."
+
+  ensure_report
+  temporary=$(mktemp "$ACCEPTANCE_DIR/restore.XXXXXX")
+  chmod 600 "$temporary"
+  {
+    printf 'backup_path=%s\n' "$path"
+    printf 'manifest_sha256=%s\n' "$(manifest_digest "$path")"
+    printf 'users=%s\n' "$users"
+    printf 'workspaces=%s\n' "$workspaces"
+    printf 'projects=%s\n' "$projects"
+    printf 'identity_fingerprint=%s\n' "$identity"
+  } > "$temporary"
+  mv "$temporary" "$RESTORE_CHECKPOINT"
 }
 
 verify_restore_checkpoint_backup() {
@@ -308,7 +354,7 @@ check_backup() {
   local directory=${1:-}
   [ -n "$directory" ] || fail "Usage: ./self-hosted-check.sh backup <directory>"
   [ -d "$directory" ] || fail "Backup directory '$directory' does not exist."
-  local required file mode path temporary users workspaces projects identity
+  local required file mode
   required=(
     SHA256SUMS postgres.dump initpad.env gitea-data.tar.gz minio-data.tar.gz
     api-data.tar.gz supervisor-data.tar.gz sftp-www.tar.gz runner-data.tar.gz
@@ -331,23 +377,7 @@ check_backup() {
     postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
     pg_restore --list < "$directory/postgres.dump" >/dev/null || \
     fail "Backup PostgreSQL dump is unreadable."
-  path=$(canonical_directory "$directory")
-  users=$(database_scalar 'SELECT count(*) FROM "User";')
-  workspaces=$(database_scalar 'SELECT count(*) FROM "Workspace";')
-  projects=$(database_scalar 'SELECT count(*) FROM "Project";')
-  identity=$(database_identity)
-  ensure_report
-  temporary=$(mktemp "$ACCEPTANCE_DIR/restore.XXXXXX")
-  chmod 600 "$temporary"
-  {
-    printf 'backup_path=%s\n' "$path"
-    printf 'manifest_sha256=%s\n' "$(manifest_digest "$path")"
-    printf 'users=%s\n' "$users"
-    printf 'workspaces=%s\n' "$workspaces"
-    printf 'projects=%s\n' "$projects"
-    printf 'identity_fingerprint=%s\n' "$identity"
-  } > "$temporary"
-  mv "$temporary" "$RESTORE_CHECKPOINT"
+  save_restore_checkpoint_from_dump "$directory"
   record backup "directory=$(basename "$directory") checksums=true archives=true dump=true"
   pass "Backup is complete and its restore identity checkpoint is saved."
   printf '  Create one marker project after this backup, then run before-restore.\n'
@@ -355,6 +385,10 @@ check_backup() {
 
 check_before_restore() {
   local directory=$1 marker=$2 existing_marker baseline_projects current_projects marker_count
+  if [ ! -f "$RESTORE_CHECKPOINT" ]; then
+    warn "Restore checkpoint was not prepared; deriving it from the verified backup now."
+    check_backup "$directory"
+  fi
   verify_restore_checkpoint_backup "$directory"
   case "$marker" in
     ''|*[!A-Za-z0-9._-]*) \

@@ -115,7 +115,9 @@ deploymentem:
 ```
 
 Release acceptance navíc ukládá identitu živých dat v okamžiku zálohy a
-prokazuje návrat v čase pomocí marker projektu. Kompletní sekvence je v
+prokazuje návrat v čase pomocí marker projektu. Fingerprint se čte z dumpu v
+krátkodobé izolované databázi, nikoli z pozdějšího živého stavu. Kompletní
+sekvence je v
 [`SELF_HOSTED_ACCEPTANCE.md`](./SELF_HOSTED_ACCEPTANCE.md); závěrečný
 `self-hosted-check.sh after-restore` zahrnuje i výše uvedený invariantní test.
 
