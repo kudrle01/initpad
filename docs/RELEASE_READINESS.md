@@ -1,7 +1,8 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá doporučenému Agentu 0.14.1, odmítnutým release
-0.13.0 a 0.14.0 a prvnímu podepsanému platformnímu releasu 0.2.0. Seznam je záměrně
+Stav dokumentu odpovídá doporučenému Agentu 0.14.1, podepsanému
+acceptance candidate 0.14.2, odmítnutým release 0.13.0 a 0.14.0 a prvnímu
+podepsanému platformnímu releasu 0.2.0. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
 
@@ -91,8 +92,11 @@ stage a povinný CLI smoke test sestaveného image v běžném i release workflo
 Podepsaná multiarch image
 `ghcr.io/kudrle01/initpad-agent@sha256:08b7829c02a06d343b825557df2e79abf2d6a745c591b6ae523a0605942948a9`
 prošla 20. září 2026 runtime probem i nezávislým anonymním distribučním
-auditem a je aktuálním doporučeným releasem. Dokud neproběhne celý
-clean-host runbook a skutečný update `0.14.1 → 0.14.2` včetně vadného
+auditem a je aktuálním doporučeným releasem. Podepsaná image 0.14.2 se
+stejnou opravou prošla 21. září 2026 anonymním auditem release assets,
+runtime probe i multiarch OCI indexu a slouží jako acceptance candidate.
+Dokud neproběhne celý clean-host runbook a skutečný update
+`0.14.1 → 0.14.2` včetně vadného
 candidate, nejde vydání považovat za produkčně přijaté. Postup je v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
@@ -120,7 +124,7 @@ Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
 npm run audit:public-release -- --tag initpad-v0.2.0
-npm run audit:public-release -- --tag agent-v0.14.1
+npm run audit:public-release -- --tag agent-v0.14.2
 ```
 
 Audit odmítne soukromý repozitář, neúplné nebo nedostupné assets, chybné

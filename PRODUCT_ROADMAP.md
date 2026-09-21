@@ -75,8 +75,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   stávající Agent.
 - [x] Vydat opravený Agent `0.14.1`, ověřit runtime výsledné image, podpis,
   veřejnou dostupnost a multiarch manifest.
-- [ ] Vydat Agent `0.14.2` a živě ověřit vzdálený update
-  `0.14.1 → 0.14.2`, odmítnutí vadného candidate a automatický rollback
+- [x] Vydat Agent `0.14.2` a anonymně ověřit podpisy, release assets,
+  finální runtime image a multiarch OCI index.
+- [ ] Živě ověřit vzdálený update `0.14.1 → 0.14.2`, odmítnutí
+  vadného candidate a automatický rollback
   při selhání replacement instance. Podepsané image `0.13.0` i `0.14.0`
   jsou runtime-revoked kvůli chybějící produkční závislosti a nesmějí
   sloužit jako výchozí funkční verze acceptance.
@@ -953,8 +955,11 @@ jen konkrétní provozní a vyhodnocovací scénář.
          explicitně revoked. Opravený release 0.14.1 kopíruje
          production dependencies do runtime image, spouští CLI smoke test po
          každém buildu i před podpisem a prošel nezávislým anonymním auditem
-         podpisu, assets i multiarch OCI indexu. Další funkční release musí
-         být 0.14.2; na samostatném Linux hostu se ověří skutečný update
+         podpisu, assets i multiarch OCI indexu. Release 0.14.2 z commitu
+         `8c27c105654b4b4ee2e0f1d4e70bb3c947e14465` prošel 21. září 2026
+         stejným anonymním auditem a publikoval immutable OCI digest
+         `sha256:a18337584dbd6b89bc6449a529562a5a948e8a317d5ef1f93895806e6e4e1fb0`.
+         Na samostatném Linux hostu se ještě ověří skutečný update
          `0.14.1 → 0.14.2` a automatický rollback replacement instance.
          Zachování workloadů po odpojení Agenta již prošlo.
          Konfigurace už vyžaduje nerozdělitelnou dvojici immutable digestu a

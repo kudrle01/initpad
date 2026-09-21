@@ -33,8 +33,9 @@ reviewed distribution release. Its final image passed the CLI runtime probe,
 signature and anonymous public-release audit. Releases 0.13.0 and 0.14.0 were
 rejected because their runtimes omitted the production `sigstore` dependency;
 neither replaced the existing Agent during acceptance. The live
-0.14.1-to-0.14.2 update and rollback drill remains a release acceptance gate.
-The local lab below stays the supported source-build acceptance path.
+0.14.1-to-0.14.2 update and rollback drill remains a release acceptance gate;
+0.14.2 has already passed its signed public-distribution and runtime-image
+checks. The local lab below stays the supported source-build acceptance path.
 
 Agent 0.13 adds the remote update protocol. An owner/admin must explicitly
 confirm each target update in **Manage Agent**. The control plane selects a
@@ -50,7 +51,7 @@ manual installer operation; remote updates apply from 0.13 onward.
 
 Agent 0.14.1 is the first corrected protocol-compatible release. It includes
 production dependencies in the runtime image and adds a container CLI smoke
-test before a release can be signed. Version 0.14.2 is the next release
+test before a release can be signed. Version 0.14.2 is the published release
 candidate used to prove a live update from working 0.14.1. It deliberately
 keeps protocol version 1 so the new immutable image proves update, identity
 preservation and rollback without coupling the test to a wire-protocol

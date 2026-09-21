@@ -164,10 +164,10 @@ the installer stopped before replacing the existing Agent.
 
 Corrected release 0.14.1 is public, signed and passed its final-image runtime
 probe and anonymous distribution audit. Keep 0.14.1 installed on the disposable
-target. Publish and audit the genuine 0.14.2 release, then open **Manage Agent**
-on the 0.14.1 target, review 0.14.2 and choose **Install update**. Do not use
-`--re-enroll`: retaining the same target identity is part of this test. Confirm
-all of the following:
+target. Release 0.14.2 is also public, signed, runtime-probed and anonymously
+audited. Open **Manage Agent** on the 0.14.1 target, review 0.14.2 and choose
+**Install update**. Do not use `--re-enroll`: retaining the same target identity
+is part of this test. Confirm all of the following:
 
 - one `agent-update` job advances through signature verification, immutable
   pull, candidate preflight and heartbeat verification;
