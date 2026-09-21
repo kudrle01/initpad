@@ -22,6 +22,10 @@ export interface AgentReleaseManifest {
     file: string;
     sha256: string;
   };
+  acceptance?: {
+    file: string;
+    sha256: string;
+  };
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -54,6 +58,8 @@ export function parseAgentReleaseManifest(
   const source = record(manifest?.source);
   const image = record(manifest?.image);
   const installer = record(manifest?.installer);
+  const acceptance = manifest?.acceptance;
+  const acceptanceRecord = acceptance === undefined ? null : record(acceptance);
   const version = manifest?.version;
   const expectedRepository = `https://github.com/${repository}`;
   const expectedVersion = expectedTag.startsWith('agent-v') ? expectedTag.slice(7) : '';
@@ -84,7 +90,11 @@ export function parseAgentReleaseManifest(
     !/^[A-Za-z0-9._-]{1,128}$/.test(image.sbom) ||
     installer?.file !== 'initpad-agent-install.sh' ||
     typeof installer.sha256 !== 'string' ||
-    !SHA256.test(installer.sha256)
+    !SHA256.test(installer.sha256) ||
+    (acceptance !== undefined &&
+      (acceptanceRecord?.file !== 'initpad-agent-host-acceptance.sh' ||
+        typeof acceptanceRecord.sha256 !== 'string' ||
+        !SHA256.test(acceptanceRecord.sha256)))
   ) {
     throw new Error('Agent release manifest is invalid');
   }

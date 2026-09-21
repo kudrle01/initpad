@@ -143,6 +143,7 @@ test('accepts a complete anonymous signed multiarch Agent release', async () => 
   );
   const imageDigest = digest(index);
   const installer = Buffer.from('#!/bin/sh\n');
+  const acceptance = Buffer.from('#!/usr/bin/env bash\n');
   const manifest = Buffer.from(
     JSON.stringify({
       schemaVersion: 1,
@@ -160,10 +161,15 @@ test('accepts a complete anonymous signed multiarch Agent release', async () => 
         file: 'initpad-agent-install.sh',
         sha256: digest(installer).slice(7),
       },
+      acceptance: {
+        file: 'initpad-agent-host-acceptance.sh',
+        sha256: digest(acceptance).slice(7),
+      },
     }),
   );
   const agentFiles = [
     'initpad-agent-install.sh',
+    'initpad-agent-host-acceptance.sh',
     'initpad-agent-release.json',
     'initpad-agent-sbom.json',
     'SHA256SUMS',
@@ -177,7 +183,9 @@ test('accepts a complete anonymous signed multiarch Agent release', async () => 
             ? digest(manifest).slice(7)
             : name === 'initpad-agent-install.sh'
               ? digest(installer).slice(7)
-              : 'c'.repeat(64);
+              : name === 'initpad-agent-host-acceptance.sh'
+                ? digest(acceptance).slice(7)
+                : 'c'.repeat(64);
         return `${hash}  ${name}`;
       })
       .join('\n') + '\n',
@@ -210,6 +218,7 @@ test('accepts a complete anonymous signed multiarch Agent release', async () => 
         return response();
       }
       if (url.endsWith('/initpad-agent-release.json')) return response(manifest);
+      if (url.endsWith('/initpad-agent-host-acceptance.sh')) return response(acceptance);
       if (url.endsWith('/SHA256SUMS')) return response(sums);
       if (url.endsWith('.sigstore.json')) return response('{}');
       if (url.startsWith('https://ghcr.io/token')) {
@@ -223,7 +232,7 @@ test('accepts a complete anonymous signed multiarch Agent release', async () => 
   });
   assert.equal(result.sourceCommit, commit);
   assert.equal(result.immutableReference, `ghcr.io/kudrle01/initpad-agent@${imageDigest}`);
-  assert.equal(verified.length, 2);
+  assert.equal(verified.length, 3);
   assert.match(verified[0][1], /release-agent\.yml@refs\/tags\/agent-v0\.14\.0$/);
 });
 

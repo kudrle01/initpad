@@ -78,15 +78,15 @@ enrollment or increment the Agent credential generation.
 ## 3. Workload preservation while disconnected
 
 Deploy a disposable project to this target and record the workload container
-ID. Stop only the Agent:
+ID. Download `initpad-agent-host-acceptance.sh` with its checksum and Sigstore
+bundle from the same tagged Agent release and verify them as described in
+`RELEASING.md`. The helper records only non-secret target/container identifiers
+in a root-only local report and never stops or starts anything itself:
 
 ```sh
-workload_id=$(sudo docker ps \
-  --filter label=com.initpad.managed=true \
-  --format '{{.ID}}' | head -1)
-test -n "$workload_id"
+sudo ./initpad-agent-host-acceptance.sh before-disconnect
 sudo docker stop initpad-agent
-sudo docker inspect "$workload_id" --format 'running={{.State.Running}}'
+sudo ./initpad-agent-host-acceptance.sh disconnected
 ```
 
 The workload must remain running. A new deployment requested while the Agent is
@@ -94,11 +94,15 @@ offline remains queued and must not execute locally. Restore the Agent:
 
 ```sh
 sudo docker start initpad-agent
-sudo docker exec initpad-agent node /app/dist/cli.js once
+sudo ./initpad-agent-host-acceptance.sh after-reconnect
+sudo cat /var/lib/initpad-agent/acceptance/results.tsv
 ```
 
 The queued operation must complete exactly once and the original target must
-return online.
+return online. The report must contain `before-disconnect`, `disconnected` and
+`after-reconnect` PASS rows. The helper also proves that the target identity,
+credential generation, Agent container and every existing workload container
+were preserved.
 
 ## 4. Idempotent reinstall and failed-update rollback
 

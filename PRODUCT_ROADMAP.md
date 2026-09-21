@@ -66,8 +66,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [ ] Na čistém Linux hostu ověřit instalaci, reboot, backup/restore a
   zachování workloadů při odpojeném Agentu.
   Nedestruktivní checker už ukládá oddělené PASS checkpointy pro preflight,
-  běžící stack, skutečný host reboot a strukturu backupu; bod zůstává otevřený
-  do reálného průchodu na control-plane VM a samostatném Agent hostu.
+  běžící stack, skutečný host reboot a strukturu backupu. Samostatný Agent-host
+  checker navíc ověřuje identitu a workloady před odpojením, během něj a po
+  návratu; bod zůstává otevřený do reálného restore a Agent průchodu.
 - [x] Vydat Agent `0.14.0`, nezávisle ověřit jeho distribuční obálku a při
   acceptance odhalit chybějící produkční závislost dříve, než nahradil
   stávající Agent.

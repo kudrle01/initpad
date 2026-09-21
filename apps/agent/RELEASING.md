@@ -69,6 +69,11 @@ cosign verify-blob \
   SHA256SUMS
 ```
 
+The signed release also contains `initpad-agent-host-acceptance.sh`. Verify it
+through the same `SHA256SUMS` before copying it to the disposable Agent host;
+it supplies the non-destructive disconnect/reconnect evidence checkpoints in
+`ACCEPTANCE.md`.
+
 The image SBOM is both a release asset and attached to the OCI image. Inspect a
 platform-specific SPDX document without pulling the image:
 

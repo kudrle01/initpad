@@ -143,6 +143,7 @@ jobs:
           identity="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/release-agent.yml@refs/tags/${GITHUB_REF_NAME}"
           for asset in \
             "${release_dir}/initpad-agent-install.sh" \
+            "${release_dir}/initpad-agent-host-acceptance.sh" \
             "${release_dir}/initpad-agent-release.json" \
             "${release_dir}/initpad-agent-sbom.json" \
             "${release_dir}/SHA256SUMS"; do

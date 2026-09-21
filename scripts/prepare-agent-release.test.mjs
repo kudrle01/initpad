@@ -40,13 +40,23 @@ test('creates a deterministic digest-bound Agent release bundle', () => {
   assert.equal(manifest.image.immutableReference, `ghcr.io/example/initpad-agent@${digest}`);
   assert.deepEqual(manifest.image.platforms, ['linux/amd64', 'linux/arm64']);
   assert.equal(statSync(resolve(outputDirectory, 'initpad-agent-install.sh')).mode & 0o777, 0o755);
+  assert.equal(
+    statSync(resolve(outputDirectory, 'initpad-agent-host-acceptance.sh')).mode & 0o777,
+    0o755,
+  );
+  assert.equal(manifest.acceptance.file, 'initpad-agent-host-acceptance.sh');
 
   const checksumLines = readFileSync(resolve(outputDirectory, 'SHA256SUMS'), 'utf8')
     .trim()
     .split('\n');
   assert.deepEqual(
     checksumLines.map((line) => line.split('  ')[1]),
-    ['initpad-agent-install.sh', 'initpad-agent-release.json', 'initpad-agent-sbom.json'],
+    [
+      'initpad-agent-install.sh',
+      'initpad-agent-host-acceptance.sh',
+      'initpad-agent-release.json',
+      'initpad-agent-sbom.json',
+    ],
   );
   for (const line of checksumLines) {
     const [expected, name] = line.split('  ');

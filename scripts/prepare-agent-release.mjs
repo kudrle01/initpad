@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseFiles = {
   installer: 'initpad-agent-install.sh',
+  hostAcceptance: 'initpad-agent-host-acceptance.sh',
   manifest: 'initpad-agent-release.json',
   sbom: 'initpad-agent-sbom.json',
   checksums: 'SHA256SUMS',
@@ -85,6 +86,11 @@ export function prepareAgentRelease({
   copyFileSync(resolve(root, 'apps/agent/install.sh'), installerPath);
   chmodSync(installerPath, 0o755);
 
+  const hostAcceptanceBytes = readFileSync(resolve(root, 'apps/agent/host-acceptance.sh'));
+  const hostAcceptancePath = resolve(output, releaseFiles.hostAcceptance);
+  copyFileSync(resolve(root, 'apps/agent/host-acceptance.sh'), hostAcceptancePath);
+  chmodSync(hostAcceptancePath, 0o755);
+
   const sbomBytes = Buffer.from(`${JSON.stringify(parsedSbom, null, 2)}\n`, 'utf8');
   writeFileSync(resolve(output, releaseFiles.sbom), sbomBytes, { mode: 0o644 });
 
@@ -108,12 +114,17 @@ export function prepareAgentRelease({
       file: releaseFiles.installer,
       sha256: sha256(installerBytes),
     },
+    acceptance: {
+      file: releaseFiles.hostAcceptance,
+      sha256: sha256(hostAcceptanceBytes),
+    },
   };
   const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   writeFileSync(resolve(output, releaseFiles.manifest), manifestBytes, { mode: 0o644 });
 
   const subjects = [
     [releaseFiles.installer, installerBytes],
+    [releaseFiles.hostAcceptance, hostAcceptanceBytes],
     [releaseFiles.manifest, manifestBytes],
     [releaseFiles.sbom, sbomBytes],
   ];

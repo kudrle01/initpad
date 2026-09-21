@@ -22,6 +22,7 @@ function manifest(version = '0.13.0') {
       sbom: 'initpad-agent-sbom.json',
     },
     installer: { file: 'initpad-agent-install.sh', sha256: 'c'.repeat(64) },
+    acceptance: { file: 'initpad-agent-host-acceptance.sh', sha256: 'd'.repeat(64) },
   };
 }
 
@@ -39,6 +40,19 @@ describe('Agent release manifest', () => {
     const mutable = manifest();
     mutable.image.immutableReference = 'ghcr.io/kudrle01/initpad-agent:latest';
     expect(() => parseAgentReleaseManifest(mutable, 'kudrle01/initpad', 'agent-v0.13.0')).toThrow(
+      'invalid',
+    );
+  });
+
+  it('accepts legacy manifests and rejects a malformed optional acceptance helper', () => {
+    const { acceptance: _acceptance, ...legacy } = manifest();
+    expect(() =>
+      parseAgentReleaseManifest(legacy, 'kudrle01/initpad', 'agent-v0.13.0'),
+    ).not.toThrow();
+
+    const malformed = manifest();
+    malformed.acceptance.file = '../acceptance.sh';
+    expect(() => parseAgentReleaseManifest(malformed, 'kudrle01/initpad', 'agent-v0.13.0')).toThrow(
       'invalid',
     );
   });

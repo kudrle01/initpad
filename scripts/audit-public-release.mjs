@@ -111,6 +111,7 @@ function validateAgentManifest(value, repository, tag) {
   const source = object(manifest.source, 'Agent release source');
   const image = object(manifest.image, 'Agent image');
   const installer = object(manifest.installer, 'Agent installer');
+  const acceptance = manifest.acceptance;
   const owner = repository.split('/')[0]?.toLowerCase();
   const expectedName = `ghcr.io/${owner}/initpad-agent`;
   if (
@@ -135,6 +136,17 @@ function validateAgentManifest(value, repository, tag) {
     !/^[a-f0-9]{64}$/.test(installer.sha256)
   ) {
     throw new Error('Agent release manifest identity is invalid');
+  }
+  if (
+    acceptance !== undefined &&
+    (typeof acceptance !== 'object' ||
+      acceptance === null ||
+      Array.isArray(acceptance) ||
+      acceptance.file !== 'initpad-agent-host-acceptance.sh' ||
+      typeof acceptance.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(acceptance.sha256))
+  ) {
+    throw new Error('Agent acceptance helper identity is invalid');
   }
   return manifest;
 }
@@ -349,6 +361,33 @@ export async function auditPublicAgentRelease({
   });
   if (checksums.get(manifest.installer.file) !== manifest.installer.sha256) {
     throw new Error('Agent installer checksum does not match its manifest');
+  }
+  if (manifest.acceptance) {
+    const helperName = manifest.acceptance.file;
+    if (checksums.get(helperName) !== manifest.acceptance.sha256) {
+      throw new Error('Agent acceptance helper checksum does not match its manifest');
+    }
+    const helperAsset = assets.get(helperName);
+    const helperBundleAsset = assets.get(`${helperName}.sigstore.json`);
+    if (!helperAsset || !helperBundleAsset) {
+      throw new Error('GitHub release is missing the signed Agent acceptance helper');
+    }
+    const [helperBytes, helperBundleBytes] = await Promise.all([
+      boundedBytes(
+        await request(fetchImpl, helperAsset.browser_download_url),
+        ASSET_LIMIT,
+        helperName,
+      ),
+      boundedBytes(
+        await request(fetchImpl, helperBundleAsset.browser_download_url),
+        ASSET_LIMIT,
+        `${helperName}.sigstore.json`,
+      ),
+    ]);
+    if (sha256(helperBytes).slice(7) !== manifest.acceptance.sha256) {
+      throw new Error('Downloaded Agent acceptance helper checksum does not match');
+    }
+    await verifyBundle(JSON.parse(helperBundleBytes.toString('utf8')), helperBytes, identity);
   }
   await inspectPublicImage(fetchImpl, manifest.image);
   log(`Public release ${tag} is anonymously readable, signed and multiarch.`);
