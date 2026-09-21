@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { chmod, copyFile, lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  chown,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -153,11 +163,21 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-async function atomicWrite(path: string, value: string): Promise<void> {
+async function atomicWriteHostFile(path: string, value: string): Promise<void> {
+  const owner = await lstat(dirname(path));
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(temporary, value, { flag: 'wx', mode: 0o600 });
-  await chmod(temporary, 0o600);
-  await rename(temporary, path);
+  try {
+    // The privileged helper writes through a host bind mount. Preserve the
+    // operator-owned runtime directory identity so backup/restore and
+    // acceptance tools remain usable without sudo after an update.
+    await chown(temporary, owner.uid, owner.gid);
+    await chmod(temporary, 0o600);
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
 }
 
 async function updateOperation(
@@ -428,7 +448,7 @@ export class PlatformUpdater {
         stage: 'switching',
         message: 'Switching to the verified platform release',
       });
-      await atomicWrite(overridePath, override);
+      await atomicWriteHostFile(overridePath, override);
       const candidateCompose = composeArgs(installRoot, true);
 
       await updateOperation(operation, {

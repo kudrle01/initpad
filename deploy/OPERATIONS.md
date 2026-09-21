@@ -247,6 +247,23 @@ Tento zásah nemění databázi, API, web ani projektové workloady. Před dalš
 drillem ověř `docker image inspect "$(docker inspect initpad-supervisor
 --format '{{.Image}}')"`.
 
+Release Supervisor do verze `0.2.1` mohl release descriptor vytvořit jako
+`root:root`, ačkoli neobsahuje credentials. Poznáš to podle `Permission denied`
+z Docker Compose nebo acceptance skriptu. Vlastnictví jednorázově vrať
+operátorovi instalace a zachovej režim `0600`:
+
+```bash
+cd ~/Projects/initpad/deploy
+sudo chown "$(id -u):$(id -g)" \
+  .runtime/platform-update/platform-release.override.yml
+chmod 600 .runtime/platform-update/platform-release.override.yml
+```
+
+Novější Supervisor při atomickém zápisu automaticky přebírá vlastníka
+hostitelského runtime adresáře. Acceptance a health check navíc čtou obsah
+přes omezený Supervisor mount; backup používá stejnou hranici i po zastavení
+služby.
+
 ## Bezpečnost
 
 - `deploy/.env` obsahuje všechny secrety — omez práva (`chmod 600 .env`), necommituj.

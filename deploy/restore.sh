@@ -131,8 +131,10 @@ if [ -z "$(get_env INITPAD_SUPERVISOR_SHARED_SECRET)" ]; then
   set_env INITPAD_SUPERVISOR_SHARED_SECRET "$(openssl rand -hex 32)"
 fi
 if [ -f "$src/platform-release.override.yml" ]; then
+  rm -f "$RUNTIME_OVERRIDE"
   cp "$src/platform-release.override.yml" "$RUNTIME_OVERRIDE"
 else
+  rm -f "$RUNTIME_OVERRIDE"
   printf 'services: {}\n' > "$RUNTIME_OVERRIDE"
 fi
 chmod 600 "$RUNTIME_OVERRIDE"

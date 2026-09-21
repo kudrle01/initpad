@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -173,6 +173,14 @@ test('updates API, web and Supervisor from immutable images after a verified bac
     assert.equal(state.currentVersion, '0.3.0');
     assert.equal(state.operation?.status, 'succeeded');
     assert.equal(state.currentImages?.api, manifest().images.api.immutableReference);
+    const runtime = resolve(directory, 'state/runtime');
+    const [runtimeStat, overrideStat] = await Promise.all([
+      stat(runtime),
+      stat(resolve(runtime, 'platform-release.override.yml')),
+    ]);
+    assert.equal(overrideStat.uid, runtimeStat.uid);
+    assert.equal(overrideStat.gid, runtimeStat.gid);
+    assert.equal(overrideStat.mode & 0o777, 0o600);
     const commands = runner.calls.map((call) => call.join(' ')).join('\n');
     assert.match(commands, /pg_dump/);
     assert.match(commands, /pg_restore --list/);

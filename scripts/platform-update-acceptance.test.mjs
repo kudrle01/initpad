@@ -63,6 +63,12 @@ test('final acceptance binds version, durable identities and exact managed workl
   assert.match(script, /rm -f "\$CHECKPOINT" "\$REBOOT_CHECKPOINT"/);
 });
 
+test('reads the root-written runtime override through the Supervisor boundary', () => {
+  assert.match(script, /read_runtime_override/);
+  assert.match(script, /docker exec initpad-supervisor cat "\$SUPERVISOR_OVERRIDE"/);
+  assert.doesNotMatch(script, /sha256sum "\$OVERRIDE"|grep -Ec [^\n]+ "\$OVERRIDE"/);
+});
+
 test('refuses fault injection when the running Supervisor helper image is unavailable', () => {
   assert.match(script, /assert_supervisor_helper_image_available/);
   assert.match(script, /docker image inspect "\$image_id"/);

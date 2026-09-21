@@ -9,6 +9,7 @@ CHECKPOINT=$ACCEPTANCE_DIR/platform-update.checkpoint
 REBOOT_CHECKPOINT=$ACCEPTANCE_DIR/platform-update-reboot.checkpoint
 REPORT=$ACCEPTANCE_DIR/results.tsv
 OVERRIDE=.runtime/platform-update/platform-release.override.yml
+SUPERVISOR_OVERRIDE=/var/lib/initpad-supervisor/runtime/platform-release.override.yml
 PAUSED_HELPER=
 
 pass() { printf '\033[1;32m✔\033[0m %s\n' "$*"; }
@@ -73,6 +74,8 @@ ensure_runtime() {
   done
   [ -f .env ] || fail "deploy/.env is missing; install InitPad first."
   [ -f "$OVERRIDE" ] || fail "The platform release override is missing."
+  [ -r "$OVERRIDE" ] || \
+    fail "The platform release override is not readable by this operator. Restore its ownership before continuing; see OPERATIONS.md."
   docker info >/dev/null 2>&1 || fail "Docker Engine is not running."
   "${COMPOSE[@]}" config --quiet
   mkdir -p "$ACCEPTANCE_DIR"
@@ -112,6 +115,15 @@ container_image() {
   docker inspect --format '{{.Config.Image}}' "$(container_id "$1")"
 }
 
+read_runtime_override() {
+  docker exec initpad-supervisor cat "$SUPERVISOR_OVERRIDE" 2>/dev/null || \
+    fail "The Supervisor cannot read the active platform release descriptor."
+}
+
+runtime_override_sha256() {
+  read_runtime_override | sha256sum | awk '{ print $1 }'
+}
+
 assert_supervisor_helper_image_available() {
   local supervisor_id image_id configured_image
   supervisor_id=$(container_id supervisor)
@@ -136,11 +148,11 @@ assert_supervisor_helper_image_available() {
 
 override_image() {
   local service=$1
-  awk -v section="  $service:" '
+  read_runtime_override | awk -v section="  $service:" '
     $0 == section { active=1; next }
     active && /^  [A-Za-z0-9_-]+:/ { exit }
     active && $1 == "image:" { gsub(/^"|"$/, "", $2); print $2; exit }
-  ' "$OVERRIDE"
+  '
 }
 
 database_scalar() {
@@ -208,7 +220,7 @@ assert_previous_release_restored() {
   local actual
   assert_baseline_invariants "$(checkpoint_value current_version)"
   assert_supervisor_helper_image_available
-  actual=$(sha256sum "$OVERRIDE" | awk '{ print $1 }')
+  actual=$(runtime_override_sha256)
   [ "$actual" = "$(checkpoint_value override_sha256)" ] || \
     fail "The previous platform release descriptor was not restored exactly."
   assert_no_helper
@@ -239,7 +251,7 @@ write_checkpoint() {
     printf 'projects=%s\n' "$(database_scalar 'SELECT count(*) FROM "Project";')"
     printf 'workload_count=%s\n' "$(managed_workload_count)"
     printf 'workload_snapshot=%s\n' "$(managed_workload_snapshot)"
-    printf 'override_sha256=%s\n' "$(sha256sum "$OVERRIDE" | awk '{ print $1 }')"
+    printf 'override_sha256=%s\n' "$(runtime_override_sha256)"
   } > "$temporary"
   mv "$temporary" "$CHECKPOINT"
   rm -f "$REBOOT_CHECKPOINT"
@@ -404,7 +416,8 @@ check_after_success() {
   [ "$status" = succeeded ] || fail "Latest platform update status is '$status', not succeeded."
   [ "$to_version" = "$expected" ] || fail "Latest update targeted '$to_version', expected '$expected'."
   assert_baseline_invariants "$expected"
-  references=$(grep -Ec 'image: ".+@sha256:[a-f0-9]{64}"' "$OVERRIDE" || true)
+  references=$(read_runtime_override | \
+    grep -Ec 'image: ".+@sha256:[a-f0-9]{64}"' || true)
   [ "$references" -eq 3 ] || fail "Installed release descriptor is not fully immutable."
   assert_no_helper
   record platform-update-success \

@@ -242,12 +242,17 @@ assert_service() {
 release_channel() {
   local override=.runtime/platform-update/platform-release.override.yml
   [ -f "$override" ] || fail "Platform release override is missing."
-  if grep -qx 'services: {}' "$override"; then
+  local content
+  content=$(docker exec initpad-supervisor cat \
+    /var/lib/initpad-supervisor/runtime/platform-release.override.yml 2>/dev/null) || \
+    fail "The Supervisor cannot read the platform release override."
+  if printf '%s\n' "$content" | grep -qx 'services: {}'; then
     printf 'source\n'
     return
   fi
   local references
-  references=$(grep -Ec 'image: ".+@sha256:[a-f0-9]{64}"' "$override" || true)
+  references=$(printf '%s\n' "$content" | \
+    grep -Ec 'image: ".+@sha256:[a-f0-9]{64}"' || true)
   [ "$references" -eq 3 ] || \
     fail "Installed platform override does not contain three immutable image references."
   printf 'signed-release\n'

@@ -462,7 +462,7 @@ function updateTone(status: PlatformUpdateOperation['status']) {
   return 'text-warning';
 }
 
-function PlatformUpdateCard({
+export function PlatformUpdateCard({
   status,
   loading,
   error,
@@ -540,18 +540,20 @@ function PlatformUpdateCard({
           )}
 
           {status?.supervisorOnline &&
-            status.latestVersion &&
             !status.updateAvailable &&
             !status.catalogError &&
             !status.catalogStale &&
             !active && (
-              <div className="flex items-center gap-2 text-sm text-success">
-                <CheckCircle2 className="h-4 w-4" />
-                InitPad is up to date and the Supervisor is online.
+              <div className="flex items-start gap-2 rounded-md border border-success/30 bg-success/5 p-3 text-success">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">InitPad {status.currentVersion} is current</p>
+                  <p className="mt-0.5 text-xs">Supervisor online · no newer verified release.</p>
+                </div>
               </div>
             )}
 
-          {operation && (
+          {operation && operation.status !== 'succeeded' && (
             <div className="rounded-md border border-border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium">
@@ -583,14 +585,16 @@ function PlatformUpdateCard({
           )}
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button disabled={!status?.canInstall || installing} onClick={onInstall}>
-              {installing || active ? (
-                <Spinner className="h-4 w-4" />
-              ) : (
-                <PackageCheck className="h-4 w-4" />
-              )}
-              {active ? 'Installing…' : 'Install update'}
-            </Button>
+            {(status?.updateAvailable || active) && (
+              <Button disabled={!status?.canInstall || installing} onClick={onInstall}>
+                {installing || active ? (
+                  <Spinner className="h-4 w-4" />
+                ) : (
+                  <PackageCheck className="h-4 w-4" />
+                )}
+                {active ? 'Installing…' : 'Install update'}
+              </Button>
+            )}
             {status?.catalogStale && (
               <span className="text-xs text-warning">
                 Release information is stale; refresh before installing.
