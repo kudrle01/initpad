@@ -801,7 +801,9 @@ jen konkrétní provozní a vyhodnocovací scénář.
      **Uživatelský test:** na jednorázové VM spustit
      `./recovery-drill.sh artifact-store-outage` a `registry-outage`; potom
      vytvořit checkpoint pomocí `backup.sh`, obnovit jej přes `restore.sh`
-     a ihned zavolat `./recovery-drill.sh verify-restore`.
+     a ihned zavolat `./self-hosted-check.sh after-restore <backup>`. Checkpoint
+     porovná identity uživatelů, workspaces a projektů, vyžádá zmizení marker
+     projektu vytvořeného po záloze a zahrne i `verify-restore` invarianty.
 5. ◐ **8e — release audit, vyhodnocení a předání.**
 
    - ✅ **8e-a — reprodukovatelný repository gate.** `npm run check` nejdřív

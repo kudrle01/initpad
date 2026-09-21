@@ -337,6 +337,7 @@ odmítnout, nikoli zálohu přepsat.
 Po záloze vytvoř v UI projekt `after-backup` a ověř, že existuje. Potom spusť:
 
 ```bash
+./self-hosted-check.sh before-restore ./backups/acceptance after-backup
 ./restore.sh ./backups/acceptance
 ```
 
@@ -366,12 +367,16 @@ bez aktivních operací provést vratné dependency outage testy:
 Ihned po `restore.sh`, ještě před novým deployem, spusť:
 
 ```bash
-./recovery-drill.sh verify-restore
+./self-hosted-check.sh after-restore ./backups/acceptance
 ```
 
-Musí potvrdit zdravou DB i artifact store, nulový počet aktivních operací a
-Agent lease, zneplatněné gateway/diagnostické projekce a nulový počet lokálních
-InitPad-managed workloadů. Starý Agent job se po reconnectu nesmí vykonat.
+Příkaz porovná identitu a počty uživatelů, workspaces a projektů s checkpointem
+uloženým při kontrole zálohy, prokáže zmizení `after-backup` a automaticky
+spustí také `recovery-drill.sh verify-restore`. Musí tedy potvrdit zdravou DB i
+artifact store, nulový počet aktivních operací a Agent lease, zneplatněné
+gateway/diagnostické projekce a nulový počet lokálních InitPad-managed
+workloadů. Starý Agent job se po reconnectu nesmí vykonat. Úspěch přidá
+`before-restore` a `after-restore` do lokálního `results.tsv`.
 
 ## 10. Ověř smazání a opětovné použití názvu
 

@@ -114,6 +114,11 @@ deploymentem:
 ./recovery-drill.sh verify-restore
 ```
 
+Release acceptance navíc ukládá identitu živých dat v okamžiku zálohy a
+prokazuje návrat v čase pomocí marker projektu. Kompletní sekvence je v
+[`SELF_HOSTED_ACCEPTANCE.md`](./SELF_HOSTED_ACCEPTANCE.md); závěrečný
+`self-hosted-check.sh after-restore` zahrnuje i výše uvedený invariantní test.
+
 Kontrola je read-only: ověří readiness, privátní bucket, absenci starých
 lease/aktivních operací, zneplatnění runtime projekcí a absenci lokálních
 InitPad-managed workloadů. Samotný SQL kontrakt lze kdykoli bezpečně ověřit

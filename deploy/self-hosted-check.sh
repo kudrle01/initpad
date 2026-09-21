@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 COMPOSE=(docker compose --profile runner --profile server)
 ACCEPTANCE_DIR=.runtime/acceptance
 REBOOT_CHECKPOINT=$ACCEPTANCE_DIR/reboot.checkpoint
+RESTORE_CHECKPOINT=$ACCEPTANCE_DIR/restore.checkpoint
 REPORT=$ACCEPTANCE_DIR/results.tsv
 
 pass() { printf '\033[1;32m✔\033[0m %s\n' "$*"; }
@@ -20,7 +21,11 @@ Usage: ./self-hosted-check.sh <command> [argument]
   running               Verify the installed control plane and CI runner
   before-reboot         Verify the stack and save a host-reboot checkpoint
   after-reboot          Prove that the host rebooted and the same stack recovered
-  backup <directory>    Verify a completed backup without restoring it
+  backup <directory>    Verify a backup and save its live identity checkpoint
+  before-restore <directory> <marker-project>
+                        Arm the destructive drill after creating the marker
+  after-restore <directory>
+                        Prove the exact checkpoint and recovery invariants returned
 
 The script never prints .env, credentials or application secrets. Results are
 appended to deploy/.runtime/acceptance/results.tsv, which is ignored by Git.
@@ -64,6 +69,49 @@ container_id() {
 database_scalar() {
   docker compose exec -T postgres \
     psql -v ON_ERROR_STOP=1 -Atqc "$1" -U initpad -d initpad
+}
+
+database_identity() {
+  database_scalar '
+    SELECT md5(
+      COALESCE((SELECT string_agg("id", $q$,$q$ ORDER BY "id") FROM "User"), $q$$q$) ||
+      $q$|$q$ ||
+      COALESCE((SELECT string_agg("id", $q$,$q$ ORDER BY "id") FROM "Workspace"), $q$$q$) ||
+      $q$|$q$ ||
+      COALESCE((SELECT string_agg("id", $q$,$q$ ORDER BY "id") FROM "Project"), $q$$q$)
+    );
+  '
+}
+
+restore_checkpoint_value() {
+  local key=$1
+  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' \
+    "$RESTORE_CHECKPOINT"
+}
+
+canonical_directory() {
+  local directory=$1 path
+  path=$(cd "$directory" && pwd -P)
+  case "$path" in *$'\n'*|*$'\r'*) fail "Backup path contains a newline.";; esac
+  printf '%s\n' "$path"
+}
+
+manifest_digest() {
+  sha256sum "$1/SHA256SUMS" | awk '{ print $1 }'
+}
+
+verify_restore_checkpoint_backup() {
+  local directory=$1 expected_path actual_path expected_digest actual_digest
+  [ -f "$RESTORE_CHECKPOINT" ] || \
+    fail "No restore checkpoint exists; verify the backup before creating the marker project."
+  actual_path=$(canonical_directory "$directory")
+  expected_path=$(restore_checkpoint_value backup_path)
+  [ "$actual_path" = "$expected_path" ] || \
+    fail "Restore checkpoint belongs to '$expected_path', not '$actual_path'."
+  actual_digest=$(manifest_digest "$actual_path")
+  expected_digest=$(restore_checkpoint_value manifest_sha256)
+  [ "$actual_digest" = "$expected_digest" ] || \
+    fail "Backup checksum manifest changed after the restore checkpoint was saved."
 }
 
 check_rootless_runner_prerequisite() {
@@ -260,7 +308,7 @@ check_backup() {
   local directory=${1:-}
   [ -n "$directory" ] || fail "Usage: ./self-hosted-check.sh backup <directory>"
   [ -d "$directory" ] || fail "Backup directory '$directory' does not exist."
-  local required file mode
+  local required file mode path temporary users workspaces projects identity
   required=(
     SHA256SUMS postgres.dump initpad.env gitea-data.tar.gz minio-data.tar.gz
     api-data.tar.gz supervisor-data.tar.gz sftp-www.tar.gz runner-data.tar.gz
@@ -283,8 +331,87 @@ check_backup() {
     postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
     pg_restore --list < "$directory/postgres.dump" >/dev/null || \
     fail "Backup PostgreSQL dump is unreadable."
+  path=$(canonical_directory "$directory")
+  users=$(database_scalar 'SELECT count(*) FROM "User";')
+  workspaces=$(database_scalar 'SELECT count(*) FROM "Workspace";')
+  projects=$(database_scalar 'SELECT count(*) FROM "Project";')
+  identity=$(database_identity)
+  ensure_report
+  temporary=$(mktemp "$ACCEPTANCE_DIR/restore.XXXXXX")
+  chmod 600 "$temporary"
+  {
+    printf 'backup_path=%s\n' "$path"
+    printf 'manifest_sha256=%s\n' "$(manifest_digest "$path")"
+    printf 'users=%s\n' "$users"
+    printf 'workspaces=%s\n' "$workspaces"
+    printf 'projects=%s\n' "$projects"
+    printf 'identity_fingerprint=%s\n' "$identity"
+  } > "$temporary"
+  mv "$temporary" "$RESTORE_CHECKPOINT"
   record backup "directory=$(basename "$directory") checksums=true archives=true dump=true"
-  pass "Backup is complete, checksummed and structurally readable."
+  pass "Backup is complete and its restore identity checkpoint is saved."
+  printf '  Create one marker project after this backup, then run before-restore.\n'
+}
+
+check_before_restore() {
+  local directory=$1 marker=$2 existing_marker baseline_projects current_projects marker_count
+  verify_restore_checkpoint_backup "$directory"
+  case "$marker" in
+    ''|*[!A-Za-z0-9._-]*) \
+      fail "Marker project must use only letters, numbers, dots, underscores or hyphens." ;;
+  esac
+  existing_marker=$(restore_checkpoint_value marker_project)
+  if [ -n "$existing_marker" ] && [ "$existing_marker" != "$marker" ]; then
+    fail "Restore checkpoint is already armed for marker project '$existing_marker'."
+  fi
+  current_projects=$(database_scalar 'SELECT count(*) FROM "Project";')
+  baseline_projects=$(restore_checkpoint_value projects)
+  [ "$current_projects" -gt "$baseline_projects" ] || \
+    fail "Create the marker project after the backup before arming the restore drill."
+  marker_count=$(database_scalar \
+    "SELECT count(*) FROM \"Project\" WHERE \"name\" = '$marker';")
+  [ "$marker_count" -ge 1 ] || \
+    fail "Post-backup marker project '$marker' does not exist."
+  if [ -z "$existing_marker" ]; then
+    printf 'marker_project=%s\n' "$marker" >> "$RESTORE_CHECKPOINT"
+  fi
+  record before-restore \
+    "directory=$(basename "$directory") marker_present=true projects=$current_projects"
+  pass "Restore drill armed. The next step is the destructive restore command."
+}
+
+check_after_restore() {
+  local directory=$1 expected actual marker marker_count field
+  verify_restore_checkpoint_backup "$directory"
+  marker=$(restore_checkpoint_value marker_project)
+  [ -n "$marker" ] || \
+    fail "Restore drill is not armed; run before-restore with a post-backup marker project."
+
+  check_running
+  for field in users workspaces projects; do
+    case "$field" in
+      users) actual=$(database_scalar 'SELECT count(*) FROM "User";') ;;
+      workspaces) actual=$(database_scalar 'SELECT count(*) FROM "Workspace";') ;;
+      projects) actual=$(database_scalar 'SELECT count(*) FROM "Project";') ;;
+    esac
+    expected=$(restore_checkpoint_value "$field")
+    [ "$actual" = "$expected" ] || \
+      fail "Restored $field count differs from the checkpoint ($expected -> $actual)."
+  done
+  expected=$(restore_checkpoint_value identity_fingerprint)
+  actual=$(database_identity)
+  [ "$actual" = "$expected" ] || \
+    fail "Restored user/workspace/project identity differs from the backup checkpoint."
+  marker_count=$(database_scalar \
+    "SELECT count(*) FROM \"Project\" WHERE \"name\" = '$marker';")
+  [ "$marker_count" = 0 ] || \
+    fail "Post-backup marker project '$marker' survived the restore."
+
+  ./recovery-drill.sh verify-restore
+  rm -f "$RESTORE_CHECKPOINT"
+  record after-restore \
+    "directory=$(basename "$directory") identity_restored=true marker_absent=true reconciliation=true"
+  pass "Destructive restore acceptance passed for the exact backup checkpoint."
 }
 
 case "${1:-}" in
@@ -293,6 +420,8 @@ case "${1:-}" in
   before-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; write_reboot_checkpoint ;;
   after-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; check_after_reboot ;;
   backup) [ "$#" -eq 2 ] || { usage >&2; exit 1; }; check_backup "$2" ;;
+  before-restore) [ "$#" -eq 3 ] || { usage >&2; exit 1; }; check_before_restore "$2" "$3" ;;
+  after-restore) [ "$#" -eq 2 ] || { usage >&2; exit 1; }; check_after_restore "$2" ;;
   -h|--help|'') usage ;;
   *) usage >&2; exit 1 ;;
 esac

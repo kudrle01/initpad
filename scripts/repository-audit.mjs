@@ -222,6 +222,7 @@ for (const path of [
   'deploy/self-hosted-check.sh',
   'deploy/backup.sh',
   'deploy/restore.sh',
+  'deploy/recovery-drill.sh',
 ]) {
   execFileSync('bash', ['-n', path], { cwd: root });
 }
