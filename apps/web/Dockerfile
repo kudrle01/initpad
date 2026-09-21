@@ -1,7 +1,7 @@
 # Platform web UI. Build context = repository root (npm workspaces monorepo):
 #   docker build -f apps/web/Dockerfile .
 # ---------------------------------------------------------------- build ----
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
+FROM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/
