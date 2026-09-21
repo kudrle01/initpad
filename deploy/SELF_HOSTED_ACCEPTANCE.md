@@ -412,7 +412,9 @@ Uloží také UID, GID a režim necitlivého release descriptoru. Starý updater
 0.2.1 totiž při atomickém cutoveru dočasně změní jeho vlastníka na root;
 acceptance po rollbacku, reboot recovery i úspěchu obnoví původního operátora
 a `0600`. Candidate API proto identifikuje podle deklarované platformní verze,
-nikoli čtení souboru měněného uprostřed operace.
+nikoli čtení souboru měněného uprostřed operace. Kontejner během
+cutoveru hledá přímo přes neměnné Compose project/service labely; nespouští
+`docker compose`, který by dočasný descriptor musel nejdřív přečíst.
 Kontrola také odmítne pokračovat, pokud Docker už nemá image záznam
 běžícího Supervisoru. U source instalace jej obnov z přesného tagu instalované
 verze podle kapitoly **Source checkout a recovery** v `OPERATIONS.md`; samotný

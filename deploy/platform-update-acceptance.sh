@@ -114,8 +114,22 @@ container_image() {
   docker inspect --format '{{.Config.Image}}' "$(container_id "$1")"
 }
 
+compose_project_label() {
+  docker inspect "$(container_id supervisor)" \
+    --format '{{index .Config.Labels "com.docker.compose.project"}}'
+}
+
+runtime_container_id() {
+  local project=$1 service=$2
+  docker ps -q \
+    --filter "label=com.docker.compose.project=$project" \
+    --filter "label=com.docker.compose.service=$service" | head -1
+}
+
 container_platform_version() {
-  docker inspect "$(container_id "$1")" \
+  local container=$1
+  [ -n "$container" ] || return 1
+  docker inspect "$container" \
     --format '{{range .Config.Env}}{{println .}}{{end}}' | \
     awk -F= '$1 == "INITPAD_PLATFORM_VERSION" { print $2; exit }'
 }
@@ -278,7 +292,8 @@ write_checkpoint() {
 }
 
 wait_for_candidate_api() {
-  local previous_id operation_id status stage candidate_version current_version helper deadline
+  local project=$1 previous_id operation_id status stage candidate_version
+  local current_version current_api helper deadline
   previous_id=$(state_value operation.id || true)
   candidate_version=$(checkpoint_value next_version)
   deadline=$((SECONDS + 900))
@@ -292,7 +307,8 @@ wait_for_candidate_api() {
         fail "Update reached terminal status '$status' before fault injection." ;;
       esac
       if [ "$stage" = api ]; then
-        current_version=$(container_platform_version api 2>/dev/null || true)
+        current_api=$(runtime_container_id "$project" api)
+        current_version=$(container_platform_version "$current_api" 2>/dev/null || true)
         helper=$(active_helper "$operation_id")
         if [ "$current_version" = "$candidate_version" ] && [ -n "$helper" ]; then
           printf '%s\n' "$operation_id"
@@ -337,15 +353,18 @@ wait_for_terminal_operation() {
 }
 
 fault_rollback() {
-  local operation_id helper api_id
+  local operation_id helper api_id project
   assert_checkpoint
   assert_previous_release_restored
   say "Validating sudo for legacy descriptor ownership recovery."
   sudo -v || fail "sudo authentication failed."
-  operation_id=$(wait_for_candidate_api)
+  project=$(compose_project_label)
+  [ -n "$project" ] || fail "Compose project identity is missing."
+  operation_id=$(wait_for_candidate_api "$project")
   helper=$(pause_helper_at_api "$operation_id")
   PAUSED_HELPER=$helper
-  api_id=$(container_id api)
+  api_id=$(runtime_container_id "$project" api)
+  [ -n "$api_id" ] || fail "The signed candidate API container disappeared."
   say "Stopping only the signed candidate API to exercise health-gated rollback."
   if ! docker stop -t 0 "$api_id" >/dev/null; then
     docker unpause "$helper" >/dev/null 2>&1 || true
@@ -370,12 +389,14 @@ check_after_rollback() {
 }
 
 interrupt_reboot() {
-  local operation_id helper temporary
+  local operation_id helper temporary project
   assert_checkpoint
   assert_previous_release_restored
   say "Validating sudo before the update starts."
   sudo -v || fail "sudo authentication failed."
-  operation_id=$(wait_for_candidate_api)
+  project=$(compose_project_label)
+  [ -n "$project" ] || fail "Compose project identity is missing."
+  operation_id=$(wait_for_candidate_api "$project")
   helper=$(pause_helper_at_api "$operation_id")
   PAUSED_HELPER=$helper
   temporary=$(mktemp "$ACCEPTANCE_DIR/platform-update-reboot.XXXXXX")
