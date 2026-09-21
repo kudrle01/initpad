@@ -22,7 +22,7 @@ srozumitelném a samostatně nasaditelném systému.
 
 | Část | Stav |
 |---|---|
-| Self-hosted platforma | Veřejný podepsaný release `0.2.1`; instalace, reboot, obnova a čistý update single-node profilu živě ověřeny, fault rollback a přerušený update se dokončí na `0.2.2` |
+| Self-hosted platforma | Veřejný podepsaný release `0.2.2`; instalace, reboot, obnova a dva čisté updaty single-node profilu živě ověřeny, fault rollback a přerušený update se dokončí na `0.2.3` |
 | InitPad Agent | Doporučený release `0.14.2`; podepsaná multiarch image prošla distribučním a runtime auditem i živým updatem a rollbackem |
 | Hosted SaaS | Ve vývoji; nejde zatím o produkční deployment profil |
 
@@ -133,7 +133,7 @@ zranitelností, a proto vyžaduje přístup k internetu.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.1
+npm run audit:public-release -- --tag initpad-v0.2.2
 npm run audit:public-release -- --tag agent-v0.14.2
 ```
 

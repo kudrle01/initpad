@@ -384,13 +384,16 @@ workloadů. Starý Agent job se po reconnectu nesmí vykonat. Úspěch přidá
 
 ## 10. Ověř podepsanou aktualizaci platformy
 
-První čistý update `0.2.0 → 0.2.1` prošel na disposable VM 21. září
-2026 se zachováním identit a prázdné lokální workload množiny. Před novým
+První dva čisté updaty `0.2.0 → 0.2.1` a `0.2.1 → 0.2.2` prošly na
+disposable VM 21. září 2026 se zachováním identit a prázdné lokální
+workload množiny. Krátká odpověď 502 během výměny API/web je u tohoto
+single-node profilu očekávaná; Supervisor po celou dobu sleduje readiness a
+projektové workloady nerestartuje. Před novým
 checkpointem ponech na připojeném Agent serveru alespoň jeden zdravý projektový
 workload a poznamenej jeho container ID; po rollbacku, reboot recovery i čistém
 update musí zůstat stejný. Zbývající fault-injection drill proto
-navazuje na skutečně běžící podepsanou platformu `0.2.1` a cílí na
-`initpad-v0.2.2`. Cílový release musí být veřejný a jeho workflow zelené.
+navazuje na skutečně běžící podepsanou platformu `0.2.2` a cílí na
+`initpad-v0.2.3`. Cílový release musí být veřejný a jeho workflow zelené.
 Nový checkout lze stáhnout kvůli acceptance skriptu, ale mezi checkpointem
 a testem **nespouštěj `install.sh`**: aktualizaci musí provést běžící
 Supervisor z podepsaného release, ne source build nové verze.
@@ -400,18 +403,18 @@ Nejprve anonymně ověř distribuční obálku a ulož baseline:
 ```bash
 cd ~/Projects/initpad
 git pull --ff-only
-npm run audit:public-release -- --tag initpad-v0.2.2
+npm run audit:public-release -- --tag initpad-v0.2.3
 cd deploy
-./platform-update-acceptance.sh prepare 0.2.1 0.2.2
+./platform-update-acceptance.sh prepare 0.2.2 0.2.3
 ```
 
 Checkpoint ukládá pouze verze, fingerprint trvalých identit a identity
 managed workloadů; neobsahuje credentials. Do dokončení celého drillu
 nevytvářej ani nemaž uživatele, workspaces, projekty nebo deploymenty.
-Uloží také UID, GID a režim necitlivého release descriptoru. Starý updater
-0.2.1 totiž při atomickém cutoveru dočasně změní jeho vlastníka na root;
-acceptance po rollbacku, reboot recovery i úspěchu obnoví původního operátora
-a `0600`. Candidate API proto identifikuje podle deklarované platformní verze,
+Uloží také UID, GID a režim necitlivého release descriptoru. Updater od
+0.2.2 zachovává jeho operátorské vlastnictví a `0600`; acceptance hodnoty
+navíc kontroluje a umí je bezpečně obnovit po starším nebo přerušeném
+updateru. Candidate API identifikuje podle deklarované platformní verze,
 nikoli čtení souboru měněného uprostřed operace. Kontejner během
 cutoveru hledá přímo přes neměnné Compose project/service labely; nespouští
 `docker compose`, který by dočasný descriptor musel nejdřív přečíst.
@@ -464,7 +467,7 @@ Naposledy potvrď **Install update** bez fault-injection skriptu. Po stavu
 ./platform-update-acceptance.sh after-success
 ```
 
-Finální kontrola vyžaduje platformu `0.2.2`, tři immutable image reference,
+Finální kontrola vyžaduje platformu `0.2.3`, tři immutable image reference,
 stejné identity v DB a přesně stejné managed workload kontejnery jako před
 prvním pokusem. `results.tsv` musí obsahovat PASS pro `platform-update-prepare`,
 `platform-update-rollback`, `platform-update-reboot-recovery` a

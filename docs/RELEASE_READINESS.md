@@ -1,7 +1,7 @@
 # Release readiness a známá omezení
 
 Stav dokumentu odpovídá doporučenému Agentu 0.14.2, odmítnutým release
-0.13.0 a 0.14.0 a podepsanému platformnímu releasu 0.2.1. Seznam je záměrně
+0.13.0 a 0.14.0 a podepsanému platformnímu releasu 0.2.2. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
 
@@ -102,7 +102,7 @@ popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
 
-### Platformní release 0.2.1 prošel čistým živým updatem
+### Platformní release 0.2.2 prošel čistým živým updatem
 
 Workflow `initpad-v*` lokálně prochází release gate a vytváří tři podepsané
 multiarch images, SBOM, provenance, Compose descriptor, checksums a recovery
@@ -110,22 +110,24 @@ instalátor. Admin UI přijímá jen novější ověřenou verzi a Supervisor p�
 přepnutím ověří PostgreSQL dump i readiness každé komponenty. Tag
 GitHub repozitář, release assets i GHCR packages `initpad-api`, `initpad-web`
 a `initpad-supervisor` jsou veřejně čitelné. Anonymní audit release 0.2.1
-ověřil Sigstore identity manifestu a checksumů, SHA-256 vazby i OCI indexy
-pro `linux/amd64` a `linux/arm64`. Dne 21. září 2026 prošel na disposable
-Ubuntu VM čistý update `0.2.0 → 0.2.1`: skončil na podepsaném release,
-zachoval identity v databázi i přesnou lokální sadu managed workloadů
-(`workloads=0` na control-plane VM). Zachování aktivního externího Agent
-workloadu se ověří v navazujícím drillu. Acceptance přitom odhalila dvě
-provozní vady — chybějící source image záznam a
-root-owned release descriptor — a obě mají regresní ochranu v kandidátu
-0.2.2. Provozní přijetí stále vyžaduje fault-injected rollback a přerušení
-uprostřed `0.2.1 → 0.2.2` cutoveru. Docker socket Supervisoru je
+i 0.2.2 ověřil Sigstore identity manifestu a checksumů, SHA-256 vazby i
+OCI indexy pro `linux/amd64` a `linux/arm64`. Dne 21. září 2026 prošly na
+disposable Ubuntu VM čisté updaty `0.2.0 → 0.2.1` a `0.2.1 → 0.2.2`:
+skončily na podepsaném release a zachovaly identity v databázi i přesnou
+lokální sadu managed workloadů (`workloads=0` na control-plane VM).
+Zachování aktivního externího Agent workloadu se ověří v navazujícím
+drillu. Acceptance odhalila chybějící source image záznam, root-owned release
+descriptor a pozorovatele závislého na descriptoru během cutoveru; všechny tři
+vady mají regresní ochranu v kandidátu 0.2.3. Provozní přijetí stále
+vyžaduje fault-injected rollback a přerušení uprostřed `0.2.2 → 0.2.3`
+cutoveru. Krátké 502 během výměny API/web je očekávané omezení
+single-node profilu, nikoli výpadek projektových workloadů. Docker socket Supervisoru je
 root-equivalent oprávnění, nikoli rootless sandbox.
 
 Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.1
+npm run audit:public-release -- --tag initpad-v0.2.2
 npm run audit:public-release -- --tag agent-v0.14.2
 ```
 

@@ -86,7 +86,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   sloužit jako výchozí funkční verze acceptance.
 - [x] Vydat platformu `0.2.1` a živě ověřit čistý UI update ze source
   instalace `0.2.0` se zachováním identit a release invariantů.
-- [ ] Vydat platformu `0.2.2` a na přechodu z podepsané `0.2.1` dokončit
+- [x] Vydat platformu `0.2.2` a živě ověřit čistý update z podepsané
+  `0.2.1` se zachováním identit a release invariantů.
+- [ ] Vydat platformu `0.2.3` a na přechodu z podepsané `0.2.2` dokončit
   vadný candidate rollback a restart hosta uprostřed cutoveru.
 
 ### P1 — uzavření diplomkového MVP
@@ -1011,14 +1013,17 @@ jen konkrétní provozní a vyhodnocovací scénář.
        HMAC Supervisor, databázový backup gate, postupný API/web/Supervisor
        cutover, readiness, rollback, obnova přerušené operace, trvalý Compose
        override, audit administrátora a potvrzovací/progress UI. Release
-       `initpad-v0.2.0` i `initpad-v0.2.1` jsou veřejné a distribučně
-       ověřené. Živý čistý update `0.2.0 → 0.2.1` dne 21. září 2026
-       zachoval identity i přesně stejnou lokální sadu managed workloadů
-       (`workloads=0` na control-plane VM) a skončil na třech immutable signed
-       images. Přitom odhalil ztracený lokální
-       source image a vlastnictví runtime descriptoru; ochrany jsou součástí
-       `0.2.2`. Podkrok zůstává částečný do živého testu vadného
-       candidate rollbacku a restartu hosta při `0.2.1 → 0.2.2`.
+       `initpad-v0.2.0`, `initpad-v0.2.1` i `initpad-v0.2.2` jsou veřejné
+       a distribučně ověřené. Živé čisté updaty `0.2.0 → 0.2.1`
+       a `0.2.1 → 0.2.2` dne 21. září 2026 zachovaly identity i přesně
+       stejnou lokální sadu managed workloadů (`workloads=0` na
+       control-plane VM) a skončily na třech immutable signed images. První
+       drill odhalil ztracený lokální source image a vlastnictví runtime
+       descriptoru; druhý potvrdil opravy a odhalil závislost acceptance
+       pozorovatele na Compose descriptoru během cutoveru. Pozorovatel nyní
+       kandidátní kontejnery hledá přímo přes Docker labels. Podkrok zůstává
+       částečný do živého testu vadného candidate rollbacku a restartu
+       hosta při `0.2.2 → 0.2.3`.
 
 ## Akceptační kritéria
 
