@@ -85,7 +85,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   jsou runtime-revoked kvůli chybějící produkční závislosti a nesmějí
   sloužit jako výchozí funkční verze acceptance.
 - [x] Vydat platformu `0.2.1` a živě ověřit čistý UI update ze source
-  instalace `0.2.0` se zachováním identit a projektových workloadů.
+  instalace `0.2.0` se zachováním identit a release invariantů.
 - [ ] Vydat platformu `0.2.2` a na přechodu z podepsané `0.2.1` dokončit
   vadný candidate rollback a restart hosta uprostřed cutoveru.
 
@@ -1013,8 +1013,9 @@ jen konkrétní provozní a vyhodnocovací scénář.
        override, audit administrátora a potvrzovací/progress UI. Release
        `initpad-v0.2.0` i `initpad-v0.2.1` jsou veřejné a distribučně
        ověřené. Živý čistý update `0.2.0 → 0.2.1` dne 21. září 2026
-       zachoval identity i přesně stejnou sadu managed workloadů a skončil
-       na třech immutable signed images. Přitom odhalil ztracený lokální
+       zachoval identity i přesně stejnou lokální sadu managed workloadů
+       (`workloads=0` na control-plane VM) a skončil na třech immutable signed
+       images. Přitom odhalil ztracený lokální
        source image a vlastnictví runtime descriptoru; ochrany jsou součástí
        `0.2.2`. Podkrok zůstává částečný do živého testu vadného
        candidate rollbacku a restartu hosta při `0.2.1 → 0.2.2`.

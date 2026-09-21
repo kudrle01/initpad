@@ -385,7 +385,10 @@ workloadů. Starý Agent job se po reconnectu nesmí vykonat. Úspěch přidá
 ## 10. Ověř podepsanou aktualizaci platformy
 
 První čistý update `0.2.0 → 0.2.1` prošel na disposable VM 21. září
-2026 se zachováním identit i workloadů. Zbývající fault-injection drill proto
+2026 se zachováním identit a prázdné lokální workload množiny. Před novým
+checkpointem ponech na připojeném Agent serveru alespoň jeden zdravý projektový
+workload a poznamenej jeho container ID; po rollbacku, reboot recovery i čistém
+update musí zůstat stejný. Zbývající fault-injection drill proto
 navazuje na skutečně běžící podepsanou platformu `0.2.1` a cílí na
 `initpad-v0.2.2`. Cílový release musí být veřejný a jeho workflow zelené.
 Nový checkout lze stáhnout kvůli acceptance skriptu, ale mezi checkpointem

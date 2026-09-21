@@ -113,8 +113,10 @@ a `initpad-supervisor` jsou veřejně čitelné. Anonymní audit release 0.2.1
 ověřil Sigstore identity manifestu a checksumů, SHA-256 vazby i OCI indexy
 pro `linux/amd64` a `linux/arm64`. Dne 21. září 2026 prošel na disposable
 Ubuntu VM čistý update `0.2.0 → 0.2.1`: skončil na podepsaném release,
-zachoval identity v databázi i přesnou sadu managed workloadů. Acceptance
-přitom odhalila dvě provozní vady — chybějící source image záznam a
+zachoval identity v databázi i přesnou lokální sadu managed workloadů
+(`workloads=0` na control-plane VM). Zachování aktivního externího Agent
+workloadu se ověří v navazujícím drillu. Acceptance přitom odhalila dvě
+provozní vady — chybějící source image záznam a
 root-owned release descriptor — a obě mají regresní ochranu v kandidátu
 0.2.2. Provozní přijetí stále vyžaduje fault-injected rollback a přerušení
 uprostřed `0.2.1 → 0.2.2` cutoveru. Docker socket Supervisoru je
