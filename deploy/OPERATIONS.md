@@ -140,7 +140,9 @@ běžící deploye se nedotýká):
 ```
 
 Volitelně přes cron (např. týdně). Ověřené buildy v object storage uklízí sama
-platforma (retention, ADR-059).
+platforma (retention, ADR-059). Skript před prune znovu připne image aktivních
+source služeb jejich nakonfigurovaným tagem. Pokud lokální image záznam už
+chybí, skončí bez dalšího mazání a vyžádá obnovu přesné instalované verze.
 
 ## Object storage: produkční hranice
 
@@ -222,6 +224,28 @@ všechny assets, vytvoří kompletní `backup.sh` checkpoint a použije stejný
 health-gated rollback. Automaticky se nevrací destruktivně změněná databáze;
 release kanál proto přijímá pouze expand/contract, image-compatible migrace.
 Pro plný návrat použij explicitní `./restore.sh <záloha>`.
+
+Když source instalace hlásí, že image ID běžícího Supervisoru už
+neexistuje, nevytvářej image pomocí `docker commit`: kontejner obsahuje citlivé
+runtime prostředí. Na disposable hostu obnov přesný source image z tagu
+odpovídajícího instalované verzi a vytvoř znovu jen Supervisor:
+
+```bash
+cd ~/Projects/initpad
+git status --short                 # musí být prázdný
+git fetch --tags
+git switch --detach initpad-v0.2.0 # dosaď skutečně instalovanou verzi
+docker build -f apps/supervisor/Dockerfile -t initpad-supervisor:source .
+cd deploy
+docker compose --profile runner --profile server up -d \
+  --no-deps --no-build --force-recreate supervisor
+cd ..
+git switch main
+```
+
+Tento zásah nemění databázi, API, web ani projektové workloady. Před dalším
+drillem ověř `docker image inspect "$(docker inspect initpad-supervisor
+--format '{{.Image}}')"`.
 
 ## Bezpečnost
 

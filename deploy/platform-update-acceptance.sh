@@ -112,6 +112,28 @@ container_image() {
   docker inspect --format '{{.Config.Image}}' "$(container_id "$1")"
 }
 
+assert_supervisor_helper_image_available() {
+  local supervisor_id image_id configured_image
+  supervisor_id=$(container_id supervisor)
+  image_id=$(docker inspect --format '{{.Image}}' "$supervisor_id")
+  configured_image=$(docker inspect --format '{{.Config.Image}}' "$supervisor_id")
+  if docker image inspect "$image_id" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  case "$configured_image" in
+    *@sha256:*)
+      fail "The running Supervisor image record is missing. Pull the exact immutable image '$configured_image', recreate only the Supervisor, and retry."
+      ;;
+    *:source)
+      fail "The running source Supervisor image record is missing. Rebuild the exact installed platform tag and recreate only the Supervisor before this drill; see SELF_HOSTED_ACCEPTANCE.md."
+      ;;
+    *)
+      fail "The running Supervisor image record '$image_id' is missing; restore its exact image before this drill."
+      ;;
+  esac
+}
+
 override_image() {
   local service=$1
   awk -v section="  $service:" '
@@ -185,6 +207,7 @@ assert_baseline_invariants() {
 assert_previous_release_restored() {
   local actual
   assert_baseline_invariants "$(checkpoint_value current_version)"
+  assert_supervisor_helper_image_available
   actual=$(sha256sum "$OVERRIDE" | awk '{ print $1 }')
   [ "$actual" = "$(checkpoint_value override_sha256)" ] || \
     fail "The previous platform release descriptor was not restored exactly."
@@ -198,6 +221,7 @@ write_checkpoint() {
   ensure_runtime
   assert_no_helper
   ./self-hosted-check.sh running
+  assert_supervisor_helper_image_available
   actual=$(state_value currentVersion)
   [ "$actual" = "$current" ] || fail "Supervisor reports platform $actual, expected $current."
   operation_status=$(state_value operation.status || true)

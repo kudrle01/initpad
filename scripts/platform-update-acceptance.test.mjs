@@ -62,3 +62,16 @@ test('final acceptance binds version, durable identities and exact managed workl
   assert.match(script, /status.*succeeded/);
   assert.match(script, /rm -f "\$CHECKPOINT" "\$REBOOT_CHECKPOINT"/);
 });
+
+test('refuses fault injection when the running Supervisor helper image is unavailable', () => {
+  assert.match(script, /assert_supervisor_helper_image_available/);
+  assert.match(script, /docker image inspect "\$image_id"/);
+  assert.match(script, /Rebuild the exact installed platform tag/);
+  assert.ok(
+    script.indexOf(
+      'assert_supervisor_helper_image_available',
+      script.indexOf('write_checkpoint()'),
+    ) <
+      script.indexOf('actual=$(state_value currentVersion)', script.indexOf('write_checkpoint()')),
+  );
+});

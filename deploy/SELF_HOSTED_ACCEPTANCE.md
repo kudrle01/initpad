@@ -385,10 +385,11 @@ workloadů. Starý Agent job se po reconnectu nesmí vykonat. Úspěch přidá
 ## 10. Ověř podepsanou aktualizaci platformy
 
 Tento drill patří na disposable control-plane VM, která stále skutečně běží
-na podepsané platformě `0.2.0`. Release `initpad-v0.2.1` musí být veřejný a
-jeho workflow zelené. Nový checkout lze stáhnout kvůli acceptance skriptu,
-ale mezi checkpointem a testem **nespouštěj `install.sh`**: aktualizaci musí
-provést podepsaný release Supervisor, ne source build.
+na platformě `0.2.0`; výchozí instalace smí být source checkout nebo podepsaný
+release. Cílový release `initpad-v0.2.1` musí být veřejný a jeho workflow
+zelené. Nový checkout lze stáhnout kvůli acceptance skriptu, ale mezi
+checkpointem a testem **nespouštěj `install.sh`**: aktualizaci musí provést
+běžící Supervisor z podepsaného release, ne source build nové verze.
 
 Nejprve anonymně ověř distribuční obálku a ulož baseline:
 
@@ -403,6 +404,10 @@ cd deploy
 Checkpoint ukládá pouze verze, fingerprint trvalých identit a identity
 managed workloadů; neobsahuje credentials. Do dokončení celého drillu
 nevytvářej ani nemaž uživatele, workspaces, projekty nebo deploymenty.
+Kontrola také odmítne pokračovat, pokud Docker už nemá image záznam
+běžícího Supervisoru. U source instalace jej obnov z přesného tagu instalované
+verze podle kapitoly **Source checkout a recovery** v `OPERATIONS.md`; samotný
+`git pull` běžící kontejner ani jeho image nezmění.
 
 ### Vadný candidate a rollback
 
