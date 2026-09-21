@@ -16,6 +16,8 @@ import type {
 } from './types.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const IMAGE_ID = /^sha256:[a-f0-9]{64}$/;
+const IMMUTABLE_IMAGE = /^[a-z0-9][a-z0-9._:/-]*@sha256:[a-f0-9]{64}$/;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 function updateLock(): string {
@@ -225,12 +227,26 @@ export class PlatformUpdater {
 
   async launchHelper(plan: string): Promise<void> {
     const container = process.env.INITPAD_SUPERVISOR_CONTAINER_NAME || 'initpad-supervisor';
-    const image = (
-      await this.runner.run('docker', ['inspect', '--format', '{{.Image}}', container])
-    ).stdout;
-    if (!/^sha256:[a-f0-9]{64}$/.test(image)) {
+    const identity = (
+      await this.runner.run('docker', [
+        'inspect',
+        '--format',
+        '{{.Image}}\n{{.Config.Image}}',
+        container,
+      ])
+    ).stdout.split('\n');
+    const imageId = identity[0]?.trim() ?? '';
+    const configuredImage = identity[1]?.trim() ?? '';
+    if (!IMAGE_ID.test(imageId)) {
       throw new Error('Running Supervisor image identity is invalid');
     }
+    // A signed release container keeps its digest-pinned registry reference in
+    // Config.Image. Prefer it over Docker's local config ID: the daemon may no
+    // longer expose that ID after image-store cleanup even while the container
+    // is still running. `docker run` can safely repull this exact digest. A
+    // source installation has only a mutable local tag, so it stays pinned to
+    // the exact running image ID instead.
+    const helperImage = IMMUTABLE_IMAGE.test(configuredImage) ? configuredImage : imageId;
     const helper = `initpad-platform-updater-${randomUUID().slice(0, 8)}`;
     const operationId = basename(plan).match(/^update-([0-9a-f-]{36})\.json$/i)?.[1];
     if (!operationId || !UUID.test(operationId)) {
@@ -255,8 +271,13 @@ export class PlatformUpdater {
       'none',
     ];
     for (const value of environment) args.push('-e', value);
-    args.push('--volumes-from', container, image, 'update-helper', '--plan', plan);
-    await this.runner.run('docker', args);
+    args.push('--volumes-from', container, helperImage, 'update-helper', '--plan', plan);
+    try {
+      await this.runner.run('docker', args);
+    } catch (error) {
+      await rm(plan, { force: true });
+      throw error;
+    }
   }
 
   async recoverInterruptedUpdate(): Promise<void> {

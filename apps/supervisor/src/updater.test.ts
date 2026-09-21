@@ -60,11 +60,27 @@ function manifest(): PlatformReleaseManifest {
 class FakeRunner implements CommandRunner {
   readonly calls: string[][] = [];
   failWeb = false;
+  failHelperRun = false;
+  supervisorImageId = `sha256:${'f'.repeat(64)}`;
+  supervisorConfiguredImage = `ghcr.io/example/initpad-supervisor@sha256:${'e'.repeat(64)}`;
 
   async run(command: string, args: string[]): Promise<CommandResult> {
     this.calls.push([command, ...args]);
     if (this.failWeb && args.includes('up') && args.at(-1) === 'web') {
       throw new Error('web failed readiness');
+    }
+    if (command === 'docker' && args[0] === 'run' && this.failHelperRun) {
+      throw new Error('helper image unavailable');
+    }
+    if (
+      command === 'docker' &&
+      args[0] === 'inspect' &&
+      args.includes('{{.Image}}\n{{.Config.Image}}')
+    ) {
+      return {
+        stdout: `${this.supervisorImageId}\n${this.supervisorConfiguredImage}`,
+        stderr: '',
+      };
     }
     if (command === 'docker' && args[0] === 'ps') return { stdout: '', stderr: '' };
     if (args.includes('ps') && args.includes('-q')) return { stdout: 'a'.repeat(64), stderr: '' };
@@ -80,6 +96,35 @@ class FakeRunner implements CommandRunner {
     return { stdout: '', stderr: '' };
   }
 }
+
+test('launches the helper from the running release immutable reference', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const runner = new FakeRunner();
+    await new PlatformUpdater(runner).launchHelper(plan);
+    const launch = runner.calls.find((call) => call[0] === 'docker' && call[1] === 'run');
+    assert.ok(launch);
+    assert.ok(launch.includes(runner.supervisorConfiguredImage));
+    assert.equal(launch.includes(runner.supervisorImageId), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('pins source helpers to the exact local image ID and removes a rejected plan', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const runner = new FakeRunner();
+    runner.supervisorConfiguredImage = 'initpad-supervisor:source';
+    runner.failHelperRun = true;
+    await assert.rejects(new PlatformUpdater(runner).launchHelper(plan), /image unavailable/);
+    const launch = runner.calls.find((call) => call[0] === 'docker' && call[1] === 'run');
+    assert.ok(launch?.includes(runner.supervisorImageId));
+    await assert.rejects(readFile(plan), /ENOENT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 async function fixture() {
   const directory = await mkdtemp(resolve(tmpdir(), 'initpad-supervisor-'));
