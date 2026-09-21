@@ -214,6 +214,95 @@ describe('AgentSetupDialog distribution', () => {
     expect(screen.queryByRole('link', { name: /download script only/i })).not.toBeInTheDocument();
   });
 
+  it('never offers a stale distribution downgrade after a successful remote update', async () => {
+    vi.mocked(api.getAgentDistribution).mockResolvedValue({
+      available: true,
+      version: '0.14.1',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      unavailableReason: null,
+      installer: {
+        path: '/api/agent/distribution/install.sh',
+        sha256: 'd'.repeat(64),
+      },
+    });
+    vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
+      enabled: true,
+      checkedAt: '2026-09-21T12:00:00.000Z',
+      stale: false,
+      currentVersion: '0.14.2',
+      latestVersion: '0.14.2',
+      updateAvailable: false,
+      updateMethod: 'none',
+      image: `ghcr.io/example/initpad-agent@sha256:${'e'.repeat(64)}`,
+      releaseUrl: 'https://github.com/example/initpad/releases/tag/agent-v0.14.2',
+      publishedAt: '2026-09-21T09:00:00.000Z',
+      error: null,
+    });
+
+    renderDialog(
+      [],
+      {
+        ...enrollment,
+        state: 'online',
+        enrollmentPending: false,
+        credentialGeneration: 1,
+        version: '0.14.2',
+        enrolledAt: '2026-09-21T12:00:00.000Z',
+        lastSeenAt: '2026-09-21T12:01:00.000Z',
+      },
+      null,
+    );
+
+    expect(await screen.findByText('Agent 0.14.2 is current')).toBeInTheDocument();
+    expect(screen.queryByText(/Update Agent to 0\.14\.1/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/curl -fsSLo initpad-agent-install\.sh/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /download script only/i })).not.toBeInTheDocument();
+  });
+
+  it('does not generate an offline reinstall command that would downgrade the Agent', async () => {
+    vi.mocked(api.getAgentDistribution).mockResolvedValue({
+      available: true,
+      version: '0.14.1',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      unavailableReason: null,
+      installer: {
+        path: '/api/agent/distribution/install.sh',
+        sha256: 'd'.repeat(64),
+      },
+    });
+    vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
+      enabled: true,
+      checkedAt: '2026-09-21T12:00:00.000Z',
+      stale: false,
+      currentVersion: '0.14.2',
+      latestVersion: '0.14.1',
+      updateAvailable: false,
+      updateMethod: 'none',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      releaseUrl: 'https://github.com/example/initpad/releases/tag/agent-v0.14.1',
+      publishedAt: '2026-09-20T09:00:00.000Z',
+      error: null,
+    });
+
+    renderDialog(
+      [],
+      {
+        ...enrollment,
+        state: 'offline',
+        enrollmentPending: false,
+        credentialGeneration: 1,
+        version: '0.14.2',
+        enrolledAt: '2026-09-21T12:00:00.000Z',
+        lastSeenAt: '2026-09-21T12:01:00.000Z',
+      },
+      null,
+    );
+
+    expect(await screen.findByText('A safe reconnect image is not available')).toBeInTheDocument();
+    expect(screen.getByText(/InitPad will not downgrade this server/i)).toBeInTheDocument();
+    expect(screen.queryByText(/curl -fsSLo initpad-agent-install\.sh/)).not.toBeInTheDocument();
+  });
+
   it('shows a verified newer release and uses its immutable image for the manual bootstrap', async () => {
     const latestImage = `ghcr.io/example/initpad-agent@sha256:${'e'.repeat(64)}`;
     vi.mocked(api.getAgentDistribution).mockResolvedValue({

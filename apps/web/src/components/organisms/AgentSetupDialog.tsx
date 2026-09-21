@@ -87,6 +87,18 @@ function formatMemory(bytes: number): string {
   return `${gibibytes >= 10 ? gibibytes.toFixed(0) : gibibytes.toFixed(1)} GiB`;
 }
 
+function compareStableVersions(left: string, right: string): number | null {
+  const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+  const leftMatch = left.match(stableVersion);
+  const rightMatch = right.match(stableVersion);
+  if (!leftMatch || !rightMatch) return null;
+  for (let index = 1; index <= 3; index += 1) {
+    const difference = Number(leftMatch[index]) - Number(rightMatch[index]);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
 export function AgentSetupDialog({
   open,
   target,
@@ -146,25 +158,49 @@ export function AgentSetupDialog({
   const installerUrl = distribution?.available
     ? new URL(distribution.installer.path, window.location.origin).toString()
     : null;
-  const desiredImage =
-    updateStatus?.updateAvailable && updateStatus.image ? updateStatus.image : distribution?.image;
+  const catalogReleaseIsNewest = Boolean(
+    updateStatus?.latestVersion &&
+    updateStatus.image &&
+    (!distribution?.version ||
+      (compareStableVersions(updateStatus.latestVersion, distribution.version) ?? -1) >= 0),
+  );
+  const desiredAgentVersion = catalogReleaseIsNewest
+    ? updateStatus?.latestVersion
+    : (distribution?.version ?? null);
+  const desiredImage = catalogReleaseIsNewest ? updateStatus?.image : (distribution?.image ?? null);
+  const desiredComparedWithRunning =
+    desiredAgentVersion && agent?.version
+      ? compareStableVersions(desiredAgentVersion, agent.version)
+      : null;
+  const wouldDowngradeAgent = desiredComparedWithRunning !== null && desiredComparedWithRunning < 0;
   const installCommand =
-    distribution?.available && desiredImage && installerUrl
+    distribution?.available && desiredImage && installerUrl && !wouldDowngradeAgent
       ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${desiredImage}' --expected-target-id '${currentTarget.id}'${insecureFlag}`
       : null;
   const reEnrollCommand = installCommand ? `${installCommand} --re-enroll` : null;
-  const desiredAgentVersion = updateStatus?.updateAvailable
-    ? updateStatus.latestVersion
-    : (distribution?.version ?? null);
   const isCurrentOnline = Boolean(
     state === 'online' &&
     agent?.version &&
-    desiredAgentVersion &&
-    agent.version === desiredAgentVersion &&
-    !updateStatus?.updateAvailable,
+    ((updateStatus?.latestVersion && !updateStatus.updateAvailable) ||
+      (!updateStatus?.latestVersion &&
+        desiredComparedWithRunning !== null &&
+        desiredComparedWithRunning <= 0)),
   );
   const hasRemoteUpdateOnline = Boolean(
     state === 'online' && updateStatus?.updateAvailable && updateStatus.updateMethod === 'remote',
+  );
+  const hasManualUpdateOnline = Boolean(
+    state === 'online' && updateStatus?.updateAvailable && updateStatus.updateMethod === 'manual',
+  );
+  const hasFallbackManualUpdateOnline = Boolean(
+    state === 'online' &&
+    !updateStatus?.latestVersion &&
+    desiredComparedWithRunning !== null &&
+    desiredComparedWithRunning > 0,
+  );
+  const showManualInstaller = Boolean(
+    canUpdateExistingAgent &&
+    (state === 'offline' || hasManualUpdateOnline || hasFallbackManualUpdateOnline),
   );
 
   async function issueEnrollment() {
@@ -468,12 +504,12 @@ export function AgentSetupDialog({
             </div>
           ) : isCurrentOnline ? (
             <div className="rounded-lg border border-success/35 bg-success/5 p-3">
-              <p className="text-sm font-medium">Agent {desiredAgentVersion} is current</p>
+              <p className="text-sm font-medium">Agent {agent?.version} is current</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Connected to this target and ready to receive jobs. No action is required.
               </p>
             </div>
-          ) : hasRemoteUpdateOnline ? null : canUpdateExistingAgent ? (
+          ) : hasRemoteUpdateOnline ? null : showManualInstaller ? (
             <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-secondary/20 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
@@ -527,15 +563,26 @@ export function AgentSetupDialog({
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                   <div className="min-w-0">
                     <p className="font-medium">
-                      {distribution || distributionError
-                        ? 'Agent installer is not configured'
-                        : 'Loading Agent release information…'}
+                      {wouldDowngradeAgent
+                        ? 'A safe reconnect image is not available'
+                        : distribution || distributionError
+                          ? 'Agent installer is not configured'
+                          : 'Loading Agent release information…'}
                     </p>
-                    {(distribution || distributionError) && (
+                    {wouldDowngradeAgent ? (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {distribution?.unavailableReason ?? distributionError}. Ask the instance
-                        administrator to update the reviewed Agent release.
+                        The configured release is older than Agent {agent?.version}. Restart the
+                        existing <code>initpad-agent</code> container or ask the instance
+                        administrator to publish the current release; InitPad will not downgrade
+                        this server.
                       </p>
+                    ) : (
+                      (distribution || distributionError) && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {distribution?.unavailableReason ?? distributionError}. Ask the instance
+                          administrator to update the reviewed Agent release.
+                        </p>
+                      )
                     )}
                   </div>
                 </div>
