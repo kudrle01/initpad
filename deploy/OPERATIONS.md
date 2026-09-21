@@ -260,9 +260,9 @@ chmod 600 .runtime/platform-update/platform-release.override.yml
 ```
 
 Novější Supervisor při atomickém zápisu automaticky přebírá vlastníka
-hostitelského runtime adresáře. Acceptance a health check navíc čtou obsah
-přes omezený Supervisor mount; backup používá stejnou hranici i po zastavení
-služby.
+hostitelského runtime adresáře. Compose, acceptance, health check i backup pak
+descriptor čtou přímo pod stejným hostitelským operátorem; nepoužívají `sudo`
+a nemění jeho obsah.
 
 ## Bezpečnost
 

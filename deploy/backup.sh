@@ -130,8 +130,7 @@ archive_volume initpad_caddy-data caddy-data.tar.gz no
 archive_volume initpad_runner-data runner-data.tar.gz
 
 if [ -f .runtime/platform-update/platform-release.override.yml ]; then
-  docker cp \
-    initpad-supervisor:/var/lib/initpad-supervisor/runtime/platform-release.override.yml \
+  cp .runtime/platform-update/platform-release.override.yml \
     "$working_destination/platform-release.override.yml"
   chmod 600 "$working_destination/platform-release.override.yml"
   backup_files+=(platform-release.override.yml)

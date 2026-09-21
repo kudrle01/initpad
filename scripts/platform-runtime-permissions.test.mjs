@@ -14,10 +14,10 @@ const restore = readFileSync(resolve(root, 'deploy/restore.sh'), 'utf8');
 test('release descriptor remains operator-owned across update, backup and restore', () => {
   assert.match(updater, /atomicWriteHostFile/);
   assert.match(updater, /chown\(temporary, owner\.uid, owner\.gid\)/);
-  assert.match(acceptance, /docker exec initpad-supervisor cat "\$SUPERVISOR_OVERRIDE"/);
   assert.match(acceptance, /platform release override is not readable by this operator/i);
-  assert.match(health, /docker exec initpad-supervisor cat/);
-  assert.match(backup, /docker cp[\s\S]+initpad-supervisor:[^\s]+platform-release\.override\.yml/);
+  assert.match(acceptance, /sha256sum "\$OVERRIDE"/);
+  assert.match(health, /\[ -r "\$override" \]/);
+  assert.match(backup, /cp \.runtime\/platform-update\/platform-release\.override\.yml/);
   assert.match(
     restore,
     /rm -f "\$RUNTIME_OVERRIDE"[\s\S]+cp "\$src\/platform-release\.override\.yml"/,

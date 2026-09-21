@@ -9,7 +9,6 @@ CHECKPOINT=$ACCEPTANCE_DIR/platform-update.checkpoint
 REBOOT_CHECKPOINT=$ACCEPTANCE_DIR/platform-update-reboot.checkpoint
 REPORT=$ACCEPTANCE_DIR/results.tsv
 OVERRIDE=.runtime/platform-update/platform-release.override.yml
-SUPERVISOR_OVERRIDE=/var/lib/initpad-supervisor/runtime/platform-release.override.yml
 PAUSED_HELPER=
 
 pass() { printf '\033[1;32m✔\033[0m %s\n' "$*"; }
@@ -115,13 +114,8 @@ container_image() {
   docker inspect --format '{{.Config.Image}}' "$(container_id "$1")"
 }
 
-read_runtime_override() {
-  docker exec initpad-supervisor cat "$SUPERVISOR_OVERRIDE" 2>/dev/null || \
-    fail "The Supervisor cannot read the active platform release descriptor."
-}
-
 runtime_override_sha256() {
-  read_runtime_override | sha256sum | awk '{ print $1 }'
+  sha256sum "$OVERRIDE" | awk '{ print $1 }'
 }
 
 assert_supervisor_helper_image_available() {
@@ -148,11 +142,11 @@ assert_supervisor_helper_image_available() {
 
 override_image() {
   local service=$1
-  read_runtime_override | awk -v section="  $service:" '
+  awk -v section="  $service:" '
     $0 == section { active=1; next }
     active && /^  [A-Za-z0-9_-]+:/ { exit }
     active && $1 == "image:" { gsub(/^"|"$/, "", $2); print $2; exit }
-  '
+  ' "$OVERRIDE"
 }
 
 database_scalar() {
@@ -416,8 +410,7 @@ check_after_success() {
   [ "$status" = succeeded ] || fail "Latest platform update status is '$status', not succeeded."
   [ "$to_version" = "$expected" ] || fail "Latest update targeted '$to_version', expected '$expected'."
   assert_baseline_invariants "$expected"
-  references=$(read_runtime_override | \
-    grep -Ec 'image: ".+@sha256:[a-f0-9]{64}"' || true)
+  references=$(grep -Ec 'image: ".+@sha256:[a-f0-9]{64}"' "$OVERRIDE" || true)
   [ "$references" -eq 3 ] || fail "Installed release descriptor is not fully immutable."
   assert_no_helper
   record platform-update-success \
