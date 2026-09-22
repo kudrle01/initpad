@@ -200,7 +200,11 @@ async function responseErrorMessage(response: Response): Promise<string> {
   return `HTTP ${response.status}`;
 }
 
-async function http<T>(path: string, init?: RequestInit): Promise<T> {
+async function http<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set('Content-Type', 'application/json');
   const workspaceId = localStorage.getItem('initpad.workspace');
@@ -212,7 +216,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers,
     },
-    REQUEST_TIMEOUT_MS,
+    timeoutMs,
   );
   if (!res.ok) {
     if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
@@ -556,7 +560,10 @@ export const api = {
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).
   adminListUsers: () => http<AdminUser[]>('/admin/users'),
-  adminPlatformUpdateStatus: () => http<PlatformUpdateStatus>('/admin/updates'),
+  // A self-update intentionally replaces the local API. Bound this request so
+  // the UI can retry after cutover instead of retaining a request from the
+  // unavailable instance for the general API timeout.
+  adminPlatformUpdateStatus: () => http<PlatformUpdateStatus>('/admin/updates', undefined, 12_000),
   adminInstallPlatformUpdate: (requestId: string) =>
     http<PlatformUpdateOperation>('/admin/updates', {
       method: 'POST',

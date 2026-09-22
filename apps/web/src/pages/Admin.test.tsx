@@ -56,4 +56,51 @@ describe('PlatformUpdateCard', () => {
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
     expect(screen.getByText('succeeded')).toBeInTheDocument();
   });
+
+  it('treats a transient fetch failure during an active update as reconnecting', () => {
+    const operation = {
+      id: 'operation-2',
+      requestId: 'request-2',
+      fromVersion: '0.2.4',
+      toVersion: '0.2.6',
+      status: 'running' as const,
+      stage: 'supervisor',
+      message: 'Switching the release Supervisor and checking readiness',
+      startedAt: '2026-09-22T11:26:32.000Z',
+      finishedAt: null,
+    };
+    const status: PlatformUpdateStatus = {
+      enabled: true,
+      supervisorConfigured: true,
+      supervisorOnline: true,
+      supervisorError: null,
+      currentVersion: '0.2.4',
+      latestVersion: '0.2.6',
+      updateAvailable: true,
+      canInstall: false,
+      releaseUrl: null,
+      publishedAt: null,
+      catalogCheckedAt: '2026-09-22T11:26:32.000Z',
+      catalogStale: false,
+      catalogError: null,
+      operation,
+      history: [operation],
+    };
+
+    render(
+      <PlatformUpdateCard
+        status={status}
+        loading={false}
+        error="fetch failed"
+        installing={false}
+        onRefresh={() => undefined}
+        onInstall={() => undefined}
+      />,
+    );
+
+    expect(
+      screen.getByText('Connection interrupted while InitPad restarts. Reconnecting…'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('fetch failed')).not.toBeInTheDocument();
+  });
 });

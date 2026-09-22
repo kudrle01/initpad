@@ -95,8 +95,17 @@ export default function Admin() {
   useEffect(() => {
     const status = updates?.operation?.status;
     if (!status || !['requesting', 'accepted', 'running'].includes(status)) return;
-    const timer = window.setInterval(() => void loadUpdates(), 2_500);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      await loadUpdates();
+      if (!cancelled) timer = window.setTimeout(() => void poll(), 2_500);
+    };
+    timer = window.setTimeout(() => void poll(), 2_500);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [loadUpdates, updates?.operation?.status]);
 
   // Only platform administrators reach this page; ordinary users are redirected.
@@ -248,7 +257,23 @@ export default function Admin() {
     if (!confirmed) return;
     setInstallingUpdate(true);
     try {
-      await api.adminInstallPlatformUpdate(createRequestId());
+      const operation = await api.adminInstallPlatformUpdate(createRequestId());
+      // Seed polling from the accepted response. The following status request
+      // may race the intentional API restart, but the durable operation must
+      // remain visible so automatic reconnect continues without a page reload.
+      setUpdates((current) =>
+        current
+          ? {
+              ...current,
+              canInstall: false,
+              operation,
+              history: [
+                operation,
+                ...current.history.filter((item) => item.requestId !== operation.requestId),
+              ],
+            }
+          : current,
+      );
       toast.success(`InitPad ${updates.latestVersion} update started`);
       await loadUpdates();
     } catch (cause) {
@@ -479,6 +504,7 @@ export function PlatformUpdateCard({
 }) {
   const operation = status?.operation;
   const active = operation && ['requesting', 'accepted', 'running'].includes(operation.status);
+  const reconnecting = Boolean(error && active);
   const progress = operation ? (UPDATE_STAGE_PROGRESS[operation.stage] ?? (active ? 15 : 100)) : 0;
 
   return (
@@ -532,11 +558,22 @@ export function PlatformUpdateCard({
             </div>
           </div>
 
-          {(error || status?.catalogError || status?.supervisorError) && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error || status?.supervisorError || status?.catalogError}</span>
+          {reconnecting ? (
+            <div
+              className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning"
+              role="status"
+              aria-live="polite"
+            >
+              <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+              <span>Connection interrupted while InitPad restarts. Reconnecting…</span>
             </div>
+          ) : (
+            (error || status?.catalogError || status?.supervisorError) && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error || status?.supervisorError || status?.catalogError}</span>
+              </div>
+            )
           )}
 
           {status?.supervisorOnline &&
