@@ -125,6 +125,10 @@ publikován, protože emulovaný ARM64 Node proces release buildu skončil
 `SIGILL` před vytvořením multiarch manifestu; 0.2.4 používá pro amd64 i
 arm64 nativní GitHub-hosted runnery. Fault-injected candidate API se při
 `0.2.2 → 0.2.4` správně vrátil na předchozí release se zachováním dat.
+Následná čistá aktualizace skončila na podepsaném `0.2.4` a
+`after-success` potvrdil stejné identity, workload snapshot i tři immutable
+image reference. Krátká nedostupnost browserového spojení během výměny
+API/web odpovídá dokumentovanému single-node omezení.
 Reboot po API cutoveru ale odhalil, že Supervisor s odebranými capabilities
 nemůže přímo číst operátorem vlastněný descriptor `0600`; recovery proto
 skončila bezpečně jako `failed` na původní verzi. Oprava 0.2.5 spouští

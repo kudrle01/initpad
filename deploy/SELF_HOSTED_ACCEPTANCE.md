@@ -398,6 +398,8 @@ operátorem vlastněného descriptoru `0600` ze Supervisoru bez capabilities.
 Platforma zůstala zdravá na `0.2.2`; nejde o ztrátu dat. Oprava `0.2.5`
 přesouvá obnovu do jednorázového helperu s jedinou filesystem capability a
 nový reboot gate přeruší `0.2.4 → 0.2.5` až po startu candidate Supervisoru.
+Po neúspěšném reboot drillu prošla čistá aktualizace na `0.2.4`; kontrola
+`after-success` potvrdila zachování identit, workloadů a podepsaného release.
 Nový checkout lze stáhnout kvůli acceptance skriptu, ale mezi checkpointem
 a testem **nespouštěj `install.sh`**: aktualizaci musí provést běžící
 Supervisor z podepsaného release, ne source build nové verze.

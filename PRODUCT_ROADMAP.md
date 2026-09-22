@@ -89,7 +89,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Vydat platformu `0.2.2` a živě ověřit čistý update z podepsané
   `0.2.1` se zachováním identit a release invariantů.
 - [x] Veřejně vydat podepsanou multiarch platformu `0.2.4` a na přechodu
-  z `0.2.2` ověřit vadný candidate a automatický rollback se zachováním dat.
+  z `0.2.2` ověřit vadný candidate, automatický rollback i následnou čistou
+  aktualizaci se zachováním dat a workloadů.
 - [ ] Vydat opravu `0.2.5` a na přechodu z `0.2.4` dokončit restart hosta
   po startu candidate Supervisoru a závěrečnou čistou aktualizaci.
 
@@ -1026,7 +1027,9 @@ jen konkrétní provozní a vyhodnocovací scénář.
        kandidátní kontejnery hledá přímo přes Docker labels. Release
        `0.2.4` dne 22. září 2026 prošel anonymní kontrolou veřejné
        dostupnosti, podpisů a obou architektur; vadný candidate API se na
-       přechodu z `0.2.2` správně vrátil zpět. Následný reboot drill odhalil,
+       přechodu z `0.2.2` správně vrátil zpět a závěrečná čistá
+       aktualizace na `0.2.4` prošla kontrolou identit, workloadů a tří
+       immutable image referencí. Následný reboot drill odhalil,
        že capability-hardened Supervisor nemůže po startu číst operátorem
        vlastněný descriptor `0600`. Oprava `0.2.5` deleguje recovery stejně
        jako update omezenému jednorázovému helperu a test přeruší operaci až
