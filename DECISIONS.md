@@ -4852,3 +4852,39 @@ vložit do již podepsaného `0.2.4`; acceptance ji proto ověří při přechod
 oddělené obnovení API/web a Supervisoru. Živý gate musí po skutečném rebootu
 skončit `rolled-back`, zachovat databázové identity i workload snapshot a
 odstranit dočasný descriptor, plan i lock.
+
+---
+
+## ADR-114 — Release descriptor se při reboot recovery obnovuje atomickým přesunem
+
+**Kontext.** Veřejný podepsaný release 0.2.5 prošel distribučním auditem,
+fault rollbackem i běžnými testy. Skutečný restart hosta po startu candidate
+Supervisoru ale skončil `recovery-failed`: jednorázový helper mohl nalézt
+původní descriptor `0600`, avšak hardened Docker runtime odmítl `copyFile`
+chybou `EPERM`. Původní soubor, databáze i workloady zůstaly zachované;
+aktivní cesta descriptoru však nebyla obnovena.
+
+**Rozhodnutí.** Recovery nepřidává helperu další capabilities. Zachovaný
+descriptor leží ve stejném operátorem vlastněném adresáři jako aktivní
+soubor, proto jej helper obnoví atomickým `rename`. Operace zachová přesný
+obsah, vlastnictví i režim souboru a nevytváří mezistav bez platného
+descriptoru. Pokud rollback artefakt u podepsané instalace chybí, recovery
+skončí explicitní chybou a ponechá aktivní candidate descriptor na místě;
+odstranění override zůstá povolené jen pro source instalaci, která žádný
+předchozí release descriptor neměla.
+
+Verze 0.2.5 zůstá kvůli auditovatelnosti immutable, ale platformní katalog
+ji označuje jako runtime-revokovanou. Oprava se vydá jako 0.2.6 a acceptance
+se zopakuje z poslední ověřené baseline 0.2.4.
+
+**Důsledky.** Long-running Supervisor i recovery helper si ponechají stejný
+minimální capability profil; odolnost se nezíská rozšířením oprávnění.
+Selhání už nemůže odstranit jedinou aktivní Compose definici. Operátor může
+0.2.5 bezpečně vrátit na 0.2.4 ověřením checksumu zachovaného
+`.previous-<operation-id>` souboru a jeho hostitelským atomickým obnovením.
+
+**Testování.** Unit test vyžaduje spotřebování původního descriptoru při
+úspěšné obnově a zachování candidate descriptoru při chybějícím
+rollback artefaktu. API test vyžaduje přeskočení revokované 0.2.5.
+Rozhodujícím gate zůstá skutečný reboot při přechodu 0.2.4 → 0.2.6,
+následný `after-reboot` a čistý `after-success`.

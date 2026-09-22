@@ -91,8 +91,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Veřejně vydat podepsanou multiarch platformu `0.2.4` a na přechodu
   z `0.2.2` ověřit vadný candidate, automatický rollback i následnou čistou
   aktualizaci se zachováním dat a workloadů.
-- [ ] Vydat opravu `0.2.5` a na přechodu z `0.2.4` dokončit restart hosta
-  po startu candidate Supervisoru a závěrečnou čistou aktualizaci.
+- [x] Vydat `0.2.5` a na přechodu z `0.2.4` ověřit skutečný restart
+  hosta; acceptance odhalila `EPERM` při kopírování zachovaného
+  descriptoru z capability-bounded helperu, proto je release revokovaný.
+- [ ] Vydat opravu `0.2.6` s atomickým obnovením descriptoru a dokončit
+  reboot rollback i závěrečnou čistou aktualizaci.
 
 ### P1 — uzavření diplomkového MVP
 
@@ -1031,9 +1034,13 @@ jen konkrétní provozní a vyhodnocovací scénář.
        aktualizace na `0.2.4` prošla kontrolou identit, workloadů a tří
        immutable image referencí. Následný reboot drill odhalil,
        že capability-hardened Supervisor nemůže po startu číst operátorem
-       vlastněný descriptor `0600`. Oprava `0.2.5` deleguje recovery stejně
-       jako update omezenému jednorázovému helperu a test přeruší operaci až
-       po startu nového Supervisoru. Kandidát `0.2.3` nebyl publikován:
+       vlastněný descriptor `0600`. Release `0.2.5` delegoval recovery
+       omezenému jednorázovému helperu, ale živý reboot drill odhalil
+       `EPERM` v `copyFile` i přes zachovaný původní descriptor. Proto je
+       `0.2.5` runtime-revokovaný; oprava `0.2.6` obnovuje stejný soubor
+       atomickým `rename` v jeho adresáři a při chybějícím rollback
+       artefaktu failne bez odstranění aktivní konfigurace. Kandidát
+       `0.2.3` nebyl publikován:
        emulovaný ARM64 Node proces v release buildu skončil `SIGILL` ještě
        před vytvořením manifestu. Od `0.2.4` se obě architektury staví na
        nativních GitHub-hosted runnerech a teprve potom se slučují.

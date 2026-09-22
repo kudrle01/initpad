@@ -325,6 +325,43 @@ test('restores the previous Supervisor without racing a second recovery', async 
       await readFile(resolve(runtime, 'platform-release.override.yml'), 'utf8'),
       'services:\n  supervisor:\n    image: "previous"\n',
     );
+    await assert.rejects(
+      readFile(resolve(runtime, `platform-release.override.yml.previous-${operationId}`)),
+      /ENOENT/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('keeps a signed candidate descriptor when its rollback artifact is missing', async () => {
+  const { directory } = await fixture();
+  try {
+    const state = await loadState();
+    if (!state.operation) throw new Error('fixture operation is missing');
+    state.operation.status = 'running';
+    state.operation.stage = 'supervisor';
+    state.currentImages = {
+      api: `ghcr.io/example/initpad-api@sha256:${'a'.repeat(64)}`,
+      web: `ghcr.io/example/initpad-web@sha256:${'b'.repeat(64)}`,
+      supervisor: `ghcr.io/example/initpad-supervisor@sha256:${'c'.repeat(64)}`,
+    };
+    await saveState(state);
+    const runtime = resolve(directory, 'state/runtime');
+    const override = resolve(runtime, 'platform-release.override.yml');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(override, 'services:\n  supervisor:\n    image: "candidate"\n');
+
+    await new PlatformUpdater(new FakeRunner()).recoverInterruptedUpdate(operationId);
+
+    const recovered = await loadState();
+    assert.equal(recovered.operation?.status, 'failed');
+    assert.equal(recovered.operation?.stage, 'recovery-failed');
+    assert.match(recovered.operation?.message ?? '', /previous signed platform release/i);
+    assert.equal(
+      await readFile(override, 'utf8'),
+      'services:\n  supervisor:\n    image: "candidate"\n',
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

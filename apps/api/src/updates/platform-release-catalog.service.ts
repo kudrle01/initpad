@@ -11,6 +11,9 @@ const LIST_LIMIT = 512 * 1024;
 const ASSET_LIMIT = 2 * 1024 * 1024;
 const MANIFEST_NAME = 'initpad-platform-release.json';
 const BUNDLE_NAME = `${MANIFEST_NAME}.sigstore.json`;
+// Published tags remain immutable for auditability. Releases that passed the
+// distribution checks but failed runtime acceptance are explicitly revoked.
+const REVOKED_PLATFORM_RELEASES = new Set(['0.2.5']);
 
 interface ReleaseAsset {
   name: string;
@@ -79,7 +82,10 @@ export class PlatformReleaseCatalogService {
     const candidate = this.parseList(list.body)
       .filter((release) => !release.draft && !release.prerelease)
       .filter((release) => release.tag.startsWith('initpad-v'))
-      .filter((release) => parseStableVersion(release.tag.slice(9)))
+      .filter((release) => {
+        const version = release.tag.slice(9);
+        return parseStableVersion(version) && !REVOKED_PLATFORM_RELEASES.has(version);
+      })
       .sort((left, right) => compareStableVersions(right.tag.slice(9), left.tag.slice(9)))[0];
     if (!candidate) {
       return { enabled: true, checkedAt, stale: false, release: null, error: null };

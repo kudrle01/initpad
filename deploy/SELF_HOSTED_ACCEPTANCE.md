@@ -395,9 +395,13 @@ update musí zůstat stejný. Release `0.2.4` prošel 22. září 2026 zeleným
 workflow a anonymní kontrolou distribuce. Přechod z `0.2.2` potvrdil vadný
 candidate rollback, ale reboot po API cutoveru odhalil `EACCES` při čtení
 operátorem vlastněného descriptoru `0600` ze Supervisoru bez capabilities.
-Platforma zůstala zdravá na `0.2.2`; nejde o ztrátu dat. Oprava `0.2.5`
-přesouvá obnovu do jednorázového helperu s jedinou filesystem capability a
-nový reboot gate přeruší `0.2.4 → 0.2.5` až po startu candidate Supervisoru.
+Platforma zůstala zdravá na `0.2.2`; nejde o ztrátu dat. Release `0.2.5`
+přesunul obnovu do jednorázového helperu s jedinou filesystem capability,
+ale skutečný reboot `0.2.4 → 0.2.5` odhalil `EPERM` při `copyFile`.
+Původní descriptor zůstal zachovaný a baseline byla obnovitelná, release je
+však runtime-revokovaný. Verze `0.2.6` nahrazuje kopii atomickým přesunem a
+failne bezpečně bez smazání aktivního descriptoru, pokud rollback artefakt
+chybí.
 Po neúspěšném reboot drillu prošla čistá aktualizace na `0.2.4`; kontrola
 `after-success` potvrdila zachování identit, workloadů a podepsaného release.
 Nový checkout lze stáhnout kvůli acceptance skriptu, ale mezi checkpointem
@@ -409,9 +413,9 @@ Nejprve anonymně ověř distribuční obálku a ulož baseline:
 ```bash
 cd ~/Projects/initpad
 git pull --ff-only
-npm run audit:public-release -- --tag initpad-v0.2.5
+npm run audit:public-release -- --tag initpad-v0.2.6
 cd deploy
-./platform-update-acceptance.sh prepare 0.2.4 0.2.5
+./platform-update-acceptance.sh prepare 0.2.4 0.2.6
 ```
 
 Checkpoint ukládá pouze verze, fingerprint trvalých identit a identity
@@ -476,7 +480,7 @@ Naposledy potvrď **Install update** bez fault-injection skriptu. Po stavu
 ./platform-update-acceptance.sh after-success
 ```
 
-Finální kontrola vyžaduje platformu `0.2.5`, tři immutable image reference,
+Finální kontrola vyžaduje platformu `0.2.6`, tři immutable image reference,
 stejné identity v DB a přesně stejné managed workload kontejnery jako před
 prvním pokusem. `results.tsv` musí obsahovat PASS pro `platform-update-prepare`,
 `platform-update-rollback`, `platform-update-reboot-recovery` a

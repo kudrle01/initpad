@@ -24,7 +24,7 @@ test('rejects malformed or non-increasing versions before inspecting the host', 
 
 test('documents the rollback, interrupted reboot and successful update sequence', () => {
   for (const command of [
-    'prepare 0.2.4 0.2.5',
+    'prepare 0.2.4 0.2.6',
     'fault-rollback',
     'after-rollback',
     'interrupt-reboot',

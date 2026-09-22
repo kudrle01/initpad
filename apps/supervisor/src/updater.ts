@@ -404,8 +404,24 @@ export class PlatformUpdater {
     try {
       if (changed) {
         const hadPrevious = await fileExists(previousOverride);
-        if (hadPrevious) await copyFile(previousOverride, overridePath);
-        else await rm(overridePath, { force: true });
+        if (hadPrevious) {
+          // Both paths are in the same operator-owned runtime directory. An
+          // atomic rename restores the exact descriptor without asking the
+          // capability-bounded helper to clone/copy a host file. copyFile(2)
+          // can be rejected with EPERM by hardened Docker hosts even when the
+          // helper has enough DAC permission to replace the directory entry.
+          await rename(previousOverride, overridePath);
+        } else if (state.currentImages) {
+          // A signed-release installation must always have saved its previous
+          // descriptor before switching. Never delete the candidate override
+          // when that rollback artifact is unexpectedly absent: retaining it
+          // leaves an operator-recoverable state instead of removing the
+          // Compose release definition altogether.
+          throw new Error('Previous signed platform release descriptor is missing');
+        } else {
+          // Source installations legitimately start without an override.
+          await rm(overridePath, { force: true });
+        }
         await this.runner.run('docker', [
           ...composeArgs(validInstallRoot(), hadPrevious),
           'up',

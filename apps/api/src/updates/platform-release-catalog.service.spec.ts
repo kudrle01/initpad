@@ -58,6 +58,10 @@ function releases(version = '0.2.0') {
   ];
 }
 
+function release(version: string) {
+  return releases(version)[0];
+}
+
 function response(value: unknown): Response {
   return new Response(JSON.stringify(value), { status: 200 });
 }
@@ -114,5 +118,19 @@ describe('PlatformReleaseCatalogService', () => {
       error: 'The platform release catalog is temporarily unavailable.',
     });
     expect(verify).not.toHaveBeenCalled();
+  });
+
+  it('skips a runtime-revoked platform release', async () => {
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(response([release('0.2.5'), release('0.2.4')]))
+      .mockResolvedValueOnce(response(manifest('0.2.4')))
+      .mockResolvedValueOnce(
+        response({ mediaType: 'application/vnd.dev.sigstore.bundle.v0.3+json' }),
+      );
+
+    const result = await new PlatformReleaseCatalogService().latest();
+
+    expect(result.release?.manifest.version).toBe('0.2.4');
   });
 });

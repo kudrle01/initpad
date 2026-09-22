@@ -129,11 +129,15 @@ Následná čistá aktualizace skončila na podepsaném `0.2.4` a
 `after-success` potvrdil stejné identity, workload snapshot i tři immutable
 image reference. Krátká nedostupnost browserového spojení během výměny
 API/web odpovídá dokumentovanému single-node omezení.
-Reboot po API cutoveru ale odhalil, že Supervisor s odebranými capabilities
-nemůže přímo číst operátorem vlastněný descriptor `0600`; recovery proto
-skončila bezpečně jako `failed` na původní verzi. Oprava 0.2.5 spouští
-obnovu v jednorázovém helperu pouze s `DAC_OVERRIDE` a reboot gate se
-opakuje na `0.2.4 → 0.2.5` po startu candidate Supervisoru.
+Reboot po API cutoveru nejprve odhalil, že Supervisor s odebranými
+capabilities nemůže přímo číst operátorem vlastněný descriptor `0600`.
+Release 0.2.5 proto přesunul obnovu do jednorázového helperu s
+`DAC_OVERRIDE`. Živý reboot gate ale následně odhalil `EPERM` v `copyFile`:
+původní descriptor zůstal bezpečně zachovaný, ale nebyl vrácen na aktivní
+cestu. Verze 0.2.5 je proto runtime-revokovaná. Oprava 0.2.6 používá
+atomický `rename` v jednom adresáři a chybějící rollback artefakt již nikdy
+nezpůsobí odstranění aktivního descriptoru; reboot gate se opakuje z
+baseline 0.2.4.
 Krátké 502 během výměny API/web je očekávané omezení
 single-node profilu, nikoli výpadek projektových workloadů. Docker socket Supervisoru je
 root-equivalent oprávnění, nikoli rootless sandbox.
