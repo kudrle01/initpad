@@ -531,7 +531,85 @@ targetu, credential generation a workload container ID se rebootem ani
 odpojením nesmějí změnit. Výsledek zaznamenej bez enrollment tokenu a bez
 obsahu `/var/lib/initpad-agent/agent.json`.
 
-## 13. Výsledek milníku
+## 13. Ověř organizační workflow dvěma reálnými účty
+
+Tento krok uzavírá audit, produkční approval, TTL, read-only portfolio
+a vyhodnocovací export. Použij skutečné účty z kroku 5, ne databázové
+fixtures: Alice je owner Team Alpha, Bob member a Carol viewer. Automatická
+tenant matice z kroku 6 zůstá technickým důkazem odpovědí 403/404; tento
+scénář navíc ověřuje, že lidé rozumějí stejným hranicím v UI.
+
+### Audit a read-only role
+
+1. Bob v Team Alpha nasadí existující projekt do dev a požádá o produkci.
+2. Carol otevře Overview, projekt, deployment history a Audit log. Stav vidí,
+   ale nemá tlačítka pro deploy, config, target, členy ani export.
+3. Alice v Audit logu vyfiltruje Boba a projekt. Musí vidět request před
+   terminálním výsledkem, správného aktéra a po **Load more** stabilní
+   chronologii bez duplicit.
+4. Alice dočasně změní Bobovu roli a vrátí ji na `member`. Starší události
+   musí dál ukazovat původní snapshot aktéra; nesmějí se přepsat ani
+   zmizet. Audit Team Beta se v Team Alpha nikdy neobjeví.
+
+### Produkční approval
+
+V nastavení Team Alpha ponech policy **Require a separate reviewer**.
+
+1. Bob povýší zdravý test build do produkce. Požadavek musí ukázat
+   neměnné SHA, digest, target a config revision; Bob jej nesmí schválit.
+2. Alice požadavek schválí. Produkce musí použít právě zobrazené SHA
+   a digest a Audit log oddělí request, review a deployment outcome.
+3. Bob vytvoří další request a zruší jej; nevznikne deployment operace.
+4. Nový request Alice zamítne; nelze jej znovu schválit.
+5. U posledního requestu Alice před review změní produkční proměnnou
+   nebo target. Approval musí request označit jako zastaralý a nevytvořit
+   druhý deployment. Vrať konfiguraci do požadovaného stavu a pro skutečné
+   nasazení vytvoř nový request.
+
+### TTL bez hodinového čekání
+
+Na allocation Team Alpha nastav nenulové **Dev TTL**, proveď zdravý dev
+deploy a ověř, že karta ukazuje budoucí expiraci. Na této disposable VM lze
+potom bezpečně posunout jen tento konkrétní `dev` do minulosti:
+
+```bash
+cd ~/Projects/initpad/deploy
+INITPAD_ACCEPTANCE_ALLOW_EXPIRY=1 \
+  ./environment-expiry-acceptance.sh arm team-alpha <project-name> dev
+```
+
+Skript odmítne `prod`, prostředí bez TTL, aktivní operaci i druhý souběžný
+checkpoint. Nečte config ani secrety. Do dvou minut musí dev karta přejít
+na prázdné prostředí, jeho workload zmizet a produkce zůstat dostupná.
+Potom spusť:
+
+```bash
+./environment-expiry-acceptance.sh verify
+```
+
+PASS vyžaduje prázdný dev/test stav, odstraněný artifact binding a URL,
+audit `environment.expired` a nezměněný fingerprint produkce. Výsledek se
+uloží do ignorovaného `.runtime/acceptance/results.tsv` bez credentials.
+
+### Portfolio a export
+
+1. Alice na Overview pozná projekt vyžadující pozornost, počet čekajících
+   approval a cleanup dluh a z karty přejde na odpovídající detail.
+2. Carol vidí stejný read-only stav bez falešného prázdného seznamu během
+   načítání a nemůže provést mutaci.
+3. Alice vyexportuje stejné období jako JSON i CSV. Součty deploymentů,
+   rollbacků a denní řádky si musí odpovídat; soubor nesmí obsahovat
+   logy, config, secret ani identitu jednotlivého uživatele.
+4. Carol exportní akci nevidí. Automatická HTTP matice z kroku 6 současně
+   dokládá, že přímý viewer request končí 403 a cizí workspace 404.
+5. Audit log Alice obsahuje dva `workspace.metrics_exported` záznamy se
+   správným formátem a obdobím, nikoli obsah exportu.
+
+Do veřejného repozitáře neukládej stažené exporty, screenshoty s osobními
+údaji ani vyplněné poznámky. Pro diplomovou práci je uchovej odděleně spolu
+s verzí platformy, datem, rolemi a výsledkem každého podscénáře.
+
+## 14. Výsledek milníku
 
 Fáze TargetAllocation je živě **PASS**, jen pokud současně platí:
 
@@ -546,6 +624,8 @@ Fáze TargetAllocation je živě **PASS**, jen pokud současně platí:
   kontejnery ani nepoužívané lokální image.
 - samostatný Agent host obnoví po rebootu tutéž identitu a odpojení Agenta
   nezastaví existující workload ani nevykoná queued deploy vícekrát;
+- druhý skutečný uživatel projde approval a audit flow, viewer zůstane
+  read-only, TTL odstraní pouze dev/test a export respektuje roli;
 - `self-hosted-check.sh` má PASS záznamy pro `preflight`, `running`,
   `before-reboot`, `after-reboot` a `backup`.
 
