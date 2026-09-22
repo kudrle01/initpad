@@ -108,6 +108,14 @@ export default function ProjectDetail() {
           { label: 'Project', value: currentProject.name },
           { label: 'Version', value: source?.version?.slice(0, 7) ?? 'not available' },
           {
+            label: 'Artifact digest',
+            value: (
+              <span className="break-all font-mono text-xs">
+                {source?.artifact?.digest ?? 'not available'}
+              </span>
+            ),
+          },
+          {
             label: 'Target',
             value:
               currentProject.environments.find((environment) => environment.name === 'prod')?.target
@@ -139,6 +147,14 @@ export default function ProjectDetail() {
         details: [
           { label: 'Project', value: currentProject.name },
           { label: 'Version', value: current?.version?.slice(0, 7) ?? 'not available' },
+          {
+            label: 'Artifact digest',
+            value: (
+              <span className="break-all font-mono text-xs">
+                {current?.artifact?.digest ?? 'not available'}
+              </span>
+            ),
+          },
           { label: 'Target', value: current?.target?.name ?? 'production' },
         ],
         consequences: [
@@ -163,6 +179,14 @@ export default function ProjectDetail() {
       details: [
         { label: 'Project', value: currentProject.name },
         { label: 'Version', value: productionRequest.version.slice(0, 12) },
+        {
+          label: 'Artifact digest',
+          value: (
+            <span className="break-all font-mono text-xs">
+              {productionRequest.artifact?.digest ?? 'not available'}
+            </span>
+          ),
+        },
         { label: 'Target', value: productionRequest.target.name },
       ],
       consequences: [

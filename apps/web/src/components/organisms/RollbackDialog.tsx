@@ -62,7 +62,7 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
                 <span className="text-muted-foreground">Verified output</span>
                 <span className="break-all text-right font-mono text-xs">
                   {preview.rollbackArtifact
-                    ? `sha256:${preview.rollbackArtifact.digest.slice(0, 12)}`
+                    ? preview.rollbackArtifact.digest
                     : `OCI tag ${short(preview.rollbackVersion)}`}
                 </span>
               </div>

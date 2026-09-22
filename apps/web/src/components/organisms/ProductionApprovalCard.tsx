@@ -98,7 +98,7 @@ export function ProductionApprovalCard({
         )}
       </div>
 
-      <dl className="mt-4 grid gap-3 rounded-md bg-secondary/50 p-3 text-xs sm:grid-cols-3">
+      <dl className="mt-4 grid gap-3 rounded-md bg-secondary/50 p-3 text-xs sm:grid-cols-2">
         <div>
           <dt className="text-muted-foreground">Verified build</dt>
           <dd className="mt-0.5 font-mono" title={request.version}>
@@ -112,6 +112,12 @@ export function ProductionApprovalCard({
         <div>
           <dt className="text-muted-foreground">Source</dt>
           <dd className="mt-0.5 font-medium">{request.sourceEnvironment}</dd>
+        </div>
+        <div className="sm:col-span-2">
+          <dt className="text-muted-foreground">Artifact digest</dt>
+          <dd className="mt-0.5 break-all font-mono" title={request.artifact?.digest ?? undefined}>
+            {request.artifact?.digest ?? 'Not available for this legacy build'}
+          </dd>
         </div>
       </dl>
 
