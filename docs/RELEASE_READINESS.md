@@ -118,7 +118,9 @@ lokální sadu managed workloadů (`workloads=0` na control-plane VM).
 Zachování aktivního externího Agent workloadu se ověří v navazujícím
 drillu. Acceptance odhalila chybějící source image záznam, root-owned release
 descriptor a pozorovatele závislého na descriptoru během cutoveru; všechny tři
-vady mají regresní ochranu v kandidátu 0.2.4. Kandidát 0.2.3 nebyl
+vady mají regresní ochranu ve veřejném release 0.2.4. Jeho anonymní audit
+dne 22. září 2026 potvrdil veřejnou dostupnost, Sigstore podpisy a OCI
+indexy pro `linux/amd64` i `linux/arm64`. Kandidát 0.2.3 nebyl
 publikován, protože emulovaný ARM64 Node proces release buildu skončil
 `SIGILL` před vytvořením multiarch manifestu; 0.2.4 používá pro amd64 i
 arm64 nativní GitHub-hosted runnery. Provozní přijetí stále vyžaduje
@@ -131,6 +133,7 @@ Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
 npm run audit:public-release -- --tag initpad-v0.2.2
+npm run audit:public-release -- --tag initpad-v0.2.4
 npm run audit:public-release -- --tag agent-v0.14.2
 ```
 

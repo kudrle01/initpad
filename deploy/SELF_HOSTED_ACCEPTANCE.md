@@ -394,8 +394,9 @@ workload a poznamenej jeho container ID; po rollbacku, reboot recovery i čisté
 update musí zůstat stejný. Zbývající fault-injection drill proto
 navazuje na skutečně běžící podepsanou platformu `0.2.2` a cílí na
 `initpad-v0.2.4`. Verze 0.2.3 nebyla publikována, protože její emulovaný
-ARM64 build selhal před vytvořením release manifestu. Cílový release musí
-být veřejný a jeho workflow zelené.
+ARM64 build selhal před vytvořením release manifestu. Cílový release
+`0.2.4` prošel 22. září 2026 zeleným workflow a anonymní kontrolou
+veřejné dostupnosti, podpisů a multiarch OCI indexů.
 Nový checkout lze stáhnout kvůli acceptance skriptu, ale mezi checkpointem
 a testem **nespouštěj `install.sh`**: aktualizaci musí provést běžící
 Supervisor z podepsaného release, ne source build nové verze.
