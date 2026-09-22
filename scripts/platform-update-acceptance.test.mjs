@@ -24,7 +24,7 @@ test('rejects malformed or non-increasing versions before inspecting the host', 
 
 test('documents the rollback, interrupted reboot and successful update sequence', () => {
   for (const command of [
-    'prepare 0.2.2 0.2.4',
+    'prepare 0.2.4 0.2.5',
     'fault-rollback',
     'after-rollback',
     'interrupt-reboot',
@@ -36,19 +36,19 @@ test('documents the rollback, interrupted reboot and successful update sequence'
   assert.match(runbook, /nespouštěj `install\.sh`/);
 });
 
-test('fault injection is fixed to the candidate API and always has an unpause fallback', () => {
+test('fault injection targets an immutable candidate service and always has an unpause fallback', () => {
   assert.match(script, /candidate_version=\$\(checkpoint_value next_version\)/);
-  assert.match(script, /runtime_container_id "\$project" api/);
+  assert.match(script, /runtime_container_id "\$project" "\$service"/);
   assert.match(script, /label=com\.docker\.compose\.project=\$project/);
   assert.match(script, /label=com\.docker\.compose\.service=\$service/);
-  assert.match(script, /current_version=\$\(container_platform_version "\$current_api"/);
+  assert.match(script, /current_version=\$\(container_platform_version "\$current_container"/);
   assert.match(script, /docker pause "\$helper"/);
   assert.match(script, /docker stop -t 0 "\$api_id"/);
   assert.match(script, /trap unpause_on_exit EXIT/);
   assert.match(script, /docker unpause "\$PAUSED_HELPER"/);
   const wait = script.slice(
-    script.indexOf('wait_for_candidate_api()'),
-    script.indexOf('pause_helper_at_api()'),
+    script.indexOf('wait_for_candidate_service()'),
+    script.indexOf('pause_helper_at_stage()'),
   );
   assert.doesNotMatch(wait, /container_id api|docker compose|\$OVERRIDE/);
   assert.doesNotMatch(script, /\beval\b|docker system prune|docker volume rm/);
@@ -56,12 +56,16 @@ test('fault injection is fixed to the candidate API and always has an unpause fa
 
 test('reboot is armed only after sudo validation and a durable cutover checkpoint', () => {
   const sudo = script.indexOf('sudo -v');
-  const wait = script.indexOf('operation_id=$(wait_for_candidate_api "$project")', sudo);
+  const wait = script.indexOf(
+    'operation_id=$(wait_for_candidate_service "$project" supervisor)',
+    sudo,
+  );
   const checkpoint = script.indexOf('mv "$temporary" "$REBOOT_CHECKPOINT"', wait);
   const reboot = script.indexOf('sudo systemctl reboot', checkpoint);
   assert.ok(sudo >= 0 && wait > sudo && checkpoint > wait && reboot > checkpoint);
   assert.match(script, /previous_boot.*!=.*current_boot/);
   assert.match(script, /interrupted\.\*rolled back/);
+  assert.match(runbook, /candidate Supervisoru/);
 });
 
 test('final acceptance binds version, durable identities and exact managed workloads', () => {

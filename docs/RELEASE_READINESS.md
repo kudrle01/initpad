@@ -123,8 +123,13 @@ dne 22. září 2026 potvrdil veřejnou dostupnost, Sigstore podpisy a OCI
 indexy pro `linux/amd64` i `linux/arm64`. Kandidát 0.2.3 nebyl
 publikován, protože emulovaný ARM64 Node proces release buildu skončil
 `SIGILL` před vytvořením multiarch manifestu; 0.2.4 používá pro amd64 i
-arm64 nativní GitHub-hosted runnery. Provozní přijetí stále vyžaduje
-fault-injected rollback a přerušení uprostřed `0.2.2 → 0.2.4` cutoveru.
+arm64 nativní GitHub-hosted runnery. Fault-injected candidate API se při
+`0.2.2 → 0.2.4` správně vrátil na předchozí release se zachováním dat.
+Reboot po API cutoveru ale odhalil, že Supervisor s odebranými capabilities
+nemůže přímo číst operátorem vlastněný descriptor `0600`; recovery proto
+skončila bezpečně jako `failed` na původní verzi. Oprava 0.2.5 spouští
+obnovu v jednorázovém helperu pouze s `DAC_OVERRIDE` a reboot gate se
+opakuje na `0.2.4 → 0.2.5` po startu candidate Supervisoru.
 Krátké 502 během výměny API/web je očekávané omezení
 single-node profilu, nikoli výpadek projektových workloadů. Docker socket Supervisoru je
 root-equivalent oprávnění, nikoli rootless sandbox.

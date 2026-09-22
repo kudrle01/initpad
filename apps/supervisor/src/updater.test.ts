@@ -126,6 +126,37 @@ test('pins source helpers to the exact local image ID and removes a rejected pla
   }
 });
 
+test('runs interrupted-update recovery in a capability-bounded one-shot helper', async () => {
+  const { directory } = await fixture();
+  try {
+    const runner = new FakeRunner();
+    await new PlatformUpdater(runner).launchRecoveryHelper();
+
+    const launch = runner.calls.find(
+      (call) => call[0] === 'docker' && call[1] === 'run' && call.includes('recovery-helper'),
+    );
+    assert.ok(launch);
+    assert.ok(launch.includes('-d'));
+    assert.ok(launch.includes('--rm'));
+    assert.ok(launch.includes('--network'));
+    assert.ok(launch.includes('none'));
+    assert.ok(launch.includes('--read-only'));
+    assert.ok(launch.includes('no-new-privileges:true'));
+    assert.ok(launch.includes('--cap-drop'));
+    assert.ok(launch.includes('ALL'));
+    assert.ok(launch.includes('--cap-add'));
+    assert.ok(launch.includes('DAC_OVERRIDE'));
+    assert.equal(launch.filter((value) => value === '--cap-add').length, 1);
+    assert.ok(launch.includes('--volumes-from'));
+    assert.ok(launch.includes('initpad-supervisor'));
+    assert.ok(launch.includes(runner.supervisorConfiguredImage));
+    assert.ok(launch.includes('--operation'));
+    assert.ok(launch.includes(operationId));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 async function fixture() {
   const directory = await mkdtemp(resolve(tmpdir(), 'initpad-supervisor-'));
   const root = resolve(directory, 'install');
@@ -254,6 +285,45 @@ test('recovers an orphaned mid-switch operation after a host restart', async () 
     await assert.rejects(
       readFile(resolve(directory, 'state/runtime/platform-release.override.yml')),
       /ENOENT/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('restores the previous Supervisor without racing a second recovery', async () => {
+  const { directory } = await fixture();
+  try {
+    const state = await loadState();
+    if (!state.operation) throw new Error('fixture operation is missing');
+    state.operation.status = 'running';
+    state.operation.stage = 'supervisor';
+    await saveState(state);
+    const runtime = resolve(directory, 'state/runtime');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(
+      resolve(runtime, 'platform-release.override.yml'),
+      'services:\n  supervisor:\n    image: "candidate"\n',
+    );
+    await writeFile(
+      resolve(runtime, `platform-release.override.yml.previous-${operationId}`),
+      'services:\n  supervisor:\n    image: "previous"\n',
+    );
+
+    const runner = new FakeRunner();
+    await new PlatformUpdater(runner).recoverInterruptedUpdate(operationId);
+
+    const recovered = await loadState();
+    assert.equal(recovered.operation?.status, 'rolled-back');
+    const composeCalls = runner.calls
+      .filter((call) => call[0] === 'docker' && call.includes('up'))
+      .map((call) => call.join(' '));
+    assert.equal(composeCalls.length, 2);
+    assert.match(composeCalls[0] ?? '', /up -d --no-deps --no-build api web$/);
+    assert.match(composeCalls[1] ?? '', /up -d --no-deps --no-build supervisor$/);
+    assert.equal(
+      await readFile(resolve(runtime, 'platform-release.override.yml'), 'utf8'),
+      'services:\n  supervisor:\n    image: "previous"\n',
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -291,9 +291,9 @@ write_checkpoint() {
   pass "Platform update baseline $current → $next is saved."
 }
 
-wait_for_candidate_api() {
-  local project=$1 previous_id operation_id status stage candidate_version
-  local current_version current_api helper deadline
+wait_for_candidate_service() {
+  local project=$1 service=$2 previous_id operation_id status stage candidate_version
+  local current_version current_container helper deadline
   previous_id=$(state_value operation.id || true)
   candidate_version=$(checkpoint_value next_version)
   deadline=$((SECONDS + 900))
@@ -306,32 +306,32 @@ wait_for_candidate_api() {
       case "$status" in failed|rolled-back|succeeded)
         fail "Update reached terminal status '$status' before fault injection." ;;
       esac
-      if [ "$stage" = api ]; then
-        current_api=$(runtime_container_id "$project" api)
-        current_version=$(container_platform_version "$current_api" 2>/dev/null || true)
+      if [ "$stage" = "$service" ]; then
+        current_container=$(runtime_container_id "$project" "$service")
+        current_version=$(container_platform_version "$current_container" 2>/dev/null || true)
         helper=$(active_helper "$operation_id")
         if [ "$current_version" = "$candidate_version" ] && [ -n "$helper" ]; then
           printf '%s\n' "$operation_id"
           return 0
         fi
-      elif [ "$stage" = web ] || [ "$stage" = supervisor ]; then
+      elif [ "$service" = api ] && { [ "$stage" = web ] || [ "$stage" = supervisor ]; }; then
         fail "The updater advanced past the API stage before it could be paused."
       fi
     fi
-    sleep 0.2
+    sleep 0.1
   done
-  fail "No candidate API appeared within 15 minutes."
+  fail "No candidate $service appeared within 15 minutes."
 }
 
-pause_helper_at_api() {
-  local operation_id=$1 helper stage
+pause_helper_at_stage() {
+  local operation_id=$1 expected_stage=$2 helper stage
   helper=$(active_helper "$operation_id")
   [ -n "$helper" ] || fail "The update helper disappeared before fault injection."
   docker pause "$helper" >/dev/null
   stage=$(state_value operation.stage || true)
-  if [ "$stage" != api ]; then
+  if [ "$stage" != "$expected_stage" ]; then
     docker unpause "$helper" >/dev/null 2>&1 || true
-    fail "The updater left the API stage before it was safely paused."
+    fail "The updater left the $expected_stage stage before it was safely paused."
   fi
   printf '%s\n' "$helper"
 }
@@ -360,8 +360,8 @@ fault_rollback() {
   sudo -v || fail "sudo authentication failed."
   project=$(compose_project_label)
   [ -n "$project" ] || fail "Compose project identity is missing."
-  operation_id=$(wait_for_candidate_api "$project")
-  helper=$(pause_helper_at_api "$operation_id")
+  operation_id=$(wait_for_candidate_service "$project" api)
+  helper=$(pause_helper_at_stage "$operation_id" api)
   PAUSED_HELPER=$helper
   api_id=$(runtime_container_id "$project" api)
   [ -n "$api_id" ] || fail "The signed candidate API container disappeared."
@@ -396,8 +396,8 @@ interrupt_reboot() {
   sudo -v || fail "sudo authentication failed."
   project=$(compose_project_label)
   [ -n "$project" ] || fail "Compose project identity is missing."
-  operation_id=$(wait_for_candidate_api "$project")
-  helper=$(pause_helper_at_api "$operation_id")
+  operation_id=$(wait_for_candidate_service "$project" supervisor)
+  helper=$(pause_helper_at_stage "$operation_id" supervisor)
   PAUSED_HELPER=$helper
   temporary=$(mktemp "$ACCEPTANCE_DIR/platform-update-reboot.XXXXXX")
   chmod 600 "$temporary"
@@ -408,7 +408,7 @@ interrupt_reboot() {
   } > "$temporary"
   mv "$temporary" "$REBOOT_CHECKPOINT"
   sync
-  say "Updater paused during API cutover; rebooting the disposable host now."
+  say "Updater paused after the candidate Supervisor started; rebooting the disposable host now."
   # A successful reboot must leave the no-restart helper paused/stopped so the
   # restarted Supervisor detects an orphaned operation and rolls it back.
   PAUSED_HELPER=
@@ -424,7 +424,7 @@ interrupt_reboot() {
 }
 
 check_after_reboot() {
-  local previous_boot current_boot operation_id status message
+  local previous_boot current_boot operation_id status stage message
   assert_checkpoint
   [ -f "$REBOOT_CHECKPOINT" ] || \
     fail "No interrupted-update reboot checkpoint exists; run interrupt-reboot first."
@@ -436,8 +436,11 @@ check_after_reboot() {
   [ "$(state_value operation.id || true)" = "$operation_id" ] || \
     fail "Supervisor recovered a different platform operation."
   status=$(state_value operation.status || true)
-  [ "$status" = rolled-back ] || \
-    fail "Interrupted update recovered as '$status', expected rolled-back."
+  if [ "$status" != rolled-back ]; then
+    stage=$(state_value operation.stage || true)
+    message=$(state_value operation.message || true)
+    fail "Interrupted update recovered as '$status' at '$stage', expected rolled-back: $message"
+  fi
   message=$(state_value operation.message || true)
   printf '%s\n' "$message" | grep -qi 'interrupted.*rolled back' || \
     fail "Supervisor did not record interrupted-update recovery."

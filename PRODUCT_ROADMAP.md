@@ -88,9 +88,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   instalace `0.2.0` se zachováním identit a release invariantů.
 - [x] Vydat platformu `0.2.2` a živě ověřit čistý update z podepsané
   `0.2.1` se zachováním identit a release invariantů.
-- [ ] Veřejně vydanou, podepsanou a multiarch platformu `0.2.4` na
-  přechodu z podepsané `0.2.2` ověřit vadným candidate rollbackem,
-  restartem hosta uprostřed cutoveru a závěrečnou čistou aktualizací.
+- [x] Veřejně vydat podepsanou multiarch platformu `0.2.4` a na přechodu
+  z `0.2.2` ověřit vadný candidate a automatický rollback se zachováním dat.
+- [ ] Vydat opravu `0.2.5` a na přechodu z `0.2.4` dokončit restart hosta
+  po startu candidate Supervisoru a závěrečnou čistou aktualizaci.
 
 ### P1 — uzavření diplomkového MVP
 
@@ -1022,11 +1023,14 @@ jen konkrétní provozní a vyhodnocovací scénář.
        drill odhalil ztracený lokální source image a vlastnictví runtime
        descriptoru; druhý potvrdil opravy a odhalil závislost acceptance
        pozorovatele na Compose descriptoru během cutoveru. Pozorovatel nyní
-       kandidátní kontejnery hledá přímo přes Docker labels. Podkrok zůstává
-       částečný do živého testu vadného candidate rollbacku a restartu
-       hosta při `0.2.2 → 0.2.4`. Release `0.2.4` dne 22. září 2026
-       prošel anonymní kontrolou veřejné dostupnosti, podpisů a obou
-       architektur. Kandidát `0.2.3` nebyl publikován:
+       kandidátní kontejnery hledá přímo přes Docker labels. Release
+       `0.2.4` dne 22. září 2026 prošel anonymní kontrolou veřejné
+       dostupnosti, podpisů a obou architektur; vadný candidate API se na
+       přechodu z `0.2.2` správně vrátil zpět. Následný reboot drill odhalil,
+       že capability-hardened Supervisor nemůže po startu číst operátorem
+       vlastněný descriptor `0600`. Oprava `0.2.5` deleguje recovery stejně
+       jako update omezenému jednorázovému helperu a test přeruší operaci až
+       po startu nového Supervisoru. Kandidát `0.2.3` nebyl publikován:
        emulovaný ARM64 Node proces v release buildu skončil `SIGILL` ještě
        před vytvořením manifestu. Od `0.2.4` se obě architektury staví na
        nativních GitHub-hosted runnerech a teprve potom se slučují.

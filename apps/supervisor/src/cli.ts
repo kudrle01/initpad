@@ -20,6 +20,7 @@ async function main(): Promise<void> {
     strict: true,
     options: {
       plan: { type: 'string' },
+      operation: { type: 'string' },
       version: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
@@ -27,7 +28,7 @@ async function main(): Promise<void> {
   const command = parsed.positionals[0] || 'serve';
   if (parsed.values.help) {
     console.log(
-      'Usage: initpad-supervisor <serve|health|version|update-helper|adopt-current-release> [options]',
+      'Usage: initpad-supervisor <serve|health|version|update-helper|recovery-helper|adopt-current-release> [options]',
     );
     return;
   }
@@ -42,6 +43,11 @@ async function main(): Promise<void> {
   if (command === 'update-helper') {
     if (!parsed.values.plan) throw new Error('update-helper requires --plan');
     await new PlatformUpdater().applyPlan(parsed.values.plan);
+    return;
+  }
+  if (command === 'recovery-helper') {
+    if (!parsed.values.operation) throw new Error('recovery-helper requires --operation');
+    await new PlatformUpdater().recoverInterruptedUpdate(parsed.values.operation);
     return;
   }
   if (command === 'adopt-current-release') {

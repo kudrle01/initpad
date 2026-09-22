@@ -142,7 +142,7 @@ export async function runServer(signal: AbortSignal): Promise<void> {
     throw new Error('INITPAD_SUPERVISOR_PORT is invalid');
   }
   const updater = new PlatformUpdater();
-  await updater.recoverInterruptedUpdate();
+  await updater.launchRecoveryHelper();
   const server = createSupervisorServer(undefined, updater);
   await new Promise<void>((resolveListen, reject) => {
     server.once('error', reject);

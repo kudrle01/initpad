@@ -4814,3 +4814,41 @@ kontrakt ověřuje tři distribuované buildy, explicitní mapování ARM64 na
 nativní runner, absenci QEMU a vazbu finální publikace na všechny tři OCI
 digesty. Živý release musí navíc projít anonymním podpisovým, SBOM a
 multiarch auditem.
+
+---
+
+## ADR-113 — Recovery přerušeného platformního updatu provádí jednorázový helper
+
+**Kontext.** Živý reboot drill `0.2.2 → 0.2.4` skončil na původní zdravé
+verzi, ale operace byla označena `recovery-failed`. Supervisor správně běží s
+read-only root filesystemem a bez Linux capabilities. Po restartu proto nemohl
+ani provést `lstat` nad hostitelským release descriptorem `0600`, který zůstává
+vlastnictvím operátora kvůli backupu a provozním nástrojům. Rozšířit práva
+celé runtime složky nebo trvale vrátit Supervisoru filesystem capabilities by
+zbytečně oslabilo jeho hardening.
+
+**Rozhodnutí.** Dlouho běžící Supervisor po startu pouze rozpozná nedokončenou
+typovanou operaci a přes Docker socket spustí ze své přesné immutable image
+jednorázový recovery helper. Helper nemá síť, dostane jen volumes stávajícího
+Supervisoru a jedinou capability `DAC_OVERRIDE`, nutnou pro obnovení a úklid
+operátorem vlastněného descriptoru. Příkaz nepřijímá Compose, cestu ani shell;
+jen UUID, které se musí shodovat s durable operací. Pokud už původní update
+helper běží, recovery se nespustí.
+
+Při přerušení ve fázi candidate Supervisoru helper nejprve obnoví API a web,
+durable operaci označí jako `rolled-back` a teprve potom obnoví původní
+Supervisor. Starý proces tak po startu vidí terminální stav a nemůže závodit s
+probíhající obnovou. Chyba kteréhokoli kroku zůstane `recovery-failed` s
+omezenou diagnostikou a bez falešného úspěchu.
+
+**Důsledky.** Běžný Supervisor si ponechá odebrané capabilities i současné
+vlastnictví hostitelských souborů. Privilegium existuje jen po dobu pevně
+typované obnovy a nelze je použít jako vzdálený shell. Opravu nelze zpětně
+vložit do již podepsaného `0.2.4`; acceptance ji proto ověří při přechodu na
+`0.2.5`, kdy se host restartuje až po startu nového Supervisoru.
+
+**Testování.** Unit test vyžaduje digest-pinned helper, `--network none`,
+`--cap-drop ALL`, jediné `--cap-add DAC_OVERRIDE`, shodu operation UUID a
+oddělené obnovení API/web a Supervisoru. Živý gate musí po skutečném rebootu
+skončit `rolled-back`, zachovat databázové identity i workload snapshot a
+odstranit dočasný descriptor, plan i lock.

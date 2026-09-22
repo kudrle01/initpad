@@ -245,7 +245,11 @@ export class PlatformUpdater {
       new Promise((resolveWait) => setTimeout(resolveWait, milliseconds)),
   ) {}
 
-  async launchHelper(plan: string): Promise<void> {
+  private async helperRuntime(): Promise<{
+    container: string;
+    helperImage: string;
+    environment: string[];
+  }> {
     const container = process.env.INITPAD_SUPERVISOR_CONTAINER_NAME || 'initpad-supervisor';
     const identity = (
       await this.runner.run('docker', [
@@ -263,15 +267,8 @@ export class PlatformUpdater {
     // A signed release container keeps its digest-pinned registry reference in
     // Config.Image. Prefer it over Docker's local config ID: the daemon may no
     // longer expose that ID after image-store cleanup even while the container
-    // is still running. `docker run` can safely repull this exact digest. A
-    // source installation has only a mutable local tag, so it stays pinned to
-    // the exact running image ID instead.
+    // is still running. Source installations stay pinned to the exact local ID.
     const helperImage = IMMUTABLE_IMAGE.test(configuredImage) ? configuredImage : imageId;
-    const helper = `initpad-platform-updater-${randomUUID().slice(0, 8)}`;
-    const operationId = basename(plan).match(/^update-([0-9a-f-]{36})\.json$/i)?.[1];
-    if (!operationId || !UUID.test(operationId)) {
-      throw new Error('Platform update plan name is invalid');
-    }
     const environment = [
       `INITPAD_INSTALL_ROOT=${validInstallRoot()}`,
       `INITPAD_SUPERVISOR_STATE_DIR=${stateDirectory()}`,
@@ -279,6 +276,16 @@ export class PlatformUpdater {
       `INITPAD_UPDATE_REPOSITORY=${process.env.INITPAD_UPDATE_REPOSITORY || 'kudrle01/initpad'}`,
       'INITPAD_SIGSTORE_FORCE_CACHE=true',
     ];
+    return { container, helperImage, environment };
+  }
+
+  async launchHelper(plan: string): Promise<void> {
+    const { container, helperImage, environment } = await this.helperRuntime();
+    const helper = `initpad-platform-updater-${randomUUID().slice(0, 8)}`;
+    const operationId = basename(plan).match(/^update-([0-9a-f-]{36})\.json$/i)?.[1];
+    if (!operationId || !UUID.test(operationId)) {
+      throw new Error('Platform update plan name is invalid');
+    }
     const args = [
       'run',
       '-d',
@@ -300,9 +307,79 @@ export class PlatformUpdater {
     }
   }
 
-  async recoverInterruptedUpdate(): Promise<void> {
+  async launchRecoveryHelper(): Promise<void> {
     const state = await loadState();
     const operation = state.operation;
+    if (!operation || !['accepted', 'running'].includes(operation.status)) return;
+    if (!UUID.test(operation.id)) throw new Error('Platform update operation id is invalid');
+
+    const activeUpdater = (
+      await this.runner.run('docker', [
+        'ps',
+        '-q',
+        '--filter',
+        `label=com.initpad.platform-update=${operation.id}`,
+      ])
+    ).stdout;
+    if (activeUpdater) return;
+    const activeRecovery = (
+      await this.runner.run('docker', [
+        'ps',
+        '-q',
+        '--filter',
+        `label=com.initpad.platform-recovery=${operation.id}`,
+      ])
+    ).stdout;
+    if (activeRecovery) return;
+
+    const { container, helperImage, environment } = await this.helperRuntime();
+    const args = [
+      'run',
+      '-d',
+      '--rm',
+      '--name',
+      `initpad-platform-recovery-${operation.id}`,
+      '--label',
+      `com.initpad.platform-recovery=${operation.id}`,
+      '--network',
+      'none',
+      '--read-only',
+      '--security-opt',
+      'no-new-privileges:true',
+      '--cap-drop',
+      'ALL',
+      '--cap-add',
+      'DAC_OVERRIDE',
+      '--pids-limit',
+      '128',
+      '--memory',
+      '192m',
+      '--cpus',
+      '0.5',
+      '--tmpfs',
+      '/tmp:size=16m,mode=1777',
+    ];
+    for (const value of environment) args.push('-e', value);
+    args.push(
+      '--volumes-from',
+      container,
+      helperImage,
+      'recovery-helper',
+      '--operation',
+      operation.id,
+    );
+    await this.runner.run('docker', args);
+  }
+
+  async recoverInterruptedUpdate(expectedOperationId?: string): Promise<void> {
+    const state = await loadState();
+    const operation = state.operation;
+    if (expectedOperationId && !UUID.test(expectedOperationId)) {
+      throw new Error('Platform recovery operation id is invalid');
+    }
+    if (expectedOperationId && operation?.id !== expectedOperationId) {
+      throw new Error('Platform recovery operation does not match durable state');
+    }
     if (!operation || !['accepted', 'running'].includes(operation.status)) return;
 
     const helper = (
@@ -323,6 +400,7 @@ export class PlatformUpdater {
     const overridePath = runtimeOverride();
     const previousOverride = `${overridePath}.previous-${operation.id}`;
     const changed = ['switching', 'api', 'web', 'supervisor'].includes(operation.stage);
+    const restoreSupervisor = operation.stage === 'supervisor';
     try {
       if (changed) {
         const hadPrevious = await fileExists(previousOverride);
@@ -338,7 +416,7 @@ export class PlatformUpdater {
           'web',
         ]);
       }
-      state.operation = {
+      const recoveredOperation: UpdateOperation = {
         ...operation,
         status: changed ? 'rolled-back' : 'failed',
         stage: changed ? 'rolled-back' : 'interrupted',
@@ -347,7 +425,22 @@ export class PlatformUpdater {
           : 'Platform update was interrupted before any image was switched',
         finishedAt: new Date().toISOString(),
       };
+      state.operation = recoveredOperation;
       await saveState(state);
+      // Once the candidate Supervisor itself was started, mark the durable
+      // operation terminal before replacing it. The restored Supervisor then
+      // observes a completed rollback and cannot race this one-shot helper.
+      if (restoreSupervisor) {
+        const hadPrevious = await fileExists(previousOverride);
+        await this.runner.run('docker', [
+          ...composeArgs(validInstallRoot(), hadPrevious),
+          'up',
+          '-d',
+          '--no-deps',
+          '--no-build',
+          'supervisor',
+        ]);
+      }
       await rm(planPath(operation.id), { force: true });
       await rm(previousOverride, { force: true });
       await rm(updateLock(), { force: true });
