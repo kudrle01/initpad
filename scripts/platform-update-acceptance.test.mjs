@@ -106,3 +106,16 @@ test('refuses fault injection when the running Supervisor helper image is unavai
       script.indexOf('actual=$(state_value currentVersion)', script.indexOf('write_checkpoint()')),
   );
 });
+
+test('rejects an orphaned update lock before saving a new baseline', () => {
+  assert.match(script, /assert_no_orphaned_update_lock/);
+  assert.match(script, /test -e \/var\/lib\/initpad-supervisor\/update\.lock/);
+  assert.match(script, /orphaned platform update lock exists/i);
+  const checkpoint = script.slice(
+    script.indexOf('write_checkpoint()'),
+    script.indexOf('wait_for_candidate_service()'),
+  );
+  assert.ok(
+    checkpoint.indexOf('assert_no_helper') < checkpoint.indexOf('assert_no_orphaned_update_lock'),
+  );
+});

@@ -4886,5 +4886,6 @@ Selhání už nemůže odstranit jedinou aktivní Compose definici. Operátor m�
 **Testování.** Unit test vyžaduje spotřebování původního descriptoru při
 úspěšné obnově a zachování candidate descriptoru při chybějícím
 rollback artefaktu. API test vyžaduje přeskočení revokované 0.2.5.
-Rozhodujícím gate zůstá skutečný reboot při přechodu 0.2.4 → 0.2.6,
-následný `after-reboot` a čistý `after-success`.
+Rozhodujícím gate zůstává skutečný reboot při přechodu 0.2.4 → 0.2.6,
+následný `after-reboot` a čistý `after-success`. Tento gate dne
+22. září 2026 prošel včetně zachování databázových identit a workloadů.

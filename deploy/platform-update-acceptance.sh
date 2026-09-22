@@ -201,6 +201,13 @@ assert_no_helper() {
     fail "A platform update helper is still running."
 }
 
+assert_no_orphaned_update_lock() {
+  if docker exec initpad-supervisor \
+    test -e /var/lib/initpad-supervisor/update.lock 2>/dev/null; then
+    fail "An orphaned platform update lock exists without a running helper; inspect the latest Supervisor operation and recover the baseline before continuing."
+  fi
+}
+
 assert_checkpoint() {
   [ -f "$CHECKPOINT" ] || fail "No platform update checkpoint exists; run prepare first."
   stable_version "$(checkpoint_value current_version)" || fail "Checkpoint current version is invalid."
@@ -260,6 +267,7 @@ write_checkpoint() {
   validate_transition "$current" "$next"
   ensure_runtime
   assert_no_helper
+  assert_no_orphaned_update_lock
   ./self-hosted-check.sh running
   assert_supervisor_helper_image_available
   actual=$(state_value currentVersion)

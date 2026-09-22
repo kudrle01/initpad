@@ -94,8 +94,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Vydat `0.2.5` a na přechodu z `0.2.4` ověřit skutečný restart
   hosta; acceptance odhalila `EPERM` při kopírování zachovaného
   descriptoru z capability-bounded helperu, proto je release revokovaný.
-- [ ] Vydat opravu `0.2.6` s atomickým obnovením descriptoru a dokončit
-  reboot rollback i závěrečnou čistou aktualizaci.
+- [x] Vydat opravu `0.2.6` s atomickým obnovením descriptoru a živě
+  dokončit fault rollback, reboot rollback i závěrečnou čistou
+  aktualizaci se zachováním dat a workloadů.
 
 ### P1 — uzavření diplomkového MVP
 
@@ -1039,7 +1040,11 @@ jen konkrétní provozní a vyhodnocovací scénář.
        `EPERM` v `copyFile` i přes zachovaný původní descriptor. Proto je
        `0.2.5` runtime-revokovaný; oprava `0.2.6` obnovuje stejný soubor
        atomickým `rename` v jeho adresáři a při chybějícím rollback
-       artefaktu failne bez odstranění aktivní konfigurace. Kandidát
+       artefaktu failne bez odstranění aktivní konfigurace. Živé ověření
+       `0.2.4 → 0.2.6` následně prošlo fault rollbackem, skutečným
+       restartem hosta i finální čistou aktualizací; první pokus navíc
+       odhalil osiřelý lock po dřívějším selhání 0.2.5, který nyní
+       acceptance odmítne ještě před uložením baseline. Kandidát
        `0.2.3` nebyl publikován:
        emulovaný ARM64 Node proces v release buildu skončil `SIGILL` ještě
        před vytvořením manifestu. Od `0.2.4` se obě architektury staví na

@@ -486,6 +486,13 @@ prvním pokusem. `results.tsv` musí obsahovat PASS pro `platform-update-prepare
 `platform-update-rollback`, `platform-update-reboot-recovery` a
 `platform-update-success`.
 
+Tento gate prošel 22. září 2026 na přechodu `0.2.4 → 0.2.6`, včetně
+skutečného restartu Ubuntu hosta. První pokus odhalil osiřelý
+`update.lock` ponechaný selháním revokované 0.2.5 ještě před spuštěním
+nového helperu. `prepare` proto nyní kontroluje nejen nepřítomnost helperu,
+ale i nepřítomnost osiřelého locku. Po jeho forenzním potvrzení a odstranění
+prošel fault rollback, reboot recovery i čistý update prvním pokusem.
+
 ## 11. Ověř smazání a opětovné použití názvu
 
 V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení

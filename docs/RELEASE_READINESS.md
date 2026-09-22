@@ -138,6 +138,14 @@ cestu. Verze 0.2.5 je proto runtime-revokovaná. Oprava 0.2.6 používá
 atomický `rename` v jednom adresáři a chybějící rollback artefakt již nikdy
 nezpůsobí odstranění aktivního descriptoru; reboot gate se opakuje z
 baseline 0.2.4.
+Veřejný release 0.2.6 dne 22. září 2026 prošel anonymní kontrolou
+podpisů a obou architektur. Na disposable Ubuntu VM pak přechod z 0.2.4
+prošel vadným candidate rollbackem, restartem hosta po startu candidate
+Supervisoru i závěrečnou čistou aktualizací. `after-success` potvrdil
+stejné databázové identity, managed workload snapshot a tři immutable
+release reference. Osiřelý lock z předchozího neúspěšného 0.2.5 pokusu
+zablokoval první helper ještě před spuštěním; acceptance proto nově
+odmítne uložit baseline, pokud lock existuje bez běžícího helperu.
 Krátké 502 během výměny API/web je očekávané omezení
 single-node profilu, nikoli výpadek projektových workloadů. Docker socket Supervisoru je
 root-equivalent oprávnění, nikoli rootless sandbox.
@@ -147,6 +155,7 @@ Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 ```bash
 npm run audit:public-release -- --tag initpad-v0.2.2
 npm run audit:public-release -- --tag initpad-v0.2.4
+npm run audit:public-release -- --tag initpad-v0.2.6
 npm run audit:public-release -- --tag agent-v0.14.2
 ```
 
