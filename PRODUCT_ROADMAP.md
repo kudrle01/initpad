@@ -88,7 +88,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   instalace `0.2.0` se zachováním identit a release invariantů.
 - [x] Vydat platformu `0.2.2` a živě ověřit čistý update z podepsané
   `0.2.1` se zachováním identit a release invariantů.
-- [ ] Vydat platformu `0.2.3` a na přechodu z podepsané `0.2.2` dokončit
+- [ ] Vydat platformu `0.2.4` a na přechodu z podepsané `0.2.2` dokončit
   vadný candidate rollback a restart hosta uprostřed cutoveru.
 
 ### P1 — uzavření diplomkového MVP
@@ -1023,7 +1023,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
        pozorovatele na Compose descriptoru během cutoveru. Pozorovatel nyní
        kandidátní kontejnery hledá přímo přes Docker labels. Podkrok zůstává
        částečný do živého testu vadného candidate rollbacku a restartu
-       hosta při `0.2.2 → 0.2.3`.
+       hosta při `0.2.2 → 0.2.4`. Kandidát `0.2.3` nebyl publikován:
+       emulovaný ARM64 Node proces v release buildu skončil `SIGILL` ještě
+       před vytvořením manifestu. Od `0.2.4` se obě architektury staví na
+       nativních GitHub-hosted runnerech a teprve potom se slučují.
 
 ## Akceptační kritéria
 

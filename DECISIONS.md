@@ -4782,3 +4782,35 @@ o rootless sandbox. Riziko se omezuje interní sítí bez publikovaného portu,
 HMAC autentizací, read-only filesystemem, odebranými capabilities a pevnými
 typovanými operacemi bez shellu z requestu. SaaS nasazuje stejné images vlastním
 provozním procesem a Supervisor nepotřebuje.
+
+---
+
+## ADR-112 — Multiarch platformní images se staví na nativních runnerech
+
+**Kontext.** Platformní release 0.2.3 stavěl `linux/amd64` i `linux/arm64` na
+jednom x64 GitHub runneru pomocí QEMU. ARM64 Node proces při produkčním
+`npm ci` skončil signálem `SIGILL` (exit 132), přestože stejný zdroj i
+lockfile prošly nativně. Opakovat release by mohlo náhodně projít, ale
+ponechalo by emulaci jako nespolehlivý release gate. Již zveřejněný tag navíc
+nesmí být přesunut na opravený commit.
+
+**Rozhodnutí.** Release od 0.2.4 používá oficiální Docker GitHub Builder
+připnutý na plný commit. Každá z API, web a Supervisor images se rozdělí
+na `linux/amd64` runner `ubuntu-24.04` a nativní `linux/arm64` runner
+`ubuntu-24.04-arm`. Reusable workflow vytvoří per-platform digesty, SBOM a
+maximální provenance a sloučí je do jednoho OCI indexu. Vlastní tagový
+workflow následně podepíše finální digesty i release assets stejnou InitPad
+Sigstore identitou jako dříve. Kandidát 0.2.3 zůstává nepublikovaný;
+opravený release používá nové immutable číslo 0.2.4.
+
+**Důsledky.** Build již nespouští cílový Node runtime pod CPU emulací,
+obě architektury se sestavují paralelně a release má být rychlejší i
+determinističtější. Připnutý reusable workflow dostává pouze read přístup
+ke zdroji, write do GHCR a krátkodobý GitHub token nutný pro build; publikaci
+GitHub Release a finální podpisy nadále provádí lokálně definovaný job.
+
+**Testování.** Repository gate vyžaduje plný SHA reusable workflow. Samostatný
+kontrakt ověřuje tři distribuované buildy, explicitní mapování ARM64 na
+nativní runner, absenci QEMU a vazbu finální publikace na všechny tři OCI
+digesty. Živý release musí navíc projít anonymním podpisovým, SBOM a
+multiarch auditem.

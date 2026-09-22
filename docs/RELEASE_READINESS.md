@@ -118,9 +118,12 @@ lokální sadu managed workloadů (`workloads=0` na control-plane VM).
 Zachování aktivního externího Agent workloadu se ověří v navazujícím
 drillu. Acceptance odhalila chybějící source image záznam, root-owned release
 descriptor a pozorovatele závislého na descriptoru během cutoveru; všechny tři
-vady mají regresní ochranu v kandidátu 0.2.3. Provozní přijetí stále
-vyžaduje fault-injected rollback a přerušení uprostřed `0.2.2 → 0.2.3`
-cutoveru. Krátké 502 během výměny API/web je očekávané omezení
+vady mají regresní ochranu v kandidátu 0.2.4. Kandidát 0.2.3 nebyl
+publikován, protože emulovaný ARM64 Node proces release buildu skončil
+`SIGILL` před vytvořením multiarch manifestu; 0.2.4 používá pro amd64 i
+arm64 nativní GitHub-hosted runnery. Provozní přijetí stále vyžaduje
+fault-injected rollback a přerušení uprostřed `0.2.2 → 0.2.4` cutoveru.
+Krátké 502 během výměny API/web je očekávané omezení
 single-node profilu, nikoli výpadek projektových workloadů. Docker socket Supervisoru je
 root-equivalent oprávnění, nikoli rootless sandbox.
 

@@ -393,7 +393,9 @@ checkpointem ponech na připojeném Agent serveru alespoň jeden zdravý projekt
 workload a poznamenej jeho container ID; po rollbacku, reboot recovery i čistém
 update musí zůstat stejný. Zbývající fault-injection drill proto
 navazuje na skutečně běžící podepsanou platformu `0.2.2` a cílí na
-`initpad-v0.2.3`. Cílový release musí být veřejný a jeho workflow zelené.
+`initpad-v0.2.4`. Verze 0.2.3 nebyla publikována, protože její emulovaný
+ARM64 build selhal před vytvořením release manifestu. Cílový release musí
+být veřejný a jeho workflow zelené.
 Nový checkout lze stáhnout kvůli acceptance skriptu, ale mezi checkpointem
 a testem **nespouštěj `install.sh`**: aktualizaci musí provést běžící
 Supervisor z podepsaného release, ne source build nové verze.
@@ -403,9 +405,9 @@ Nejprve anonymně ověř distribuční obálku a ulož baseline:
 ```bash
 cd ~/Projects/initpad
 git pull --ff-only
-npm run audit:public-release -- --tag initpad-v0.2.3
+npm run audit:public-release -- --tag initpad-v0.2.4
 cd deploy
-./platform-update-acceptance.sh prepare 0.2.2 0.2.3
+./platform-update-acceptance.sh prepare 0.2.2 0.2.4
 ```
 
 Checkpoint ukládá pouze verze, fingerprint trvalých identit a identity
@@ -467,7 +469,7 @@ Naposledy potvrď **Install update** bez fault-injection skriptu. Po stavu
 ./platform-update-acceptance.sh after-success
 ```
 
-Finální kontrola vyžaduje platformu `0.2.3`, tři immutable image reference,
+Finální kontrola vyžaduje platformu `0.2.4`, tři immutable image reference,
 stejné identity v DB a přesně stejné managed workload kontejnery jako před
 prvním pokusem. `results.tsv` musí obsahovat PASS pro `platform-update-prepare`,
 `platform-update-rollback`, `platform-update-reboot-recovery` a
