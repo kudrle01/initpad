@@ -306,15 +306,33 @@ say "Waiting for the release Supervisor"
 wait_healthy supervisor 60
 
 # ---- 5. SSO — MUST run after the API is up: Gitea validates the discovery
-# URL immediately when the auth source is registered.
-if gitea_cli admin auth list 2>/dev/null | grep -q initpad-sso; then
-  say "SSO authentication source already registered"
+# URL immediately when the auth source is registered or updated. Reconcile an
+# existing source as well: its cached authorization/token endpoints contain
+# INITPAD_PUBLIC_URL and would otherwise survive a LAN address or domain change.
+sso_discovery_url=http://api:3000/api/.well-known/openid-configuration
+sso_source_id=$(gitea_cli admin auth list 2>/dev/null | \
+  awk '$2=="initpad-sso" {print $1; exit}')
+if [ -n "$sso_source_id" ]; then
+  case "$sso_source_id" in
+    *[!0-9]*) fail "The existing initpad-sso authentication source has an invalid id." ;;
+  esac
+  say "Reconciling Gitea SSO authentication source"
+  gitea_cli admin auth update-oauth --id "$sso_source_id" \
+    --name initpad-sso --provider openidConnect \
+    --key gitea --secret "$OIDC_SECRET" \
+    --auto-discover-url "$sso_discovery_url" >/dev/null
 else
   say "Registering the platform as Gitea's OIDC sign-in (SSO)"
   gitea_cli admin auth add-oauth --name initpad-sso --provider openidConnect \
     --key gitea --secret "$OIDC_SECRET" \
-    --auto-discover-url "http://api:3000/api/.well-known/openid-configuration" >/dev/null
+    --auto-discover-url "$sso_discovery_url" >/dev/null
 fi
+# Gitea keeps OAuth provider instances in process memory. Reload after the CLI
+# reconciliation so the next login cannot use endpoints cached before a public
+# URL change. This preserves the source id and all existing account bindings.
+say "Reloading Gitea authentication providers"
+$COMPOSE restart gitea >/dev/null
+wait_healthy gitea 60
 
 # ---- 6. runner (+ optional HTTPS proxy) --------------------------------------
 rotate_runner_if_address_changed

@@ -215,12 +215,14 @@ současně otevřít z Windows.
 
 Otevři detail projektu a ověř, že karta built-in deploymentu ukazuje
 aktuální `<VM_IP>` a přidělený port. Když VM po restartu dostane jinou IP,
-změň `INITPAD_PUBLIC_URL` v `.env`, spusť `./install.sh` a obnov stránku.
+změň `INITPAD_PUBLIC_URL` i `INITPAD_GITEA_PUBLIC_URL` v `.env`, spusť
+`./install.sh` a obnov stránku. Instalátor zachová existující Gitea identity,
+ale znovu načte OIDC endpointy a podle potřeby přeregistruje CI runner.
 Existující karta musí ukázat novou IP bez nového deploymentu; uživatelské
 SFTP/SSH URL se změnit nesmí. Běžící konfiguraci ověř:
 
 ```bash
-grep '^INITPAD_PUBLIC_URL=' .env
+grep -E '^INITPAD_(PUBLIC_URL|GITEA_PUBLIC_URL)=' .env
 docker compose exec -T api printenv INITPAD_FRONTEND_URL
 ```
 
