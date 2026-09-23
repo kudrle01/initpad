@@ -150,12 +150,19 @@ Krátké 502 během výměny API/web je očekávané omezení
 single-node profilu, nikoli výpadek projektových workloadů. Docker socket Supervisoru je
 root-equivalent oprávnění, nikoli rootless sandbox.
 
+Veřejný podepsaný release 0.2.7 dne 23. září 2026 prošel anonymní
+kontrolou obou architektur a čistým UI updatem z 0.2.6. `after-success`
+potvrdil zachování databázových identit, dat, managed workload snapshotu
+a tří immutable release referencí. Rozsáhlý fault/reboot gate zůstává
+doložený na bezprostředně předchozí opravě 0.2.6.
+
 Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
 npm run audit:public-release -- --tag initpad-v0.2.2
 npm run audit:public-release -- --tag initpad-v0.2.4
 npm run audit:public-release -- --tag initpad-v0.2.6
+npm run audit:public-release -- --tag initpad-v0.2.7
 npm run audit:public-release -- --tag agent-v0.14.2
 ```
 

@@ -97,6 +97,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Vydat opravu `0.2.6` s atomickým obnovením descriptoru a živě
   dokončit fault rollback, reboot rollback i závěrečnou čistou
   aktualizaci se zachováním dat a workloadů.
+- [x] Vydat `0.2.7` s reconnecting UI, bezpečným TTL acceptance helperem
+  a viditelným immutable digestem produkčního artefaktu; čistý update
+  z podepsané `0.2.6` živě zachoval identity, data a workloady.
 
 ### P1 — uzavření diplomkového MVP
 
@@ -1049,6 +1052,9 @@ jen konkrétní provozní a vyhodnocovací scénář.
        emulovaný ARM64 Node proces v release buildu skončil `SIGILL` ještě
        před vytvořením manifestu. Od `0.2.4` se obě architektury staví na
        nativních GitHub-hosted runnerech a teprve potom se slučují.
+       Release `0.2.7` dne 23. září 2026 prošel anonymní kontrolou
+       podpisů a multiarch images i čistým UI updatem z `0.2.6`;
+       `after-success` potvrdil stejné identity, data a managed workloady.
 
 ## Akceptační kritéria
 

@@ -493,6 +493,12 @@ nového helperu. `prepare` proto nyní kontroluje nejen nepřítomnost helperu,
 ale i nepřítomnost osiřelého locku. Po jeho forenzním potvrzení a odstranění
 prošel fault rollback, reboot recovery i čistý update prvním pokusem.
 
+Navazující podepsaný release `0.2.7` prošel 23. září 2026 čistým
+updatem z `0.2.6`. `platform-update-success` znovu potvrdil identity, data,
+managed workload snapshot i immutable image reference. Fault a reboot drill
+se neopakoval, protože 0.2.7 nemění recovery protokol; ten zůstává doložen
+bezprostředně předchozím gate.
+
 ## 11. Ověř smazání a opětovné použití názvu
 
 V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení
