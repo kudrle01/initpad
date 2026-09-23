@@ -35,6 +35,18 @@ export function dockerContainerName(projectName: string, env: string, namespace?
     : `initpad-${projectName}-${env}`;
 }
 
+export function dockerHealthFailureReason(
+  path: string,
+  bindAddress = config.deployment.bindAddress,
+  healthHost = config.deployHealthHost,
+): string {
+  const reason = `Health check at ${path} did not return 2xx within ~10s.`;
+  const loopbackBind = ['127.0.0.1', '::1', 'localhost'].includes(bindAddress);
+  const loopbackProbe = ['127.0.0.1', '::1', 'localhost'].includes(healthHost);
+  if (!loopbackBind || loopbackProbe) return reason;
+  return `${reason} The workload port is bound to ${bindAddress}, but the containerized control plane probes ${healthHost}. For trusted-LAN direct ports set INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0 and restrict them with the host firewall, or use a managed gateway.`;
+}
+
 /**
  * Container deployment target. Builds an image from the generated Dockerfile
  * (or pulls a pre-built one from the registry) and runs a container attached
@@ -153,7 +165,7 @@ export class DockerProvider implements DeploymentProvider {
       return {
         status: 'failed',
         url,
-        reason: `Health check at ${input.healthPath ?? '/health'} did not return 2xx within ~10s.`,
+        reason: dockerHealthFailureReason(input.healthPath ?? '/health'),
       };
     }
     if (input.imageRef) await this.pruneUnusedRepositoryImages(input.imageRef);

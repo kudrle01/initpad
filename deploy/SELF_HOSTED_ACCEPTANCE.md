@@ -69,14 +69,20 @@ cd initpad/deploy
 cp .env.example .env
 ```
 
-V `deploy/.env` změň pouze následující veřejné adresy (nahraď `<VM_IP>`):
+V `deploy/.env` nastav následující LAN hodnoty (nahraď `<VM_IP>`):
 
 ```ini
 INITPAD_PUBLIC_URL=http://<VM_IP>:8080
 INITPAD_GITEA_PUBLIC_URL=http://<VM_IP>:3001
 INITPAD_EDITION=self-hosted
 INITPAD_REGISTRATION_MODE=open
+INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0
 ```
+
+Poslední hodnota je pro tento bridged-LAN test záměrná: zpřístupní náhodné
+porty vestavěných Docker deploymentů ostatním zařízením v důvěryhodné LAN.
+V produkci preferuj managed gateway se stabilními HTTPS adresami; přímé porty
+nevystavuj bez omezení zdrojové sítě hostitelským firewallem.
 
 Interní split-horizon hodnoty ponech beze změny:
 

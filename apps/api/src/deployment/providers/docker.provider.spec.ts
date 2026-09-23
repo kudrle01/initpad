@@ -7,7 +7,12 @@ import * as tarStream from 'tar-stream';
 // (ADR-059 P1.4); DockerProvider.loadImageArchive delegates to it. Tests stay here
 // to preserve the Docker-ingest boundary contract they were written for.
 import { assertImageArchiveIdentity } from '../../artifacts/image-archive';
-import { DockerProvider, dockerContainerName, dockerNetworkName } from './docker.provider';
+import {
+  DockerProvider,
+  dockerContainerName,
+  dockerHealthFailureReason,
+  dockerNetworkName,
+} from './docker.provider';
 
 type Manifest = { Config?: string; RepoTags?: string[]; Layers?: string[] };
 
@@ -180,6 +185,17 @@ describe('DockerProvider allocation isolation (ADR-060)', () => {
       'initpad-team-alpha-alice-api-dev',
     );
     expect(dockerContainerName('alice-api', 'dev')).toBe('initpad-alice-api-dev');
+  });
+});
+
+describe('DockerProvider health diagnostics', () => {
+  it('explains the Linux loopback mismatch without weakening the safe default', () => {
+    expect(dockerHealthFailureReason('/health', '127.0.0.1', 'host.docker.internal')).toContain(
+      'INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0',
+    );
+    expect(dockerHealthFailureReason('/health', '0.0.0.0', 'host.docker.internal')).toBe(
+      'Health check at /health did not return 2xx within ~10s.',
+    );
   });
 });
 
