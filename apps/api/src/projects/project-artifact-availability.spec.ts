@@ -119,7 +119,7 @@ describe('ProjectArtifactLifecycle image availability', () => {
   });
 });
 
-describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
+describe('ProjectArtifactLifecycle registry capture for verified Gitea delivery', () => {
   const GITEA_REPOSITORY = {
     ...REPOSITORY,
     provider: 'gitea',
@@ -198,7 +198,7 @@ describe('ProjectArtifactLifecycle registry capture for Agent delivery', () => {
     });
   });
 
-  it('refuses remote delivery when storage is only process memory', async () => {
+  it('refuses verified delivery when storage is only process memory', async () => {
     const lifecycle = new ProjectArtifactLifecycle(
       {} as never,
       { durable: false } as never,

@@ -2275,7 +2275,10 @@ ani private-GHCR pull jsou zakázané (ADR-049).
    deploy. Když daemon po restartu image nemá, Run again/redeploy ji
    **rehydratuje z object store**, znovu ověří digest/manifest a teprve pak
    nasadí. `storageRef` (opaque key) se nikdy nezaměňuje s Docker image ref;
-   image ref se odvozuje samostatně.
+   image ref se odvozuje samostatně. Gitea OCI image se zachytí při prvním
+   ověřeném CI deployi i pro vestavěný Docker target, nejen pro vzdáleného
+   Agenta. Dev, test, produkční approval i Agent tak odkazují na stejný
+   `BuildArtifact` a SHA-256 digest.
 7. **Retention/GC a idempotentní delete.** Mazání/retention/GC nesmí odstranit
    artifact stále referencovaný Environmentem nebo aktivní DeploymentOperation.
    Project delete má idempotentní externí cleanup; selhání storage se nesmí

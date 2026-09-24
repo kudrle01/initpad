@@ -96,6 +96,16 @@ function make(
   };
   const artifacts = overrides.artifacts ?? {
     ensureImageAvailable: jest.fn(async () => true),
+    captureRegistryArtifact: jest.fn(async () => ({
+      id: 'artifact-captured',
+      projectId: 'project-1',
+      commitSha: VERSION,
+      providerRunId: '',
+      digest: 'd'.repeat(64),
+      status: 'available',
+      storageKind: 'object-store',
+      storageRef: 'artifact/key',
+    })),
   };
   const agentDelivery = overrides.agentDelivery ?? {
     queueDeployment: jest.fn(async () => undefined),
@@ -180,6 +190,35 @@ describe('ProjectDeploymentExecutor', () => {
       }),
     });
     expect(ctx.cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('captures and publishes an immutable Gitea artifact for a direct Docker target', async () => {
+    const ctx = make({
+      operation: { id: 'operation-1', buildArtifactId: null, buildArtifact: null },
+    });
+
+    await expect(
+      ctx.executor.execute('project-1', 'dev', VERSION, true, 'operation-1'),
+    ).resolves.toBe(true);
+
+    expect((ctx.artifacts as any).captureRegistryArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'gitea', fullName: 'acme/api' }),
+      expect.objectContaining({ id: 'project-1', workspaceId: 'workspace-1' }),
+      'operation-1',
+      VERSION,
+    );
+    expect(ctx.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        projectId: 'project-1',
+        name: 'dev',
+        activeOperationId: 'operation-1',
+      },
+      data: expect.objectContaining({
+        status: 'running',
+        version: VERSION,
+        buildArtifactId: 'artifact-captured',
+      }),
+    });
   });
 
   it('tears down provider state and does not publish after cancellation', async () => {

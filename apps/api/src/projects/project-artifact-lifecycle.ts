@@ -82,8 +82,9 @@ export class ProjectArtifactLifecycle {
 
   /**
    * Captures the exact Gitea OCI image into the same durable object-store
-   * representation used by GitHub Actions. Remote Agents therefore never need
-   * a registry password and both editions share one delivery trust boundary.
+   * representation used by GitHub Actions. Direct Docker and remote Agent
+   * targets therefore share one immutable build identity and Agents never need
+   * a registry password.
    */
   async captureRegistryArtifact(
     repository: ScmRepositoryRef,
@@ -93,7 +94,7 @@ export class ProjectArtifactLifecycle {
   ): Promise<BuildArtifact> {
     if (!this.store.durable) {
       throw new Error(
-        'Agent deployment requires durable artifact storage; configure the S3/MinIO artifact bucket',
+        'Verified Gitea deployment requires durable artifact storage; configure the S3/MinIO artifact bucket',
       );
     }
     const normalizedVersion = version.toLowerCase();
@@ -177,7 +178,7 @@ export class ProjectArtifactLifecycle {
         await this.store.delete(existing.storageRef).catch(() => undefined);
       }
       await this.bindOperationArtifact(operationId, project.id, artifact.id);
-      this.logger.log(`Captured registry image ${imageRef} for Agent delivery`);
+      this.logger.log(`Captured registry image ${imageRef} for verified delivery`);
       return artifact;
     } catch (error) {
       if (objectKey && !persisted) await this.store.delete(objectKey).catch(() => undefined);

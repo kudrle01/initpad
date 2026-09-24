@@ -72,7 +72,12 @@ export class ProjectDeploymentExecutor {
         }
       } else {
         testedImageRef = registryImageRef(repository, version);
-        if (agentBacked && !operation?.buildArtifactId) {
+        // Gitea publishes an immutable OCI tag rather than a downloadable CI
+        // artifact. Capture its exact bytes once for every target so direct
+        // Docker and Agent deployments share the same durable build identity.
+        // Production approval can then lock and display the artifact digest
+        // instead of treating current self-hosted builds as legacy releases.
+        if (!operation?.buildArtifactId) {
           const artifact = await this.artifacts.captureRegistryArtifact(
             repository,
             project,
