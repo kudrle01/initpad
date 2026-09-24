@@ -1,7 +1,7 @@
 # Release readiness a známá omezení
 
 Stav dokumentu odpovídá doporučenému Agentu 0.14.2, odmítnutým release
-0.13.0 a 0.14.0 a podepsanému platformnímu releasu 0.2.2. Seznam je záměrně
+0.13.0 a 0.14.0 a podepsanému platformnímu releasu 0.2.8. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
 
@@ -102,7 +102,7 @@ popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
 manifestu; API neúplnou nebo nestabilní verzi při startu odmítne.
 
-### Platformní release 0.2.2 prošel čistým živým updatem
+### Platformní release mechanismus prošel čistými živými updaty
 
 Workflow `initpad-v*` lokálně prochází release gate a vytváří tři podepsané
 multiarch images, SBOM, provenance, Compose descriptor, checksums a recovery
@@ -156,6 +156,13 @@ potvrdil zachování databázových identit, dat, managed workload snapshotu
 a tří immutable release referencí. Rozsáhlý fault/reboot gate zůstává
 doložený na bezprostředně předchozí opravě 0.2.6.
 
+Veřejný podepsaný release 0.2.8 dne 24. září 2026 prošel anonymní
+kontrolou podpisů a OCI indexů pro `linux/amd64` a `linux/arm64` a čistým
+UI updatem z 0.2.7. Následný živý multi-user test na self-hosted VM vytvořil
+z Gitea buildu trvalý OCI artefakt, nasadil totožný SHA-256 digest do dev a
+testu a po žádosti membera a schválení jiným ownerem také do produkce.
+Produkční statická aplikace byla po dokončení dostupná na publikované URL.
+
 Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
@@ -163,6 +170,7 @@ npm run audit:public-release -- --tag initpad-v0.2.2
 npm run audit:public-release -- --tag initpad-v0.2.4
 npm run audit:public-release -- --tag initpad-v0.2.6
 npm run audit:public-release -- --tag initpad-v0.2.7
+npm run audit:public-release -- --tag initpad-v0.2.8
 npm run audit:public-release -- --tag agent-v0.14.2
 ```
 

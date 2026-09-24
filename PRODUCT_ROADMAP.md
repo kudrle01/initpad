@@ -100,6 +100,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Vydat `0.2.7` s reconnecting UI, bezpečným TTL acceptance helperem
   a viditelným immutable digestem produkčního artefaktu; čistý update
   z podepsané `0.2.6` živě zachoval identity, data a workloady.
+- [x] Vydat `0.2.8`, živě aktualizovat podepsanou `0.2.7` a ověřit
+  build-once promotion jednoho Gitea OCI artefaktu přes `dev → test → prod`
+  včetně odděleného produkčního schválení druhým uživatelem.
 
 ### P1 — uzavření diplomkového MVP
 
@@ -713,13 +716,16 @@ jen konkrétní provozní a vyhodnocovací scénář.
    Workspace admin může policy změnit po potvrzení a změna platí i pro dosud
    čekající žádost. API, responzivní UI, audit a automatické regresní testy jsou
    hotové (ADR-082).
-   - ◐ **7b acceptance:** owner v team workspace živě vytvořil immutable
-     request, UI správně zakázalo self-approval a zrušení prošlo potvrzovacím
-     dialogem bez spuštění produkce. Zbývá, aby member/maintainer požádal a oprávněný druhý člověk
-     schválí a prod použije přesně zobrazený digest. Samostatně ověřit reject,
-     cancel, dvojité schválení a zneplatnění po změně produkční proměnné
-     nebo targetu. V Audit logu musí být oddělené request, review a deployment
-     outcome události.
+   - ◐ **7b acceptance:** self-approval ownera je živě zakázaný a zrušení
+     prošlo potvrzovacím dialogem bez spuštění produkce. Dne 24. září
+     2026 navíc member v team workspace vytvořil request a jiný owner jej
+     schválil. `dev`, `test` i `prod` použily stejný SHA-256 digest
+     `2234cb543eda6ee48461ef046a247226b36102814fbbcae2bacdca1894b149af`;
+     produkční SFTP aplikace byla po dokončení dostupná přes publikovanou
+     URL. Zbývá samostatně živě ověřit reject, cancel, dvojité schválení
+     a zneplatnění po změně produkční proměnné nebo targetu. V Audit
+     logu se ještě musí potvrdit oddělené request, review a deployment outcome
+     události.
 3. ◐ **7c — provozní policy a lifecycle.** Allocation nese validované
    CPU/RAM/PID limity, stávající maximální počet prostředí a volitelné TTL pro
    dev/test. Vestavěný Docker i vzdálený Agent vynucují stejný resource snapshot.
@@ -1055,6 +1061,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
        Release `0.2.7` dne 23. září 2026 prošel anonymní kontrolou
        podpisů a multiarch images i čistým UI updatem z `0.2.6`;
        `after-success` potvrdil stejné identity, data a managed workloady.
+       Release `0.2.8` dne 24. září 2026 prošel anonymní kontrolou
+       podpisů a multiarch images i čistým UI updatem z `0.2.7`. Následný
+       multi-user acceptance prokázal vytvoření trvalého Gitea OCI artefaktu
+       a promotion stejného digestu přes dev, test a schválený prod.
 
 ## Akceptační kritéria
 
