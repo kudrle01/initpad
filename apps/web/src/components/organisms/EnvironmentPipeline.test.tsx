@@ -122,3 +122,35 @@ describe('EnvironmentPipeline workspace access', () => {
     expect(screen.queryByRole('menuitem', { name: /roll back/i })).not.toBeInTheDocument();
   });
 });
+
+describe('EnvironmentPipeline expiry', () => {
+  it('shows scheduled cleanup before the warning window begins', () => {
+    renderPipeline([
+      environment({
+        status: 'running',
+        version: 'a'.repeat(40),
+        expiresAt: '2030-01-01T12:00:00.000Z',
+        expiryWarningAt: '2030-01-01T11:45:00.000Z',
+      }),
+    ]);
+
+    const notice = screen.getByText(/scheduled cleanup/i).closest('div');
+    expect(notice).toBeInTheDocument();
+    expect(notice).toHaveClass('text-muted-foreground');
+    expect(notice).not.toHaveClass('text-warning');
+  });
+
+  it('emphasizes scheduled cleanup once the warning window begins', () => {
+    renderPipeline([
+      environment({
+        status: 'running',
+        version: 'a'.repeat(40),
+        expiresAt: '2020-01-01T12:00:00.000Z',
+        expiryWarningAt: '2020-01-01T11:45:00.000Z',
+      }),
+    ]);
+
+    const notice = screen.getByText(/scheduled cleanup/i).closest('div');
+    expect(notice).toHaveClass('text-warning');
+  });
+});

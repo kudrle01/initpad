@@ -445,8 +445,13 @@ export function EnvironmentPipeline({
                   </Link>
                 )}
 
-              {expiryWarning && env.expiresAt && (
-                <div className="mt-2 flex items-start gap-1 text-xs text-warning">
+              {env.expiresAt && (
+                <div
+                  className={cn(
+                    'mt-2 flex items-start gap-1 text-xs',
+                    expiryWarning ? 'text-warning' : 'text-muted-foreground',
+                  )}
+                >
                   <Clock3 className="mt-0.5 h-3 w-3 shrink-0" />
                   <span>
                     Scheduled cleanup {new Date(env.expiresAt).toLocaleString()}. Redeploy to renew.
