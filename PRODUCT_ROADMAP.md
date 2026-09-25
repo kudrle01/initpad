@@ -722,10 +722,15 @@ jen konkrétní provozní a vyhodnocovací scénář.
      schválil. `dev`, `test` i `prod` použily stejný SHA-256 digest
      `2234cb543eda6ee48461ef046a247226b36102814fbbcae2bacdca1894b149af`;
      produkční SFTP aplikace byla po dokončení dostupná přes publikovanou
-     URL. Zbývá samostatně živě ověřit reject, cancel, dvojité schválení
-     a zneplatnění po změně produkční proměnné nebo targetu. V Audit
-     logu se ještě musí potvrdit oddělené request, review a deployment outcome
-     události.
+     URL. Navazující acceptance 25. září ověřil cancel žadatelem, reject
+     jiným ownerem a automatické zneplatnění pending requestu po změně
+     produkční konfigurace; ve všech případech zůstal běžící workload
+     nedotčený a nevznikl nový deployment. Audit log oddělil request,
+     review, deployment accepted a terminální outcome se správnými aktéry.
+     Detail projektu nyní po config mutaci refetchuje stav requestu bez
+     ručního reloadu a tento UX kontrakt kryjí regresní testy. Zbývá živě
+     vyvolat souběžný pokus o dvojité schválení; databázovou atomicitu už
+     kryjí automatické testy.
 3. ◐ **7c — provozní policy a lifecycle.** Allocation nese validované
    CPU/RAM/PID limity, stávající maximální počet prostředí a volitelné TTL pro
    dev/test. Vestavěný Docker i vzdálený Agent vynucují stejný resource snapshot.

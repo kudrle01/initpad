@@ -48,6 +48,7 @@ export default function ProjectDetail() {
     setTargetEnv,
     setConfigEnv,
     setDiagnosticEnv,
+    refreshDetails,
     retryLoad,
     toggleCommit,
     promote,
@@ -373,6 +374,7 @@ export default function ProjectDetail() {
         env={configEnv}
         canManage={canMaintain}
         onOpenChange={(o) => !o && setConfigEnv(null)}
+        onChanged={refreshDetails}
       />
 
       <WorkloadDiagnosticsDialog

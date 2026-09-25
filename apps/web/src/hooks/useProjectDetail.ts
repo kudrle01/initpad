@@ -453,6 +453,7 @@ export function useProjectDetail() {
     setTargetEnv,
     setConfigEnv,
     setDiagnosticEnv,
+    refreshDetails: () => load('head'),
     retryLoad,
     toggleCommit: (sha: string) => setOpenSha((current) => (current === sha ? null : sha)),
     promote,

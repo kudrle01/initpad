@@ -20,11 +20,12 @@ interface Props {
   env: EnvName | null;
   canManage: boolean;
   onOpenChange: (open: boolean) => void;
+  onChanged: () => Promise<void> | void;
 }
 
 // Per-environment application config & secrets (ADR-061). Secret values are never
 // shown (the API masks them); a secret can be replaced by entering a new value.
-export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props) {
+export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChanged }: Props) {
   const [vars, setVars] = useState<ConfigVar[]>([]);
   const [loading, setLoading] = useState(false);
   const [key, setKey] = useState('');
@@ -76,6 +77,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
       setValue('');
       setIsSecret(false);
       load();
+      await onChanged();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -103,6 +105,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange }: Props
     try {
       await api.deleteConfigVar(projectId, env, k);
       load();
+      await onChanged();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
