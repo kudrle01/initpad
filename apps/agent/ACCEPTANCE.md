@@ -57,23 +57,45 @@ jobs must succeed.
 
 ## 2. Reboot recovery
 
-Restart the Linux host, not only the container:
+Use the verified `initpad-agent-host-acceptance.sh` asset from the same release
+to check the Docker boot service, Agent restart policy, identity, container and
+any existing workloads before restarting the Linux host:
 
 ```sh
+sudo ./initpad-agent-host-acceptance.sh before-reboot
 sudo reboot
 ```
 
-After reconnecting, Docker and the Agent must recover without running the
-installer again:
+Do not run the installer or create another enrollment after reconnecting. The
+same Agent must recover automatically:
 
 ```sh
-sudo systemctl is-active docker
-sudo docker inspect initpad-agent --format 'running={{.State.Running}} health={{.State.Health.Status}}'
-sudo docker exec initpad-agent node /app/dist/cli.js once
+sudo ./initpad-agent-host-acceptance.sh after-reboot
 ```
 
 InitPad must show the same target identity online. A reboot must not issue a new
-enrollment or increment the Agent credential generation.
+enrollment or increment the Agent credential generation. On a conventional
+systemd host, `before-reboot` fails early when `docker.service` is not enabled.
+The installer reports the same condition but deliberately does not change host
+boot policy without an operator decision.
+
+If an existing installation is already offline after a reboot, diagnose and
+recover it without re-enrollment:
+
+```sh
+sudo systemctl is-enabled docker
+sudo systemctl is-active docker
+sudo docker inspect initpad-agent \
+  --format 'running={{.State.Running}} restart={{.HostConfig.RestartPolicy.Name}} exit={{.State.ExitCode}}'
+sudo docker logs --tail=100 initpad-agent
+sudo systemctl enable --now docker  # only when the service was disabled/inactive
+sudo docker start initpad-agent     # only when Docker is active and the container is stopped
+```
+
+`unless-stopped` is intentional: a running Agent recovers after reboot, while
+an Agent that an administrator explicitly stopped remains stopped. Starting an
+existing container preserves its target identity; generating a new token is
+not a recovery step.
 
 ## 3. Workload preservation while disconnected
 

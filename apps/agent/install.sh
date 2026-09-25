@@ -45,6 +45,10 @@ fail() {
   exit 1
 }
 
+warn() {
+  printf '%s: warning: %s\n' "$PROGRAM" "$1" >&2
+}
+
 require_value() {
   [ "$#" -ge 2 ] || fail "$1 requires a value"
   [ -n "$2" ] || fail "$1 requires a non-empty value"
@@ -128,6 +132,15 @@ esac
 command -v docker >/dev/null 2>&1 || fail 'Docker Engine is required'
 [ -S /var/run/docker.sock ] || fail '/var/run/docker.sock is not available'
 docker info >/dev/null 2>&1 || fail 'Docker Engine is not reachable'
+
+# Do not silently modify the host's service policy. Some installations use a
+# non-systemd or externally managed Docker daemon, but a conventional systemd
+# host must enable Docker if the Agent is expected to recover after reboot.
+if command -v systemctl >/dev/null 2>&1 \
+  && [ "$(systemctl show docker.service --property=LoadState --value 2>/dev/null || true)" = loaded ] \
+  && ! systemctl is-enabled --quiet docker.service; then
+  warn 'Docker is running but docker.service is not enabled for host boot; run: sudo systemctl enable docker'
+fi
 [ -t 0 ] || fail 'run the installer in an interactive terminal so the enrollment token can be entered securely'
 
 case "$PUBLISHED_HOST" in

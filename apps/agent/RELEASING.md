@@ -88,3 +88,9 @@ production. It verifies first enrollment, restart after a host reboot,
 idempotent reinstall, rollback from a deliberately unhealthy digest and
 preservation of existing workloads when the Agent is disconnected. A genuine
 upgrade checkpoint closes only when a later signed release exists.
+
+For the reboot checkpoint, run the release asset's `before-reboot` command
+before restarting the host and `after-reboot` after login. The pair rejects a
+disabled systemd Docker service, an incorrect restart policy, a container
+replacement and a changed target identity instead of relying on a visual
+online/offline observation.

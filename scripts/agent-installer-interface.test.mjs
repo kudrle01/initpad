@@ -30,3 +30,12 @@ test('verifies a saved identity before parking the running Agent', () => {
   assert.match(source, /not intended target/);
   assert.match(source, /rerun this command with --re-enroll/);
 });
+
+test('keeps explicit Agent restart semantics and warns about disabled Docker autostart', () => {
+  const source = readFileSync(installer, 'utf8');
+
+  assert.match(source, /--restart unless-stopped/);
+  assert.match(source, /systemctl is-enabled --quiet docker\.service/);
+  assert.match(source, /Docker is running but docker\.service is not enabled for host boot/);
+  assert.doesNotMatch(source, /systemctl enable --now/);
+});

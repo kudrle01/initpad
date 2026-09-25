@@ -9,6 +9,8 @@ CONFIG_FILE=${INITPAD_AGENT_CONFIG_FILE:-/var/lib/initpad-agent/agent.json}
 ACCEPTANCE_DIR=${INITPAD_AGENT_ACCEPTANCE_DIR:-/var/lib/initpad-agent/acceptance}
 DISCONNECT_CHECKPOINT=$ACCEPTANCE_DIR/disconnect.checkpoint
 UPDATE_CHECKPOINT=$ACCEPTANCE_DIR/update.checkpoint
+REBOOT_CHECKPOINT=$ACCEPTANCE_DIR/reboot.checkpoint
+BOOT_ID_FILE=${INITPAD_AGENT_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}
 CHECKPOINT=$DISCONNECT_CHECKPOINT
 REPORT=$ACCEPTANCE_DIR/results.tsv
 
@@ -21,6 +23,8 @@ usage() {
   before-disconnect  Verify Agent/workloads and save their identities
   disconnected       Prove workloads stayed running while Agent is stopped
   after-reconnect    Prove the same Agent identity and workloads recovered
+  before-reboot      Verify Agent autostart prerequisites and save host state
+  after-reboot       Prove host reboot restored the same Agent automatically
   before-update VER  Save Agent identity/workloads before a remote update
   inject-failure     Pause only the next replacement Agent during cutover
   after-rollback VER Prove that a failed update restored the previous Agent
@@ -109,6 +113,23 @@ assert_agent_managed() {
   [ "$managed" = true ] || fail "'$AGENT_CONTAINER' is missing or is not an InitPad Agent container."
 }
 
+assert_restart_policy() {
+  local policy
+  policy=$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' \
+    "$AGENT_CONTAINER" 2>/dev/null || true)
+  [ "$policy" = unless-stopped ] || \
+    fail "Agent restart policy is '${policy:-missing}', expected 'unless-stopped'."
+}
+
+assert_docker_boot_service() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  [ "$(systemctl show docker.service --property=LoadState --value 2>/dev/null || true)" = loaded ] || \
+    return 0
+  systemctl is-active --quiet docker.service || fail "docker.service is not active."
+  systemctl is-enabled --quiet docker.service || \
+    fail "docker.service is not enabled for host boot; run 'sudo systemctl enable docker'."
+}
+
 assert_workloads_running() {
   local ids=$1 id count=0
   while IFS= read -r id; do
@@ -117,6 +138,14 @@ assert_workloads_running() {
     count=$((count + 1))
   done <<< "$ids"
   [ "$count" -gt 0 ] || fail "Deploy at least one workload to this target first."
+}
+
+assert_workloads_running_if_present() {
+  local ids=$1 id
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    [ "$(container_running "$id")" = true ] || fail "Workload '$id' is not running."
+  done <<< "$ids"
 }
 
 checkpoint_value() {
@@ -264,6 +293,84 @@ check_after_reconnect() {
   printf 'Confirm in InitPad that the queued protocol test completed exactly once.\n'
 }
 
+before_reboot() {
+  [ -r "$BOOT_ID_FILE" ] || fail "Host boot ID '$BOOT_ID_FILE' is not readable."
+  [ -f "$CONFIG_FILE" ] || fail "Agent identity '$CONFIG_FILE' does not exist."
+  [ "$(stat -c '%a' "$CONFIG_FILE")" = 600 ] || fail "Agent identity permissions are not 0600."
+  assert_agent_managed
+  assert_restart_policy
+  assert_docker_boot_service
+  [ "$(container_running "$AGENT_CONTAINER")" = true ] || fail "Agent is not running."
+  docker exec "$AGENT_CONTAINER" node /app/dist/cli.js once >/dev/null || \
+    fail "Agent heartbeat was rejected before reboot."
+
+  local identity target_id agent_container_id image boot_id ids temporary
+  identity=$(agent_identity)
+  target_id=${identity%%|*}
+  agent_container_id=$(docker inspect --format '{{.Id}}' "$AGENT_CONTAINER")
+  image=$(agent_image)
+  boot_id=$(tr -d '\n' < "$BOOT_ID_FILE")
+  [ -n "$boot_id" ] || fail "Host boot ID is empty."
+  ids=$(workload_ids "$target_id")
+  assert_workloads_running_if_present "$ids"
+
+  ensure_storage
+  temporary=$(mktemp "$ACCEPTANCE_DIR/reboot.XXXXXX")
+  chmod 0600 "$temporary"
+  {
+    printf 'boot_id=%s\n' "$boot_id"
+    printf 'identity=%s\n' "$identity"
+    printf 'target_id=%s\n' "$target_id"
+    printf 'agent_container=%s\n' "$agent_container_id"
+    printf 'agent_image=%s\n' "$image"
+    while IFS= read -r id; do
+      [ -n "$id" ] && printf 'workload=%s\n' "$id"
+    done <<< "$ids"
+  } > "$temporary"
+  mv "$temporary" "$REBOOT_CHECKPOINT"
+  CHECKPOINT=$REBOOT_CHECKPOINT
+  record before-reboot \
+    "target=$target_id workloads=$(printf '%s\n' "$ids" | grep -c . || true)"
+  pass "Reboot checkpoint saved. Reboot the host without stopping the Agent first."
+}
+
+check_after_reboot() {
+  CHECKPOINT=$REBOOT_CHECKPOINT
+  assert_checkpoint
+  [ -r "$BOOT_ID_FILE" ] || fail "Host boot ID '$BOOT_ID_FILE' is not readable."
+  [ "$(tr -d '\n' < "$BOOT_ID_FILE")" != "$(checkpoint_value boot_id)" ] || \
+    fail "Host boot ID did not change; this was not a host reboot."
+  assert_docker_boot_service
+  assert_agent_managed
+  assert_restart_policy
+
+  local deadline current_id running health
+  deadline=$((SECONDS + 90))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    current_id=$(docker inspect --format '{{.Id}}' "$AGENT_CONTAINER" 2>/dev/null || true)
+    running=$(container_running "$AGENT_CONTAINER")
+    health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+      "$AGENT_CONTAINER" 2>/dev/null || true)
+    [ "$current_id" = "$(checkpoint_value agent_container)" ] \
+      && [ "$running" = true ] && [ "$health" = healthy ] && break
+    sleep 2
+  done
+  [ "$current_id" = "$(checkpoint_value agent_container)" ] || \
+    fail "Host reboot did not preserve the Agent container."
+  [ "$running" = true ] || \
+    fail "Agent did not restart. Inspect docker.service and 'docker logs $AGENT_CONTAINER'."
+  [ "$health" = healthy ] || fail "Agent did not become healthy after reboot."
+  [ "$(agent_image)" = "$(checkpoint_value agent_image)" ] || \
+    fail "Agent image changed during host reboot."
+  assert_identity_unchanged
+  assert_workloads_preserved
+  docker exec "$AGENT_CONTAINER" node /app/dist/cli.js once >/dev/null || \
+    fail "Agent heartbeat was rejected after reboot."
+  rm -f "$REBOOT_CHECKPOINT"
+  record after-reboot "identity_preserved=true workloads_preserved=true heartbeat=true"
+  pass "Host reboot restored the same Agent identity, container and workloads."
+}
+
 before_update() {
   local expected_version=$1
   require_version "$expected_version"
@@ -360,7 +467,7 @@ after_update() {
 
 case "${1:-}" in
   -h|--help|'') usage; exit 0 ;;
-  before-disconnect|disconnected|after-reconnect|inject-failure) ;;
+  before-disconnect|disconnected|after-reconnect|before-reboot|after-reboot|inject-failure) ;;
   before-update|after-rollback|after-update)
     [ "$#" -eq 2 ] || { usage >&2; exit 1; }
     require_version "$2"
@@ -379,6 +486,8 @@ case "$1" in
   before-disconnect) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; before_disconnect ;;
   disconnected) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; check_disconnected ;;
   after-reconnect) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; check_after_reconnect ;;
+  before-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; before_reboot ;;
+  after-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; check_after_reboot ;;
   before-update) before_update "$2" ;;
   inject-failure) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; inject_update_failure ;;
   after-rollback) after_rollback "$2" ;;

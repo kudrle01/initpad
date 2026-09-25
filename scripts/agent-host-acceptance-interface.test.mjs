@@ -15,6 +15,8 @@ test('documents explicit, operator-controlled lifecycle checkpoints', () => {
     'before-disconnect',
     'disconnected',
     'after-reconnect',
+    'before-reboot',
+    'after-reboot',
     'before-update',
     'inject-failure',
     'after-rollback',
@@ -46,4 +48,16 @@ test('fault injection pauses only while the rollback slot exists and has a fail-
   );
   assert.match(injection, /docker unpause "\$AGENT_CONTAINER"/);
   assert.doesNotMatch(injection, /docker (rm|stop) /);
+});
+
+test('exposes an evidence-backed host reboot acceptance flow', () => {
+  const help = execFileSync(helper, ['--help'], { encoding: 'utf8' });
+  const source = readFileSync(helper, 'utf8');
+
+  assert.match(help, /before-reboot\s+Verify Agent autostart prerequisites/);
+  assert.match(help, /after-reboot\s+Prove host reboot restored the same Agent/);
+  assert.match(source, /RestartPolicy\.Name/);
+  assert.match(source, /systemctl is-enabled --quiet docker\.service/);
+  assert.match(source, /kernel\/random\/boot_id/);
+  assert.match(source, /Host reboot restored the same Agent identity, container and workloads/);
 });
