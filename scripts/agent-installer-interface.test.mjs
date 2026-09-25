@@ -39,3 +39,18 @@ test('keeps explicit Agent restart semantics and warns about disabled Docker aut
   assert.match(source, /Docker is running but docker\.service is not enabled for host boot/);
   assert.doesNotMatch(source, /systemctl enable --now/);
 });
+
+test('verifies a changed control-plane URL before replacing a saved identity endpoint', () => {
+  const source = readFileSync(installer, 'utf8');
+  const existingIdentityBranch = source.indexOf(
+    "printf 'Keeping the existing Agent identity in %s.\\n'",
+  );
+  const binding = source.indexOf('verify_identity_binding', existingIdentityBranch);
+  const migrate = source.indexOf('migrate_control_plane_url', existingIdentityBranch);
+
+  assert.ok(existingIdentityBranch > 0, 'existing identity branch is missing');
+  assert.ok(binding > existingIdentityBranch, 'target binding check is missing');
+  assert.ok(migrate > binding, 'URL migration runs before target binding is verified');
+  assert.match(source, /migrate-url --url "\$CONTROL_PLANE_URL"/);
+  assert.match(source, /existing URL and identity were preserved/);
+});

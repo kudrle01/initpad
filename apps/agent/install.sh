@@ -218,6 +218,30 @@ run_agent_container() {
 
 CONFIG_FILE=$DATA_DIR/agent.json
 
+migrate_control_plane_url() {
+  saved_url=$(sed -n 's/^[[:space:]]*"controlPlaneUrl":[[:space:]]*"\([^"]*\)"[,]*[[:space:]]*$/\1/p' \
+    "$CONFIG_FILE")
+  [ -n "$saved_url" ] || fail 'the saved Agent identity does not contain a readable control-plane URL'
+  [ "$saved_url" != "$CONTROL_PLANE_URL" ] || return 0
+
+  printf 'Verifying control-plane URL migration from %s to %s.\n' \
+    "$saved_url" "$CONTROL_PLANE_URL"
+  if [ "$ALLOW_INSECURE_HTTP" = true ]; then
+    migration_output=$(run_agent_container --rm "$IMAGE" \
+      migrate-url --url "$CONTROL_PLANE_URL" --allow-insecure-http 2>&1) || {
+        printf '%s\n' "$migration_output" >&2
+        fail 'the candidate Agent could not verify the new control-plane URL; the existing URL and identity were preserved'
+      }
+  else
+    migration_output=$(run_agent_container --rm "$IMAGE" \
+      migrate-url --url "$CONTROL_PLANE_URL" 2>&1) || {
+        printf '%s\n' "$migration_output" >&2
+        fail 'the candidate Agent could not verify the new control-plane URL; the existing URL and identity were preserved'
+      }
+  fi
+  printf '%s\n' "$migration_output"
+}
+
 verify_identity_binding() {
   [ -n "$EXPECTED_TARGET_ID" ] || return 0
   [ -f "$CONFIG_FILE" ] || fail 'the Agent identity was not written after enrollment'
@@ -245,6 +269,7 @@ if [ ! -f "$CONFIG_FILE" ] || [ "$REENROLL" = true ]; then
 else
   printf 'Keeping the existing Agent identity in %s.\n' "$CONFIG_FILE"
   verify_identity_binding
+  migrate_control_plane_url
   if ! identity_check=$(run_agent_container --rm "$IMAGE" once 2>&1); then
     printf '%s\n' "$identity_check" >&2
     fail 'the candidate Agent could not verify the existing identity; nothing was changed. Inspect the error above. If the identity was rejected because this target was disconnected, recreated or restored from another database, generate a new enrollment token and rerun this command with --re-enroll'

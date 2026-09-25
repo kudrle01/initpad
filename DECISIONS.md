@@ -4892,3 +4892,35 @@ rollback artefaktu. API test vyžaduje přeskočení revokované 0.2.5.
 Rozhodujícím gate zůstává skutečný reboot při přechodu 0.2.4 → 0.2.6,
 následný `after-reboot` a čistý `after-success`. Tento gate dne
 22. září 2026 prošel včetně zachování databázových identit a workloadů.
+
+---
+
+## ADR-115 — URL control plane je ověřitelná transportní konfigurace Agenta
+
+**Kontext.** Agent uchovával URL control plane ve stejném root-only souboru
+jako svou identitu. Po změně self-hosted instalace z host-only adresy na LAN
+adresu kontejner po rebootu správně nastartoval, ale opakovaně kontaktoval
+starý endpoint. Instalátor přijaté `--url` u existující identity ignoroval,
+takže UI ukazovalo `offline`, přestože Docker kontejner byl zdravý. Nový
+enrollment by zbytečně měnil credential i auditovanou identitu targetu.
+
+**Rozhodnutí.** Target ID, Agent ID a credential zůstávají identitou; URL je
+transportní konfigurace. Při opětovném spuštění podepsaného instalátoru s
+jinou URL vytvoří Agent dočasnou konfiguraci se stávajícím credentialem.
+Nový endpoint musí přijmout plný heartbeat a vrátit stejnou target identitu;
+teprve potom se konfigurace atomicky nahradí. HTTP zůstává povoleno jen s
+explicitním LAN flagem. Při jakékoli chybě se dočasný soubor odstraní a
+původní URL, credential i běžící kontejner zůstanou nedotčeny. Jiná
+databáze nebo zrušený target se nadále řeší explicitním re-enrollmentem.
+
+**Důsledky.** Změna DNS, TLS entry pointu nebo LAN adresy stejné instance
+nevyžaduje ruční editaci souboru ani nový token. Credential je kandidátnímu
+endpointu odeslán pouze při explicitním root operátorem spuštěném instalátoru;
+stejný endpoint poskytuje checksummovaný instalační příkaz. Automatická
+migrace není vzdálený redirect a control plane ji nemůže vyvolat jobem.
+
+**Testování.** Unit test ověřuje úspěšný heartbeat před commitem,
+zachování credentialu, normalizovaný no-op a rollback konfigurace po chybě.
+Installer contract vyžaduje migraci před parkováním starého kontejneru.
+Release acceptance 0.14.3 musí na disposable hostu prokázat úspěšnou změnu
+URL i odmítnutí nedostupného kandidáta bez nového enrollmentu.

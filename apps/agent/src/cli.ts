@@ -14,6 +14,7 @@ import { readSecret } from './secret-prompt.js';
 import { AGENT_VERSION, PROTOCOL_VERSION } from './types.js';
 import type { AgentConfig } from './types.js';
 import { runAgentUpdateHelper } from './agent-update.js';
+import { migrateControlPlaneUrl } from './control-plane-migration.js';
 
 const HELP = `InitPad Agent ${AGENT_VERSION}
 
@@ -22,6 +23,7 @@ Usage:
   initpad-agent run [--config <path>]
   initpad-agent once [--config <path>]
   initpad-agent health [--config <path>]
+  initpad-agent migrate-url --url <control-plane-url> [--allow-insecure-http] [--config <path>]
   initpad-agent version
 
 The enrollment token is requested interactively and is never accepted as a
@@ -104,6 +106,16 @@ async function main(): Promise<void> {
     process.once('SIGINT', () => controller.abort());
     process.once('SIGTERM', () => controller.abort());
     await runAgentUpdateHelper(cli.plan, controller.signal);
+    return;
+  }
+  if (cli.command === 'migrate-url') {
+    if (!cli.url) throw new Error('migrate-url requires --url <control-plane-url>');
+    const migration = await migrateControlPlaneUrl(cli.configPath, cli.url, cli.allowInsecureHttp);
+    console.log(
+      migration.changed
+        ? `Control-plane URL migrated from ${migration.from} to ${migration.to}.`
+        : `Control-plane URL is already ${migration.to}.`,
+    );
     return;
   }
   const config = await loadConfig(cli.configPath);

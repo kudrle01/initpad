@@ -108,9 +108,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 
 - [ ] Dokončit živé multi-user acceptance auditu, prod approval, TTL,
   read-only portfolia a evaluation exportu z Fáze 7.
-- [ ] V následujícím Agent release živě zopakovat nový evidence-backed
-  reboot gate: Docker boot enablement, stejný Agent kontejner, identita,
-  heartbeat a zachované workloady bez nového enrollmentu.
+- [ ] Vydat Agent `0.14.3` a živě zopakovat nový evidence-backed reboot
+  gate: Docker boot enablement, stejný Agent kontejner, identita, heartbeat a
+  zachované workloady bez nového enrollmentu. Na stejném disposable targetu
+  ověřit atomickou migraci změněné control-plane URL i rollback při
+  nedostupném kandidátním endpointu.
 - [ ] Projít GitHub App E2E pro osobní i organizační instalaci: login,
   create/import, Actions artifact, Agent deploy, rename, suspend a uninstall.
 - [ ] Provést finální bezpečnostní, maintainability, dependency,

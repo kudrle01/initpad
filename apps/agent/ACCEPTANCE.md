@@ -160,6 +160,15 @@ The version must still be the accepted release, the heartbeat must pass, the
 workload must be running and no parked `initpad-agent-previous` container may
 remain.
 
+For Agent 0.14.3 or newer, also expose the same disposable control plane
+through a second trusted URL and rerun the generated installer command from
+that URL. The command must print a verified URL migration, preserve the target
+ID and credential generation, and reconnect without an enrollment token.
+Temporarily make the candidate URL unreachable and repeat with a third URL;
+the installer must fail while the previously verified URL and running Agent
+remain unchanged. Never point this test at another InitPad database: changing
+instances is re-enrollment, not URL migration.
+
 ## 5. Real release update
 
 A real update requires a second signed release with a different immutable
