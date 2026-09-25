@@ -103,6 +103,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Vydat `0.2.8`, živě aktualizovat podepsanou `0.2.7` a ověřit
   build-once promotion jednoho Gitea OCI artefaktu přes `dev → test → prod`
   včetně odděleného produkčního schválení druhým uživatelem.
+- [x] Vydat `0.2.9`, živě aktualizovat podepsanou `0.2.8`, aplikovat
+  case-insensitive identity indexy a ověřit přihlášení stejného účtu
+  náhodnou velikostí písmen bez změny hesla nebo uložené identity.
 
 ### P1 — uzavření diplomkového MVP
 
