@@ -750,23 +750,27 @@ jen konkrétní provozní a vyhodnocovací scénář.
    fingerprint. Automatické testy i provozní acceptance jsou hotové.
    **Uživatelský test:** překročení kvóty je odmítnuto před jobem, expirující dev
    je vidět dopředu a po TTL zmizí jen workload; prod zůstane nedotčený.
-4. ◐ **7d — organizační portfolio.** Workspace dashboard jedním databázovým
+4. ✅ **7d — organizační portfolio.** Workspace dashboard jedním databázovým
    read-modelem shrnuje projekty, poslední CI/deploy, health, aktivní server
    accesses, čekající approvals a cleanup dluh. Načtení nevolá SCM ani Docker
    a neroste o dotaz pro každý projekt (ADR-084). Automatické testy, produkční
-   build a živý owner acceptance nad reálným workspace jsou hotové; zbývá
-   živý acceptance druhé read-only role.
+   build a živý owner acceptance nad reálným workspace jsou hotové.
+   Živý viewer acceptance 25. září 2026 potvrdil stejný portfolio stav,
+   přístup k detailu, historii a auditu bez deploy, config, target, member nebo
+   server mutací; `/new` a `/import` zobrazily read-only stav a loading
+   nepředstíral prázdný workspace.
    **Uživatelský test:** owner pozná problémový projekt a přejde na konkrétní
    akci; viewer vidí stejný read-only stav a prázdný list se během načítání
    falešně nezobrazí.
-5. ◐ **7e — vyhodnocovací export.** Owner/admin volí období a stahuje
+5. ✅ **7e — vyhodnocovací export.** Owner/admin volí období a stahuje
    verzovaný JSON nebo CSV s celkovými i denními agregacemi: úspěšnost
    deploymentů, rollbacky, request-to-healthy dev a build-to-production proxy.
    Databázový select záměrně nečte logy, message, config, secrets ani identity;
    cizí workspace vrací 404 a member/viewer 403 (ADR-085). Automatické testy,
    produkční build a živé stažení obou formátů ownerem jsou hotové; Audit
-   log potvrdil správný formát, období i aktéra. Zbývá živý pokus druhého
-   member/viewer účtu.
+   log potvrdil správný formát, období i aktéra. Živý viewer acceptance
+   25. září 2026 potvrdil, že exportní akce není dostupná; přímé
+   `403` a cross-workspace `404` nadále kryje HTTP tenant matice.
    **Uživatelský test:** owner exportuje období a hodnoty odpovídají
    auditovaným operacím; member bez oprávnění export nezíská.
 
