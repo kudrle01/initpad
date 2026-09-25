@@ -736,14 +736,18 @@ jen konkrétní provozní a vyhodnocovací scénář.
      ručního reloadu a tento UX kontrakt kryjí regresní testy. Zbývá živě
      vyvolat souběžný pokus o dvojité schválení; databázovou atomicitu už
      kryjí automatické testy.
-3. ◐ **7c — provozní policy a lifecycle.** Allocation nese validované
+3. ✅ **7c — provozní policy a lifecycle.** Allocation nese validované
    CPU/RAM/PID limity, stávající maximální počet prostředí a volitelné TTL pro
    dev/test. Vestavěný Docker i vzdálený Agent vynucují stejný resource snapshot.
    Úspěšný deploy ukládá expiry a předstih varování; periodický
    compare-and-set sweep auditovaně odstraní pouze workload a při chybě jej
    bezpečně naplánuje znovu. Produkce je vyloučena dotazem i guardem a repository
-   není součástí lifecycle akce (ADR-083). Automatické testy jsou hotové; zbývá
-   živý test po aplikaci migrace.
+   není součástí lifecycle akce (ADR-083). Karta prostředí ukazuje
+   naplánovaný úklid hned po deployi a ve warning okně jej zvýrazní. Živý
+   acceptance 25. září 2026 bezpečně posunul pouze disposable `dev`
+   `team-alpha/approval-acceptance-2309` do minulosti; lifecycle sweep odstranil
+   jeho workload i artifact binding, zaznamenal audit a zachoval produkční
+   fingerprint. Automatické testy i provozní acceptance jsou hotové.
    **Uživatelský test:** překročení kvóty je odmítnuto před jobem, expirující dev
    je vidět dopředu a po TTL zmizí jen workload; prod zůstane nedotčený.
 4. ◐ **7d — organizační portfolio.** Workspace dashboard jedním databázovým
