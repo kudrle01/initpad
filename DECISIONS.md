@@ -4924,3 +4924,31 @@ zachování credentialu, normalizovaný no-op a rollback konfigurace po chybě.
 Installer contract vyžaduje migraci před parkováním starého kontejneru.
 Release acceptance 0.14.3 musí na disposable hostu prokázat úspěšnou změnu
 URL i odmítnutí nedostupného kandidáta bez nového enrollmentu.
+
+---
+
+## ADR-116 — Lokální přihlašovací identifikátory nerozlišují velikost písmen
+
+**Kontext.** Lokální login normalizoval e-mail na lowercase, ale username
+porovnával přesně. Účet `carol` se proto nepřihlásil jako `Carol`, přestože
+rate limiter obě podoby správně považoval za jeden subjekt. Samotné PostgreSQL
+`UNIQUE` nad `text` navíc nezakazovalo souběžný vznik `Carol` a `carol`.
+
+**Rozhodnutí.** Username i e-mail se při lookupu normalizují pomocí Unicode
+NFKC, oříznutí a lowercase a PostgreSQL je porovnává case-insensitive.
+Nové managed username se ve stejné kanonické podobě zakládá v InitPadu i
+Gitee. Funkční unikátní indexy nad `LOWER(username)` a `LOWER(email)` chrání
+invariant i při souběžné registraci nebo přímém databázovém zápisu.
+Stejné vyhledávání používá login, password reset a přidání existujícího
+člena workspace. Heslo se nikdy nenormalizuje a zůstává case-sensitive.
+
+**Důsledky.** Běžné překlepy ve velikosti písmen u identity neblokují
+přihlášení ani správu týmu, zatímco rate-limit subject a databázová identita
+zůstávají shodné. Migrace záměrně selže s explicitní chybou, pokud by
+stará databáze již obsahovala case-insensitive duplicity; ty musí operátor
+nejprve ručně sloučit, nikoli nechat migraci tiše vybrat jeden účet.
+
+**Testování.** API testy vyžadují stejný lookup pro smíšenou velikost
+username i e-mailu, kanonické založení managed účtu a stejné vyhledání
+člena workspace. Produkční build kontroluje Prisma typy; live acceptance po
+migraci ověří `carol`, `Carol` i e-mail s rozdílnou velikostí písmen.

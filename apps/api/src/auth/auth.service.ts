@@ -15,6 +15,7 @@ import { hashPassword, verifyPassword } from './password';
 import { encryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import { config } from '../config';
+import { accountIdentifierEquals, normalizeAccountIdentifier } from '../common/account-identifier';
 
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -149,9 +150,15 @@ export class AuthService implements OnModuleInit {
     platformRole?: 'admin' | 'user';
     mustChangePassword?: boolean;
   }) {
-    const email = input.email.trim().toLowerCase();
+    const username = normalizeAccountIdentifier(input.username);
+    const email = normalizeAccountIdentifier(input.email);
     const existing = await this.prisma.user.findFirst({
-      where: { OR: [{ username: input.username }, { email }] },
+      where: {
+        OR: [
+          { username: accountIdentifierEquals(username) },
+          { email: accountIdentifierEquals(email) },
+        ],
+      },
     });
     if (existing) {
       throw new BadRequestException('Username or e-mail is already taken');
@@ -160,13 +167,13 @@ export class AuthService implements OnModuleInit {
     let provisionedUsername: string | null = null;
     try {
       const giteaUser = await this.gitea.createUser({
-        username: input.username,
+        username,
         email,
         password: input.password,
       });
       provisionedUsername = giteaUser.login;
-      const accessToken = await this.gitea.createUserToken(input.username, input.password);
-      await this.gitea.randomizeUserPassword(input.username);
+      const accessToken = await this.gitea.createUserToken(username, input.password);
+      await this.gitea.randomizeUserPassword(username);
       return await this.prisma.user.create({
         data: {
           giteaId: giteaUser.id,
@@ -217,9 +224,13 @@ export class AuthService implements OnModuleInit {
     const username = await this.uniqueUsername(input.login);
     // In SaaS the e-mail participates in account display and workspace lookup,
     // so keep it only when GitHub explicitly attested it as verified.
-    const emailRaw = input.emailVerified ? input.email?.trim().toLowerCase() || null : null;
+    const emailRaw = input.emailVerified
+      ? normalizeAccountIdentifier(input.email ?? '') || null
+      : null;
     const emailTaken = emailRaw
-      ? (await this.prisma.user.findUnique({ where: { email: emailRaw } })) != null
+      ? (await this.prisma.user.findFirst({
+          where: { email: accountIdentifierEquals(emailRaw) },
+        })) != null
       : false;
     const email = emailTaken ? null : emailRaw;
     return this.prisma.user.create({
@@ -269,7 +280,11 @@ export class AuthService implements OnModuleInit {
     if (base.length < 2) base = `${base}gh`;
     let candidate = base;
     for (let i = 1; i <= 50; i++) {
-      if (!(await this.prisma.user.findUnique({ where: { username: candidate } })))
+      if (
+        !(await this.prisma.user.findFirst({
+          where: { username: accountIdentifierEquals(candidate) },
+        }))
+      )
         return candidate;
       candidate = `${base}-${i}`;
     }
@@ -281,9 +296,14 @@ export class AuthService implements OnModuleInit {
     if (config.edition === 'saas') {
       throw new ForbiddenException('Password sign-in is disabled in the SaaS edition');
     }
-    const identity = dto.username.trim();
+    const identity = normalizeAccountIdentifier(dto.username);
     const user = await this.prisma.user.findFirst({
-      where: { OR: [{ username: identity }, { email: identity.toLowerCase() }] },
+      where: {
+        OR: [
+          { username: accountIdentifierEquals(identity) },
+          { email: accountIdentifierEquals(identity) },
+        ],
+      },
     });
     const passwordMatches = await verifyPassword(
       dto.password,
@@ -364,10 +384,12 @@ export class AuthService implements OnModuleInit {
    * a release gate and self-hosted administrators can use account reset meanwhile.
    */
   async requestPasswordReset(identity: string): Promise<void> {
-    const id = identity.trim();
+    const id = normalizeAccountIdentifier(identity);
     if (!id) return;
     const user = await this.prisma.user.findFirst({
-      where: { OR: [{ username: id }, { email: id.toLowerCase() }] },
+      where: {
+        OR: [{ username: accountIdentifierEquals(id) }, { email: accountIdentifierEquals(id) }],
+      },
     });
     if (!user || !user.passwordHash) return;
     await this.issueAuthToken(user.id, 'password_reset', PASSWORD_RESET_TTL_MS);

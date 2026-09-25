@@ -12,6 +12,7 @@ import { AddWorkspaceMemberDto, AssignableRole, UpdateWorkspaceMemberDto } from 
 import { repositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { AuditEventsService } from '../audit/audit-events.service';
+import { accountIdentifierEquals, normalizeAccountIdentifier } from '../common/account-identifier';
 
 const REPOSITORY_SELECT = {
   scmProvider: true,
@@ -282,9 +283,14 @@ export class WorkspacesService {
     if (workspace.type === 'personal') {
       throw new BadRequestException('Create a team workspace before adding other members');
     }
-    const identity = dto.identity.trim();
+    const identity = normalizeAccountIdentifier(dto.identity);
     const member = await this.prisma.user.findFirst({
-      where: { OR: [{ username: identity }, { email: identity.toLowerCase() }] },
+      where: {
+        OR: [
+          { username: accountIdentifierEquals(identity) },
+          { email: accountIdentifierEquals(identity) },
+        ],
+      },
     });
     if (!member) throw new NotFoundException(`User '${identity}' not found`);
     const existing = await this.prisma.workspaceMember.findUnique({

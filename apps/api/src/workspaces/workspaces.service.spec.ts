@@ -166,7 +166,16 @@ describe('WorkspacesService tenant isolation', () => {
     const service = new WorkspacesService(prisma as never, workspaceScm as never, audit as never);
     jest.spyOn(service, 'require').mockResolvedValue('admin');
 
-    await service.addMember('admin', 'team', { identity: 'bob', role: 'viewer' });
+    await service.addMember('admin', 'team', { identity: ' BoB ', role: 'viewer' });
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { username: { equals: 'bob', mode: 'insensitive' } },
+          { email: { equals: 'bob', mode: 'insensitive' } },
+        ],
+      },
+    });
 
     expect(gitea.setCollaborator).toHaveBeenCalledWith(
       expect.objectContaining({

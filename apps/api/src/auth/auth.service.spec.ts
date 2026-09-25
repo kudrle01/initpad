@@ -40,7 +40,7 @@ describe('AuthService', () => {
 
     const result = await Promise.allSettled([
       service.register({
-        username: 'first-user',
+        username: 'First-User',
         email: 'first@example.test',
         password: 'long-password-1',
       }),
@@ -55,6 +55,9 @@ describe('AuthService', () => {
     const rejected = result.find((entry) => entry.status === 'rejected') as PromiseRejectedResult;
     expect(rejected.reason).toBeInstanceOf(ForbiddenException);
     expect(gitea.createUser).toHaveBeenCalledTimes(1);
+    expect(gitea.createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'first-user' }),
+    );
   });
 
   it('keeps self-service registration open in the open policy', async () => {
@@ -115,7 +118,7 @@ describe('AuthService', () => {
     expect(await service.registrationAvailable()).toBe(false); // then closed to self-service
   });
 
-  it('normalizes an e-mail address during sign-in', async () => {
+  it('matches username and e-mail case-insensitively during sign-in', async () => {
     config.edition = 'self-hosted';
     const user = {
       id: 'u1',
@@ -132,9 +135,24 @@ describe('AuthService', () => {
     };
     const prisma = { user: { findFirst: jest.fn(async () => user) } };
     const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
-    await service.login({ username: 'ALICE@EXAMPLE.TEST', password: 'long-password' });
+    await service.login({ username: ' ALICE@EXAMPLE.TEST ', password: 'long-password' });
     expect(prisma.user.findFirst).toHaveBeenCalledWith({
-      where: { OR: [{ username: 'ALICE@EXAMPLE.TEST' }, { email: 'alice@example.test' }] },
+      where: {
+        OR: [
+          { username: { equals: 'alice@example.test', mode: 'insensitive' } },
+          { email: { equals: 'alice@example.test', mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    await service.login({ username: 'ALIce', password: 'long-password' });
+    expect(prisma.user.findFirst).toHaveBeenLastCalledWith({
+      where: {
+        OR: [
+          { username: { equals: 'alice', mode: 'insensitive' } },
+          { email: { equals: 'alice', mode: 'insensitive' } },
+        ],
+      },
     });
   });
 
@@ -215,7 +233,7 @@ describe('AuthService', () => {
     let createData: Record<string, unknown> | undefined;
     const prisma = {
       user: {
-        findUnique: jest.fn(async () => null), // username free, e-mail free
+        findFirst: jest.fn(async () => null), // username free, e-mail free
         count: jest.fn(async () => 3),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
           createData = data;
@@ -249,7 +267,7 @@ describe('AuthService', () => {
     const prisma = {
       user: {
         // username free (1st call) then e-mail already taken (2nd call).
-        findUnique: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'other' }),
+        findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'other' }),
         count: jest.fn(async () => 3),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
           createData = data;
@@ -273,7 +291,7 @@ describe('AuthService', () => {
     let createData: Record<string, unknown> | undefined;
     const prisma = {
       user: {
-        findUnique: jest.fn(async () => null),
+        findFirst: jest.fn(async () => null),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
           createData = data;
           return { id: 'u9', ...data };
