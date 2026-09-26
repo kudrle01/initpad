@@ -41,7 +41,8 @@ server. Před testem ověř:
 - gateway/DNS funguje, pokud se hodnotí stabilní HTTPS URL;
 - účty A a B jsou aktivní, ale testovací workspace ani projekt ještě
   neexistují;
-- účastník B bude owner/admin team workspace; A bude member.
+- účastník A bude owner team workspace a účastník B maintainer;
+  facilitátor ověří, že B nemá správu členů ani produkční policy.
 
 Do záznamu uveď commit InitPadu, verzi Agenta, edici, typ targetu, zvolenou
 šablonu a kapacitu CI runneru. Nepřikládej `.env`, tokeny ani credentials.
@@ -88,7 +89,8 @@ Zadání pro účastníka B:
 
 Facilitátor potom v detailu operací ověří, že `dev`, `test` a `prod`
 odkazují na stejné SHA a digest. V team workspace nesmí A schválit vlastní
-žádost, pokud policy vyžaduje druhého člověka.
+žádost, pokud policy vyžaduje druhého člověka. B ji jako maintainer
+schválit smí, aniž by získal oprávnění spravovat workspace.
 
 ## Scénář C — chyba a rollback
 

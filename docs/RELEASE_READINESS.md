@@ -160,7 +160,7 @@ Veřejný podepsaný release 0.2.8 dne 24. září 2026 prošel anonymní
 kontrolou podpisů a OCI indexů pro `linux/amd64` a `linux/arm64` a čistým
 UI updatem z 0.2.7. Následný živý multi-user test na self-hosted VM vytvořil
 z Gitea buildu trvalý OCI artefakt, nasadil totožný SHA-256 digest do dev a
-testu a po žádosti membera a schválení jiným ownerem také do produkce.
+testu a po žádosti membera a schválení jiným oprávněným reviewerem také do produkce.
 Produkční statická aplikace byla po dokončení dostupná na publikované URL.
 
 Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:

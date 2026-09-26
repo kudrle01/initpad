@@ -169,13 +169,14 @@ s Giteou. Restart pouhého kontejneru proto nelze vydávat za reboot hosta.
 
 ## 5. Ověř účty, workspace a role
 
-1. Založ účty `alice`, `bob` a `carol` (pro druhý a třetí použij privátní okno).
+1. Založ účty `alice`, `bob`, `carol`, `dave` a `erin` (pro další účty
+   použij privátní okno).
 2. Alice vytvoří workspace `Team Alpha` se slugem `team-alpha`.
 3. Bob vytvoří workspace `Team Beta` se slugem `team-beta`.
-4. Alice přidá existujícího Boba do Team Alpha jako `member` a Carol jako
-   `viewer`.
-5. Ověř, že Bob vidí oba své workspace, Carol pouze Team Alpha a žádný uživatel
-   nevidí projekty ani allocations workspace, jehož není členem.
+4. Alice přidá existujícího Boba do Team Alpha jako `member`, Carol jako
+   `viewer`, Davea jako `maintainer` a Erin jako `admin`.
+5. Ověř, že Bob vidí oba své workspace, ostatní pouze Team Alpha a žádný
+   uživatel nevidí projekty ani allocations workspace, jehož není členem.
 6. Owner může členům měnit role; member ani viewer správu členů provést nemůže.
 
 ## 6. Ověř TargetAllocation a izolaci tenantů
@@ -549,7 +550,8 @@ obsahu `/var/lib/initpad-agent/agent.json`.
 
 Tento krok uzavírá audit, produkční approval, TTL, read-only portfolio
 a vyhodnocovací export. Použij skutečné účty z kroku 5, ne databázové
-fixtures: Alice je owner Team Alpha, Bob member a Carol viewer. Automatická
+fixtures: Alice je owner Team Alpha, Bob member, Carol viewer, Dave maintainer
+a Erin admin. Automatická
 tenant matice z kroku 6 zůstá technickým důkazem odpovědí 403/404; tento
 scénář navíc ověřuje, že lidé rozumějí stejným hranicím v UI.
 
@@ -571,11 +573,16 @@ V nastavení Team Alpha ponech policy **Require a separate reviewer**.
 
 1. Bob povýší zdravý test build do produkce. Požadavek musí ukázat
    neměnné SHA, digest, target a config revision; Bob jej nesmí schválit.
-2. Alice požadavek schválí. Produkce musí použít právě zobrazené SHA
+2. Dave jako maintainer požadavek schválí. Produkce musí použít právě zobrazené SHA
    a digest a Audit log oddělí request, review a deployment outcome.
-3. Bob vytvoří další request a zruší jej; nevznikne deployment operace.
-4. Nový request Alice zamítne; nelze jej znovu schválit.
-5. U posledního requestu Alice před review změní produkční proměnnou
+3. Erin jako admin se pokusí policy změnit. API vrátí `403` s vysvětlením,
+   že policy mění jen owner, a hodnota se nezmění.
+4. Alice jako owner nastaví **Allow self-approval**. Dave vytvoří novou
+   produkční žádost a sám ji schválí; nasadí se stejný digest. Alice potom
+   vrátí **Require a separate reviewer**.
+5. Bob vytvoří další request a zruší jej; nevznikne deployment operace.
+6. Nový request Dave zamítne; nelze jej znovu schválit.
+7. U posledního requestu Alice před review změní produkční proměnnou
    nebo target. Approval musí request označit jako zastaralý a nevytvořit
    druhý deployment. Vrať konfiguraci do požadovaného stavu a pro skutečné
    nasazení vytvoř nový request.

@@ -98,7 +98,9 @@ sequenceDiagram
 Do `test` a `prod` se nepřekládá zdrojový kód znovu. Promotion používá
 stejné SHA a digest, které prošly předchozím prostředím. Produkce navíc
 prochází approval workflow; team workspace ve výchozím stavu vyžaduje
-jiného schvalovatele.
+jiného schvalovatele. Review smí provést owner, admin nebo maintainer,
+zatímco produkční policy mění pouze owner. Personal workspace má pevné
+`self-review`.
 
 ## Provisioning projektu
 

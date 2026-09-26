@@ -3668,10 +3668,12 @@ Z těchto identifikátorů vzniká SHA-256 state token; hodnoty proměnných, se
 credentials ani logů se do žádosti nebo auditu nekopírují.
 
 Team workspace má výchozí policy `separate-reviewer`: žádat může role s
-project-write oprávněním (rollback vyžaduje maintain), ale schválit může pouze
-owner/admin odlišný od žadatele. Personal workspace má pevný `self-review`.
-Team admin smí policy vědomě změnit po varovném potvrzení; rozhoduje aktuální
-policy, zatímco snapshot původní policy zůstává pro audit.
+project-write oprávněním (rollback vyžaduje maintain), ale schválit může role
+s oprávněním maintain odlišná od žadatele. Personal workspace má pevný
+`self-review`. Team policy smí vědomě změnit pouze owner po varovném
+potvrzení; rozhoduje aktuální policy, zatímco snapshot původní policy zůstává
+pro audit. Vymezení rolí schvalovatele a správce policy zpřesňuje a v těchto
+bodech částečně nahrazuje ADR-117.
 
 Před schválením se snapshot znovu sestaví. Jakákoli změna jej označí jako
 `stale`. Claim `pending -> approving` je compare-and-set a databázový partial
@@ -4952,3 +4954,56 @@ nejprve ručně sloučit, nikoli nechat migraci tiše vybrat jeden účet.
 username i e-mailu, kanonické založení managed účtu a stejné vyhledání
 člena workspace. Produkční build kontroluje Prisma typy; live acceptance po
 migraci ověří `carol`, `Carol` i e-mail s rozdílnou velikostí písmen.
+
+---
+
+## ADR-117 — Produkční review používá maintain, policy vlastní owner
+
+**Kontext.** ADR-082 zavedlo schvalování neměnného produkčního záměru, ale
+review svázalo s oprávněním `admin`. Tým proto musel každému dalšímu
+schvalovateli současně zpřístupnit správu členů, rolí a nastavení
+workspace. Každý admin navíc mohl přepnout `separate-reviewer` na
+`self-review` a sám odstranit oddělení povinností, které měl approval chránit.
+
+**Rozhodnutí.** Produkční žádost smí schválit nebo zamítnout role, která má
+sdílené oprávnění `maintain`: owner, admin nebo maintainer. Member a viewer
+dostanou `403`; nečlenovi se resource nadále skryje jako `404`. Policy
+`separate-reviewer` pořád zakazuje schválení vlastní žádosti všem třem rolím.
+Při `self-review` smí vlastní žádost schválit také maintainer. Právo podat
+promote nebo redeploy zůstává na `write`, rollback na `maintain` a zrušení
+žádosti pouze jejímu žadateli.
+
+Produkční policy týmového workspace smí měnit pouze owner. Admin,
+maintainer, member i viewer aktuální hodnotu vidí, ale nemohou ji změnit.
+Personal workspace má nadále pevné `self-review`. Nevzniká nová role,
+per-user příznak ani databázová migrace. Audit review ukládá roli
+schvalovatele, nikoli rozšířená oprávnění.
+
+Toto rozhodnutí částečně nahrazuje ADR-082 pouze v bodech, kdo smí provést
+review a kdo smí změnit policy. Immutable snapshot, stale detekce,
+compare-and-set claim, nejvýše jedna živá žádost, ochrana artifactu,
+auditní state machine i odmítnutí přímých produkčních endpointů zůstávají
+beze změny.
+
+**Proč.** Oprávnění `maintain` už vyjadřuje odpovědnost za deployment,
+rollback a provozní stav projektu. Review stejného immutable artifactu do této
+hranice patří, zatímco správa identity a governance workspace nikoli. Tím se
+uplatní princip nejmenších oprávnění: reviewer nepotřebuje plného admina.
+Výhradní právo ownera změnit policy odděluje provozní rozhodnutí od změny
+samotných pravidel schvalování.
+
+**Důsledky.** Tým může mít více reviewerů bez rozšíření správy členů
+a infrastruktury. Admin zůstává reviewerem, ale nemůže jednostranně vypnout
+princip čtyř očí. Owner se stává jediným governance bodem pro tuto policy;
+jeho nedostupnost proto odloží její změnu, nikoli běžné review. UI musí
+rozlišovat read-only hodnotu policy od chybějícího oprávnění a autoritativní
+capability pro tlačítka nadále přebírá z API.
+
+**Testování.** Automatická matice vyžaduje review pro ownera, admina a
+maintainera a `403` pro membera a viewera. Kryje vlastní žádost maintainera
+pod oběma policy, roli v approval/rejection auditu, owner-only změnu policy,
+přesnou chybu ostatních členů a nezměněné `404` pro nečlena. Webové testy
+ověřují serverové capabilities, read-only nastavení a text rolí. Živý scénář
+projde `member request -> maintainer review -> stejný digest`, zamítne změnu
+policy adminem a po ownerově přepnutí na `self-review` dovolí maintainerovi
+schválit vlastní novou žádost.

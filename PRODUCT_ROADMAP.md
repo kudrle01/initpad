@@ -717,13 +717,19 @@ jen konkrétní provozní a vyhodnocovací scénář.
    redeploy i rollback již nelze spustit přímo. Žádost ukládá immutable build,
    digest, target/allocation identity a revision i číslo revize konfigurace; samotné
    hodnoty configu a secretů neukládá. Team workspace ve výchozím stavu vyžaduje
-   jiného ownera/admina, personal workspace dovoluje explicitní self-review. Schválení
+   jiného ownera, admina nebo maintainera; personal workspace dovoluje explicitní
+   self-review. Schválení
    znovu ověří celý snapshot, atomicky zamkne prostředí a teprve potom založí
    autoritativní deployment operation. Souběžná, dvojitá, zamítnutá nebo
    zastaralá žádost nespustí druhé nasazení; pending artifact chrání retention.
-   Workspace admin může policy změnit po potvrzení a změna platí i pro dosud
-   čekající žádost. API, responzivní UI, audit a automatické regresní testy jsou
-   hotové (ADR-082).
+   Policy může po potvrzení změnit pouze workspace owner a změna platí i pro
+   dosud čekající žádost. API, responzivní UI, audit a automatické regresní
+   testy jsou hotové (ADR-082, ADR-117).
+   - ◻ **7b least-privilege acceptance:** owner nastaví `separate-reviewer`,
+     member požádá o produkci a maintainer schválí právě zobrazený digest.
+     Adminův pokus změnit policy musí skončit `403` bez mutace. Owner potom
+     přepne policy na `self-review` a maintainer smí schválit vlastní novou
+     žádost. Produkce musí v obou případech použít stejný immutable digest.
    - ✅ **7b acceptance:** self-approval ownera je živě zakázaný a zrušení
      prošlo potvrzovacím dialogem bez spuštění produkce. Dne 24. září
      2026 navíc member v team workspace vytvořil request a jiný owner jej

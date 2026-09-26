@@ -43,7 +43,9 @@ credentials. Aktuální omezení a podmínky produkčního použití jsou v
 - bezpečný outbound enrollment, heartbeat a obnovitelné Agent joby bez
   příchozího SSH nebo obecného vzdáleného shellu;
 - historii commitů, CI jobů a deployment operací;
-- produkční approval, rollback a bezpečné odstranění deploymentu i projektu.
+- produkční approval, který odděluje změnu policy vlastníkem od review
+  prováděného ownerem, adminem nebo maintainerem;
+- rollback a bezpečné odstranění deploymentu i projektu.
 
 Self-hosted edice používá vestavěnou Giteu, Gitea Actions a privátní OCI
 registry. GitHub varianta umí přihlášení, instalaci GitHub App, založení nebo
