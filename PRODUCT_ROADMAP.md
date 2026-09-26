@@ -109,8 +109,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 
 ### P1 — uzavření diplomkového MVP
 
-- [ ] Dokončit živé multi-user acceptance auditu, prod approval, TTL,
-  read-only portfolia a evaluation exportu z Fáze 7.
+- [ ] Dokončit zbývající živé multi-user acceptance auditu z Fáze 7;
+  prod approval, TTL, read-only portfolio a evaluation export jsou ověřené.
 - [ ] Vydat Agent `0.14.3` a živě zopakovat nový evidence-backed reboot
   gate: Docker boot enablement, stejný Agent kontejner, identita, heartbeat a
   zachované workloady bez nového enrollmentu. Na stejném disposable targetu
@@ -713,7 +713,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
      přepnutí workspace a vizuální oddělení jeho událostí. Zbývá ověřit
      druhý reálný účet/roli, přímý 404 pokus, stránkování a zachování
      snapshotu po změně role/jména.
-2. ◐ **7b — skutečný prod approval workflow.** Produkční promotion,
+2. ✅ **7b — skutečný prod approval workflow.** Produkční promotion,
    redeploy i rollback již nelze spustit přímo. Žádost ukládá immutable build,
    digest, target/allocation identity a revision i číslo revize konfigurace; samotné
    hodnoty configu a secretů neukládá. Team workspace ve výchozím stavu vyžaduje
@@ -724,7 +724,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
    Workspace admin může policy změnit po potvrzení a změna platí i pro dosud
    čekající žádost. API, responzivní UI, audit a automatické regresní testy jsou
    hotové (ADR-082).
-   - ◐ **7b acceptance:** self-approval ownera je živě zakázaný a zrušení
+   - ✅ **7b acceptance:** self-approval ownera je živě zakázaný a zrušení
      prošlo potvrzovacím dialogem bez spuštění produkce. Dne 24. září
      2026 navíc member v team workspace vytvořil request a jiný owner jej
      schválil. `dev`, `test` i `prod` použily stejný SHA-256 digest
@@ -736,9 +736,13 @@ jen konkrétní provozní a vyhodnocovací scénář.
      nedotčený a nevznikl nový deployment. Audit log oddělil request,
      review, deployment accepted a terminální outcome se správnými aktéry.
      Detail projektu nyní po config mutaci refetchuje stav requestu bez
-     ručního reloadu a tento UX kontrakt kryjí regresní testy. Zbývá živě
-     vyvolat souběžný pokus o dvojité schválení; databázovou atomicitu už
-     kryjí automatické testy.
+     ručního reloadu a tento UX kontrakt kryjí regresní testy. Dne 25. září
+     2026 Bob vytvořil čerstvý produkční redeploy request a Alice otevřela
+     jeho potvrzení ve dvou předem načtených kartách. Souběžné odeslání
+     vrátilo jednomu volání řízené `already approved`, zatímco druhé
+     vytvořilo právě jeden `PROD redeploy`; deployment history obsahovala
+     jedinou novou operaci a ta skončila `succeeded`. Databázový compare-and-set
+     claim i jediné naplánování kryje také automatický regresní test.
 3. ✅ **7c — provozní policy a lifecycle.** Allocation nese validované
    CPU/RAM/PID limity, stávající maximální počet prostředí a volitelné TTL pro
    dev/test. Vestavěný Docker i vzdálený Agent vynucují stejný resource snapshot.
