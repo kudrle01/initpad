@@ -18,6 +18,7 @@ export function WorkspaceAdministrationSettings() {
     'separate-reviewer',
   );
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
+  const canChangeApprovalPolicy = activeWorkspace?.role === 'owner';
 
   useEffect(() => {
     setName(activeWorkspace?.name ?? '');
@@ -25,7 +26,7 @@ export function WorkspaceAdministrationSettings() {
   }, [activeWorkspace?.id, activeWorkspace?.name, activeWorkspace?.productionApprovalPolicy]);
 
   const workspace = activeWorkspace;
-  if (!workspace || workspace.type === 'personal' || !canAdmin) return null;
+  if (!workspace || workspace.type === 'personal') return null;
   const workspaceId = workspace.id;
   const workspaceName = workspace.name;
   const workspaceApprovalPolicy = workspace.productionApprovalPolicy;
@@ -72,11 +73,12 @@ export function WorkspaceAdministrationSettings() {
   }
 
   async function saveApprovalPolicy() {
+    if (!canChangeApprovalPolicy) return;
     if (approvalPolicy === 'self-review') {
       const confirmed = await confirmAction({
         title: 'Allow production self-approval?',
         description:
-          'A requester with workspace admin rights will be able to approve their own production request.',
+          'A requester who is an owner, admin or maintainer will be able to approve their own production request.',
         confirmLabel: 'Allow self-approval',
         tone: 'warning',
         consequences: [
@@ -106,38 +108,44 @@ export function WorkspaceAdministrationSettings() {
     <SettingsSection
       icon={Building2}
       title="Current team workspace"
-      help={[
-        {
-          title: 'Rename',
-          description: 'Changes the workspace display name.',
-        },
-        {
-          title: 'Delete',
-          description: 'Available only after its projects and servers have been removed.',
-        },
-      ]}
+      help={
+        canAdmin
+          ? [
+              {
+                title: 'Rename',
+                description: 'Changes the workspace display name.',
+              },
+              {
+                title: 'Delete',
+                description: 'Available only after its projects and servers have been removed.',
+              },
+            ]
+          : undefined
+      }
     >
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <input
-          className="h-11 min-w-0 flex-1 rounded-md border border-input bg-card px-3 text-sm sm:h-9"
-          aria-label="Current workspace name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <Button
-          variant="secondary"
-          onClick={saveName}
-          disabled={busy || name.trim().length < 2 || name.trim() === workspaceName}
-        >
-          Rename
-        </Button>
-        {workspace.role === 'owner' && (
-          <Button variant="destructive" disabled={busy} onClick={() => void deleteWorkspace()}>
-            Delete empty workspace
+      {canAdmin && (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            className="h-11 min-w-0 flex-1 rounded-md border border-input bg-card px-3 text-sm sm:h-9"
+            aria-label="Current workspace name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <Button
+            variant="secondary"
+            onClick={saveName}
+            disabled={busy || name.trim().length < 2 || name.trim() === workspaceName}
+          >
+            Rename
           </Button>
-        )}
-      </div>
-      <div className="mt-4 max-w-xl border-t border-border pt-4">
+          {workspace.role === 'owner' && (
+            <Button variant="destructive" disabled={busy} onClick={() => void deleteWorkspace()}>
+              Delete empty workspace
+            </Button>
+          )}
+        </div>
+      )}
+      <div className={canAdmin ? 'mt-4 max-w-xl border-t border-border pt-4' : 'max-w-xl'}>
         <label htmlFor="production-approval-policy" className="text-sm font-medium">
           Production approval
         </label>
@@ -145,20 +153,27 @@ export function WorkspaceAdministrationSettings() {
           <Select
             id="production-approval-policy"
             value={approvalPolicy}
-            disabled={busy}
+            disabled={busy || !canChangeApprovalPolicy}
             onChange={(event) => setApprovalPolicy(event.target.value as typeof approvalPolicy)}
           >
             <option value="separate-reviewer">Require a different reviewer</option>
             <option value="self-review">Allow self-approval</option>
           </Select>
-          <Button
-            variant="secondary"
-            disabled={busy || approvalPolicy === workspaceApprovalPolicy}
-            onClick={() => void saveApprovalPolicy()}
-          >
-            Update policy
-          </Button>
+          {canChangeApprovalPolicy && (
+            <Button
+              variant="secondary"
+              disabled={busy || approvalPolicy === workspaceApprovalPolicy}
+              onClick={() => void saveApprovalPolicy()}
+            >
+              Update policy
+            </Button>
+          )}
         </div>
+        {!canChangeApprovalPolicy && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Only the workspace owner can change this policy.
+          </p>
+        )}
       </div>
     </SettingsSection>
   );

@@ -121,9 +121,12 @@ export function ProductionApprovalCard({
         </div>
       </dl>
 
+      <p className="mt-3 text-xs text-muted-foreground">
+        Owners, admins and maintainers can review production requests.
+      </p>
       {waitingForAnotherReviewer && (
         <p className="mt-3 text-xs text-warning">
-          A different workspace owner or admin must approve this request.
+          A different workspace owner, admin or maintainer must approve this request.
         </p>
       )}
       {request.reviewer && (

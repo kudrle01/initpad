@@ -74,4 +74,64 @@ describe('ProductionApprovalCard', () => {
 
     expect(screen.getByText('Not available for this legacy build')).toBeInTheDocument();
   });
+
+  it('shows production review actions and the maintainer capability from the server view', () => {
+    render(
+      <MemoryRouter>
+        <ProductionApprovalCard
+          request={request({ canApprove: true, canReject: true })}
+          projectId="project-1"
+          busy={false}
+          onApprove={vi.fn()}
+          onReject={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Approve and deploy' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Owners, admins and maintainers can review production requests.'),
+    ).toBeInTheDocument();
+  });
+
+  it('does not expose review actions when the server denies them', () => {
+    render(
+      <MemoryRouter>
+        <ProductionApprovalCard
+          request={request({ canApprove: false, canReject: false })}
+          projectId="project-1"
+          busy={false}
+          onApprove={vi.fn()}
+          onReject={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Approve and deploy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
+  });
+
+  it('explains separate review to a maintainer who created the request', () => {
+    render(
+      <MemoryRouter>
+        <ProductionApprovalCard
+          request={request({ canApprove: false, canReject: true })}
+          projectId="project-1"
+          busy={false}
+          onApprove={vi.fn()}
+          onReject={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByText(
+        'A different workspace owner, admin or maintainer must approve this request.',
+      ),
+    ).toBeInTheDocument();
+  });
 });

@@ -213,7 +213,7 @@ describe('WorkspacesService tenant isolation', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('lets a team admin change production review policy and audits only the policy names', async () => {
+  it('lets the team owner change production review policy and audits only the policy names', async () => {
     const previous = {
       id: 'team',
       name: 'Team',
@@ -228,18 +228,19 @@ describe('WorkspacesService tenant isolation', () => {
         update: jest.fn(async () => ({ ...previous, productionApprovalPolicy: 'self-review' })),
       },
       workspaceMember: {
-        findUniqueOrThrow: jest.fn(async () => ({ role: 'admin' })),
+        findUniqueOrThrow: jest.fn(async () => ({ role: 'owner' })),
       },
     };
     const audit = { record: jest.fn(async () => undefined) };
     const service = new WorkspacesService(prisma as never, {} as never, audit);
-    jest.spyOn(service, 'require').mockResolvedValue('admin');
+    jest.spyOn(service, 'require').mockResolvedValue('owner');
 
     await expect(
-      service.updateProductionApprovalPolicy('admin', 'team', 'self-review'),
-    ).resolves.toMatchObject({ productionApprovalPolicy: 'self-review', role: 'admin' });
+      service.updateProductionApprovalPolicy('owner', 'team', 'self-review'),
+    ).resolves.toMatchObject({ productionApprovalPolicy: 'self-review', role: 'owner' });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
+        actorUserId: 'owner',
         action: 'workspace.production_policy_changed',
         details: {
           previousPolicy: 'separate-reviewer',
@@ -247,6 +248,41 @@ describe('WorkspacesService tenant isolation', () => {
         },
       }),
     );
+  });
+
+  it.each(['admin', 'maintainer', 'member'] as const)(
+    'does not let a team %s change production review policy',
+    async (role) => {
+      const prisma = {
+        workspace: {
+          findUnique: jest.fn(),
+          update: jest.fn(),
+        },
+      };
+      const service = new WorkspacesService(prisma as never, {} as never);
+      jest.spyOn(service, 'require').mockResolvedValue(role);
+
+      await expect(
+        service.updateProductionApprovalPolicy(role, 'team', 'self-review'),
+      ).rejects.toThrow('Only the workspace owner can change the production approval policy');
+      expect(service.require).toHaveBeenCalledWith(role, 'team', 'read');
+      expect(prisma.workspace.findUnique).not.toHaveBeenCalled();
+      expect(prisma.workspace.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps the workspace hidden when a non-member tries to change production policy', async () => {
+    const prisma = {
+      workspaceMember: { findUnique: jest.fn(async () => null) },
+      workspace: { findUnique: jest.fn(), update: jest.fn() },
+    };
+    const service = new WorkspacesService(prisma as never, {} as never);
+
+    await expect(
+      service.updateProductionApprovalPolicy('stranger', 'team', 'self-review'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.workspace.findUnique).not.toHaveBeenCalled();
+    expect(prisma.workspace.update).not.toHaveBeenCalled();
   });
 
   it('does not allow changing the fixed self-review policy of a personal workspace', async () => {

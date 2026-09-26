@@ -18,6 +18,9 @@ const PROJECT_B = 'project-b';
 const memberships = new Map([
   [`${WORKSPACE_A}:alice`, 'owner'],
   [`${WORKSPACE_A}:bob`, 'viewer'],
+  [`${WORKSPACE_A}:charlie`, 'maintainer'],
+  [`${WORKSPACE_A}:dave`, 'member'],
+  [`${WORKSPACE_A}:erin`, 'admin'],
   [`${WORKSPACE_B}:bob`, 'owner'],
 ]);
 
@@ -109,6 +112,26 @@ describe('two-workspace tenant boundary matrix', () => {
       role: 'viewer',
     });
     await expect(workspaces.requireProject('bob', PROJECT_A, 'write')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  it('grants maintain permission to owners, admins and maintainers only', async () => {
+    const workspaces = workspaceBoundary();
+
+    await expect(workspaces.requireProject('alice', PROJECT_A, 'maintain')).resolves.toMatchObject({
+      role: 'owner',
+    });
+    await expect(workspaces.requireProject('erin', PROJECT_A, 'maintain')).resolves.toMatchObject({
+      role: 'admin',
+    });
+    await expect(
+      workspaces.requireProject('charlie', PROJECT_A, 'maintain'),
+    ).resolves.toMatchObject({ role: 'maintainer' });
+    await expect(workspaces.requireProject('dave', PROJECT_A, 'maintain')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(workspaces.requireProject('bob', PROJECT_A, 'maintain')).rejects.toBeInstanceOf(
       ForbiddenException,
     );
   });

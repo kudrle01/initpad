@@ -241,7 +241,11 @@ export class ProjectProductionApprovals {
     decision: 'approved' | 'rejected',
     note?: string,
   ) {
-    const { workspaceId } = await this.workspaces.requireProject(userId, projectId, 'admin');
+    const { workspaceId, role: reviewerRole } = await this.workspaces.requireProject(
+      userId,
+      projectId,
+      'maintain',
+    );
     const request = await this.request(projectId, requestId);
     if (request.workspaceId !== workspaceId)
       throw new NotFoundException('Production request not found');
@@ -281,6 +285,7 @@ export class ProjectProductionApprovals {
       await this.record(request, userId, 'production.request_rejected', {
         kind: request.kind,
         environment: 'prod',
+        reviewerRole,
       });
       return this.latest(projectId, userId);
     }
@@ -310,6 +315,7 @@ export class ProjectProductionApprovals {
         kind: request.kind,
         environment: 'prod',
         version: request.version,
+        reviewerRole,
       });
       const operationId = await this.schedule(
         projectId,
@@ -335,6 +341,7 @@ export class ProjectProductionApprovals {
         environment: 'prod',
         version: request.version,
         operationId,
+        reviewerRole,
       }).catch(() => undefined);
     } catch (error) {
       const stale = error instanceof ConflictException;
@@ -579,7 +586,7 @@ export class ProjectProductionApprovals {
       this.workspaces.roleFor(userId, request.workspaceId),
       this.currentPolicy(request.workspaceId),
     ]);
-    const canReview = role === 'owner' || role === 'admin';
+    const canReview = role ? this.workspaces.can(role, 'maintain') : false;
     const selfBlocked = currentPolicy === 'separate-reviewer' && request.requestedById === userId;
     return {
       id: request.id,

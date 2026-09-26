@@ -3,11 +3,23 @@ import { ProjectProductionApprovals } from './project-production-approvals';
 
 const targetRevision = new Date('2026-09-07T10:00:00.000Z');
 const allocationRevision = new Date('2026-09-07T10:05:00.000Z');
+type TestRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
+type TestPermission = 'read' | 'write' | 'maintain' | 'admin';
 
 function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-reviewer') {
   let policy = initialPolicy;
   let request: Record<string, any> | null = null;
   let configRevision = 3;
+  const roles = new Map<string, TestRole>([
+    ['requester', 'member'],
+    ['reviewer', 'owner'],
+  ]);
+  const permissions: Record<TestPermission, ReadonlySet<TestRole>> = {
+    read: new Set<TestRole>(['owner', 'admin', 'maintainer', 'member', 'viewer']),
+    write: new Set<TestRole>(['owner', 'admin', 'maintainer', 'member']),
+    maintain: new Set<TestRole>(['owner', 'admin', 'maintainer']),
+    admin: new Set<TestRole>(['owner', 'admin']),
+  } as const;
   const create = jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
     request = {
       id: 'request-1',
@@ -123,8 +135,15 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
     callback(prisma),
   );
   const workspaces = {
-    requireProject: jest.fn(async () => ({ workspaceId: 'workspace-1', role: 'owner' })),
-    roleFor: jest.fn(async () => 'owner'),
+    requireProject: jest.fn(
+      async (userId: string, _projectId: string, permission: TestPermission) => {
+        const role = roles.get(userId) ?? 'viewer';
+        if (!permissions[permission].has(role)) throw new ForbiddenException();
+        return { workspaceId: 'workspace-1', role };
+      },
+    ),
+    roleFor: jest.fn(async (userId: string) => roles.get(userId) ?? null),
+    can: jest.fn((role: TestRole, permission: TestPermission) => permissions[permission].has(role)),
   };
   const audit = { record: jest.fn(async () => undefined) };
   const schedule = jest.fn(async () => 'operation-1');
@@ -145,6 +164,9 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
     },
     setPolicy(value: 'self-review' | 'separate-reviewer') {
       policy = value;
+    },
+    setRole(userId: string, role: TestRole) {
+      roles.set(userId, role);
     },
     changeProductionConfig() {
       configRevision += 1;
@@ -185,8 +207,13 @@ describe('ProjectProductionApprovals', () => {
 
   it('enforces a different reviewer for team production', async () => {
     const h = harness();
+    h.setRole('requester', 'maintainer');
     await h.service.create('project-1', 'requester', { kind: 'promote' });
 
+    await expect(h.service.latest('project-1', 'requester')).resolves.toMatchObject({
+      canApprove: false,
+      canReject: true,
+    });
     await expect(h.service.approve('project-1', 'request-1', 'requester')).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -194,8 +221,9 @@ describe('ProjectProductionApprovals', () => {
     expect(h.request?.status).toBe('pending');
   });
 
-  it('queues the exact approved snapshot once and links its deployment operation', async () => {
+  it('lets a maintainer queue the exact approved snapshot once', async () => {
     const h = harness();
+    h.setRole('reviewer', 'maintainer');
     await h.service.create('project-1', 'requester', { kind: 'promote' });
 
     await expect(h.service.approve('project-1', 'request-1', 'reviewer')).resolves.toMatchObject({
@@ -221,6 +249,12 @@ describe('ProjectProductionApprovals', () => {
     expect(auditActions).toEqual(
       expect.arrayContaining(['production.approval_accepted', 'production.request_approved']),
     );
+    expect(h.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'production.approval_accepted',
+        details: expect.objectContaining({ reviewerRole: 'maintainer' }),
+      }),
+    );
 
     await expect(h.service.approve('project-1', 'request-1', 'reviewer')).rejects.toBeInstanceOf(
       ConflictException,
@@ -242,6 +276,7 @@ describe('ProjectProductionApprovals', () => {
 
   it('uses the current workspace policy for a still-pending request', async () => {
     const h = harness();
+    h.setRole('requester', 'maintainer');
     await h.service.create('project-1', 'requester', { kind: 'promote' });
     h.setPolicy('self-review');
 
@@ -252,5 +287,55 @@ describe('ProjectProductionApprovals', () => {
     await expect(h.service.approve('project-1', 'request-1', 'requester')).resolves.toMatchObject({
       status: 'approved',
     });
+  });
+
+  it.each(['member', 'viewer'] as const)(
+    'does not let a %s approve or reject production',
+    async (role) => {
+      const h = harness();
+      h.setRole('reviewer', role);
+      await h.service.create('project-1', 'requester', { kind: 'promote' });
+
+      await expect(h.service.approve('project-1', 'request-1', 'reviewer')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(h.service.reject('project-1', 'request-1', 'reviewer')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(h.schedule).not.toHaveBeenCalled();
+      expect(h.request?.status).toBe('pending');
+    },
+  );
+
+  it.each([
+    ['owner', true],
+    ['admin', true],
+    ['maintainer', true],
+    ['member', false],
+    ['viewer', false],
+  ] as const)('reports canApprove from the %s permission tier', async (role, canApprove) => {
+    const h = harness();
+    h.setRole('reviewer', role);
+    await h.service.create('project-1', 'requester', { kind: 'promote' });
+
+    await expect(h.service.latest('project-1', 'reviewer')).resolves.toMatchObject({
+      canApprove,
+      canReject: canApprove,
+    });
+  });
+
+  it('records a maintainer role when a request is rejected', async () => {
+    const h = harness();
+    h.setRole('reviewer', 'maintainer');
+    await h.service.create('project-1', 'requester', { kind: 'promote' });
+
+    await h.service.reject('project-1', 'request-1', 'reviewer');
+
+    expect(h.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'production.request_rejected',
+        details: expect.objectContaining({ reviewerRole: 'maintainer' }),
+      }),
+    );
   });
 });

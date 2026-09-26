@@ -3,7 +3,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api';
-import type { Project } from '@/types';
+import type { ProductionDeploymentRequest, Project } from '@/types';
 import { useProjectDetail } from './useProjectDetail';
 
 const mocks = vi.hoisted(() => ({
@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
     listTemplates: vi.fn(),
     listTargets: vi.fn(),
     deleteProject: vi.fn(),
+    approveProductionDeployment: vi.fn(),
+    rejectProductionDeployment: vi.fn(),
+    cancelProductionDeployment: vi.fn(),
   },
 }));
 
@@ -65,6 +68,26 @@ const project: Project = {
   createdAt: '2026-09-12T00:00:00.000Z',
   lastCommit: 'a'.repeat(40),
   environments: [],
+};
+
+const productionRequest: ProductionDeploymentRequest = {
+  id: 'request-1',
+  kind: 'promote',
+  status: 'pending',
+  sourceEnvironment: 'test',
+  version: 'a'.repeat(40),
+  artifact: { id: 'artifact-1', digest: `sha256:${'b'.repeat(64)}` },
+  target: { id: 'target-1', name: 'Production', provider: 'agent' },
+  policy: 'separate-reviewer',
+  requester: { userId: 'member-1', username: 'member', displayName: 'Member' },
+  reviewer: null,
+  reviewNote: null,
+  deployment: null,
+  canApprove: false,
+  canReject: false,
+  canCancel: false,
+  createdAt: '2026-09-26T10:00:00.000Z',
+  reviewedAt: null,
 };
 
 function arrangeSuccessfulLoad() {
@@ -116,5 +139,21 @@ describe('useProjectDetail', () => {
     expect(result.current.project).toBeNull();
     expect(result.current.commits).toEqual([]);
     expect(result.current.error).toBeNull();
+  });
+
+  it('does not call production review endpoints when the server capability is false', async () => {
+    mocks.api.getProductionRequest.mockResolvedValue(productionRequest);
+    const { result } = renderHook(() => useProjectDetail());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.approveProduction();
+      await result.current.rejectProduction();
+      await result.current.cancelProduction();
+    });
+
+    expect(mocks.api.approveProductionDeployment).not.toHaveBeenCalled();
+    expect(mocks.api.rejectProductionDeployment).not.toHaveBeenCalled();
+    expect(mocks.api.cancelProductionDeployment).not.toHaveBeenCalled();
   });
 });

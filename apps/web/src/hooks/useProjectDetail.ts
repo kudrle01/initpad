@@ -290,6 +290,9 @@ export function useProjectDetail() {
 
   async function reviewProduction(action: 'approve' | 'reject' | 'cancel') {
     if (!id || !productionRequest) return;
+    if (action === 'approve' && !productionRequest.canApprove) return;
+    if (action === 'reject' && !productionRequest.canReject) return;
+    if (action === 'cancel' && !productionRequest.canCancel) return;
     setBusy(`production-${action}`);
     try {
       const updated =

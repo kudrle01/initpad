@@ -97,7 +97,9 @@ export function WorkspaceMembersSettings() {
       consequences: [
         nextRole === 'admin'
           ? 'The member gains permission to manage workspace membership and infrastructure.'
-          : 'The member may immediately lose access to actions allowed by the current role.',
+          : nextRole === 'maintainer'
+            ? 'The member can maintain deployments and review production requests without workspace administration rights.'
+            : 'The member may immediately lose access to actions allowed by the current role.',
         'Private repository access is reconciled to the new role.',
       ],
     });
@@ -142,29 +144,35 @@ export function WorkspaceMembersSettings() {
   return (
     <SettingsSection icon={Users} title="Workspace members">
       {canManage && (
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
-          <input
-            className="h-11 min-w-0 rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9"
-            placeholder="Username or e-mail"
-            aria-label="New member username or e-mail"
-            value={identity}
-            onChange={(event) => setIdentity(event.target.value)}
-          />
-          <select
-            className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
-            aria-label="New member role"
-            value={role}
-            onChange={(event) => setRole(event.target.value as AssignableRole)}
-          >
-            {ASSIGNABLE_ROLES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <Button onClick={() => void addMember()} disabled={adding || !identity.trim()}>
-            <Plus className="h-4 w-4" /> Add
-          </Button>
+        <div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
+            <input
+              className="h-11 min-w-0 rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9"
+              placeholder="Username or e-mail"
+              aria-label="New member username or e-mail"
+              value={identity}
+              onChange={(event) => setIdentity(event.target.value)}
+            />
+            <select
+              className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
+              aria-label="New member role"
+              value={role}
+              onChange={(event) => setRole(event.target.value as AssignableRole)}
+            >
+              {ASSIGNABLE_ROLES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <Button onClick={() => void addMember()} disabled={adding || !identity.trim()}>
+              <Plus className="h-4 w-4" /> Add
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Maintainers can manage deployments, rollbacks and production reviews without managing
+            workspace membership or policy.
+          </p>
         </div>
       )}
 

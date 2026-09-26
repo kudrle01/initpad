@@ -196,7 +196,12 @@ export class WorkspacesService {
     workspaceId: string,
     policy: 'self-review' | 'separate-reviewer',
   ) {
-    await this.require(userId, workspaceId, 'admin');
+    const role = await this.require(userId, workspaceId, 'read');
+    if (role !== 'owner') {
+      throw new ForbiddenException(
+        'Only the workspace owner can change the production approval policy',
+      );
+    }
     const previous = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
     if (!previous) throw new NotFoundException('Workspace not found');
     if (previous.type === 'personal') {
