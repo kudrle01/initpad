@@ -119,7 +119,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   `prod-only` skončil ověřeným artifactem a produkčním requestem bez
   skrytého workloadu. Změna předvolby byla za běhu prostředí odmítnuta a
   po jeho odstranění se auditovaně propsala bez změny repozitáře.
-- [ ] Dokončit zbývající živé multi-user acceptance auditu z Fáze 7;
+- [x] Dokončit zbývající živé multi-user acceptance auditu z Fáze 7;
   prod approval, TTL, read-only portfolio a evaluation export jsou ověřené.
 - [ ] Vydat Agent `0.14.3` a živě zopakovat nový evidence-backed reboot
   gate: Docker boot enablement, stejný Agent kontejner, identita, heartbeat a
@@ -722,10 +722,12 @@ jen konkrétní provozní a vyhodnocovací scénář.
      nekopíruje provider message, logy, config ani secrety. Odkaz v UI vede na
      projekt nebo jeho deployment historii a zachová ID i po odstranění
      autoritativního řádku.
-   - ◐ **7a.4 — živý acceptance.** Prošlo filtrování, prázdný výsledek,
-     přepnutí workspace a vizuální oddělení jeho událostí. Zbývá ověřit
-     druhý reálný účet/roli, přímý 404 pokus, stránkování a zachování
-     snapshotu po změně role/jména.
+   - ✅ **7a.4 — živý acceptance.** Prošlo filtrování, prázdný výsledek,
+     přepnutí workspace a vizuální oddělení jeho událostí. Dne
+     27. září 2026 druhý reálný účet přečetl audit Team Alpha, dvě
+     navazující cursor stránky zachovaly chronologii bez duplicit a přímý
+     pokus o audit cizího workspace skončil `404`. Po změně jeho role zůstalo
+     stejné ID události i původní snapshot username/display name.
 2. ✅ **7b — skutečný prod approval workflow.** Produkční promotion,
    redeploy i rollback již nelze spustit přímo. Žádost ukládá immutable build,
    digest, target/allocation identity a revision i číslo revize konfigurace; samotné
@@ -738,15 +740,19 @@ jen konkrétní provozní a vyhodnocovací scénář.
    Policy může po potvrzení změnit pouze workspace owner a změna platí i pro
    dosud čekající žádost. API, responzivní UI, audit a automatické regresní
    testy jsou hotové (ADR-082, ADR-117).
-   - ◻ **7b least-privilege acceptance:** owner nastaví `separate-reviewer`,
+   - ✅ **7b least-privilege acceptance:** owner nastaví `separate-reviewer`,
      member požádá o produkci a maintainer schválí právě zobrazený digest.
      Adminův pokus změnit policy musí skončit `403` bez mutace. Owner potom
      přepne policy na `self-review` a maintainer smí schválit vlastní novou
      žádost. Produkce musí v obou případech použít stejný immutable digest.
-     Dne 27. září 2026 prošla první polovina: requester neměl review akci,
-     jiný maintainer schválil přesně zobrazený build a produkce použila stejný
-     commit i digest jako zdrojové prostředí. K uzavření zbývá admin `403`
-     bez mutace policy a výslovný `self-review` scénář maintainera.
+     Dne 27. září 2026 requester neměl review akci a jiný maintainer
+     schválil přesně zobrazený build. Následně workspace admin dostal při
+     přímé změně policy `403` a uložená hodnota zůstala beze změny. Owner
+     zapnul `self-review`; maintainer vytvořil i schválil vlastní request a
+     terminální produkce použila stejný commit i SHA-256 digest
+     `80e0d144ebb67bf4eb27dc6dad9bac1cdf5ed6609b4c81987b8e502961cf70b0`
+     jako zdrojový test. Po ověření se policy vrátila na
+     `separate-reviewer`; dočasné členství, session i workload byly odstraněny.
    - ✅ **7b acceptance:** self-approval ownera je živě zakázaný a zrušení
      prošlo potvrzovacím dialogem bez spuštění produkce. Dne 24. září
      2026 navíc member v team workspace vytvořil request a jiný owner jej

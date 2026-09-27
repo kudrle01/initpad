@@ -12,7 +12,9 @@ veřejný produkční provoz.
   databáze, artifact storage a zálohy/obnovy. Čistá instalace, skutečný
   reboot a destruktivní restore drill prošly na disposable Ubuntu VM.
 - Workspace RBAC, role synchronizované do SCM a automatizovaná dvou-workspace
-  isolation matice.
+  isolation matice. Živý multi-user scénář navíc ověřil auditní cursor
+  stránkování a snapshoty, cizí `404`, owner-only production policy,
+  oddělené review i výslovný maintainer self-review.
 - Dvanáct verzovaných šablon včetně Laravelu, Nette a Symfony.
 - Immutable build artifact a promotion stejného digestu přes prostředí.
 - Produkční approval, rollback, audit a bezpečné dialogy destruktivních akcí.
