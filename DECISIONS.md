@@ -5007,3 +5007,58 @@ ověřují serverové capabilities, read-only nastavení a text rolí. Živý sc
 projde `member request -> maintainer review -> stejný digest`, zamítne změnu
 policy adminem a po ownerově přepnutí na `self-review` dovolí maintainerovi
 schválit vlastní novou žádost.
+
+---
+
+## ADR-118 — Projekt volí jednu ze tří pevných pipeline předvoleb
+
+**Kontext.** Původní golden path podle ADR-013 vedla každý projekt přes
+`dev → test → prod`. Pro výuku a týmy s QA plochou je to správný výchozí
+tok, ale menší aplikace často potřebují jen dev a produkci. Některé
+regulované nebo externě hostované projekty naopak chtějí, aby CI artifact
+nenasadilo automaticky nikam a produkce vznikla až po explicitní žádosti.
+Zakládat kvůli tomu fiktivní prázdná prostředí zhoršuje orientaci i metriky.
+
+**Rozhodnutí.** Projekt ukládá jednu z předvoleb `dev-test-prod`, `dev-prod`
+nebo `prod-only`; první zůstává výchozí a bezpečným migračním stavem.
+Pořadí a předchozí stupeň odvozuje jediná doménová funkce. CI automaticky
+nasadí jen do existujícího dev. Bez dev pouze ověří a trvale uloží artifact
+výchozí větve. Promotion smí jít jen do bezprostředně následujícího stupně.
+
+Produkce zůstává vždy poslední, nikdy nevyprší a lze ji změnit pouze přes
+`ProductionDeploymentRequest`: z běžícího testu, běžícího dev nebo u
+`prod-only` z posledního ověřeného CI artifactu. Build-once invariant
+ADR-013, immutable digest, health gate, skutečný žadatel a pravidla schválení
+ADR-082/ADR-117 se nemění.
+
+Předvolbu smí změnit oprávnění `maintain` pouze bez rozpracované operace
+a bez čekající produkční žádosti. Přidaný stupeň vznikne prázdný.
+Odebraný stupeň musí být po dokončeném teardownu zcela prázdný; jinak
+API vrátí `409`. Změna probíhá v serializovatelné transakci a zapisuje
+původní i novou předvolbu do auditu.
+
+**Proč.** Tři pojmenované varianty pokrývají nejčastější malé a školní
+workflow, aniž by InitPad přestal být opinionated produktem. Jde o řízenou
+odchylku od výchozí golden path vymezené ADR-026, nikoli o obecný editor
+pipeline. Vlastní názvy, libovolné pořadí a více než tři stupně by vyžadovaly
+obecný workflow engine, migrační pravidla, konfigurovatelné approval policy a
+podstatně složitější UX bez přínosu pro ověřovaný scope diplomové práce.
+
+**Důsledky.** Existující projekty dostanou databázový default
+`dev-test-prod`; migrace nemění jejich Environment řádky, URL, workloady,
+gateway routy, ESO cesty ani historii. Read model a web zobrazují jen
+konfigurované stupně. Metrika času do zdravého dev je u pipeline bez dev
+`null`, nikoli nula, takže exportní schema zůstává kompatibilní. Odstranění
+prázdného stupně při pozdější explicitní změně odstraní jeho provozní
+deployment timeline; audit projektu zůstává zachován a UI na tento důsledek
+upozorní před potvrzením.
+
+**Testování.** API testy ověřují create/import všech předvoleb, CI bez
+automatického deploymentu u `prod-only`, navazující promotion, zdroj každé
+produkční žádosti, role, souběh, pending approval, prázdnost odebíraného
+stupně, audit, expiraci a `null` metriku bez dev. Statický migrační test
+zakazuje zápis do Environment a DeploymentOperation. Webové testy pokrývají
+výběr a vykreslení všech tří variant. Uživatelský gate založí každou
+předvolbu, u `dev-prod` prokáže stejný digest po review jiným maintainerem,
+u `prod-only` ruční žádost z posledního buildu a při odebrání neprázdného
+testu nejprve `409` a po teardownu úspěšnou auditovanou změnu.

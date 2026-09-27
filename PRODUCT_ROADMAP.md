@@ -23,7 +23,8 @@ InitPad není obecný serverový panel. Je to opinionated developer platform:
 - nový projekt ze zkontrolované golden-path šablony nebo import existujícího repa;
 - týmové vlastnictví, workspaces, přidávání existujících účtů a role;
 - automatický build/test a dohledatelný artefakt;
-- řízený tok dev → test → prod nad heterogenní infrastrukturou;
+- řízený tok `dev → test → prod`, `dev → prod` nebo chráněná
+  produkce z ověřeného CI buildu nad heterogenní infrastrukturou;
 - přidělení prostředí bez předání serverových credentials studentům;
 - stejný produkt pro školní infrastrukturu i server přinesený uživatelem.
 
@@ -109,6 +110,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 
 ### P1 — uzavření diplomkového MVP
 
+- [x] Implementovat pevné projektové pipeline předvolby `dev-test-prod`,
+  `dev-prod` a `prod-only` bez porušení build-once a produkčního approval.
+- [ ] Živě ověřit všechny tři předvolby a bezpečnou změnu existujícího
+  projektu podle scénáře v uživatelském ověření.
 - [ ] Dokončit zbývající živé multi-user acceptance auditu z Fáze 7;
   prod approval, TTL, read-only portfolio a evaluation export jsou ověřené.
 - [ ] Vydat Agent `0.14.3` a živě zopakovat nový evidence-backed reboot
@@ -1123,6 +1128,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 6 — target allocations | ano | Podle `deploy/SELF_HOSTED_ACCEPTANCE.md` dva workspace nasadí na jeden Docker target; sítě/jména se nepřekrývají, role/cizí data jsou izolované a disabled/quota policy je vynucená. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, **Test protocol** a **Test Docker**; lifecycle ověří digest-pinned image, health, bounded logy, replace/rollback/stop/start a úplný cleanup. Potom vytvořit skutečný projekt s Agent targetem pro dev, ověřit stejný artifact digest, Deploy → Stop → Start → Remove a prázdný cleanup. Po vypnutí Agent přejde offline a nový deploy zůstane ve frontě; po reconnectu se dokončí právě jednou. Druhý workspace nesmí vidět ani měnit první workload. U Agentu 0.10+ se po dosažení rotačního intervalu zvýší credential generation právě o jedna, pending upozornění po potvrzení zmizí, heartbeat i rozpracovaný job pokračují a starý credential je odmítnut. Produkční routing navíc ověří dvě současně alokované stabilní HTTPS URL, zachování URL při redeploy/rename/stop-start, rollback při výpadku gateway a nepřístupný gateway admin endpoint i Docker API. |
 | 8 — delivery/approval | ano | Push → dev, promotion stejného digestu → test, prod approval, health failure a ruční rollback. React/Vue prod se nasadí bez lokálního `npm` buildu. PHP na ESO odpoví na čisté URL bez `/www`/`public`, soukromý `composer.json` vrátí non-2xx a druhý redeploy uspěje i po vytvoření runtime cache. Delete dialog ukáže všechny targety a vyžádá prod potvrzení. Částečný ESO teardown nastaví prostředí na `empty`, vypíše cleanup cesty a bez reloadu nabídne retry/explicitní detach. Legacy strom s cizí cache se přesune do unikátní karantény a původní deployment cesta se musí prokazatelně uvolnit. Po smazání repozitáře lze založit nový projekt se stejným jménem. U Agent targetu otevřít `Workload diagnostics`: běžící workload vrátí current revision, health a bounded output; po Stop vrátí `stopped`, exit code a `not running`. Viewer akci ani logy neuvidí, offline request zůstane viditelně queued a dokončí se po reconnectu. Deployment timeline se přitom nezmění. |
+| 8b — pipeline předvolby | ano | Založit projekt s každou ze tří předvoleb a ověřit přesnou sadu karet. U `dev-prod` pushnout změnu, ověřit dev, požádat o produkci, nechat ji schválit jiným maintainerem a porovnat stejný digest v produkci. U `prod-only` ověřit, že CI nic nenasadilo, a požádat o produkci z posledního ověřeného buildu. U existujícího projektu zkusit odebrat test s běžícím workloadem: API musí vrátit 409; po Remove a dokončení úklidu musí změna projít a vzniknout auditní událost. |
 | 9 — školní E2E | ano | Nezávislý studentský tým projde celý scénář; změří se čas, kroky, chyby a SUS. |
 
 ## Aktuální stav ověření

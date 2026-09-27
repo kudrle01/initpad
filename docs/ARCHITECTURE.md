@@ -54,7 +54,9 @@ neobsahuje obecný vzdálený shell.
 - **Workspace** je bezpečnostní a organizační hranice. Členství nese roli
   `viewer`, `member`, `maintainer`, `admin` nebo `owner`.
 - **Project** odkazuje na repozitář pomocí providera a immutable repository
-  identity. Zobrazené jméno ani URL nejsou identitou repozitáře.
+  identity. Zobrazené jméno ani URL nejsou identitou repozitáře. Zároveň
+  nese jednu ze tří pevných pipeline předvoleb: `dev-test-prod`, `dev-prod`
+  nebo `prod-only`.
 - **Target** popisuje fyzický server nebo hosting a jeho management provider.
 - **TargetAllocation** přiděluje konkrétnímu workspace omezený přístup na
   target: namespace, povolená prostředí, kapacitu a resource limity.
@@ -95,12 +97,16 @@ sequenceDiagram
     Agent->>API: terminální výsledek
 ```
 
-Do `test` a `prod` se nepřekládá zdrojový kód znovu. Promotion používá
-stejné SHA a digest, které prošly předchozím prostředím. Produkce navíc
-prochází approval workflow; team workspace ve výchozím stavu vyžaduje
-jiného schvalovatele. Review smí provést owner, admin nebo maintainer,
-zatímco produkční policy mění pouze owner. Personal workspace má pevné
-`self-review`.
+CI sestaví každý commit pouze jednou. U `dev-test-prod` se stejné SHA a
+digest povyšují z dev do testu, u `dev-prod` přímo z dev do produkční
+žádosti. `prod-only` artifact pouze převezme a ověří; nic automaticky
+nenasadí a uživatel podá produkční žádost z posledního ověřeného buildu
+výchozí větve. Přeskakování stupňů není dovoleno.
+
+Produkce ve všech předvolbách prochází approval workflow; team workspace
+ve výchozím stavu vyžaduje jiného schvalovatele. Review smí provést owner,
+admin nebo maintainer, zatímco produkční policy mění pouze owner. Personal
+workspace má pevné `self-review`.
 
 ## Provisioning projektu
 
@@ -113,6 +119,11 @@ nejprve zobrazí jako preflight problém.
 Provisioning je omezený na jedno repo, ale není globálně serializovaný.
 Více projektů může vznikat současně; CI runner používá viditelnou frontu a
 nastavenou kapacitu, aby náročné buildy nezablokovaly control plane.
+
+Předvolbu lze později změnit s oprávněním `maintain`, ale jen bez běžící
+operace a čekající produkční žádosti. Nový stupeň vzniká prázdný;
+odebraný stupeň musí být po úklidu workloadu zcela prázdný. Změna je
+serializovaná s kontrolou souběhu a zapsaná do auditu.
 
 ## Agent a vzdálený Docker
 

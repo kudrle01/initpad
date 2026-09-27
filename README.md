@@ -10,8 +10,9 @@
 
 InitPad je interní vývojářská platforma pro školy, menší týmy a firemní
 sandboxy. Z jednoho formuláře připraví soukromý Git repozitář, výchozí kód,
-CI pipeline a prostředí `dev → test → prod`. Vývojář tak nemusí pro každý
-projekt znovu skládat Docker, CI/CD a základní provozní konfiguraci.
+CI pipeline a zvolený tok `dev → test → prod`, `dev → prod` nebo jen
+chráněnou produkci. Vývojář tak nemusí pro každý projekt znovu skládat
+Docker, CI/CD a základní provozní konfiguraci.
 
 Projekt vzniká jako praktická část diplomové práce na Vysoké škole ekonomické
 v Praze. Cílem není nahradit Kubernetes nebo velké platform-engineering
@@ -36,8 +37,10 @@ credentials. Aktuální omezení a podmínky produkčního použití jsou v
 - osobní a týmové workspaces s rolemi;
 - založení projektu ze dvanácti udržovaných šablon;
 - import existujícího repozitáře;
-- automatický build, test a nasazení do dev;
-- povýšení stejného buildu do testu a produ;
+- tři pevné pipeline předvolby: `dev → test → prod`, `dev → prod`
+  a `prod only`;
+- automatický build a test; nasazení do dev jen u předvoleb, které dev mají;
+- povýšení stejného ověřeného buildu vždy jen do následujícího stupně;
 - Docker targety připojené přes InitPad Agent a kompatibilní SFTP hosting pro
   statické a PHP aplikace;
 - bezpečný outbound enrollment, heartbeat a obnovitelné Agent joby bez
