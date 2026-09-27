@@ -45,7 +45,11 @@ export async function assertImageArchiveIdentity(
     manifestSeen = true;
     const chunks: Buffer[] = [];
     let bytes = 0;
-    stream.on('data', (chunk: Buffer) => {
+    stream.on('data', (chunk: unknown) => {
+      if (!Buffer.isBuffer(chunk)) {
+        validationError ??= new Error('Image archive manifest contains non-binary data');
+        return;
+      }
       bytes += chunk.length;
       if (bytes > 1024 * 1024) {
         validationError ??= new Error('Image archive manifest is too large');

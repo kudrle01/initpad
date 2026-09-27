@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Docker from 'dockerode';
 import { createReadStream, createWriteStream } from 'fs';
+import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import * as tar from 'tar-fs';
 import { ProviderKind } from '../../domain/types';
@@ -455,7 +456,11 @@ export class DockerProvider implements DeploymentProvider {
   }
 
   private async buildImage(contextDir: string, tag: string): Promise<void> {
-    const stream = await this.docker.buildImage(tar.pack(contextDir), { t: tag });
+    // tar-fs 3 uses streamx internally, while Dockerode consumes a Node stream.
+    // Adapt through the public async-iterator contract instead of asserting two
+    // structurally different stream implementations to be compatible.
+    const context = Readable.from(tar.pack(contextDir));
+    const stream = await this.docker.buildImage(context, { t: tag });
     await new Promise<void>((resolve, reject) => {
       this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
     });

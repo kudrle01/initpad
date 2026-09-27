@@ -133,7 +133,15 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   create/import, Actions artifact, Agent deploy, rename, suspend a uninstall.
 - [ ] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
-  části.
+  části. Dne 27. září 2026 prošel repository gate nad 772
+  verzovanými soubory, kompatibilní npm aktualizace, všechny čtyři
+  produkční buildy a celá automatizovaná sada. Produkční dependency
+  audit hlásí nula známých zranitelností. Aktualizované stream typy
+  odhalily a opravily explicitní adaptér `tar-fs` → Dockerode a
+  fail-closed validaci dat Docker manifestu. Nest 12, Prisma 7, React 19,
+  Tailwind 4, Jest 30, Node types 26 a TypeScript 7 jsou samostatné major
+  migrace, ne součást stabilizačního dependency refresh. Zbývá ruční
+  responsive/accessibility a cílený hotspot/dead-code review.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [ ] Sjednotit release notes, README, provozní dokumentaci, ADR index a
@@ -896,7 +904,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
      Frontendová vrstva navíc interakčně ověřuje destruktivní project-delete
      potvrzení a stavový hook detailu projektu včetně autoritativního 404.
      **Uživatelský test:** po čistém `npm ci` spustit `npm run check`; lint,
-     format check, build a všech 743 testů musí projít bez ručního zásahu.
+     format check, build a automatizovaná sada musí proběhnout bez ručního
+     zásahu (763 API, 51 web, 80 Agent, 15 Supervisor a 44 release-tool testů;
+     jeden další Supervisor socket test může být v omezeném sandboxu
+     přeskočen).
    - ✅ **8e-b — cílený maintainability pass.** Podle charakterizačních testů
      rozložit jen potvrzené hotspoty s více odpovědnostmi. Velikost souboru je
      signál pro review, ne automatický důvod k abstrakci.
