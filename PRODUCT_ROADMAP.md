@@ -112,15 +112,23 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 
 - [x] Implementovat pevné projektové pipeline předvolby `dev-test-prod`,
   `dev-prod` a `prod-only` bez porušení build-once a produkčního approval.
-- [ ] Živě ověřit všechny tři předvolby a bezpečnou změnu existujícího
-  projektu podle scénáře v uživatelském ověření.
+- [x] Živě ověřit všechny tři předvolby a bezpečnou změnu existujícího
+  projektu podle scénáře v uživatelském ověření. Dne 27. září 2026
+  prošly na self-hosted stacku samostatné projekty `dev-test-prod`, `dev-prod`
+  a `prod-only`: automatický deploy respektoval zvolené prostředí,
+  `prod-only` skončil ověřeným artifactem a produkčním requestem bez
+  skrytého workloadu. Změna předvolby byla za běhu prostředí odmítnuta a
+  po jeho odstranění se auditovaně propsala bez změny repozitáře.
 - [ ] Dokončit zbývající živé multi-user acceptance auditu z Fáze 7;
   prod approval, TTL, read-only portfolio a evaluation export jsou ověřené.
 - [ ] Vydat Agent `0.14.3` a živě zopakovat nový evidence-backed reboot
   gate: Docker boot enablement, stejný Agent kontejner, identita, heartbeat a
   zachované workloady bez nového enrollmentu. Na stejném disposable targetu
   ověřit atomickou migraci změněné control-plane URL i rollback při
-  nedostupném kandidátním endpointu.
+  nedostupném kandidátním endpointu. Release `agent-v0.14.3` z commitu
+  `c596b4bf43f209ea5a632df5dd9fe6fbdd85917c` je veřejný; 27. září 2026
+  prošel anonymním auditem podpisů, assets a multiarch OCI indexu. Zbývá
+  pouze skutečný host reboot a oba URL-migration scénáře.
 - [ ] Projít GitHub App E2E pro osobní i organizační instalaci: login,
   create/import, Actions artifact, Agent deploy, rename, suspend a uninstall.
 - [ ] Provést finální bezpečnostní, maintainability, dependency,
@@ -735,6 +743,10 @@ jen konkrétní provozní a vyhodnocovací scénář.
      Adminův pokus změnit policy musí skončit `403` bez mutace. Owner potom
      přepne policy na `self-review` a maintainer smí schválit vlastní novou
      žádost. Produkce musí v obou případech použít stejný immutable digest.
+     Dne 27. září 2026 prošla první polovina: requester neměl review akci,
+     jiný maintainer schválil přesně zobrazený build a produkce použila stejný
+     commit i digest jako zdrojové prostředí. K uzavření zbývá admin `403`
+     bez mutace policy a výslovný `self-review` scénář maintainera.
    - ✅ **7b acceptance:** self-approval ownera je živě zakázaný a zrušení
      prošlo potvrzovacím dialogem bez spuštění produkce. Dne 24. září
      2026 navíc member v team workspace vytvořil request a jiný owner jej

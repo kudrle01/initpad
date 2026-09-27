@@ -55,14 +55,17 @@ identity and workload preservation, and automatic rollback after a deliberately
 failed replacement. It deliberately keeps protocol version 1 so acceptance is
 not coupled to a wire-protocol migration.
 
-The 0.14.3 source candidate treats the control-plane URL as mutable transport
-metadata rather than Agent identity. When an operator reruns the reviewed
-installer with a changed URL, the candidate sends the existing credential to
-that endpoint, requires an accepted heartbeat and only then atomically saves
-the new URL. A failed verification leaves the old URL, credential and target
-binding untouched. This is intended for a hostname, LAN address or TLS entry
-point change of the same InitPad instance; moving a host to another instance
-still requires explicit re-enrollment.
+The public, signed 0.14.3 release candidate treats the control-plane URL as
+mutable transport metadata rather than Agent identity. When an operator reruns
+the reviewed installer with a changed URL, the candidate sends the existing
+credential to that endpoint, requires an accepted heartbeat and only then
+atomically saves the new URL. A failed verification leaves the old URL,
+credential and target binding untouched. This is intended for a hostname, LAN
+address or TLS entry point change of the same InitPad instance; moving a host
+to another instance still requires explicit re-enrollment.
+Its release assets, signatures and `amd64/arm64` OCI index passed anonymous
+distribution verification. It remains a candidate until the clean-host reboot
+and both successful and failed URL-migration paths pass the runbook.
 
 Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
 [release acceptance](./ACCEPTANCE.md). The installer shown by a control plane

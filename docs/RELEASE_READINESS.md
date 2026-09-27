@@ -1,7 +1,8 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá doporučenému Agentu 0.14.2, odmítnutým release
-0.13.0 a 0.14.0 a podepsanému platformnímu releasu 0.2.8. Seznam je záměrně
+Stav dokumentu odpovídá doporučenému Agentu 0.14.2, distribučně ověřenému
+kandidátu 0.14.3, odmítnutým release 0.13.0 a 0.14.0 a podepsanému
+platformnímu releasu 0.2.8. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
 
@@ -96,7 +97,12 @@ anonymním auditem release assets, runtime probe i multiarch OCI indexu.
 Na samostatném Linux hostu poté prošel živý update `0.14.1 → 0.14.2` se
 zachováním identity a workloadů; fault-injected selhání replacement instance
 obnovilo 0.14.1 a následný čistý pokus připojil 0.14.2. Verze 0.14.2 je proto
-aktuálním doporučeným releasem. Reprodukovatelný postup zůstává v clean-host runbooku
+aktuálním doporučeným releasem. Veřejný release 0.14.3 z commitu
+`c596b4bf43f209ea5a632df5dd9fe6fbdd85917c` prošel 27. září 2026 anonymním
+auditem podpisů, release assets a OCI indexu pro `linux/amd64` a `linux/arm64`.
+Jeho reboot a control-plane URL migration se musí ještě ověřit na samostatném
+Linux hostu; do té doby zůstává kandidátem a výchozí katalog drží 0.14.2.
+Reprodukovatelný postup zůstává v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).
 Digest a release verze se konfigurují jako jedna povinná dvojice z podepsaného
