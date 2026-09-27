@@ -16,7 +16,28 @@ function row(): ProjectRow {
     scmDefaultBranch: 'main',
     scmInstallationId: 'installation-1',
     lastCommit: 'init',
+    pipelinePreset: 'dev-test-prod',
     createdAt: new Date('2026-08-03T08:00:00.000Z'),
+    buildArtifacts: [
+      {
+        id: 'artifact-latest',
+        projectId: 'project-1',
+        sourceProvider: 'github-actions',
+        providerArtifactId: '123',
+        providerRunId: '88',
+        commitSha: 'c'.repeat(40),
+        name: 'initpad-image.tar',
+        digest: 'e'.repeat(64),
+        sizeBytes: 100n,
+        expiresAt: new Date('2026-09-03T08:00:00.000Z'),
+        status: 'available',
+        storageKind: 'object-store',
+        storageRef: 'artifact.tar',
+        error: null,
+        createdAt: new Date('2026-08-03T09:00:00.000Z'),
+        updatedAt: new Date('2026-08-03T09:00:00.000Z'),
+      },
+    ],
     environments: [
       {
         name: 'prod',
@@ -105,6 +126,13 @@ describe('projectView', () => {
       provider: 'github-actions',
       digest: 'd'.repeat(64),
       runId: '77',
+    });
+    expect(project.latestVerifiedArtifact).toEqual({
+      id: 'artifact-latest',
+      version: 'c'.repeat(40),
+      provider: 'github-actions',
+      digest: 'e'.repeat(64),
+      runId: '88',
     });
   });
 

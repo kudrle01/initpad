@@ -8,15 +8,17 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { EnvName } from '../../domain/types';
+import { EnvName, PipelinePreset } from '../../domain/types';
+import { PIPELINE_PRESETS } from '../pipeline-preset';
 
 class EnvironmentConfigDto {
   @IsIn(['dev', 'test', 'prod'])
   name!: EnvName;
 
   // The target this environment should deploy to. Self-hosted may omit it and
-  // use built-in defaults; SaaS validates an explicit workspace target for all
-  // three environments because its control plane has no local deploy host.
+  // use built-in defaults; SaaS validates an explicit workspace target for
+  // every stage selected by the project because its control plane has no local
+  // deploy host.
   @IsOptional()
   @Matches(
     /^(?:builtin-(?:docker|ssh|sftp)|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i,
@@ -32,6 +34,10 @@ export class CreateProjectDto {
 
   @Matches(/^[a-z0-9-]{1,64}$/)
   templateId!: string;
+
+  @IsOptional()
+  @IsIn(PIPELINE_PRESETS)
+  pipelinePreset?: PipelinePreset;
 
   @IsOptional()
   @IsArray()

@@ -25,6 +25,11 @@ type DeployInBackground = (
 ) => Promise<void>;
 
 type ScheduleDeployment = (projectId: string, version: string, kind: string) => Promise<void>;
+type VerifyRegistryArtifact = (
+  project: { id: string; workspaceId: string },
+  repository: ScmRepositoryRef,
+  version: string,
+) => Promise<void>;
 
 /**
  * Repository-authenticated CI callback state machine. It validates the source
@@ -42,6 +47,7 @@ export class ProjectCiOrchestrator {
     private readonly resolveActor: (projectId: string) => Promise<ScmActor>,
     private readonly deployInBackground: DeployInBackground,
     private readonly scheduleDeployment: ScheduleDeployment,
+    private readonly verifyRegistryArtifact: VerifyRegistryArtifact,
   ) {}
 
   async started(repo: string, sha: string, ref: string, token: string): Promise<void> {
@@ -112,8 +118,6 @@ export class ProjectCiOrchestrator {
     const dev = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: project.id, name: 'dev' } },
     });
-    if (!dev) throw new BadRequestException("Project has no 'dev' environment");
-
     const ciStatus = (artifactInput.ciStatus || 'success').trim().toLowerCase();
     if (!['success', 'failure', 'cancelled', 'skipped'].includes(ciStatus)) {
       throw new BadRequestException(`Unsupported CI result '${ciStatus}'`);
@@ -125,6 +129,41 @@ export class ProjectCiOrchestrator {
 
     const buildArtifact = await this.resolveArtifact(project.id, repository, sha, artifactInput);
     if (buildArtifact === 'duplicate') return;
+
+    if (!dev) {
+      if (isRetry) {
+        this.logger.log(`Ignoring CI retry for pipeline without dev: ${repo} (${retryTag})`);
+        return;
+      }
+      await this.prisma.project.update({
+        where: { id: project.id },
+        data: { lastCommit: `ci: verifying ${sha.slice(0, 7)}` },
+      });
+      if (buildArtifact) {
+        await this.ingestion.queueVerification(project.id, repository, buildArtifact);
+      } else {
+        void this.verifyRegistryArtifact(project, repository, sha)
+          .then(() =>
+            this.prisma.project.update({
+              where: { id: project.id },
+              data: { lastCommit: `ci: verified ${sha.slice(0, 7)}` },
+            }),
+          )
+          .catch((error) => {
+            this.logger.error(
+              `Registry artifact verification failed for ${repository.fullName}: ${(error as Error).message}`,
+            );
+            return this.prisma.project
+              .update({
+                where: { id: project.id },
+                data: { lastCommit: `ci: artifact failed ${sha.slice(0, 7)}` },
+              })
+              .catch(() => undefined);
+          });
+      }
+      this.logger.log(`CI artifact verification: ${repo} (${sha})`);
+      return;
+    }
 
     if (isRetry) {
       const actor = await this.resolveActor(project.id);
@@ -187,7 +226,7 @@ export class ProjectCiOrchestrator {
       id: string;
       status: string;
       activeOperationId: string | null;
-    },
+    } | null,
     repository: ScmRepositoryRef,
     retryTag: string,
     isRetry: boolean,
@@ -198,6 +237,19 @@ export class ProjectCiOrchestrator {
       `CI did not produce a deployable image (docker job: ${ciStatus}). ` +
       'Open the SCM run logs, fix the failed job and run again.';
     const scm = this.workspaceScm.provider(repository.provider);
+
+    if (!dev) {
+      if (isRetry) {
+        const actor = await this.resolveActor(project.id);
+        await scm.deleteTag(repository, retryTag, actor).catch(() => undefined);
+      }
+      await this.prisma.project.update({
+        where: { id: project.id },
+        data: { lastCommit: `ci: failed ${sha.slice(0, 7)}` },
+      });
+      this.logger.warn(`CI failed before artifact verification: ${repository.fullName}`);
+      return;
+    }
 
     if (isRetry) {
       const actor = await this.resolveActor(project.id);

@@ -133,6 +133,23 @@ describe('WorkspaceMetricsService', () => {
     expect(csv).not.toMatch(/secret|message|actor|log/i);
   });
 
+  it('reports time to healthy dev as null when the configured pipeline has no dev', async () => {
+    const { service, prisma } = setup();
+    prisma.$transaction.mockResolvedValueOnce([
+      { slug: 'production-team' },
+      rows.filter((row) => row.environment.name === 'prod'),
+    ]);
+
+    const exported = await service.export('owner-1', 'workspace-1', {
+      from: '2026-08-01',
+      to: '2026-08-02',
+      format: 'json',
+    });
+
+    expect(exported.data.schemaVersion).toBe(1);
+    expect(exported.data.totals.averageTimeToHealthyDevSeconds).toBeNull();
+  });
+
   it('returns 404 outside the workspace and 403 to a non-admin member', async () => {
     await expect(
       setup(null).service.export('stranger', 'workspace-1', { format: 'json' }),

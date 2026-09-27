@@ -120,6 +120,59 @@ const repository = (name = 'api', empty = false) => ({
 describe('ProjectsService.importExisting guards', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it.each([
+    ['dev-test-prod', ['dev', 'test', 'prod']],
+    ['dev-prod', ['dev', 'prod']],
+    ['prod-only', ['prod']],
+  ] as const)('imports only the stages configured by %s', async (pipelinePreset, names) => {
+    const create = jest.fn(async (_input: unknown) => ({ id: 'p1' }));
+    const prisma = {
+      project: { findFirst: jest.fn(async () => null), create },
+      user: {
+        findUniqueOrThrow: jest.fn(async () => owner),
+        update: jest.fn(async () => owner),
+      },
+      workspaceMember: { findMany: jest.fn(async () => []) },
+    };
+    const scm = {
+      listRepositories: jest.fn(async () => [repository()]),
+      readFile: jest.fn(async (_repo: unknown, path: string) =>
+        path === 'Dockerfile' ? 'FROM node:22' : 'INITPAD_PLATFORM_URL INITPAD_DEPLOY_TOKEN',
+      ),
+      issueCloneToken: jest.fn(async () => 'clone-token'),
+      configureRepoSecrets: jest.fn(async () => undefined),
+      removeRepoSecrets: jest.fn(async () => undefined),
+    };
+    const service = build({
+      workspaces,
+      prisma,
+      templates: { get: jest.fn(() => template) },
+      targets: {
+        listEntities: jest.fn(async () => [dockerTarget]),
+        parseCaps: (value: string) => value.split(','),
+      },
+      scm,
+    });
+    jest.spyOn(service, 'get').mockResolvedValue({ id: 'p1' } as never);
+
+    await service.importExisting(
+      { repositoryId: '101', templateId: 'node-api', pipelinePreset },
+      'u1',
+    );
+
+    const input = create.mock.calls[0]?.[0] as {
+      data: {
+        pipelinePreset: string;
+        environments: { create: Array<{ name: string; status: string }> };
+      };
+    };
+    expect(input.data.pipelinePreset).toBe(pipelinePreset);
+    expect(input.data.environments.create.map((environment) => environment.name)).toEqual(names);
+    expect(
+      input.data.environments.create.every((environment) => environment.status === 'empty'),
+    ).toBe(true);
+  });
+
   it('rejects a repository name that is not a valid project name', async () => {
     const service = build({
       workspaces,

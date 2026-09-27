@@ -10,6 +10,8 @@ import { AuditEventsService } from '../audit/audit-events.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { RollbackPreview } from '../domain/types';
+import type { PipelinePreset } from '../domain/types';
+import { productionSourceStage } from './pipeline-preset';
 
 export type ProductionRequestKind = 'promote' | 'redeploy' | 'rollback';
 export type ProductionApprovalPolicy = 'self-review' | 'separate-reviewer';
@@ -376,9 +378,10 @@ export class ProjectProductionApprovals {
         id: true,
         name: true,
         workspaceId: true,
+        pipelinePreset: true,
         workspace: { select: { productionApprovalPolicy: true } },
         environments: {
-          where: { name: { in: ['test', 'prod'] } },
+          where: { name: { in: ['dev', 'test', 'prod'] } },
           select: {
             id: true,
             name: true,
@@ -397,6 +400,12 @@ export class ProjectProductionApprovals {
             buildArtifact: { select: { id: true, digest: true } },
           },
         },
+        buildArtifacts: {
+          where: { status: 'available' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true, commitSha: true, digest: true },
+        },
       },
     });
     if (!project) throw new NotFoundException(`Project '${projectId}' not found`);
@@ -412,7 +421,13 @@ export class ProjectProductionApprovals {
       throw new BadRequestException('Production workspace access is paused');
     }
 
-    const candidate = await this.candidate(projectId, input, project.environments);
+    const candidate = await this.candidate(
+      projectId,
+      input,
+      project.pipelinePreset as PipelinePreset,
+      project.environments,
+      project.buildArtifacts[0] ?? null,
+    );
     const policy = project.workspace.productionApprovalPolicy as ProductionApprovalPolicy;
     const base = {
       workspaceId: project.workspaceId,
@@ -434,6 +449,7 @@ export class ProjectProductionApprovals {
   private async candidate(
     projectId: string,
     input: CreateInput,
+    preset: PipelinePreset,
     environments: Array<{
       name: string;
       status: string;
@@ -441,6 +457,7 @@ export class ProjectProductionApprovals {
       buildArtifactId: string | null;
       buildArtifact: { id: string; digest: string } | null;
     }>,
+    latestArtifact: { id: string; commitSha: string; digest: string } | null,
   ): Promise<Candidate> {
     if (input.kind === 'rollback') {
       if (!input.candidateOperationId || !input.stateToken) {
@@ -468,13 +485,28 @@ export class ProjectProductionApprovals {
       };
     }
 
-    const sourceName = input.kind === 'promote' ? 'test' : 'prod';
+    const sourceName = input.kind === 'promote' ? productionSourceStage(preset) : 'prod';
+    if (input.kind === 'promote' && !sourceName) {
+      if (!latestArtifact) {
+        throw new BadRequestException('No verified default-branch CI build is available');
+      }
+      return {
+        kind: input.kind,
+        sourceEnvironment: 'ci',
+        candidateOperationId: null,
+        candidateStateToken: null,
+        version: latestArtifact.commitSha,
+        buildArtifactId: latestArtifact.id,
+        artifactDigest: latestArtifact.digest,
+      };
+    }
+    if (!sourceName) throw new BadRequestException('Production source is not configured');
     const source = environments.find((environment) => environment.name === sourceName);
     if (!source?.version)
       throw new BadRequestException(`${sourceName} has no verified build to publish`);
     if (input.kind === 'promote' && source.status !== 'running') {
       throw new BadRequestException(
-        'Test must be running before its build can be requested for production',
+        `${sourceName} must be running before its build can be requested for production`,
       );
     }
     return {

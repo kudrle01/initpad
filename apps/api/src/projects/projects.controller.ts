@@ -27,6 +27,7 @@ import {
   CreateProductionDeploymentRequestDto,
   ReviewProductionDeploymentRequestDto,
 } from './dto/production-deployment-request.dto';
+import { UpdatePipelinePresetDto } from './dto/update-pipeline-preset.dto';
 
 function historyLimit(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
@@ -149,6 +150,16 @@ export class ProjectsController {
   ) {
     await this.projects.assertAccess(id, userId, 'write');
     return this.projects.promote(id, env, userId);
+  }
+
+  @Put(':id/pipeline-preset')
+  async updatePipelinePreset(
+    @Param('id') id: string,
+    @Body() dto: UpdatePipelinePresetDto,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertAccess(id, userId, 'maintain');
+    return this.projects.updatePipelinePreset(id, dto.pipelinePreset, userId, dto.environments);
   }
 
   @Post(':id/redeploy/:env')

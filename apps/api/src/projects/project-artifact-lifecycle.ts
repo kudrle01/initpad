@@ -89,7 +89,7 @@ export class ProjectArtifactLifecycle {
   async captureRegistryArtifact(
     repository: ScmRepositoryRef,
     project: { id: string; workspaceId: string },
-    operationId: string,
+    operationId: string | null,
     version: string,
   ): Promise<BuildArtifact> {
     if (!this.store.durable) {
@@ -115,7 +115,7 @@ export class ProjectArtifactLifecycle {
       existing.storageRef &&
       (await this.store.head(existing.storageRef))?.sizeBytes === Number(existing.sizeBytes)
     ) {
-      await this.bindOperationArtifact(operationId, project.id, existing.id);
+      if (operationId) await this.bindOperationArtifact(operationId, project.id, existing.id);
       return existing;
     }
 
@@ -177,7 +177,7 @@ export class ProjectArtifactLifecycle {
       if (existing?.storageRef && existing.storageRef !== artifact.storageRef) {
         await this.store.delete(existing.storageRef).catch(() => undefined);
       }
-      await this.bindOperationArtifact(operationId, project.id, artifact.id);
+      if (operationId) await this.bindOperationArtifact(operationId, project.id, artifact.id);
       this.logger.log(`Captured registry image ${imageRef} for verified delivery`);
       return artifact;
     } catch (error) {

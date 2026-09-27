@@ -48,6 +48,7 @@ describe('ProjectsService immutable artifact binding', () => {
     const service = make(prisma);
     jest.spyOn(service, 'get').mockResolvedValue({
       id: 'project-1',
+      pipelinePreset: 'dev-test-prod',
       environments: [
         { name: 'dev', status: 'running', version: 'a'.repeat(40), artifact: { id: 'artifact-1' } },
       ],
@@ -65,6 +66,22 @@ describe('ProjectsService immutable artifact binding', () => {
       'artifact-1',
       undefined,
     );
+  });
+
+  it('does not promote to a stage outside the project preset', async () => {
+    const service = make({});
+    jest.spyOn(service, 'get').mockResolvedValue({
+      id: 'project-1',
+      pipelinePreset: 'dev-prod',
+      environments: [
+        { name: 'dev', status: 'running', version: 'a'.repeat(40), artifact: { id: 'artifact-1' } },
+        { name: 'prod', status: 'empty', version: null, artifact: null },
+      ],
+    } as never);
+    const schedule = jest.spyOn(service as any, 'scheduleDeployment').mockResolvedValue(undefined);
+
+    await expect(service.promote('project-1', 'test')).rejects.toThrow("Cannot promote to 'test'");
+    expect(schedule).not.toHaveBeenCalled();
   });
 
   it('reuses a failed GitHub deployment when the cached image is present (no rehydration)', async () => {

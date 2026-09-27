@@ -6,6 +6,7 @@ const TOKEN = 'repository-callback-secret';
 const SHA = 'a'.repeat(40);
 const PROJECT = {
   id: 'project-1',
+  workspaceId: 'workspace-1',
   lastCommit: 'init',
   ciDeployTokenHash: hashToken(TOKEN),
   scmProvider: 'github',
@@ -31,17 +32,20 @@ const ARTIFACT = {
 function make(
   options: {
     project?: Record<string, unknown>;
-    dev?: Record<string, unknown>;
+    dev?: Record<string, unknown> | null;
     replay?: Record<string, unknown> | null;
     scm?: Record<string, unknown>;
   } = {},
 ) {
   const project = options.project ?? PROJECT;
-  const dev = options.dev ?? {
-    id: 'env-1',
-    status: 'deploying',
-    activeOperationId: null,
-  };
+  const dev =
+    'dev' in options
+      ? options.dev
+      : {
+          id: 'env-1',
+          status: 'deploying',
+          activeOperationId: null,
+        };
   const prisma = {
     project: {
       findMany: jest.fn(async () => [project]),
@@ -64,9 +68,13 @@ function make(
     begin: jest.fn(async () => 'operation-1'),
     complete: jest.fn(async () => undefined),
   };
-  const ingestion = { queue: jest.fn(async () => undefined) };
+  const ingestion = {
+    queue: jest.fn(async () => undefined),
+    queueVerification: jest.fn(async () => undefined),
+  };
   const deployInBackground = jest.fn(async () => undefined);
   const scheduleDeployment = jest.fn(async () => undefined);
+  const verifyRegistryArtifact = jest.fn(async () => undefined);
   const resolveActor = jest.fn(async () => ({ username: 'alice', token: 'token' }));
   const orchestrator = new ProjectCiOrchestrator(
     prisma as never,
@@ -76,6 +84,7 @@ function make(
     resolveActor,
     deployInBackground,
     scheduleDeployment,
+    verifyRegistryArtifact,
   );
   return {
     orchestrator,
@@ -85,10 +94,48 @@ function make(
     ingestion,
     deployInBackground,
     scheduleDeployment,
+    verifyRegistryArtifact,
   };
 }
 
 describe('ProjectCiOrchestrator', () => {
+  it('verifies a GitHub artifact without deploying when the project has no dev stage', async () => {
+    const ctx = make({ dev: null });
+
+    await ctx.orchestrator.deployFromCi('acme/api', SHA, 'main', TOKEN, {
+      artifactId: ARTIFACT.providerArtifactId,
+      artifactDigest: ARTIFACT.digest,
+    });
+
+    expect(ctx.ingestion.queueVerification).toHaveBeenCalledWith(
+      'project-1',
+      expect.objectContaining({ fullName: 'acme/api' }),
+      ARTIFACT,
+    );
+    expect(ctx.operations.begin).not.toHaveBeenCalled();
+    expect(ctx.scheduleDeployment).not.toHaveBeenCalled();
+  });
+
+  it('captures a Gitea registry artifact without deploying when no dev stage exists', async () => {
+    const giteaProject = {
+      ...PROJECT,
+      scmProvider: 'gitea',
+      scmInstallationId: null,
+      repoUrl: 'https://git.example.test/acme/api',
+    };
+    const ctx = make({ project: giteaProject, dev: null });
+
+    await ctx.orchestrator.deployFromCi('acme/api', SHA, 'main', TOKEN);
+    await Promise.resolve();
+
+    expect(ctx.verifyRegistryArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'project-1', workspaceId: 'workspace-1' }),
+      expect.objectContaining({ provider: 'gitea' }),
+      SHA,
+    );
+    expect(ctx.operations.begin).not.toHaveBeenCalled();
+  });
+
   it('binds the resolved GitHub artifact to the deployment operation', async () => {
     const ctx = make();
 

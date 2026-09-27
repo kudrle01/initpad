@@ -206,6 +206,28 @@ describe('ProjectsService create provisioning journal', () => {
     );
   });
 
+  it.each([
+    ['dev-test-prod', ['dev', 'test', 'prod']],
+    ['dev-prod', ['dev', 'prod']],
+    ['prod-only', ['prod']],
+  ] as const)('creates only the stages configured by %s', async (pipelinePreset, names) => {
+    const { service, prisma } = build();
+
+    await service.create({ name: 'new-api', templateId: 'node-api', pipelinePreset }, 'u1');
+
+    const input = prisma.project.create.mock.calls[0]?.[0] as {
+      data: {
+        pipelinePreset: string;
+        environments: { create: Array<{ name: string; status: string }> };
+      };
+    };
+    expect(input.data.pipelinePreset).toBe(pipelinePreset);
+    expect(input.data.environments.create.map((environment) => environment.name)).toEqual(names);
+    expect(
+      input.data.environments.create.find((environment) => environment.name === 'prod')?.status,
+    ).toBe('empty');
+  });
+
   it('deletes a created repository when persisting its applied result fails', async () => {
     const completeEffect = jest.fn(async () => {
       throw new Error('journal unavailable');

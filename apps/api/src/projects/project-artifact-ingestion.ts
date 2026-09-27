@@ -101,11 +101,21 @@ export class ProjectArtifactIngestion {
     void this.ingest(projectId, repository, artifact, operationId);
   }
 
+  /** Verifies and stores a CI artifact without publishing it to an environment. */
+  async queueVerification(
+    projectId: string,
+    repository: ScmRepositoryRef,
+    artifact: ScmBuildArtifact,
+  ): Promise<void> {
+    await this.accept(projectId, artifact);
+    void this.ingest(projectId, repository, artifact, null);
+  }
+
   async ingest(
     projectId: string,
     repository: ScmRepositoryRef,
     artifact: ScmBuildArtifact,
-    operationId: string,
+    operationId: string | null,
   ): Promise<void> {
     const claimed = await this.prisma.buildArtifact.updateMany({
       where: {
@@ -117,19 +127,21 @@ export class ProjectArtifactIngestion {
       data: { status: 'ingesting', error: null },
     });
     if (claimed.count !== 1) return;
-    await this.operations.advancePhase(
-      operationId,
-      'running',
-      'Downloading and verifying tested image',
-    );
-    await this.prisma.environment.updateMany({
-      where: { projectId, name: 'dev', activeOperationId: operationId },
-      data: { statusReason: 'Downloading and verifying tested image' },
-    });
-    await this.prisma.deploymentOperation.updateMany({
-      where: { id: operationId, status: 'running' },
-      data: { message: 'Downloading and verifying tested image' },
-    });
+    if (operationId) {
+      await this.operations.advancePhase(
+        operationId,
+        'running',
+        'Downloading and verifying tested image',
+      );
+      await this.prisma.environment.updateMany({
+        where: { projectId, name: 'dev', activeOperationId: operationId },
+        data: { statusReason: 'Downloading and verifying tested image' },
+      });
+      await this.prisma.deploymentOperation.updateMany({
+        where: { id: operationId, status: 'running' },
+        data: { message: 'Downloading and verifying tested image' },
+      });
+    }
     const scm = this.workspaceScm.provider(repository.provider);
     let download: Awaited<ReturnType<NonNullable<ScmProvider['downloadBuildArtifact']>>> | null =
       null;
@@ -163,7 +175,7 @@ export class ProjectArtifactIngestion {
           error: null,
         },
       });
-      if (await this.operations.cancelled(operationId)) {
+      if (operationId && (await this.operations.cancelled(operationId))) {
         await this.prisma.environment.updateMany({
           where: { projectId, name: 'dev', activeOperationId: operationId },
           data: {
@@ -181,7 +193,14 @@ export class ProjectArtifactIngestion {
         );
         return;
       }
-      await this.deployVerifiedArtifact(projectId, artifact.commitSha, operationId);
+      if (operationId) {
+        await this.deployVerifiedArtifact(projectId, artifact.commitSha, operationId);
+      } else {
+        await this.prisma.project.update({
+          where: { id: projectId },
+          data: { lastCommit: `ci: verified ${artifact.commitSha.slice(0, 7)}` },
+        });
+      }
     } catch (error) {
       const message = (error as Error).message;
       if (objectKey) {
@@ -203,13 +222,22 @@ export class ProjectArtifactIngestion {
           data: { status: 'failed', error: message, storageKind: null, storageRef: null },
         })
         .catch(() => undefined);
-      await this.prisma.environment
-        .updateMany({
-          where: { projectId, name: 'dev', activeOperationId: operationId },
-          data: { status: 'failed', statusReason: message, activeOperationId: null },
-        })
-        .catch(() => undefined);
-      await this.operations.complete(operationId, 'failed', message);
+      if (operationId) {
+        await this.prisma.environment
+          .updateMany({
+            where: { projectId, name: 'dev', activeOperationId: operationId },
+            data: { status: 'failed', statusReason: message, activeOperationId: null },
+          })
+          .catch(() => undefined);
+        await this.operations.complete(operationId, 'failed', message);
+      } else {
+        await this.prisma.project
+          .update({
+            where: { id: projectId },
+            data: { lastCommit: `ci: artifact failed ${artifact.commitSha.slice(0, 7)}` },
+          })
+          .catch(() => undefined);
+      }
       this.logger.error(`Artifact ingestion failed for ${repository.fullName}: ${message}`);
     } finally {
       download?.cleanup();

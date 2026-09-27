@@ -16,6 +16,8 @@ export type TargetManagementState = 'active' | 'disconnected' | 'retired';
 
 export type EnvName = 'dev' | 'test' | 'prod';
 
+export type PipelinePreset = 'dev-test-prod' | 'dev-prod' | 'prod-only';
+
 export type DeployStatus = 'empty' | 'deploying' | 'running' | 'failed' | 'stopped';
 
 export interface TemplateManifest {
@@ -150,6 +152,14 @@ export interface Project {
   };
   createdAt: string;
   lastCommit: string;
+  pipelinePreset: PipelinePreset;
+  latestVerifiedArtifact: {
+    id: string;
+    version: string;
+    provider: string;
+    digest: string;
+    runId: string;
+  } | null;
   environments: Environment[];
 }
 

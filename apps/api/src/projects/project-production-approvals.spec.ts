@@ -6,7 +6,10 @@ const allocationRevision = new Date('2026-09-07T10:05:00.000Z');
 type TestRole = 'owner' | 'admin' | 'maintainer' | 'member' | 'viewer';
 type TestPermission = 'read' | 'write' | 'maintain' | 'admin';
 
-function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-reviewer') {
+function harness(
+  initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-reviewer',
+  pipelinePreset: 'dev-test-prod' | 'dev-prod' | 'prod-only' = 'dev-test-prod',
+) {
   let policy = initialPolicy;
   let request: Record<string, any> | null = null;
   let configRevision = 3;
@@ -69,8 +72,29 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
     id: 'project-1',
     name: 'Payments API',
     workspaceId: 'workspace-1',
+    pipelinePreset,
     workspace: { productionApprovalPolicy: policy },
     environments: [
+      {
+        id: 'dev-env',
+        name: 'dev',
+        provider: 'docker',
+        status: 'running',
+        version: 'dddddddddddddddddddddddddddddddddddddddd',
+        buildArtifactId: 'artifact-dev',
+        activeOperationId: null,
+        targetId: 'target-dev',
+        allocationId: 'allocation-dev',
+        configRevision: 1,
+        target: {
+          id: 'target-dev',
+          name: 'Dev target',
+          updatedAt: targetRevision,
+          managementState: 'active',
+        },
+        allocation: { id: 'allocation-dev', updatedAt: allocationRevision, status: 'active' },
+        buildArtifact: { id: 'artifact-dev', digest: 'digest-dev' },
+      },
       {
         id: 'test-env',
         name: 'test',
@@ -110,6 +134,13 @@ function harness(initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-
         },
         allocation: { id: 'allocation-prod', updatedAt: allocationRevision, status: 'active' },
         buildArtifact: { id: 'artifact-old', digest: 'digest-old' },
+      },
+    ],
+    buildArtifacts: [
+      {
+        id: 'artifact-ci',
+        commitSha: 'cccccccccccccccccccccccccccccccccccccccc',
+        digest: 'digest-ci',
       },
     ],
   });
@@ -204,6 +235,29 @@ describe('ProjectProductionApprovals', () => {
       }),
     );
   });
+
+  it.each([
+    ['dev-test-prod', 'test', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'artifact-1'],
+    ['dev-prod', 'dev', 'dddddddddddddddddddddddddddddddddddddddd', 'artifact-dev'],
+    ['prod-only', 'ci', 'cccccccccccccccccccccccccccccccccccccccc', 'artifact-ci'],
+  ] as const)(
+    'takes a protected production candidate from the %s pipeline source',
+    async (preset, sourceEnvironment, version, artifactId) => {
+      const h = harness('separate-reviewer', preset);
+
+      await h.service.create('project-1', 'requester', { kind: 'promote' });
+
+      expect(h.prisma.productionDeploymentRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            sourceEnvironment,
+            version,
+            buildArtifactId: artifactId,
+          }),
+        }),
+      );
+    },
+  );
 
   it('enforces a different reviewer for team production', async () => {
     const h = harness();

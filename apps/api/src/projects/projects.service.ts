@@ -1,4 +1,11 @@
-import { Inject, Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { rmSync } from 'fs';
 import { Prisma } from '@prisma/client';
 import {
@@ -7,6 +14,7 @@ import {
   DeploymentOperationSummary,
   EnvName,
   Project,
+  PipelinePreset,
   ProviderKind,
   RollbackPreview,
   WorkloadDiagnostic,
@@ -58,8 +66,7 @@ import {
 } from './project-production-approvals';
 import { ProjectDeletion } from './project-deletion';
 import { ProjectReconciliation } from './project-reconciliation';
-
-const ENV_ORDER: EnvName[] = ['dev', 'test', 'prod'];
+import { DEFAULT_PIPELINE_PRESET, pipelineStages, previousPipelineStage } from './pipeline-preset';
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
 /**
@@ -164,6 +171,9 @@ export class ProjectsService {
         this.deployEnvInBackground(projectId, 'dev', version, true, operationId),
       async (projectId, version, kind) => {
         await this.scheduleDeployment(projectId, 'dev', version, true, kind);
+      },
+      async (project, repository, version) => {
+        await this.artifactLifecycle.captureRegistryArtifact(repository, project, null, version);
       },
     );
     this.rollbackFlow = new ProjectRollback(
@@ -313,6 +323,11 @@ export class ProjectsService {
       where: { workspaceId },
       include: {
         environments: { include: { target: true, allocation: true, buildArtifact: true } },
+        buildArtifacts: {
+          where: { status: 'available' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -335,6 +350,11 @@ export class ProjectsService {
       where: { id },
       include: {
         environments: { include: { target: true, allocation: true, buildArtifact: true } },
+        buildArtifacts: {
+          where: { status: 'available' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
       },
     });
     if (!row) throw new NotFoundException(`Project '${id}' not found`);
@@ -345,6 +365,181 @@ export class ProjectsService {
   // own scoped credentials and intentionally do not call this method.
   async assertAccess(id: string, userId: string, permission: WorkspacePermission): Promise<void> {
     await this.workspaces.requireProject(userId, id, permission);
+  }
+
+  async updatePipelinePreset(
+    id: string,
+    nextPreset: PipelinePreset,
+    actorUserId: string,
+    requestedTargets?: Array<{ name: EnvName; targetId?: string }>,
+  ): Promise<Project> {
+    const { workspaceId } = await this.workspaces.requireProject(actorUserId, id, 'maintain');
+    const project = await this.prisma.project.findUnique({
+      where: { id },
+      include: { environments: true },
+    });
+    if (!project) throw new NotFoundException(`Project '${id}' not found`);
+    const currentPreset = project.pipelinePreset as PipelinePreset;
+    if (currentPreset === nextPreset) return this.get(id);
+
+    const activeOperation = await this.prisma.deploymentOperation.findFirst({
+      where: { environment: { projectId: id }, status: 'running' },
+      select: { id: true },
+    });
+    if (
+      activeOperation ||
+      project.environments.some((environment) => environment.activeOperationId)
+    ) {
+      throw new ConflictException(
+        'The pipeline preset cannot change while a project operation is running',
+      );
+    }
+    const pendingProduction = await this.prisma.productionDeploymentRequest.findFirst({
+      where: { projectId: id, status: { in: ['pending', 'approving'] } },
+      select: { id: true },
+    });
+    if (pendingProduction) {
+      throw new ConflictException(
+        'Resolve or cancel the pending production request before changing the pipeline preset',
+      );
+    }
+
+    const currentStages = pipelineStages(currentPreset);
+    const nextStages = pipelineStages(nextPreset);
+    this.assertRequestedStages(nextStages, requestedTargets);
+    const removed = currentStages.filter((stage) => !nextStages.includes(stage));
+    const added = nextStages.filter((stage) => !currentStages.includes(stage));
+    for (const stage of removed) {
+      const environment = project.environments.find((candidate) => candidate.name === stage);
+      if (
+        environment &&
+        (environment.status !== 'empty' ||
+          environment.version !== null ||
+          environment.url !== null ||
+          environment.buildArtifactId !== null ||
+          environment.statusReason !== null ||
+          environment.activeOperationId !== null)
+      ) {
+        throw new ConflictException(
+          `Environment '${stage}' is not empty. Remove its deployment and finish any pending cleanup before changing the pipeline preset.`,
+        );
+      }
+    }
+
+    const template = this.templates.get(project.templateId);
+    const targets = await this.targets.listEntities(workspaceId);
+    const resolvedAdded = added.map((name) => ({
+      name,
+      target: this.environmentTargets.resolveTarget(
+        name,
+        template,
+        requestedTargets?.find((target) => target.name === name)?.targetId,
+        targets,
+      ),
+    }));
+    const addedTargets = await this.environmentTargets.prepareAllocations(
+      workspaceId,
+      resolvedAdded,
+      templateRuntime(template),
+    );
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        // Recheck every mutable precondition inside the same serializable
+        // transaction that changes the stage set. The earlier checks provide a
+        // fast, useful error; these checks close the race with a deployment or
+        // production request started while targets were being resolved.
+        const current = await tx.project.findUnique({
+          where: { id },
+          include: { environments: true },
+        });
+        if (!current || current.pipelinePreset !== currentPreset) {
+          throw new ConflictException('The pipeline preset changed concurrently; reload and retry');
+        }
+        const concurrentOperation = await tx.deploymentOperation.findFirst({
+          where: { environment: { projectId: id }, status: 'running' },
+          select: { id: true },
+        });
+        if (
+          concurrentOperation ||
+          current.environments.some((environment) => environment.activeOperationId)
+        ) {
+          throw new ConflictException(
+            'The pipeline preset cannot change while a project operation is running',
+          );
+        }
+        const concurrentProduction = await tx.productionDeploymentRequest.findFirst({
+          where: { projectId: id, status: { in: ['pending', 'approving'] } },
+          select: { id: true },
+        });
+        if (concurrentProduction) {
+          throw new ConflictException(
+            'Resolve or cancel the pending production request before changing the pipeline preset',
+          );
+        }
+        for (const stage of removed) {
+          const environment = current.environments.find((candidate) => candidate.name === stage);
+          if (
+            environment &&
+            (environment.status !== 'empty' ||
+              environment.version !== null ||
+              environment.url !== null ||
+              environment.buildArtifactId !== null ||
+              environment.statusReason !== null ||
+              environment.activeOperationId !== null)
+          ) {
+            throw new ConflictException(
+              `Environment '${stage}' is not empty. Remove its deployment and finish any pending cleanup before changing the pipeline preset.`,
+            );
+          }
+        }
+        if (removed.length > 0) {
+          await tx.environment.deleteMany({
+            where: { projectId: id, name: { in: removed } },
+          });
+        }
+        for (const [order, name] of nextStages.entries()) {
+          const existing = project.environments.find((environment) => environment.name === name);
+          if (existing && !removed.includes(name)) {
+            await tx.environment.update({ where: { id: existing.id }, data: { order } });
+            continue;
+          }
+          const resolved = addedTargets.find((target) => target.name === name);
+          if (!resolved) throw new Error(`Target for added environment '${name}' was not resolved`);
+          await tx.environment.create({
+            data: {
+              projectId: id,
+              name,
+              order,
+              provider: resolved.target.kind,
+              targetId: resolved.target.id,
+              allocationId: resolved.allocationId,
+              status: 'empty',
+            },
+          });
+        }
+        const changed = await tx.project.updateMany({
+          where: { id, pipelinePreset: currentPreset },
+          data: { pipelinePreset: nextPreset },
+        });
+        if (changed.count !== 1) {
+          throw new ConflictException('The pipeline preset changed concurrently; reload and retry');
+        }
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+    await this.auditEvents?.record({
+      workspaceId,
+      actorUserId,
+      action: 'project.pipeline_preset_changed',
+      outcome: 'succeeded',
+      resourceType: 'project',
+      resourceId: id,
+      resourceName: project.name,
+      details: { previousPreset: currentPreset, pipelinePreset: nextPreset },
+    });
+    return this.get(id);
   }
 
   // The most recent provisioning operation (create/import) for a project.
@@ -390,6 +585,9 @@ export class ProjectsService {
       throw new BadRequestException(`This workspace already has a project named '${dto.name}'`);
     }
     const template = this.templates.get(dto.templateId);
+    const pipelinePreset = dto.pipelinePreset ?? DEFAULT_PIPELINE_PRESET;
+    const stages = pipelineStages(pipelinePreset);
+    this.assertRequestedStages(stages, dto.environments);
     const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
     const scmContext = await this.workspaceScm.createContext(
       ownerId,
@@ -401,7 +599,7 @@ export class ProjectsService {
     // Resolve every target before creating external state. Invalid target
     // configuration must not leave a repository behind in Gitea.
     const targets = await this.targets.listEntities(workspaceId);
-    const resolvedTargets = ENV_ORDER.map((name) => {
+    const resolvedTargets = stages.map((name) => {
       const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
       return {
         name,
@@ -545,6 +743,7 @@ export class ProjectsService {
             scmDefaultBranch: repo.defaultBranch,
             scmInstallationId: repo.installationId,
             lastCommit: 'init: scaffold from template',
+            pipelinePreset,
             ciDeployTokenHash: hashToken(ciDeployToken),
             ownerId,
             workspaceId,
@@ -697,8 +896,11 @@ export class ProjectsService {
         );
       }
 
+      const pipelinePreset = dto.pipelinePreset ?? DEFAULT_PIPELINE_PRESET;
+      const stages = pipelineStages(pipelinePreset);
+      this.assertRequestedStages(stages, dto.environments);
       const targets = await this.targets.listEntities(workspaceId);
-      const resolvedTargets = ENV_ORDER.map((name) => {
+      const resolvedTargets = stages.map((name) => {
         const chosen = dto.environments?.find((e) => e.name === name)?.targetId;
         return {
           name,
@@ -733,6 +935,7 @@ export class ProjectsService {
             scmDefaultBranch: repo.defaultBranch,
             scmInstallationId: repo.installationId,
             lastCommit: 'import: existing repository',
+            pipelinePreset,
             ciDeployTokenHash: hashToken(ciDeployToken),
             ownerId,
             workspaceId,
@@ -1149,15 +1352,13 @@ export class ProjectsService {
       throw new BadRequestException('Production deployments must be requested and approved');
     }
     const project = await this.get(id);
-    const idx = ENV_ORDER.indexOf(target);
-    if (idx <= 0) {
+    const sourceName = previousPipelineStage(project.pipelinePreset, target);
+    if (!sourceName) {
       throw new BadRequestException(`Cannot promote to '${target}'`);
     }
-    const source = project.environments.find((e) => e.name === ENV_ORDER[idx - 1]);
+    const source = project.environments.find((e) => e.name === sourceName);
     if (!source || source.status !== 'running' || !source.version) {
-      throw new BadRequestException(
-        `Source environment '${ENV_ORDER[idx - 1]}' has nothing to promote`,
-      );
+      throw new BadRequestException(`Source environment '${sourceName}' has nothing to promote`);
     }
     // Promote = run THE SAME registry image in the target environment (build
     // once, deploy many). Runs in the BACKGROUND: an SFTP build-extract to a
@@ -1629,6 +1830,18 @@ export class ProjectsService {
     if (issue) {
       throw new BadRequestException(
         `${issue} Configure a public InitPad URL before creating or importing a GitHub project.`,
+      );
+    }
+  }
+
+  private assertRequestedStages(
+    stages: readonly EnvName[],
+    requested?: Array<{ name: EnvName }>,
+  ): void {
+    const unexpected = requested?.find((environment) => !stages.includes(environment.name));
+    if (unexpected) {
+      throw new BadRequestException(
+        `Environment '${unexpected.name}' is not part of the selected pipeline preset`,
       );
     }
   }

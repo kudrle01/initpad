@@ -3,21 +3,30 @@ import {
   DeployStatus,
   EnvName,
   Project,
+  PipelinePreset,
   ProviderKind,
   TargetManagementState,
   TargetScope,
 } from '../domain/types';
 import { ScmKind } from '../scm/scm-provider';
 import { withCurrentPublicHost } from '../common/public-url';
+import { pipelineStages } from './pipeline-preset';
 
 export type ProjectRow = Prisma.ProjectGetPayload<{
   include: {
     environments: { include: { target: true; allocation: true; buildArtifact: true } };
+    buildArtifacts: {
+      where: { status: 'available' };
+      orderBy: { createdAt: 'desc' };
+      take: 1;
+    };
   };
 }>;
 
 /** Maps the persistence model to the stable project API contract. */
 export function projectView(row: ProjectRow, publicHost: string): Project {
+  const configuredStages = new Set(pipelineStages(row.pipelinePreset as PipelinePreset));
+  const latestVerifiedArtifact = row.buildArtifacts[0];
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -37,7 +46,18 @@ export function projectView(row: ProjectRow, publicHost: string): Project {
     },
     createdAt: row.createdAt.toISOString(),
     lastCommit: row.lastCommit,
+    pipelinePreset: row.pipelinePreset as PipelinePreset,
+    latestVerifiedArtifact: latestVerifiedArtifact
+      ? {
+          id: latestVerifiedArtifact.id,
+          version: latestVerifiedArtifact.commitSha,
+          provider: latestVerifiedArtifact.sourceProvider,
+          digest: latestVerifiedArtifact.digest,
+          runId: latestVerifiedArtifact.providerRunId,
+        }
+      : null,
     environments: [...row.environments]
+      .filter((environment) => configuredStages.has(environment.name as EnvName))
       .sort((a, b) => a.order - b.order)
       .map((environment) => ({
         name: environment.name as EnvName,

@@ -89,6 +89,7 @@ describe('ProjectArtifactIngestion → object storage', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
         update: jest.fn(async () => ({})),
       },
+      project: { update: jest.fn(async () => ({})) },
     };
   }
 
@@ -123,6 +124,30 @@ describe('ProjectArtifactIngestion → object storage', () => {
         }),
       }),
     );
+  });
+
+  it('stores a prod-only artifact without creating or running a deployment', async () => {
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    const prisma = basePrisma(updateMany);
+    const scm = {
+      downloadBuildArtifact: jest.fn(async () => ({ filePath, cleanup: jest.fn() })),
+    };
+    const deployment = { loadImageArchive: jest.fn(async () => undefined) };
+    const store = {
+      put: jest.fn(async () => undefined),
+      head: jest.fn(async () => ({ sizeBytes: 12 })),
+      delete: jest.fn(async () => undefined),
+    };
+    const { ingestion, deployVerifiedArtifact } = makeIngestion(prisma, scm, deployment, store);
+
+    await ingestion.ingest('project-1', repository, artifact, null);
+
+    expect(deployVerifiedArtifact).not.toHaveBeenCalled();
+    expect(prisma.deploymentOperation.update).not.toHaveBeenCalled();
+    expect(prisma.project.update).toHaveBeenCalledWith({
+      where: { id: 'project-1' },
+      data: { lastCommit: `ci: verified ${SHA.slice(0, 7)}` },
+    });
   });
 
   it('deletes the partial object and fails when the upload cannot be confirmed', async () => {

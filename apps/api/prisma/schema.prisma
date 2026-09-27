@@ -419,6 +419,9 @@ model Project {
   scmInstallation    GitHubInstallation?           @relation(fields: [scmInstallationId], references: [id], onDelete: SetNull)
   scmInstallationId  String?
   lastCommit         String
+  // Constrained by a database CHECK migration. The default preserves the
+  // original three-stage pipeline for every existing project (ADR-118).
+  pipelinePreset     String                        @default("dev-test-prod")
   // SHA-256 hash of the repository-specific CI webhook token. The plaintext
   // exists only as a Gitea Actions secret and is never persisted by InitPad.
   ciDeployTokenHash  String?

@@ -8,7 +8,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { EnvName } from '../../domain/types';
+import { EnvName, PipelinePreset } from '../../domain/types';
+import { PIPELINE_PRESETS } from '../pipeline-preset';
 
 class ImportEnvironmentDto {
   @IsIn(['dev', 'test', 'prod'])
@@ -40,6 +41,10 @@ export class ImportProjectDto {
 
   @Matches(/^[a-z0-9-]{1,64}$/)
   templateId!: string;
+
+  @IsOptional()
+  @IsIn(PIPELINE_PRESETS)
+  pipelinePreset?: PipelinePreset;
 
   @IsOptional()
   @IsArray()

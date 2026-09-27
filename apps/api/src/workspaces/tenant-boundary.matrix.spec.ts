@@ -157,6 +157,25 @@ describe('two-workspace tenant boundary matrix', () => {
     expect(projects.workloadDiagnostic).not.toHaveBeenCalled();
   });
 
+  it('reserves pipeline preset changes for maintainers inside the project workspace', async () => {
+    const workspaces = workspaceBoundary();
+    const projects = {
+      assertAccess: jest.fn((id: string, userId: string, permission: 'maintain') =>
+        workspaces.requireProject(userId, id, permission),
+      ),
+      updatePipelinePreset: jest.fn(),
+    };
+    const controller = new ProjectsController(projects as never);
+
+    await expect(
+      controller.updatePipelinePreset(PROJECT_A, { pipelinePreset: 'dev-prod' }, 'bob'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      controller.updatePipelinePreset(PROJECT_B, { pipelinePreset: 'dev-prod' }, 'alice'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(projects.updatePipelinePreset).not.toHaveBeenCalled();
+  });
+
   it('blocks config reads and writes before touching a foreign project environment', async () => {
     const workspaces = workspaceBoundary();
     const prisma = {
