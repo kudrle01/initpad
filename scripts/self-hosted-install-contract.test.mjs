@@ -7,6 +7,18 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const installer = readFileSync(resolve(root, 'deploy/install.sh'), 'utf8');
 
+test('reconciles newly required generated secrets into legacy environments', () => {
+  const secrets = installer.slice(
+    installer.indexOf('# ---- 1. configuration + secrets'),
+    installer.indexOf('# The Supervisor mounts this checkout'),
+  );
+
+  assert.match(secrets, /awk -F= '\$2=="__GENERATE__" \{print \$1\}' \.env\.example/);
+  assert.match(secrets, /value=\$\(get_env "\$key"\)/);
+  assert.match(secrets, /\[ -z "\$value" \] \|\| \[ "\$value" = __GENERATE__ \]/);
+  assert.match(secrets, /set_env "\$key" "\$\(random_secret\)"/);
+});
+
 test('reconciles the persisted Gitea OIDC source after a public URL change', () => {
   const sso = installer.slice(
     installer.indexOf('# ---- 5. SSO'),

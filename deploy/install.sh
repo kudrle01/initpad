@@ -60,16 +60,6 @@ if [ ! -f .env ]; then
 fi
 chmod 600 .env
 
-# Replace every __GENERATE__ placeholder with a random secret.
-while grep -q '__GENERATE__' .env; do
-  secret=$(random_secret)
-  tmp=$(mktemp)
-  awk -v s="$secret" '!done && /__GENERATE__/ { sub(/__GENERATE__/, s); done=1 } { print }' .env > "$tmp"
-  mv "$tmp" .env
-  chmod 600 .env
-done
-say "Secrets are in place"
-
 get_env() { awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/, ""); print; exit}' .env; }
 set_env() {
   local tmp; tmp=$(mktemp)
@@ -77,6 +67,18 @@ set_env() {
   mv "$tmp" .env
   chmod 600 .env
 }
+
+# Reconcile generated secrets from the current example into legacy installs.
+# Existing non-empty values are intentionally preserved. This makes adding a
+# new required secret safe for in-place upgrades instead of requiring an
+# operator to copy it into an older .env by hand.
+while IFS= read -r key; do
+  value=$(get_env "$key")
+  if [ -z "$value" ] || [ "$value" = __GENERATE__ ]; then
+    set_env "$key" "$(random_secret)"
+  fi
+done < <(awk -F= '$2=="__GENERATE__" {print $1}' .env.example)
+say "Secrets are in place"
 
 # The Supervisor mounts this checkout read-only at the same absolute path so
 # its separately launched helper can use the reviewed Compose file. Recompute
