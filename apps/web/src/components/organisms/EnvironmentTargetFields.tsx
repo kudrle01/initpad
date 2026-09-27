@@ -63,9 +63,17 @@ interface Props {
   values: EnvironmentTargets;
   hosted: boolean;
   onChange: (environment: EnvName, targetId: string) => void;
+  environments?: readonly EnvName[];
 }
 
-export function EnvironmentTargetFields({ template, targets, values, hosted, onChange }: Props) {
+export function EnvironmentTargetFields({
+  template,
+  targets,
+  values,
+  hosted,
+  onChange,
+  environments = ENV_NAMES,
+}: Props) {
   const options = template
     ? targets.filter(
         (target) => targetAcceptsNewAssignments(target) && targetSupports(target, template),
@@ -114,7 +122,7 @@ export function EnvironmentTargetFields({ template, targets, values, hosted, onC
         />
       </div>
       <div className="grid max-w-3xl gap-2 md:grid-cols-3">
-        {ENV_NAMES.map((environment) => (
+        {environments.map((environment) => (
           <div key={environment} className="rounded-lg border border-border bg-card p-3">
             <Label
               htmlFor={`target-${environment}`}

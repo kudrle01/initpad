@@ -12,13 +12,21 @@ import { InfoTip } from '@/components/molecules/InfoTip';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { Spinner } from '@/components/atoms/Spinner';
+import { PipelinePresetField } from '@/components/organisms/PipelinePresetField';
+import { DEFAULT_PIPELINE_PRESET, pipelineStages } from '@/lib/pipeline-presets';
 import {
-  ENV_NAMES,
   EnvironmentTargetFields,
   suggestedEnvironmentTargets,
   type EnvironmentTargets,
 } from '@/components/organisms/EnvironmentTargetFields';
-import type { EnvName, ImportableRepo, ImportPreflight, Target, TemplateManifest } from '@/types';
+import type {
+  EnvName,
+  ImportableRepo,
+  ImportPreflight,
+  PipelinePreset,
+  Target,
+  TemplateManifest,
+} from '@/types';
 
 // Import an existing repository: pick a repo + template, run a preflight against
 // the runtime contract, then record the project without touching the code.
@@ -34,6 +42,7 @@ export default function ImportRepo() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [repositoryId, setRepositoryId] = useState('');
   const [templateId, setTemplateId] = useState('');
+  const [pipelinePreset, setPipelinePreset] = useState<PipelinePreset>(DEFAULT_PIPELINE_PRESET);
   const [preflight, setPreflight] = useState<ImportPreflight | null>(null);
   const [checking, setChecking] = useState(false);
   const [downloadingWorkflow, setDownloadingWorkflow] = useState(false);
@@ -47,6 +56,7 @@ export default function ImportRepo() {
     test: '',
     prod: '',
   });
+  const selectedStages = pipelineStages(pipelinePreset);
 
   useEffect(() => {
     let current = true;
@@ -119,17 +129,22 @@ export default function ImportRepo() {
   }
 
   async function doImport() {
-    if (readOnly || !preflight?.canImport || ENV_NAMES.some((name) => !environmentTargets[name]))
+    if (
+      readOnly ||
+      !preflight?.canImport ||
+      selectedStages.some((stage) => !environmentTargets[stage])
+    )
       return;
     setBusy(true);
     try {
       const project = await api.importRepo(
         repositoryId,
         templateId,
-        ENV_NAMES.map((environment) => ({
+        selectedStages.map((environment) => ({
           name: environment,
           targetId: environmentTargets[environment],
         })),
+        pipelinePreset,
       );
       toast.success('Repository imported');
       void navigate(`/projects/${project.id}`);
@@ -265,12 +280,15 @@ export default function ImportRepo() {
             </Select>
           </div>
 
+          <PipelinePresetField value={pipelinePreset} onChange={setPipelinePreset} />
+
           <EnvironmentTargetFields
             template={template}
             targets={targets}
             values={environmentTargets}
             hosted={hosted}
             onChange={chooseTarget}
+            environments={selectedStages}
           />
 
           <div>
@@ -341,7 +359,7 @@ export default function ImportRepo() {
                     busy ||
                     !preflight.canImport ||
                     (hosted && !ghStatus?.ciCallbackReady) ||
-                    ENV_NAMES.some((environment) => !environmentTargets[environment])
+                    selectedStages.some((environment) => !environmentTargets[environment])
                   }
                   onClick={doImport}
                 >

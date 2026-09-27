@@ -14,14 +14,15 @@ import { FormField } from '@/components/molecules/FormField';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { Spinner } from '@/components/atoms/Spinner';
+import { PipelinePresetField } from '@/components/organisms/PipelinePresetField';
 import { cn } from '@/lib/utils';
+import { DEFAULT_PIPELINE_PRESET, pipelineStages } from '@/lib/pipeline-presets';
 import {
-  ENV_NAMES,
   EnvironmentTargetFields,
   suggestedEnvironmentTargets,
   type EnvironmentTargets,
 } from '@/components/organisms/EnvironmentTargetFields';
-import type { EnvName, RuntimeKind, Target, TemplateManifest } from '@/types';
+import type { EnvName, PipelinePreset, RuntimeKind, Target, TemplateManifest } from '@/types';
 
 function runtimeOf(t: TemplateManifest): RuntimeKind {
   return t.runtime ?? (t.artifact === 'static' ? 'static' : 'node');
@@ -38,6 +39,7 @@ export default function NewProject() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [name, setName] = useState('my-project');
   const [templateId, setTemplateId] = useState<string>('');
+  const [pipelinePreset, setPipelinePreset] = useState<PipelinePreset>(DEFAULT_PIPELINE_PRESET);
   const [environmentTargets, setEnvironmentTargets] = useState<EnvironmentTargets>({
     dev: '',
     test: '',
@@ -51,6 +53,7 @@ export default function NewProject() {
   const [reloadKey, setReloadKey] = useState(0);
   const validName = /^[a-z][a-z0-9-]{1,40}$/.test(name);
   const hosted = user?.edition === 'saas';
+  const selectedStages = pipelineStages(pipelinePreset);
 
   const template = useMemo(
     () => templates.find((t) => t.id === templateId),
@@ -140,12 +143,12 @@ export default function NewProject() {
       !validName ||
       !templateId ||
       !githubReady ||
-      ENV_NAMES.some((name) => !environmentTargets[name])
+      selectedStages.some((stage) => !environmentTargets[stage])
     )
       return;
     setBusy(true);
     try {
-      const environments: EnvConfig[] = ENV_NAMES.map((environment) => ({
+      const environments: EnvConfig[] = selectedStages.map((environment) => ({
         name: environment,
         targetId: environmentTargets[environment],
       }));
@@ -153,6 +156,7 @@ export default function NewProject() {
         name,
         templateId,
         environments,
+        pipelinePreset,
         hosted ? scmInstallationId : undefined,
       );
       toast.success('Project created');
@@ -319,12 +323,17 @@ export default function NewProject() {
           </div>
 
           <div className="flex flex-col gap-1.5">
+            <PipelinePresetField value={pipelinePreset} onChange={setPipelinePreset} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
             <EnvironmentTargetFields
               template={template ?? null}
               targets={targets}
               values={environmentTargets}
               hosted={hosted}
               onChange={chooseTarget}
+              environments={selectedStages}
             />
             {template && capabilityMismatches.length > 0 && (
               <div className="mt-2 flex max-w-2xl items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground">
@@ -352,9 +361,10 @@ export default function NewProject() {
             <Rocket className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
             <span>
               The project moves through{' '}
-              <b className="font-semibold text-foreground">dev → test → prod</b>. The first
-              successful CI run deploys to <b className="font-semibold text-foreground">dev</b>;
-              promote to test and prod manually from the detail page.
+              <b className="font-semibold text-foreground">{selectedStages.join(' → ')}</b>.{' '}
+              {pipelinePreset === 'prod-only'
+                ? 'CI verifies the build without publishing it; request production from the project detail.'
+                : 'The first successful CI run deploys to dev; promote the same build from the project detail.'}
             </span>
           </div>
 
@@ -367,7 +377,7 @@ export default function NewProject() {
                 !validName ||
                 !githubReady ||
                 !!loadError ||
-                ENV_NAMES.some((environment) => !environmentTargets[environment])
+                selectedStages.some((environment) => !environmentTargets[environment])
               }
               onClick={submit}
             >

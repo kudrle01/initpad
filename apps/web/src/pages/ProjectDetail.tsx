@@ -16,9 +16,10 @@ import { ProjectHistory } from '@/components/organisms/ProjectHistory';
 import { ProjectRepository } from '@/components/organisms/ProjectRepository';
 import { ProjectSummary } from '@/components/organisms/ProjectSummary';
 import { ProductionApprovalCard } from '@/components/organisms/ProductionApprovalCard';
+import { PipelinePresetSettings } from '@/components/organisms/PipelinePresetSettings';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useConfirmation } from '@/confirmation';
-import type { EnvName } from '@/types';
+import type { EnvName, PipelinePreset } from '@/types';
 
 export default function ProjectDetail() {
   const confirmAction = useConfirmation();
@@ -43,6 +44,7 @@ export default function ProjectDetail() {
     targets,
     readOnly,
     canMaintain,
+    hosted,
     setConfirmOpen,
     setRollbackPreview,
     setTargetEnv,
@@ -65,6 +67,7 @@ export default function ProjectDetail() {
     startEnvironment,
     removeEnvironment,
     bindTarget,
+    updatePipelinePreset,
     deleteProject,
   } = useProjectDetail();
 
@@ -98,21 +101,37 @@ export default function ProjectDetail() {
 
   async function promoteWithConfirmation(target: EnvName) {
     if (target === 'prod') {
-      const source = currentProject.environments.find((environment) => environment.name === 'test');
+      const productionIndex = currentProject.environments.findIndex(
+        (environment) => environment.name === 'prod',
+      );
+      const source =
+        productionIndex > 0 ? currentProject.environments[productionIndex - 1] : undefined;
+      const verifiedBuild = source?.artifact
+        ? {
+            version: source.version,
+            digest: source.artifact.digest,
+            label: source.name,
+          }
+        : currentProject.latestVerifiedArtifact
+          ? {
+              version: currentProject.latestVerifiedArtifact.version,
+              digest: currentProject.latestVerifiedArtifact.digest,
+              label: 'CI',
+            }
+          : null;
       const confirmed = await confirmAction({
         title: 'Request production deployment?',
-        description:
-          'The exact verified test build, target and production configuration revision will be locked for review.',
+        description: `The exact verified ${verifiedBuild?.label ?? 'source'} build, target and production configuration revision will be locked for review.`,
         confirmLabel: 'Create request',
         tone: 'warning',
         details: [
           { label: 'Project', value: currentProject.name },
-          { label: 'Version', value: source?.version?.slice(0, 7) ?? 'not available' },
+          { label: 'Version', value: verifiedBuild?.version?.slice(0, 7) ?? 'not available' },
           {
             label: 'Artifact digest',
             value: (
               <span className="break-all font-mono text-xs">
-                {source?.artifact?.digest ?? 'not available'}
+                {verifiedBuild?.digest ?? 'not available'}
               </span>
             ),
           },
@@ -272,6 +291,35 @@ export default function ProjectDetail() {
     if (confirmed) await removeEnvironment(environment);
   }
 
+  async function changePipelinePresetWithConfirmation(
+    preset: PipelinePreset,
+    environments: Array<{ name: EnvName; targetId?: string }>,
+  ) {
+    const currentNames = new Set(
+      currentProject.environments.map((environment) => environment.name),
+    );
+    const removed = currentProject.environments.filter(
+      (environment) => !environments.some((candidate) => candidate.name === environment.name),
+    );
+    const added = environments.filter((environment) => !currentNames.has(environment.name));
+    const confirmed = await confirmAction({
+      title: 'Change project pipeline?',
+      description: 'The configured deployment stages will change for future operations.',
+      confirmLabel: 'Change pipeline',
+      tone: 'warning',
+      details: [
+        { label: 'Preset', value: preset },
+        { label: 'Added', value: added.map((stage) => stage.name).join(', ') || 'none' },
+        { label: 'Removed', value: removed.map((stage) => stage.name).join(', ') || 'none' },
+      ],
+      consequences: [
+        'A removed stage must already be empty and have no pending cleanup.',
+        'Production remains protected by a separate approval request.',
+      ],
+    });
+    if (confirmed) await updatePipelinePreset(preset, environments);
+  }
+
   return (
     <div>
       {error && <LoadErrorState className="mb-4" message={error} onRetry={retryLoad} />}
@@ -313,6 +361,20 @@ export default function ProjectDetail() {
             onCancel={() => void cancelProductionWithConfirmation()}
           />
         )}
+      </DetailSection>
+
+      <DetailSection title="Pipeline settings">
+        <PipelinePresetSettings
+          project={project}
+          template={template}
+          targets={targets}
+          hosted={hosted}
+          canMaintain={canMaintain}
+          busy={busy === 'pipeline-preset'}
+          onSave={(preset, environments) =>
+            void changePipelinePresetWithConfirmation(preset, environments)
+          }
+        />
       </DetailSection>
 
       <DetailSection title="Configuration">

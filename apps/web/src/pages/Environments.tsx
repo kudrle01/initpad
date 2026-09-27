@@ -117,7 +117,7 @@ export default function Environments() {
         <EmptyState
           icon={Layers}
           title="No environments yet"
-          description="Create a project and its dev/test/prod environments will appear here."
+          description="Create a project and its configured deployment environments will appear here."
         />
       ) : (
         <>

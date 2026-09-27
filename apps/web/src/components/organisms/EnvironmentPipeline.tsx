@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Activity,
   Link2Off,
+  PackageCheck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -33,9 +34,7 @@ import { Spinner } from '@/components/atoms/Spinner';
 import { cn } from '@/lib/utils';
 import { cleanupNotice } from '@/lib/deployment';
 import { deploymentProgress } from '@/lib/deployment-progress';
-import type { Commit, EnvName, Environment, Project, ProviderKind } from '@/types';
-
-const NEXT: Record<EnvName, EnvName | null> = { dev: 'test', test: 'prod', prod: null };
+import type { Commit, EnvName, Project, ProviderKind } from '@/types';
 
 const STRIPE: Record<string, string> = {
   running: 'bg-success',
@@ -86,16 +85,73 @@ export function EnvironmentPipeline({
   readOnly = false,
   canRollback = false,
 }: Props) {
-  const byEnv = Object.fromEntries(project.environments.map((e) => [e.name, e])) as Record<
-    EnvName,
-    Environment
-  >;
+  const production = project.environments.find((environment) => environment.name === 'prod');
+  const verifiedBuild =
+    project.pipelinePreset === 'prod-only' ? project.latestVerifiedArtifact : null;
+  const canRequestVerifiedBuild = Boolean(
+    verifiedBuild &&
+    !readOnly &&
+    busy === null &&
+    production?.workspaceAccessStatus !== 'disabled' &&
+    !(
+      production?.target?.scope === 'user' &&
+      (production.target.managementState ?? 'active') !== 'active'
+    ),
+  );
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
-      {project.environments.map((env) => {
-        const next = NEXT[env.name];
-        const target = next ? byEnv[next] : undefined;
+      {project.pipelinePreset === 'prod-only' && (
+        <>
+          <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card p-4">
+            <span className="absolute inset-x-0 top-0 h-1 bg-primary" />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider">Verified build</span>
+              <PackageCheck className="h-4 w-4 text-primary" />
+            </div>
+            <div className="mt-2 font-mono text-sm">
+              {verifiedBuild ? `v${verifiedBuild.version.slice(0, 7)}` : '—'}
+            </div>
+            {verifiedBuild ? (
+              <div
+                className="truncate font-mono text-[10px] text-muted-foreground"
+                title={`Verified build sha256:${verifiedBuild.digest}`}
+              >
+                build {verifiedBuild.digest.slice(0, 12)}
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Push to the default branch and wait for CI verification.
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-row items-center justify-center gap-2 sm:w-16 sm:flex-col">
+            <button
+              type="button"
+              disabled={!canRequestVerifiedBuild}
+              onClick={() => onPromote('prod')}
+              title={
+                canRequestVerifiedBuild
+                  ? 'Request this verified build for production'
+                  : 'A verified build and available production target are required'
+              }
+              className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-full border transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                canRequestVerifiedBuild
+                  ? 'border-primary bg-primary text-primary-foreground shadow-sm hover:brightness-95'
+                  : 'border-border text-muted-foreground/50',
+              )}
+            >
+              <ArrowRight className="h-4 w-4" />
+            </button>
+            <span className="text-[11px] text-muted-foreground">Request prod</span>
+          </div>
+        </>
+      )}
+      {project.environments.map((env, index) => {
+        const target = project.environments[index + 1];
+        const next = target?.name ?? null;
         const synced =
           !!target &&
           !!env.version &&
@@ -178,7 +234,7 @@ export function EnvironmentPipeline({
                 )}
               />
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">{env.name}</span>
+                <h3 className="text-xs font-semibold uppercase tracking-wider">{env.name}</h3>
                 <div className="flex items-center gap-1.5">
                   {env.status !== 'empty' ? (
                     <Link

@@ -67,6 +67,8 @@ const project: Project = {
   },
   createdAt: '2026-09-12T00:00:00.000Z',
   lastCommit: 'a'.repeat(40),
+  pipelinePreset: 'dev-test-prod',
+  latestVerifiedArtifact: null,
   environments: [],
 };
 

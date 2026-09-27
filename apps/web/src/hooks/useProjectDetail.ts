@@ -13,6 +13,7 @@ import type {
   Commit,
   DeploymentOperation,
   EnvName,
+  PipelinePreset,
   Project,
   ProductionDeploymentRequest,
   ProvisioningStatus,
@@ -42,7 +43,7 @@ export function useProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { workspaces } = useAuth();
+  const { workspaces, user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [template, setTemplate] = useState<TemplateManifest | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
@@ -404,6 +405,23 @@ export function useProjectDetail() {
     }
   }
 
+  async function updatePipelinePreset(
+    pipelinePreset: PipelinePreset,
+    environments: Array<{ name: EnvName; targetId?: string }>,
+  ) {
+    if (!id) return;
+    setBusy('pipeline-preset');
+    try {
+      setProject(await api.updatePipelinePreset(id, pipelinePreset, environments));
+      setProductionRequest(null);
+      toast.success('Pipeline updated');
+    } catch (actionError) {
+      toast.error((actionError as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function deleteProject(options: DeleteProjectOptions) {
     if (!id || !project) return;
     setDeleting(true);
@@ -451,6 +469,7 @@ export function useProjectDetail() {
     targets,
     readOnly,
     canMaintain,
+    hosted: user?.edition === 'saas',
     setConfirmOpen,
     setRollbackPreview,
     setTargetEnv,
@@ -473,6 +492,7 @@ export function useProjectDetail() {
     startEnvironment,
     removeEnvironment,
     bindTarget,
+    updatePipelinePreset,
     deleteProject,
   };
 }

@@ -29,6 +29,7 @@ import type {
   AuditEventPage,
   TargetUsage,
   DeployStatus,
+  PipelinePreset,
 } from '@/types';
 
 export interface EnvConfig {
@@ -348,11 +349,18 @@ export const api = {
     name: string,
     templateId: string,
     environments: EnvConfig[],
+    pipelinePreset: PipelinePreset,
     scmInstallationId?: string,
   ) =>
     http<Project>('/projects', {
       method: 'POST',
-      body: JSON.stringify({ name, templateId, environments, scmInstallationId }),
+      body: JSON.stringify({
+        name,
+        templateId,
+        environments,
+        pipelinePreset,
+        scmInstallationId,
+      }),
     }),
   listImportableRepos: () => http<ImportableRepo[]>('/projects/import/repos'),
   importPreflight: (repositoryId: string, templateId: string) =>
@@ -360,10 +368,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ repositoryId, templateId }),
     }),
-  importRepo: (repositoryId: string, templateId: string, environments: EnvConfig[]) =>
+  importRepo: (
+    repositoryId: string,
+    templateId: string,
+    environments: EnvConfig[],
+    pipelinePreset: PipelinePreset,
+  ) =>
     http<Project>('/projects/import', {
       method: 'POST',
-      body: JSON.stringify({ repositoryId, templateId, environments }),
+      body: JSON.stringify({ repositoryId, templateId, environments, pipelinePreset }),
+    }),
+  updatePipelinePreset: (id: string, pipelinePreset: PipelinePreset, environments: EnvConfig[]) =>
+    http<Project>(`/projects/${id}/pipeline-preset`, {
+      method: 'PUT',
+      body: JSON.stringify({ pipelinePreset, environments }),
     }),
   promote: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/promote/${env}`, { method: 'POST' }),

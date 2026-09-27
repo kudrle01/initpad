@@ -33,7 +33,7 @@ function environment(overrides: Partial<Environment> = {}): Environment {
   };
 }
 
-function project(environments: Environment[]): Project {
+function project(environments: Environment[], overrides: Partial<Project> = {}): Project {
   return {
     id: 'project-1',
     workspaceId: 'workspace-1',
@@ -53,15 +53,18 @@ function project(environments: Environment[]): Project {
     },
     createdAt: '2026-09-15T10:00:00.000Z',
     lastCommit: 'Initial commit',
+    pipelinePreset: 'dev-test-prod',
+    latestVerifiedArtifact: null,
     environments,
+    ...overrides,
   };
 }
 
-function renderPipeline(environments: Environment[]) {
+function renderPipeline(environments: Environment[], overrides: Partial<Project> = {}) {
   render(
     <MemoryRouter>
       <EnvironmentPipeline
-        project={project(environments)}
+        project={project(environments, overrides)}
         busy={null}
         commitsBySha={{}}
         onPromote={vi.fn()}
@@ -79,6 +82,45 @@ function renderPipeline(environments: Environment[]) {
     </MemoryRouter>,
   );
 }
+
+describe('EnvironmentPipeline presets', () => {
+  it('renders the complete default pipeline in configured order', () => {
+    renderPipeline([environment(), environment({ name: 'test' }), environment({ name: 'prod' })]);
+
+    const headings = screen.getAllByRole('heading', { level: 3 });
+    expect(headings.map((heading) => heading.textContent)).toEqual(['dev', 'test', 'prod']);
+  });
+
+  it('derives the next stage from the configured environment list', () => {
+    renderPipeline(
+      [
+        environment({ status: 'running', version: 'a'.repeat(40) }),
+        environment({ name: 'prod', target: { ...environment().target!, id: 'target-prod' } }),
+      ],
+      { pipelinePreset: 'dev-prod' },
+    );
+
+    expect(screen.getByTitle(/request va+ from dev for production/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^test$/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the latest verified build as the only production source for prod-only', () => {
+    renderPipeline([environment({ name: 'prod' })], {
+      pipelinePreset: 'prod-only',
+      latestVerifiedArtifact: {
+        id: 'artifact-1',
+        version: 'b'.repeat(40),
+        provider: 'github-actions',
+        digest: 'd'.repeat(64),
+        runId: 'run-1',
+      },
+    });
+
+    expect(screen.getByText('Verified build')).toBeInTheDocument();
+    expect(screen.getByText(`v${'b'.repeat(7)}`)).toBeInTheDocument();
+    expect(screen.getByTitle(/request this verified build for production/i)).toBeEnabled();
+  });
+});
 
 describe('EnvironmentPipeline workspace access', () => {
   it('shows one actionable pause explanation instead of suggesting an impossible deploy', () => {
