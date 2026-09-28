@@ -140,8 +140,13 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   odhalily a opravily explicitní adaptér `tar-fs` → Dockerode a
   fail-closed validaci dat Docker manifestu. Nest 12, Prisma 7, React 19,
   Tailwind 4, Jest 30, Node types 26 a TypeScript 7 jsou samostatné major
-  migrace, ne součást stabilizačního dependency refresh. Zbývá ruční
-  responsive/accessibility a cílený hotspot/dead-code review.
+  migrace, ne součást stabilizačního dependency refresh. Runtime audit
+  dvanácti hlavních a projektových obrazovek ověřil hierarchii nadpisů,
+  popisky ovladačů a polí, unikátní ID, kontrast i absenci horizontálního
+  přetečení v tabletovém viewportu. Vnořený odkaz v disclosure řádku
+  commitu nahradily dva samostatné sémantické ovladače a repository reachability
+  gate nově pokrývá také Supervisor. Zbývá vizuální průchod skutečným
+  mobilním viewportem a závěrečné rozhodnutí nad potvrzenými hotspoty.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [ ] Sjednotit release notes, README, provozní dokumentaci, ADR index a
@@ -905,7 +910,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
      potvrzení a stavový hook detailu projektu včetně autoritativního 404.
      **Uživatelský test:** po čistém `npm ci` spustit `npm run check`; lint,
      format check, build a automatizovaná sada musí proběhnout bez ručního
-     zásahu (763 API, 51 web, 80 Agent, 15 Supervisor a 44 release-tool testů;
+     zásahu (763 API, 52 web, 80 Agent, 15 Supervisor a 44 release-tool testů;
      jeden další Supervisor socket test může být v omezeném sandboxu
      přeskočen).
    - ✅ **8e-b — cílený maintainability pass.** Podle charakterizačních testů

@@ -45,6 +45,7 @@ export function StatusDot({
   const map = kind === 'ci' ? CI_CLASS : DEPLOY_CLASS;
   return (
     <span
+      aria-hidden="true"
       className={cn(
         'inline-block h-[7px] w-[7px] shrink-0 rounded-full',
         map[status] ?? 'bg-muted-foreground/50',

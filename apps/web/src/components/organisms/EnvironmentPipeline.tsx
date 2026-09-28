@@ -130,6 +130,7 @@ export function EnvironmentPipeline({
               type="button"
               disabled={!canRequestVerifiedBuild}
               onClick={() => onPromote('prod')}
+              aria-label="Request verified build for production"
               title={
                 canRequestVerifiedBuild
                   ? 'Request this verified build for production'

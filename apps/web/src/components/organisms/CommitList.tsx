@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useId } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, ExternalLink, History } from 'lucide-react';
 import { StatusDot } from '@/components/atoms/StatusDot';
@@ -59,6 +59,8 @@ export function CommitList({
   limit,
   deploymentHistoryUrl,
 }: Props) {
+  const disclosureId = useId();
+
   if (commits.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-card px-6 py-8 text-center text-sm text-muted-foreground">
@@ -77,20 +79,21 @@ export function CommitList({
         const recoveredPublication =
           c.pipeline.some((stage) => stage.name === 'deploy' && stage.status === 'failed') &&
           c.pipeline.some((stage) => stage.source === 'platform' && stage.status === 'success');
+        const detailsId = `${disclosureId}-${c.sha}`;
         return (
           <div key={c.sha}>
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => onToggle(c.sha)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') onToggle(c.sha);
-              }}
-              className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
-            >
+            <div className="group relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary/40">
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-controls={detailsId}
+                aria-label={`${open ? 'Collapse' : 'Expand'} commit ${c.sha.slice(0, 7)}: ${c.message}`}
+                onClick={() => onToggle(c.sha)}
+                className="absolute inset-0 z-0 cursor-pointer rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+              />
               <ChevronRight
                 className={cn(
-                  'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                  'pointer-events-none relative z-10 h-4 w-4 shrink-0 text-muted-foreground transition-transform',
                   open && 'rotate-90',
                 )}
               />
@@ -99,34 +102,39 @@ export function CommitList({
                   href={scmLink(`${repoUrl}/commit/${c.sha}`, scmProvider)}
                   target="_blank"
                   rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
                   title={`View commit in ${scmProvider === 'github' ? 'GitHub' : 'Gitea'}`}
-                  className="text-link shrink-0 font-mono text-xs"
+                  className="text-link relative z-10 shrink-0 font-mono text-xs"
                 >
                   {c.sha.slice(0, 7)}
                 </a>
               ) : (
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                <span className="pointer-events-none relative z-10 shrink-0 font-mono text-xs text-muted-foreground">
                   {c.sha.slice(0, 7)}
                 </span>
               )}
-              <span className="flex-1 truncate text-sm">{c.message}</span>
-              <span className="sm:hidden" title={ci.label} aria-label={ci.label}>
+              <span className="pointer-events-none relative z-10 flex-1 truncate text-sm">
+                {c.message}
+              </span>
+              <span
+                className="pointer-events-none relative z-10 sm:hidden"
+                title={ci.label}
+                aria-label={ci.label}
+              >
                 <StatusDot status={ci.dot} kind="ci" />
               </span>
-              <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
+              <span className="pointer-events-none relative z-10 hidden shrink-0 text-xs text-muted-foreground md:inline">
                 {c.author}
               </span>
               <StatusBadge
                 status={ci.dot}
                 label={ci.label}
                 kind="ci"
-                className="hidden sm:inline-flex"
+                className="pointer-events-none relative z-10 hidden sm:inline-flex"
               />
             </div>
 
             {open && (
-              <div className="border-t border-border bg-secondary/30 px-4 py-3">
+              <div id={detailsId} className="border-t border-border bg-secondary/30 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   {c.pipeline.map((s, i) => (
                     <Fragment key={s.name}>

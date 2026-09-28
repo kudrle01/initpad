@@ -134,6 +134,7 @@ for (const [path, content] of textFiles) {
 const sourceGroups = [
   { root: 'apps/api/src', entries: ['apps/api/src/main.ts'] },
   { root: 'apps/agent/src', entries: ['apps/agent/src/cli.ts'] },
+  { root: 'apps/supervisor/src', entries: ['apps/supervisor/src/cli.ts'] },
   { root: 'apps/web/src', entries: ['apps/web/src/main.tsx'] },
 ];
 
