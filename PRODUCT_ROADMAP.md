@@ -145,8 +145,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   popisky ovladačů a polí, unikátní ID, kontrast i absenci horizontálního
   přetečení v tabletovém viewportu. Vnořený odkaz v disclosure řádku
   commitu nahradily dva samostatné sémantické ovladače a repository reachability
-  gate nově pokrývá také Supervisor. Zbývá vizuální průchod skutečným
-  mobilním viewportem a závěrečné rozhodnutí nad potvrzenými hotspoty.
+  gate nově pokrývá také Supervisor. Hotspot review oddělil Agent diagnostiku
+  od enrollment/update dialogu a platformní update panel od správy uživatelů;
+  provider adaptéry, typed API fasáda a environment pipeline zůstávají
+  záměrně pohromadě jako soudržné hranice. Zbývá vizuální průchod skutečným
+  mobilním viewportem.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [ ] Sjednotit release notes, README, provozní dokumentaci, ADR index a
@@ -1014,6 +1017,20 @@ jen konkrétní provozní a vyhodnocovací scénář.
       **Uživatelský test:** desetkrát zkusit chybné přihlášení ke stejné
       identitě, restartovat API a zopakovat pokus; odpověď musí být `429` s
       `Retry-After`, aniž DB obsahuje IP nebo zadaný login.
+    - ✅ **8e-b9 — sémantické UI a odpovědnosti komponent.** Runtime audit
+      hlavních, administračních a projektových obrazovek ověřil nadpisy,
+      popisky, unikátní ID, kontrast a absenci horizontálního přetečení v
+      tabletovém viewportu. Commit disclosure už nevkládá odkaz do jiného
+      interaktivního prvku, dekorativní stavové tečky jsou skryté před
+      accessibility stromem a ikonová produkční akce má explicitní název.
+      Agent diagnostika je samostatný prezentační modul a platformní aktualizace
+      už není součástí komponenty správy uživatelů; jejich původní integrační
+      testy dál hlídají stejné chování. Velké provider adaptéry, typed API
+      fasáda a environment pipeline zůstávají záměrně nerozdělené, protože
+      každá tvoří jednu soudržnou hranici. **Uživatelský test:** klávesnicí
+      otevřít commit detail a jeho Git odkaz, v Servers otevřít Manage Agent a
+      spustit jednotlivé testy a v Admin otevřít potvrzení update; focus,
+      popisky a stavové zprávy musí být čitelné bez myši.
    - ◐ **8e-c — nezávislé vyhodnocení.** Reprodukovatelný protokol v
      `docs/EVALUATION.md` odděluje role, infrastrukturu, aktivní čas od CI
      fronty, zásahy facilitátora, promotion invariant, rollback a tenant
