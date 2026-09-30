@@ -72,10 +72,11 @@ Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
 remains disabled until that deployment is configured with the exact digest
 produced by a successful release.
 
-`host-acceptance.sh` is an operator-run evidence helper for the disconnect
-and host-reboot tests. It verifies the Agent identity and InitPad-managed
-workload container IDs before, during and after a deliberate Agent stop. Its
-reboot checkpoint additionally verifies the Docker boot service, restart
+`host-acceptance.sh` is an operator-run evidence helper for disconnect,
+host-reboot and control-plane URL migration tests. It verifies the Agent
+identity and InitPad-managed workload container IDs across those lifecycle
+events, and proves that a rejected URL leaves the existing Agent untouched.
+Its reboot checkpoint additionally verifies the Docker boot service, restart
 policy and Linux boot ID, then proves the same container recovered. It never
 stops, starts or replaces a container and stores its root-only report outside
 the source checkout.

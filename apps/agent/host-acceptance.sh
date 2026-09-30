@@ -10,6 +10,7 @@ ACCEPTANCE_DIR=${INITPAD_AGENT_ACCEPTANCE_DIR:-/var/lib/initpad-agent/acceptance
 DISCONNECT_CHECKPOINT=$ACCEPTANCE_DIR/disconnect.checkpoint
 UPDATE_CHECKPOINT=$ACCEPTANCE_DIR/update.checkpoint
 REBOOT_CHECKPOINT=$ACCEPTANCE_DIR/reboot.checkpoint
+URL_MIGRATION_CHECKPOINT=$ACCEPTANCE_DIR/url-migration.checkpoint
 BOOT_ID_FILE=${INITPAD_AGENT_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}
 CHECKPOINT=$DISCONNECT_CHECKPOINT
 REPORT=$ACCEPTANCE_DIR/results.tsv
@@ -25,6 +26,12 @@ usage() {
   after-reconnect    Prove the same Agent identity and workloads recovered
   before-reboot      Verify Agent autostart prerequisites and save host state
   after-reboot       Prove host reboot restored the same Agent automatically
+  before-url-migration VER
+                     Save identity/workloads before changing control-plane URL
+  after-url-migration VER URL
+                     Prove a verified URL migration preserved the target
+  after-url-rollback VER
+                     Prove a rejected URL left the previous Agent unchanged
   before-update VER  Save Agent identity/workloads before a remote update
   inject-failure     Pause only the next replacement Agent during cutover
   after-rollback VER Prove that a failed update restored the previous Agent
@@ -73,6 +80,16 @@ agent_version() {
 
 agent_image() {
   docker inspect --format '{{.Config.Image}}' "$AGENT_CONTAINER" 2>/dev/null || true
+}
+
+canonical_control_plane_url() {
+  local url=$1
+  [[ "$url" =~ ^https?://[^/?#[:space:]]+(/[^?#[:space:]]*)?$ ]] || \
+    fail "Expected control-plane URL must be an absolute HTTP(S) URL without a query or fragment."
+  while [ "${url%/}" != "$url" ]; do
+    url=${url%/}
+  done
+  printf '%s\n' "$url"
 }
 
 require_version() {
@@ -210,6 +227,48 @@ write_update_checkpoint() {
     done <<< "$ids"
   } > "$temporary"
   mv "$temporary" "$CHECKPOINT"
+}
+
+write_url_migration_checkpoint() {
+  local expected_version=$1 actual_version identity target_id agent_container_id image url ids temporary
+  actual_version=$(agent_version)
+  [ "$actual_version" = "$expected_version" ] || \
+    fail "Agent version is '$actual_version', expected '$expected_version'."
+  identity=$(agent_identity)
+  target_id=${identity%%|*}
+  agent_container_id=$(docker inspect --format '{{.Id}}' "$AGENT_CONTAINER")
+  image=$(agent_image)
+  [[ "$image" =~ @sha256:[a-f0-9]{64}$ ]] || fail "Agent image is not digest-pinned."
+  url=$(config_value controlPlaneUrl)
+  [ -n "$url" ] || fail "Agent identity has no readable controlPlaneUrl."
+  url=$(canonical_control_plane_url "$url")
+  ids=$(workload_ids "$target_id")
+  assert_workloads_running "$ids"
+
+  ensure_storage
+  temporary=$(mktemp "$ACCEPTANCE_DIR/url-migration.XXXXXX")
+  chmod 0600 "$temporary"
+  {
+    printf 'identity=%s\n' "$identity"
+    printf 'target_id=%s\n' "$target_id"
+    printf 'agent_container=%s\n' "$agent_container_id"
+    printf 'agent_image=%s\n' "$image"
+    printf 'agent_version=%s\n' "$actual_version"
+    printf 'control_plane_url=%s\n' "$url"
+    while IFS= read -r id; do
+      [ -n "$id" ] && printf 'workload=%s\n' "$id"
+    done <<< "$ids"
+  } > "$temporary"
+  mv "$temporary" "$CHECKPOINT"
+}
+
+assert_no_url_migration_residue() {
+  local residue
+  residue=$(find "${CONFIG_FILE%/*}" -maxdepth 1 -type f \
+    -name "${CONFIG_FILE##*/}.url-migration-*" -print -quit)
+  [ -z "$residue" ] || fail "Temporary URL migration config was not removed."
+  ! docker container inspect initpad-agent-previous >/dev/null 2>&1 || \
+    fail "Rollback slot 'initpad-agent-previous' still exists."
 }
 
 assert_no_update_residue() {
@@ -371,6 +430,80 @@ check_after_reboot() {
   pass "Host reboot restored the same Agent identity, container and workloads."
 }
 
+before_url_migration() {
+  local expected_version=$1
+  require_version "$expected_version"
+  [ -f "$CONFIG_FILE" ] || fail "Agent identity '$CONFIG_FILE' does not exist."
+  [ "$(stat -c '%a' "$CONFIG_FILE")" = 600 ] || fail "Agent identity permissions are not 0600."
+  assert_agent_managed
+  [ "$(container_running "$AGENT_CONTAINER")" = true ] || fail "Agent is not running."
+  docker exec "$AGENT_CONTAINER" node /app/dist/cli.js once >/dev/null || \
+    fail "Agent heartbeat was rejected before URL migration."
+  CHECKPOINT=$URL_MIGRATION_CHECKPOINT
+  write_url_migration_checkpoint "$expected_version"
+  record before-url-migration \
+    "version=$expected_version workloads=$(checkpoint_workloads | grep -c .)"
+  pass "URL migration checkpoint saved for Agent $expected_version."
+}
+
+check_after_url_migration() {
+  local expected_version=$1 expected_url previous_url previous_id previous_image current_id
+  require_version "$expected_version"
+  expected_url=$(canonical_control_plane_url "$2")
+  CHECKPOINT=$URL_MIGRATION_CHECKPOINT
+  assert_checkpoint
+  assert_agent_managed
+  [ "$(container_running "$AGENT_CONTAINER")" = true ] || fail "Migrated Agent is not running."
+  previous_url=$(checkpoint_value control_plane_url)
+  [ "$expected_url" != "$previous_url" ] || fail "Expected URL is unchanged from the checkpoint."
+  [ "$(canonical_control_plane_url "$(config_value controlPlaneUrl)")" = "$expected_url" ] || \
+    fail "Agent did not persist the expected control-plane URL."
+  previous_id=$(checkpoint_value agent_container)
+  previous_image=$(checkpoint_value agent_image)
+  current_id=$(docker inspect --format '{{.Id}}' "$AGENT_CONTAINER")
+  [ "$current_id" != "$previous_id" ] || fail "Installer did not replace the Agent container."
+  [ "$(agent_image)" = "$previous_image" ] || fail "Agent image changed during URL migration."
+  [ "$(agent_version)" = "$expected_version" ] || fail "Agent version changed during URL migration."
+  assert_identity_unchanged
+  assert_workloads_preserved
+  docker exec "$AGENT_CONTAINER" node /app/dist/cli.js once >/dev/null || \
+    fail "Agent heartbeat was rejected after URL migration."
+  assert_no_url_migration_residue
+  rm -f "$CHECKPOINT"
+  record after-url-migration \
+    "version=$expected_version url_changed=true identity_preserved=true workloads_preserved=true"
+  pass "Verified URL migration preserved the Agent identity and workloads."
+}
+
+check_after_url_rollback() {
+  local expected_version=$1 previous_url previous_id previous_image
+  require_version "$expected_version"
+  CHECKPOINT=$URL_MIGRATION_CHECKPOINT
+  assert_checkpoint
+  assert_agent_managed
+  [ "$(container_running "$AGENT_CONTAINER")" = true ] || fail "Original Agent is not running."
+  previous_url=$(checkpoint_value control_plane_url)
+  [ "$(canonical_control_plane_url "$(config_value controlPlaneUrl)")" = "$previous_url" ] || \
+    fail "Rejected URL migration changed the saved control-plane URL."
+  previous_id=$(checkpoint_value agent_container)
+  previous_image=$(checkpoint_value agent_image)
+  [ "$(docker inspect --format '{{.Id}}' "$AGENT_CONTAINER")" = "$previous_id" ] || \
+    fail "Rejected URL migration replaced the Agent container."
+  [ "$(agent_image)" = "$previous_image" ] || \
+    fail "Rejected URL migration changed the Agent image."
+  [ "$(agent_version)" = "$expected_version" ] || \
+    fail "Agent version changed during rejected URL migration."
+  assert_identity_unchanged
+  assert_workloads_preserved
+  docker exec "$AGENT_CONTAINER" node /app/dist/cli.js once >/dev/null || \
+    fail "Original Agent heartbeat was rejected after URL migration rollback."
+  assert_no_url_migration_residue
+  rm -f "$CHECKPOINT"
+  record after-url-rollback \
+    "version=$expected_version url_preserved=true identity_preserved=true workloads_preserved=true"
+  pass "Rejected URL migration preserved the previous Agent, URL and workloads."
+}
+
 before_update() {
   local expected_version=$1
   require_version "$expected_version"
@@ -468,9 +601,14 @@ after_update() {
 case "${1:-}" in
   -h|--help|'') usage; exit 0 ;;
   before-disconnect|disconnected|after-reconnect|before-reboot|after-reboot|inject-failure) ;;
-  before-update|after-rollback|after-update)
+  before-url-migration|after-url-rollback|before-update|after-rollback|after-update)
     [ "$#" -eq 2 ] || { usage >&2; exit 1; }
     require_version "$2"
+    ;;
+  after-url-migration)
+    [ "$#" -eq 3 ] || { usage >&2; exit 1; }
+    require_version "$2"
+    canonical_control_plane_url "$3" >/dev/null
     ;;
   *) usage >&2; exit 1 ;;
 esac
@@ -478,6 +616,7 @@ esac
 require_root
 require_command docker
 require_command awk
+require_command find
 require_command sed
 require_command sort
 docker info >/dev/null 2>&1 || fail "Docker Engine is not reachable."
@@ -488,6 +627,9 @@ case "$1" in
   after-reconnect) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; check_after_reconnect ;;
   before-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; before_reboot ;;
   after-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; check_after_reboot ;;
+  before-url-migration) before_url_migration "$2" ;;
+  after-url-migration) check_after_url_migration "$2" "$3" ;;
+  after-url-rollback) check_after_url_rollback "$2" ;;
   before-update) before_update "$2" ;;
   inject-failure) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; inject_update_failure ;;
   after-rollback) after_rollback "$2" ;;

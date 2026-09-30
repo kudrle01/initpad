@@ -17,6 +17,9 @@ test('documents explicit, operator-controlled lifecycle checkpoints', () => {
     'after-reconnect',
     'before-reboot',
     'after-reboot',
+    'before-url-migration',
+    'after-url-migration',
+    'after-url-rollback',
     'before-update',
     'inject-failure',
     'after-rollback',
@@ -32,6 +35,25 @@ test('rejects malformed update versions before requiring root or Docker', () => 
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /stable MAJOR\.MINOR\.PATCH/);
+});
+
+test('rejects malformed URL migration input before requiring root or Docker', () => {
+  const malformedVersion = spawnSync(helper, ['before-url-migration', 'latest'], {
+    encoding: 'utf8',
+  });
+  const relativeUrl = spawnSync(helper, ['after-url-migration', '0.14.3', '/relative'], {
+    encoding: 'utf8',
+  });
+  const emptyAuthority = spawnSync(helper, ['after-url-migration', '0.14.3', 'https://'], {
+    encoding: 'utf8',
+  });
+
+  assert.notEqual(malformedVersion.status, 0);
+  assert.match(malformedVersion.stderr, /stable MAJOR\.MINOR\.PATCH/);
+  assert.notEqual(relativeUrl.status, 0);
+  assert.match(relativeUrl.stderr, /absolute HTTP\(S\) URL/);
+  assert.notEqual(emptyAuthority.status, 0);
+  assert.match(emptyAuthority.stderr, /absolute HTTP\(S\) URL/);
 });
 
 test('fault injection pauses only while the rollback slot exists and has a fail-safe unpause', () => {
@@ -60,4 +82,21 @@ test('exposes an evidence-backed host reboot acceptance flow', () => {
   assert.match(source, /systemctl is-enabled --quiet docker\.service/);
   assert.match(source, /kernel\/random\/boot_id/);
   assert.match(source, /Host reboot restored the same Agent identity, container and workloads/);
+});
+
+test('proves successful and rejected control-plane URL migration without recording the URL', () => {
+  const source = readFileSync(helper, 'utf8');
+  const start = source.indexOf('before_url_migration()');
+  const end = source.indexOf('before_update()', start);
+  const migration = source.slice(start, end);
+
+  assert.ok(start > 0 && end > start, 'URL migration acceptance functions are missing');
+  assert.match(migration, /assert_identity_unchanged/);
+  assert.match(migration, /Installer did not replace the Agent container/);
+  assert.match(migration, /Rejected URL migration replaced the Agent container/);
+  assert.match(migration, /assert_workloads_preserved/);
+  assert.match(migration, /assert_no_url_migration_residue/);
+  assert.match(migration, /url_changed=true/);
+  assert.match(migration, /url_preserved=true/);
+  assert.doesNotMatch(migration, /record [^\n]*\$expected_url/);
 });

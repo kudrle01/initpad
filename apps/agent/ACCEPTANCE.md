@@ -161,13 +161,42 @@ workload must be running and no parked `initpad-agent-previous` container may
 remain.
 
 For Agent 0.14.3 or newer, also expose the same disposable control plane
-through a second trusted URL and rerun the generated installer command from
-that URL. The command must print a verified URL migration, preserve the target
-ID and credential generation, and reconnect without an enrollment token.
-Temporarily make the candidate URL unreachable and repeat with a third URL;
-the installer must fail while the previously verified URL and running Agent
-remain unchanged. Never point this test at another InitPad database: changing
-instances is re-enrollment, not URL migration.
+through a second trusted URL. Before rerunning the verified installer with that
+URL, save an evidence checkpoint:
+
+```sh
+sudo ./initpad-agent-host-acceptance.sh before-url-migration 0.14.3
+# Rerun the verified installer with --url set to the second URL.
+sudo ./initpad-agent-host-acceptance.sh \
+  after-url-migration 0.14.3 'https://SECOND_CONTROL_PLANE_URL'
+```
+
+The installer must print a verified URL migration and reconnect without an
+enrollment token. The second command proves that the target ID, credential
+generation, digest-pinned image and workloads were preserved while the Agent
+container was safely replaced.
+
+Then create a fresh checkpoint and rerun the already verified installer with a
+third, deliberately unreachable URL. Do not download anything from that URL
+and do not use a URL belonging to another InitPad database:
+
+```sh
+sudo ./initpad-agent-host-acceptance.sh before-url-migration 0.14.3
+if sudo sh ./initpad-agent-install.sh \
+  --url 'https://UNREACHABLE_CONTROL_PLANE_URL' \
+  --image 'AGENT_IMAGE_FROM_THE_VERIFIED_COMMAND'; then
+  echo 'ERROR: unreachable URL was accepted' >&2
+  exit 1
+fi
+sudo ./initpad-agent-host-acceptance.sh after-url-rollback 0.14.3
+```
+
+Retain every other option from the verified command, including
+`--published-host`, gateway/CA settings and `--allow-insecure-http` when the
+trusted LAN test requires it. The final check proves that the failed migration
+did not change the saved URL, container, identity or workloads and that no
+temporary migration config remains. Changing InitPad instances requires
+explicit re-enrollment and is not URL migration.
 
 ## 5. Real release update
 
