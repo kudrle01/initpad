@@ -152,8 +152,12 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   mobilním viewportem.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
-- [ ] Sjednotit release notes, README, provozní dokumentaci, ADR index a
-  finální diagramy se skutečně ověřeným stavem.
+- [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
+  finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
+  platformu 0.2.9, rozlišuje doporučený Agent 0.14.2 od kandidáta 0.14.3 a
+  odkazuje na 118 samostatných ADR. Repository gate hlídá souvislou řadu,
+  shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
+  zůstává jako stabilní kompatibilní rozcestník.
 
 ### P2 — produkční public SaaS
 

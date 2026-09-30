@@ -1,7 +1,7 @@
 # Architektura InitPadu
 
 Tento dokument popisuje aktuální implementaci, ne zamýšlený koncový stav.
-Rozhodnutí a jejich důvody jsou v [`DECISIONS.md`](../DECISIONS.md), provozní
+Rozhodnutí a jejich důvody jsou v [indexu ADR](./adr/README.md), provozní
 postupy v [`deploy/OPERATIONS.md`](../deploy/OPERATIONS.md) a dosud otevřené
 hranice v [`RELEASE_READINESS.md`](./RELEASE_READINESS.md).
 

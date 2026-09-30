@@ -2,7 +2,7 @@
 
 Stav dokumentu odpovídá doporučenému Agentu 0.14.2, distribučně ověřenému
 kandidátu 0.14.3, odmítnutým release 0.13.0 a 0.14.0 a podepsanému
-platformnímu releasu 0.2.8. Seznam je záměrně
+platformnímu releasu 0.2.9. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
 
@@ -171,6 +171,13 @@ z Gitea buildu trvalý OCI artefakt, nasadil totožný SHA-256 digest do dev a
 testu a po žádosti membera a schválení jiným oprávněným reviewerem také do produkce.
 Produkční statická aplikace byla po dokončení dostupná na publikované URL.
 
+Veřejný podepsaný release 0.2.9 dne 27. září 2026 prošel anonymní kontrolou
+podpisů a multiarch OCI indexů a čistým UI updatem z 0.2.8. Databázová migrace
+zavedla case-insensitive unikátní identity bez změny uloženého zobrazení;
+živé přihlášení stejného účtu s náhodnou velikostí písmen potvrdilo nový
+kontrakt. Navazující acceptance ověřila tři pevné pipeline předvolby,
+oddělené produkční review a nezměněný build-once digest.
+
 Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
@@ -179,7 +186,9 @@ npm run audit:public-release -- --tag initpad-v0.2.4
 npm run audit:public-release -- --tag initpad-v0.2.6
 npm run audit:public-release -- --tag initpad-v0.2.7
 npm run audit:public-release -- --tag initpad-v0.2.8
+npm run audit:public-release -- --tag initpad-v0.2.9
 npm run audit:public-release -- --tag agent-v0.14.2
+npm run audit:public-release -- --tag agent-v0.14.3
 ```
 
 Audit odmítne soukromý repozitář, neúplné nebo nedostupné assets, chybné

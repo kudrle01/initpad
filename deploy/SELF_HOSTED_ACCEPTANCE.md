@@ -508,6 +508,13 @@ managed workload snapshot i immutable image reference. Fault a reboot drill
 se neopakoval, protože 0.2.7 nemění recovery protokol; ten zůstává doložen
 bezprostředně předchozím gate.
 
+Release `0.2.8` následně prošel čistým UI updatem z `0.2.7` a zachoval
+identity, data i workload snapshot. Release `0.2.9` prošel 27. září 2026
+anonymním distribučním auditem a čistým updatem z `0.2.8`; po aplikaci
+case-insensitive identity migrace fungovalo přihlášení stejného účtu s
+libovolnou velikostí písmen. Oba releasy nemění recovery protokol, proto se
+destruktivní fault/reboot sekvence neopakovala.
+
 ## 11. Ověř smazání a opětovné použití názvu
 
 V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení

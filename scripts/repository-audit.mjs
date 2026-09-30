@@ -53,6 +53,7 @@ const requiredPublicDocs = [
   'DECISIONS.md',
   'THREAT_MODEL.md',
   'docs/ARCHITECTURE.md',
+  'docs/adr/README.md',
   'docs/EVALUATION.md',
   'docs/RELEASE_READINESS.md',
   'deploy/README.md',
@@ -65,6 +66,40 @@ const requiredPublicDocs = [
 
 for (const path of requiredPublicDocs) {
   if (!tracked.has(path)) failures.push(`${path}: required public documentation is missing`);
+}
+
+const adrIndexPath = 'docs/adr/README.md';
+const adrIndex = tracked.has(adrIndexPath) ? readFileSync(resolve(root, adrIndexPath), 'utf8') : '';
+const indexedAdrs = [
+  ...adrIndex.matchAll(/\| \[(ADR-(\d{3}))\]\(\.\/(ADR-\d{3}\.md)\) \| ([^|]+) \|/g),
+];
+const indexedAdrPaths = new Set();
+for (const [position, match] of indexedAdrs.entries()) {
+  const [, id, number, file, title] = match;
+  const expectedNumber = String(position + 1).padStart(3, '0');
+  if (number !== expectedNumber || file !== `${id}.md`) {
+    failures.push(`${adrIndexPath}: ADR index is not contiguous at ${id}`);
+  }
+  const path = `docs/adr/${file}`;
+  indexedAdrPaths.add(path);
+  if (!tracked.has(path)) {
+    failures.push(`${path}: indexed ADR file is missing`);
+    continue;
+  }
+  const heading = `# ${id} — ${title.trim()}`;
+  if (!readFileSync(resolve(root, path), 'utf8').startsWith(`${heading}\n`)) {
+    failures.push(`${path}: heading does not match the ADR index`);
+  }
+}
+if (indexedAdrs.length === 0) failures.push(`${adrIndexPath}: ADR index is empty`);
+for (const path of trackedFiles.filter((path) => /^docs\/adr\/ADR-\d{3}\.md$/.test(path))) {
+  if (!indexedAdrPaths.has(path)) failures.push(`${path}: ADR is missing from the index`);
+}
+if (!(
+  tracked.has('DECISIONS.md') &&
+  readFileSync(resolve(root, 'DECISIONS.md'), 'utf8').includes(adrIndexPath)
+)) {
+  failures.push('DECISIONS.md: compatibility entry must link to the ADR index');
 }
 
 const executableOperations = [

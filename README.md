@@ -23,8 +23,8 @@ srozumitelném a samostatně nasaditelném systému.
 
 | Část | Stav |
 |---|---|
-| Self-hosted platforma | Veřejný podepsaný release `0.2.7`; recovery gate i následný čistý update živě ověřeny se zachováním dat a workloadů |
-| InitPad Agent | Doporučený release `0.14.2`; podepsaná multiarch image prošla distribučním a runtime auditem i živým updatem a rollbackem |
+| Self-hosted platforma | Veřejný podepsaný release `0.2.9`; update z `0.2.8`, identity migrace i živý multi-user tok ověřeny se zachováním dat a workloadů |
+| InitPad Agent | Doporučený release `0.14.2`; veřejný kandidát `0.14.3` čeká na závěrečný reboot a URL-migration gate |
 | Hosted SaaS | Ve vývoji; nejde zatím o produkční deployment profil |
 
 Release assets, checksumy a OCI images jsou veřejné a ověřitelné bez GitHub
@@ -138,8 +138,8 @@ zranitelností, a proto vyžaduje přístup k internetu.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.2
-npm run audit:public-release -- --tag agent-v0.14.2
+npm run audit:public-release -- --tag initpad-v0.2.9
+npm run audit:public-release -- --tag agent-v0.14.3
 ```
 
 Změna šablony nebo kontejnerové image navíc spouští samostatný GitHub Actions
@@ -170,7 +170,7 @@ izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
 - [apps/agent/README.md](apps/agent/README.md) — izolovaný Agent lab;
 - [apps/agent/RELEASING.md](apps/agent/RELEASING.md) — vydání a ověření Agenta;
 - [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) — stav a další milníky;
-- [DECISIONS.md](DECISIONS.md) — architektonická rozhodnutí;
+- [docs/adr/README.md](docs/adr/README.md) — index architektonických rozhodnutí;
 - [THREAT_MODEL.md](THREAT_MODEL.md) — hranice důvěry a produkční podmínky.
 
 ## Autor, licence a přispívání
