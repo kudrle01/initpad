@@ -57,6 +57,11 @@ jobs must succeed.
 
 ## 2. Reboot recovery
 
+Deploy at least one disposable project to this Agent target and confirm that
+its workload is running. The reboot gate deliberately refuses an empty target:
+otherwise it could not prove that application workloads survive the host
+restart.
+
 Use the verified `initpad-agent-host-acceptance.sh` asset from the same release
 to check the Docker boot service, Agent restart policy, identity, container and
 any existing workloads before restarting the Linux host:
@@ -99,11 +104,12 @@ not a recovery step.
 
 ## 3. Workload preservation while disconnected
 
-Deploy a disposable project to this target and record the workload container
-ID. Download `initpad-agent-host-acceptance.sh` with its checksum and Sigstore
-bundle from the same tagged Agent release and verify them as described in
-`RELEASING.md`. The helper records only non-secret target/container identifiers
-in a root-only local report and never stops or starts anything itself:
+Keep the disposable project from the reboot test deployed and record its
+workload container ID. Download `initpad-agent-host-acceptance.sh` with its
+checksum and Sigstore bundle from the same tagged Agent release and verify them
+as described in `RELEASING.md`. The helper records only non-secret
+target/container identifiers in a root-only local report and never stops or
+starts anything itself:
 
 ```sh
 sudo ./initpad-agent-host-acceptance.sh before-disconnect

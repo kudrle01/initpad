@@ -81,6 +81,9 @@ test('exposes an evidence-backed host reboot acceptance flow', () => {
   assert.match(source, /RestartPolicy\.Name/);
   assert.match(source, /systemctl is-enabled --quiet docker\.service/);
   assert.match(source, /kernel\/random\/boot_id/);
+  const start = source.indexOf('before_reboot()');
+  const end = source.indexOf('check_after_reboot()', start);
+  assert.match(source.slice(start, end), /assert_workloads_running "\$ids"/);
   assert.match(source, /Host reboot restored the same Agent identity, container and workloads/);
 });
 

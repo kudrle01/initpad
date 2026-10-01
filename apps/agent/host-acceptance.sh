@@ -157,14 +157,6 @@ assert_workloads_running() {
   [ "$count" -gt 0 ] || fail "Deploy at least one workload to this target first."
 }
 
-assert_workloads_running_if_present() {
-  local ids=$1 id
-  while IFS= read -r id; do
-    [ -n "$id" ] || continue
-    [ "$(container_running "$id")" = true ] || fail "Workload '$id' is not running."
-  done <<< "$ids"
-}
-
 checkpoint_value() {
   local key=$1
   awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$CHECKPOINT"
@@ -371,7 +363,7 @@ before_reboot() {
   boot_id=$(tr -d '\n' < "$BOOT_ID_FILE")
   [ -n "$boot_id" ] || fail "Host boot ID is empty."
   ids=$(workload_ids "$target_id")
-  assert_workloads_running_if_present "$ids"
+  assert_workloads_running "$ids"
 
   ensure_storage
   temporary=$(mktemp "$ACCEPTANCE_DIR/reboot.XXXXXX")
