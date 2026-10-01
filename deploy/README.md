@@ -102,6 +102,12 @@ docker compose --env-file /secure/runtime/initpad-saas.env \
   -f saas.compose.yml up -d
 ```
 
+After the profile is running, follow
+[SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md). Its helper verifies the public HTTPS
+edge, applied migrations and a real S3 round-trip. On disposable staging it
+also coordinates provider-native PostgreSQL and bucket backup/restore through
+paired markers without reading secret values on the host.
+
 The default web binding is `127.0.0.1:8080`; an external HTTPS edge/WAF must
 proxy it. This manifest is a staging contract only. The remaining public-SaaS
 gates are listed in [release readiness](../docs/RELEASE_READINESS.md).

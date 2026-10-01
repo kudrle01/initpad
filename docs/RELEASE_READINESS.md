@@ -42,7 +42,8 @@ Veřejný SaaS zatím není release profil. Před připojením nedůvěryhodnýc
 zákazníků musí být hotové alespoň:
 
 1. nasadit a provozně ověřit připravený samostatný SaaS profil bez vestavěné
-   Gitey a lokálního object storu nad konkrétními externími službami;
+   Gitey a lokálního object storu nad konkrétními externími službami; připravený
+   live acceptance musí projít včetně konzistentního DB + bucket restore;
 2. živé end-to-end ověření GitHub OAuth, GitHub App instalace, osobního i
    organizačního repozitáře, Actions artifactu, rename/suspend/uninstall;
 3. napojit připravené read-only secret-file rozhraní na konkrétní externí

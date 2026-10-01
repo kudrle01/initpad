@@ -182,6 +182,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - [x] Načítat PostgreSQL, kryptografické, GitHub a S3 credentials z read-only
     secret souborů ještě před migrací; odmítnout přímou i souborovou hodnotu
     současně, relativní cestu, prázdný nebo nečitelný soubor.
+  - [x] Připravit provider-neutral live acceptance pro veřejné HTTPS, aplikované
+    migrace, S3 round-trip a konzistentní externí PostgreSQL + bucket restore;
+    recovery markery povolit pouze explicitně na disposable stagingu.
   - [ ] Zapojit konkrétní externí PostgreSQL, S3 a secret manager ve stagingu
     a ověřit obnovu bez lokálních stavových služeb.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační

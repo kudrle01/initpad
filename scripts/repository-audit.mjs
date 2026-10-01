@@ -105,6 +105,7 @@ if (!(
 const executableOperations = [
   'deploy/install.sh',
   'deploy/saas-check.sh',
+  'deploy/saas-acceptance.sh',
   'deploy/prepare-rootless-runner.sh',
   'deploy/configure-agent-release.sh',
   'deploy/self-hosted-check.sh',
@@ -256,6 +257,7 @@ for (const path of ['apps/agent/install.sh', 'deploy/configure-agent-release.sh'
 }
 for (const path of [
   'deploy/install.sh',
+  'deploy/saas-acceptance.sh',
   'deploy/prepare-rootless-runner.sh',
   'deploy/install-release.sh',
   'deploy/self-hosted-check.sh',
