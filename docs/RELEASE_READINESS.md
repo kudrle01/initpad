@@ -30,6 +30,11 @@ veřejný produkční provoz.
   → workload.
 - PostgreSQL-backed per-IP a per-account rate limit sdílený všemi API
   replikami bez ukládání zdrojových identit.
+- Finální repository, dependency, maintainability, responsive a accessibility
+  audit. Vedle produkčních buildů a automatizované sady prošly 1. října
+  2026 ownerovi dostupné obrazovky živým průchodem při 390 × 844 px bez
+  horizontálního přetečení, chybějícího hlavního nadpisu nebo nepopsaného
+  viditelného ovladače. Mobilní navigace i formuláře zůstaly ovladatelné.
 
 ## Blokátory veřejného SaaS
 

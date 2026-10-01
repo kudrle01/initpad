@@ -142,9 +142,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   URL odmítl bez změny stavu a poté se vrátil na původní endpoint.
 - [ ] Projít GitHub App E2E pro osobní i organizační instalaci: login,
   create/import, Actions artifact, Agent deploy, rename, suspend a uninstall.
-- [ ] Provést finální bezpečnostní, maintainability, dependency,
+- [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
-  části. Dne 27. září 2026 prošel repository gate nad 772
+  části. Dne 27. září 2026 prošel repository gate nad 895
   verzovanými soubory, kompatibilní npm aktualizace, všechny čtyři
   produkční buildy a celá automatizovaná sada. Produkční dependency
   audit hlásí nula známých zranitelností. Aktualizované stream typy
@@ -159,8 +159,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   gate nově pokrývá také Supervisor. Hotspot review oddělil Agent diagnostiku
   od enrollment/update dialogu a platformní update panel od správy uživatelů;
   provider adaptéry, typed API fasáda a environment pipeline zůstávají
-  záměrně pohromadě jako soudržné hranice. Zbývá vizuální průchod skutečným
-  mobilním viewportem.
+  záměrně pohromadě jako soudržné hranice. Dne 1. října 2026
+  prošly všechny ownerovi dostupné hlavní obrazovky živým průchodem ve
+  viewportu 390 × 844 px bez horizontálního přetečení; každá zachovala jeden
+  hlavní nadpis, popsané formulářové prvky a použitelný mobilní drawer.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
