@@ -88,10 +88,13 @@ private S3-compatible storage, secrets and the public edge are supplied by the
 deployment environment; Gitea, MinIO, the local runner, simulated targets,
 Supervisor and the host Docker socket are absent.
 
-Start from `.env.saas.example`, inject every `EXTERNAL_SECRET` from the staging
-secret manager and use immutable API, web and Agent references from reviewed
-releases. Before deployment, validate without printing the resolved
-environment:
+Start from `.env.saas.example` and point every `*_FILE` entry at a read-only
+file projected by the staging secret manager. The env file contains paths, not
+secret values. API startup rejects a secret supplied both directly and through
+a file, an unreadable/empty file or a relative path. Files are loaded before
+the database migration, and their pointers are removed from the application
+process environment. Use immutable API, web and Agent references from reviewed
+releases. Before deployment, validate without printing the resolved model:
 
 ```bash
 ./saas-check.sh /secure/runtime/initpad-saas.env

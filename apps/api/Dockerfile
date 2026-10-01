@@ -34,7 +34,7 @@ COPY apps/agent/package.json apps/agent/package.json
 COPY templates /templates
 WORKDIR /repo/apps/api
 EXPOSE 3000
-# Apply versioned, reviewable migrations before accepting traffic. Unlike
-# `db push`, this preserves migration history and never guesses destructive
-# schema changes in production.
-CMD ["sh", "-c", "node scripts/migrate.js && exec node dist/main.js"]
+# Load deployment secrets before Prisma reads DATABASE_URL, then apply
+# versioned migrations before accepting traffic. Unlike `db push`, this
+# preserves migration history and never guesses destructive schema changes.
+CMD ["node", "scripts/run-with-secrets.js", "sh", "-c", "node scripts/migrate.js && exec node dist/main.js"]

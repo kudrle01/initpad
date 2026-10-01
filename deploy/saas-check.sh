@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 env_file=${1:-.env.saas}
 [ -r "$env_file" ] || {
-  echo "Missing $env_file. Start from .env.saas.example and inject secrets at deploy time." >&2
+  echo "Missing $env_file. Start from .env.saas.example and configure secret file paths." >&2
   exit 1
 }
 
@@ -14,7 +14,7 @@ compose() {
 }
 
 # `config --quiet` expands and validates the complete model without printing
-# its environment (which contains secrets supplied by the deployment system).
+# its environment. Secret values remain in read-only mounted files.
 compose config --quiet
 
 services=$(compose config --services | LC_ALL=C sort)

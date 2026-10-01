@@ -41,11 +41,12 @@ veřejný produkční provoz.
 Veřejný SaaS zatím není release profil. Před připojením nedůvěryhodných
 zákazníků musí být hotové alespoň:
 
-1. samostatný SaaS deployment profil bez vestavěné Gitey a lokálního
-   object store;
+1. nasadit a provozně ověřit připravený samostatný SaaS profil bez vestavěné
+   Gitey a lokálního object storu nad konkrétními externími službami;
 2. živé end-to-end ověření GitHub OAuth, GitHub App instalace, osobního i
    organizačního repozitáře, Actions artifactu, rename/suspend/uninstall;
-3. externí správa secretů a rotace produkčních credentials;
+3. napojit připravené read-only secret-file rozhraní na konkrétní externí
+   secret manager a ověřit rotaci produkčních credentials;
 4. edge connection/volumetric ochrana a ověřená proxy topologie; aplikační
    distribuovaný limiter není náhradou WAF nebo DDoS ochrany;
 5. produkční e-mail provider pro reset hesla tam, kde zůstane password login;

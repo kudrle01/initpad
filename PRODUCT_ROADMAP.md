@@ -179,6 +179,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - [x] Oddělit staging runtime contract pouze pro digest-pinned API a web,
     bez Gitey, MinIO, runneru, testovacích targetů, Supervisoru a Docker socketu;
     fail-closed ověřit GitHub, HTTPS a externí S3 konfiguraci.
+  - [x] Načítat PostgreSQL, kryptografické, GitHub a S3 credentials z read-only
+    secret souborů ještě před migrací; odmítnout přímou i souborovou hodnotu
+    současně, relativní cestu, prázdný nebo nečitelný soubor.
   - [ ] Zapojit konkrétní externí PostgreSQL, S3 a secret manager ve stagingu
     a ověřit obnovu bez lokálních stavových služeb.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
