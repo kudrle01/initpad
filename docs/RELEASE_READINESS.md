@@ -2,7 +2,7 @@
 
 Stav dokumentu odpovídá doporučenému Agentu 0.14.3, odmítnutým release
 0.13.0 a 0.14.0 a podepsanému
-platformnímu releasu 0.2.9. Seznam je záměrně
+platformnímu releasu 0.2.10. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
 
@@ -184,6 +184,17 @@ zavedla case-insensitive unikátní identity bez změny uloženého zobrazení;
 kontrakt. Navazující acceptance ověřila tři pevné pipeline předvolby,
 oddělené produkční review a nezměněný build-once digest.
 
+Release 0.2.10 dne 1. října 2026 poprvé vstoupil do distribuce jako GitHub
+prerelease. Candidate audit ověřil podpisy, veřejné assets a multiarch OCI
+indexy ještě před instalací. Protože 0.2.9 candidate katalog neznal, disposable
+VM použila jednorázově podepsaný recovery instalátor. První pokus po úplné
+záloze skončil timeoutem GHCR před cutoverem a bezpečně obnovil zdravou
+0.2.9; opakování po dokončení image pullu uspělo. Acceptance
+`platform-update-bootstrap` potvrdila stejné databázové identity, managed
+workload snapshot a tři immutable image reference. Beze změny tagu, assetů
+nebo digestů byl candidate povýšen na stable, anonymní audit se zopakoval a
+VM se vrátila na `stable` kanál jako zdravý signed release 0.2.10.
+
 Anonymní distribuční kontrolu lze kdykoli zopakovat bez GitHub credentials:
 
 ```bash
@@ -193,6 +204,7 @@ npm run audit:public-release -- --tag initpad-v0.2.6
 npm run audit:public-release -- --tag initpad-v0.2.7
 npm run audit:public-release -- --tag initpad-v0.2.8
 npm run audit:public-release -- --tag initpad-v0.2.9
+npm run audit:public-release -- --tag initpad-v0.2.10
 npm run audit:public-release -- --tag agent-v0.14.2
 npm run audit:public-release -- --tag agent-v0.14.3
 ```

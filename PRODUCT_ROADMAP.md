@@ -107,13 +107,15 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Vydat `0.2.9`, živě aktualizovat podepsanou `0.2.8`, aplikovat
   case-insensitive identity indexy a ověřit přihlášení stejného účtu
   náhodnou velikostí písmen bez změny hesla nebo uložené identity.
-- [ ] Vydat platformu `0.2.10` nejprve jako candidate. Protože `0.2.9` ještě
+- [x] Vydat platformu `0.2.10` nejprve jako candidate. Protože `0.2.9` ještě
   prerelease katalog neumí, na disposable VM provést jednorázový bootstrap
   kandidáta podepsaným recovery instalátorem a ověřit zachování dat,
   workloadů, Agent 0.14.3 bootstrap a viditelné oddělení candidate/stable
   katalogů. Teprve potom povýšit stejný podepsaný release na stable a
   zopakovat anonymní distribuční audit. Další candidate releasy už instalovat
-  standardně z administrace.
+  standardně z administrace. Dne 1. října 2026 candidate i stable
+  distribuční audit prošly a `platform-update-bootstrap` potvrdil zachované
+  databázové identity, managed workloady a tři immutable image reference.
 
 ### P1 — uzavření diplomkového MVP
 
@@ -163,7 +165,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
-  platformu 0.2.9, uvádí doporučený Agent 0.14.3 a
+  platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
   odkazuje na 119 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.

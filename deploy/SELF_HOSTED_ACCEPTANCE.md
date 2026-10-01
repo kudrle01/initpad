@@ -553,6 +553,14 @@ povyš stejný GitHub release na stable, vrať kanál v `.env` na `stable` a spu
 candidate releasy testují standardně tlačítkem **Install update**; recovery
 bootstrap se už neopakuje.
 
+Tento přechod prošel 1. října 2026. První instalační pokus po ověření
+podpisu, checksumů a vytvoření zálohy narazil na timeout GHCR při stahování
+Supervisor image; recovery instalátor obnovil zdravou 0.2.9. Po dokončení
+immutable image pullu druhý pokus uspěl a `after-bootstrap` potvrdil zachování
+databázových identit, managed workloadů i tří release digestů. Stejný release
+pak byl bez přestavění povýšen na stable, znovu prošel anonymním auditem a
+VM po návratu na `stable` hlásila zdravou podepsanou verzi 0.2.10.
+
 ## 11. Ověř smazání a opětovné použití názvu
 
 V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení
