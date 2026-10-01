@@ -2,3 +2,5 @@
 # PEM begin marker and no key material.
 fcc994768b1c71fd09be82709c598e84cb996952:apps/web/src/components/organisms/TargetDialog.tsx:private-key:320
 dd2f7bf7df9cc0bbba741bffe84caad7ac01a0e8:apps/web/src/components/organisms/TargetDialog.tsx:private-key:269
+# Reviewed test-only PEM marker without key material.
+211eb11b9536de6e940a227e381197ac43c0b2a1:apps/api/src/config.spec.ts:private-key:129

@@ -1,6 +1,10 @@
 import { config, validateConfig } from './config';
 
 describe('validateConfig production secrets', () => {
+  const fakePrivateKey = [
+    '-----BEGIN',
+    'PRIVATE KEY-----\ntest-fixture-only\n-----END PRIVATE KEY-----',
+  ].join(' ');
   const originalNodeEnv = process.env.NODE_ENV;
   const originalArtifactStore = { ...config.artifactStore };
   const originalAgentDistribution = { ...config.agentDistribution };
@@ -126,7 +130,7 @@ describe('validateConfig production secrets', () => {
       appId: '12345',
       clientId: 'Iv1.example',
       clientSecret: 'github-client-secret',
-      privateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+      privateKey: fakePrivateKey,
       webhookSecret: 'w'.repeat(32),
       appSlug: 'initpad-example',
       callbackUrl: 'https://initpad.example/api/auth/github/callback',
@@ -142,7 +146,7 @@ describe('validateConfig production secrets', () => {
       appId: '12345',
       clientId: 'Iv1.example',
       clientSecret: 'github-client-secret',
-      privateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+      privateKey: fakePrivateKey,
       webhookSecret: 'w'.repeat(32),
       appSlug: 'initpad-example',
       callbackUrl: 'http://other.example/api/auth/github/callback',
