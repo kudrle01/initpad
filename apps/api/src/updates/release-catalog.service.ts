@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { verify, type Bundle } from 'sigstore';
-import { config } from '../config';
+import { config, type AgentUpdateChannel } from '../config';
 import {
   compareStableVersions,
   parseAgentReleaseManifest,
@@ -41,6 +41,7 @@ export interface VerifiedAgentRelease {
 
 export interface AgentCatalogResult {
   enabled: boolean;
+  channel: AgentUpdateChannel;
   checkedAt: string | null;
   stale: boolean;
   release: VerifiedAgentRelease | null;
@@ -62,7 +63,14 @@ export class ReleaseCatalogService {
 
   async latestAgentRelease(force = false): Promise<AgentCatalogResult> {
     if (!config.updates.enabled) {
-      return { enabled: false, checkedAt: null, stale: false, release: null, error: null };
+      return {
+        enabled: false,
+        channel: config.updates.agentChannel,
+        checkedAt: null,
+        stale: false,
+        release: null,
+        error: null,
+      };
     }
     if (!force && this.cached && this.cached.expiresAt > Date.now()) return this.cached.result;
     if (this.inFlight) return this.inFlight;
@@ -97,7 +105,10 @@ export class ReleaseCatalogService {
 
     const releases = this.parseReleaseList(response.body);
     const candidate = releases
-      .filter((release) => !release.draft && !release.prerelease)
+      .filter(
+        (release) =>
+          !release.draft && (config.updates.agentChannel === 'candidate' || !release.prerelease),
+      )
       .filter((release) => release.tag_name.startsWith('agent-v'))
       .filter((release) => {
         const version = release.tag_name.slice(7);
@@ -107,7 +118,14 @@ export class ReleaseCatalogService {
         compareStableVersions(right.tag_name.slice(7), left.tag_name.slice(7)),
       )[0];
     if (!candidate) {
-      return { enabled: true, checkedAt, stale: false, release: null, error: null };
+      return {
+        enabled: true,
+        channel: config.updates.agentChannel,
+        checkedAt,
+        stale: false,
+        release: null,
+        error: null,
+      };
     }
 
     const manifestAsset = candidate.assets.find((asset) => asset.name === AGENT_MANIFEST);
@@ -155,6 +173,7 @@ export class ReleaseCatalogService {
 
     return {
       enabled: true,
+      channel: config.updates.agentChannel,
       checkedAt,
       stale: false,
       release: {
@@ -183,6 +202,7 @@ export class ReleaseCatalogService {
     }
     return {
       enabled: true,
+      channel: config.updates.agentChannel,
       checkedAt: new Date().toISOString(),
       stale: false,
       release: null,

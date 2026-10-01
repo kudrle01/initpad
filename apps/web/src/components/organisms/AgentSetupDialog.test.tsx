@@ -94,6 +94,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
     enabled: true,
+    channel: 'stable',
     checkedAt: '2026-09-16T10:00:00.000Z',
     stale: false,
     currentVersion: null,
@@ -227,6 +228,7 @@ describe('AgentSetupDialog distribution', () => {
     });
     vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
       enabled: true,
+      channel: 'stable',
       checkedAt: '2026-09-21T12:00:00.000Z',
       stale: false,
       currentVersion: '0.14.2',
@@ -272,6 +274,7 @@ describe('AgentSetupDialog distribution', () => {
     });
     vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
       enabled: true,
+      channel: 'stable',
       checkedAt: '2026-09-21T12:00:00.000Z',
       stale: false,
       currentVersion: '0.14.2',
@@ -314,6 +317,7 @@ describe('AgentSetupDialog distribution', () => {
     });
     vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
       enabled: true,
+      channel: 'stable',
       checkedAt: '2026-09-16T10:00:00.000Z',
       stale: false,
       currentVersion: '0.12.1',
@@ -362,6 +366,7 @@ describe('AgentSetupDialog distribution', () => {
     });
     vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
       enabled: true,
+      channel: 'candidate',
       checkedAt: '2026-09-16T10:00:00.000Z',
       stale: false,
       currentVersion: '0.13.0',
@@ -388,6 +393,7 @@ describe('AgentSetupDialog distribution', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: 'Install update' }));
+    expect(screen.getByText(/candidate update channel/i)).toBeInTheDocument();
     expect(await screen.findByText('Install Agent 0.14.0?')).toBeInTheDocument();
     expect(onUpdateAgent).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Install update' }));

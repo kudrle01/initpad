@@ -237,6 +237,7 @@ export interface AgentDistribution {
 
 export interface AgentUpdateStatus {
   enabled: boolean;
+  channel: 'stable' | 'candidate';
   checkedAt: string | null;
   stale: boolean;
   currentVersion: string | null;

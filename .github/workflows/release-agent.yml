@@ -180,6 +180,7 @@ jobs:
           set -euo pipefail
           gh release create "${GITHUB_REF_NAME}" "${RELEASE_DIRECTORY}"/* \
             --verify-tag \
+            --prerelease \
             --title "InitPad Agent ${AGENT_VERSION}" \
             --generate-notes
           {
@@ -188,4 +189,6 @@ jobs:
             echo "\`${IMAGE_NAME}@${IMAGE_DIGEST}\`"
             echo
             echo 'The OCI image and every downloadable asset were signed with the release workflow identity.'
+            echo
+            echo 'The release starts as a candidate prerelease. Promote it only after the host acceptance gate passes.'
           } >> "${GITHUB_STEP_SUMMARY}"

@@ -115,6 +115,10 @@ procedure is a complete public SaaS delivery test yet.
   to explicitly adopt the current reviewed release and restart the platform
   with that exact version and immutable digest. A half-configured or mutable
   pair fails before the platform starts unless the explicit update repairs it.
+  This pair bootstraps new hosts; enrolled Agents discover later signed stable
+  releases without editing `.env`. The default `INITPAD_AGENT_UPDATE_CHANNEL`
+  is `stable`. Set `candidate` only on a disposable acceptance installation,
+  then return it to `stable` after testing.
 - **Logs**: `docker compose logs -f api` (or any other service).
 - Do not run this stack and the `infra/` development stack simultaneously;
   they intentionally share the compose project name.

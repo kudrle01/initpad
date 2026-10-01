@@ -4,6 +4,7 @@ describe('validateConfig production secrets', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalArtifactStore = { ...config.artifactStore };
   const originalAgentDistribution = { ...config.agentDistribution };
+  const originalUpdates = { ...config.updates };
   const originalSecrets = {
     jwtSecret: config.auth.jwtSecret,
     encryptionKey: config.security.encryptionKey,
@@ -36,6 +37,7 @@ describe('validateConfig production secrets', () => {
     config.http.trustProxyHops = originalSecrets.trustProxyHops;
     Object.assign(config.artifactStore, originalArtifactStore);
     Object.assign(config.agentDistribution, originalAgentDistribution);
+    Object.assign(config.updates, originalUpdates);
   });
 
   it('rejects the Compose fallback artifact-store password', () => {
@@ -77,5 +79,13 @@ describe('validateConfig production secrets', () => {
     config.agentDistribution.image = `ghcr.io/example/initpad-agent@sha256:${'a'.repeat(64)}`;
     config.agentDistribution.releaseVersion = '0.11.0-rc.1';
     expect(() => validateConfig()).toThrow('INITPAD_AGENT_RELEASE_VERSION');
+  });
+
+  it('accepts only the explicit stable and candidate Agent update channels', () => {
+    config.updates.agentChannel = 'candidate';
+    expect(() => validateConfig()).not.toThrow();
+
+    config.updates.agentChannel = 'preview' as never;
+    expect(() => validateConfig()).toThrow('INITPAD_AGENT_UPDATE_CHANNEL');
   });
 });

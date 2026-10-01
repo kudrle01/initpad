@@ -192,43 +192,55 @@ test('accepts a complete anonymous signed multiarch Agent release', async () => 
   );
   const assets = agentFiles.flatMap((name) => [name, `${name}.sigstore.json`]);
   const verified = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    if (url.endsWith(`/repos/${repository}`)) {
+      return response(JSON.stringify({ full_name: repository, private: false }));
+    }
+    if (url.endsWith(`/repos/${repository}/releases/tags/${agentTag}`)) {
+      return response(
+        JSON.stringify({
+          tag_name: agentTag,
+          draft: false,
+          prerelease: true,
+          assets: assets.map((name) => ({
+            name,
+            size: 20,
+            browser_download_url: `https://downloads.test/${name}`,
+          })),
+        }),
+      );
+    }
+    if (options.method === 'HEAD' && url.startsWith('https://downloads.test/')) {
+      return response();
+    }
+    if (url.endsWith('/initpad-agent-release.json')) return response(manifest);
+    if (url.endsWith('/initpad-agent-host-acceptance.sh')) return response(acceptance);
+    if (url.endsWith('/SHA256SUMS')) return response(sums);
+    if (url.endsWith('.sigstore.json')) return response('{}');
+    if (url.startsWith('https://ghcr.io/token')) {
+      return response(JSON.stringify({ token: 't'.repeat(20) }));
+    }
+    if (url.includes('/v2/kudrle01/initpad-agent/manifests/')) return response(index);
+    throw new Error(`Unexpected request: ${options.method ?? 'GET'} ${url}`);
+  };
+  await assert.rejects(
+    auditPublicAgentRelease({
+      repository,
+      tag: agentTag,
+      fetchImpl,
+      verifyBundle: async () => {},
+      log: () => {},
+    }),
+    /not a public stable release/,
+  );
   const result = await auditPublicAgentRelease({
     repository,
     tag: agentTag,
-    fetchImpl: async (input, options = {}) => {
-      const url = String(input);
-      if (url.endsWith(`/repos/${repository}`)) {
-        return response(JSON.stringify({ full_name: repository, private: false }));
-      }
-      if (url.endsWith(`/repos/${repository}/releases/tags/${agentTag}`)) {
-        return response(
-          JSON.stringify({
-            tag_name: agentTag,
-            draft: false,
-            prerelease: false,
-            assets: assets.map((name) => ({
-              name,
-              size: 20,
-              browser_download_url: `https://downloads.test/${name}`,
-            })),
-          }),
-        );
-      }
-      if (options.method === 'HEAD' && url.startsWith('https://downloads.test/')) {
-        return response();
-      }
-      if (url.endsWith('/initpad-agent-release.json')) return response(manifest);
-      if (url.endsWith('/initpad-agent-host-acceptance.sh')) return response(acceptance);
-      if (url.endsWith('/SHA256SUMS')) return response(sums);
-      if (url.endsWith('.sigstore.json')) return response('{}');
-      if (url.startsWith('https://ghcr.io/token')) {
-        return response(JSON.stringify({ token: 't'.repeat(20) }));
-      }
-      if (url.includes('/v2/kudrle01/initpad-agent/manifests/')) return response(index);
-      throw new Error(`Unexpected request: ${options.method ?? 'GET'} ${url}`);
-    },
+    fetchImpl,
     verifyBundle: async (_bundle, bytes, identity) => verified.push([bytes, identity]),
     log: () => {},
+    allowPrerelease: true,
   });
   assert.equal(result.sourceCommit, commit);
   assert.equal(result.immutableReference, `ghcr.io/kudrle01/initpad-agent@${imageDigest}`);

@@ -24,6 +24,11 @@ export type Edition = 'self-hosted' | 'saas';
 const EDITIONS: readonly Edition[] = ['self-hosted', 'saas'];
 const edition = (process.env.INITPAD_EDITION || 'self-hosted') as Edition;
 
+export type AgentUpdateChannel = 'stable' | 'candidate';
+const AGENT_UPDATE_CHANNELS: readonly AgentUpdateChannel[] = ['stable', 'candidate'];
+const agentUpdateChannel = (process.env.INITPAD_AGENT_UPDATE_CHANNEL ||
+  'stable') as AgentUpdateChannel;
+
 // Registration policy for the self-hosted edition (ADR-040). Two modes: `open`
 // is normal self-service registration (public deployment); `admin-provisioned`
 // means only the instance admin creates accounts (private deployment). A
@@ -78,6 +83,7 @@ export const config = {
   },
   updates: {
     enabled: process.env.INITPAD_UPDATE_CHECKS_ENABLED !== 'false',
+    agentChannel: agentUpdateChannel,
     githubApiUrl: process.env.INITPAD_UPDATE_GITHUB_API_URL || 'https://api.github.com',
     repository: process.env.INITPAD_UPDATE_REPOSITORY || 'kudrle01/initpad',
     cacheSeconds: Number(process.env.INITPAD_UPDATE_CACHE_SECONDS || 900),
@@ -326,6 +332,11 @@ export function validateConfig(): void {
   }
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.updates.repository)) {
     throw new Error('INITPAD_UPDATE_REPOSITORY must be an owner/repository pair');
+  }
+  if (!AGENT_UPDATE_CHANNELS.includes(config.updates.agentChannel)) {
+    throw new Error(
+      `INITPAD_AGENT_UPDATE_CHANNEL must be one of ${AGENT_UPDATE_CHANNELS.join(', ')}`,
+    );
   }
   let updateApiUrl: URL;
   try {

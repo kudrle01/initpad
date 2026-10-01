@@ -302,6 +302,13 @@ hodnot proběhne atomicky a běžný instalátor vlastní pin nikdy tiše neposu
 Tím jde nová instalace Agenta spustit přímo příkazem z UI, zatímco rollback
 nebo postupný rollout zůstává pod kontrolou správce.
 
+Tato dvojice je bootstrap pro nové servery, ne ruční konfigurace každé další
+aktualizace. Běžící Agent zjišťuje novější podepsaný release z katalogu a
+instalaci stále potvrzuje owner/admin pro konkrétní target. Výchozí
+`INITPAD_AGENT_UPDATE_CHANNEL=stable` ignoruje GitHub prerelease. Hodnota
+`candidate` patří jen na disposable acceptance control plane; UI ji viditelně
+označí a po skončení testu se musí vrátit na `stable`.
+
 ## Kapacita a škálování
 
 - Pro pohodlný self-hosted provoz včetně sestavování šablon počítej

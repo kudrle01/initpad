@@ -121,14 +121,16 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   po jeho odstranění se auditovaně propsala bez změny repozitáře.
 - [x] Dokončit zbývající živé multi-user acceptance auditu z Fáze 7;
   prod approval, TTL, read-only portfolio a evaluation export jsou ověřené.
-- [ ] Vydat Agent `0.14.3` a živě zopakovat nový evidence-backed reboot
+- [x] Vydat Agent `0.14.3` a živě zopakovat nový evidence-backed reboot
   gate: Docker boot enablement, stejný Agent kontejner, identita, heartbeat a
   zachované workloady bez nového enrollmentu. Na stejném disposable targetu
   ověřit atomickou migraci změněné control-plane URL i rollback při
   nedostupném kandidátním endpointu. Release `agent-v0.14.3` z commitu
   `c596b4bf43f209ea5a632df5dd9fe6fbdd85917c` je veřejný; 27. září 2026
-  prošel anonymním auditem podpisů, assets a multiarch OCI indexu. Zbývá
-  pouze skutečný host reboot a oba URL-migration scénáře.
+  prošel anonymním auditem podpisů, assets a multiarch OCI indexu. Dne
+  1. října 2026 samostatný Linux host zachoval při rebootu stejný Agent
+  kontejner, identitu i workloady, přijal dosažitelnou novou URL, nedostupnou
+  URL odmítl bez změny stavu a poté se vrátil na původní endpoint.
 - [ ] Projít GitHub App E2E pro osobní i organizační instalaci: login,
   create/import, Actions artifact, Agent deploy, rename, suspend a uninstall.
 - [ ] Provést finální bezpečnostní, maintainability, dependency,
@@ -154,8 +156,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
-  platformu 0.2.9, rozlišuje doporučený Agent 0.14.2 od kandidáta 0.14.3 a
-  odkazuje na 118 samostatných ADR. Repository gate hlídá souvislou řadu,
+  platformu 0.2.9, uvádí doporučený Agent 0.14.3 a
+  odkazuje na 119 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.
 

@@ -9,9 +9,11 @@ import { AgentsService } from './agents.service';
 import { agentVersionAtLeast, MIN_REMOTE_UPDATE_AGENT_VERSION } from './agent-version';
 import type { CreateAgentUpdateDto } from './dto/agent-job.dto';
 import type { AgentJobSummary } from './agent-jobs.service';
+import type { AgentUpdateChannel } from '../config';
 
 export interface AgentUpdateStatus {
   enabled: boolean;
+  channel: AgentUpdateChannel;
   checkedAt: string | null;
   stale: boolean;
   currentVersion: string | null;
@@ -49,6 +51,7 @@ export class AgentUpdatesService {
     );
     return {
       enabled: catalog.enabled,
+      channel: catalog.channel,
       checkedAt: catalog.checkedAt,
       stale: catalog.stale,
       currentVersion,

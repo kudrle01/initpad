@@ -3,7 +3,8 @@
 Agent releases are created only from a version tag. The workflow builds one OCI
 index for Linux `amd64` and `arm64`, attaches BuildKit SBOM and maximum
 provenance, signs the immutable digest and release files with keyless Cosign,
-and creates a GitHub release. It never publishes `latest`.
+and creates a GitHub prerelease. It never publishes a mutable `latest` image
+tag. The release is promoted to stable only after live host acceptance.
 
 ## Publish
 
@@ -22,14 +23,32 @@ and creates a GitHub release. It never publishes `latest`.
    update it. Never move a published release tag.
 
 3. The **Release InitPad Agent** workflow refuses a mismatched tag or an
-   existing version tag before it builds. After it succeeds, copy the
-   `immutableReference` from `initpad-agent-release.json` in the GitHub release.
-4. Set the manifest's full `ghcr.io/.../initpad-agent@sha256:...` value as
-   `INITPAD_AGENT_IMAGE` and its `version` as `INITPAD_AGENT_RELEASE_VERSION`
-   in the control-plane deployment, then run `deploy/install.sh`. Both values
-   are required together so the enrollment dialog cannot display the bundled
-   source version for a different image digest. It will then offer the verified
-   one-command installer.
+   existing version tag before it builds. It publishes the signed result as a
+   GitHub prerelease so the default stable catalog cannot offer an unaccepted
+   runtime to customer installations.
+4. Audit the candidate while it is still a prerelease:
+
+   ```sh
+   npm run audit:public-release -- --tag "agent-v${version}" --allow-prerelease
+   ```
+
+5. On a disposable acceptance control plane set
+   `INITPAD_AGENT_UPDATE_CHANNEL=candidate`, restart the API and follow
+   [`ACCEPTANCE.md`](./ACCEPTANCE.md). The UI labels this channel explicitly.
+   Stable installations keep the default `stable` value and ignore the
+   prerelease.
+6. After every required live check passes, promote the existing release without
+   rebuilding or moving its tag:
+
+   ```sh
+   gh release edit "agent-v${version}" --prerelease=false --latest
+   npm run audit:public-release -- --tag "agent-v${version}"
+   ```
+
+   Then update `deploy/agent-release.env` from the signed manifest and include
+   that reviewed bootstrap pair in the next platform release. Existing Agents
+   discover the newly stable release through the signed catalog; operators do
+   not edit `.env` for every Agent update.
 
 For unauthenticated customer installation, the GHCR package must be public.
 After its first publication, change the package visibility once in GitHub
@@ -82,7 +101,7 @@ docker buildx imagetools inspect 'ghcr.io/OWNER/initpad-agent@sha256:DIGEST' \
   --format '{{ json (index .SBOM "linux/amd64").SPDX }}'
 ```
 
-Publishing is not the acceptance result. Follow the reproducible clean-host
+Publishing a prerelease is not the acceptance result. Follow the reproducible clean-host
 [`ACCEPTANCE.md`](./ACCEPTANCE.md) runbook before approving a release for
 production. It verifies first enrollment, restart after a host reboot,
 idempotent reinstall, rollback from a deliberately unhealthy digest and

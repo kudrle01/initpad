@@ -315,6 +315,11 @@ export function AgentSetupDialog({
                     ? 'This is the final manual, identity-preserving update. Agent 0.13 and newer can install later verified releases remotely.'
                     : 'The release manifest and immutable image identity were verified. Installation still requires your confirmation.'}
                 </p>
+                {updateStatus.channel === 'candidate' && (
+                  <p className="mt-2 text-xs font-medium text-warning">
+                    Candidate update channel · use only on an acceptance server.
+                  </p>
+                )}
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
                   {updateStatus.updateMethod === 'remote' && (
                     <Button

@@ -11,6 +11,7 @@ const target = {
 function catalog(version: string | null) {
   const result = {
     enabled: true,
+    channel: 'stable' as const,
     checkedAt: '2026-09-16T10:00:00.000Z',
     stale: false,
     release: version

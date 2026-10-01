@@ -212,7 +212,13 @@ async function inspectPublicImage(fetchImpl, image) {
   }
 }
 
-async function publicReleaseAssets(fetchImpl, repository, tag, releaseFiles) {
+async function publicReleaseAssets(
+  fetchImpl,
+  repository,
+  tag,
+  releaseFiles,
+  allowPrerelease = false,
+) {
   const api = 'https://api.github.com';
   const repositoryInfo = object(
     await json(
@@ -237,10 +243,14 @@ async function publicReleaseAssets(fetchImpl, repository, tag, releaseFiles) {
   if (
     release.tag_name !== tag ||
     release.draft ||
-    release.prerelease ||
+    (release.prerelease && !allowPrerelease) ||
     !Array.isArray(release.assets)
   ) {
-    throw new Error('GitHub release is not a public stable release');
+    throw new Error(
+      allowPrerelease
+        ? 'GitHub release is not a public release'
+        : 'GitHub release is not a public stable release',
+    );
   }
   const assets = new Map(
     release.assets.map((value) => {
@@ -340,6 +350,7 @@ export async function auditPublicAgentRelease({
   fetchImpl = fetch,
   verifyBundle = defaultVerifyBundle,
   log = console.log,
+  allowPrerelease = false,
 }) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     throw new Error('repository must use owner/name format');
@@ -348,7 +359,13 @@ export async function auditPublicAgentRelease({
     throw new Error('tag must use agent-vMAJOR.MINOR.PATCH format');
   }
 
-  const assets = await publicReleaseAssets(fetchImpl, repository, tag, AGENT_RELEASE_FILES);
+  const assets = await publicReleaseAssets(
+    fetchImpl,
+    repository,
+    tag,
+    AGENT_RELEASE_FILES,
+    allowPrerelease,
+  );
   const identity = `https://github.com/${repository}/.github/workflows/release-agent.yml@refs/tags/${tag}`;
   const { manifest, checksums } = await verifyReleaseEnvelope({
     fetchImpl,
@@ -390,7 +407,9 @@ export async function auditPublicAgentRelease({
     await verifyBundle(JSON.parse(helperBundleBytes.toString('utf8')), helperBytes, identity);
   }
   await inspectPublicImage(fetchImpl, manifest.image);
-  log(`Public release ${tag} is anonymously readable, signed and multiarch.`);
+  log(
+    `Public ${allowPrerelease ? 'candidate ' : ''}release ${tag} is anonymously readable, signed and multiarch.`,
+  );
   return {
     repository,
     tag,
@@ -412,7 +431,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   ).version;
   const tag = argument('--tag') ?? `initpad-v${version}`;
   const audit = tag.startsWith('agent-v') ? auditPublicAgentRelease : auditPublicPlatformRelease;
-  audit({ repository: argument('--repository') ?? 'kudrle01/initpad', tag }).catch((error) => {
+  audit({
+    repository: argument('--repository') ?? 'kudrle01/initpad',
+    tag,
+    ...(tag.startsWith('agent-v')
+      ? { allowPrerelease: process.argv.includes('--allow-prerelease') }
+      : {}),
+  }).catch((error) => {
     console.error(`Public release audit failed: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
   });

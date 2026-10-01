@@ -28,9 +28,10 @@ immutable `INITPAD_AGENT_IMAGE` digest and its explicit
 `INITPAD_AGENT_RELEASE_VERSION`. It installs and enrolls without cloning this
 repository, preserves the root-only identity across updates and restores the
 previous container when the replacement cannot heartbeat. The repository
-publishes signed, public `amd64/arm64` images. Agent 0.14.2 is the current
+publishes signed, public `amd64/arm64` images. Agent 0.14.3 is the current
 reviewed distribution release. Its final image passed the CLI runtime probe,
-signature, anonymous public-release audit, live update and rollback acceptance.
+signature, anonymous public-release audit, live update, reboot, URL migration
+and rollback acceptance.
 Releases 0.13.0 and 0.14.0 were
 rejected because their runtimes omitted the production `sigstore` dependency;
 neither replaced the existing Agent during acceptance. The local lab below
@@ -55,17 +56,24 @@ identity and workload preservation, and automatic rollback after a deliberately
 failed replacement. It deliberately keeps protocol version 1 so acceptance is
 not coupled to a wire-protocol migration.
 
-The public, signed 0.14.3 release candidate treats the control-plane URL as
+The public, signed 0.14.3 release treats the control-plane URL as
 mutable transport metadata rather than Agent identity. When an operator reruns
-the reviewed installer with a changed URL, the candidate sends the existing
+the reviewed installer with a changed URL, the Agent sends the existing
 credential to that endpoint, requires an accepted heartbeat and only then
 atomically saves the new URL. A failed verification leaves the old URL,
 credential and target binding untouched. This is intended for a hostname, LAN
 address or TLS entry point change of the same InitPad instance; moving a host
 to another instance still requires explicit re-enrollment.
 Its release assets, signatures and `amd64/arm64` OCI index passed anonymous
-distribution verification. It remains a candidate until the clean-host reboot
-and both successful and failed URL-migration paths pass the runbook.
+distribution verification. On 1 October 2026 a separate Linux host preserved
+the same Agent container, identity and managed workloads across a real reboot,
+accepted a reachable URL change, rejected an unreachable endpoint and returned
+to the original URL without re-enrollment.
+
+New version tags are published as GitHub prereleases. Customer control planes
+use the `stable` update channel by default; a disposable acceptance instance may
+opt into `candidate`. Promotion changes only GitHub release metadata after the
+signed image has passed the runbook—it never rebuilds the image or moves its tag.
 
 Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
 [release acceptance](./ACCEPTANCE.md). The installer shown by a control plane

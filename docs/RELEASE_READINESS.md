@@ -1,7 +1,7 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá doporučenému Agentu 0.14.2, distribučně ověřenému
-kandidátu 0.14.3, odmítnutým release 0.13.0 a 0.14.0 a podepsanému
+Stav dokumentu odpovídá doporučenému Agentu 0.14.3, odmítnutým release
+0.13.0 a 0.14.0 a podepsanému
 platformnímu releasu 0.2.9. Seznam je záměrně
 otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
 veřejný produkční provoz.
@@ -21,8 +21,9 @@ veřejný produkční provoz.
 - Outbound Agent protokol s enrollmentem, rotací credentials, lease fencingem,
   diagnostikou, resource limity a stabilní gateway routou.
 - Reprodukovatelná repository gate, immutable container references a
-  podepsané multiarch vydání Agenta 0.14.2 s runtime probem výsledné image,
-  živým identity-preserving updatem a ověřeným automatickým rollbackem.
+  podepsané multiarch vydání Agenta 0.14.3 s runtime probem výsledné image,
+  živým identity-preserving updatem, skutečným rebootem, migrací URL a
+  ověřeným automatickým rollbackem.
 - Podepsaný platformní release bundle, oddělený Supervisor, ověřený backup,
   postupný health-gated cutover a image rollback pro self-hosted instalaci.
 - Strukturované redigované logy a korelace request → operation → Agent job
@@ -98,12 +99,16 @@ auditem. Podepsaná image 0.14.2 se stejnou opravou prošla 21. září 2026
 anonymním auditem release assets, runtime probe i multiarch OCI indexu.
 Na samostatném Linux hostu poté prošel živý update `0.14.1 → 0.14.2` se
 zachováním identity a workloadů; fault-injected selhání replacement instance
-obnovilo 0.14.1 a následný čistý pokus připojil 0.14.2. Verze 0.14.2 je proto
-aktuálním doporučeným releasem. Veřejný release 0.14.3 z commitu
+obnovilo 0.14.1 a následný čistý pokus připojil 0.14.2. Veřejný release
+0.14.3 z commitu
 `c596b4bf43f209ea5a632df5dd9fe6fbdd85917c` prošel 27. září 2026 anonymním
 auditem podpisů, release assets a OCI indexu pro `linux/amd64` a `linux/arm64`.
-Jeho reboot a control-plane URL migration se musí ještě ověřit na samostatném
-Linux hostu; do té doby zůstává kandidátem a výchozí katalog drží 0.14.2.
+Dne 1. října 2026 na samostatném Linux hostu prošel skutečný reboot se
+stejným kontejnerem, identitou a workloady, migrace na dosažitelnou druhou URL,
+odmítnutí nedostupné URL s rollbackem a návrat na původní endpoint. Verze
+0.14.3 je proto aktuálním doporučeným releasem. Budoucí tagy začínají jako
+GitHub prerelease; běžný `stable` katalog je ignoruje a testovací control plane
+je musí explicitně povolit kanálem `candidate`.
 Reprodukovatelný postup zůstává v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).

@@ -24,7 +24,7 @@ srozumitelném a samostatně nasaditelném systému.
 | Část | Stav |
 |---|---|
 | Self-hosted platforma | Veřejný podepsaný release `0.2.9`; update z `0.2.8`, identity migrace i živý multi-user tok ověřeny se zachováním dat a workloadů |
-| InitPad Agent | Doporučený release `0.14.2`; veřejný kandidát `0.14.3` čeká na závěrečný reboot a URL-migration gate |
+| InitPad Agent | Doporučený release `0.14.3`; reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu |
 | Hosted SaaS | Ve vývoji; nejde zatím o produkční deployment profil |
 
 Release assets, checksumy a OCI images jsou veřejné a ověřitelné bez GitHub

@@ -124,3 +124,4 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 | [ADR-116](./ADR-116.md) | Lokální přihlašovací identifikátory nerozlišují velikost písmen |
 | [ADR-117](./ADR-117.md) | Produkční review používá maintain, policy vlastní owner |
 | [ADR-118](./ADR-118.md) | Projekt volí jednu ze tří pevných pipeline předvoleb |
+| [ADR-119](./ADR-119.md) | Agent release prochází odděleným candidate a stable kanálem |

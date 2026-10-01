@@ -265,3 +265,10 @@ identity and application workloads and connected as 0.14.2. Releases 0.13.0
 and 0.14.0 remain documented runtime rejections rather than accepted baselines.
 Any future manual repair, new enrollment, lost workload or mutable image
 reference is a failure and must be documented rather than worked around.
+
+Agent 0.14.3 subsequently passed the extended lifecycle gate on a separate
+Linux host on 1 October 2026. A real host reboot preserved the same Agent
+container ID, target identity and managed workload IDs. The reviewed installer
+then moved the existing identity to a reachable second control-plane URL, an
+unreachable URL was rejected while the previous URL and workloads stayed
+unchanged, and the Agent returned to the original URL without re-enrollment.

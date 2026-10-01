@@ -27,13 +27,13 @@ function manifest(version = '0.14.1'): Record<string, unknown> {
   };
 }
 
-function releaseList(version = '0.14.1') {
+function releaseList(version = '0.14.1', prerelease = false) {
   return [
     {
       tag_name: `agent-v${version}`,
       html_url: `https://github.com/kudrle01/initpad/releases/tag/agent-v${version}`,
       draft: false,
-      prerelease: false,
+      prerelease,
       published_at: '2026-09-16T10:00:00Z',
       assets: [
         {
@@ -60,6 +60,7 @@ describe('ReleaseCatalogService', () => {
   beforeEach(() => {
     Object.assign(config.updates, {
       enabled: true,
+      agentChannel: 'stable',
       githubApiUrl: 'https://api.github.com',
       repository: 'kudrle01/initpad',
       cacheSeconds: 900,
@@ -115,6 +116,37 @@ describe('ReleaseCatalogService', () => {
     expect(verify).not.toHaveBeenCalled();
   });
 
+  it('keeps GitHub prereleases out of the stable channel', async () => {
+    const candidate = releaseList('0.15.0', true)[0];
+    const stable = releaseList('0.14.1')[0];
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([candidate, stable]))
+      .mockResolvedValueOnce(jsonResponse(manifest('0.14.1')))
+      .mockResolvedValueOnce(jsonResponse({}));
+
+    const result = await new ReleaseCatalogService().latestAgentRelease();
+
+    expect(result.channel).toBe('stable');
+    expect(result.release?.manifest.version).toBe('0.14.1');
+  });
+
+  it('allows a disposable control plane to select the newest candidate release', async () => {
+    config.updates.agentChannel = 'candidate';
+    const candidate = releaseList('0.15.0', true)[0];
+    const stable = releaseList('0.14.1')[0];
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([stable, candidate]))
+      .mockResolvedValueOnce(jsonResponse(manifest('0.15.0')))
+      .mockResolvedValueOnce(jsonResponse({}));
+
+    const result = await new ReleaseCatalogService().latestAgentRelease();
+
+    expect(result.channel).toBe('candidate');
+    expect(result.release?.manifest.version).toBe('0.15.0');
+  });
+
   it.each(['0.13.0', '0.14.0'])(
     'skips published release %s after failed runtime acceptance',
     async (revokedVersion) => {
@@ -157,6 +189,7 @@ describe('ReleaseCatalogService', () => {
 
     await expect(new ReleaseCatalogService().latestAgentRelease()).resolves.toEqual({
       enabled: false,
+      channel: 'stable',
       checkedAt: null,
       stale: false,
       release: null,

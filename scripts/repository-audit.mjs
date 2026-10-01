@@ -327,6 +327,16 @@ for (const path of requiredAutomation) {
   if (!tracked.has(path)) failures.push(`${path}: required dependency automation is missing`);
 }
 
+const agentReleaseWorkflow = textFiles.get('.github/workflows/release-agent.yml') ?? '';
+if (
+  !agentReleaseWorkflow.includes('gh release create') ||
+  !agentReleaseWorkflow.includes('--prerelease')
+) {
+  failures.push(
+    '.github/workflows/release-agent.yml: Agent releases must enter acceptance as prereleases',
+  );
+}
+
 for (const path of trackedFiles.filter((path) => /^\.github\/workflows\/.*\.ya?ml$/.test(path))) {
   const workflow = textFiles.get(path) ?? '';
   const actionReferences = [...workflow.matchAll(/^\s*uses:\s*[^\s@]+@([^\s#]+)/gm)];
