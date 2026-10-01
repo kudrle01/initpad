@@ -97,6 +97,16 @@ export function PlatformUpdateCard({
             </div>
           </div>
 
+          {status?.channel === 'candidate' && (
+            <div
+              className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning"
+              role="status"
+            >
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Candidate update channel · use only on a disposable acceptance server.</span>
+            </div>
+          )}
+
           {reconnecting ? (
             <div
               className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning"

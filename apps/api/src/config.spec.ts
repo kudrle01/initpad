@@ -88,4 +88,12 @@ describe('validateConfig production secrets', () => {
     config.updates.agentChannel = 'preview' as never;
     expect(() => validateConfig()).toThrow('INITPAD_AGENT_UPDATE_CHANNEL');
   });
+
+  it('accepts only the explicit stable and candidate platform update channels', () => {
+    config.updates.platformChannel = 'candidate';
+    expect(() => validateConfig()).not.toThrow();
+
+    config.updates.platformChannel = 'preview' as never;
+    expect(() => validateConfig()).toThrow('INITPAD_PLATFORM_UPDATE_CHANNEL');
+  });
 });

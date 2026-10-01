@@ -106,9 +106,10 @@ auditem podpisů, release assets a OCI indexu pro `linux/amd64` a `linux/arm64`.
 Dne 1. října 2026 na samostatném Linux hostu prošel skutečný reboot se
 stejným kontejnerem, identitou a workloady, migrace na dosažitelnou druhou URL,
 odmítnutí nedostupné URL s rollbackem a návrat na původní endpoint. Verze
-0.14.3 je proto aktuálním doporučeným releasem. Budoucí tagy začínají jako
-GitHub prerelease; běžný `stable` katalog je ignoruje a testovací control plane
-je musí explicitně povolit kanálem `candidate`.
+0.14.3 je proto aktuálním doporučeným releasem. Budoucí Agent i platformní
+tagy začínají jako GitHub prerelease; běžné `stable` katalogy je ignorují a
+testovací control plane je musí explicitně povolit příslušným kanálem
+`candidate`.
 Reprodukovatelný postup zůstává v clean-host runbooku
 [`apps/agent/ACCEPTANCE.md`](../apps/agent/ACCEPTANCE.md); vydávací proces
 popisuje [`apps/agent/RELEASING.md`](../apps/agent/RELEASING.md).

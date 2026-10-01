@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { verify, type Bundle } from 'sigstore';
-import { config } from '../config';
+import { config, type ReleaseChannel } from '../config';
 import { compareStableVersions, parseStableVersion } from './release-manifest';
 import {
   parsePlatformReleaseManifest,
@@ -40,6 +40,7 @@ export interface VerifiedPlatformRelease {
 
 export interface PlatformCatalogResult {
   enabled: boolean;
+  channel: ReleaseChannel;
   checkedAt: string | null;
   stale: boolean;
   release: VerifiedPlatformRelease | null;
@@ -55,7 +56,14 @@ export class PlatformReleaseCatalogService {
 
   async latest(force = false): Promise<PlatformCatalogResult> {
     if (!config.updates.enabled) {
-      return { enabled: false, checkedAt: null, stale: false, release: null, error: null };
+      return {
+        enabled: false,
+        channel: config.updates.platformChannel,
+        checkedAt: null,
+        stale: false,
+        release: null,
+        error: null,
+      };
     }
     if (!force && this.cached && this.cached.expiresAt > Date.now()) return this.cached.result;
     if (this.inFlight) return this.inFlight;
@@ -80,7 +88,10 @@ export class PlatformReleaseCatalogService {
     if (!list.ok) throw new Error(`platform release catalog returned HTTP ${list.status}`);
     const checkedAt = new Date().toISOString();
     const candidate = this.parseList(list.body)
-      .filter((release) => !release.draft && !release.prerelease)
+      .filter(
+        (release) =>
+          !release.draft && (config.updates.platformChannel === 'candidate' || !release.prerelease),
+      )
       .filter((release) => release.tag.startsWith('initpad-v'))
       .filter((release) => {
         const version = release.tag.slice(9);
@@ -88,7 +99,14 @@ export class PlatformReleaseCatalogService {
       })
       .sort((left, right) => compareStableVersions(right.tag.slice(9), left.tag.slice(9)))[0];
     if (!candidate) {
-      return { enabled: true, checkedAt, stale: false, release: null, error: null };
+      return {
+        enabled: true,
+        channel: config.updates.platformChannel,
+        checkedAt,
+        stale: false,
+        release: null,
+        error: null,
+      };
     }
     const manifestAsset = candidate.assets.find((asset) => asset.name === MANIFEST_NAME);
     const bundleAsset = candidate.assets.find((asset) => asset.name === BUNDLE_NAME);
@@ -127,6 +145,7 @@ export class PlatformReleaseCatalogService {
     });
     return {
       enabled: true,
+      channel: config.updates.platformChannel,
       checkedAt,
       stale: false,
       release: {
@@ -156,6 +175,7 @@ export class PlatformReleaseCatalogService {
     }
     return {
       enabled: true,
+      channel: config.updates.platformChannel,
       checkedAt: new Date().toISOString(),
       stale: false,
       release: null,

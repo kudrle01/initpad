@@ -235,10 +235,15 @@ export default function Admin() {
     const confirmed = await confirmAction({
       title: `Install InitPad ${updates.latestVersion}?`,
       description:
-        'The signed release will be installed by the local Supervisor after a verified database backup.',
+        updates.channel === 'candidate'
+          ? 'This signed prerelease is available only because this instance uses the candidate channel. Install it only for acceptance testing.'
+          : 'The signed release will be installed by the local Supervisor after a verified database backup.',
       confirmLabel: 'Install update',
       tone: 'warning',
       consequences: [
+        ...(updates.channel === 'candidate'
+          ? ['This version has not completed the live stable-release acceptance gate.']
+          : []),
         'The API and web UI will restart briefly; this page may be unavailable for a moment.',
         'Running project workloads are not restarted.',
         'If readiness fails, the previous platform images are restored automatically.',

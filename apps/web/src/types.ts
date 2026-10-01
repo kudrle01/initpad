@@ -42,6 +42,7 @@ export interface PlatformUpdateOperation {
 
 export interface PlatformUpdateStatus {
   enabled: boolean;
+  channel: 'stable' | 'candidate';
   supervisorConfigured: boolean;
   supervisorOnline: boolean;
   supervisorError: string | null;

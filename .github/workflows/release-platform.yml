@@ -335,6 +335,7 @@ jobs:
           set -euo pipefail
           gh release create "${GITHUB_REF_NAME}" "${RELEASE_DIRECTORY}"/* \
             --verify-tag \
+            --prerelease \
             --title "InitPad ${PLATFORM_VERSION}" \
             --generate-notes
           {
@@ -342,4 +343,5 @@ jobs:
             echo
             echo 'API, web and Supervisor images are digest-pinned and signed.'
             echo 'Every downloadable asset is covered by the signed checksum manifest.'
+            echo 'The release starts as a candidate prerelease and must pass live update acceptance before promotion.'
           } >> "${GITHUB_STEP_SUMMARY}"

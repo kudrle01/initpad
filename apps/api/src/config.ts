@@ -24,10 +24,12 @@ export type Edition = 'self-hosted' | 'saas';
 const EDITIONS: readonly Edition[] = ['self-hosted', 'saas'];
 const edition = (process.env.INITPAD_EDITION || 'self-hosted') as Edition;
 
-export type AgentUpdateChannel = 'stable' | 'candidate';
-const AGENT_UPDATE_CHANNELS: readonly AgentUpdateChannel[] = ['stable', 'candidate'];
-const agentUpdateChannel = (process.env.INITPAD_AGENT_UPDATE_CHANNEL ||
-  'stable') as AgentUpdateChannel;
+export type ReleaseChannel = 'stable' | 'candidate';
+export type AgentUpdateChannel = ReleaseChannel;
+const RELEASE_CHANNELS: readonly ReleaseChannel[] = ['stable', 'candidate'];
+const agentUpdateChannel = (process.env.INITPAD_AGENT_UPDATE_CHANNEL || 'stable') as ReleaseChannel;
+const platformUpdateChannel = (process.env.INITPAD_PLATFORM_UPDATE_CHANNEL ||
+  'stable') as ReleaseChannel;
 
 // Registration policy for the self-hosted edition (ADR-040). Two modes: `open`
 // is normal self-service registration (public deployment); `admin-provisioned`
@@ -84,6 +86,7 @@ export const config = {
   updates: {
     enabled: process.env.INITPAD_UPDATE_CHECKS_ENABLED !== 'false',
     agentChannel: agentUpdateChannel,
+    platformChannel: platformUpdateChannel,
     githubApiUrl: process.env.INITPAD_UPDATE_GITHUB_API_URL || 'https://api.github.com',
     repository: process.env.INITPAD_UPDATE_REPOSITORY || 'kudrle01/initpad',
     cacheSeconds: Number(process.env.INITPAD_UPDATE_CACHE_SECONDS || 900),
@@ -91,7 +94,7 @@ export const config = {
     sigstoreCachePath:
       process.env.INITPAD_SIGSTORE_CACHE_DIR ||
       resolve(process.cwd(), '../../.runtime/sigstore-js'),
-    platformVersion: (process.env.INITPAD_PLATFORM_VERSION || '0.2.9').trim(),
+    platformVersion: (process.env.INITPAD_PLATFORM_VERSION || '0.2.10').trim(),
     supervisorUrl: (process.env.INITPAD_SUPERVISOR_URL || '').trim(),
     supervisorSharedSecret: process.env.INITPAD_SUPERVISOR_SHARED_SECRET || '',
   },
@@ -333,9 +336,12 @@ export function validateConfig(): void {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.updates.repository)) {
     throw new Error('INITPAD_UPDATE_REPOSITORY must be an owner/repository pair');
   }
-  if (!AGENT_UPDATE_CHANNELS.includes(config.updates.agentChannel)) {
+  if (!RELEASE_CHANNELS.includes(config.updates.agentChannel)) {
+    throw new Error(`INITPAD_AGENT_UPDATE_CHANNEL must be one of ${RELEASE_CHANNELS.join(', ')}`);
+  }
+  if (!RELEASE_CHANNELS.includes(config.updates.platformChannel)) {
     throw new Error(
-      `INITPAD_AGENT_UPDATE_CHANNEL must be one of ${AGENT_UPDATE_CHANNELS.join(', ')}`,
+      `INITPAD_PLATFORM_UPDATE_CHANNEL must be one of ${RELEASE_CHANNELS.join(', ')}`,
     );
   }
   let updateApiUrl: URL;

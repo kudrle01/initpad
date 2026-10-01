@@ -515,6 +515,44 @@ case-insensitive identity migrace fungovalo přihlášení stejného účtu s
 libovolnou velikostí písmen. Oba releasy nemění recovery protokol, proto se
 destruktivní fault/reboot sekvence neopakovala.
 
+### Jednorázový bootstrap candidate kanálu
+
+Platforma `0.2.9` vznikla před oddělením candidate a stable katalogu, a proto
+GitHub prerelease `0.2.10` sama v administraci neuvidí. Pouze pro tento první
+přechod se na disposable VM použije podepsaný recovery instalátor ze stejného
+candidate releasu. Nejde o obcházení ověření: instalátor ověří Sigstore
+identitu workflow, kontrolní součty i immutable image digesty, vytvoří úplnou
+zálohu a při chybě obnoví předchozí release.
+
+Před instalací nastav v `deploy/.env`
+`INITPAD_PLATFORM_UPDATE_CHANNEL=candidate`, anonymně ověř prerelease a ulož
+baseline:
+
+```bash
+cd ~/Projects/initpad
+git pull --ff-only
+npm run audit:public-release -- --tag initpad-v0.2.10 --allow-prerelease
+cd deploy
+./platform-update-acceptance.sh prepare 0.2.9 0.2.10
+```
+
+Release assets stáhni do samostatného adresáře a spusť z něj
+`initpad-install-release.sh --project-root ~/Projects/initpad` podle recovery
+postupu v `OPERATIONS.md`. Po zelené instalaci spusť:
+
+```bash
+cd ~/Projects/initpad/deploy
+./platform-update-acceptance.sh after-bootstrap
+```
+
+PASS vyžaduje podepsanou verzi `0.2.10`, tři immutable image reference a
+stejné databázové identity i managed workloady jako před instalací. V
+administraci navíc musí být candidate kanál viditelně označen. Teprve potom
+povyš stejný GitHub release na stable, vrať kanál v `.env` na `stable` a spusť
+`./install.sh`, aby se změna konfigurace načetla. Od `0.2.10` se všechny další
+candidate releasy testují standardně tlačítkem **Install update**; recovery
+bootstrap se už neopakuje.
+
 ## 11. Ověř smazání a opětovné použití názvu
 
 V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení

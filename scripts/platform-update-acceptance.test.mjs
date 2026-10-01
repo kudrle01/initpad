@@ -30,6 +30,7 @@ test('documents the rollback, interrupted reboot and successful update sequence'
     'interrupt-reboot',
     'after-reboot',
     'after-success',
+    'after-bootstrap',
   ]) {
     assert.match(runbook, new RegExp(`platform-update-acceptance\\.sh ${command}`));
   }
@@ -74,6 +75,15 @@ test('final acceptance binds version, durable identities and exact managed workl
   assert.match(script, /references.*-eq 3/);
   assert.match(script, /status.*succeeded/);
   assert.match(script, /rm -f "\$CHECKPOINT" "\$REBOOT_CHECKPOINT"/);
+});
+
+test('verified recovery bootstrap has a separate acceptance gate', () => {
+  assert.match(script, /check_after_bootstrap\(\)/);
+  assert.match(script, /Verified recovery adoption left an unexpected platform operation/);
+  assert.match(script, /record platform-update-bootstrap/);
+  assert.match(script, /after-bootstrap\)/);
+  assert.match(runbook, /jednorázový bootstrap candidate kanálu/i);
+  assert.match(runbook, /platform-update-acceptance\.sh after-bootstrap/);
 });
 
 test('requires and hashes an operator-readable runtime override', () => {

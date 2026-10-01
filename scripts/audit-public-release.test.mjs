@@ -79,7 +79,7 @@ function response(body = '', options = {}) {
   return new Response(body, { status: 200, ...options });
 }
 
-function publicFetch(data) {
+function publicFetch(data, { prerelease = false } = {}) {
   const assets = releaseFiles.flatMap((name) => [name, `${name}.sigstore.json`]);
   return async (input, options = {}) => {
     const url = String(input);
@@ -91,7 +91,7 @@ function publicFetch(data) {
         JSON.stringify({
           tag_name: tag,
           draft: false,
-          prerelease: false,
+          prerelease,
           assets: assets.map((name) => ({
             name,
             size: 20,
@@ -128,6 +128,32 @@ test('accepts a complete anonymous signed multiarch platform release', async () 
   assert.equal(result.sourceCommit, commit);
   assert.equal(verified.length, 2);
   assert.match(verified[0][1], /release-platform\.yml@refs\/tags\/initpad-v0\.2\.0$/);
+});
+
+test('requires explicit opt-in before auditing a platform prerelease', async () => {
+  const data = fixture();
+  const fetchImpl = publicFetch(data, { prerelease: true });
+  await assert.rejects(
+    auditPublicPlatformRelease({
+      repository,
+      tag,
+      fetchImpl,
+      verifyBundle: async () => {},
+      log: () => {},
+    }),
+    /not a public stable release/,
+  );
+
+  await assert.doesNotReject(
+    auditPublicPlatformRelease({
+      repository,
+      tag,
+      fetchImpl,
+      verifyBundle: async () => {},
+      log: () => {},
+      allowPrerelease: true,
+    }),
+  );
 });
 
 test('accepts a complete anonymous signed multiarch Agent release', async () => {

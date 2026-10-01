@@ -317,6 +317,7 @@ export async function auditPublicPlatformRelease({
   fetchImpl = fetch,
   verifyBundle = defaultVerifyBundle,
   log = console.log,
+  allowPrerelease = false,
 }) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     throw new Error('repository must use owner/name format');
@@ -325,7 +326,13 @@ export async function auditPublicPlatformRelease({
     throw new Error('tag must use initpad-vMAJOR.MINOR.PATCH format');
   }
 
-  const assets = await publicReleaseAssets(fetchImpl, repository, tag, PLATFORM_RELEASE_FILES);
+  const assets = await publicReleaseAssets(
+    fetchImpl,
+    repository,
+    tag,
+    PLATFORM_RELEASE_FILES,
+    allowPrerelease,
+  );
   const identity = `https://github.com/${repository}/.github/workflows/release-platform.yml@refs/tags/${tag}`;
   const { manifest } = await verifyReleaseEnvelope({
     fetchImpl,
@@ -340,7 +347,9 @@ export async function auditPublicPlatformRelease({
   for (const component of COMPONENTS) {
     await inspectPublicImage(fetchImpl, manifest.images[component]);
   }
-  log(`Public release ${tag} is anonymously readable, signed and multiarch.`);
+  log(
+    `Public ${allowPrerelease ? 'candidate ' : ''}release ${tag} is anonymously readable, signed and multiarch.`,
+  );
   return { repository, tag, version: manifest.version, sourceCommit: manifest.source.commit };
 }
 
@@ -434,9 +443,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   audit({
     repository: argument('--repository') ?? 'kudrle01/initpad',
     tag,
-    ...(tag.startsWith('agent-v')
-      ? { allowPrerelease: process.argv.includes('--allow-prerelease') }
-      : {}),
+    allowPrerelease: process.argv.includes('--allow-prerelease'),
   }).catch((error) => {
     console.error(`Public release audit failed: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;

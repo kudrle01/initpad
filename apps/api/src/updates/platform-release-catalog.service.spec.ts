@@ -36,13 +36,13 @@ function manifest(version = '0.2.0') {
   };
 }
 
-function releases(version = '0.2.0') {
+function releases(version = '0.2.0', prerelease = false) {
   return [
     {
       tag_name: `initpad-v${version}`,
       html_url: `https://github.com/kudrle01/initpad/releases/tag/initpad-v${version}`,
       draft: false,
-      prerelease: false,
+      prerelease,
       published_at: '2026-09-16T10:00:00Z',
       assets: [
         {
@@ -70,6 +70,7 @@ describe('PlatformReleaseCatalogService', () => {
   beforeEach(() => {
     Object.assign(config.updates, {
       enabled: true,
+      platformChannel: 'stable',
       githubApiUrl: 'https://api.github.com',
       repository: 'kudrle01/initpad',
       cacheSeconds: 900,
@@ -118,6 +119,33 @@ describe('PlatformReleaseCatalogService', () => {
       error: 'The platform release catalog is temporarily unavailable.',
     });
     expect(verify).not.toHaveBeenCalled();
+  });
+
+  it('keeps platform prereleases out of the stable channel', async () => {
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(response([releases('0.3.0', true)[0], release('0.2.9')]))
+      .mockResolvedValueOnce(response(manifest('0.2.9')))
+      .mockResolvedValueOnce(response({}));
+
+    const result = await new PlatformReleaseCatalogService().latest();
+
+    expect(result.channel).toBe('stable');
+    expect(result.release?.manifest.version).toBe('0.2.9');
+  });
+
+  it('allows a disposable control plane to select a platform candidate', async () => {
+    config.updates.platformChannel = 'candidate';
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(response([release('0.2.9'), releases('0.3.0', true)[0]]))
+      .mockResolvedValueOnce(response(manifest('0.3.0')))
+      .mockResolvedValueOnce(response({}));
+
+    const result = await new PlatformReleaseCatalogService().latest();
+
+    expect(result.channel).toBe('candidate');
+    expect(result.release?.manifest.version).toBe('0.3.0');
   });
 
   it('skips a runtime-revoked platform release', async () => {

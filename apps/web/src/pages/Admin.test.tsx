@@ -23,6 +23,7 @@ describe('PlatformUpdateCard', () => {
     };
     const status: PlatformUpdateStatus = {
       enabled: true,
+      channel: 'stable',
       supervisorConfigured: true,
       supervisorOnline: true,
       supervisorError: null,
@@ -71,6 +72,7 @@ describe('PlatformUpdateCard', () => {
     };
     const status: PlatformUpdateStatus = {
       enabled: true,
+      channel: 'candidate',
       supervisorConfigured: true,
       supervisorOnline: true,
       supervisorError: null,
@@ -101,6 +103,7 @@ describe('PlatformUpdateCard', () => {
     expect(
       screen.getByText('Connection interrupted while InitPad restarts. Reconnecting…'),
     ).toBeInTheDocument();
+    expect(screen.getByText(/candidate update channel/i)).toBeInTheDocument();
     expect(screen.queryByText('fetch failed')).not.toBeInTheDocument();
   });
 });

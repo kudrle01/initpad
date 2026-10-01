@@ -30,6 +30,7 @@ Usage: ./platform-update-acceptance.sh <command> [versions]
   interrupt-reboot          Pause the updater during API cutover and reboot the host
   after-reboot              Prove reboot recovery returned to the previous release
   after-success             Prove the final clean update preserved data and workloads
+  after-bootstrap           Prove a verified recovery install preserved data and workloads
 
 Run prepare once on the disposable Linux control-plane host. For fault-rollback
 and interrupt-reboot, start the command in a terminal and then click Install
@@ -477,6 +478,23 @@ check_after_success() {
   pass "Signed platform $expected update preserved data and managed workloads."
 }
 
+check_after_bootstrap() {
+  local expected operation references
+  assert_checkpoint
+  expected=$(checkpoint_value next_version)
+  operation=$(state_value operation.status || true)
+  [ -z "$operation" ] || \
+    fail "Verified recovery adoption left an unexpected platform operation '$operation'."
+  assert_baseline_invariants "$expected"
+  references=$(grep -Ec 'image: ".+@sha256:[a-f0-9]{64}"' "$OVERRIDE" || true)
+  [ "$references" -eq 3 ] || fail "Installed release descriptor is not fully immutable."
+  assert_no_helper
+  record platform-update-bootstrap \
+    "version=$expected identity_preserved=true workloads_preserved=true signed_release=true"
+  rm -f "$CHECKPOINT" "$REBOOT_CHECKPOINT"
+  pass "Verified platform $expected bootstrap preserved data and managed workloads."
+}
+
 case "${1:-}" in
   prepare) [ "$#" -eq 3 ] || { usage >&2; exit 1; }; write_checkpoint "$2" "$3" ;;
   fault-rollback) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; ensure_runtime; fault_rollback ;;
@@ -484,6 +502,7 @@ case "${1:-}" in
   interrupt-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; ensure_runtime; interrupt_reboot ;;
   after-reboot) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; restore_override_ownership; ensure_runtime; check_after_reboot ;;
   after-success) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; restore_override_ownership; ensure_runtime; check_after_success ;;
+  after-bootstrap) [ "$#" -eq 1 ] || { usage >&2; exit 1; }; restore_override_ownership; ensure_runtime; check_after_bootstrap ;;
   -h|--help|'') usage ;;
   *) usage >&2; exit 1 ;;
 esac

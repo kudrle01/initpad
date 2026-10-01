@@ -79,6 +79,7 @@ export class PlatformUpdatesService {
     );
     return {
       enabled: config.edition === 'self-hosted' && config.updates.enabled,
+      channel: catalogResult.channel,
       supervisorConfigured: this.supervisor.configured,
       supervisorOnline: supervisorResult.value !== null,
       supervisorError: supervisorResult.error,

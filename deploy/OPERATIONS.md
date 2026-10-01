@@ -309,6 +309,31 @@ instalaci stále potvrzuje owner/admin pro konkrétní target. Výchozí
 `candidate` patří jen na disposable acceptance control plane; UI ji viditelně
 označí a po skončení testu se musí vrátit na `stable`.
 
+Stejný gate platí pro platformu. Tag `initpad-vX.Y.Z` vytvoří GitHub
+prerelease a acceptance VM jej uvidí pouze s
+`INITPAD_PLATFORM_UPDATE_CHANNEL=candidate`. Nejprve se ověří distribuce:
+
+```bash
+npm run audit:public-release -- --tag initpad-vX.Y.Z --allow-prerelease
+```
+
+Přechod `0.2.9 → 0.2.10` je jednorázová výjimka: starší API ještě candidate
+katalog neumí, proto se candidate nainstaluje jeho podepsaným recovery
+instalátorem a výsledek se uzavře příkazem
+`platform-update-acceptance.sh after-bootstrap`. Přesný postup je v
+`SELF_HOSTED_ACCEPTANCE.md`. Od `0.2.10` se candidate instaluje běžně z
+administrace a kontroluje pomocí `after-success`.
+
+Po úspěšné acceptance se povýší ten samý podepsaný release; tag ani image
+digest se nemění:
+
+```bash
+gh release edit initpad-vX.Y.Z --prerelease=false --latest
+npm run audit:public-release -- --tag initpad-vX.Y.Z
+```
+
+Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kroku.
+
 ## Kapacita a škálování
 
 - Pro pohodlný self-hosted provoz včetně sestavování šablon počítej

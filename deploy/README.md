@@ -101,6 +101,9 @@ procedure is a complete public SaaS delivery test yet.
   release when readiness fails. The selected release is persisted in
   `.runtime/platform-update`, so `docker compose up` and `./install.sh` do not
   silently replace it with a source build.
+  Customer installations use `INITPAD_PLATFORM_UPDATE_CHANNEL=stable`.
+  `candidate` is reserved for a disposable acceptance installation and is
+  visibly labelled in the administration UI.
 - **Source installation**: when no signed release is active, `git pull &&
   ./install.sh` rebuilds the checked-out API, web and Supervisor. Once a signed
   release is installed, a source pull updates operating files but preserves the

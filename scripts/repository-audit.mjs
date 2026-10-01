@@ -336,6 +336,15 @@ if (
     '.github/workflows/release-agent.yml: Agent releases must enter acceptance as prereleases',
   );
 }
+const platformReleaseWorkflow = textFiles.get('.github/workflows/release-platform.yml') ?? '';
+if (
+  !platformReleaseWorkflow.includes('gh release create') ||
+  !platformReleaseWorkflow.includes('--prerelease')
+) {
+  failures.push(
+    '.github/workflows/release-platform.yml: platform releases must enter acceptance as prereleases',
+  );
+}
 
 for (const path of trackedFiles.filter((path) => /^\.github\/workflows\/.*\.ya?ml$/.test(path))) {
   const workflow = textFiles.get(path) ?? '';

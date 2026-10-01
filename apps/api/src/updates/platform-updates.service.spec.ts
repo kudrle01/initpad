@@ -44,6 +44,7 @@ function row(overrides: Record<string, unknown> = {}) {
 function catalog() {
   return {
     enabled: true,
+    channel: 'stable' as const,
     checkedAt: '2026-09-16T11:59:00.000Z',
     stale: false,
     error: null,
@@ -92,6 +93,7 @@ describe('PlatformUpdatesService', () => {
     );
 
     await expect(service.status()).resolves.toMatchObject({
+      channel: 'stable',
       currentVersion: '0.2.0',
       latestVersion: '0.3.0',
       updateAvailable: true,

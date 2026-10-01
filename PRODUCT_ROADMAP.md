@@ -107,6 +107,13 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Vydat `0.2.9`, živě aktualizovat podepsanou `0.2.8`, aplikovat
   case-insensitive identity indexy a ověřit přihlášení stejného účtu
   náhodnou velikostí písmen bez změny hesla nebo uložené identity.
+- [ ] Vydat platformu `0.2.10` nejprve jako candidate. Protože `0.2.9` ještě
+  prerelease katalog neumí, na disposable VM provést jednorázový bootstrap
+  kandidáta podepsaným recovery instalátorem a ověřit zachování dat,
+  workloadů, Agent 0.14.3 bootstrap a viditelné oddělení candidate/stable
+  katalogů. Teprve potom povýšit stejný podepsaný release na stable a
+  zopakovat anonymní distribuční audit. Další candidate releasy už instalovat
+  standardně z administrace.
 
 ### P1 — uzavření diplomkového MVP
 
