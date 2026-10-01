@@ -168,7 +168,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
   platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
-  odkazuje na 119 samostatných ADR. Repository gate hlídá souvislou řadu,
+  odkazuje na 120 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.
 
@@ -176,6 +176,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 
 - [ ] Vytvořit SaaS deployment profil bez Gitey a bundled object storu;
   použít externí udržované S3-compatible úložiště a secret manager.
+  - [x] Oddělit staging runtime contract pouze pro digest-pinned API a web,
+    bez Gitey, MinIO, runneru, testovacích targetů, Supervisoru a Docker socketu;
+    fail-closed ověřit GitHub, HTTPS a externí S3 konfiguraci.
+  - [ ] Zapojit konkrétní externí PostgreSQL, S3 a secret manager ve stagingu
+    a ověřit obnovu bez lokálních stavových služeb.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
 - [ ] Doplnit persistentní OAuth/OIDC stav, kompletní tenant/capacity kvóty,

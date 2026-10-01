@@ -1,0 +1,98 @@
+# Public control-plane profile. It deliberately does not include Gitea, MinIO,
+# a CI runner, deployment targets, Caddy or the self-hosted update Supervisor.
+# Database, object storage, edge/WAF and secrets are owned by the deployment
+# environment. Validate a prepared environment with ./saas-check.sh.
+
+name: initpad-saas
+
+services:
+  api:
+    image: ${INITPAD_API_IMAGE:?set_digest_pinned_api_image}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${INITPAD_DATABASE_URL:?inject the external PostgreSQL URL}
+      INITPAD_EDITION: saas
+      INITPAD_REGISTRATION_MODE: admin-provisioned
+      INITPAD_FRONTEND_URL: ${INITPAD_PUBLIC_URL:?set the public HTTPS origin}
+      INITPAD_PLATFORM_PUBLIC_URL: ${INITPAD_PUBLIC_URL:?set the public HTTPS origin}
+      INITPAD_PLATFORM_INTERNAL_URL: ${INITPAD_PUBLIC_URL:?set the public HTTPS origin}
+      INITPAD_SCM_WEBHOOK_URL: ${INITPAD_PUBLIC_URL:?set the public HTTPS origin}
+      INITPAD_TRUST_PROXY_HOPS: ${INITPAD_TRUST_PROXY_HOPS:-1}
+      INITPAD_COOKIE_SECURE: 'true'
+      INITPAD_JWT_SECRET: ${INITPAD_JWT_SECRET:?inject from the secret manager}
+      INITPAD_ENCRYPTION_KEY: ${INITPAD_ENCRYPTION_KEY:?inject from the secret manager}
+      INITPAD_SCM_WEBHOOK_TOKEN: ${INITPAD_SCM_WEBHOOK_TOKEN:?inject from the secret manager}
+      INITPAD_OIDC_CLIENT_SECRET: ${INITPAD_OIDC_CLIENT_SECRET:?inject from the secret manager}
+      INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:?set the deployed release version}
+      INITPAD_UPDATE_REPOSITORY: ${INITPAD_UPDATE_REPOSITORY:-kudrle01/initpad}
+      INITPAD_AGENT_UPDATE_CHANNEL: stable
+      INITPAD_PLATFORM_UPDATE_CHANNEL: stable
+      INITPAD_SIGSTORE_CACHE_DIR: /data/sigstore-js
+      INITPAD_AGENT_IMAGE: ${INITPAD_AGENT_IMAGE:?set a digest-pinned Agent image}
+      INITPAD_AGENT_RELEASE_VERSION: ${INITPAD_AGENT_RELEASE_VERSION:?set the Agent version}
+      INITPAD_GITHUB_APP_ID: ${INITPAD_GITHUB_APP_ID:?inject the GitHub App id}
+      INITPAD_GITHUB_CLIENT_ID: ${INITPAD_GITHUB_CLIENT_ID:?inject the GitHub OAuth client id}
+      INITPAD_GITHUB_CLIENT_SECRET: ${INITPAD_GITHUB_CLIENT_SECRET:?inject from the secret manager}
+      INITPAD_GITHUB_PRIVATE_KEY: ${INITPAD_GITHUB_PRIVATE_KEY:?inject from the secret manager}
+      INITPAD_GITHUB_WEBHOOK_SECRET: ${INITPAD_GITHUB_WEBHOOK_SECRET:?inject from the secret manager}
+      INITPAD_GITHUB_APP_SLUG: ${INITPAD_GITHUB_APP_SLUG:?set the public GitHub App slug}
+      INITPAD_GITHUB_CALLBACK_URL: ${INITPAD_PUBLIC_URL:?set the public HTTPS origin}/api/auth/github/callback
+      INITPAD_ARTIFACT_S3_ENDPOINT: ${INITPAD_ARTIFACT_S3_ENDPOINT:-}
+      INITPAD_ARTIFACT_S3_REGION: ${INITPAD_ARTIFACT_S3_REGION:-us-east-1}
+      INITPAD_ARTIFACT_S3_BUCKET: ${INITPAD_ARTIFACT_S3_BUCKET:?set the private external bucket}
+      INITPAD_ARTIFACT_S3_ACCESS_KEY_ID: ${INITPAD_ARTIFACT_S3_ACCESS_KEY_ID:?inject from the secret manager}
+      INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY: ${INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY:?inject from the secret manager}
+      INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE: ${INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE:-false}
+      INITPAD_ARTIFACT_PRESIGN_TTL_SECONDS: ${INITPAD_ARTIFACT_PRESIGN_TTL_SECONDS:-300}
+      INITPAD_ARTIFACT_RETENTION_DAYS: ${INITPAD_ARTIFACT_RETENTION_DAYS:-30}
+      INITPAD_TEMPLATES_DIR: /templates
+      INITPAD_WORKSPACE_DIR: /data/workspace
+    volumes:
+      - api-data:/data
+    networks: [control]
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health/ready']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${INITPAD_API_MEMORY_LIMIT:-1g}
+    cpus: ${INITPAD_API_CPU_LIMIT:-2.0}
+    pids_limit: ${INITPAD_API_PIDS_LIMIT:-300}
+    restart: unless-stopped
+
+  web:
+    image: ${INITPAD_WEB_IMAGE:?set_digest_pinned_web_image}
+    ports:
+      - '${INITPAD_WEB_BIND_ADDRESS:-127.0.0.1}:${INITPAD_WEB_PORT:-8080}:80'
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [control]
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=32m
+      - /var/run:size=1m
+      - /tmp:size=8m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 100
+    restart: unless-stopped
+
+volumes:
+  api-data: {}
+
+networks:
+  control: {}

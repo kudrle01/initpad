@@ -104,6 +104,7 @@ if (!(
 
 const executableOperations = [
   'deploy/install.sh',
+  'deploy/saas-check.sh',
   'deploy/prepare-rootless-runner.sh',
   'deploy/configure-agent-release.sh',
   'deploy/self-hosted-check.sh',
@@ -418,6 +419,10 @@ const localComposeImages = new Set([
   '${INITPAD_API_IMAGE:-initpad-api:source}',
   '${INITPAD_WEB_IMAGE:-initpad-web:source}',
   '${INITPAD_SUPERVISOR_IMAGE:-initpad-supervisor:source}',
+  // The isolated SaaS manifest requires these values and its checker rejects
+  // anything that does not resolve to an immutable digest reference.
+  '${INITPAD_API_IMAGE:?set_digest_pinned_api_image}',
+  '${INITPAD_WEB_IMAGE:?set_digest_pinned_web_image}',
 ]);
 for (const path of trackedFiles.filter((path) => /\.ya?ml$/.test(path))) {
   const content = textFiles.get(path) ?? '';

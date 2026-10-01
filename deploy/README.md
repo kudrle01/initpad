@@ -80,6 +80,29 @@ secrets. Agent enrollment and workload preservation use the separate clean-host
 acceptance in [apps/agent/ACCEPTANCE.md](../apps/agent/ACCEPTANCE.md); neither
 procedure is a complete public SaaS delivery test yet.
 
+## Public SaaS staging contract
+
+`saas.compose.yml` is a separate control-plane boundary, not a mode of the
+self-hosted stack. It contains only the API and web images. PostgreSQL,
+private S3-compatible storage, secrets and the public edge are supplied by the
+deployment environment; Gitea, MinIO, the local runner, simulated targets,
+Supervisor and the host Docker socket are absent.
+
+Start from `.env.saas.example`, inject every `EXTERNAL_SECRET` from the staging
+secret manager and use immutable API, web and Agent references from reviewed
+releases. Before deployment, validate without printing the resolved
+environment:
+
+```bash
+./saas-check.sh /secure/runtime/initpad-saas.env
+docker compose --env-file /secure/runtime/initpad-saas.env \
+  -f saas.compose.yml up -d
+```
+
+The default web binding is `127.0.0.1:8080`; an external HTTPS edge/WAF must
+proxy it. This manifest is a staging contract only. The remaining public-SaaS
+gates are listed in [release readiness](../docs/RELEASE_READINESS.md).
+
 ## Operations
 
 - **Backup**: run `./backup.sh /secure/path/initpad-backup`. It creates a

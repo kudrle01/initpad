@@ -5,6 +5,9 @@ describe('validateConfig production secrets', () => {
   const originalArtifactStore = { ...config.artifactStore };
   const originalAgentDistribution = { ...config.agentDistribution };
   const originalUpdates = { ...config.updates };
+  const originalGithub = { ...config.github };
+  const originalCi = { ...config.ci };
+  const originalEdition = config.edition;
   const originalSecrets = {
     jwtSecret: config.auth.jwtSecret,
     encryptionKey: config.security.encryptionKey,
@@ -38,6 +41,9 @@ describe('validateConfig production secrets', () => {
     Object.assign(config.artifactStore, originalArtifactStore);
     Object.assign(config.agentDistribution, originalAgentDistribution);
     Object.assign(config.updates, originalUpdates);
+    Object.assign(config.github, originalGithub);
+    Object.assign(config.ci, originalCi);
+    config.edition = originalEdition;
   });
 
   it('rejects the Compose fallback artifact-store password', () => {
@@ -95,5 +101,53 @@ describe('validateConfig production secrets', () => {
 
     config.updates.platformChannel = 'preview' as never;
     expect(() => validateConfig()).toThrow('INITPAD_PLATFORM_UPDATE_CHANNEL');
+  });
+
+  it('rejects an incomplete SaaS control plane configuration', () => {
+    config.edition = 'saas';
+    Object.assign(config.github, {
+      appId: '',
+      clientId: '',
+      clientSecret: '',
+      privateKey: '',
+      webhookSecret: '',
+      appSlug: '',
+      callbackUrl: '',
+    });
+    config.ci.publicUrl = '';
+
+    expect(() => validateConfig()).toThrow('SaaS edition requires INITPAD_GITHUB_APP_ID');
+  });
+
+  it('accepts a complete same-origin HTTPS SaaS configuration', () => {
+    config.edition = 'saas';
+    config.ci.publicUrl = 'https://initpad.example';
+    Object.assign(config.github, {
+      appId: '12345',
+      clientId: 'Iv1.example',
+      clientSecret: 'github-client-secret',
+      privateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+      webhookSecret: 'w'.repeat(32),
+      appSlug: 'initpad-example',
+      callbackUrl: 'https://initpad.example/api/auth/github/callback',
+    });
+
+    expect(() => validateConfig()).not.toThrow();
+  });
+
+  it('rejects an HTTP or cross-origin GitHub callback in SaaS', () => {
+    config.edition = 'saas';
+    config.ci.publicUrl = 'https://initpad.example';
+    Object.assign(config.github, {
+      appId: '12345',
+      clientId: 'Iv1.example',
+      clientSecret: 'github-client-secret',
+      privateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+      webhookSecret: 'w'.repeat(32),
+      appSlug: 'initpad-example',
+      callbackUrl: 'http://other.example/api/auth/github/callback',
+    });
+
+    expect(() => validateConfig()).toThrow('INITPAD_GITHUB_CALLBACK_URL');
   });
 });

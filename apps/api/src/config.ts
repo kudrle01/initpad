@@ -274,6 +274,71 @@ export function artifactStoreConfigured(): boolean {
   return Boolean(s.bucket && s.accessKeyId && s.secretAccessKey);
 }
 
+function requireSaasConfig(): void {
+  const required = {
+    INITPAD_GITHUB_APP_ID: config.github.appId,
+    INITPAD_GITHUB_CLIENT_ID: config.github.clientId,
+    INITPAD_GITHUB_CLIENT_SECRET: config.github.clientSecret,
+    INITPAD_GITHUB_PRIVATE_KEY: config.github.privateKey,
+    INITPAD_GITHUB_WEBHOOK_SECRET: config.github.webhookSecret,
+    INITPAD_GITHUB_APP_SLUG: config.github.appSlug,
+    INITPAD_GITHUB_CALLBACK_URL: config.github.callbackUrl,
+    INITPAD_PLATFORM_PUBLIC_URL: config.ci.publicUrl,
+  };
+  const missing = Object.entries(required)
+    .filter(([, value]) => !value.trim())
+    .map(([name]) => name);
+  if (missing.length) {
+    throw new Error(`SaaS edition requires ${missing.join(', ')}`);
+  }
+
+  let publicUrl: URL;
+  let callbackUrl: URL;
+  try {
+    publicUrl = new URL(config.ci.publicUrl);
+  } catch {
+    throw new Error('INITPAD_PLATFORM_PUBLIC_URL must be a valid public HTTPS origin in SaaS');
+  }
+  try {
+    callbackUrl = new URL(config.github.callbackUrl);
+  } catch {
+    throw new Error('INITPAD_GITHUB_CALLBACK_URL must be a valid public HTTPS URL in SaaS');
+  }
+  if (
+    publicUrl.protocol !== 'https:' ||
+    publicUrl.pathname !== '/' ||
+    publicUrl.search ||
+    publicUrl.hash ||
+    publicUrl.username ||
+    publicUrl.password
+  ) {
+    throw new Error('INITPAD_PLATFORM_PUBLIC_URL must be a public HTTPS origin in SaaS');
+  }
+  if (
+    callbackUrl.protocol !== 'https:' ||
+    callbackUrl.origin !== publicUrl.origin ||
+    callbackUrl.pathname !== '/api/auth/github/callback' ||
+    callbackUrl.search ||
+    callbackUrl.hash
+  ) {
+    throw new Error(
+      'INITPAD_GITHUB_CALLBACK_URL must equal <INITPAD_PLATFORM_PUBLIC_URL>/api/auth/github/callback',
+    );
+  }
+  if (!/^\d+$/.test(config.github.appId)) {
+    throw new Error('INITPAD_GITHUB_APP_ID must be a numeric GitHub App id');
+  }
+  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(config.github.appSlug)) {
+    throw new Error('INITPAD_GITHUB_APP_SLUG must be a valid GitHub App slug');
+  }
+  if (!/^-----BEGIN (?:RSA )?PRIVATE KEY-----/.test(config.github.privateKey)) {
+    throw new Error('INITPAD_GITHUB_PRIVATE_KEY must contain a PEM private key');
+  }
+  if (config.github.webhookSecret.length < 32) {
+    throw new Error('INITPAD_GITHUB_WEBHOOK_SECRET must contain at least 32 characters');
+  }
+}
+
 export function validateConfig(): void {
   if (!EDITIONS.includes(config.edition)) {
     throw new Error(
@@ -309,6 +374,7 @@ export function validateConfig(): void {
         'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID and INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY',
     );
   }
+  if (config.edition === 'saas') requireSaasConfig();
   if (!['127.0.0.1', '0.0.0.0', '::1', '::'].includes(config.deployment.bindAddress)) {
     throw new Error('INITPAD_DEPLOY_BIND_ADDRESS must be a local or wildcard IP address');
   }
