@@ -11,6 +11,7 @@ import {
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import { config } from '../config';
+import { PrismaService } from '../prisma/prisma.service';
 
 interface AuthCode {
   userId: string;
@@ -18,18 +19,19 @@ interface AuthCode {
   clientId: string;
   redirectUri: string;
   nonce?: string;
-  expiresAt: number;
 }
 
-const MAX_EPHEMERAL_ENTRIES = 10_000;
+const AUTHORIZATION_CODE_TTL_MS = 5 * 60_000;
+const ACCESS_TOKEN_TTL_MS = 60 * 60_000;
 
 /**
  * The platform's OIDC provider: holds the signing key pair, issues
  * authorization codes and access tokens, and signs id_tokens (RS256).
  *
  * The signing key is persisted to INITPAD_OIDC_KEY_FILE when configured, so
- * SSO sessions survive API restarts. Codes and access tokens are in-memory
- * (short-lived by design).
+ * SSO sessions survive API restarts. Hashed codes and access tokens live in
+ * PostgreSQL so a callback can reach any API replica without exposing bearer
+ * plaintext in the database.
  */
 @Injectable()
 export class OidcService {
@@ -38,13 +40,7 @@ export class OidcService {
   private readonly publicJwk: { kty: string; n: string; e: string };
   readonly kid: string;
 
-  private readonly codes = new Map<string, AuthCode>();
-  private readonly accessTokens = new Map<
-    string,
-    { userId: string; tokenVersion: number; expiresAt: number }
-  >();
-
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     this.privateKey = this.loadOrCreateKey();
     this.publicJwk = createPublicKey(this.privateKey).export({ format: 'jwk' }) as {
       kty: string;
@@ -135,63 +131,95 @@ export class OidcService {
 
   // --- authorization codes ---
 
-  issueCode(input: Omit<AuthCode, 'expiresAt'>): string {
-    this.pruneExpired();
+  async issueCode(input: AuthCode): Promise<string> {
+    await this.pruneExpired();
     const code = randomBytes(24).toString('base64url');
-    this.codes.set(code, { ...input, expiresAt: Date.now() + 5 * 60_000 });
+    await this.prisma.oidcGrant.create({
+      data: {
+        kind: 'authorization_code',
+        tokenHash: this.tokenHash(code),
+        userId: input.userId,
+        tokenVersion: input.tokenVersion,
+        clientId: input.clientId,
+        redirectUri: input.redirectUri,
+        nonce: input.nonce,
+        expiresAt: new Date(Date.now() + AUTHORIZATION_CODE_TTL_MS),
+      },
+    });
     return code;
   }
 
-  consumeCode(code: string): AuthCode | null {
-    const entry = this.codes.get(code);
-    this.codes.delete(code);
-    if (!entry || entry.expiresAt < Date.now()) return null;
-    return entry;
+  async consumeCode(code: string): Promise<AuthCode | null> {
+    if (!code) return null;
+    const tokenHash = this.tokenHash(code);
+    const consumedAt = new Date();
+    const claimed = await this.prisma.oidcGrant.updateMany({
+      where: {
+        tokenHash,
+        kind: 'authorization_code',
+        usedAt: null,
+        expiresAt: { gt: consumedAt },
+      },
+      data: { usedAt: consumedAt },
+    });
+    if (claimed.count !== 1) return null;
+    const entry = await this.prisma.oidcGrant.findUnique({
+      where: { tokenHash },
+      select: {
+        userId: true,
+        tokenVersion: true,
+        clientId: true,
+        redirectUri: true,
+        nonce: true,
+      },
+    });
+    if (!entry?.clientId || !entry.redirectUri) return null;
+    return {
+      userId: entry.userId,
+      tokenVersion: entry.tokenVersion,
+      clientId: entry.clientId,
+      redirectUri: entry.redirectUri,
+      ...(entry.nonce ? { nonce: entry.nonce } : {}),
+    };
   }
 
   // --- access tokens (for the userinfo endpoint) ---
 
-  issueAccessToken(userId: string, tokenVersion: number): string {
-    this.pruneExpired();
+  async issueAccessToken(userId: string, tokenVersion: number): Promise<string> {
+    await this.pruneExpired();
     const token = randomBytes(32).toString('base64url');
-    this.accessTokens.set(token, {
-      userId,
-      tokenVersion,
-      expiresAt: Date.now() + 60 * 60_000,
+    await this.prisma.oidcGrant.create({
+      data: {
+        kind: 'access_token',
+        tokenHash: this.tokenHash(token),
+        userId,
+        tokenVersion,
+        expiresAt: new Date(Date.now() + ACCESS_TOKEN_TTL_MS),
+      },
     });
     return token;
   }
 
-  accessForToken(token: string): { userId: string; tokenVersion: number } | null {
-    const entry = this.accessTokens.get(token);
-    if (!entry) return null;
-    if (entry.expiresAt < Date.now()) {
-      this.accessTokens.delete(token);
-      return null;
-    }
-    return { userId: entry.userId, tokenVersion: entry.tokenVersion };
+  async accessForToken(token: string): Promise<{ userId: string; tokenVersion: number } | null> {
+    if (!token) return null;
+    const entry = await this.prisma.oidcGrant.findFirst({
+      where: {
+        tokenHash: this.tokenHash(token),
+        kind: 'access_token',
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: { userId: true, tokenVersion: true },
+    });
+    return entry ?? null;
   }
 
-  private pruneExpired(): void {
-    const now = Date.now();
-    for (const [code, entry] of this.codes) {
-      if (entry.expiresAt < now) this.codes.delete(code);
-    }
-    for (const [token, entry] of this.accessTokens) {
-      if (entry.expiresAt < now) this.accessTokens.delete(token);
-    }
-    // Expiry normally keeps these stores tiny. The cap is a final bound during
-    // deliberate high-volume abuse; Map iteration order evicts the oldest item.
-    while (this.codes.size >= MAX_EPHEMERAL_ENTRIES) {
-      const oldest = this.codes.keys().next().value;
-      if (!oldest) break;
-      this.codes.delete(oldest);
-    }
-    while (this.accessTokens.size >= MAX_EPHEMERAL_ENTRIES) {
-      const oldest = this.accessTokens.keys().next().value;
-      if (!oldest) break;
-      this.accessTokens.delete(oldest);
-    }
+  private async pruneExpired(): Promise<void> {
+    await this.prisma.oidcGrant.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  }
+
+  private tokenHash(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   // --- id_token (RS256 JWT, signed manually via node:crypto) ---

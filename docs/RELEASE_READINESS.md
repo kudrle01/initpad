@@ -30,6 +30,10 @@ veřejný produkční provoz.
   → workload.
 - PostgreSQL-backed per-IP a per-account rate limit sdílený všemi API
   replikami bez ukládání zdrojových identit.
+- PostgreSQL-backed GitHub OAuth state a interní OIDC granty. Náhodné
+  browserové hodnoty, authorization codes ani bearer tokeny se neukládají
+  v plaintextu; jednorázové hodnoty se spotřebují atomicky napříč API
+  replikami a přežijí restart procesu.
 - Finální repository, dependency, maintainability, responsive a accessibility
   audit. Vedle produkčních buildů a automatizované sady prošly 1. října
   2026 ownerovi dostupné obrazovky živým průchodem při 390 × 844 px bez

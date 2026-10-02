@@ -88,7 +88,7 @@ export class GitHubSetupController {
     try {
       const candidate = await this.installations.inspectSetup(state, installationId);
       if (candidate.accountType === 'Organization') {
-        const { url, nonce } = this.oauth.authorizeSetupUrl(state, installationId);
+        const { url, nonce } = await this.oauth.authorizeSetupUrl(state, installationId);
         res.cookie(GITHUB_OAUTH_NONCE_COOKIE, nonce, {
           httpOnly: true,
           sameSite: 'lax',

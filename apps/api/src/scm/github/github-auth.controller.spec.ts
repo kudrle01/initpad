@@ -100,7 +100,8 @@ describe('GitHubAuthController setup verification', () => {
     );
 
     expect(oauth.exchangeCode).not.toHaveBeenCalled();
-    expect(response.redirect).toHaveBeenCalledWith(expect.stringContaining('installation_error'));
+    expect(oauth.verifyState).not.toHaveBeenCalled();
+    expect(response.redirect).toHaveBeenCalledWith(expect.stringContaining('github_state'));
   });
 
   it('stores a user credential after linking the immutable GitHub identity', async () => {

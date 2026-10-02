@@ -39,6 +39,7 @@ model User {
   targets                    Target[]
   memberships                WorkspaceMember[]
   authTokens                 AuthToken[]
+  oidcGrants                 OidcGrant[]
   externalIdentities         ExternalIdentity[]
   githubInstallationAccesses GitHubInstallationAccess[]    @relation("GitHubInstallationAuthorizedBy")
   githubInstallationSetups   GitHubInstallationSetup[]
@@ -152,6 +153,44 @@ model AuthToken {
   createdAt DateTime  @default(now())
 
   @@index([userId, kind])
+}
+
+// Hashed, expiring and single-use OAuth state. The signed browser value keeps
+// the flow payload while this row supplies durable replay protection shared by
+// every API replica. No nonce, setup token or provider credential is stored.
+model ExternalOAuthState {
+  id        String    @id @default(uuid())
+  provider  String // github | gitlab
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([provider, expiresAt])
+  @@index([expiresAt])
+}
+
+// OIDC authorization codes and access tokens for the embedded identity
+// provider. Only SHA-256 hashes are persisted. Authorization codes are marked
+// used atomically; access tokens remain reusable until expiry and are still
+// fenced by the account tokenVersion on every request.
+model OidcGrant {
+  id           String    @id @default(uuid())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  kind         String // authorization_code | access_token
+  tokenHash    String    @unique
+  tokenVersion Int
+  clientId     String?
+  redirectUri  String?
+  nonce        String?
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, kind])
+  @@index([kind, expiresAt])
+  @@index([expiresAt])
 }
 
 // Short-lived distributed fixed-window counters for public authentication and

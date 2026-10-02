@@ -126,3 +126,4 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 | [ADR-118](./ADR-118.md) | Projekt volí jednu ze tří pevných pipeline předvoleb |
 | [ADR-119](./ADR-119.md) | Release platformy a Agenta prochází candidate a stable kanálem |
 | [ADR-120](./ADR-120.md) | SaaS control plane má samostatný runtime profil |
+| [ADR-121](./ADR-121.md) | OAuth state a OIDC granty jsou hashované a trvalé |

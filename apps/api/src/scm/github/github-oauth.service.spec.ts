@@ -2,6 +2,48 @@ import { createHmac } from 'crypto';
 import { config } from '../../config';
 import { GitHubOAuthService } from './github-oauth.service';
 
+function oauthStateStore() {
+  const rows = new Map<string, { expiresAt: Date; usedAt: Date | null }>();
+  const externalOAuthState = {
+    deleteMany: jest.fn(async ({ where }: { where: { expiresAt: { lt: Date } } }) => {
+      let count = 0;
+      for (const [key, row] of rows) {
+        if (row.expiresAt < where.expiresAt.lt) {
+          rows.delete(key);
+          count += 1;
+        }
+      }
+      return { count };
+    }),
+    create: jest.fn(
+      async ({ data }: { data: { tokenHash: string; expiresAt: Date; provider: string } }) => {
+        rows.set(data.tokenHash, { expiresAt: data.expiresAt, usedAt: null });
+        return data;
+      },
+    ),
+    updateMany: jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: {
+          tokenHash: string;
+          provider: string;
+          usedAt: null;
+          expiresAt: { gt: Date };
+        };
+        data: { usedAt: Date };
+      }) => {
+        const row = rows.get(where.tokenHash);
+        if (!row || row.usedAt || row.expiresAt <= where.expiresAt.gt) return { count: 0 };
+        row.usedAt = data.usedAt;
+        return { count: 1 };
+      },
+    ),
+  };
+  return { prisma: { externalOAuthState }, rows };
+}
+
 describe('GitHubOAuthService', () => {
   const saved = { ...config.github };
   const savedFetch = global.fetch;
@@ -20,26 +62,32 @@ describe('GitHubOAuthService', () => {
 
   it('is inert until client credentials and a callback are set', () => {
     config.github.clientId = '';
-    expect(new GitHubOAuthService().isConfigured()).toBe(false);
+    expect(new GitHubOAuthService(oauthStateStore().prisma as never).isConfigured()).toBe(false);
   });
 
-  it('builds an authorize URL and a state that verifies', () => {
-    const service = new GitHubOAuthService();
-    const { url, state, nonce } = service.authorizeUrl('link');
+  it('builds an authorize URL and consumes its state once across replicas', async () => {
+    const store = oauthStateStore();
+    const service = new GitHubOAuthService(store.prisma as never);
+    const { url, state, nonce } = await service.authorizeUrl('link');
     expect(url).toContain('https://github.com/login/oauth/authorize?');
     expect(url).toContain('client_id=client-123');
     expect(url).toContain('redirect_uri=https%3A%2F%2Finitpad.example');
     expect(url).toContain(`state=${encodeURIComponent(state)}`);
-    const verified = service.verifyState(state);
+    expect(store.rows.has(state)).toBe(false);
+    expect([...store.rows.keys()][0]).toMatch(/^[a-f0-9]{64}$/);
+    const otherReplica = new GitHubOAuthService(store.prisma as never);
+    await expect(otherReplica.verifyState(state, 'wrong-browser-nonce')).resolves.toBeNull();
+    const verified = await otherReplica.verifyState(state, nonce);
     expect(verified).toEqual({ mode: 'link', nonce });
+    await expect(service.verifyState(state, nonce)).resolves.toBeNull();
   });
 
-  it('binds organization verification OAuth to the pending setup and installation', () => {
-    const service = new GitHubOAuthService();
-    const { url, state, nonce } = service.authorizeSetupUrl('pending-setup', '147774798');
+  it('binds organization verification OAuth to the pending setup and installation', async () => {
+    const service = new GitHubOAuthService(oauthStateStore().prisma as never);
+    const { url, state, nonce } = await service.authorizeSetupUrl('pending-setup', '147774798');
     expect(url).toContain('client_id=client-123');
     expect(url).not.toContain('scope=');
-    expect(service.verifyState(state)).toEqual({
+    await expect(service.verifyState(state, nonce)).resolves.toEqual({
       mode: 'setup',
       nonce,
       setupState: 'pending-setup',
@@ -47,18 +95,18 @@ describe('GitHubOAuthService', () => {
     });
   });
 
-  it('rejects a tampered or expired state', () => {
-    const service = new GitHubOAuthService();
-    expect(service.verifyState('garbage')).toBeNull();
-    const { state } = service.authorizeUrl('login');
+  it('rejects a tampered or expired state', async () => {
+    const service = new GitHubOAuthService(oauthStateStore().prisma as never);
+    await expect(service.verifyState('garbage', 'browser-nonce')).resolves.toBeNull();
+    const { state, nonce } = await service.authorizeUrl('login');
     const [payload] = state.split('.');
-    expect(service.verifyState(`${payload}.deadbeef`)).toBeNull(); // wrong signature
+    await expect(service.verifyState(`${payload}.deadbeef`, nonce)).resolves.toBeNull();
     // A correctly-signed but stale state must also fail.
     const stale = Buffer.from(
       JSON.stringify({ mode: 'login', nonce: 'n', ts: Date.now() - 11 * 60 * 1000 }),
     ).toString('base64url');
     const sig = createHmac('sha256', config.auth.jwtSecret).update(stale).digest('base64url');
-    expect(service.verifyState(`${stale}.${sig}`)).toBeNull();
+    await expect(service.verifyState(`${stale}.${sig}`, 'n')).resolves.toBeNull();
   });
 
   it('exchanges a code for the GitHub user identity', async () => {
@@ -81,7 +129,9 @@ describe('GitHubOAuthService', () => {
       });
     global.fetch = fetchMock as never;
 
-    const user = await new GitHubOAuthService().exchangeCodeForUser('the-code');
+    const user = await new GitHubOAuthService(
+      oauthStateStore().prisma as never,
+    ).exchangeCodeForUser('the-code');
     expect(user).toEqual({
       providerUserId: '987654',
       login: 'octocat',
@@ -105,7 +155,9 @@ describe('GitHubOAuthService', () => {
       })
       .mockResolvedValueOnce({ ok: false, status: 403 });
 
-    await expect(new GitHubOAuthService().exchangeCode('code')).resolves.toMatchObject({
+    await expect(
+      new GitHubOAuthService(oauthStateStore().prisma as never).exchangeCode('code'),
+    ).resolves.toMatchObject({
       token: {
         accessToken: 'ghu_transient',
         accessTokenExpiresAt: null,
@@ -129,7 +181,9 @@ describe('GitHubOAuthService', () => {
     global.fetch = fetchMock as never;
 
     const before = Date.now();
-    const token = await new GitHubOAuthService().refreshUserToken('ghr_old');
+    const token = await new GitHubOAuthService(oauthStateStore().prisma as never).refreshUserToken(
+      'ghr_old',
+    );
     expect(token.accessToken).toBe('ghu_new');
     expect(token.refreshToken).toBe('ghr_new');
     expect(token.accessTokenExpiresAt?.getTime()).toBeGreaterThanOrEqual(before + 28_800_000);
@@ -144,9 +198,9 @@ describe('GitHubOAuthService', () => {
       ok: true,
       json: async () => ({ access_token: 'ghu_new', expires_in: 28800 }),
     })) as never;
-    await expect(new GitHubOAuthService().refreshUserToken('ghr_old')).rejects.toThrow(
-      'incomplete',
-    );
+    await expect(
+      new GitHubOAuthService(oauthStateStore().prisma as never).refreshUserToken('ghr_old'),
+    ).rejects.toThrow('incomplete');
   });
 
   it('throws when GitHub returns no access token', async () => {
@@ -154,6 +208,8 @@ describe('GitHubOAuthService', () => {
       ok: true,
       json: async () => ({ error: 'bad_verification_code' }),
     })) as never;
-    await expect(new GitHubOAuthService().exchangeCodeForUser('x')).rejects.toThrow('access token');
+    await expect(
+      new GitHubOAuthService(oauthStateStore().prisma as never).exchangeCodeForUser('x'),
+    ).rejects.toThrow('access token');
   });
 });

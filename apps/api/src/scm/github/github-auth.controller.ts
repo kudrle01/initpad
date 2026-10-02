@@ -32,11 +32,11 @@ export class GitHubAuthController {
 
   @Get()
   @RateLimited(RATE_LIMITS.githubAuthorize)
-  authorize(@Query('mode') modeRaw: string, @Res() res: Response) {
+  async authorize(@Query('mode') modeRaw: string, @Res() res: Response) {
     if (!this.oauth.isConfigured())
       return res.redirect(this.frontend('/login?error=github_unavailable'));
     const mode: Exclude<OAuthMode, 'setup'> = modeRaw === 'link' ? 'link' : 'login';
-    const { url, nonce } = this.oauth.authorizeUrl(mode);
+    const { url, nonce } = await this.oauth.authorizeUrl(mode);
     res.cookie(GITHUB_OAUTH_NONCE_COOKIE, nonce, {
       httpOnly: true,
       sameSite: 'lax',
@@ -58,10 +58,10 @@ export class GitHubAuthController {
     if (!this.oauth.isConfigured())
       return res.redirect(this.frontend('/login?error=github_unavailable'));
 
-    const verified = this.oauth.verifyState(state);
     const nonce = readStringCookie(req, GITHUB_OAUTH_NONCE_COOKIE);
+    const verified = nonce ? await this.oauth.verifyState(state, nonce) : null;
     res.clearCookie(GITHUB_OAUTH_NONCE_COOKIE, { path: '/' });
-    if (!verified || !nonce || nonce !== verified.nonce || !code) {
+    if (!verified || !code) {
       return res.redirect(
         this.frontend(
           verified?.mode === 'setup'

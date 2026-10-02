@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { config } from '../../config';
+import { PrismaService } from '../../prisma/prisma.service';
 import { scmFetch, scmStatusError } from '../scm-http';
 
 export type OAuthMode = 'login' | 'link' | 'setup';
@@ -50,6 +51,8 @@ function b64url(input: string): string {
  */
 @Injectable()
 export class GitHubOAuthService {
+  constructor(private readonly prisma: PrismaService) {}
+
   isConfigured(): boolean {
     return Boolean(
       config.github.clientId && config.github.clientSecret && config.github.callbackUrl,
@@ -57,9 +60,13 @@ export class GitHubOAuthService {
   }
 
   /** Builds the GitHub authorize URL and the matching signed state + nonce. */
-  authorizeUrl(mode: Exclude<OAuthMode, 'setup'>): { url: string; state: string; nonce: string } {
+  async authorizeUrl(
+    mode: Exclude<OAuthMode, 'setup'>,
+  ): Promise<{ url: string; state: string; nonce: string }> {
     const nonce = randomBytes(16).toString('base64url');
-    const state = this.signState({ mode, nonce, ts: Date.now() });
+    const issuedAt = Date.now();
+    const state = this.signState({ mode, nonce, ts: issuedAt });
+    await this.registerState(state, issuedAt);
     const params = new URLSearchParams({
       client_id: config.github.clientId,
       redirect_uri: config.github.callbackUrl,
@@ -75,18 +82,20 @@ export class GitHubOAuthService {
    * can access an organization installation. It reuses the App's configured
    * OAuth callback and carries the original one-time workspace setup state.
    */
-  authorizeSetupUrl(
+  async authorizeSetupUrl(
     setupState: string,
     installationId: string,
-  ): { url: string; state: string; nonce: string } {
+  ): Promise<{ url: string; state: string; nonce: string }> {
     const nonce = randomBytes(16).toString('base64url');
+    const issuedAt = Date.now();
     const state = this.signState({
       mode: 'setup',
       nonce,
-      ts: Date.now(),
+      ts: issuedAt,
       setupState,
       installationId,
     });
+    await this.registerState(state, issuedAt);
     const params = new URLSearchParams({
       client_id: config.github.clientId,
       redirect_uri: config.github.callbackUrl,
@@ -95,8 +104,29 @@ export class GitHubOAuthService {
     return { url: `${config.github.oauthBaseUrl}/login/oauth/authorize?${params}`, state, nonce };
   }
 
-  /** Verifies the signed state (HMAC + freshness); returns its payload or null. */
-  verifyState(raw: string | undefined): VerifiedOAuthState | null {
+  /** Verifies and atomically consumes signed state; a replay returns null. */
+  async verifyState(
+    raw: string | undefined,
+    browserNonce: string | undefined,
+  ): Promise<VerifiedOAuthState | null> {
+    const verified = this.parseState(raw);
+    if (!verified || !raw || !browserNonce || !this.equalSecret(browserNonce, verified.nonce)) {
+      return null;
+    }
+    const usedAt = new Date();
+    const claimed = await this.prisma.externalOAuthState.updateMany({
+      where: {
+        provider: 'github',
+        tokenHash: this.tokenHash(raw),
+        usedAt: null,
+        expiresAt: { gt: usedAt },
+      },
+      data: { usedAt },
+    });
+    return claimed.count === 1 ? verified : null;
+  }
+
+  private parseState(raw: string | undefined): VerifiedOAuthState | null {
     if (!raw || !raw.includes('.')) return null;
     const [payload, sig] = raw.split('.', 2);
     const expected = this.hmac(payload);
@@ -288,5 +318,27 @@ export class GitHubOAuthService {
 
   private hmac(payload: string): string {
     return createHmac('sha256', config.auth.jwtSecret).update(payload).digest('base64url');
+  }
+
+  private async registerState(state: string, issuedAt: number): Promise<void> {
+    const now = new Date();
+    await this.prisma.externalOAuthState.deleteMany({ where: { expiresAt: { lt: now } } });
+    await this.prisma.externalOAuthState.create({
+      data: {
+        provider: 'github',
+        tokenHash: this.tokenHash(state),
+        expiresAt: new Date(issuedAt + STATE_TTL_MS),
+      },
+    });
+  }
+
+  private tokenHash(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private equalSecret(actual: string, expected: string): boolean {
+    const a = Buffer.from(actual);
+    const b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 }

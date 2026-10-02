@@ -56,7 +56,7 @@ export class OidcController {
         return;
       }
 
-      const code = this.oidc.issueCode({
+      const code = await this.oidc.issueCode({
         userId: session.id,
         tokenVersion: session.tokenVersion,
         clientId: client_id,
@@ -86,7 +86,7 @@ export class OidcController {
       res.status(400).json({ error: 'unsupported_grant_type' });
       return;
     }
-    const code = this.oidc.consumeCode(body.code);
+    const code = await this.oidc.consumeCode(body.code);
     if (!code || code.clientId !== creds.id || code.redirectUri !== body.redirect_uri) {
       res.status(400).json({ error: 'invalid_grant' });
       return;
@@ -102,7 +102,7 @@ export class OidcController {
       return;
     }
 
-    const accessToken = this.oidc.issueAccessToken(user.id, user.tokenVersion);
+    const accessToken = await this.oidc.issueAccessToken(user.id, user.tokenVersion);
     const idToken = this.oidc.signIdToken({
       sub: user.id,
       aud: creds.id,
@@ -126,7 +126,7 @@ export class OidcController {
   async userinfo(@Req() req: Request, @Res() res: Response) {
     const auth = req.headers.authorization ?? '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-    const access = this.oidc.accessForToken(token);
+    const access = await this.oidc.accessForToken(token);
     if (!access) {
       res.status(401).json({ error: 'invalid_token' });
       return;
