@@ -235,6 +235,19 @@ model RateLimitBucket {
   @@index([scope, expiresAt])
 }
 
+// Short database lease for singleton control-plane maintenance. `generation`
+// is incremented whenever a different API process takes over an expired lease,
+// so a new leader can run one-time recovery without every replica doing so.
+model ControlPlaneLease {
+  name       String   @id
+  ownerId    String
+  generation Int      @default(1)
+  expiresAt  DateTime
+  updatedAt  DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
 // Instance-wide audit trail for signed self-hosted platform updates (ADR-111).
 // The Supervisor is authoritative for execution; this row preserves who asked
 // for it and mirrors bounded progress without storing release bundles, secrets

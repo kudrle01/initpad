@@ -130,3 +130,4 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 | [ADR-122](./ADR-122.md) | Workspace kapacita je samostatná transakční hranice |
 | [ADR-123](./ADR-123.md) | Autentizační e-maily používají šifrovaný transakční outbox |
 | [ADR-124](./ADR-124.md) | Load a SMTP outage acceptance jsou omezené staging gate, ne důkaz active-active mutací |
+| [ADR-125](./ADR-125.md) | Background lifecycle volí jediného leadera databázovým lease |

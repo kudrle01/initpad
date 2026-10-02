@@ -60,8 +60,9 @@ zákazníků musí být hotové alespoň:
 6. egress firewall odpovídající aplikační SSRF/DNS-rebinding policy;
 7. centrální log collector nebo OpenTelemetry pipeline s definovanou retencí,
    přístupovými rolemi, metrikami, alerty a incident runbookem;
-8. spustit připravený omezený load test na SaaS stagingu a dokončit
-   ownership scheduleru/lifecycle operací před active-active mutačním provozem;
+8. spustit připravený omezený load test na SaaS stagingu a doplnit execution
+   fencing process-bound operací; background lifecycle už volí jediného leadera
+   databázovým lease (ADR-125);
 9. nezávislé uživatelské a provozní ověření release kandidáta.
 
 ## Známá provozní omezení
@@ -75,9 +76,10 @@ ani microVM.
 
 ### Control plane je single-node
 
-Periodický retention, environment expiry a reconciliation běží uvnitř API
-procesu. Databázové compare-and-set operace chrání destruktivní přechody, ale
-není implementovaný distribuovaný scheduler pro aktivní/aktivní repliky.
+Periodický retention, environment expiry a startup reconciliation volí jediného
+leadera atomickým PostgreSQL lease s generačním takeoverem. Process-bound
+deployment a artifact ingestion operace ale zatím nemají vlastní obnovovaný
+execution lease. Mutační veřejný provoz proto zůstává single-replica.
 
 ### Vestavěný object store je pouze důvěryhodný profil
 

@@ -17,7 +17,8 @@ used as a first restore test on production data.
   the intended edge proxy.
 - Keep the staging control plane quiescent before scaling API replicas: no
   provisioning, deployment, promotion, rollback or target mutation may be in
-  progress. The current background lifecycle is not an active-active scheduler.
+  progress. Background lifecycle has a database-elected leader, but process-bound
+  project operations do not yet have active-active execution fencing.
 - Prepare provider-native backup and restore procedures for the whole InitPad
   PostgreSQL database and the complete artifact bucket.
 
@@ -73,7 +74,7 @@ reviewed staging capacity plan with:
 - `INITPAD_LOAD_ACCEPTANCE_MAX_ERROR_RATE`
 
 Do not leave more than one public API replica serving mutating production
-traffic until the lifecycle/scheduler ownership gate is completed.
+traffic until the deployment execution-fencing gate is completed.
 
 ## SMTP outage and retry drill
 

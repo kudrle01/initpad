@@ -20,6 +20,7 @@ import { AuthModule } from '../auth/auth.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { ArtifactsModule } from '../artifacts/artifacts.module';
 import { AuditEventsModule } from '../audit/audit-events.module';
+import { ControlPlaneLeaseService } from '../common/control-plane-lease.service';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AuditEventsModule } from '../audit/audit-events.module';
   providers: [
     ProjectsService,
     ProjectsLifecycleService,
+    ControlPlaneLeaseService,
     ImportService,
     ProvisioningService,
     AppConfigService,

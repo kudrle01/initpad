@@ -202,8 +202,9 @@ firewallového precondition je v [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md).
 
 Stejný staging helper obsahuje omezený read-heavy load test veřejného HTTPS
 edge. Vyžaduje nejméně dvě zdravé API repliky, ale smí běžet pouze bez
-aktivních projektových operací. Dokud není dokončené vlastnictví scheduleru,
-nejde o schválení active-active mutačního provozu.
+aktivních projektových operací. Background lifecycle už volí jediného leadera,
+ale dokud process-bound operace nemají execution fencing, nejde o schválení
+active-active mutačního provozu.
 
 ## HTTPS
 
