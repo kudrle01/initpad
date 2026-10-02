@@ -55,11 +55,13 @@ zákazníků musí být hotové alespoň:
 4. edge connection/volumetric ochrana a ověřená proxy topologie; aplikační
    distribuovaný limiter není náhradou WAF nebo DDoS ochrany;
 5. nakonfigurovat a provozně ověřit konkrétní SMTP provider, doručitelnost,
-   retry/alert a rotaci file-backed hesla; transakční outbox je hotový (ADR-123);
+   retry/alert a rotaci file-backed hesla; transakční outbox i dvoufázový
+   outage acceptance jsou připravené (ADR-123, ADR-124), ale živý drill chybí;
 6. egress firewall odpovídající aplikační SSRF/DNS-rebinding policy;
 7. centrální log collector nebo OpenTelemetry pipeline s definovanou retencí,
    přístupovými rolemi, metrikami, alerty a incident runbookem;
-8. load test, kapacitní limity a rozhodnutí o scheduleru pro více API replik;
+8. spustit připravený omezený load test na SaaS stagingu a dokončit
+   ownership scheduleru/lifecycle operací před active-active mutačním provozem;
 9. nezávislé uživatelské a provozní ověření release kandidáta.
 
 ## Známá provozní omezení

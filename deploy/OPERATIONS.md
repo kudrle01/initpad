@@ -196,6 +196,14 @@ INITPAD_SMTP_ACCEPTANCE_RECIPIENT=staging-inbox@example.org \
 
 Příkaz nevypisuje adresu ani credentials. Úspěšné předání ještě potvrď
 v cílové schránce; tím se zachytí také reputace domény a spam filtering.
+Výpadek relay serveru a následné bezpečné doručení retry se ověřuje dvoufázově
+přes `smtp-outage-before` a `smtp-outage-after`. Přesný postup včetně
+firewallového precondition je v [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md).
+
+Stejný staging helper obsahuje omezený read-heavy load test veřejného HTTPS
+edge. Vyžaduje nejméně dvě zdravé API repliky, ale smí běžet pouze bez
+aktivních projektových operací. Dokud není dokončené vlastnictví scheduleru,
+nejde o schválení active-active mutačního provozu.
 
 ## HTTPS
 

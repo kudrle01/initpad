@@ -20,6 +20,9 @@ interface ResponseLike {
 
 const requestStorage = new AsyncLocalStorage<RequestContext>();
 const httpLogger = new Logger('HttpRequest');
+// Opaque and process-local. It proves that an edge really reached more than
+// one API replica without exposing a hostname, pod name or cloud identifier.
+const instanceId = randomUUID();
 
 /**
  * A server-generated ID is used deliberately. An untrusted caller cannot
@@ -33,6 +36,7 @@ export function requestContextMiddleware(
   const requestId = randomUUID();
   const startedAt = process.hrtime.bigint();
   response.setHeader('X-Request-Id', requestId);
+  response.setHeader('X-InitPad-Instance', instanceId);
   requestStorage.run({ requestId }, () => {
     response.once('finish', () => {
       const path = (request.originalUrl ?? request.url ?? '').split('?', 1)[0];

@@ -7,8 +7,12 @@ import test from 'node:test';
 
 const require = createRequire(import.meta.url);
 const probePath = resolve('apps/api/scripts/saas-dependency-probe.js');
+const loadProbePath = resolve('apps/api/scripts/saas-load-probe.js');
+const smtpOutageProbePath = resolve('apps/api/scripts/saas-smtp-outage-probe.js');
 const acceptance = readFileSync('deploy/saas-acceptance.sh', 'utf8');
 const probeSource = readFileSync(probePath, 'utf8');
+const loadProbeSource = readFileSync(loadProbePath, 'utf8');
+const smtpOutageProbeSource = readFileSync(smtpOutageProbePath, 'utf8');
 const {
   artifactRoundTrip,
   createRecoveryMarker,
@@ -178,6 +182,12 @@ test('keeps live acceptance explicit, provider-neutral and secret-file based', (
   assert.match(acceptance, /before-backup\) before_backup/);
   assert.match(acceptance, /after-backup\) after_backup/);
   assert.match(acceptance, /after-restore\) after_restore/);
+  assert.match(acceptance, /load\) check_load/);
+  assert.match(acceptance, /smtp-outage-before\) smtp_outage_before/);
+  assert.match(acceptance, /smtp-outage-after\) smtp_outage_after/);
+  assert.match(acceptance, /smtp-outage-cleanup\) smtp_outage_cleanup/);
+  assert.match(acceptance, /scripts\/saas-load-probe\.js/);
+  assert.match(acceptance, /scripts\/saas-smtp-outage-probe\.js/);
   assert.match(acceptance, /INITPAD_SAAS_ACCEPTANCE:-0/);
   assert.match(acceptance, /scripts\/run-with-secrets\.js/);
   assert.match(acceptance, /--proto '=https'/);
@@ -192,4 +202,8 @@ test('keeps live acceptance explicit, provider-neutral and secret-file based', (
   assert.match(probeSource, /GetObjectCommand/);
   assert.match(probeSource, /DeleteObjectCommand/);
   assert.match(probeSource, /_prisma_migrations/);
+  assert.match(loadProbeSource, /Load acceptance requires a quiescent staging control plane/);
+  assert.match(loadProbeSource, /INITPAD_LOAD_ACCEPTANCE_MIN_INSTANCES/);
+  assert.match(smtpOutageProbeSource, /SMTP_OUTAGE_PREPARED/);
+  assert.match(smtpOutageProbeSource, /payload_erased=true/);
 });

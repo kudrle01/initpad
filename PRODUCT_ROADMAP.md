@@ -168,7 +168,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
   platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
-  odkazuje na 122 samostatných ADR. Repository gate hlídá souvislou řadu,
+  odkazuje na 124 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.
 
@@ -203,6 +203,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - [x] Doplnit produkční SMTP delivery přes šifrovaný transakční outbox,
     bezpečný retry worker a secret-file konfiguraci SaaS (ADR-123).
   - [ ] Provést load test včetně více API replik a SMTP outage scénáře.
+    Provider-neutral acceptance je připravené: load gate měří p50/p95/p99,
+    chybovost, propustnost a odpovědi alespoň dvou procesů; outage gate
+    dokládá zachovaný šifrovaný retry, dostupné API a vymazání payloadu po
+    doručení. Živý SaaS staging run a scheduler ownership ještě chybí
+    (ADR-124).
 - [ ] Zapojit OpenTelemetry/log collector, metriky, retenci, alerting a incident
   runbook; rozhodnout scheduler a topologii pro více API replik.
 - [ ] Nasadit staging, zopakovat GitHub/Agent/tenant/recovery acceptance a až

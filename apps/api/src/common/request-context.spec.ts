@@ -22,6 +22,12 @@ describe('request context', () => {
 
     expect(observed).toMatch(/^[a-f0-9-]{36}$/);
     expect(response.setHeader).toHaveBeenCalledWith('X-Request-Id', observed);
+    expect(response.setHeader).toHaveBeenCalledWith(
+      'X-InitPad-Instance',
+      expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
+    );
   });
 
   it('uses a fresh correlation id outside an HTTP request', () => {

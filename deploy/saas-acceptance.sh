@@ -7,6 +7,7 @@ COMMAND=${1:-}
 ENV_FILE=${2:-${INITPAD_SAAS_ENV_FILE:-.env.saas}}
 ACCEPTANCE_DIR=.runtime/saas-acceptance
 CHECKPOINT=$ACCEPTANCE_DIR/recovery.checkpoint
+SMTP_OUTAGE_CHECKPOINT=$ACCEPTANCE_DIR/smtp-outage.checkpoint
 REPORT=$ACCEPTANCE_DIR/results.tsv
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f saas.compose.yml)
 
@@ -20,15 +21,17 @@ Usage: ./saas-acceptance.sh <command> [env-file]
 
   dependencies   Verify public readiness, applied migrations and S3 round-trip
   email          Submit one staging message through the configured SMTP relay
+  load           Exercise the public edge through at least two API replicas
+  smtp-outage-before  Prove an SMTP outage queues a retry without failing the API
+  smtp-outage-after   Prove the queued message is delivered after SMTP recovers
+  smtp-outage-cleanup Remove a failed drill's isolated fixture
   before-backup  Write the baseline markers before the external backup
   after-backup   Write markers which must disappear after external restore
   after-restore  Prove PostgreSQL and S3 returned to the same baseline
 
-The three recovery commands require INITPAD_SAAS_ACCEPTANCE=1 and are intended
-only for a disposable staging deployment. Run the provider's database and
-bucket backup after before-backup, run after-backup, restore both external
-services, start the control plane and finally run after-restore. Secret values
-are read only inside the API probe container and are never printed or sourced.
+Recovery and SMTP outage commands require INITPAD_SAAS_ACCEPTANCE=1 and are
+intended only for a disposable staging deployment. Secret values are read only
+inside the API probe container and are never printed or sourced.
 EOF
 }
 
@@ -82,18 +85,21 @@ ensure_runtime() {
   ./saas-check.sh "$ENV_FILE" >/dev/null
   ensure_storage
 
-  local service container health
+  local service containers container health
   for service in api web; do
-    container=$("${COMPOSE[@]}" ps -q "$service")
-    [ -n "$container" ] || fail "SaaS service '$service' is not running."
-    health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
-    [ "$health" = healthy ] || fail "SaaS service '$service' is not healthy."
+    containers=$("${COMPOSE[@]}" ps -q "$service")
+    [ -n "$containers" ] || fail "SaaS service '$service' is not running."
+    while IFS= read -r container; do
+      [ -n "$container" ] || continue
+      health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
+      [ "$health" = healthy ] || fail "SaaS service '$service' has an unhealthy replica."
+    done <<< "$containers"
   done
 }
 
 public_readiness() {
   local api_container public_url
-  api_container=$("${COMPOSE[@]}" ps -q api)
+  api_container=$("${COMPOSE[@]}" ps -q api | head -n 1)
   public_url=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
     "$api_container" | awk -F= '$1 == "INITPAD_PLATFORM_PUBLIC_URL" { sub(/^[^=]*=/, ""); print; exit }')
   [[ "$public_url" =~ ^https:// ]] || fail "Rendered SaaS public URL is not HTTPS."
@@ -135,6 +141,82 @@ check_email() {
     api node scripts/run-with-secrets.js node scripts/saas-email-probe.js
   record saas-email 'smtp_authenticated=true message_submitted=true'
   pass "SMTP accepted the staging message. Confirm its arrival in the inbox."
+}
+
+check_load() {
+  ensure_runtime
+  public_readiness
+  local replicas result summary
+  replicas=$("${COMPOSE[@]}" ps -q api | awk 'NF { count += 1 } END { print count + 0 }')
+  [ "$replicas" -ge 2 ] || \
+    fail "Load acceptance requires at least two healthy API replicas behind the public edge."
+  result=$("${COMPOSE[@]}" run --rm --no-deps \
+    -e INITPAD_ACCEPTANCE_ALLOW_DB_FIXTURES=1 \
+    -e INITPAD_LOAD_ACCEPTANCE_URL \
+    -e INITPAD_LOAD_ACCEPTANCE_DURATION_SECONDS \
+    -e INITPAD_LOAD_ACCEPTANCE_CONCURRENCY \
+    -e INITPAD_LOAD_ACCEPTANCE_REQUEST_TIMEOUT_MS \
+    -e INITPAD_LOAD_ACCEPTANCE_MIN_REQUESTS \
+    -e INITPAD_LOAD_ACCEPTANCE_MIN_INSTANCES \
+    -e INITPAD_LOAD_ACCEPTANCE_MAX_P95_MS \
+    -e INITPAD_LOAD_ACCEPTANCE_MAX_ERROR_RATE \
+    api node scripts/run-with-secrets.js node scripts/saas-load-probe.js)
+  printf '%s\n' "$result"
+  summary=$(printf '%s\n' "$result" | awk '/^LOAD_RESULT / { line = $0 } END { print line }')
+  [ -n "$summary" ] || fail "Load probe did not return a bounded result."
+  record saas-load "${summary#LOAD_RESULT }"
+  pass "Public edge load passed through $replicas healthy API replicas."
+}
+
+smtp_outage_probe() {
+  local command=$1 marker=$2
+  "${COMPOSE[@]}" run --rm --no-deps \
+    -e INITPAD_ACCEPTANCE_ALLOW_DB_FIXTURES=1 \
+    -e INITPAD_SMTP_OUTAGE_ACCEPTANCE_RECIPIENT \
+    api node scripts/run-with-secrets.js node scripts/saas-smtp-outage-probe.js \
+    "$command" "$marker"
+}
+
+smtp_outage_before() {
+  require_recovery_opt_in
+  ensure_runtime
+  [ ! -e "$SMTP_OUTAGE_CHECKPOINT" ] || fail "An SMTP outage checkpoint already exists."
+  [ -n "${INITPAD_SMTP_OUTAGE_ACCEPTANCE_RECIPIENT:-}" ] || \
+    fail "Set INITPAD_SMTP_OUTAGE_ACCEPTANCE_RECIPIENT to an unused staging inbox."
+  local marker temporary
+  marker=$(new_uuid)
+  smtp_outage_probe prepare "$marker"
+  temporary=$(mktemp "$ACCEPTANCE_DIR/smtp-outage.XXXXXX")
+  chmod 600 "$temporary"
+  printf 'marker=%s\n' "$marker" > "$temporary"
+  mv "$temporary" "$SMTP_OUTAGE_CHECKPOINT"
+  record saas-smtp-outage-before 'api_ready=true retry_persisted=true'
+  pass "SMTP outage preserved a retryable message. Restore SMTP egress now."
+}
+
+smtp_outage_after() {
+  require_recovery_opt_in
+  ensure_runtime
+  [ -r "$SMTP_OUTAGE_CHECKPOINT" ] || fail "No SMTP outage checkpoint exists."
+  local marker
+  marker=$(awk -F= '$1 == "marker" { print $2; exit }' "$SMTP_OUTAGE_CHECKPOINT")
+  valid_uuid "$marker" || fail "The SMTP outage checkpoint is invalid."
+  smtp_outage_probe recover "$marker"
+  rm -f "$SMTP_OUTAGE_CHECKPOINT"
+  record saas-smtp-outage-after 'delivered=true payload_erased=true retry_observed=true'
+  pass "SMTP recovery delivered the queued message and erased its secret payload."
+}
+
+smtp_outage_cleanup() {
+  require_recovery_opt_in
+  ensure_runtime
+  [ -r "$SMTP_OUTAGE_CHECKPOINT" ] || fail "No SMTP outage checkpoint exists."
+  local marker
+  marker=$(awk -F= '$1 == "marker" { print $2; exit }' "$SMTP_OUTAGE_CHECKPOINT")
+  valid_uuid "$marker" || fail "The SMTP outage checkpoint is invalid."
+  smtp_outage_probe cleanup "$marker"
+  rm -f "$SMTP_OUTAGE_CHECKPOINT"
+  pass "SMTP outage fixture and checkpoint were removed."
 }
 
 require_recovery_opt_in() {
@@ -192,6 +274,10 @@ after_restore() {
 case "$COMMAND" in
   dependencies) check_dependencies ;;
   email) check_email ;;
+  load) check_load ;;
+  smtp-outage-before) smtp_outage_before ;;
+  smtp-outage-after) smtp_outage_after ;;
+  smtp-outage-cleanup) smtp_outage_cleanup ;;
   before-backup) before_backup ;;
   after-backup) after_backup ;;
   after-restore) after_restore ;;
