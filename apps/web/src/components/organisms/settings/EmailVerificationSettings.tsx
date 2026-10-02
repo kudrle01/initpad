@@ -11,14 +11,18 @@ export function EmailVerificationSettings() {
   const { user } = useAuth();
   const toast = useToast();
   const [verifyLink, setVerifyLink] = useState<string | null>(null);
+  const [emailQueued, setEmailQueued] = useState(false);
 
   if (user?.edition !== 'self-hosted' || !user.email || user.emailVerified) return null;
 
   async function sendVerification() {
     try {
-      const { verifyUrl } = await api.requestEmailVerification();
-      setVerifyLink(verifyUrl);
-      toast.success('Verification link created');
+      const result = await api.requestEmailVerification();
+      setVerifyLink(result.verifyUrl ?? null);
+      setEmailQueued(result.delivery === 'email');
+      toast.success(
+        result.delivery === 'email' ? 'Verification e-mail queued' : 'Verification link created',
+      );
     } catch (error) {
       toast.error((error as Error).message);
     }
@@ -32,11 +36,16 @@ export function EmailVerificationSettings() {
       description={
         <>
           Confirm <strong className="font-medium text-foreground">{user.email}</strong> to secure
-          account recovery. On an instance without e-mail delivery, open the link shown below.
+          account recovery. Configured instances deliver the link by e-mail; otherwise it is shown
+          here once.
         </>
       }
     >
-      {!verifyLink ? (
+      {emailQueued ? (
+        <p className="text-sm text-primary">
+          Check your inbox. The single-use verification link has been queued for delivery.
+        </p>
+      ) : !verifyLink ? (
         <Button variant="secondary" onClick={sendVerification}>
           Send verification link
         </Button>

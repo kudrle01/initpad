@@ -21,6 +21,13 @@ services:
       INITPAD_COOKIE_SECURE: 'true'
       INITPAD_JWT_SECRET_FILE: /run/secrets/jwt_secret
       INITPAD_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+      INITPAD_SMTP_HOST: ${INITPAD_SMTP_HOST:?set the SMTP hostname}
+      INITPAD_SMTP_PORT: ${INITPAD_SMTP_PORT:-587}
+      INITPAD_SMTP_SECURE: ${INITPAD_SMTP_SECURE:-false}
+      INITPAD_SMTP_REQUIRE_TLS: 'true'
+      INITPAD_SMTP_USERNAME: ${INITPAD_SMTP_USERNAME:?set the SMTP username}
+      INITPAD_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+      INITPAD_SMTP_FROM: ${INITPAD_SMTP_FROM:?set the sender address}
       INITPAD_SCM_WEBHOOK_TOKEN_FILE: /run/secrets/scm_webhook_token
       INITPAD_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
       INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:?set the deployed release version}
@@ -53,6 +60,7 @@ services:
       - database_url
       - jwt_secret
       - encryption_key
+      - smtp_password
       - scm_webhook_token
       - oidc_client_secret
       - github_client_secret
@@ -115,6 +123,8 @@ secrets:
     file: ${INITPAD_JWT_SECRET_FILE:?set the JWT secret file}
   encryption_key:
     file: ${INITPAD_ENCRYPTION_KEY_FILE:?set the encryption key file}
+  smtp_password:
+    file: ${INITPAD_SMTP_PASSWORD_FILE:?set the SMTP password file}
   scm_webhook_token:
     file: ${INITPAD_SCM_WEBHOOK_TOKEN_FILE:?set the SCM webhook token file}
   oidc_client_secret:

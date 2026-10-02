@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
   ForbiddenException,
@@ -16,6 +17,7 @@ import { encryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import { config } from '../config';
 import { accountIdentifierEquals, normalizeAccountIdentifier } from '../common/account-identifier';
+import { MailDeliveryService, type MailKind } from '../mail/mail-delivery.service';
 
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -57,6 +59,7 @@ export class AuthService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly gitea: GiteaService,
+    private readonly mail?: MailDeliveryService,
   ) {}
 
   /**
@@ -102,6 +105,10 @@ export class AuthService implements OnModuleInit {
 
   registrationMode(): string {
     return config.auth.registrationMode;
+  }
+
+  emailDeliveryEnabled(): boolean {
+    return this.mail?.isEnabled() ?? false;
   }
 
   /** Managed registration: provisions a Gitea account + token, persists the user. */
@@ -350,12 +357,10 @@ export class AuthService implements OnModuleInit {
     return { token: this.signToken(updated), user: this.toSession(updated) };
   }
 
-  /**
-   * Issues an e-mail verification link for the signed-in user's own address.
-   * Without SMTP the link is returned to the caller (their own account) and
-   * logged; a production build wires this to actual delivery.
-   */
-  async requestEmailVerification(userId: string): Promise<{ verifyUrl: string }> {
+  /** Issues an e-mail verification link without exposing it when SMTP is configured. */
+  async requestEmailVerification(
+    userId: string,
+  ): Promise<{ delivery: 'email' | 'manual'; verifyUrl?: string }> {
     if (config.edition === 'saas') {
       throw new BadRequestException('SaaS e-mail verification is provided by GitHub');
     }
@@ -363,10 +368,21 @@ export class AuthService implements OnModuleInit {
     if (!user) throw new UnauthorizedException();
     if (!user.email) throw new BadRequestException('No e-mail address on file');
     if (user.emailVerifiedAt) throw new BadRequestException('E-mail is already verified');
-    const token = await this.issueAuthToken(userId, 'email_verify', EMAIL_VERIFY_TTL_MS);
-    const verifyUrl = `${this.frontendBase()}/verify-email/${token}`;
-    this.logger.log(`E-mail verification link issued for ${user.username}`);
-    return { verifyUrl };
+    const link = await this.issueAuthLink(
+      user,
+      'email_verify',
+      EMAIL_VERIFY_TTL_MS,
+      'verify-email',
+    );
+    this.logger.log({
+      event: 'auth.email_verification.issued',
+      userId: user.id,
+      delivery: link.delivery,
+    });
+    return {
+      delivery: link.delivery,
+      ...(link.url ? { verifyUrl: link.url } : {}),
+    };
   }
 
   async verifyEmail(token: string): Promise<void> {
@@ -380,8 +396,8 @@ export class AuthService implements OnModuleInit {
   /**
    * Starts a password reset. Always resolves the same way regardless of whether
    * the account exists, so the endpoint cannot be used to enumerate users. The
-   * plaintext link is never returned or logged; production e-mail delivery is
-   * a release gate and self-hosted administrators can use account reset meanwhile.
+   * plaintext link is never returned or logged. Without SMTP the operation is
+   * intentionally a no-op and self-hosted administrators can reset the account.
    */
   async requestPasswordReset(identity: string): Promise<void> {
     const id = normalizeAccountIdentifier(identity);
@@ -391,13 +407,9 @@ export class AuthService implements OnModuleInit {
         OR: [{ username: accountIdentifierEquals(id) }, { email: accountIdentifierEquals(id) }],
       },
     });
-    if (!user || !user.passwordHash) return;
-    await this.issueAuthToken(user.id, 'password_reset', PASSWORD_RESET_TTL_MS);
-    this.logger.warn({
-      event: 'auth.password_reset.delivery_pending',
-      username: user.username,
-      message: 'Password reset token issued; configure e-mail delivery before public use',
-    });
+    if (!user || !user.passwordHash || !user.email || !this.mail?.isEnabled()) return;
+    await this.issueAuthLink(user, 'password_reset', PASSWORD_RESET_TTL_MS, 'reset-password');
+    this.logger.log({ event: 'auth.password_reset.queued', userId: user.id });
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
@@ -418,9 +430,16 @@ export class AuthService implements OnModuleInit {
    * link where the user sets their own password and is signed in. This is the
    * private-edition onboarding alternative to reading out a temporary password.
    */
-  async createActivationLink(userId: string): Promise<string> {
-    const token = await this.issueAuthToken(userId, 'activation', ACTIVATION_TTL_MS);
-    return `${this.frontendBase()}/activate/${token}`;
+  async createActivationLink(
+    userId: string,
+  ): Promise<{ delivery: 'email' | 'manual'; activationUrl?: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new BadRequestException('User not found');
+    const link = await this.issueAuthLink(user, 'activation', ACTIVATION_TTL_MS, 'activate');
+    return {
+      delivery: link.delivery,
+      ...(link.url ? { activationUrl: link.url } : {}),
+    };
   }
 
   async activate(
@@ -444,14 +463,50 @@ export class AuthService implements OnModuleInit {
     return config.auth.frontendUrl.replace(/\/+$/, '');
   }
 
-  private async issueAuthToken(userId: string, kind: string, ttlMs: number): Promise<string> {
+  private async issueAuthLink(
+    user: { id: string; email: string | null; name: string | null; username: string },
+    kind: MailKind,
+    ttlMs: number,
+    route: string,
+  ): Promise<{ delivery: 'email' | 'manual'; url?: string }> {
+    const deliverByEmail = Boolean(this.mail?.isEnabled() && user.email);
+    const token = await this.prisma.$transaction(async (tx) => {
+      // Serialize token replacement for this account. The partial unique index
+      // is the final invariant; this lock also makes simultaneous requests
+      // deterministically supersede rather than surface a constraint error.
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`);
+      const token = await this.issueAuthToken(tx, user.id, kind, ttlMs);
+      if (deliverByEmail) {
+        await this.mail!.enqueueAuthMail(tx, {
+          userId: user.id,
+          kind,
+          recipient: user.email!,
+          displayName: user.name || user.username,
+          url: `${this.frontendBase()}/${route}/${token}`,
+        });
+      }
+      return token;
+    });
+    if (deliverByEmail) {
+      this.mail!.scheduleDelivery();
+      return { delivery: 'email' };
+    }
+    return { delivery: 'manual', url: `${this.frontendBase()}/${route}/${token}` };
+  }
+
+  private async issueAuthToken(
+    db: Prisma.TransactionClient | PrismaService,
+    userId: string,
+    kind: MailKind,
+    ttlMs: number,
+  ): Promise<string> {
     // Supersede any earlier unused token of the same kind for this user.
-    await this.prisma.authToken.updateMany({
+    await db.authToken.updateMany({
       where: { userId, kind, usedAt: null },
       data: { usedAt: new Date() },
     });
     const token = generateToken();
-    await this.prisma.authToken.create({
+    await db.authToken.create({
       data: { userId, kind, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + ttlMs) },
     });
     return token;

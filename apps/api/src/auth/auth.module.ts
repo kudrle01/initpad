@@ -7,10 +7,12 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { ScmModule } from '../scm/scm.module';
 import { RateLimitGuard } from './rate-limit.guard';
 import { RateLimitService } from './rate-limit.service';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
     ScmModule,
+    MailModule,
     JwtModule.register({
       secret: config.auth.jwtSecret,
       signOptions: { expiresIn: '7d' },

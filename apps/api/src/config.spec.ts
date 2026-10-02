@@ -11,6 +11,7 @@ describe('validateConfig production secrets', () => {
   const originalUpdates = { ...config.updates };
   const originalGithub = { ...config.github };
   const originalCi = { ...config.ci };
+  const originalMail = { ...config.mail };
   const originalEdition = config.edition;
   const originalSecrets = {
     jwtSecret: config.auth.jwtSecret,
@@ -47,6 +48,7 @@ describe('validateConfig production secrets', () => {
     Object.assign(config.updates, originalUpdates);
     Object.assign(config.github, originalGithub);
     Object.assign(config.ci, originalCi);
+    Object.assign(config.mail, originalMail);
     config.edition = originalEdition;
   });
 
@@ -56,6 +58,22 @@ describe('validateConfig production secrets', () => {
   });
 
   it('does not treat a non-secret access-key identifier as a password', () => {
+    expect(() => validateConfig()).not.toThrow();
+  });
+
+  it('rejects partial SMTP configuration and accepts a complete TLS relay', () => {
+    Object.assign(config.mail, { host: 'smtp.example', from: '', username: '', password: '' });
+    expect(() => validateConfig()).toThrow('INITPAD_SMTP_HOST and INITPAD_SMTP_FROM');
+
+    Object.assign(config.mail, {
+      host: 'smtp.example',
+      port: 587,
+      secure: false,
+      requireTls: true,
+      username: 'initpad',
+      password: 'smtp-secret',
+      from: 'InitPad <no-reply@initpad.example>',
+    });
     expect(() => validateConfig()).not.toThrow();
   });
 
@@ -135,6 +153,15 @@ describe('validateConfig production secrets', () => {
       appSlug: 'initpad-example',
       callbackUrl: 'https://initpad.example/api/auth/github/callback',
     });
+    Object.assign(config.mail, {
+      host: 'smtp.example',
+      port: 587,
+      secure: false,
+      requireTls: true,
+      username: 'initpad',
+      password: 'smtp-secret',
+      from: 'InitPad <no-reply@initpad.example>',
+    });
 
     expect(() => validateConfig()).not.toThrow();
   });
@@ -150,6 +177,15 @@ describe('validateConfig production secrets', () => {
       webhookSecret: 'w'.repeat(32),
       appSlug: 'initpad-example',
       callbackUrl: 'http://other.example/api/auth/github/callback',
+    });
+    Object.assign(config.mail, {
+      host: 'smtp.example',
+      port: 587,
+      secure: false,
+      requireTls: true,
+      username: 'initpad',
+      password: 'smtp-secret',
+      from: 'InitPad <no-reply@initpad.example>',
     });
 
     expect(() => validateConfig()).toThrow('INITPAD_GITHUB_CALLBACK_URL');

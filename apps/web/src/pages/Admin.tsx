@@ -24,6 +24,7 @@ interface OneTime {
   username: string;
   password?: string;
   activationUrl?: string;
+  activationEmailed?: boolean;
 }
 
 export default function Admin() {
@@ -120,7 +121,7 @@ export default function Admin() {
         tone: 'warning',
         consequences: [
           'The new account receives instance-wide user administration permissions.',
-          'A one-time activation link and temporary password will be displayed after creation.',
+          'A temporary password is shown once; activation uses e-mail when configured.',
         ],
       });
       if (!confirmed) return;
@@ -131,13 +132,19 @@ export default function Admin() {
         user: created,
         temporaryPassword,
         activationUrl,
+        activationDelivery,
       } = await api.adminCreateUser({
         username: username.trim(),
         email: email.trim(),
         name: name.trim() || undefined,
         platformRole: role,
       });
-      setOneTime({ username: created.username, password: temporaryPassword, activationUrl });
+      setOneTime({
+        username: created.username,
+        password: temporaryPassword,
+        activationUrl,
+        activationEmailed: activationDelivery === 'email',
+      });
       setUsername('');
       setEmail('');
       setName('');
@@ -215,15 +222,23 @@ export default function Admin() {
       tone: 'warning',
       consequences: [
         'Any earlier unused activation link for this account becomes invalid.',
-        'The new link is shown only once and must be shared securely.',
+        'The new link is e-mailed when delivery is configured; otherwise it is shown once.',
       ],
     });
     if (!confirmed) return;
     setBusyUserId(target.id);
     try {
-      const { activationUrl } = await api.adminCreateActivationLink(target.id);
-      setOneTime({ username: target.username, activationUrl });
-      toast.success(`Activation link created for @${target.username}`);
+      const { activationUrl, delivery } = await api.adminCreateActivationLink(target.id);
+      setOneTime({
+        username: target.username,
+        activationUrl,
+        activationEmailed: delivery === 'email',
+      });
+      toast.success(
+        delivery === 'email'
+          ? `Activation e-mail queued for @${target.username}`
+          : `Activation link created for @${target.username}`,
+      );
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -306,9 +321,9 @@ export default function Admin() {
               <div className="min-w-0">
                 <h2 className="text-[15px] font-semibold">Onboarding for @{oneTime.username}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Share securely. Shown{' '}
-                  <strong className="font-medium text-foreground">once</strong> and cannot be
-                  retrieved again. Send the activation link, or give the temporary password.
+                  {oneTime.activationEmailed
+                    ? 'The activation e-mail is queued. Any temporary password below is shown once.'
+                    : 'Share securely. Credentials shown here cannot be retrieved again.'}
                 </p>
               </div>
             </div>
@@ -319,6 +334,11 @@ export default function Admin() {
                 </p>
                 <CopyField command={oneTime.activationUrl} />
               </div>
+            )}
+            {oneTime.activationEmailed && (
+              <p className="mt-4 text-sm text-primary">
+                Activation link queued for delivery to the account e-mail address.
+              </p>
             )}
             {oneTime.password && (
               <div className="mt-3">

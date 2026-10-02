@@ -533,6 +533,7 @@ export const api = {
       githubEnabled: boolean;
       edition: 'self-hosted' | 'saas';
       passwordAuthEnabled: boolean;
+      emailDeliveryEnabled: boolean;
     }>('/auth/config'),
   listIdentities: () => http<LinkedIdentity[]>('/me/identities'),
   unlinkIdentity: (provider: string) =>
@@ -559,7 +560,9 @@ export const api = {
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
   requestEmailVerification: () =>
-    http<{ verifyUrl: string }>('/auth/email/request-verification', { method: 'POST' }),
+    http<{ delivery: 'email' | 'manual'; verifyUrl?: string }>('/auth/email/request-verification', {
+      method: 'POST',
+    }),
   verifyEmail: (token: string) =>
     http<void>('/auth/email/verify', { method: 'POST', body: JSON.stringify({ token }) }),
   requestPasswordReset: (identity: string) =>
@@ -603,12 +606,17 @@ export const api = {
     name?: string;
     platformRole?: 'admin' | 'user';
   }) =>
-    http<{ user: AdminUser; temporaryPassword: string; activationUrl: string }>('/admin/users', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    http<{
+      user: AdminUser;
+      temporaryPassword: string;
+      activationUrl?: string;
+      activationDelivery: 'email' | 'manual';
+    }>('/admin/users', { method: 'POST', body: JSON.stringify(body) }),
   adminCreateActivationLink: (id: string) =>
-    http<{ activationUrl: string }>(`/admin/users/${id}/activation-link`, { method: 'POST' }),
+    http<{ activationUrl?: string; delivery: 'email' | 'manual' }>(
+      `/admin/users/${id}/activation-link`,
+      { method: 'POST' },
+    ),
   adminDeactivateUser: (id: string) =>
     http<AdminUser>(`/admin/users/${id}/deactivate`, { method: 'POST' }),
   adminActivateUser: (id: string) =>

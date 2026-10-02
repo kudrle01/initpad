@@ -54,8 +54,8 @@ zákazníků musí být hotové alespoň:
    secret manager a ověřit rotaci produkčních credentials;
 4. edge connection/volumetric ochrana a ověřená proxy topologie; aplikační
    distribuovaný limiter není náhradou WAF nebo DDoS ochrany;
-5. produkční e-mail provider pro reset hesla tam, kde zůstane password login;
-   SaaS přihlášení používá ověřenou GitHub identitu;
+5. nakonfigurovat a provozně ověřit konkrétní SMTP provider, doručitelnost,
+   retry/alert a rotaci file-backed hesla; transakční outbox je hotový (ADR-123);
 6. egress firewall odpovídající aplikační SSRF/DNS-rebinding policy;
 7. centrální log collector nebo OpenTelemetry pipeline s definovanou retencí,
    přístupovými rolemi, metrikami, alerty a incident runbookem;
@@ -223,12 +223,14 @@ npm run audit:public-release -- --tag agent-v0.14.3
 Audit odmítne soukromý repozitář, neúplné nebo nedostupné assets, chybné
 Sigstore identity a OCI digesty i image bez `linux/amd64` a `linux/arm64`.
 
-### E-mail delivery není zapojená
+### E-mail provider je provozní závislost
 
-Self-hosted uživatel si může bezpečně ověřit vlastní e-mail odkazem
-zobrazeným v jeho session. Zapomenuté heslo ale bez e-mail providera neposílá
-reset link; správce instance musí vydat dočasné heslo nebo aktivační odkaz.
-Resetovací token se z bezpečnostních důvodů nevypisuje do logu.
+InitPad umí doručit ověření, reset hesla a aktivaci přes SMTP z trvalého
+šifrovaného outboxu. Self-hosted bez SMTP zobrazí oprávněnému uživateli
+jednorázový ověřovací nebo aktivační odkaz; reset hesla bez providera nic
+neprozradí a správce vydá dočasné heslo. SaaS bez kompletní SMTP konfigurace
+nestartuje. Repozitář ale negarantuje reputaci domény, SPF/DKIM/DMARC ani
+doručitelnost konkrétního providera; ty patří do staging acceptance.
 
 ### Observability končí strukturovaným logem
 

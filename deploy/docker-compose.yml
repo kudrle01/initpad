@@ -123,6 +123,15 @@ services:
       INITPAD_TRUST_PROXY_HOPS: ${INITPAD_TRUST_PROXY_HOPS:-1}
       INITPAD_JWT_SECRET: ${INITPAD_JWT_SECRET:?run install.sh to generate secrets}
       INITPAD_ENCRYPTION_KEY: ${INITPAD_ENCRYPTION_KEY:?run install.sh to generate secrets}
+      # Optional SMTP delivery. When unset, self-hosted verification and
+      # activation links remain available as one-time manual links in the UI.
+      INITPAD_SMTP_HOST: ${INITPAD_SMTP_HOST:-}
+      INITPAD_SMTP_PORT: ${INITPAD_SMTP_PORT:-587}
+      INITPAD_SMTP_SECURE: ${INITPAD_SMTP_SECURE:-false}
+      INITPAD_SMTP_REQUIRE_TLS: ${INITPAD_SMTP_REQUIRE_TLS:-true}
+      INITPAD_SMTP_USERNAME: ${INITPAD_SMTP_USERNAME:-}
+      INITPAD_SMTP_PASSWORD: ${INITPAD_SMTP_PASSWORD:-}
+      INITPAD_SMTP_FROM: ${INITPAD_SMTP_FROM:-}
       INITPAD_SCM_WEBHOOK_TOKEN: ${INITPAD_SCM_WEBHOOK_TOKEN:?run install.sh to generate secrets}
       INITPAD_SCM_WEBHOOK_URL: http://api:3000
       INITPAD_REGISTRATION_MODE: ${INITPAD_REGISTRATION_MODE:-open}

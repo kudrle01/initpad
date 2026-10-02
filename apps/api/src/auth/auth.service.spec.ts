@@ -330,8 +330,17 @@ describe('AuthService', () => {
 
   it('issues a single-use reset token superseding earlier ones', async () => {
     let created: Record<string, unknown> | undefined;
+    const transaction = jest.fn();
     const prisma = {
-      user: { findFirst: jest.fn(async () => ({ id: 'u1', username: 'dave', passwordHash: 'x' })) },
+      user: {
+        findFirst: jest.fn(async () => ({
+          id: 'u1',
+          username: 'dave',
+          name: 'Dave',
+          email: 'dave@example.test',
+          passwordHash: 'x',
+        })),
+      },
       authToken: {
         updateMany: jest.fn(async () => ({ count: 1 })),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -339,8 +348,19 @@ describe('AuthService', () => {
           return {};
         }),
       },
+      $queryRaw: jest.fn(async () => [{ id: 'u1' }]),
+      emailOutbox: { create: jest.fn(async () => ({})) },
+      $transaction: transaction,
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    transaction.mockImplementation(async (operation: (tx: unknown) => Promise<void>) =>
+      operation(prisma),
+    );
+    const mail = {
+      isEnabled: jest.fn(() => true),
+      enqueueAuthMail: jest.fn(async () => undefined),
+      scheduleDelivery: jest.fn(),
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never, mail as never);
     await service.requestPasswordReset('dave');
     expect(prisma.authToken.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'u1', kind: 'password_reset', usedAt: null } }),
@@ -348,6 +368,15 @@ describe('AuthService', () => {
     expect(created?.kind).toBe('password_reset');
     expect(typeof created?.tokenHash).toBe('string');
     expect(created?.tokenHash).toHaveLength(64); // sha-256 hex, never the plaintext
+    expect(mail.enqueueAuthMail).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({
+        userId: 'u1',
+        kind: 'password_reset',
+        recipient: 'dave@example.test',
+      }),
+    );
+    expect(mail.scheduleDelivery).toHaveBeenCalledTimes(1);
   });
 
   it('resets the password, forces re-login and consumes the token', async () => {

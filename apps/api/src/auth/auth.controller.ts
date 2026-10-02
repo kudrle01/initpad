@@ -33,6 +33,7 @@ export class AuthController {
       registrationMode: this.auth.registrationMode(),
       edition: config.edition,
       passwordAuthEnabled: config.edition === 'self-hosted',
+      emailDeliveryEnabled: this.auth.emailDeliveryEnabled(),
       // Whether "Sign in with GitHub" / account linking is available.
       githubEnabled: Boolean(
         config.github.clientId && config.github.clientSecret && config.github.callbackUrl,

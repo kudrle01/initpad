@@ -161,6 +161,42 @@ každou změnou image nebo storage backendu spusť `./backup.sh`. Volba dlouhodo
 vestavěné náhrady nebo vlastního auditem ověřeného source buildu zůstává
 samostatným release rozhodnutím.
 
+## E-mailové doručování
+
+Self-hosted instalace funguje i bez SMTP: aktivaci a ověření zobrazí jako
+jednorázový odkaz oprávněnému uživateli. Pro reset zapomenutého hesla a
+veřejný provoz nastav v `.env` relay s TLS:
+
+```dotenv
+INITPAD_SMTP_HOST=smtp.example.org
+INITPAD_SMTP_PORT=587
+INITPAD_SMTP_SECURE=false
+INITPAD_SMTP_REQUIRE_TLS=true
+INITPAD_SMTP_USERNAME=initpad
+INITPAD_SMTP_PASSWORD=replace-with-secret
+INITPAD_SMTP_FROM=InitPad <no-reply@example.org>
+```
+
+Port 587 používá STARTTLS (`SECURE=false`, `REQUIRE_TLS=true`). Pro implicitní
+TLS na portu 465 nastav `SECURE=true`. Po změně spusť `./install.sh`; nové
+zprávy se zařadí do databázového outboxu. Do logu se zapisuje pouze ID,
+druh a výsledek zprávy, ne adresa ani autentizační odkaz. Sleduj události
+`mail.outbox.retry_scheduled` a `mail.outbox.failed`.
+
+SaaS profil vyžaduje stejné veřejné parametry a heslo přes
+`INITPAD_SMTP_PASSWORD_FILE`. DNS politika odesílací domény (SPF, DKIM a
+DMARC) se nastavuje u zvoleného providera, nikoli v InitPadu.
+
+Na SaaS stagingu ověř přihlášení i skutečné předání zprávy relay serveru:
+
+```bash
+INITPAD_SMTP_ACCEPTANCE_RECIPIENT=staging-inbox@example.org \
+  ./saas-acceptance.sh email .env.saas
+```
+
+Příkaz nevypisuje adresu ani credentials. Úspěšné předání ještě potvrď
+v cílové schránce; tím se zachytí také reputace domény a spam filtering.
+
 ## HTTPS
 
 - **Veřejná doména:** nastav `INITPAD_DOMAIN` + `INITPAD_GIT_DOMAIN` v `.env`,

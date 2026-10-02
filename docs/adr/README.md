@@ -128,3 +128,4 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 | [ADR-120](./ADR-120.md) | SaaS control plane má samostatný runtime profil |
 | [ADR-121](./ADR-121.md) | OAuth state a OIDC granty jsou hashované a trvalé |
 | [ADR-122](./ADR-122.md) | Workspace kapacita je samostatná transakční hranice |
+| [ADR-123](./ADR-123.md) | Autentizační e-maily používají šifrovaný transakční outbox |

@@ -41,6 +41,7 @@ test('mounts deployment-owned secrets as files without placing values in the env
     'INITPAD_GITHUB_WEBHOOK_SECRET',
     'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID',
     'INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY',
+    'INITPAD_SMTP_PASSWORD',
   ];
 
   for (const name of secretNames) {

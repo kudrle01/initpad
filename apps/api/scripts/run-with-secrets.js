@@ -14,6 +14,7 @@ const fileBackedSecrets = [
   'INITPAD_GITHUB_WEBHOOK_SECRET',
   'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID',
   'INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY',
+  'INITPAD_SMTP_PASSWORD',
 ];
 
 function fail(message) {

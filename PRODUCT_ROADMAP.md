@@ -200,7 +200,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     Admission check a zápis používají serializable transakci, limity spravuje
     platformní administrátor a jejich využití vidí členové workspace
     (ADR-122).
-  - [ ] Doplnit produkční e-mail delivery a load test.
+  - [x] Doplnit produkční SMTP delivery přes šifrovaný transakční outbox,
+    bezpečný retry worker a secret-file konfiguraci SaaS (ADR-123).
+  - [ ] Provést load test včetně více API replik a SMTP outage scénáře.
 - [ ] Zapojit OpenTelemetry/log collector, metriky, retenci, alerting a incident
   runbook; rozhodnout scheduler a topologii pro více API replik.
 - [ ] Nasadit staging, zopakovat GitHub/Agent/tenant/recovery acceptance a až
@@ -280,13 +282,13 @@ jen pro existující účty podle username/e-mailu; ověření e-mailu a neenume
 reset hesla. GitHub login/link a bezpečná vazba GitHub App jsou implementované
 ve Fázi 3; produkční SaaS profil stále čeká na Agenta a živý E2E test.
 
-Produkční odesílání e-mailů zatím není implementované: aktivační/verifikační
-odkazy se v self-hosted prototypu zobrazují oprávněnému uživateli. Reset token se
-po ADR-101 z bezpečnostních důvodů neloguje; do zapojení e-mailu použije správce
-instance administrátorský reset. To je vhodné pro demo a administrátorem řízenou
-instalaci, ne důkaz vlastnictví e-mailu ve veřejném SaaS;
-SaaS proto přijímá pouze e-mail ověřený GitHubem a neověřený profilový e-mail
-neukládá. SMTP/e-mail provider je samostatný krok před veřejným provozem.
+Produkční SMTP doručení je implementované transakčním outboxem (ADR-123):
+vydání tokenu a zprávy je atomické, odkaz zůstává do odeslání šifrovaný a
+worker používá lease a retry. Self-hosted bez SMTP zachová jednorázový ruční
+aktivační/verifikační odkaz; reset hesla zůstane neenumerující a správce
+použije administrátorský reset. SaaS vyžaduje SMTP konfiguraci i file-backed
+heslo. Konkrétní provider, deliverability a rotace secretu se ještě musí ověřit
+ve stagingu.
 
 ### Fáze 3 — existující repozitáře a cloudové SCM — rozpracováno
 

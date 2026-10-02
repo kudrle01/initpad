@@ -30,6 +30,8 @@ const RELEASE_CHANNELS: readonly ReleaseChannel[] = ['stable', 'candidate'];
 const agentUpdateChannel = (process.env.INITPAD_AGENT_UPDATE_CHANNEL || 'stable') as ReleaseChannel;
 const platformUpdateChannel = (process.env.INITPAD_PLATFORM_UPDATE_CHANNEL ||
   'stable') as ReleaseChannel;
+const rawSmtpSecure = process.env.INITPAD_SMTP_SECURE;
+const rawSmtpRequireTls = process.env.INITPAD_SMTP_REQUIRE_TLS;
 
 // Registration policy for the self-hosted edition (ADR-040). Two modes: `open`
 // is normal self-service registration (public deployment); `admin-provisioned`
@@ -128,6 +130,17 @@ export const config = {
   security: {
     encryptionKey:
       process.env.INITPAD_ENCRYPTION_KEY || process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
+  },
+  mail: {
+    host: (process.env.INITPAD_SMTP_HOST || '').trim(),
+    port: Number(process.env.INITPAD_SMTP_PORT || 587),
+    secure: rawSmtpSecure === 'true',
+    // STARTTLS is required by default. Operators must opt out explicitly for
+    // a trusted local test relay; SaaS never permits that downgrade.
+    requireTls: rawSmtpRequireTls !== 'false',
+    username: process.env.INITPAD_SMTP_USERNAME || '',
+    password: process.env.INITPAD_SMTP_PASSWORD || '',
+    from: (process.env.INITPAD_SMTP_FROM || '').trim(),
   },
   // CI → deploy: shared token the CI job uses to authenticate against the
   // platform webhook. The platform sets it as the repo's Actions secret.
@@ -274,6 +287,10 @@ export function artifactStoreConfigured(): boolean {
   return Boolean(s.bucket && s.accessKeyId && s.secretAccessKey);
 }
 
+export function mailDeliveryConfigured(): boolean {
+  return Boolean(config.mail.host && config.mail.from);
+}
+
 function requireSaasConfig(): void {
   const required = {
     INITPAD_GITHUB_APP_ID: config.github.appId,
@@ -284,6 +301,10 @@ function requireSaasConfig(): void {
     INITPAD_GITHUB_APP_SLUG: config.github.appSlug,
     INITPAD_GITHUB_CALLBACK_URL: config.github.callbackUrl,
     INITPAD_PLATFORM_PUBLIC_URL: config.ci.publicUrl,
+    INITPAD_SMTP_HOST: config.mail.host,
+    INITPAD_SMTP_USERNAME: config.mail.username,
+    INITPAD_SMTP_PASSWORD: config.mail.password,
+    INITPAD_SMTP_FROM: config.mail.from,
   };
   const missing = Object.entries(required)
     .filter(([, value]) => !value.trim())
@@ -352,6 +373,37 @@ export function validateConfig(): void {
   ) {
     throw new Error('INITPAD_TRUST_PROXY_HOPS must be an integer between 0 and 5');
   }
+  if (
+    (rawSmtpSecure !== undefined && !['true', 'false'].includes(rawSmtpSecure)) ||
+    (rawSmtpRequireTls !== undefined && !['true', 'false'].includes(rawSmtpRequireTls))
+  ) {
+    throw new Error('INITPAD_SMTP_SECURE and INITPAD_SMTP_REQUIRE_TLS must be true or false');
+  }
+  if (!Number.isInteger(config.mail.port) || config.mail.port < 1 || config.mail.port > 65_535) {
+    throw new Error('INITPAD_SMTP_PORT must be an integer between 1 and 65535');
+  }
+  const anyMailValue = Boolean(
+    config.mail.host || config.mail.username || config.mail.password || config.mail.from,
+  );
+  if (anyMailValue && !mailDeliveryConfigured()) {
+    throw new Error('SMTP delivery requires INITPAD_SMTP_HOST and INITPAD_SMTP_FROM');
+  }
+  if (Boolean(config.mail.username) !== Boolean(config.mail.password)) {
+    throw new Error('INITPAD_SMTP_USERNAME and INITPAD_SMTP_PASSWORD must be configured together');
+  }
+  if (
+    config.mail.host &&
+    (/[:/\s\0\r\n]/.test(config.mail.host) || config.mail.host.length > 253)
+  ) {
+    throw new Error('INITPAD_SMTP_HOST must be a hostname or IP address without a scheme or port');
+  }
+  if (
+    config.mail.from &&
+    (/\r|\n/.test(config.mail.from) ||
+      !/^(?:[^<>\r\n]+\s+)?<?[^\s<>@]+@[^\s<>@]+>?$/.test(config.mail.from))
+  ) {
+    throw new Error('INITPAD_SMTP_FROM must contain one valid e-mail sender address');
+  }
   const acceptedModes = [...REGISTRATION_MODES, ...Object.keys(LEGACY_REGISTRATION_ALIASES)];
   if (!acceptedModes.includes(rawRegistrationMode)) {
     throw new Error(
@@ -373,6 +425,9 @@ export function validateConfig(): void {
       'SaaS edition requires a durable artifact store: set INITPAD_ARTIFACT_S3_BUCKET, ' +
         'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID and INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY',
     );
+  }
+  if (config.edition === 'saas' && !config.mail.requireTls) {
+    throw new Error('SaaS SMTP delivery requires TLS');
   }
   if (config.edition === 'saas') requireSaasConfig();
   if (!['127.0.0.1', '0.0.0.0', '::1', '::'].includes(config.deployment.bindAddress)) {

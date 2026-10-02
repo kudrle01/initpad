@@ -19,6 +19,7 @@ usage() {
 Usage: ./saas-acceptance.sh <command> [env-file]
 
   dependencies   Verify public readiness, applied migrations and S3 round-trip
+  email          Submit one staging message through the configured SMTP relay
   before-backup  Write the baseline markers before the external backup
   after-backup   Write markers which must disappear after external restore
   after-restore  Prove PostgreSQL and S3 returned to the same baseline
@@ -125,6 +126,17 @@ check_dependencies() {
   pass "External PostgreSQL, private artifact storage and public readiness passed."
 }
 
+check_email() {
+  ensure_runtime
+  [ -n "${INITPAD_SMTP_ACCEPTANCE_RECIPIENT:-}" ] || \
+    fail "Set INITPAD_SMTP_ACCEPTANCE_RECIPIENT to a staging inbox."
+  "${COMPOSE[@]}" run --rm --no-deps \
+    -e INITPAD_SMTP_ACCEPTANCE_RECIPIENT \
+    api node scripts/run-with-secrets.js node scripts/saas-email-probe.js
+  record saas-email 'smtp_authenticated=true message_submitted=true'
+  pass "SMTP accepted the staging message. Confirm its arrival in the inbox."
+}
+
 require_recovery_opt_in() {
   [ "${INITPAD_SAAS_ACCEPTANCE:-0}" = 1 ] || \
     fail "Set INITPAD_SAAS_ACCEPTANCE=1 only on a disposable staging deployment."
@@ -179,6 +191,7 @@ after_restore() {
 
 case "$COMMAND" in
   dependencies) check_dependencies ;;
+  email) check_email ;;
   before-backup) before_backup ;;
   after-backup) after_backup ;;
   after-restore) after_restore ;;

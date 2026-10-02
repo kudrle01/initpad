@@ -71,7 +71,10 @@ describe('AdminService', () => {
         provisionInput = input;
         return row({ mustChangePassword: true, username: input.username as string });
       }),
-      createActivationLink: jest.fn(async () => 'https://frontend/activate/tok'),
+      createActivationLink: jest.fn(async () => ({
+        delivery: 'manual',
+        activationUrl: 'https://frontend/activate/tok',
+      })),
     };
     const service = new AdminService({} as never, auth as never, {} as never);
     const result = await service.createUser({ username: 'alice', email: 'a@example.test' });

@@ -172,6 +172,9 @@ test('proves and cleans one consistent database and object-store checkpoint', as
 
 test('keeps live acceptance explicit, provider-neutral and secret-file based', () => {
   assert.match(acceptance, /dependencies\) check_dependencies/);
+  assert.match(acceptance, /email\) check_email/);
+  assert.match(acceptance, /INITPAD_SMTP_ACCEPTANCE_RECIPIENT/);
+  assert.match(acceptance, /scripts\/saas-email-probe\.js/);
   assert.match(acceptance, /before-backup\) before_backup/);
   assert.match(acceptance, /after-backup\) after_backup/);
   assert.match(acceptance, /after-restore\) after_restore/);
