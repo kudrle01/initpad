@@ -7,6 +7,10 @@ import { ScmBuildArtifact, ScmProvider, ScmRepositoryRef } from '../scm/scm-prov
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { artifactImageRef } from './project-deployment-identity';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
+import {
+  serializableCapacityTransaction,
+  WorkspaceCapacityService,
+} from '../workspaces/workspace-capacity.service';
 
 type DeployVerifiedArtifact = (
   projectId: string,
@@ -21,6 +25,7 @@ type DeployVerifiedArtifact = (
  */
 export class ProjectArtifactIngestion {
   private readonly logger = new Logger('ProjectArtifactIngestion');
+  private readonly capacity: WorkspaceCapacityService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -29,7 +34,9 @@ export class ProjectArtifactIngestion {
     private readonly store: ArtifactStore,
     private readonly operations: ProjectDeploymentOperations,
     private readonly deployVerifiedArtifact: DeployVerifiedArtifact,
-  ) {}
+  ) {
+    this.capacity = new WorkspaceCapacityService(prisma);
+  }
 
   async recoverInterrupted(): Promise<void> {
     try {
@@ -249,43 +256,66 @@ export class ProjectArtifactIngestion {
       sourceProvider: artifact.provider,
       providerArtifactId: artifact.providerArtifactId,
     };
-    const existing = await this.prisma.buildArtifact.findUnique({
-      where: {
-        sourceProvider_providerArtifactId: identity,
-      },
-      select: { id: true, projectId: true, commitSha: true },
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { workspaceId: true },
     });
-    if (existing) {
-      if (
-        existing.projectId !== projectId ||
-        existing.commitSha.toLowerCase() !== artifact.commitSha.toLowerCase()
-      ) {
-        throw new Error('Build artifact is already bound to another deployment');
+    if (!project) throw new Error('Project for build artifact was not found');
+
+    return serializableCapacityTransaction(this.prisma, async (tx) => {
+      const existing = await tx.buildArtifact.findUnique({
+        where: {
+          sourceProvider_providerArtifactId: identity,
+        },
+        select: { id: true, projectId: true, commitSha: true, status: true, sizeBytes: true },
+      });
+      if (existing) {
+        if (
+          existing.projectId !== projectId ||
+          existing.commitSha.toLowerCase() !== artifact.commitSha.toLowerCase()
+        ) {
+          throw new Error('Build artifact is already bound to another deployment');
+        }
+        if (!['accepted', 'ingesting', 'available'].includes(existing.status)) {
+          await this.capacity.assertAvailable(
+            project.workspaceId,
+            'artifactBytes',
+            existing.sizeBytes,
+            tx,
+          );
+        }
+        return tx.buildArtifact.update({
+          where: { id: existing.id },
+          data: {
+            status: 'accepted',
+            storageKind: null,
+            storageRef: null,
+            error: null,
+          },
+          select: { id: true },
+        });
       }
-      return this.prisma.buildArtifact.update({
-        where: { id: existing.id },
+
+      await this.capacity.assertAvailable(
+        project.workspaceId,
+        'artifactBytes',
+        BigInt(artifact.sizeBytes),
+        tx,
+      );
+      return tx.buildArtifact.create({
         data: {
-          status: 'accepted',
-          storageKind: null,
-          storageRef: null,
-          error: null,
+          projectId,
+          sourceProvider: artifact.provider,
+          providerArtifactId: artifact.providerArtifactId,
+          providerRunId: artifact.providerRunId,
+          commitSha: artifact.commitSha,
+          name: artifact.name,
+          digest: artifact.digest,
+          sizeBytes: BigInt(artifact.sizeBytes),
+          expiresAt: artifact.expiresAt,
         },
         select: { id: true },
       });
-    }
-    return this.prisma.buildArtifact.create({
-      data: {
-        projectId,
-        sourceProvider: artifact.provider,
-        providerArtifactId: artifact.providerArtifactId,
-        providerRunId: artifact.providerRunId,
-        commitSha: artifact.commitSha,
-        name: artifact.name,
-        digest: artifact.digest,
-        sizeBytes: BigInt(artifact.sizeBytes),
-        expiresAt: artifact.expiresAt,
-      },
-      select: { id: true },
     });
   }
 

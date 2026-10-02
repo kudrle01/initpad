@@ -20,8 +20,15 @@ function makeService(
   prisma: Record<string, unknown>,
   role: string | null,
   audit = { record: jest.fn(async () => undefined) },
+  capacity = { assertAvailable: jest.fn(async () => undefined) },
 ) {
-  return new TargetAllocationsService(prisma as never, workspacesWithRole(role), audit as never);
+  prisma.$transaction ??= jest.fn(async (run: (client: typeof prisma) => unknown) => run(prisma));
+  return new TargetAllocationsService(
+    prisma as never,
+    workspacesWithRole(role),
+    audit as never,
+    capacity as never,
+  );
 }
 
 const allocationRow = {
@@ -61,11 +68,14 @@ describe('TargetAllocationsService authorization (ADR-060 P2.4)', () => {
       workspace: { findUniqueOrThrow: jest.fn(async () => ({ slug: 'acme' })) },
     };
     const audit = { record: jest.fn(async () => undefined) };
-    const service = makeService(prisma, 'admin', audit);
+    const capacity = { assertAvailable: jest.fn(async () => undefined) };
+    const service = makeService(prisma, 'admin', audit, capacity);
 
     const res = await service.create('u1', { targetId: 'tgt-1', capabilities: ['static'] }, 'ws-1');
 
     expect(res.namespace).toBe('acme');
+    expect(capacity.assertAvailable).toHaveBeenCalledTimes(2);
+    expect(capacity.assertAvailable).toHaveBeenLastCalledWith('ws-1', 'targets', 1, prisma);
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

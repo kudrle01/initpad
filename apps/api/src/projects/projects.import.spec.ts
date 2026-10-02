@@ -30,6 +30,7 @@ function build(parts: {
   workspaces?: unknown;
 }) {
   const scm = parts.scm as { listRepositories?: () => Promise<ReturnType<typeof repository>[]> };
+  const customPrisma = (parts.prisma ?? {}) as Record<string, any>;
   const prisma = {
     targetAllocation: {
       findUnique: jest.fn(async () => ({
@@ -45,8 +46,20 @@ function build(parts: {
       create: jest.fn(),
     },
     environment: { count: jest.fn(async () => 0) },
-    ...(parts.prisma as object),
+    ...customPrisma,
+    project: {
+      count: jest.fn(async () => 0),
+      ...(customPrisma.project ?? {}),
+    },
+    workspace: {
+      findUnique: jest.fn(async () => ({ maxProjects: 50 })),
+      ...(customPrisma.workspace ?? {}),
+    },
+    $transaction: jest.fn(),
   };
+  prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+    run(prisma),
+  );
   const workspaceScm = {
     repository: jest.fn(async (_userId: string, _workspaceId: string, repositoryId: string) => {
       const repo = (await scm.listRepositories?.())?.find(

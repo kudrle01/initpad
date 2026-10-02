@@ -13,6 +13,10 @@ import { repositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { AuditEventsService } from '../audit/audit-events.service';
 import { accountIdentifierEquals, normalizeAccountIdentifier } from '../common/account-identifier';
+import {
+  serializableCapacityTransaction,
+  WorkspaceCapacityService,
+} from './workspace-capacity.service';
 
 const REPOSITORY_SELECT = {
   scmProvider: true,
@@ -44,6 +48,7 @@ export class WorkspacesService {
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
       record: () => Promise.resolve(),
     },
+    private readonly capacity: WorkspaceCapacityService = new WorkspaceCapacityService(prisma),
   ) {}
 
   async list(userId: string) {
@@ -326,8 +331,11 @@ export class WorkspacesService {
     memberUserId: string,
     role: AssignableRole,
   ): Promise<void> {
-    await this.prisma.workspaceMember.create({
-      data: { workspaceId, userId: memberUserId, role },
+    await serializableCapacityTransaction(this.prisma, async (tx) => {
+      await this.capacity.assertAvailable(workspaceId, 'members', 1, tx);
+      await tx.workspaceMember.create({
+        data: { workspaceId, userId: memberUserId, role },
+      });
     });
     try {
       await this.syncRepositoryAccess(workspaceId, memberUserId, role);

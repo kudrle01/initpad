@@ -67,6 +67,10 @@ import {
 import { ProjectDeletion } from './project-deletion';
 import { ProjectReconciliation } from './project-reconciliation';
 import { DEFAULT_PIPELINE_PRESET, pipelineStages, previousPipelineStage } from './pipeline-preset';
+import {
+  serializableCapacityTransaction,
+  WorkspaceCapacityService,
+} from '../workspaces/workspace-capacity.service';
 
 type ProvisioningRetry = { retryOfId: string; attempt: number };
 /**
@@ -91,6 +95,7 @@ export class ProjectsService {
   private readonly productionApprovals: ProjectProductionApprovals;
   private readonly projectDeletion: ProjectDeletion;
   private readonly reconciliation: ProjectReconciliation;
+  private readonly capacity: WorkspaceCapacityService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -105,6 +110,7 @@ export class ProjectsService {
     @Inject(AuditEventsService)
     private readonly auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
   ) {
+    this.capacity = new WorkspaceCapacityService(prisma);
     this.queries = new ProjectQueries(prisma, templates, workspaceScm, workspaces);
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
@@ -584,6 +590,7 @@ export class ProjectsService {
     if (await this.prisma.project.findFirst({ where: { workspaceId, name: dto.name } })) {
       throw new BadRequestException(`This workspace already has a project named '${dto.name}'`);
     }
+    await this.capacity.assertAvailable(workspaceId, 'projects');
     const template = this.templates.get(dto.templateId);
     const pipelinePreset = dto.pipelinePreset ?? DEFAULT_PIPELINE_PRESET;
     const stages = pipelineStages(pipelinePreset);
@@ -729,36 +736,39 @@ export class ProjectsService {
           repository: repo.fullName,
         });
         await this.provisioning.beginEffect(operationId, projectEffect);
-        created = await this.prisma.project.create({
-          data: {
-            name: dto.name,
-            templateId: template.id,
-            repoPath,
-            repoUrl: repo.repoUrl,
-            scmProvider: repo.provider,
-            scmRepositoryId: repo.repositoryId,
-            scmOwner: repo.owner,
-            scmRepositoryName: repo.name,
-            scmFullName: repo.fullName,
-            scmDefaultBranch: repo.defaultBranch,
-            scmInstallationId: repo.installationId,
-            lastCommit: 'init: scaffold from template',
-            pipelinePreset,
-            ciDeployTokenHash: hashToken(ciDeployToken),
-            ownerId,
-            workspaceId,
-            environments: {
-              create: envTargets.map(({ name, target, allocationId }, order) => ({
-                name,
-                order,
-                provider: target.kind,
-                targetId: target.id,
-                allocationId,
-                status: name === 'dev' ? 'deploying' : 'empty',
-                statusReason: name === 'dev' ? CI_WAITING_REASON : null,
-              })),
+        created = await serializableCapacityTransaction(this.prisma, async (tx) => {
+          await this.capacity.assertAvailable(workspaceId, 'projects', 1, tx);
+          return tx.project.create({
+            data: {
+              name: dto.name,
+              templateId: template.id,
+              repoPath,
+              repoUrl: repo.repoUrl,
+              scmProvider: repo.provider,
+              scmRepositoryId: repo.repositoryId,
+              scmOwner: repo.owner,
+              scmRepositoryName: repo.name,
+              scmFullName: repo.fullName,
+              scmDefaultBranch: repo.defaultBranch,
+              scmInstallationId: repo.installationId,
+              lastCommit: 'init: scaffold from template',
+              pipelinePreset,
+              ciDeployTokenHash: hashToken(ciDeployToken),
+              ownerId,
+              workspaceId,
+              environments: {
+                create: envTargets.map(({ name, target, allocationId }, order) => ({
+                  name,
+                  order,
+                  provider: target.kind,
+                  targetId: target.id,
+                  allocationId,
+                  status: name === 'dev' ? 'deploying' : 'empty',
+                  statusReason: name === 'dev' ? CI_WAITING_REASON : null,
+                })),
+              },
             },
-          },
+          });
         });
         await this.provisioning.bindProject(operationId, created.id);
         await this.provisioning.completeEffect(operationId, projectEffect, {
@@ -895,6 +905,7 @@ export class ProjectsService {
           `Cannot import '${repo.fullName}': add the InitPad starter workflow at '${workflowPath}' first. You can download it from the import screen.`,
         );
       }
+      await this.capacity.assertAvailable(workspaceId, 'projects');
 
       const pipelinePreset = dto.pipelinePreset ?? DEFAULT_PIPELINE_PRESET;
       const stages = pipelineStages(pipelinePreset);
@@ -921,35 +932,38 @@ export class ProjectsService {
       await this.provisioning.beginEffect(op, projectEffect);
       let created: { id: string } | null = null;
       try {
-        created = await this.prisma.project.create({
-          data: {
-            name: repo.name,
-            templateId: template.id,
-            repoPath: repo.fullName,
-            repoUrl: repo.repoUrl,
-            scmProvider: repo.provider,
-            scmRepositoryId: repo.repositoryId,
-            scmOwner: repo.owner,
-            scmRepositoryName: repo.name,
-            scmFullName: repo.fullName,
-            scmDefaultBranch: repo.defaultBranch,
-            scmInstallationId: repo.installationId,
-            lastCommit: 'import: existing repository',
-            pipelinePreset,
-            ciDeployTokenHash: hashToken(ciDeployToken),
-            ownerId,
-            workspaceId,
-            environments: {
-              create: envTargets.map(({ name, target, allocationId }, order) => ({
-                name,
-                order,
-                provider: target.kind,
-                targetId: target.id,
-                allocationId,
-                status: 'empty',
-              })),
+        created = await serializableCapacityTransaction(this.prisma, async (tx) => {
+          await this.capacity.assertAvailable(workspaceId, 'projects', 1, tx);
+          return tx.project.create({
+            data: {
+              name: repo.name,
+              templateId: template.id,
+              repoPath: repo.fullName,
+              repoUrl: repo.repoUrl,
+              scmProvider: repo.provider,
+              scmRepositoryId: repo.repositoryId,
+              scmOwner: repo.owner,
+              scmRepositoryName: repo.name,
+              scmFullName: repo.fullName,
+              scmDefaultBranch: repo.defaultBranch,
+              scmInstallationId: repo.installationId,
+              lastCommit: 'import: existing repository',
+              pipelinePreset,
+              ciDeployTokenHash: hashToken(ciDeployToken),
+              ownerId,
+              workspaceId,
+              environments: {
+                create: envTargets.map(({ name, target, allocationId }, order) => ({
+                  name,
+                  order,
+                  provider: target.kind,
+                  targetId: target.id,
+                  allocationId,
+                  status: 'empty',
+                })),
+              },
             },
-          },
+          });
         });
         await this.provisioning.bindProject(op, created.id);
         await this.provisioning.completeEffect(op, projectEffect, {

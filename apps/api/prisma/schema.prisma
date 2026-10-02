@@ -252,6 +252,14 @@ model Workspace {
   // distinct reviewer (ADR-082).
   productionApprovalPolicy   String                        @default("separate-reviewer") // self-review | separate-reviewer
   productionRequests         ProductionDeploymentRequest[]
+  // Tenant-wide capacity policy. TargetAllocation keeps the narrower runtime
+  // envelope for one server access; these limits protect the control plane and
+  // shared storage across every server allocation available to the workspace.
+  maxProjects                Int                           @default(50)
+  maxMembers                 Int                           @default(100)
+  maxTargets                 Int                           @default(20)
+  maxConcurrentOperations    Int                           @default(10)
+  maxArtifactBytes           BigInt                        @default(21474836480)
 }
 
 model WorkspaceMember {

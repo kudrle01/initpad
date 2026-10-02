@@ -27,8 +27,13 @@ describe('ProjectsService failed CI handoff', () => {
       status: 'deploying',
       activeOperationId: null,
       target: { name: 'Built-in Docker' },
+      project: { id: project.id, name: 'api', workspaceId: 'workspace-1' },
     };
     const prisma = {
+      workspace: {
+        findUnique: jest.fn(async () => ({ maxConcurrentOperations: 10 })),
+      },
+      provisioningOperation: { count: jest.fn(async () => 0) },
       project: {
         findMany: jest.fn(async () => [project]),
         update: jest.fn(async () => project),
@@ -38,10 +43,15 @@ describe('ProjectsService failed CI handoff', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       deploymentOperation: {
+        count: jest.fn(async () => 0),
         create: jest.fn(async () => ({ id: 'operation-1' })),
         update: jest.fn(async () => ({ id: 'operation-1' })),
       },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+      run(prisma),
+    );
     const deployment = { deploy: jest.fn() };
     const service = new ProjectsService(
       prisma as never,

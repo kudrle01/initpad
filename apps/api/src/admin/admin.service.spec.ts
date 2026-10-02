@@ -18,6 +18,52 @@ function row(over: Record<string, unknown> = {}) {
 }
 
 describe('AdminService', () => {
+  it('updates workspace capacity and records the platform administrator action', async () => {
+    const before = {
+      workspaceId: 'workspace-1',
+      workspaceName: 'Team Alpha',
+      limits: {
+        projects: 10,
+        members: 20,
+        targets: 5,
+        concurrentOperations: 4,
+        artifactBytes: '10737418240',
+      },
+    };
+    const after = {
+      ...before,
+      limits: { ...before.limits, projects: 25 },
+    };
+    const capacity = {
+      snapshot: jest.fn(async () => before),
+      update: jest.fn(async () => after),
+    };
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = new AdminService(
+      {} as never,
+      {} as never,
+      {} as never,
+      capacity as never,
+      audit,
+    );
+
+    await expect(
+      service.updateWorkspaceCapacity('admin-1', 'workspace-1', {
+        maxProjects: 25,
+        maxMembers: 20,
+        maxTargets: 5,
+        maxConcurrentOperations: 4,
+        maxArtifactStorageGiB: 10,
+      }),
+    ).resolves.toBe(after);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'workspace-1',
+        actorUserId: 'admin-1',
+        action: 'workspace.capacity_updated',
+      }),
+    );
+  });
   it('creates a user with a one-time forced-change password', async () => {
     let provisionInput: Record<string, unknown> | undefined;
     const auth = {

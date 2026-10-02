@@ -128,8 +128,16 @@ describe('Agent-backed Docker target creation', () => {
     });
     const prisma = {
       target: { findFirst: jest.fn(async () => null), create },
-      workspace: { findUniqueOrThrow: jest.fn(async () => ({ slug: 'team-alpha' })) },
+      targetAllocation: { count: jest.fn(async () => 0) },
+      workspace: {
+        findUnique: jest.fn(async () => ({ maxTargets: 20 })),
+        findUniqueOrThrow: jest.fn(async () => ({ slug: 'team-alpha' })),
+      },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+      run(prisma),
+    );
     const workspaces = {
       resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })),
       require: jest.fn(async () => 'owner'),

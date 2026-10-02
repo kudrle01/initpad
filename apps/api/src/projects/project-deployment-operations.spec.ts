@@ -4,15 +4,27 @@ import { ProjectDeploymentOperations } from './project-deployment-operations';
 const targetRevision = new Date('2026-09-07T10:00:00.000Z');
 const allocationRevision = new Date('2026-09-07T10:05:00.000Z');
 
+function withCapacity<T extends Record<string, any>>(prisma: T): T {
+  const client: Record<string, any> = prisma;
+  client.workspace ??= {
+    findUnique: jest.fn(async () => ({ maxConcurrentOperations: 10 })),
+  };
+  client.provisioningOperation ??= { count: jest.fn(async () => 0) };
+  client.deploymentOperation.count ??= jest.fn(async () => 0);
+  client.$transaction ??= jest.fn(async (run: (transaction: T) => unknown) => run(prisma));
+  return prisma;
+}
+
 describe('ProjectDeploymentOperations', () => {
   it('claims an idle environment and records an immutable target snapshot', async () => {
-    const prisma = {
+    const prisma = withCapacity({
       environment: {
         findUnique: jest.fn(async () => ({
           id: 'env-1',
           targetId: 'target-1',
           target: { name: 'ESO' },
           provider: 'sftp',
+          project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
         })),
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
@@ -20,7 +32,7 @@ describe('ProjectDeploymentOperations', () => {
         create: jest.fn(async ({ data }) => ({ id: 'operation-1', ...data })),
         update: jest.fn(),
       },
-    };
+    });
     const operations = new ProjectDeploymentOperations(prisma as never);
 
     await expect(
@@ -53,7 +65,7 @@ describe('ProjectDeploymentOperations', () => {
       record: jest.fn(async () => undefined),
       recordOperationResult: jest.fn(async () => undefined),
     };
-    const prisma = {
+    const prisma = withCapacity({
       environment: {
         findUnique: jest.fn(async () => ({
           id: 'env-1',
@@ -71,7 +83,7 @@ describe('ProjectDeploymentOperations', () => {
         create: jest.fn(async ({ data }) => ({ id: operationId, ...data })),
         update: jest.fn(async () => ({ id: operationId, correlationId: operationId })),
       },
-    };
+    });
     const operations = new ProjectDeploymentOperations(prisma as never, audit);
 
     await operations.begin('project-1', 'test', 'promote', 'abc123', null, 'user-1');
@@ -90,13 +102,14 @@ describe('ProjectDeploymentOperations', () => {
 
   it('cancels the losing operation when two requests race for one environment', async () => {
     const update = jest.fn(async () => undefined);
-    const prisma = {
+    const prisma = withCapacity({
       environment: {
         findUnique: jest.fn(async () => ({
           id: 'env-1',
           targetId: null,
           target: null,
           provider: 'docker',
+          project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
         })),
         updateMany: jest.fn(async () => ({ count: 0 })),
       },
@@ -104,7 +117,7 @@ describe('ProjectDeploymentOperations', () => {
         create: jest.fn(async ({ data }) => ({ id: 'operation-loser', ...data })),
         update,
       },
-    };
+    });
     const operations = new ProjectDeploymentOperations(prisma as never);
 
     await expect(operations.begin('project-1', 'dev', 'redeploy', 'abc123')).rejects.toBeInstanceOf(

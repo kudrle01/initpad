@@ -24,6 +24,7 @@ import { WorkspacesService } from './workspaces.service';
 import { WorkspacePortfolioService } from './workspace-portfolio.service';
 import { WorkspaceMetricsService } from './workspace-metrics.service';
 import { WorkspaceMetricsQueryDto } from './dto/workspace-metrics-query.dto';
+import { WorkspaceCapacityService } from './workspace-capacity.service';
 
 @Controller('workspaces')
 @UseGuards(JwtAuthGuard)
@@ -32,6 +33,7 @@ export class WorkspacesController {
     private readonly workspaces: WorkspacesService,
     private readonly portfolio: WorkspacePortfolioService,
     private readonly metrics: WorkspaceMetricsService,
+    private readonly capacity: WorkspaceCapacityService,
   ) {}
 
   @Get()
@@ -47,6 +49,12 @@ export class WorkspacesController {
   @Get(':id/portfolio')
   portfolioSummary(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.portfolio.get(userId, id);
+  }
+
+  @Get(':id/capacity')
+  async capacitySummary(@CurrentUser() userId: string, @Param('id') id: string) {
+    await this.workspaces.require(userId, id, 'read');
+    return this.capacity.snapshot(id);
   }
 
   @Get(':id/metrics')

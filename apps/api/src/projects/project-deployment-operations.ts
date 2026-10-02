@@ -10,6 +10,10 @@ import { AuditEventsService, auditOperationAction } from '../audit/audit-events.
 import { PrismaService } from '../prisma/prisma.service';
 import type { ExpectedProductionState } from './project-production-approvals';
 import { newCorrelationId } from '../common/request-context';
+import {
+  serializableCapacityTransaction,
+  WorkspaceCapacityService,
+} from '../workspaces/workspace-capacity.service';
 
 /**
  * Owns the durable operation lock shared by CI, deployment and environment
@@ -18,11 +22,14 @@ import { newCorrelationId } from '../common/request-context';
  */
 export class ProjectDeploymentOperations {
   private readonly logger = new Logger('ProjectDeploymentOperations');
+  private readonly capacity: WorkspaceCapacityService;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
-  ) {}
+  ) {
+    this.capacity = new WorkspaceCapacityService(prisma);
+  }
 
   async recoverInterrupted(): Promise<void> {
     try {
@@ -100,47 +107,60 @@ export class ProjectDeploymentOperations {
         'Artifact, target, or production configuration changed. Create a new production request.',
       );
     }
-    const operation = await this.prisma.deploymentOperation.create({
-      data: {
-        correlationId: newCorrelationId(),
-        environmentId: environment.id,
-        kind,
-        status: 'running',
-        phase: 'queued',
-        version,
-        buildArtifactId: buildArtifactId ?? null,
-        message: kind === 'ci-retry' ? 'Waiting for GitHub Actions build' : 'Preparing deployment',
-        targetIdSnapshot: environment.targetId,
-        targetName: environment.target?.name ?? environment.provider,
-        providerSnapshot: environment.provider,
+    const { operation, claimed } = await serializableCapacityTransaction(
+      this.prisma,
+      async (tx) => {
+        await this.capacity.assertAvailable(
+          environment.project.workspaceId,
+          'concurrentOperations',
+          1,
+          tx,
+        );
+        const operation = await tx.deploymentOperation.create({
+          data: {
+            correlationId: newCorrelationId(),
+            environmentId: environment.id,
+            kind,
+            status: 'running',
+            phase: 'queued',
+            version,
+            buildArtifactId: buildArtifactId ?? null,
+            message:
+              kind === 'ci-retry' ? 'Waiting for GitHub Actions build' : 'Preparing deployment',
+            targetIdSnapshot: environment.targetId,
+            targetName: environment.target?.name ?? environment.provider,
+            providerSnapshot: environment.provider,
+          },
+        });
+        const claimed = await tx.environment.updateMany({
+          where: {
+            id: environment.id,
+            activeOperationId: null,
+            ...(expectedProductionState
+              ? {
+                  targetId: expectedProductionState.targetId,
+                  allocationId: expectedProductionState.allocationId,
+                  configRevision: expectedProductionState.configRevision,
+                }
+              : {}),
+          },
+          data: {
+            activeOperationId: operation.id,
+            status: 'deploying',
+            statusReason:
+              kind === 'start'
+                ? 'Starting environment'
+                : kind === 'stop'
+                  ? 'Stopping environment'
+                  : kind === 'remove'
+                    ? 'Removing deployment'
+                    : 'Preparing deployment',
+            ...(!['start', 'stop', 'remove'].includes(kind) ? { deploymentRequired: true } : {}),
+          },
+        });
+        return { operation, claimed };
       },
-    });
-    const claimed = await this.prisma.environment.updateMany({
-      where: {
-        id: environment.id,
-        activeOperationId: null,
-        ...(expectedProductionState
-          ? {
-              targetId: expectedProductionState.targetId,
-              allocationId: expectedProductionState.allocationId,
-              configRevision: expectedProductionState.configRevision,
-            }
-          : {}),
-      },
-      data: {
-        activeOperationId: operation.id,
-        status: 'deploying',
-        statusReason:
-          kind === 'start'
-            ? 'Starting environment'
-            : kind === 'stop'
-              ? 'Stopping environment'
-              : kind === 'remove'
-                ? 'Removing deployment'
-                : 'Preparing deployment',
-        ...(!['start', 'stop', 'remove'].includes(kind) ? { deploymentRequired: true } : {}),
-      },
-    });
+    );
     if (claimed.count === 1) {
       this.logger.log({
         event: 'deployment.operation.started',

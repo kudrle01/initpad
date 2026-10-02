@@ -176,18 +176,27 @@ describe('ProjectArtifactIngestion → object storage', () => {
 
   it('does not reset an artifact identity already bound to another project', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ maxArtifactBytes: 1024n })) },
       buildArtifact: {
         findUnique: jest.fn(async () => ({
           id: 'artifact-existing',
           projectId: 'project-2',
           commitSha: SHA,
+          status: 'available',
+          sizeBytes: 12n,
         })),
+        aggregate: jest.fn(async () => ({ _sum: { sizeBytes: 12n } })),
         create: jest.fn(),
         update: jest.fn(),
       },
+      project: { findUnique: jest.fn(async () => ({ workspaceId: 'workspace-1' })) },
       environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
       deploymentOperation: { update: jest.fn(async () => ({})) },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+      run(prisma),
+    );
     const { ingestion, deployVerifiedArtifact } = makeIngestion(prisma, {}, {}, {});
 
     await expect(ingestion.queue('project-1', repository, artifact, 'op-1')).rejects.toThrow(

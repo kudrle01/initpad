@@ -135,9 +135,12 @@ describe('WorkspacesService tenant isolation', () => {
   it('grants repository access when an admin adds a member', async () => {
     const prisma = {
       user: { findFirst: jest.fn(async () => ({ id: 'u2', username: 'bob' })) },
-      workspace: { findUnique: jest.fn(async () => ({ type: 'team' })) },
+      workspace: {
+        findUnique: jest.fn(async () => ({ type: 'team', maxMembers: 100 })),
+      },
       workspaceMember: {
         findUnique: jest.fn(async () => null),
+        count: jest.fn(async () => 1),
         create: jest.fn(async () => ({})),
         delete: jest.fn(async () => ({})),
         findMany: jest.fn(async () => []),
@@ -156,7 +159,11 @@ describe('WorkspacesService tenant isolation', () => {
           },
         ]),
       },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+      run(prisma),
+    );
     const gitea = { setCollaborator: jest.fn(async () => undefined) };
     const workspaceScm = {
       collaboratorUsername: jest.fn(async () => 'bob'),

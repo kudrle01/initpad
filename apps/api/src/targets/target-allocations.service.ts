@@ -20,6 +20,10 @@ import {
   resolvePublicInternetHost,
   UnsafeOutboundDestinationError,
 } from '../common/outbound-network-policy';
+import {
+  serializableCapacityTransaction,
+  WorkspaceCapacityService,
+} from '../workspaces/workspace-capacity.service';
 
 const ALLOCATION_INCLUDE = {
   target: {
@@ -137,6 +141,7 @@ export class TargetAllocationsService {
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
       record: () => Promise.resolve(),
     },
+    private readonly capacity: WorkspaceCapacityService = new WorkspaceCapacityService(prisma),
   ) {}
 
   async list(userId: string, requestedWorkspaceId?: string): Promise<TargetAllocationSummary[]> {
@@ -192,6 +197,7 @@ export class TargetAllocationsService {
     ) {
       throw new BadRequestException('This workspace already has access to that server');
     }
+    await this.capacity.assertAvailable(workspaceId, 'targets');
 
     const capabilities = this.resolveCapabilities(dto.capabilities, target.capabilities);
     const workspace = await this.prisma.workspace.findUniqueOrThrow({
@@ -199,22 +205,25 @@ export class TargetAllocationsService {
       select: { slug: true },
     });
     const usage = allocationUsageDefaults(target, workspace.slug);
-    const row = await this.prisma.targetAllocation.create({
-      data: {
-        workspaceId,
-        targetId: dto.targetId,
-        namespace: workspace.slug,
-        rootPath: usage.rootPath,
-        publicUrl: dto.publicUrl ?? usage.publicUrl,
-        capabilities,
-        maxEnvironments: dto.maxEnvironments ?? 50,
-        cpuLimitMillicores: dto.cpuLimitMillicores ?? 1000,
-        memoryLimitMb: dto.memoryLimitMb ?? 512,
-        pidsLimit: dto.pidsLimit ?? 256,
-        devTtlHours: dto.devTtlHours ?? null,
-        testTtlHours: dto.testTtlHours ?? null,
-      },
-      include: ALLOCATION_INCLUDE,
+    const row = await serializableCapacityTransaction(this.prisma, async (tx) => {
+      await this.capacity.assertAvailable(workspaceId, 'targets', 1, tx);
+      return tx.targetAllocation.create({
+        data: {
+          workspaceId,
+          targetId: dto.targetId,
+          namespace: workspace.slug,
+          rootPath: usage.rootPath,
+          publicUrl: dto.publicUrl ?? usage.publicUrl,
+          capabilities,
+          maxEnvironments: dto.maxEnvironments ?? 50,
+          cpuLimitMillicores: dto.cpuLimitMillicores ?? 1000,
+          memoryLimitMb: dto.memoryLimitMb ?? 512,
+          pidsLimit: dto.pidsLimit ?? 256,
+          devTtlHours: dto.devTtlHours ?? null,
+          testTtlHours: dto.testTtlHours ?? null,
+        },
+        include: ALLOCATION_INCLUDE,
+      });
     });
     await this.auditEvents.record({
       workspaceId,

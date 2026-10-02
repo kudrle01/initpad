@@ -175,8 +175,8 @@ function Navigation({ user, onNavigate }: { user: User; onNavigate?: () => void 
       {MANAGE_NAV.map((item) => (
         <Item key={item.to} {...item} onNavigate={onNavigate} />
       ))}
-      {user.edition === 'self-hosted' && user.platformRole === 'admin' && (
-        <Item to="/admin" label="Instance" icon={ShieldCheck} onNavigate={onNavigate} />
+      {user.platformRole === 'admin' && (
+        <Item to="/admin" label="Platform" icon={ShieldCheck} onNavigate={onNavigate} />
       )}
     </nav>
   );

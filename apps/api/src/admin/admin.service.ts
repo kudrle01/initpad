@@ -1,9 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { GiteaService } from '../scm/gitea.service';
 import { generateTemporaryPassword, hashPassword } from '../auth/password';
 import { CreateUserDto } from './dto/create-user.dto';
+import { WorkspaceCapacityService } from '../workspaces/workspace-capacity.service';
+import { UpdateWorkspaceCapacityDto } from './dto/update-workspace-capacity.dto';
+import { AuditEventsService } from '../audit/audit-events.service';
 
 export interface AdminUser {
   id: string;
@@ -56,10 +59,10 @@ const USER_SELECT = {
 } as const;
 
 /**
- * Instance administration for the self-hosted edition (ADR-040): list, create,
- * deactivate/reactivate and reset users. Creation and reset return a random
- * one-time password shown to the administrator once; only its hash is stored
- * and the account is forced to change it before doing anything else.
+ * Platform-wide administration. Workspace capacity applies to both editions;
+ * self-hosted additionally exposes managed user lifecycle (ADR-040). Creation
+ * and reset return a random one-time password shown once; only its hash is
+ * stored and the account must change it before doing anything else.
  */
 @Injectable()
 export class AdminService {
@@ -67,7 +70,48 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly gitea: GiteaService,
+    private readonly workspaceCapacity: WorkspaceCapacityService = new WorkspaceCapacityService(
+      prisma,
+    ),
+    @Inject(AuditEventsService)
+    private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
+      record: () => Promise.resolve(),
+    },
   ) {}
+
+  listWorkspaceCapacity() {
+    return this.workspaceCapacity.list();
+  }
+
+  async updateWorkspaceCapacity(
+    actorUserId: string,
+    workspaceId: string,
+    dto: UpdateWorkspaceCapacityDto,
+  ) {
+    const previous = await this.workspaceCapacity.snapshot(workspaceId);
+    const updated = await this.workspaceCapacity.update(workspaceId, dto);
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId,
+      action: 'workspace.capacity_updated',
+      resourceType: 'workspace',
+      resourceId: workspaceId,
+      resourceName: updated.workspaceName,
+      details: {
+        previousProjects: previous.limits.projects,
+        projects: updated.limits.projects,
+        previousMembers: previous.limits.members,
+        members: updated.limits.members,
+        previousTargets: previous.limits.targets,
+        targets: updated.limits.targets,
+        previousConcurrentOperations: previous.limits.concurrentOperations,
+        concurrentOperations: updated.limits.concurrentOperations,
+        previousArtifactBytes: previous.limits.artifactBytes,
+        artifactBytes: updated.limits.artifactBytes,
+      },
+    });
+    return updated;
+  }
 
   async listUsers(): Promise<AdminUser[]> {
     const rows = await this.prisma.user.findMany({

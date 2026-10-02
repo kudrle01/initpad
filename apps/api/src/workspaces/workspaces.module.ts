@@ -6,11 +6,17 @@ import { GitHubCoreModule } from '../scm/github/github-core.module';
 import { AuditEventsModule } from '../audit/audit-events.module';
 import { WorkspacePortfolioService } from './workspace-portfolio.service';
 import { WorkspaceMetricsService } from './workspace-metrics.service';
+import { WorkspaceCapacityService } from './workspace-capacity.service';
 
 @Module({
   imports: [AuthModule, GitHubCoreModule, AuditEventsModule],
   controllers: [WorkspacesController],
-  providers: [WorkspacesService, WorkspacePortfolioService, WorkspaceMetricsService],
-  exports: [WorkspacesService],
+  providers: [
+    WorkspacesService,
+    WorkspacePortfolioService,
+    WorkspaceMetricsService,
+    WorkspaceCapacityService,
+  ],
+  exports: [WorkspacesService, WorkspaceCapacityService],
 })
 export class WorkspacesModule {}

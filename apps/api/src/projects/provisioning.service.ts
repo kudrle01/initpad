@@ -10,6 +10,10 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AuditEventsService, auditOperationAction } from '../audit/audit-events.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  serializableCapacityTransaction,
+  WorkspaceCapacityService,
+} from '../workspaces/workspace-capacity.service';
 
 export type ProvisioningKind = 'create' | 'import';
 export type ProvisioningStep = 'validate' | 'repository' | 'ci' | 'done';
@@ -107,12 +111,15 @@ type Row = ProvisioningRecord & {
 export class ProvisioningService implements OnModuleInit {
   private readonly instanceId = randomUUID();
   private readonly logger = new Logger(ProvisioningService.name);
+  private readonly capacity: WorkspaceCapacityService;
 
   constructor(
     private readonly prisma: PrismaService,
     @Inject(AuditEventsService)
     private readonly auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
-  ) {}
+  ) {
+    this.capacity = new WorkspaceCapacityService(prisma);
+  }
 
   async onModuleInit(): Promise<void> {
     await this.reconcileStale();
@@ -143,10 +150,19 @@ export class ProvisioningService implements OnModuleInit {
     };
     let operationId: string;
     if (!options?.retryOfId) {
-      operationId = (await this.prisma.provisioningOperation.create({ data, select: { id: true } }))
-        .id;
+      operationId = await serializableCapacityTransaction(this.prisma, async (tx) => {
+        await this.capacity.assertAvailable(workspaceId, 'concurrentOperations', 1, tx);
+        return (await tx.provisioningOperation.create({ data, select: { id: true } })).id;
+      });
     } else {
-      operationId = await this.prisma.$transaction(async (tx) => {
+      operationId = await serializableCapacityTransaction(this.prisma, async (tx) => {
+        await this.capacity.assertAvailable(
+          workspaceId,
+          'concurrentOperations',
+          1,
+          tx,
+          options.retryOfId,
+        );
         const op = await tx.provisioningOperation.create({ data, select: { id: true } });
         const previous = await tx.provisioningOperation.updateMany({
           where: { id: options.retryOfId, status: 'retrying', leaseOwner: this.instanceId },

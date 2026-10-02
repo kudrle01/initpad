@@ -28,6 +28,10 @@ import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
+  serializableCapacityTransaction,
+  WorkspaceCapacityService,
+} from '../workspaces/workspace-capacity.service';
+import {
   agentVersionAtLeast,
   MIN_GATEWAY_ROUTE_AGENT_VERSION,
   supportsProjectAgent,
@@ -181,6 +185,7 @@ export interface TargetRow {
 @Injectable()
 export class TargetsService implements OnModuleInit {
   private readonly logger = new Logger('TargetsService');
+  private readonly capacity: WorkspaceCapacityService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -190,7 +195,9 @@ export class TargetsService implements OnModuleInit {
     private readonly auditEvents: Pick<AuditEventsService, 'record'> = {
       record: () => Promise.resolve(),
     },
-  ) {}
+  ) {
+    this.capacity = new WorkspaceCapacityService(prisma);
+  }
 
   async onModuleInit(): Promise<void> {
     // Built-ins are the self-contained installation's own demo capacity. A
@@ -384,6 +391,7 @@ export class TargetsService implements OnModuleInit {
     if (await this.prisma.target.findFirst({ where: { workspaceId, name: dto.name } })) {
       throw new BadRequestException(`This workspace already has a target named '${dto.name}'`);
     }
+    await this.capacity.assertAvailable(workspaceId, 'targets');
     const workspace = await this.prisma.workspace.findUniqueOrThrow({
       where: { id: workspaceId },
       select: { slug: true },
@@ -402,39 +410,42 @@ export class TargetsService implements OnModuleInit {
     // workspace that registered it. Create its access policy in the same
     // nested write so the UI never exposes a half-created server that still
     // needs a second technical "allocation" step.
-    const row = await this.prisma.target.create({
-      data: {
-        name: dto.name,
-        kind: dto.kind,
-        scope: 'user',
-        capabilities,
-        host: agentBacked ? null : dto.host!,
-        port: agentBacked ? null : dto.port!,
-        username: agentBacked ? null : dto.username!,
-        auth: agentBacked ? null : dto.auth!,
-        secret: agentBacked ? null : encryptSecret(dto.secret!),
-        hostKeyFingerprint: agentBacked ? null : dto.hostKeyFingerprint!,
-        remotePath,
-        publicUrl,
-        routingMode,
-        gatewayAdapter: routingMode === 'managed-gateway' ? 'caddy' : null,
-        ownerId: userId,
-        workspaceId,
-        allocations: {
-          create: {
-            workspaceId,
-            namespace: workspace.slug,
-            rootPath: usage.rootPath,
-            publicUrl: usage.publicUrl,
-            capabilities,
+    const row = await serializableCapacityTransaction(this.prisma, async (tx) => {
+      await this.capacity.assertAvailable(workspaceId, 'targets', 1, tx);
+      return tx.target.create({
+        data: {
+          name: dto.name,
+          kind: dto.kind,
+          scope: 'user',
+          capabilities,
+          host: agentBacked ? null : dto.host!,
+          port: agentBacked ? null : dto.port!,
+          username: agentBacked ? null : dto.username!,
+          auth: agentBacked ? null : dto.auth!,
+          secret: agentBacked ? null : encryptSecret(dto.secret!),
+          hostKeyFingerprint: agentBacked ? null : dto.hostKeyFingerprint!,
+          remotePath,
+          publicUrl,
+          routingMode,
+          gatewayAdapter: routingMode === 'managed-gateway' ? 'caddy' : null,
+          ownerId: userId,
+          workspaceId,
+          allocations: {
+            create: {
+              workspaceId,
+              namespace: workspace.slug,
+              rootPath: usage.rootPath,
+              publicUrl: usage.publicUrl,
+              capabilities,
+            },
           },
         },
-      },
-      include: {
-        allocations: {
-          select: { id: true, capabilities: true, maxEnvironments: true },
+        include: {
+          allocations: {
+            select: { id: true, capabilities: true, maxEnvironments: true },
+          },
         },
-      },
+      });
     });
     const allocation = row.allocations[0];
     await this.auditEvents.record({

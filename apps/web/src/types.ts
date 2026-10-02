@@ -81,6 +81,30 @@ export interface WorkspaceMember {
   createdAt: string;
 }
 
+export interface WorkspaceCapacity {
+  workspaceId: string;
+  workspaceName: string;
+  limits: WorkspaceCapacityValues;
+  usage: WorkspaceCapacityValues;
+  remaining: WorkspaceCapacityValues;
+}
+
+export interface WorkspaceCapacityValues {
+  projects: number;
+  members: number;
+  targets: number;
+  concurrentOperations: number;
+  artifactBytes: string;
+}
+
+export interface WorkspaceCapacityUpdate {
+  maxProjects: number;
+  maxMembers: number;
+  maxTargets: number;
+  maxConcurrentOperations: number;
+  maxArtifactStorageGiB: number;
+}
+
 export interface AuditEvent {
   id: string;
   actor: {

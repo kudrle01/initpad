@@ -30,6 +30,8 @@ import type {
   TargetUsage,
   DeployStatus,
   PipelinePreset,
+  WorkspaceCapacity,
+  WorkspaceCapacityUpdate,
 } from '@/types';
 
 export interface EnvConfig {
@@ -274,6 +276,8 @@ export const api = {
   listWorkspaces: () => http<Workspace[]>('/workspaces'),
   getWorkspacePortfolio: (workspaceId: string) =>
     http<WorkspacePortfolio>(`/workspaces/${workspaceId}/portfolio`),
+  getWorkspaceCapacity: (workspaceId: string) =>
+    http<WorkspaceCapacity>(`/workspaces/${workspaceId}/capacity`),
   downloadWorkspaceMetrics: (
     workspaceId: string,
     format: 'json' | 'csv',
@@ -578,6 +582,12 @@ export const api = {
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).
   adminListUsers: () => http<AdminUser[]>('/admin/users'),
+  adminListWorkspaceCapacity: () => http<WorkspaceCapacity[]>('/admin/workspaces/capacity'),
+  adminUpdateWorkspaceCapacity: (workspaceId: string, body: WorkspaceCapacityUpdate) =>
+    http<WorkspaceCapacity>(`/admin/workspaces/${workspaceId}/capacity`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
   // A self-update intentionally replaces the local API. Bound this request so
   // the UI can retry after cutover instead of retaining a request from the
   // unavailable instance for the general API timeout.

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PlatformAdminGuard } from './platform-admin.guard';
@@ -6,9 +6,11 @@ import { AdminService } from './admin.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PlatformUpdatesService } from '../updates/platform-updates.service';
 import { RequestPlatformUpdateDto } from '../updates/dto/request-platform-update.dto';
+import { UpdateWorkspaceCapacityDto } from './dto/update-workspace-capacity.dto';
 
-// Instance administration API (self-hosted edition). Every route requires a
-// valid session AND the platform administrator role.
+// Platform administration API. Account provisioning and self-update are used
+// by self-hosted installations; workspace capacity policy also protects SaaS.
+// Every route requires a valid session AND the platform administrator role.
 @Controller('admin')
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
 export class AdminController {
@@ -30,6 +32,20 @@ export class AdminController {
   @Get('users')
   listUsers() {
     return this.admin.listUsers();
+  }
+
+  @Get('workspaces/capacity')
+  listWorkspaceCapacity() {
+    return this.admin.listWorkspaceCapacity();
+  }
+
+  @Put('workspaces/:id/capacity')
+  updateWorkspaceCapacity(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateWorkspaceCapacityDto,
+  ) {
+    return this.admin.updateWorkspaceCapacity(userId, id, dto);
   }
 
   @Post('users')

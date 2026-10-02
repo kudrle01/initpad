@@ -1,16 +1,27 @@
 import { ProvisioningService } from './provisioning.service';
 
+function withCapacity<T extends Record<string, any>>(prisma: T): T {
+  const client: Record<string, any> = prisma;
+  client.workspace ??= {
+    findUnique: jest.fn(async () => ({ maxConcurrentOperations: 10 })),
+  };
+  client.deploymentOperation ??= { count: jest.fn(async () => 0) };
+  client.provisioningOperation.count ??= jest.fn(async () => 0);
+  client.$transaction ??= jest.fn(async (run: (transaction: T) => unknown) => run(prisma));
+  return prisma;
+}
+
 describe('ProvisioningService', () => {
   it('starts a running operation at the validate step', async () => {
     let createArgs: { data?: Record<string, unknown> } | undefined;
-    const prisma = {
+    const prisma = withCapacity({
       provisioningOperation: {
         create: jest.fn(async (args: { data?: Record<string, unknown> }) => {
           createArgs = args;
           return { id: 'op1' };
         }),
       },
-    };
+    });
     const service = new ProvisioningService(prisma as never);
     const id = await service.start('ws1', 'api', 'import');
     expect(id).toBe('op1');
@@ -29,12 +40,12 @@ describe('ProvisioningService', () => {
       record: jest.fn(async () => undefined),
       recordOperationResult: jest.fn(async () => undefined),
     };
-    const prisma = {
+    const prisma = withCapacity({
       provisioningOperation: {
         create: jest.fn(async () => ({ id: operationId })),
         update: jest.fn(async () => ({})),
       },
-    };
+    });
     const service = new ProvisioningService(prisma as never, audit);
 
     await service.start('ws1', 'api', 'create', {
@@ -186,8 +197,13 @@ describe('ProvisioningService', () => {
 
   it('creates a retry attempt and retires its predecessor in one transaction', async () => {
     const tx = {
+      workspace: {
+        findUnique: jest.fn(async () => ({ maxConcurrentOperations: 10 })),
+      },
+      deploymentOperation: { count: jest.fn(async () => 0) },
       provisioningOperation: {
         create: jest.fn(async () => ({ id: 'op2' })),
+        count: jest.fn(async () => 0),
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
     };

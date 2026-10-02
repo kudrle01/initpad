@@ -148,8 +148,10 @@ artifact and bounded in-memory configuration through the fenced job protocol.
 ## Production gates
 
 Before calling InitPad hosted multi-tenant or enterprise-ready: remove the host
-Docker socket from the control plane, add production e-mail delivery,
-approval policy and complete quota enforcement, reconcile SCM permissions, use
-an external secret manager, persist OIDC grants, add centralized audit logs,
-metrics and traces, scan images/SBOMs, sign artifacts, enforce the application
-egress policy again at the network/firewall layer and test disaster recovery.
+Docker socket from the control plane, add production e-mail delivery, reconcile
+SCM permissions, use an external secret manager, add centralized audit logs,
+metrics and traces, enforce the application egress policy again at the
+network/firewall layer and test disaster recovery. Workspace admission quotas,
+persistent OIDC grants, production approvals, image/SBOM scanning, signed
+artifacts and recovery tests are implemented, but still require the complete
+hosted staging acceptance described in the roadmap.

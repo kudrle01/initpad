@@ -63,9 +63,11 @@ function build(
   const prisma = {
     project: {
       findFirst: jest.fn(async () => null),
+      count: jest.fn(async () => 0),
       create: jest.fn(async (_input: unknown) => ({ id: 'p1' })),
       delete: jest.fn(async () => undefined),
     },
+    workspace: { findUnique: jest.fn(async () => ({ maxProjects: 50 })) },
     targetAllocation: {
       findUnique: jest.fn(
         async (input: { where: { workspaceId_targetId?: { targetId: string } } }) => {
@@ -91,7 +93,11 @@ function build(
     },
     user: { findUniqueOrThrow: jest.fn(async () => ({ id: 'u1', username: 'alice' })) },
     workspaceMember: { findMany: jest.fn(async () => []) },
+    $transaction: jest.fn(),
   };
+  prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+    run(prisma),
+  );
   const scm = {
     initLocal: jest.fn(async () => undefined),
     provision: jest.fn(async () => repository),

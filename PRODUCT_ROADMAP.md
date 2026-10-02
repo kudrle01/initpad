@@ -168,7 +168,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
   platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
-  odkazuje na 121 samostatných ADR. Repository gate hlídá souvislou řadu,
+  odkazuje na 122 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.
 
@@ -195,7 +195,12 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     codes/access tokeny do PostgreSQL. Browserové a bearer hodnoty se ukládají
     pouze jako SHA-256, callback state i authorization code jsou atomicky
     jednorázové a flow funguje přes restart i mezi API replikami (ADR-121).
-  - [ ] Dokončit tenant/capacity kvóty, produkční e-mail delivery a load test.
+  - [x] Vynutit workspace kapacitu pro projekty, členy, deployment servery,
+    souběžné provisioning/deployment operace a rezervované artefakty.
+    Admission check a zápis používají serializable transakci, limity spravuje
+    platformní administrátor a jejich využití vidí členové workspace
+    (ADR-122).
+  - [ ] Doplnit produkční e-mail delivery a load test.
 - [ ] Zapojit OpenTelemetry/log collector, metriky, retenci, alerting a incident
   runbook; rozhodnout scheduler a topologii pro více API replik.
 - [ ] Nasadit staging, zopakovat GitHub/Agent/tenant/recovery acceptance a až
