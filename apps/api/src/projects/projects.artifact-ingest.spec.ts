@@ -54,6 +54,10 @@ function makeIngestion(
   store: Record<string, unknown>,
 ) {
   const operations = new ProjectDeploymentOperations(prisma as never);
+  jest
+    .spyOn(operations, 'runWithExecutionLease')
+    .mockImplementation(async (_operationId, task) => task());
+  jest.spyOn(operations, 'assertExecution').mockResolvedValue();
   jest.spyOn(operations, 'cancelled').mockResolvedValue(false);
   const deployVerifiedArtifact = jest.fn(async () => undefined);
   const ingestion = new ProjectArtifactIngestion(
@@ -64,7 +68,7 @@ function makeIngestion(
     operations,
     deployVerifiedArtifact,
   );
-  return { ingestion, deployVerifiedArtifact };
+  return { ingestion, deployVerifiedArtifact, operations };
 }
 
 describe('ProjectArtifactIngestion → object storage', () => {
@@ -80,6 +84,7 @@ describe('ProjectArtifactIngestion → object storage', () => {
 
   function basePrisma(updateMany: jest.Mock) {
     return {
+      $queryRaw: jest.fn(async () => [{ id: 'a1', generation: 1 }]),
       buildArtifact: {
         updateMany,
         findUnique: jest.fn(async () => ({ id: 'a1', project: { workspaceId: 'ws1' } })),
@@ -94,6 +99,117 @@ describe('ProjectArtifactIngestion → object storage', () => {
     };
   }
 
+  it('recovers only an expired artifact lease through a generation CAS', async () => {
+    const expiredAt = new Date('2026-10-03T08:00:00.000Z');
+    const artifactUpdate = jest.fn(async () => ({ count: 1 }));
+    const prisma = {
+      buildArtifact: {
+        updateMany: artifactUpdate,
+        findMany: jest.fn(async () => [
+          {
+            id: 'a1',
+            status: 'ingesting',
+            projectId: 'project-1',
+            commitSha: SHA,
+            createdAt: new Date('2026-10-03T07:00:00.000Z'),
+            ingestionOwner: 'dead-replica',
+            ingestionGeneration: 4,
+            ingestionLeaseExpiresAt: expiredAt,
+            operations: [],
+          },
+        ]),
+      },
+    };
+    const ingestion = new ProjectArtifactIngestion(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      jest.fn(),
+    );
+
+    await ingestion.recoverInterrupted();
+
+    expect(artifactUpdate).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'a1',
+        status: 'ingesting',
+        ingestionOwner: 'dead-replica',
+        ingestionGeneration: 4,
+      }),
+      data: expect.objectContaining({
+        status: 'failed',
+        ingestionOwner: null,
+        ingestionLeaseExpiresAt: null,
+      }),
+    });
+  });
+
+  it('does not recover a live artifact lease owned by another API replica', async () => {
+    const findMany = jest.fn(async () => []);
+    const transaction = jest.fn();
+    const ingestion = new ProjectArtifactIngestion(
+      { buildArtifact: { findMany }, $transaction: transaction } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      jest.fn(),
+    );
+
+    await ingestion.recoverInterrupted();
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({
+              status: 'ingesting',
+              OR: expect.arrayContaining([
+                expect.objectContaining({ ingestionLeaseExpiresAt: { lte: expect.any(Date) } }),
+              ]),
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('leaves an expired artifact untouched while its deployment operation is still live', async () => {
+    const artifactUpdate = jest.fn();
+    const ingestion = new ProjectArtifactIngestion(
+      {
+        buildArtifact: {
+          updateMany: artifactUpdate,
+          findMany: jest.fn(async () => [
+            {
+              id: 'a1',
+              status: 'ingesting',
+              projectId: 'project-1',
+              commitSha: SHA,
+              createdAt: new Date('2026-10-03T07:00:00.000Z'),
+              ingestionOwner: 'replica-1',
+              ingestionGeneration: 2,
+              ingestionLeaseExpiresAt: new Date('2026-10-03T08:00:00.000Z'),
+              operations: [{ id: 'operation-1' }],
+            },
+          ]),
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      jest.fn(),
+    );
+
+    await ingestion.recoverInterrupted();
+
+    expect(artifactUpdate).not.toHaveBeenCalled();
+  });
+
   it('uploads the verified bytes and marks the artifact available (object-store)', async () => {
     const updateMany = jest.fn(async () => ({ count: 1 }));
     const prisma = basePrisma(updateMany);
@@ -106,7 +222,7 @@ describe('ProjectArtifactIngestion → object storage', () => {
       head: jest.fn(async () => ({ sizeBytes: 12 })),
       delete: jest.fn(async () => undefined),
     };
-    const { ingestion } = makeIngestion(prisma, scm, deployment, store);
+    const { ingestion, operations } = makeIngestion(prisma, scm, deployment, store);
 
     await ingestion.ingest('project-1', repository, artifact, 'op-1');
 
@@ -115,6 +231,7 @@ describe('ProjectArtifactIngestion → object storage', () => {
     expect(store.head).toHaveBeenCalledWith(expectedKey);
     expect(deployment.loadImageArchive).toHaveBeenCalledWith(filePath, EXPECTED_REF);
     expect(store.delete).not.toHaveBeenCalled();
+    expect(operations.runWithExecutionLease).toHaveBeenCalledWith('op-1', expect.any(Function));
     // Final DB transition records object-store + the opaque key.
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -171,6 +288,89 @@ describe('ProjectArtifactIngestion → object storage', () => {
     expect(store.delete).toHaveBeenCalledWith(expectedKey);
     expect(deployment.loadImageArchive).not.toHaveBeenCalled();
     expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    );
+  });
+
+  it('renews a slow ingestion and publishes only through its generation fence', async () => {
+    jest.useFakeTimers();
+    let finishDownload!: () => void;
+    const waitForDownload = new Promise<void>((resolve) => {
+      finishDownload = resolve;
+    });
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    const prisma = basePrisma(updateMany);
+    const query = prisma.$queryRaw as jest.Mock;
+    const scm = {
+      downloadBuildArtifact: jest.fn(async () => {
+        await waitForDownload;
+        return { filePath, cleanup: jest.fn() };
+      }),
+    };
+    const store = {
+      put: jest.fn(async () => undefined),
+      head: jest.fn(async () => ({ sizeBytes: 12 })),
+      delete: jest.fn(async () => undefined),
+    };
+    const { ingestion } = makeIngestion(
+      prisma,
+      scm,
+      { loadImageArchive: jest.fn(async () => undefined) },
+      store,
+    );
+
+    const running = ingestion.ingest('project-1', repository, artifact, null);
+    await Promise.resolve();
+    expect(query).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(30_000);
+    expect(query).toHaveBeenCalledTimes(2);
+    finishDownload();
+    await running;
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'a1',
+        status: 'ingesting',
+        ingestionGeneration: 1,
+      }),
+      data: expect.objectContaining({
+        status: 'available',
+        ingestionOwner: null,
+        ingestionLeaseExpiresAt: null,
+      }),
+    });
+    jest.useRealTimers();
+  });
+
+  it('does not publish or clean shared storage after losing the ingestion lease', async () => {
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    const prisma = basePrisma(updateMany);
+    (prisma.$queryRaw as jest.Mock)
+      .mockResolvedValueOnce([{ id: 'a1', generation: 3 }])
+      .mockResolvedValueOnce([]);
+    const store = {
+      put: jest.fn(async () => undefined),
+      head: jest.fn(async () => ({ sizeBytes: 12 })),
+      delete: jest.fn(async () => undefined),
+    };
+    const { ingestion } = makeIngestion(
+      prisma,
+      {
+        downloadBuildArtifact: jest.fn(async () => ({ filePath, cleanup: jest.fn() })),
+      },
+      { loadImageArchive: jest.fn(async () => undefined) },
+      store,
+    );
+
+    await ingestion.ingest('project-1', repository, artifact, null);
+
+    expect(store.put).not.toHaveBeenCalled();
+    expect(store.delete).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'available' }) }),
+    );
+    expect(updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
     );
   });

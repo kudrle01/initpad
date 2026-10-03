@@ -62,6 +62,12 @@ export class ProjectsLifecycleService implements OnModuleInit, OnModuleDestroy {
           this.logger.warn(`Artifact retention sweep skipped: ${(error as Error).message}`),
         );
       this.leaderGeneration = generation;
+    } else {
+      await this.projects
+        .recoverInterruptedExecutions()
+        .catch((error) =>
+          this.logger.warn(`Execution recovery sweep skipped: ${(error as Error).message}`),
+        );
     }
     await this.projects
       .runEnvironmentExpiry()

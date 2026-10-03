@@ -547,6 +547,12 @@ model BuildArtifact {
   storageKind        String?
   storageRef         String?
   error              String?
+  // API-process execution lease for provider download, archive verification
+  // and durable object-store publication. Every takeover increments the
+  // generation so a stale replica cannot publish or delete another attempt.
+  ingestionOwner          String?
+  ingestionGeneration     Int                          @default(0)
+  ingestionLeaseExpiresAt DateTime?
   createdAt          DateTime                      @default(now())
   updatedAt          DateTime                      @updatedAt
   environments       Environment[]
@@ -556,6 +562,7 @@ model BuildArtifact {
   @@unique([sourceProvider, providerArtifactId])
   @@index([projectId, commitSha, createdAt])
   @@index([status, createdAt])
+  @@index([status, ingestionLeaseExpiresAt])
 }
 
 model Environment {

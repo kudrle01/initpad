@@ -221,9 +221,16 @@ export class ProjectsService {
     await this.reconciliation.reconcileRepositoryIdentities();
     await this.reconciliation.migrateLegacyCiTokens();
     await this.reconciliation.reconcileCiRuntimeSecrets();
+    await this.recoverInterruptedExecutions();
+    await this.environmentTargets.reconcileAllocations();
+  }
+
+  /** Lightweight leader sweep for process leases that can expire after startup. */
+  async recoverInterruptedExecutions(): Promise<void> {
+    // Deployment recovery owns environment state and therefore runs before
+    // artifact recovery decides whether an attached operation is still live.
     await this.operations.recoverInterrupted();
     await this.artifactIngestion.recoverInterrupted();
-    await this.environmentTargets.reconcileAllocations();
   }
 
   /**

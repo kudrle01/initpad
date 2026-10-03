@@ -63,8 +63,9 @@ zákazníků musí být hotové alespoň:
 7. centrální log collector nebo OpenTelemetry pipeline s definovanou retencí,
    přístupovými rolemi, metrikami, alerty a incident runbookem;
 8. spustit připravený omezený load test na SaaS stagingu a dokončit execution
-   fencing artifact ingestion a synchronních lifecycle mutací; background
-   lifecycle i operation-backed deployment už vlastní lease (ADR-125, ADR-126);
+   fencing synchronních lifecycle mutací; background lifecycle,
+   operation-backed deployment i GitHub artifact ingestion už vlastní lease
+   (ADR-125, ADR-126, ADR-128);
 9. po upstream opravě aktualizovat Sigstore HTTP cache řetězec a odstranit
    dočasnou výjimku `GHSA-ch52-4w7c-c8xp` před její expirací 2. listopadu 2026;
 10. nezávislé uživatelské a provozní ověření release kandidáta.
@@ -82,9 +83,11 @@ ani microVM.
 
 Periodický retention, environment expiry a startup reconciliation volí jediného
 leadera atomickým PostgreSQL lease s generačním takeoverem. Operation-backed
-deployment/start má vlastní obnovovaný lease a fenced terminal publication.
-Artifact ingestion a zbývající synchronní lifecycle mutace ale stejnou ochranu
-zatím nemají. Mutační veřejný provoz proto zůstává single-replica.
+deployment/start i GitHub artifact ingestion mají vlastní obnovovaný lease a
+fenced terminal publication; leader jejich recovery opakuje v každém
+minutovém maintenance cyklu. Zbývající synchronní lifecycle mutace a Gitea OCI
+capture ale stejnou ochranu zatím nemají. Mutační veřejný provoz proto zůstává
+single-replica.
 
 ### Sigstore má časově omezenou dependency výjimku
 

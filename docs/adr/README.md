@@ -133,3 +133,4 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 | [ADR-125](./ADR-125.md) | Background lifecycle volí jediného leadera databázovým lease |
 | [ADR-126](./ADR-126.md) | Process-bound deployment používá obnovovaný generační lease |
 | [ADR-127](./ADR-127.md) | Dependency audit připouští jen úzkou a expirující výjimku |
+| [ADR-128](./ADR-128.md) | Artifact ingestion používá vlastní generační execution lease |

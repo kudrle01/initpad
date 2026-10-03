@@ -7,6 +7,7 @@ describe('ProjectsLifecycleService', () => {
   it('recovers persisted state and owns the periodic expiry sweep', async () => {
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
       runEnvironmentExpiry: jest.fn(async () => 0),
     };
@@ -22,6 +23,7 @@ describe('ProjectsLifecycleService', () => {
     await jest.advanceTimersByTimeAsync(60_000);
     expect(projects.runEnvironmentExpiry).toHaveBeenCalledTimes(2);
     expect(projects.reconcilePersistedState).toHaveBeenCalledTimes(1);
+    expect(projects.recoverInterruptedExecutions).toHaveBeenCalledTimes(1);
     expect(leases.acquire).toHaveBeenCalledTimes(2);
 
     lifecycle.onModuleDestroy();
@@ -32,6 +34,7 @@ describe('ProjectsLifecycleService', () => {
   it('keeps startup available when best-effort sweeps fail', async () => {
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => {
         throw new Error('artifact store unavailable');
       }),
@@ -54,10 +57,33 @@ describe('ProjectsLifecycleService', () => {
     lifecycle.onModuleDestroy();
   });
 
+  it('keeps expiry maintenance running when periodic execution recovery fails', async () => {
+    const projects = {
+      reconcilePersistedState: jest.fn(async () => undefined),
+      recoverInterruptedExecutions: jest.fn(async () => {
+        throw new Error('database temporarily unavailable');
+      }),
+      runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
+      runEnvironmentExpiry: jest.fn(async () => 0),
+    };
+    const lifecycle = new ProjectsLifecycleService(
+      projects as never,
+      { acquire: jest.fn(async () => ({ generation: 1 })) } as never,
+    );
+
+    await lifecycle.onModuleInit();
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(projects.recoverInterruptedExecutions).toHaveBeenCalledTimes(1);
+    expect(projects.runEnvironmentExpiry).toHaveBeenCalledTimes(2);
+    lifecycle.onModuleDestroy();
+  });
+
   it('does not overlap slow expiry sweeps', async () => {
     let finishSweep: (() => void) | undefined;
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
       runEnvironmentExpiry: jest
         .fn()
@@ -76,10 +102,14 @@ describe('ProjectsLifecycleService', () => {
     jest.advanceTimersByTime(60_000);
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(projects.runEnvironmentExpiry).toHaveBeenCalledTimes(2);
     expect(leases.acquire).toHaveBeenCalledTimes(2);
 
     jest.advanceTimersByTime(60_000);
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
     expect(projects.runEnvironmentExpiry).toHaveBeenCalledTimes(2);
@@ -93,6 +123,7 @@ describe('ProjectsLifecycleService', () => {
   it('keeps follower replicas passive and runs recovery after lease takeover', async () => {
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
       runEnvironmentExpiry: jest.fn(async () => 0),
     };
@@ -121,6 +152,7 @@ describe('ProjectsLifecycleService', () => {
             finishRecovery = resolve;
           }),
       ),
+      recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
       runEnvironmentExpiry: jest.fn(async () => 0),
     };
