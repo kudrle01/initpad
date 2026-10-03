@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceCapacity, WorkspaceCapacityUpdate } from '@/types';
@@ -75,8 +75,12 @@ describe('WorkspaceCapacityCard', () => {
     expect(screen.getByText('workspace-1')).toBeInTheDocument();
 
     const projects = screen.getByLabelText(/Projects.*4 used/);
-    fireEvent.change(projects, { target: { value: '60' } });
-    await user.click(screen.getByRole('button', { name: 'Save limits' }));
+    await user.clear(projects);
+    await user.type(projects, '60');
+
+    const saveButton = screen.getByRole('button', { name: 'Save limits' });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
 
     await waitFor(() =>
       expect(mocks.api.adminUpdateWorkspaceCapacity).toHaveBeenCalledWith(
@@ -93,8 +97,12 @@ describe('WorkspaceCapacityCard', () => {
     render(<WorkspaceCapacityCard />);
 
     const members = await screen.findByLabelText(/Members.*8 used/);
-    fireEvent.change(members, { target: { value: '4' } });
-    await user.click(screen.getByRole('button', { name: 'Save limits' }));
+    await user.clear(members);
+    await user.type(members, '4');
+
+    const saveButton = screen.getByRole('button', { name: 'Save limits' });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
 
     await waitFor(() => expect(mocks.confirmAction).toHaveBeenCalledTimes(1));
     expect(mocks.confirmAction).toHaveBeenCalledWith(
