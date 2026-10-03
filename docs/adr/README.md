@@ -131,3 +131,4 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 | [ADR-123](./ADR-123.md) | Autentizační e-maily používají šifrovaný transakční outbox |
 | [ADR-124](./ADR-124.md) | Load a SMTP outage acceptance jsou omezené staging gate, ne důkaz active-active mutací |
 | [ADR-125](./ADR-125.md) | Background lifecycle volí jediného leadera databázovým lease |
+| [ADR-126](./ADR-126.md) | Process-bound deployment používá obnovovaný generační lease |

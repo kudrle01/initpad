@@ -88,6 +88,7 @@ describe('ProjectArtifactIngestion → object storage', () => {
       deploymentOperation: {
         updateMany: jest.fn(async () => ({ count: 1 })),
         update: jest.fn(async () => ({})),
+        findUnique: jest.fn(async () => ({ correlationId: 'correlation-1' })),
       },
       project: { update: jest.fn(async () => ({})) },
     };
@@ -191,7 +192,11 @@ describe('ProjectArtifactIngestion → object storage', () => {
       },
       project: { findUnique: jest.fn(async () => ({ workspaceId: 'workspace-1' })) },
       environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
-      deploymentOperation: { update: jest.fn(async () => ({})) },
+      deploymentOperation: {
+        update: jest.fn(async () => ({})),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        findUnique: jest.fn(async () => ({ correlationId: 'correlation-1' })),
+      },
       $transaction: jest.fn(),
     };
     prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>

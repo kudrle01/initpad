@@ -1333,17 +1333,36 @@ export class ProjectsService {
     operationId: string,
   ): Promise<void> {
     try {
-      const published = await this.deployEnv(projectId, envName, version, useRegistry, operationId);
-      if (published) await this.operations.complete(operationId, 'succeeded');
+      await this.operations.runWithExecutionLease(operationId, async () => {
+        try {
+          const published = await this.deployEnv(
+            projectId,
+            envName,
+            version,
+            useRegistry,
+            operationId,
+          );
+          if (published) await this.operations.complete(operationId, 'succeeded');
+        } catch (error) {
+          await this.operations.assertExecution(operationId);
+          this.logger.error(`Deploy to ${envName} failed: ${(error as Error).message}`);
+          await this.prisma.environment
+            .updateMany({
+              where: { projectId, name: envName, activeOperationId: operationId },
+              data: {
+                status: 'failed',
+                statusReason: (error as Error).message,
+                activeOperationId: null,
+              },
+            })
+            .catch(() => undefined);
+          await this.operations.complete(operationId, 'failed', (error as Error).message);
+        }
+      });
     } catch (e) {
-      this.logger.error(`Deploy to ${envName} failed: ${(e as Error).message}`);
-      await this.prisma.environment
-        .updateMany({
-          where: { projectId, name: envName, activeOperationId: operationId },
-          data: { status: 'failed', statusReason: (e as Error).message, activeOperationId: null },
-        })
-        .catch(() => undefined);
-      await this.operations.complete(operationId, 'failed', (e as Error).message);
+      // A different replica may own or have taken over the operation. Never
+      // publish failure from a worker that cannot prove its execution fence.
+      this.logger.warn(`Deploy execution stopped: ${(e as Error).message}`);
     }
   }
 

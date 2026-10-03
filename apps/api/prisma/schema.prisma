@@ -739,6 +739,12 @@ model DeploymentOperation {
   phase             String                       @default("queued") // queued | assigned | running | verifying | succeeded | failed | unhealthy | cancelled
   version           String?
   message           String?
+  // API-process execution lease. Generation changes on every takeover so a
+  // stale worker cannot publish after another replica has recovered the row.
+  // Agent-backed work clears this lease after the durable AgentJob handoff.
+  executionOwner          String?
+  executionGeneration     Int                          @default(0)
+  executionLeaseExpiresAt DateTime?
   // Immutable deployment destination snapshot. Environment.target may change
   // later; historical activity must keep the target that actually received it.
   targetIdSnapshot  String?
@@ -752,6 +758,7 @@ model DeploymentOperation {
 
   @@index([environmentId, createdAt])
   @@index([status])
+  @@index([status, executionLeaseExpiresAt])
   @@index([buildArtifactId])
   @@index([correlationId])
 }

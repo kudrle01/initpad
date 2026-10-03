@@ -46,6 +46,8 @@ describe('ProjectsService failed CI handoff', () => {
         count: jest.fn(async () => 0),
         create: jest.fn(async () => ({ id: 'operation-1' })),
         update: jest.fn(async () => ({ id: 'operation-1' })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        findUnique: jest.fn(async () => ({ correlationId: 'correlation-1' })),
       },
       $transaction: jest.fn(),
     };
@@ -88,8 +90,8 @@ describe('ProjectsService failed CI handoff', () => {
         statusReason: expect.stringContaining('docker job: failure'),
       }),
     });
-    expect(prisma.deploymentOperation.update).toHaveBeenCalledWith({
-      where: { id: 'operation-1' },
+    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'operation-1', executionOwner: null, finishedAt: null },
       data: expect.objectContaining({
         status: 'failed',
         message: expect.stringContaining('docker job: failure'),

@@ -274,66 +274,83 @@ export class ProjectEnvironmentLifecycle {
     operationId: string,
   ): Promise<void> {
     try {
-      const { project, template, environment, slug } = await this.context(projectId, envName);
-      const repository = repositoryRef(project);
-      if (this.isAgentBacked(environment)) {
-        await this.queueAgentLifecycle(project, template, environment, slug, 'start', operationId);
-        return;
-      }
-      const appPort = this.usesSharedSshPort(environment)
-        ? await this.allocateSharedSshPort(projectId, envName)
-        : undefined;
-      const result = await this.deployment.start(environment.provider as ProviderKind, {
-        projectName: slug,
-        env: envName,
-        port: template.port,
-        healthPath: template.healthPath ?? '/health',
-        startCommand: template.startCommand,
-        version: environment.version ?? undefined,
-        appPort,
-        connection: this.targets.connection(environment),
-        allocation: this.targets.allocation(environment),
+      await this.operations.runWithExecutionLease(operationId, async () => {
+        try {
+          const { project, template, environment, slug } = await this.context(projectId, envName);
+          const repository = repositoryRef(project);
+          if (this.isAgentBacked(environment)) {
+            await this.queueAgentLifecycle(
+              project,
+              template,
+              environment,
+              slug,
+              'start',
+              operationId,
+            );
+            return;
+          }
+          const appPort = this.usesSharedSshPort(environment)
+            ? await this.allocateSharedSshPort(projectId, envName)
+            : undefined;
+          const result = await this.deployment.start(environment.provider as ProviderKind, {
+            projectName: slug,
+            env: envName,
+            port: template.port,
+            healthPath: template.healthPath ?? '/health',
+            startCommand: template.startCommand,
+            version: environment.version ?? undefined,
+            appPort,
+            connection: this.targets.connection(environment),
+            allocation: this.targets.allocation(environment),
+          });
+          if (await this.operations.cancelled(operationId)) {
+            const teardown = await this.deployment.teardown(environment.provider as ProviderKind, {
+              projectName: slug,
+              env: envName,
+              imageRef: deployedImageRef(repository, environment),
+              connection: this.targets.connection(environment),
+              allocation: this.targets.allocation(environment),
+            });
+            await this.prisma.environment.updateMany({
+              where: { projectId, name: envName, activeOperationId: operationId },
+              data: this.emptyState(
+                teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null,
+              ),
+            });
+            await this.operations.complete(operationId, 'cancelled', 'Cancelled by user');
+            return;
+          }
+          await this.prisma.environment.updateMany({
+            where: { projectId, name: envName, activeOperationId: operationId },
+            data: {
+              status: result.status,
+              url: result.url,
+              statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
+            },
+          });
+          await this.operations.complete(
+            operationId,
+            result.status === 'failed' ? 'failed' : 'succeeded',
+            result.reason,
+          );
+        } catch (error) {
+          await this.operations.assertExecution(operationId);
+          await this.prisma.environment
+            .updateMany({
+              where: { projectId, name: envName, activeOperationId: operationId },
+              data: {
+                status: 'failed',
+                statusReason: (error as Error).message,
+                activeOperationId: null,
+              },
+            })
+            .catch(() => undefined);
+          await this.operations.complete(operationId, 'failed', (error as Error).message);
+        }
       });
-      if (await this.operations.cancelled(operationId)) {
-        const teardown = await this.deployment.teardown(environment.provider as ProviderKind, {
-          projectName: slug,
-          env: envName,
-          imageRef: deployedImageRef(repository, environment),
-          connection: this.targets.connection(environment),
-          allocation: this.targets.allocation(environment),
-        });
-        await this.prisma.environment.updateMany({
-          where: { projectId, name: envName, activeOperationId: operationId },
-          data: this.emptyState(teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null),
-        });
-        await this.operations.complete(operationId, 'cancelled', 'Cancelled by user');
-        return;
-      }
-      await this.prisma.environment.updateMany({
-        where: { projectId, name: envName, activeOperationId: operationId },
-        data: {
-          status: result.status,
-          url: result.url,
-          statusReason: result.status === 'failed' ? (result.reason ?? null) : null,
-        },
-      });
-      await this.operations.complete(
-        operationId,
-        result.status === 'failed' ? 'failed' : 'succeeded',
-        result.reason,
-      );
-    } catch (error) {
-      await this.prisma.environment
-        .updateMany({
-          where: { projectId, name: envName, activeOperationId: operationId },
-          data: {
-            status: 'failed',
-            statusReason: (error as Error).message,
-            activeOperationId: null,
-          },
-        })
-        .catch(() => undefined);
-      await this.operations.complete(operationId, 'failed', (error as Error).message);
+    } catch {
+      // Another replica may still own this operation. A worker without the
+      // execution fence must leave durable state untouched.
     }
   }
 

@@ -21,6 +21,13 @@ function make(
   operations: Record<string, unknown> = {},
   agentDelivery: Record<string, unknown> = {},
 ) {
+  const executionOperations = {
+    runWithExecutionLease: jest.fn(async (_operationId: string, task: () => Promise<unknown>) =>
+      task(),
+    ),
+    assertExecution: jest.fn(async () => undefined),
+    ...operations,
+  };
   return new ProjectEnvironmentLifecycle(
     prisma as never,
     {
@@ -35,7 +42,7 @@ function make(
       connection: jest.fn(() => undefined),
       allocation: jest.fn(() => undefined),
     } as never,
-    operations as never,
+    executionOperations as never,
     agentDelivery as never,
   );
 }

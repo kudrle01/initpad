@@ -81,7 +81,8 @@ describe('ProjectDeploymentOperations', () => {
       },
       deploymentOperation: {
         create: jest.fn(async ({ data }) => ({ id: operationId, ...data })),
-        update: jest.fn(async () => ({ id: operationId, correlationId: operationId })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        findUnique: jest.fn(async () => ({ correlationId: operationId })),
       },
     });
     const operations = new ProjectDeploymentOperations(prisma as never, audit);
@@ -166,16 +167,35 @@ describe('ProjectDeploymentOperations', () => {
   });
 
   it('recovers running and user-cancelled operations after an API restart', async () => {
-    const operationUpdate = jest.fn(async () => undefined);
+    const old = new Date('2026-01-01T00:00:00.000Z');
+    const operationUpdate = jest.fn(async () => ({ count: 1 }));
     const environmentUpdate = jest.fn(async () => ({ count: 1 }));
     const transaction = jest.fn(async (queries: Promise<unknown>[]) => Promise.all(queries));
     const prisma = {
       deploymentOperation: {
         findMany: jest.fn(async () => [
-          { id: 'running-1', status: 'running', agentJobs: [] },
-          { id: 'cancelled-1', status: 'cancelled', agentJobs: [] },
+          {
+            id: 'running-1',
+            status: 'running',
+            kind: 'deploy',
+            createdAt: old,
+            executionOwner: null,
+            executionGeneration: 0,
+            executionLeaseExpiresAt: null,
+            agentJobs: [],
+          },
+          {
+            id: 'cancelled-1',
+            status: 'cancelled',
+            kind: 'deploy',
+            createdAt: old,
+            executionOwner: null,
+            executionGeneration: 0,
+            executionLeaseExpiresAt: null,
+            agentJobs: [],
+          },
         ]),
-        update: operationUpdate,
+        updateMany: operationUpdate,
       },
       environment: { updateMany: environmentUpdate },
       $transaction: transaction,
@@ -187,14 +207,14 @@ describe('ProjectDeploymentOperations', () => {
     expect(operationUpdate).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        where: { id: 'running-1' },
+        where: expect.objectContaining({ id: 'running-1', executionGeneration: 0 }),
         data: expect.objectContaining({ status: 'failed' }),
       }),
     );
     expect(operationUpdate).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        where: { id: 'cancelled-1' },
+        where: expect.objectContaining({ id: 'cancelled-1', executionGeneration: 0 }),
         data: expect.objectContaining({ status: 'cancelled' }),
       }),
     );
@@ -216,9 +236,18 @@ describe('ProjectDeploymentOperations', () => {
     const operations = new ProjectDeploymentOperations({
       deploymentOperation: {
         findMany: jest.fn(async () => [
-          { id: 'agent-operation', status: 'running', agentJobs: [{ id: 'job-1' }] },
+          {
+            id: 'agent-operation',
+            status: 'running',
+            kind: 'deploy',
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            executionOwner: null,
+            executionGeneration: 0,
+            executionLeaseExpiresAt: null,
+            agentJobs: [{ id: 'job-1' }],
+          },
         ]),
-        update: operationUpdate,
+        updateMany: operationUpdate,
       },
       environment: { updateMany: environmentUpdate },
       $transaction: jest.fn(),
@@ -230,11 +259,37 @@ describe('ProjectDeploymentOperations', () => {
     expect(environmentUpdate).not.toHaveBeenCalled();
   });
 
+  it('does not clear an operation that another replica claimed during recovery', async () => {
+    const environmentUpdate = jest.fn();
+    const operations = new ProjectDeploymentOperations({
+      deploymentOperation: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'operation-1',
+            status: 'running',
+            kind: 'deploy',
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            executionOwner: 'old-owner',
+            executionGeneration: 3,
+            executionLeaseExpiresAt: new Date('2026-01-01T00:01:00.000Z'),
+            agentJobs: [],
+          },
+        ]),
+        updateMany: jest.fn(async () => ({ count: 0 })),
+      },
+      environment: { updateMany: environmentUpdate },
+    } as never);
+
+    await operations.recoverInterrupted();
+
+    expect(environmentUpdate).not.toHaveBeenCalled();
+  });
+
   it('clears the environment lock even if operation history cannot be updated', async () => {
     const updateMany = jest.fn(async () => ({ count: 1 }));
     const prisma = {
       deploymentOperation: {
-        update: jest.fn(async () => {
+        updateMany: jest.fn(async () => {
           throw new Error('history unavailable');
         }),
       },
@@ -250,9 +305,15 @@ describe('ProjectDeploymentOperations', () => {
   });
 
   it('records health-check failures as an unhealthy terminal phase', async () => {
-    const operationUpdate = jest.fn(async () => undefined);
+    const operationUpdate = jest.fn(async (_args: unknown) => undefined);
     const operations = new ProjectDeploymentOperations({
-      deploymentOperation: { update: operationUpdate },
+      deploymentOperation: {
+        updateMany: jest.fn(async (args) => {
+          await operationUpdate(args);
+          return { count: 1 };
+        }),
+        findUnique: jest.fn(async () => ({ correlationId: 'correlation-1' })),
+      },
       environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
     } as never);
 
@@ -263,7 +324,7 @@ describe('ProjectDeploymentOperations', () => {
     );
 
     expect(operationUpdate).toHaveBeenCalledWith({
-      where: { id: 'operation-1' },
+      where: { id: 'operation-1', executionOwner: null, finishedAt: null },
       data: expect.objectContaining({ status: 'failed', phase: 'unhealthy' }),
     });
   });
@@ -282,6 +343,7 @@ describe('ProjectDeploymentOperations', () => {
         status: 'running',
         finishedAt: null,
         phase: { in: ['queued', 'assigned', 'running'] },
+        executionOwner: null,
       },
       data: { phase: 'verifying', message: 'Verifying deployment' },
     });
@@ -306,22 +368,32 @@ describe('ProjectDeploymentOperations', () => {
     const operations = new ProjectDeploymentOperations({
       deploymentOperation: { updateMany: operationUpdate },
       environment: { updateMany: environmentUpdate },
+      $queryRaw: jest.fn(async () => [{ generation: 1 }]),
     } as never);
 
-    operations.reportProgress('operation-1', 'project-1', 'prod', 'Uploading 5/10 files');
-    await Promise.resolve();
+    await operations.runWithExecutionLease('operation-1', async () => {
+      operations.reportProgress('operation-1', 'project-1', 'prod', 'Uploading 5/10 files');
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     expect(operationUpdate).toHaveBeenCalledWith({
-      where: { id: 'operation-1', status: 'running' },
+      where: expect.objectContaining({
+        id: 'operation-1',
+        status: 'running',
+        executionGeneration: 1,
+      }),
       data: { message: 'Uploading 5/10 files' },
     });
     expect(operationUpdate).toHaveBeenCalledWith({
-      where: {
+      where: expect.objectContaining({
         id: 'operation-1',
         status: 'running',
         finishedAt: null,
         phase: { in: ['queued', 'assigned'] },
-      },
+        executionGeneration: 1,
+      }),
       data: { phase: 'running' },
     });
     expect(environmentUpdate).toHaveBeenCalledWith({
@@ -331,6 +403,96 @@ describe('ProjectDeploymentOperations', () => {
         activeOperationId: 'operation-1',
       },
       data: { statusReason: 'Uploading 5/10 files' },
+    });
+  });
+
+  it('renews a slow execution and completes only through its generation fence', async () => {
+    jest.useFakeTimers();
+    let finish!: () => void;
+    const providerWork = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const query = jest.fn(async () => [{ generation: 4 }]);
+    const operationUpdate = jest.fn(async () => ({ count: 1 }));
+    const environmentUpdate = jest.fn(async () => ({ count: 1 }));
+    const operations = new ProjectDeploymentOperations({
+      $queryRaw: query,
+      deploymentOperation: {
+        updateMany: operationUpdate,
+        findUnique: jest.fn(async () => ({ correlationId: 'correlation-1' })),
+      },
+      environment: { updateMany: environmentUpdate },
+    } as never);
+
+    const running = operations.runWithExecutionLease('operation-1', async () => {
+      await providerWork;
+      await operations.complete('operation-1', 'succeeded');
+    });
+    await Promise.resolve();
+    expect(query).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(30_000);
+    expect(query).toHaveBeenCalledTimes(2);
+
+    finish();
+    await running;
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(operationUpdate).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'operation-1',
+        executionGeneration: 4,
+      }),
+      data: expect.objectContaining({
+        status: 'succeeded',
+        executionOwner: null,
+        executionLeaseExpiresAt: null,
+      }),
+    });
+    expect(environmentUpdate).toHaveBeenCalledWith({
+      where: { activeOperationId: 'operation-1' },
+      data: { activeOperationId: null },
+    });
+    jest.useRealTimers();
+  });
+
+  it('refuses terminal publication after another replica takes the execution lease', async () => {
+    const operationUpdate = jest.fn();
+    const operations = new ProjectDeploymentOperations({
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([{ generation: 2 }])
+        .mockResolvedValueOnce([]),
+      deploymentOperation: { updateMany: operationUpdate },
+      environment: { updateMany: jest.fn() },
+    } as never);
+
+    await expect(
+      operations.runWithExecutionLease('operation-1', () =>
+        operations.complete('operation-1', 'succeeded'),
+      ),
+    ).rejects.toThrow('execution lease was lost');
+    expect(operationUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'succeeded' }) }),
+    );
+  });
+
+  it('releases process ownership after handing durable work to an Agent', async () => {
+    const operationUpdate = jest.fn(async () => ({ count: 1 }));
+    const operations = new ProjectDeploymentOperations({
+      $queryRaw: jest.fn(async () => [{ generation: 7 }]),
+      deploymentOperation: { updateMany: operationUpdate },
+    } as never);
+
+    await expect(
+      operations.runWithExecutionLease('operation-1', async () => 'agent-job-queued'),
+    ).resolves.toBe('agent-job-queued');
+
+    expect(operationUpdate).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'operation-1',
+        executionGeneration: 7,
+      }),
+      data: { executionOwner: null, executionLeaseExpiresAt: null },
     });
   });
 });

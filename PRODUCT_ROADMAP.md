@@ -168,7 +168,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
   platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
-  odkazuje na 125 samostatných ADR. Repository gate hlídá souvislou řadu,
+  odkazuje na 126 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.
 
@@ -206,14 +206,19 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     Provider-neutral acceptance je připravené: load gate měří p50/p95/p99,
     chybovost, propustnost a odpovědi alespoň dvou procesů; outage gate
     dokládá zachovaný šifrovaný retry, dostupné API a vymazání payloadu po
-    doručení. Živý SaaS staging run a execution fencing procesních operací
-    ještě chybí (ADR-124).
+    doručení. Živý SaaS staging run a zbývající execution fencing procesních
+    operací ještě chybí (ADR-124).
   - [x] Zvolit jediného vlastníka startup recovery, artifact retention a
     environment expiry přes atomický PostgreSQL lease. Follower repliky zůstanou
     pasivní, nový leader pozná takeover podle rostoucí generace a dlouhý recovery
     lease průběžně obnovuje (ADR-125).
-  - [ ] Doplnit execution lease/fencing pro process-bound deployment a artifact
-    ingestion operace; do té doby zůstává mutační produkční provoz single-replica.
+  - [x] Doplnit obnovovaný generační execution lease pro operation-backed
+    deployment a start. Recovery ignoruje živého ownera, takeover používá CAS a
+    starý worker po ztrátě fence nesmí publikovat stav; Agent handoff lease
+    uvolní ve prospěch trvalého AgentJob protokolu (ADR-126).
+  - [ ] Doplnit stejný lease/fencing pro artifact ingestion a zbývající
+    synchronní lifecycle mutace; do té doby zůstává mutační produkční provoz
+    single-replica.
 - [ ] Zapojit OpenTelemetry/log collector, metriky, retenci, alerting a incident
   runbook a dokončit topologii pro více API replik.
 - [ ] Nasadit staging, zopakovat GitHub/Agent/tenant/recovery acceptance a až
