@@ -131,7 +131,7 @@ describe('ProjectArtifactLifecycle registry capture for verified Gitea delivery'
     let uploadedBytes = '';
     const store = {
       durable: true,
-      head: jest.fn(async () => null),
+      head: jest.fn(async () => ({ sizeBytes: 25 })),
       put: jest.fn(async (_key: string, path: string) => {
         uploadedBytes = readFileSync(path, 'utf8');
       }),
@@ -160,13 +160,21 @@ describe('ProjectArtifactLifecycle registry capture for verified Gitea delivery'
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    const prisma = {
+    const accepted = { ...created, status: 'accepted', storageKind: null, storageRef: null };
+    const operationUpdate = jest.fn(async () => ({ count: 1 }));
+    const prisma: Record<string, unknown> = {
+      $queryRaw: jest.fn(async () => [{ id: 'artifact-1', generation: 1 }]),
+      workspace: { findUnique: jest.fn(async () => ({ maxArtifactBytes: 1024n })) },
       buildArtifact: {
         findUnique: jest.fn(async () => null),
-        create: jest.fn(async () => created),
+        findUniqueOrThrow: jest.fn(async () => created),
+        aggregate: jest.fn(async () => ({ _sum: { sizeBytes: 0n } })),
+        create: jest.fn(async () => accepted),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
-      deploymentOperation: { updateMany: jest.fn(async () => ({ count: 1 })) },
+      deploymentOperation: { updateMany: operationUpdate },
     };
+    prisma.$transaction = jest.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma));
     const lifecycle = new ProjectArtifactLifecycle(
       prisma as never,
       store as never,
@@ -192,7 +200,7 @@ describe('ProjectArtifactLifecycle registry capture for verified Gitea delivery'
       expect.any(String),
       expect.objectContaining({ contentType: 'application/x-tar' }),
     );
-    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+    expect(operationUpdate).toHaveBeenCalledWith({
       where: { id: 'operation-1', status: 'running', environment: { projectId: 'project-1' } },
       data: { buildArtifactId: 'artifact-1' },
     });
@@ -253,9 +261,28 @@ describe('ProjectArtifactLifecycle registry capture for verified Gitea delivery'
     expect(existsSync(temporaryPath)).toBe(false);
   });
 
-  it('removes partial object data and local files when object storage rejects an upload', async () => {
+  it('records failure and removes partial data when object storage rejects an upload', async () => {
     let temporaryPath = '';
-    const create = jest.fn();
+    const accepted = {
+      id: 'artifact-1',
+      projectId: 'project-1',
+      sourceProvider: 'gitea-oci',
+      providerArtifactId: `project-1:${'a'.repeat(40)}`,
+      providerRunId: '',
+      commitSha: 'a'.repeat(40),
+      name: 'initpad-image.tar',
+      digest: createHash('sha256').update('verified-registry-archive').digest('hex'),
+      sizeBytes: 25n,
+      expiresAt: new Date(),
+      status: 'accepted',
+      storageKind: null,
+      storageRef: null,
+      error: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const create = jest.fn(async () => accepted);
+    const updateMany = jest.fn(async () => ({ count: 1 }));
     const store = {
       durable: true,
       put: jest.fn(async () => {
@@ -269,11 +296,20 @@ describe('ProjectArtifactLifecycle registry capture for verified Gitea delivery'
         writeFileSync(path, 'verified-registry-archive');
       }),
     };
+    const prisma: Record<string, unknown> = {
+      $queryRaw: jest.fn(async () => [{ id: 'artifact-1', generation: 1 }]),
+      workspace: { findUnique: jest.fn(async () => ({ maxArtifactBytes: 1024n })) },
+      buildArtifact: {
+        findUnique: jest.fn(async () => null),
+        aggregate: jest.fn(async () => ({ _sum: { sizeBytes: 0n } })),
+        create,
+        updateMany,
+      },
+      deploymentOperation: { updateMany: jest.fn() },
+    };
+    prisma.$transaction = jest.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma));
     const lifecycle = new ProjectArtifactLifecycle(
-      {
-        buildArtifact: { findUnique: jest.fn(async () => null), create },
-        deploymentOperation: { updateMany: jest.fn() },
-      } as never,
+      prisma as never,
       store as never,
       deployment as never,
     );
@@ -287,11 +323,189 @@ describe('ProjectArtifactLifecycle registry capture for verified Gitea delivery'
       ),
     ).rejects.toThrow('object storage unavailable');
 
-    expect(create).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    );
     expect(store.delete).toHaveBeenCalledWith(
       expect.stringMatching(/^artifacts\/workspace-1\/project-1\//),
     );
     expect(temporaryPath).not.toBe('');
     expect(existsSync(temporaryPath)).toBe(false);
+  });
+
+  it('does not delete shared storage after losing the registry capture lease', async () => {
+    const digest = createHash('sha256').update('verified-registry-archive').digest('hex');
+    const accepted = {
+      id: 'artifact-1',
+      projectId: 'project-1',
+      sourceProvider: 'gitea-oci',
+      providerArtifactId: `project-1:${'a'.repeat(40)}`,
+      providerRunId: '',
+      commitSha: 'a'.repeat(40),
+      name: 'initpad-image.tar',
+      digest,
+      sizeBytes: 25n,
+      expiresAt: new Date(),
+      status: 'accepted',
+      storageKind: null,
+      storageRef: null,
+      error: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 'artifact-1', generation: 3 }])
+      .mockResolvedValueOnce([]);
+    const updateMany = jest.fn();
+    const prisma: Record<string, unknown> = {
+      $queryRaw: query,
+      workspace: { findUnique: jest.fn(async () => ({ maxArtifactBytes: 1024n })) },
+      buildArtifact: {
+        findUnique: jest.fn(async () => null),
+        aggregate: jest.fn(async () => ({ _sum: { sizeBytes: 0n } })),
+        create: jest.fn(async () => accepted),
+        updateMany,
+      },
+      deploymentOperation: { updateMany: jest.fn() },
+    };
+    prisma.$transaction = jest.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma));
+    const store = {
+      durable: true,
+      put: jest.fn(async () => undefined),
+      head: jest.fn(async () => ({ sizeBytes: 25 })),
+      delete: jest.fn(async () => undefined),
+    };
+    const lifecycle = new ProjectArtifactLifecycle(
+      prisma as never,
+      store as never,
+      {
+        saveImageArchive: jest.fn(async (_imageRef: string, path: string) => {
+          writeFileSync(path, 'verified-registry-archive');
+        }),
+      } as never,
+    );
+
+    await expect(
+      lifecycle.captureRegistryArtifact(
+        GITEA_REPOSITORY,
+        { id: 'project-1', workspaceId: 'workspace-1' },
+        null,
+        'a'.repeat(40),
+      ),
+    ).rejects.toThrow('Artifact execution lease was lost');
+
+    expect(store.put).toHaveBeenCalled();
+    expect(store.delete).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'available' }) }),
+    );
+    expect(updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    );
+  });
+
+  it('rejects changed bytes for an already reserved immutable registry commit', async () => {
+    const existing = {
+      id: 'artifact-1',
+      projectId: 'project-1',
+      sourceProvider: 'gitea-oci',
+      providerArtifactId: `project-1:${'a'.repeat(40)}`,
+      providerRunId: '',
+      commitSha: 'a'.repeat(40),
+      name: 'initpad-image.tar',
+      digest: '0'.repeat(64),
+      sizeBytes: 25n,
+      expiresAt: new Date(),
+      status: 'failed',
+      storageKind: null,
+      storageRef: null,
+      error: 'previous upload failed',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const prisma: Record<string, unknown> = {
+      buildArtifact: { findUnique: jest.fn(async () => existing) },
+    };
+    prisma.$transaction = jest.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma));
+    const store = { durable: true, put: jest.fn(), delete: jest.fn() };
+    const lifecycle = new ProjectArtifactLifecycle(
+      prisma as never,
+      store as never,
+      {
+        saveImageArchive: jest.fn(async (_imageRef: string, path: string) => {
+          writeFileSync(path, 'verified-registry-archive');
+        }),
+      } as never,
+    );
+
+    await expect(
+      lifecycle.captureRegistryArtifact(
+        GITEA_REPOSITORY,
+        { id: 'project-1', workspaceId: 'workspace-1' },
+        null,
+        'a'.repeat(40),
+      ),
+    ).rejects.toThrow('Registry image bytes changed');
+    expect(store.put).not.toHaveBeenCalled();
+  });
+
+  it('uses a concurrently repaired artifact instead of reopening its stale revision', async () => {
+    const digest = createHash('sha256').update('verified-registry-archive').digest('hex');
+    const stale = {
+      id: 'artifact-1',
+      projectId: 'project-1',
+      sourceProvider: 'gitea-oci',
+      providerArtifactId: `project-1:${'a'.repeat(40)}`,
+      providerRunId: '',
+      commitSha: 'a'.repeat(40),
+      name: 'initpad-image.tar',
+      digest,
+      sizeBytes: 25n,
+      expiresAt: new Date(),
+      status: 'available',
+      storageKind: 'object-store',
+      storageRef: 'artifacts/stale.tar',
+      error: null,
+      ingestionGeneration: 1,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const repaired = {
+      ...stale,
+      storageRef: 'artifacts/repaired.tar',
+      ingestionGeneration: 2,
+      updatedAt: new Date('2026-01-01T00:01:00Z'),
+    };
+    const findUnique = jest.fn().mockResolvedValueOnce(stale).mockResolvedValueOnce(repaired);
+    const prisma: Record<string, unknown> = { buildArtifact: { findUnique } };
+    prisma.$transaction = jest.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma));
+    const store = {
+      durable: true,
+      head: jest.fn(async () => ({ sizeBytes: 1 })),
+      put: jest.fn(),
+      delete: jest.fn(async () => undefined),
+    };
+    const lifecycle = new ProjectArtifactLifecycle(
+      prisma as never,
+      store as never,
+      {
+        saveImageArchive: jest.fn(async (_imageRef: string, path: string) => {
+          writeFileSync(path, 'verified-registry-archive');
+        }),
+      } as never,
+    );
+
+    await expect(
+      lifecycle.captureRegistryArtifact(
+        GITEA_REPOSITORY,
+        { id: 'project-1', workspaceId: 'workspace-1' },
+        null,
+        'a'.repeat(40),
+      ),
+    ).resolves.toEqual(repaired);
+    expect(store.put).not.toHaveBeenCalled();
+    expect(store.delete).toHaveBeenCalledWith('artifacts/stale.tar');
   });
 });

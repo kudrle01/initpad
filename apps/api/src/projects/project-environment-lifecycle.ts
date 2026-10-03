@@ -38,15 +38,15 @@ export class ProjectEnvironmentLifecycle {
     if (environment.status !== 'running') {
       throw new BadRequestException(`Environment '${envName}' is not running`);
     }
+    const operationId = await this.operations.begin(
+      projectId,
+      envName,
+      'stop',
+      environment.version,
+      environment.buildArtifactId,
+      actorUserId,
+    );
     if (this.isAgentBacked(environment)) {
-      const operationId = await this.operations.begin(
-        projectId,
-        envName,
-        'stop',
-        environment.version,
-        environment.buildArtifactId,
-        actorUserId,
-      );
       try {
         await this.queueAgentLifecycle(project, template, environment, slug, 'stop', operationId);
       } catch (error) {
@@ -55,15 +55,25 @@ export class ProjectEnvironmentLifecycle {
       }
       return;
     }
-    await this.deployment.stop(environment.provider as ProviderKind, {
-      projectName: slug,
-      env: envName,
-      connection: this.targets.connection(environment),
-      allocation: this.targets.allocation(environment),
-    });
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId, name: envName } },
-      data: { status: 'stopped', statusReason: null },
+    await this.operations.runWithExecutionLease(operationId, async () => {
+      try {
+        await this.deployment.stop(environment.provider as ProviderKind, {
+          projectName: slug,
+          env: envName,
+          connection: this.targets.connection(environment),
+          allocation: this.targets.allocation(environment),
+        });
+      } catch (error) {
+        await this.failDirectLifecycle(environment.id, operationId, 'running', error);
+        throw error;
+      }
+      await this.operations.assertExecution(operationId);
+      const published = await this.prisma.environment.updateMany({
+        where: { id: environment.id, activeOperationId: operationId },
+        data: { status: 'stopped', statusReason: null },
+      });
+      if (published.count !== 1) throw new Error('Stop operation lost its environment lock');
+      await this.operations.complete(operationId, 'succeeded', 'Environment stopped');
     });
   }
 
@@ -220,16 +230,36 @@ export class ProjectEnvironmentLifecycle {
       }
       return;
     }
-    const teardown = await this.deployment.teardown(environment.provider as ProviderKind, {
-      projectName: slug,
-      env: envName,
-      imageRef: deployedImageRef(repository, environment),
-      connection: this.targets.connection(environment),
-      allocation: this.targets.allocation(environment),
-    });
-    await this.prisma.environment.update({
-      where: { projectId_name: { projectId, name: envName } },
-      data: this.emptyState(teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null),
+    const operationId = await this.operations.begin(
+      projectId,
+      envName,
+      'remove',
+      environment.version,
+      environment.buildArtifactId,
+      actorUserId,
+    );
+    await this.operations.runWithExecutionLease(operationId, async () => {
+      let teardown: Awaited<ReturnType<DeploymentService['teardown']>>;
+      try {
+        teardown = await this.deployment.teardown(environment.provider as ProviderKind, {
+          projectName: slug,
+          env: envName,
+          imageRef: deployedImageRef(repository, environment),
+          connection: this.targets.connection(environment),
+          allocation: this.targets.allocation(environment),
+        });
+      } catch (error) {
+        await this.failDirectLifecycle(environment.id, operationId, environment.status, error);
+        throw error;
+      }
+      await this.operations.assertExecution(operationId);
+      const message = teardown?.warning ? `Cleanup pending: ${teardown.warning}` : null;
+      const published = await this.prisma.environment.updateMany({
+        where: { id: environment.id, activeOperationId: operationId },
+        data: { ...this.emptyState(message), activeOperationId: operationId },
+      });
+      if (published.count !== 1) throw new Error('Remove operation lost its environment lock');
+      await this.operations.complete(operationId, 'succeeded', message ?? 'Deployment removed');
     });
   }
 
@@ -421,6 +451,21 @@ export class ProjectEnvironmentLifecycle {
     await this.prisma.environment.updateMany({
       where: { id: environmentId, activeOperationId: operationId },
       data: { status, statusReason: message, activeOperationId: null },
+    });
+    await this.operations.complete(operationId, 'failed', message);
+  }
+
+  private async failDirectLifecycle(
+    environmentId: string,
+    operationId: string,
+    status: string,
+    error: unknown,
+  ): Promise<void> {
+    await this.operations.assertExecution(operationId);
+    const message = error instanceof Error ? error.message : 'Environment operation failed';
+    await this.prisma.environment.updateMany({
+      where: { id: environmentId, activeOperationId: operationId },
+      data: { status, statusReason: message },
     });
     await this.operations.complete(operationId, 'failed', message);
   }

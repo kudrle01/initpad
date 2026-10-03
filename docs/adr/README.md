@@ -134,3 +134,4 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 | [ADR-126](./ADR-126.md) | Process-bound deployment používá obnovovaný generační lease |
 | [ADR-127](./ADR-127.md) | Dependency audit připouští jen úzkou a expirující výjimku |
 | [ADR-128](./ADR-128.md) | Artifact ingestion používá vlastní generační execution lease |
+| [ADR-129](./ADR-129.md) | Sdílený artifact fence a operation-backed lifecycle uzavírají mutační hranici |

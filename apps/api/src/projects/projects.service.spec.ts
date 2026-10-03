@@ -76,7 +76,7 @@ describe('ProjectsService project deletion', () => {
       },
       environment: {
         findUniqueOrThrow: jest.fn().mockResolvedValue(environment),
-        update: jest.fn().mockResolvedValue(environment),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const deployment = {
@@ -96,15 +96,24 @@ describe('ProjectsService project deletion', () => {
       {} as never,
     );
     jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
+    const operations = (service as unknown as { operations: Record<string, jest.Mock> }).operations;
+    jest.spyOn(operations, 'begin').mockResolvedValue('operation-1');
+    jest
+      .spyOn(operations, 'runWithExecutionLease')
+      .mockImplementation(async (_operationId: string, task: () => Promise<unknown>) => task());
+    jest.spyOn(operations, 'assertExecution').mockResolvedValue(undefined);
+    jest.spyOn(operations, 'complete').mockResolvedValue(undefined);
 
     await service.removeEnv('project-1', 'prod');
 
-    expect(prisma.environment.update).toHaveBeenCalledWith(
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { id: 'prod-1', activeOperationId: 'operation-1' },
         data: expect.objectContaining({
           status: 'empty',
           version: null,
           url: null,
+          activeOperationId: 'operation-1',
           statusReason: expect.stringContaining('Cleanup pending:'),
         }),
       }),

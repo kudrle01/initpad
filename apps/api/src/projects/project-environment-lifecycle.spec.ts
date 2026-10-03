@@ -22,10 +22,12 @@ function make(
   agentDelivery: Record<string, unknown> = {},
 ) {
   const executionOperations = {
+    begin: jest.fn(async () => 'operation-1'),
     runWithExecutionLease: jest.fn(async (_operationId: string, task: () => Promise<unknown>) =>
       task(),
     ),
     assertExecution: jest.fn(async () => undefined),
+    complete: jest.fn(async () => undefined),
     ...operations,
   };
   return new ProjectEnvironmentLifecycle(
@@ -57,7 +59,7 @@ describe('ProjectEnvironmentLifecycle', () => {
   });
 
   it('stops a running environment without discarding its deployed version', async () => {
-    const update = jest.fn(async () => undefined);
+    const updateMany = jest.fn(async () => ({ count: 1 }));
     const prisma = {
       project: { findUniqueOrThrow: jest.fn(async () => PROJECT) },
       environment: {
@@ -69,7 +71,7 @@ describe('ProjectEnvironmentLifecycle', () => {
           target: null,
           allocation: null,
         })),
-        update,
+        updateMany,
       },
     };
     const deployment = { stop: jest.fn(async () => undefined) };
@@ -81,8 +83,8 @@ describe('ProjectEnvironmentLifecycle', () => {
       'docker',
       expect.objectContaining({ projectName: 'acme-api', env: 'dev' }),
     );
-    expect(update).toHaveBeenCalledWith({
-      where: { projectId_name: { projectId: 'project-1', name: 'dev' } },
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'env-1', activeOperationId: 'operation-1' },
       data: { status: 'stopped', statusReason: null },
     });
   });
@@ -144,6 +146,73 @@ describe('ProjectEnvironmentLifecycle', () => {
     expect(deployment.stop).not.toHaveBeenCalled();
   });
 
+  it('does not publish a direct stop after losing its execution lease', async () => {
+    const updateMany = jest.fn();
+    const prisma = {
+      project: { findUniqueOrThrow: jest.fn(async () => PROJECT) },
+      environment: {
+        findUniqueOrThrow: jest.fn(async () => ({
+          id: 'env-1',
+          provider: 'docker',
+          status: 'running',
+          version: 'a'.repeat(40),
+          buildArtifactId: 'artifact-1',
+          activeOperationId: null,
+          target: null,
+          allocation: null,
+        })),
+        updateMany,
+      },
+    };
+    const operations = {
+      begin: jest.fn(async () => 'operation-1'),
+      assertExecution: jest.fn(async () => {
+        throw new Error('Deployment execution lease was lost');
+      }),
+      complete: jest.fn(),
+    };
+    const lifecycle = make(prisma, { stop: jest.fn(async () => undefined) }, operations);
+
+    await expect(lifecycle.stop('project-1', 'dev')).rejects.toThrow(
+      'Deployment execution lease was lost',
+    );
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(operations.complete).not.toHaveBeenCalled();
+  });
+
+  it('restores the visible running state when a direct stop fails', async () => {
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    const complete = jest.fn(async () => undefined);
+    const prisma = {
+      project: { findUniqueOrThrow: jest.fn(async () => PROJECT) },
+      environment: {
+        findUniqueOrThrow: jest.fn(async () => ({
+          id: 'env-1',
+          provider: 'docker',
+          status: 'running',
+          version: 'a'.repeat(40),
+          buildArtifactId: 'artifact-1',
+          activeOperationId: null,
+          target: null,
+          allocation: null,
+        })),
+        updateMany,
+      },
+    };
+    const lifecycle = make(
+      prisma,
+      { stop: jest.fn(async () => Promise.reject(new Error('daemon unavailable'))) },
+      { begin: jest.fn(async () => 'operation-1'), complete },
+    );
+
+    await expect(lifecycle.stop('project-1', 'dev')).rejects.toThrow('daemon unavailable');
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'env-1', activeOperationId: 'operation-1' },
+      data: { status: 'running', statusReason: 'daemon unavailable' },
+    });
+    expect(complete).toHaveBeenCalledWith('operation-1', 'failed', 'daemon unavailable');
+  });
+
   it('does not start a second runtime for an environment that is already running', async () => {
     const prisma = {
       environment: {
@@ -161,7 +230,7 @@ describe('ProjectEnvironmentLifecycle', () => {
   });
 
   it('keeps external cleanup debt visible while releasing local environment state', async () => {
-    const update = jest.fn(async () => undefined);
+    const updateMany = jest.fn(async () => ({ count: 1 }));
     const environment = {
       id: 'env-1',
       provider: 'sftp',
@@ -174,7 +243,7 @@ describe('ProjectEnvironmentLifecycle', () => {
     };
     const prisma = {
       project: { findUniqueOrThrow: jest.fn(async () => PROJECT) },
-      environment: { findUniqueOrThrow: jest.fn(async () => environment), update },
+      environment: { findUniqueOrThrow: jest.fn(async () => environment), updateMany },
     };
     const deployment = {
       teardown: jest.fn(async () => ({ warning: 'Administrator cleanup required' })),
@@ -183,13 +252,13 @@ describe('ProjectEnvironmentLifecycle', () => {
 
     await lifecycle.remove('project-1', 'prod');
 
-    expect(update).toHaveBeenCalledWith({
-      where: { projectId_name: { projectId: 'project-1', name: 'prod' } },
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'env-1', activeOperationId: 'operation-1' },
       data: expect.objectContaining({
         status: 'empty',
         version: null,
         allocatedPort: null,
-        activeOperationId: null,
+        activeOperationId: 'operation-1',
         statusReason: 'Cleanup pending: Administrator cleanup required',
       }),
     });

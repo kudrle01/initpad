@@ -172,7 +172,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
   platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
-  odkazuje na 128 samostatných ADR. Repository gate hlídá souvislou řadu,
+  odkazuje na 129 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.
 
@@ -228,8 +228,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     repliku a stale worker nesmí publikovat ani smazat objekt novějšího pokusu
     (ADR-128). Lehká recovery expirovaných deployment/artifact lease se opakuje
     v každém leader cyklu, takže dočasná ztráta lease nečeká na restart.
-  - [ ] Doplnit fencing zbývajících synchronních lifecycle mutací a Gitea OCI
-    capture; do té doby zůstává mutační produkční provoz single-replica.
+  - [x] Sdílet generační artifact lease i pro Gitea OCI capture a převést
+    přímý stop/remove na operation-backed execution lease. Workspace kvóta se
+    rezervuje před uploadem a stale worker nesmí publikovat ani mazat data
+    vítězné repliky (ADR-129).
 - [ ] Zapojit OpenTelemetry/log collector, metriky, retenci, alerting a incident
   runbook a dokončit topologii pro více API replik.
 - [ ] Nasadit staging, zopakovat GitHub/Agent/tenant/recovery acceptance a až

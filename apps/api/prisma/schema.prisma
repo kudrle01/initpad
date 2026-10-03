@@ -529,13 +529,14 @@ model Project {
 }
 
 // Immutable CI outputs accepted at the repository/commit trust boundary.
-// GitHub artifacts are verified through the workspace-bound App installation,
-// then ingested into platform-owned storage (the prototype's Docker daemon).
+// GitHub artifacts are verified through the workspace-bound App installation;
+// Gitea OCI images are captured after CI. Both become immutable objects in
+// platform-owned storage before delivery to a deployment target.
 model BuildArtifact {
   id                 String                        @id @default(uuid())
   project            Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId          String
-  sourceProvider     String // github-actions (Gitea continues to use OCI)
+  sourceProvider     String // github-actions | gitea-oci
   providerArtifactId String
   providerRunId      String
   commitSha          String
