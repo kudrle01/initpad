@@ -1,4 +1,5 @@
 import './load-env';
+import './instrumentation';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';

@@ -1,5 +1,10 @@
 import { EventEmitter } from 'node:events';
-import { currentRequestId, newCorrelationId, requestContextMiddleware } from './request-context';
+import {
+  currentRequestId,
+  httpMetricAttributes,
+  newCorrelationId,
+  requestContextMiddleware,
+} from './request-context';
 import { structuredLogRecord } from './structured-logger';
 
 describe('request context', () => {
@@ -32,5 +37,16 @@ describe('request context', () => {
 
   it('uses a fresh correlation id outside an HTTP request', () => {
     expect(newCorrelationId()).toMatch(/^[a-f0-9-]{36}$/);
+  });
+
+  it('keeps metric labels bounded and independent of URL or tenant identity', () => {
+    expect(httpMetricAttributes('POST', 503)).toEqual({
+      'http.request.method': 'POST',
+      'http.response.status_code': 503,
+      'initpad.http.status_class': '5xx',
+    });
+    expect(JSON.stringify(httpMetricAttributes('GET', 200))).not.toMatch(
+      /path|url|user|workspace/i,
+    );
   });
 });

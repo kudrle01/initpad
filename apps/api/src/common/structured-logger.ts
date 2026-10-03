@@ -1,5 +1,6 @@
 import type { LoggerService, LogLevel } from '@nestjs/common';
 import { currentRequestId } from './request-context';
+import { activeTraceFields } from './telemetry-context';
 
 type LogWriter = (line: string, level: LogLevel) => void;
 
@@ -13,6 +14,15 @@ const SECRET_TEXT = [
   /(\/(?:activate|reset-password|verify-email)\/)[A-Za-z0-9_-]+/gi,
   /(https?:\/\/[^\s:/]+:)[^\s@/]+@/gi,
 ];
+const RESERVED_FIELDS = new Set([
+  'timestamp',
+  'level',
+  'context',
+  'metadata',
+  'requestId',
+  'traceId',
+  'spanId',
+]);
 
 function redactText(value: string): string {
   return SECRET_TEXT.reduce(
@@ -64,15 +74,21 @@ export function structuredLogRecord(
   const metadata = optionalParams.slice(0, context ? -1 : undefined);
   const normalizedMessage = normalize(message);
   const requestId = currentRequestId();
+  const traceFields = activeTraceFields();
+  const payload =
+    typeof normalizedMessage === 'object' && normalizedMessage !== null
+      ? Object.fromEntries(
+          Object.entries(normalizedMessage).filter(([key]) => !RESERVED_FIELDS.has(key)),
+        )
+      : { message: normalizedMessage };
   return {
-    ...(typeof normalizedMessage === 'object' && normalizedMessage !== null
-      ? normalizedMessage
-      : { message: normalizedMessage }),
+    ...payload,
     ...(metadata.length ? { metadata: normalize(metadata) } : {}),
     timestamp: new Date().toISOString(),
     level: outputLevel,
     ...(context ? { context: redactText(context) } : {}),
     ...(requestId ? { requestId } : {}),
+    ...(traceFields ?? {}),
   };
 }
 

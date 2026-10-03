@@ -141,6 +141,12 @@ services:
       INITPAD_AGENT_UPDATE_CHANNEL: ${INITPAD_AGENT_UPDATE_CHANNEL:-stable}
       INITPAD_PLATFORM_UPDATE_CHANNEL: ${INITPAD_PLATFORM_UPDATE_CHANNEL:-stable}
       INITPAD_SIGSTORE_CACHE_DIR: /data/sigstore-js
+      # Optional OTLP/HTTP export. It is disabled by default so self-hosted
+      # installations never depend on an undeclared collector.
+      INITPAD_OTEL_ENABLED: ${INITPAD_OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-initpad-api}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-60000}
       INITPAD_SUPERVISOR_URL: http://supervisor:7070
       INITPAD_SUPERVISOR_SHARED_SECRET: ${INITPAD_SUPERVISOR_SHARED_SECRET:?run install.sh to generate secrets}
       # Enables the public, checksum-bound Agent installer UX only when it is

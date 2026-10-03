@@ -159,13 +159,18 @@ veřejný DNS záznam nevytvoří.
 | Ověřené build artifacty | privátní S3-compatible storage |
 | Běžící workload | Docker target; databáze drží požadovanou a naposledy pozorovanou projekci |
 | Uživatelská bezpečnostní historie | `AuditEvent` v PostgreSQL |
-| Provozní diagnostika | strukturované API/Agent logy |
+| Provozní diagnostika | strukturované API/Agent logy; volitelně OTLP traces a metrics |
 
 Audit log, deployment timeline a provozní log jsou rozdílné vrstvy.
 Audit odpovídá na „kdo změnu vyžádal“, operace na „v jakém stavu je“ a
 strukturovaný log na „kde se provádění porouchalo“. `correlationId` spojuje
 HTTP request, deployment operation a Agent job; kontejner nese odpovídající
 `com.initpad.job` label.
+
+API observability je explicitní exportní hranice, ne skrytá lokální služba.
+Self-hosted instalace funguje bez collectoru; SaaS profil vyžaduje privátní
+OTLP/HTTP endpoint. Konkrétní backend, retence, role, alerty a incident acceptance
+patří infrastruktuře a jsou popsané v [observability kontraktu](./OBSERVABILITY.md).
 
 ## Recovery a konzistence
 

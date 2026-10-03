@@ -60,8 +60,9 @@ zákazníků musí být hotové alespoň:
    retry/alert a rotaci file-backed hesla; transakční outbox i dvoufázový
    outage acceptance jsou připravené (ADR-123, ADR-124), ale živý drill chybí;
 6. egress firewall odpovídající aplikační SSRF/DNS-rebinding policy;
-7. centrální log collector nebo OpenTelemetry pipeline s definovanou retencí,
-   přístupovými rolemi, metrikami, alerty a incident runbookem;
+7. napojit připravený OTLP traces/metrics exporter a JSON stdout na konkrétní
+   collector/backend, poté živě ověřit definovanou retenci, přístupové role,
+   alerty a incident runbook z `docs/OBSERVABILITY.md` (ADR-130);
 8. spustit připravený omezený load test na SaaS stagingu; background lifecycle,
    operation-backed deployment/start/stop/remove i GitHub/Gitea artifact
    publication už vlastní lease (ADR-125, ADR-126, ADR-128, ADR-129);

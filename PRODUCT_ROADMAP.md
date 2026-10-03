@@ -172,7 +172,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
   platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
-  odkazuje na 129 samostatných ADR. Repository gate hlídá souvislou řadu,
+  odkazuje na 130 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.
 
@@ -234,6 +234,12 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     vítězné repliky (ADR-129).
 - [ ] Zapojit OpenTelemetry/log collector, metriky, retenci, alerting a incident
   runbook a dokončit topologii pro více API replik.
+  - [x] Doplnit opt-in OTLP/HTTP traces a metrics do API, nízkokardinalitní
+    request metriky, trace-log korelaci, unikátní instance identity a povinný
+    collector endpoint v SaaS runtime kontraktu (ADR-130).
+  - [ ] Napojit konkrétní staging collector/backend, runtime JSON log
+    collector, retenční mazání, přístupové role a alert rules; pak provést
+    dvoureplikovou telemetry-gap a incident acceptance z `docs/OBSERVABILITY.md`.
 - [ ] Nasadit staging, zopakovat GitHub/Agent/tenant/recovery acceptance a až
   potom povolit nedůvěryhodné zákazníky.
 

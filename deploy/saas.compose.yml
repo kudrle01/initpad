@@ -35,6 +35,12 @@ services:
       INITPAD_AGENT_UPDATE_CHANNEL: stable
       INITPAD_PLATFORM_UPDATE_CHANNEL: stable
       INITPAD_SIGSTORE_CACHE_DIR: /data/sigstore-js
+      # Production SaaS must send traces and metrics to a private collector.
+      # Structured JSON logs stay on stdout for the runtime log collector.
+      INITPAD_OTEL_ENABLED: 'true'
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?set the private OTLP HTTP collector endpoint}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-initpad-api}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-60000}
       INITPAD_AGENT_IMAGE: ${INITPAD_AGENT_IMAGE:?set a digest-pinned Agent image}
       INITPAD_AGENT_RELEASE_VERSION: ${INITPAD_AGENT_RELEASE_VERSION:?set the Agent version}
       INITPAD_GITHUB_APP_ID: ${INITPAD_GITHUB_APP_ID:?inject the GitHub App id}

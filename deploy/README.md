@@ -112,6 +112,13 @@ The default web binding is `127.0.0.1:8080`; an external HTTPS edge/WAF must
 proxy it. This manifest is a staging contract only. The remaining public-SaaS
 gates are listed in [release readiness](../docs/RELEASE_READINESS.md).
 
+The SaaS profile also requires a private OTLP/HTTP collector endpoint. API
+replicas export traces and metrics to it; structured redacted JSON logs remain
+on stdout for the runtime log collector. InitPad does not bundle an
+observability database. Start with [`observability/`](./observability/README.md)
+and implement the retention, access, alerts and incident acceptance documented
+in [the observability contract](../docs/OBSERVABILITY.md).
+
 ## Operations
 
 - **Backup**: run `./backup.sh /secure/path/initpad-backup`. It creates a

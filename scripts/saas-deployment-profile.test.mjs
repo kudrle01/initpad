@@ -18,6 +18,12 @@ test('keeps the SaaS runtime separate from bundled self-hosted dependencies', ()
   assert.match(compose, /INITPAD_EDITION: saas/);
   assert.match(compose, /DATABASE_URL_FILE: \/run\/secrets\/database_url/);
   assert.match(compose, /INITPAD_ARTIFACT_S3_BUCKET:\?set the private external bucket/);
+  assert.match(compose, /INITPAD_OTEL_ENABLED: 'true'/);
+  assert.match(
+    compose,
+    /OTEL_EXPORTER_OTLP_ENDPOINT:\?set the private OTLP HTTP collector endpoint/,
+  );
+  assert.match(example, /^OTEL_EXPORTER_OTLP_ENDPOINT=http:\/\/otel-collector:4318$/m);
 });
 
 test('requires immutable platform images and validates without printing secrets', () => {

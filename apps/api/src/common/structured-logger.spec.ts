@@ -1,4 +1,5 @@
 import { StructuredLogger, structuredLogRecord } from './structured-logger';
+import * as telemetryContext from './telemetry-context';
 
 describe('StructuredLogger', () => {
   it('emits one JSON object with an event and Nest context', () => {
@@ -41,12 +42,25 @@ describe('StructuredLogger', () => {
   });
 
   it('does not let message metadata replace reserved log fields', () => {
-    expect(
-      structuredLogRecord('warn', {
-        event: 'malicious.input',
-        level: 'success',
-        timestamp: 'not-a-time',
-      }),
-    ).toMatchObject({ event: 'malicious.input', level: 'warn' });
+    const record = structuredLogRecord('warn', {
+      event: 'malicious.input',
+      level: 'success',
+      timestamp: 'not-a-time',
+      requestId: 'client-selected',
+      traceId: 'client-selected',
+    });
+    expect(record).toMatchObject({ event: 'malicious.input', level: 'warn' });
+    expect(record).not.toHaveProperty('requestId');
+    expect(record).not.toHaveProperty('traceId');
+  });
+
+  it('adds the active OpenTelemetry trace without accepting it from the message', () => {
+    jest.spyOn(telemetryContext, 'activeTraceFields').mockReturnValue({
+      traceId: 'a'.repeat(32),
+      spanId: 'b'.repeat(16),
+    });
+    const record = structuredLogRecord('log', { event: 'traced.operation' });
+
+    expect(record).toMatchObject({ traceId: 'a'.repeat(32), spanId: 'b'.repeat(16) });
   });
 });
