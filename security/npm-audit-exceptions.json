@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "id": "GHSA-ch52-4w7c-c8xp",
+      "source": 1240991,
+      "package": "http-cache-semantics",
+      "severity": "high",
+      "affectedPackages": [
+        "@sigstore/sign",
+        "@sigstore/tuf",
+        "http-cache-semantics",
+        "make-fetch-happen",
+        "sigstore",
+        "tuf-js"
+      ],
+      "directPackages": ["sigstore"],
+      "expiresOn": "2026-11-02",
+      "reason": "Sigstore uses this HTTP client only to retrieve public trust metadata into a private per-service cache. InitPad does not expose a shared HTTP cache or forward user-controlled max-stale directives, which are prerequisites for the reported cross-user disclosure. No patched upstream version exists; remove this exception as soon as one is published."
+    }
+  ]
+}

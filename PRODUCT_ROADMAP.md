@@ -146,8 +146,12 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
   verzovanými soubory, kompatibilní npm aktualizace, všechny čtyři
-  produkční buildy a celá automatizovaná sada. Produkční dependency
-  audit hlásí nula známých zranitelností. Aktualizované stream typy
+  produkční buildy a celá automatizovaná sada. Dne 2. října nová bezpečnostní
+  upozornění bez
+  upstream opravy odhalila chybně produkční Tailwind build dependency a
+  transitivní HTTP cache klient Sigstore. Build větev je oddělená a zbývající
+  přesný řetězec má veřejnou fail-closed výjimku s expirací 2. listopadu 2026
+  (ADR-127). Aktualizované stream typy
   odhalily a opravily explicitní adaptér `tar-fs` → Dockerode a
   fail-closed validaci dat Docker manifestu. Nest 12, Prisma 7, React 19,
   Tailwind 4, Jest 30, Node types 26 a TypeScript 7 jsou samostatné major
@@ -168,7 +172,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
   platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
-  odkazuje na 126 samostatných ADR. Repository gate hlídá souvislou řadu,
+  odkazuje na 127 samostatných ADR. Repository gate hlídá souvislou řadu,
   shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
   zůstává jako stabilní kompatibilní rozcestník.
 
@@ -189,6 +193,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     a ověřit obnovu bez lokálních stavových služeb.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
+- [ ] Po vydání opraveného `http-cache-semantics`/Sigstore dependency řetězce
+  provést kompatibilní aktualizaci a odstranit dočasnou auditní výjimku
+  `GHSA-ch52-4w7c-c8xp`; gate ji nejpozději 2. listopadu 2026 odmítne.
 - [ ] Doplnit persistentní OAuth/OIDC stav, kompletní tenant/capacity kvóty,
   produkční e-mail delivery a load test.
   - [x] Přesunout GitHub OAuth state a interní OIDC authorization

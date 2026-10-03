@@ -39,6 +39,8 @@ veřejný produkční provoz.
   2026 ownerovi dostupné obrazovky živým průchodem při 390 × 844 px bez
   horizontálního přetečení, chybějícího hlavního nadpisu nebo nepopsaného
   viditelného ovladače. Mobilní navigace i formuláře zůstaly ovladatelné.
+  Nové advisory z 2. října oddělilo Tailwind tooling od runtime grafu; jediná
+  zbývající Sigstore větev je explicitně evidovaná v ADR-127.
 
 ## Blokátory veřejného SaaS
 
@@ -63,7 +65,9 @@ zákazníků musí být hotové alespoň:
 8. spustit připravený omezený load test na SaaS stagingu a dokončit execution
    fencing artifact ingestion a synchronních lifecycle mutací; background
    lifecycle i operation-backed deployment už vlastní lease (ADR-125, ADR-126);
-9. nezávislé uživatelské a provozní ověření release kandidáta.
+9. po upstream opravě aktualizovat Sigstore HTTP cache řetězec a odstranit
+   dočasnou výjimku `GHSA-ch52-4w7c-c8xp` před její expirací 2. listopadu 2026;
+10. nezávislé uživatelské a provozní ověření release kandidáta.
 
 ## Známá provozní omezení
 
@@ -81,6 +85,15 @@ leadera atomickým PostgreSQL lease s generačním takeoverem. Operation-backed
 deployment/start má vlastní obnovovaný lease a fenced terminal publication.
 Artifact ingestion a zbývající synchronní lifecycle mutace ale stejnou ochranu
 zatím nemají. Mutační veřejný provoz proto zůstává single-replica.
+
+### Sigstore má časově omezenou dependency výjimku
+
+`http-cache-semantics` do verze 4.2.0 má high-severity advisory bez dostupné
+opravené verze. Zasažená cesta se v InitPadu používá pouze pro veřejná trust
+metadata v privátní cache, nikoli jako sdílená cache uživatelských odpovědí,
+proto chybí předpoklady popsaného cross-user útoku. Release gate přesto povoluje
+jen přesný Sigstore řetězec, odmítne jakýkoli další nález a výjimka automaticky
+vyprší 2. listopadu 2026. Jde o evidované dočasné riziko, ne tvrzení o opravě.
 
 ### Vestavěný object store je pouze důvěryhodný profil
 

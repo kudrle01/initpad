@@ -132,3 +132,4 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 | [ADR-124](./ADR-124.md) | Load a SMTP outage acceptance jsou omezené staging gate, ne důkaz active-active mutací |
 | [ADR-125](./ADR-125.md) | Background lifecycle volí jediného leadera databázovým lease |
 | [ADR-126](./ADR-126.md) | Process-bound deployment používá obnovovaný generační lease |
+| [ADR-127](./ADR-127.md) | Dependency audit připouští jen úzkou a expirující výjimku |
