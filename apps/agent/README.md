@@ -1,143 +1,147 @@
 # InitPad Agent
 
-InitPad Agent runs on a Docker target and connects **outbound** to the InitPad
-control plane. It does not expose SSH, a Docker API or a management HTTP port.
-The target therefore needs Docker and outbound HTTPS, not Node.js.
+InitPad Agent běží na Docker targetu a připojuje se **odchozím spojením** ke
+control plane InitPadu. Nevystavuje SSH, Docker API ani administrační HTTP port.
+Target proto potřebuje Docker a odchozí HTTPS, nikoli Node.js.
 
-The implemented runtime provides enrollment, a root-only credential file,
-Docker capability discovery, heartbeat, a durable leased-job transport and an
-allocation-scoped Docker lifecycle engine. Agent 0.4 also executes real
-project deploy/start/stop/remove jobs from verified build artifacts. The wire
-protocol deliberately has no generic shell endpoint.
+Implementovaný runtime zajišťuje enrollment, credential soubor přístupný pouze
+uživateli root, zjištění schopností Dockeru, heartbeat, trvalý přenos jobů s
+lease a Docker lifecycle engine omezený na konkrétní allocation. Agent 0.4 také
+provádí skutečné projektové joby `deploy`, `start`, `stop` a `remove` z
+ověřených build artefaktů. Wire protokol záměrně nemá obecný shell endpoint.
 
-Agent 0.5 added the read-only readiness gate for production Caddy routing,
-Agent 0.6 the durable generation-fenced route reconciler, Agent 0.7 the
-allocation-owned workload network and Agent 0.8 a dual-revision, public-HTTPS
-health gate. The control plane orchestrates workload and route jobs in a safe
-order and publishes a managed deployment only after its stable browser URL
-returns 2xx. A failed cutover restores the previously serving revision.
-Agent 0.9 added bounded allocation-scoped workload diagnostics. Agent 0.10
-automatically rotates its target credential after 30 days with a two-phase
-overlap: it persists the new generation and old fallback before proving the new
-identity, so a restart or lost response cannot disconnect the target.
+Agent 0.5 doplnil read-only readiness gate pro produkční směrování Caddy,
+Agent 0.6 trvalý route reconciler chráněný generací, Agent 0.7 síť workloadu
+vlastněnou allocation a Agent 0.8 health gate se dvěma revizemi a veřejným
+HTTPS. Control plane řadí workload a route joby v bezpečném pořadí a managed
+deployment publikuje až poté, co jeho stabilní URL vrátí 2xx. Neúspěšný cutover
+obnoví dříve obsluhující revizi. Agent 0.9 doplnil omezenou diagnostiku
+workloadu v rozsahu allocation. Agent 0.10 po 30 dnech automaticky rotuje
+credential targetu s dvoufázovým překryvem: před ověřením nové identity uloží
+novou generaci i původní fallback, takže restart ani ztracená odpověď target
+neodpojí.
 
-The repository builds the Agent as an executable Node.js package and a minimal
-container image. A reviewed Linux installer is served by the control plane and
-shown in the enrollment dialog once the instance administrator configures an
-immutable `INITPAD_AGENT_IMAGE` digest and its explicit
-`INITPAD_AGENT_RELEASE_VERSION`. It installs and enrolls without cloning this
-repository, preserves the root-only identity across updates and restores the
-previous container when the replacement cannot heartbeat. The repository
-publishes signed, public `amd64/arm64` images. Agent 0.14.3 is the current
-reviewed distribution release. Its final image passed the CLI runtime probe,
-signature, anonymous public-release audit, live update, reboot, URL migration
-and rollback acceptance.
-Releases 0.13.0 and 0.14.0 were
-rejected because their runtimes omitted the production `sigstore` dependency;
-neither replaced the existing Agent during acceptance. The local lab below
-stays the supported source-build acceptance path.
+Repozitář sestavuje Agenta jako spustitelný Node.js balíček a minimální
+kontejnerový image. Zkontrolovaný instalátor pro Linux poskytuje control plane
+a zobrazí jej v enrollment dialogu poté, co správce instance nastaví immutable
+digest `INITPAD_AGENT_IMAGE` a explicitní `INITPAD_AGENT_RELEASE_VERSION`.
+Instalátor provede instalaci a enrollment bez klonování repozitáře, zachová mezi
+aktualizacemi identitu přístupnou pouze uživateli root a při chybějícím
+heartbeat náhradního kontejneru obnoví předchozí kontejner. Repozitář publikuje
+podepsané veřejné image pro `amd64/arm64`. Aktuálním zkontrolovaným distribučním
+releasem je Agent 0.14.3. Jeho výsledný image prošel CLI runtime probe,
+ověřením podpisu, anonymním auditem veřejného releasu, živou aktualizací,
+restartem hostu, migrací URL a rollback acceptance.
 
-Agent 0.13 adds the remote update protocol. An owner/admin must explicitly
-confirm each target update in **Manage Agent**. The control plane selects a
-stable release from its bounded GitHub catalog and verifies the release
-manifest's exact Sigstore workflow identity. The Agent verifies the same
-manifest again, pulls only its immutable image digest and hands replacement to
-a short-lived updater running from the already trusted Agent image. The updater
-preflights the candidate with the existing identity, parks the old container,
-requires a successful new heartbeat and otherwise restores the old container.
-Application workloads are not restarted. There is no generic command, script
-URL or user-supplied image in the job. Updating 0.12.1 to 0.13 remains a final
-manual installer operation; remote updates apply from 0.13 onward.
+Releasy 0.13.0 a 0.14.0 byly odmítnuty, protože jejich runtime image
+neobsahovaly produkční závislost `sigstore`. Ani jeden během acceptance
+nenahradil existujícího Agenta. Níže popsaný lokální lab zůstává podporovanou
+acceptance cestou pro build ze zdrojového kódu.
 
-Agent 0.14.1 was the first corrected protocol-compatible release. It added
-production dependencies to the runtime image and a container CLI smoke test
-before signing. Version 0.14.2 then proved a live update from working 0.14.1,
-identity and workload preservation, and automatic rollback after a deliberately
-failed replacement. It deliberately keeps protocol version 1 so acceptance is
-not coupled to a wire-protocol migration.
+Agent 0.13 přidal protokol vzdálené aktualizace. Owner nebo admin musí každou
+aktualizaci targetu explicitně potvrdit v **Manage Agent**. Control plane vybere
+stabilní release ze svého omezeného GitHub katalogu a ověří přesnou identitu
+Sigstore workflow v release manifestu. Agent ověří stejný manifest znovu,
+stáhne pouze immutable digest image a předá náhradu krátkodobému updateru
+spuštěnému z již důvěryhodného image Agenta. Updater provede preflight kandidáta
+se stávající identitou, odstaví původní kontejner, vyžádá úspěšný nový heartbeat
+a jinak původní kontejner obnoví. Aplikační workloady se nerestartují. Job
+neobsahuje obecný příkaz, URL skriptu ani uživatelem dodaný image. Přechod z
+0.12.1 na 0.13 zůstává poslední ruční operací instalátoru; vzdálené aktualizace
+se uplatní od verze 0.13.
 
-The public, signed 0.14.3 release treats the control-plane URL as
-mutable transport metadata rather than Agent identity. When an operator reruns
-the reviewed installer with a changed URL, the Agent sends the existing
-credential to that endpoint, requires an accepted heartbeat and only then
-atomically saves the new URL. A failed verification leaves the old URL,
-credential and target binding untouched. This is intended for a hostname, LAN
-address or TLS entry point change of the same InitPad instance; moving a host
-to another instance still requires explicit re-enrollment.
-Its release assets, signatures and `amd64/arm64` OCI index passed anonymous
-distribution verification. On 1 October 2026 a separate Linux host preserved
-the same Agent container, identity and managed workloads across a real reboot,
-accepted a reachable URL change, rejected an unreachable endpoint and returned
-to the original URL without re-enrollment.
+Agent 0.14.1 byl prvním opraveným releasem kompatibilním s protokolem. Do
+runtime image doplnil produkční závislosti a před podepsáním také smoke test CLI
+v kontejneru. Verze 0.14.2 následně prokázala živou aktualizaci z funkční 0.14.1,
+zachování identity a workloadů a automatický rollback po záměrně neúspěšné
+náhradě. Záměrně zachovává protokol ve verzi 1, aby acceptance nezávisela na
+migraci wire protokolu.
 
-New version tags are published as GitHub prereleases. Customer control planes
-use the `stable` update channel by default; a disposable acceptance instance may
-opt into `candidate`. Promotion changes only GitHub release metadata after the
-signed image has passed the runbook—it never rebuilds the image or moves its tag.
+Veřejný podepsaný release 0.14.3 považuje URL control plane za měnitelná
+transportní metadata, nikoli součást identity Agenta. Pokud provozovatel znovu
+spustí zkontrolovaný instalátor se změněnou URL, Agent na tento endpoint odešle
+stávající credential, vyžádá přijatý heartbeat a teprve poté atomicky uloží
+novou URL. Neúspěšné ověření ponechá původní URL, credential i vazbu targetu beze
+změny. Tento postup slouží ke změně hostname, LAN adresy nebo TLS entry pointu
+stejné instance InitPadu. Přesun hostu do jiné instance nadále vyžaduje
+explicitní re-enrollment.
 
-Release maintainers use [RELEASING.md](./RELEASING.md) and the clean-host
-[release acceptance](./ACCEPTANCE.md). The installer shown by a control plane
-remains disabled until that deployment is configured with the exact digest
-produced by a successful release.
+Release assets, podpisy a OCI index `amd64/arm64` prošly anonymním ověřením
+distribuce. Dne 1. října 2026 samostatný Linux host zachoval stejný kontejner
+Agenta, identitu i managed workloady přes skutečný restart, přijal dostupnou
+změnu URL, odmítl nedostupný endpoint a bez re-enrollmentu se vrátil na původní
+URL.
 
-`host-acceptance.sh` is an operator-run evidence helper for disconnect,
-host-reboot and control-plane URL migration tests. It verifies the Agent
-identity and InitPad-managed workload container IDs across those lifecycle
-events, and proves that a rejected URL leaves the existing Agent untouched.
-Its reboot checkpoint additionally verifies the Docker boot service, restart
-policy and Linux boot ID, then proves the same container recovered. It never
-stops, starts or replaces a container and stores its root-only report outside
-the source checkout.
+Nové verzovací tagy se publikují jako GitHub prerelease. Zákaznické control
+plane používají ve výchozím stavu update kanál `stable`; disposable acceptance
+instance může zvolit `candidate`. Povýšení mění pouze metadata GitHub releasu
+poté, co podepsaný image projde runbookem. Image se znovu nesestavuje a jeho tag
+se nepřesouvá.
 
-The production installer itself is `apps/agent/install.sh`. Operators should
-normally use the complete checksum-verified command generated by **Manage
-Agent**, not copy this source file and not invoke a host-level `initpad-agent`
-binary. The command requires only Docker Engine on Linux, uses host networking
-only for the Agent process, mounts the local Docker socket and stores identity
-in `/var/lib/initpad-agent`. The downloaded script accepts `--help` for optional
-direct-port hostname, private Caddy socket, private CA and explicit
-`--re-enroll` recovery parameters. A normal update verifies the saved identity
-before stopping the old Agent. It never replaces a rejected credential
-silently; `--re-enroll` requires a new short-lived token and is reserved for a
-disconnected, recreated or restored target. Those local details deliberately
-do not come from a control-plane job.
+Správci releasu používají [RELEASING.md](./RELEASING.md) a clean-host
+[release acceptance](./ACCEPTANCE.md). Instalátor zobrazený control plane zůstává
+vypnutý, dokud nasazení nenastaví přesný digest vytvořený úspěšným releasem.
 
-The generated command also carries the intended target's non-secret ID. Before
-preserving an existing host identity, the installer verifies that it belongs to
-that exact target. This prevents a host from successfully reconnecting an older
-target while a newly created server card remains `not enrolled`.
+`host-acceptance.sh` je důkazní pomocný skript spouštěný provozovatelem při
+testech odpojení, restartu hostu a migrace URL control plane. Napříč těmito
+lifecycle událostmi ověřuje identitu Agenta a ID kontejnerů workloadů spravovaných
+InitPadem a prokazuje, že odmítnutá URL existujícího Agenta nezmění. Checkpoint
+restartu navíc ověří službu Docker při startu, restart policy a Linux boot ID a
+následně prokáže obnovení stejného kontejneru. Skript nikdy nezastavuje,
+nespouští ani nenahrazuje kontejner a svůj report přístupný pouze uživateli root
+ukládá mimo checkout zdrojového kódu.
 
-The target `publicUrl` is used by the control plane to construct browser links;
-it is not an Agent health-check address. A production Agent using the local
-Docker socket and host networking checks published ports through loopback.
-`--published-host` remains an explicit lab option only for an Agent controlling
-a remote Docker daemon, such as the isolated Docker-in-Docker acceptance stack.
+Produkční instalátor je `apps/agent/install.sh`. Provozovatelé mají běžně
+používat úplný příkaz s ověřením checksumu vytvořený v **Manage Agent**, nikoli
+kopírovat tento zdrojový soubor nebo spouštět host-level binární soubor
+`initpad-agent`. Příkaz vyžaduje pouze Docker Engine na Linuxu, host networking
+používá jen pro proces Agenta, připojuje lokální Docker socket a identitu ukládá
+do `/var/lib/initpad-agent`. Stažený skript podporuje `--help` a volitelné
+parametry pro hostname přímých portů, privátní Caddy socket, privátní CA a
+explicitní recovery `--re-enroll`. Běžná aktualizace před zastavením původního
+Agenta ověří uloženou identitu. Odmítnutý credential nikdy skrytě nenahradí;
+`--re-enroll` vyžaduje nový krátkodobý token a je vyhrazen pro odpojený, znovu
+vytvořený nebo obnovený target. Tyto lokální údaje se záměrně nepřebírají z
+control-plane jobu.
 
-The manual installer remains the recovery and air-gap path after 0.13. Remote
-updates are deliberately per target: update one non-critical target first,
-observe its heartbeat, protocol and Docker tests, then approve the remaining
-targets. InitPad never silently rolls out an Agent release to every server.
+Vygenerovaný příkaz obsahuje také necitlivé ID zamýšleného targetu. Než
+instalátor zachová existující identitu hostu, ověří, že patří přesně tomuto
+targetu. Host se tak nemůže úspěšně připojit ke staršímu targetu, zatímco nově
+vytvořená karta serveru zůstane ve stavu `not enrolled`.
 
-The Agent container uses `unless-stopped`. This starts a previously running
-Agent when Docker returns after a host reboot, while preserving an
-administrator's explicit manual stop. On a conventional systemd host the
-installer warns when `docker.service` is not enabled; it does not silently
-change host boot policy. Recovery after an unexpected reboot uses
-`systemctl enable --now docker` when needed and `docker start initpad-agent`,
-never a new enrollment token.
+Control plane používá `publicUrl` targetu k sestavení odkazů pro prohlížeč;
+nejde o adresu health checku Agenta. Produkční Agent s lokálním Docker socketem
+a host networkingem kontroluje publikované porty přes loopback. Parametr
+`--published-host` zůstává explicitní volbou pouze pro lab, ve kterém Agent
+ovládá vzdálený Docker daemon, například izolovaný Docker-in-Docker acceptance
+stack.
 
-## Local acceptance without a VM
+Ruční instalátor zůstává i po verzi 0.13 cestou pro recovery a air-gap.
+Vzdálené aktualizace probíhají záměrně po jednotlivých targetech: nejprve
+aktualizujte jeden nekritický target, sledujte jeho heartbeat a výsledky testů
+protokolu a Dockeru a teprve poté schvalte zbývající targety. InitPad nikdy
+skrytě nenasazuje release Agenta na všechny servery současně.
 
-The lab uses a dedicated Docker-in-Docker daemon. It never gives the Agent the
-host socket used by InitPad, so it represents a separate customer target even
-though everything runs on one development machine.
+Kontejner Agenta používá `unless-stopped`. Po návratu Dockeru po restartu hostu
+se dříve běžící Agent spustí, ale explicitní ruční zastavení správcem zůstane
+zachováno. Na běžném hostu se systemd instalátor upozorní, pokud není povolena
+služba `docker.service`; boot policy hostu skrytě nemění. Recovery po
+neočekávaném restartu používá v případě potřeby
+`systemctl enable --now docker` a `docker start initpad-agent`, nikdy nový
+enrollment token.
 
-1. Start the normal platform with `deploy/install.sh`.
-2. In **Infrastructure**, add `Docker (InitPad Agent)` with an application base
-   URL such as `http://127.0.0.1`.
-3. Generate an enrollment token, but do not close the dialog yet.
-4. From `deploy/`, run (if the shell prompt already shows `deploy`, do not run
-   `cd deploy` again):
+## Lokální acceptance bez VM
+
+Lab používá vyhrazený Docker-in-Docker daemon. Agent nikdy nedostane socket
+hostu používaný InitPadem, takže představuje samostatný zákaznický target, i
+když vše běží na jednom vývojovém počítači.
+
+1. Spusťte standardní platformu pomocí `deploy/install.sh`.
+2. V části **Infrastructure** přidejte target `Docker (InitPad Agent)` se základní
+   URL aplikací, například `http://127.0.0.1`.
+3. Vygenerujte enrollment token, ale dialog zatím nezavírejte.
+4. Z adresáře `deploy/` spusťte následující příkazy. Pokud prompt shellu už
+   zobrazuje `deploy`, příkaz `cd deploy` znovu nespouštějte:
 
    ```sh
    ./agent-lab.sh build
@@ -146,18 +150,19 @@ though everything runs on one development machine.
    ./agent-lab.sh logs
    ```
 
-5. Paste the token only into the hidden prompt. Within at most 30 seconds the UI
-   changes to `online` and shows the Agent/Docker versions and last contact.
-6. Stop the lab with `./agent-lab.sh stop`; after 90 seconds the UI changes to
-   `offline`. Starting it again returns it to `online` without re-enrollment.
-7. Click **Manage Agent → Test protocol**. The job moves through `queued`,
-   `leased` and `succeeded`, its progress advances for 35 seconds and `attempt`
-   remains 1 during a normal run. The probe does not create a container.
-8. Click **Test Docker**. A digest-pinned Nginx image exercises create, health,
-   bounded logs, replacement, rollback, stop, start and remove. The newest
-   `lifecycle-test` entry must finish as `succeeded` with the message
-   `Docker lifecycle test completed and cleaned up`.
-9. Confirm that the isolated target contains no diagnostic residue:
+5. Token vložte pouze do skrytého promptu. Nejpozději do 30 sekund se stav v UI
+   změní na `online` a zobrazí verze Agenta a Dockeru i čas posledního kontaktu.
+6. Lab zastavíte příkazem `./agent-lab.sh stop`. Po 90 sekundách se stav v UI
+   změní na `offline`. Po opětovném spuštění se vrátí na `online` bez nového
+   enrollmentu.
+7. Klikněte na **Manage Agent → Test protocol**. Job projde stavy `queued`,
+   `leased` a `succeeded`, jeho průběh postupuje 35 sekund a při běžném průběhu
+   zůstává `attempt` roven 1. Probe nevytváří kontejner.
+8. Klikněte na **Test Docker**. Image Nginx připnutý digestem projde vytvořením,
+   health checkem, omezeným čtením logů, výměnou, rollbackem, zastavením,
+   spuštěním a odstraněním. Nejnovější záznam `lifecycle-test` musí skončit jako
+   `succeeded` se zprávou `Docker lifecycle test completed and cleaned up`.
+9. Ověřte, že izolovaný target neobsahuje žádné zbytky po diagnostice:
 
    ```sh
    ./agent-lab.sh docker ps -a --filter label=com.initpad.managed=true
@@ -166,27 +171,28 @@ though everything runs on one development machine.
    ./agent-lab.sh docker network inspect net-<workspace-slug>-diagnostic
    ```
 
-   The first command prints no workload; both inspect commands return not
-   found when the test pulled the image and created the network itself. An
-   image already cached before the test is intentionally preserved.
-10. **Disable Agent** invalidates the credential. The running process receives
-   `401`, logs `agent.credential_rejected` and exits; a new enrollment is then
-   required.
+   První příkaz nevypíše žádný workload. Oba příkazy `inspect` vrátí not found,
+   pokud test image stáhl a síť vytvořil sám. Image, který byl v cache už před
+   testem, se záměrně zachovává.
+10. **Disable Agent** zneplatní credential. Běžící proces dostane odpověď `401`,
+    zaznamená `agent.credential_rejected` a skončí. Poté je nutný nový
+    enrollment.
 
-To verify lease recovery, start another probe, stop `agent-lab` after it becomes
-`leased`, wait at least 30 seconds and start it again. The same job is reclaimed
-as `attempt 2` and finishes successfully. A stale first attempt cannot renew or
-publish progress after reassignment.
+Obnovení lease ověříte takto: spusťte další probe, po přechodu do stavu `leased`
+zastavte `agent-lab`, počkejte alespoň 30 sekund a znovu jej spusťte. Stejný job
+se převezme jako `attempt 2` a úspěšně skončí. Zastaralý první pokus po
+přeřazení nemůže obnovit lease ani publikovat průběh.
 
-`INITPAD_AGENT_LAB_URL` overrides the control-plane URL when the web port or
-hostname differs. HTTP is accepted only because the lab passes the explicit
-`--allow-insecure-http` flag; real internet-facing installations require HTTPS.
+Proměnná `INITPAD_AGENT_LAB_URL` přepíše URL control plane, pokud se liší port
+webu nebo hostname. HTTP je přijato pouze proto, že lab předává explicitní
+příznak `--allow-insecure-http`. Skutečné instalace dostupné z internetu
+vyžadují HTTPS.
 
-## Real project delivery acceptance
+## Acceptance skutečného doručení projektu
 
-After the diagnostic tests above pass, verify the actual project path:
+Po úspěšných diagnostických testech výše ověřte skutečnou cestu projektu:
 
-1. Rebuild the current control plane and Agent without resetting volumes:
+1. Znovu sestavte aktuální control plane a Agenta bez resetu volumes:
 
    ```sh
    cd deploy
@@ -196,14 +202,15 @@ After the diagnostic tests above pass, verify the actual project path:
    ./agent-lab.sh start
    ```
 
-2. In **Infrastructure**, confirm the target is `online` and reports Agent
-   `0.4.0` or newer. The target must now be selectable in **New project**.
-3. Create a disposable project (for example React) and select the Agent target
-   for `dev`. Keep test/prod on their existing targets. Wait for CI and then
-   for the dev environment to change from `Waiting for Agent` through artifact
-   verification and health checking to `running`.
-4. Verify the isolated daemon owns exactly the expected allocation-scoped
-   workload:
+2. V části **Infrastructure** ověřte, že target je `online` a hlásí Agenta ve
+   verzi `0.4.0` nebo novější. Target musí být nyní možné vybrat v **New
+   project**.
+3. Vytvořte jednorázový projekt, například React, a pro prostředí `dev` vyberte
+   target s Agentem. Prostředí test a prod ponechte na jejich stávajících
+   targetech. Počkejte na CI a poté na změnu prostředí dev z `Waiting for Agent`
+   přes ověření artefaktu a health check do stavu `running`.
+4. Ověřte, že izolovaný daemon vlastní přesně očekávaný workload omezený na
+   allocation:
 
    ```sh
    ./agent-lab.sh docker ps \
@@ -211,24 +218,25 @@ After the diagnostic tests above pass, verify the actual project path:
      --format '{{.Names}}  {{.Image}}  {{.Ports}}'
    ```
 
-   Its image tag/revision must match the build shown by the project. The Agent
-   already completed an HTTP health check inside the target. The lab confines
-   random ports to `42000–42031` and exposes them through a non-privileged TCP
-   bridge bound only to host loopback. With target application URL
-   `http://127.0.0.1`, the link shown by InitPad must therefore open from the
-   same development machine. The bridge does not publish Docker API port 2375
-   and is not a replacement for a production ingress on a real target.
-5. From the environment tools run **Stop**, **Start**, then **Remove
-   deployment**. Each operation must progress through an Agent job and the
-   environment must end as `stopped`, `running`, then `empty`. The `docker ps
-   -a` command above must return no container after removal.
-6. Start another deploy, stop the Agent before it claims the job and wait until
-   UI marks it offline. The operation must remain `Waiting for Agent`, not fail
-   or execute locally. Start the Agent again; the same operation finishes once.
-7. Confirm a second workspace cannot see or allocate the first workspace's
-   Agent target. To test two Agent workloads on one physical daemon, register a
-   second workspace-owned target and run a second Agent identity against the
-   lab daemon:
+   Tag image a revize musí odpovídat buildu zobrazenému v projektu. Agent už
+   uvnitř targetu dokončil HTTP health check. Lab omezuje náhodné porty na
+   rozsah od `42000` do `42031` a zpřístupňuje je přes neprivilegovaný TCP
+   bridge navázaný pouze na loopback hostu. Při URL aplikace targetu
+   `http://127.0.0.1` se proto odkaz zobrazený InitPadem musí otevřít ze stejného
+   vývojového počítače. Bridge nepublikuje port Docker API 2375 a nenahrazuje
+   produkční ingress na skutečném targetu.
+5. V nástrojích prostředí spusťte **Stop**, **Start** a poté **Remove
+   deployment**. Každá operace musí projít jobem Agenta a prostředí musí postupně
+   skončit ve stavech `stopped`, `running` a `empty`. Příkaz `docker ps -a` výše
+   po odstranění nesmí vrátit žádný kontejner.
+6. Spusťte další deploy, zastavte Agenta dříve, než job převezme, a počkejte, až
+   UI označí target jako offline. Operace musí zůstat ve stavu `Waiting for
+   Agent`, nesmí selhat ani proběhnout lokálně. Agenta znovu spusťte, stejná
+   operace pak skončí právě jednou.
+7. Ověřte, že druhý workspace nevidí ani nemůže alokovat target Agenta prvního
+   workspace. Dva workloady Agentů na jednom fyzickém daemonu otestujete tak, že
+   zaregistrujete druhý target vlastněný workspace a proti lab daemonu spustíte
+   druhou identitu Agenta:
 
    ```sh
    ./agent-lab.sh enroll-secondary
@@ -236,17 +244,17 @@ After the diagnostic tests above pass, verify the actual project path:
    ./agent-lab.sh status
    ```
 
-   The secondary identity has its own `0600` credential volume but deliberately
-   uses the same DinD daemon. Deploy one project from each workspace. Labels,
-   names and networks must use different namespaces; stopping or removing the
-   second workload must leave the first one running and reachable. Neither
-   workspace may see or act on the other's target or workload. A centrally
-   shared multi-workspace Agent target requires a future platform-admin sharing
-   model.
+   Sekundární identita má vlastní volume s credentialem s oprávněním `0600`, ale
+   záměrně používá stejný daemon DinD. Nasaďte po jednom projektu z každého
+   workspace. Labely, názvy a sítě musí používat odlišné namespace. Zastavení
+   nebo odstranění druhého workloadu musí první ponechat běžící a dostupný.
+   Žádný workspace nesmí vidět target ani workload toho druhého a nesmí s nimi
+   manipulovat. Centrálně sdílený target Agenta pro více workspace vyžaduje
+   budoucí model sdílení na úrovni správce platformy.
 
-   When two managed identities are needed while an existing direct-port lab
-   target must stay online, the lab also offers an optional third credential
-   slot with the same isolation contract:
+   Pokud jsou potřeba dvě spravované identity a existující lab target s přímými
+   porty má zůstat online, nabízí lab také volitelný třetí slot credentialu se
+   stejným izolačním kontraktem:
 
    ```sh
    ./agent-lab.sh enroll-tertiary
@@ -254,119 +262,120 @@ After the diagnostic tests above pass, verify the actual project path:
    ./agent-lab.sh logs-tertiary
    ```
 
-   It is not a production topology or a shared credential: each process still
-   represents one independently enrolled target and stores only that target's
+   Nejde o produkční topologii ani sdílený credential. Každý proces nadále
+   představuje jeden samostatně zaregistrovaný target a ukládá pouze jeho
    credential.
 
-## Managed gateway preflight and health-gated routing (Agent 0.8)
+## Preflight managed gateway a směrování řízené health checkem (Agent 0.8)
 
-A production preflight is an infrastructure acceptance test. The target
-administrator prepares:
+Produkční preflight je infrastrukturní acceptance test. Správce targetu
+připraví:
 
-- the gateway origin itself, for example `apps.example.test`, resolving to the
-  gateway and serving a certificate trusted by the Agent host on port 443;
-- wildcard DNS so `initpad-preflight.apps.example.test` resolves to the same
-  gateway path used by application hostnames;
-- preferably the Agent-local `INITPAD_AGENT_GATEWAY_ADMIN_SOCKET`, pointing to
-  a permissioned socket below `/run`; `INITPAD_AGENT_GATEWAY_ADMIN_URL` remains
-  available for an explicitly isolated loopback or private management network.
+- samotný origin gateway, například `apps.example.test`, který se překládá na
+  gateway a na portu 443 poskytuje certifikát důvěryhodný pro host Agenta,
+- wildcard DNS, aby se `initpad-preflight.apps.example.test` překládalo na
+  stejnou cestu gateway, kterou používají hostnamy aplikací,
+- přednostně lokální proměnnou Agenta `INITPAD_AGENT_GATEWAY_ADMIN_SOCKET`,
+  která ukazuje na socket s omezeným oprávněním pod `/run`. Proměnná
+  `INITPAD_AGENT_GATEWAY_ADMIN_URL` zůstává k dispozici pro explicitně
+  izolovanou loopback nebo privátní správní síť.
 
-The control plane never sends or stores that admin URL in a job. The bundled
-lab mounts a dedicated Unix socket between the Agent and Caddy. Caddy runs
-inside the same isolated daemon as workloads, has no Docker socket, and opens
-no admin TCP listener.
+Control plane tuto admin URL nikdy neposílá v jobu ani ji neukládá. Přibalený
+lab připojuje mezi Agenta a Caddy vyhrazený Unix socket. Caddy běží uvnitř
+stejného izolovaného daemonu jako workloady, nemá Docker socket a neotevírá
+žádný admin TCP listener.
 
-### Local DNS/TLS acceptance on macOS
+### Lokální acceptance DNS a TLS na macOS
 
-The lab provides a faithful local equivalent without requiring a registered
-domain. It reserves `apps.initpad.test`, runs a split-horizon wildcard DNS view
-for the Agent and host, and terminates HTTPS on loopback port 443 with a
-dedicated Caddy CA. The host view on port 5533 returns `127.0.0.1`; the Agent
-view returns the edge address in its private Docker network. The lab does not
-modify macOS automatically or pretend to configure production DNS.
+Lab poskytuje věrný lokální ekvivalent bez nutnosti registrované domény.
+Rezervuje `apps.initpad.test`, provozuje split-horizon wildcard DNS pro Agenta a
+host a ukončuje HTTPS na loopback portu 443 pomocí vyhrazené CA Caddy. Pohled
+hostu na portu 5533 vrací `127.0.0.1`, pohled Agenta vrací adresu edge v jeho
+privátní Docker síti. Lab macOS automaticky neupravuje a nepředstírá konfiguraci
+produkčního DNS.
 
-1. From `deploy/`, start the edge and generate its CA:
+1. Z adresáře `deploy/` spusťte edge a vygenerujte jeho CA:
 
    ```sh
    ./agent-lab.sh gateway-setup
    ```
 
-2. Run the two macOS setup blocks printed by that command. The first creates
-   `/etc/resolver/apps.initpad.test`; the second trusts only the generated lab
-   CA. The CA copy is stored below ignored `deploy/.runtime/` and is never
-   committed.
-3. Create the target with **Managed gateway (production)** and application URL
-   `https://apps.initpad.test`. Enroll it and start the matching Agent identity
-   after the edge is ready.
-4. Choose **Manage Agent → Test gateway**. Wildcard DNS, trusted TLS and the
-   private Caddy admin socket must all pass. Opening
-   `https://apps.initpad.test` must not show a certificate warning.
+2. Spusťte dva bloky nastavení pro macOS, které tento příkaz vypíše. První
+   vytvoří `/etc/resolver/apps.initpad.test`, druhý důvěřuje pouze vygenerované
+   CA labu. Kopie CA se ukládá pod ignorovaný adresář `deploy/.runtime/` a nikdy
+   se necommituje.
+3. Vytvořte target s volbou **Managed gateway (production)** a URL aplikace
+   `https://apps.initpad.test`. Proveďte enrollment a po připravenosti edge
+   spusťte odpovídající identitu Agenta.
+4. Zvolte **Manage Agent → Test gateway**. Wildcard DNS, důvěryhodné TLS i
+   privátní admin socket Caddy musí projít. Otevření `https://apps.initpad.test`
+   nesmí zobrazit varování o certifikátu.
 
-The resolver file affects only the reserved `.test` subzone. To undo the DNS
-part, remove `/etc/resolver/apps.initpad.test` and flush the macOS DNS cache.
-Remove the exact imported Caddy certificate through Keychain Access when the
-lab is no longer needed; do not delete certificates by a broad common-name
-match. A real server instead uses administrator-managed public or private DNS
-and a CA trusted by its clients.
+Soubor resolveru ovlivňuje pouze rezervovanou subzónu `.test`. Část s DNS
+vrátíte zpět odstraněním `/etc/resolver/apps.initpad.test` a vyprázdněním DNS
+cache macOS. Až lab nebudete potřebovat, odstraňte přesný importovaný certifikát
+Caddy přes Správu klíčenky. Certifikáty nemažte podle obecné shody common name.
+Skutečný server místo toho používá veřejné nebo privátní DNS spravované
+administrátorem a CA, které jeho klienti důvěřují.
 
-After rebuilding API, web and Agent 0.8, create a disposable Docker Agent
-target with **Managed gateway (production)** and the HTTPS gateway origin,
-enroll/start it, then choose **Manage Agent → Test gateway**. The job must
-advance through wildcard DNS, trusted TLS and private Caddy readiness and end
-as `passed`. Stopping the Agent leaves a queued test waiting; an invalid DNS
-zone or certificate ends as `failed` with the corresponding bounded error.
-Changing the target origin resets the previous result to `not-run`.
+Po opětovném sestavení API, webu a Agenta 0.8 vytvořte jednorázový Docker target
+s volbou **Managed gateway (production)** a HTTPS originem gateway, proveďte
+enrollment, spusťte jej a zvolte **Manage Agent → Test gateway**. Job musí projít
+wildcard DNS, důvěryhodným TLS a připraveností privátního Caddy a skončit jako
+`passed`. Zastavení Agenta ponechá zařazený test čekající. Neplatná DNS zóna
+nebo certifikát skončí jako `failed` s odpovídající omezenou chybou. Změna
+originu targetu vrátí předchozí výsledek na `not-run`.
 
-The same private adapter can now reconcile only control-plane-owned routes in
-the dedicated Caddy `initpad` server. It uses ETags to avoid overwriting a
-concurrent change and never accepts Caddy JSON, an admin URL or an upstream
-from a project. Before an active route is installed, the Agent connects the
-locally configured `INITPAD_AGENT_GATEWAY_CONTAINER` to the exact labeled
-project/environment network. Stopped or absent routes are removed before the
-gateway is disconnected. The gateway must be a running container labeled
-`com.initpad.gateway=true`; project payloads cannot choose it.
+Stejný privátní adaptér nyní dokáže sladit pouze routy vlastněné control plane
+ve vyhrazeném serveru Caddy `initpad`. Používá ETagy, aby nepřepsal souběžnou
+změnu, a nikdy nepřijímá Caddy JSON, admin URL ani upstream z projektu. Před
+instalací aktivní routy Agent připojí lokálně nakonfigurovaný
+`INITPAD_AGENT_GATEWAY_CONTAINER` k přesně označené síti projektu a prostředí.
+Zastavené nebo chybějící routy se odstraní dříve, než se gateway odpojí. Gateway
+musí být běžící kontejner s labelem `com.initpad.gateway=true`. Payload projektu
+ji nemůže vybrat.
 
-Managed workloads use a per-project network and bind their Agent-only health
-port to host loopback by default. A containerized remote-daemon lab may set
-`INITPAD_AGENT_MANAGED_HEALTH_BIND=0.0.0.0` only when that daemon is reachable
-solely through the lab's private management network. The health port is never
-used as the managed browser URL.
+Managed workloady používají síť pro každý projekt a svůj health port určený
+pouze Agentovi ve výchozím stavu váží na loopback hostu. Kontejnerizovaný lab se
+vzdáleným daemonem smí nastavit `INITPAD_AGENT_MANAGED_HEALTH_BIND=0.0.0.0`
+pouze tehdy, pokud je daemon dosažitelný výhradně přes privátní správní síť
+labu. Health port se nikdy nepoužívá jako managed URL v prohlížeči.
 
-There is intentionally no manual UI button for a synthetic route: durable
-route jobs are internal and are triggered by the two-stage project lifecycle.
-Passing preflight makes a compatible target selectable. Each managed deploy
-creates a revision-specific workload, verifies its internal health, atomically
-switches Caddy and then requests the exact public HTTPS health path. Only a 2xx
-response commits the new revision and retires the old container and unused
-image. DNS, TLS, redirects and non-2xx responses fail the gate, restore the
-previous upstream and discard only the failed candidate. A full project remove
-lists and deletes every workload revision carrying the exact target,
-allocation, project and environment ownership labels.
+Záměrně neexistuje ruční tlačítko v UI pro syntetickou routu. Trvalé route joby
+jsou interní a spouští je dvoustupňový životní cyklus projektu. Úspěšný
+preflight zpřístupní kompatibilní target pro výběr. Každý managed deploy vytvoří
+workload specifický pro revizi, ověří jeho interní health, atomicky přepne Caddy
+a poté vyžádá přesnou veřejnou HTTPS cestu health checku. Pouze odpověď 2xx
+potvrdí novou revizi a vyřadí starý kontejner i nepoužívaný image. DNS, TLS,
+přesměrování a odpovědi jiné než 2xx gate neprojdou, obnoví předchozí upstream
+a zahodí pouze neúspěšného kandidáta. Úplné odebrání projektu vypíše a odstraní
+každou revizi workloadu s přesnými vlastnickými labely targetu, allocation,
+projektu a prostředí.
 
-## Credential storage
+## Uložení credentialu
 
-The credential is written atomically to
-`/var/lib/initpad-agent/agent.json`. The directory is mode `0700`, the file is
-mode `0600`, and symlink/non-regular config files are rejected. Database and
-Agent logs never contain the plaintext credential or a job lease token. The
-database stores only SHA-256 hashes of both credential types. Possession of the
-long-lived credential authorizes only the physical target to which enrollment
-bound it; each claimed job additionally requires its short-lived fencing token.
+Credential se atomicky zapisuje do `/var/lib/initpad-agent/agent.json`. Adresář
+má režim `0700`, soubor `0600` a symlinky i nepravidelné konfigurační soubory se
+odmítají. Databáze a logy Agenta nikdy neobsahují credential v čitelné podobě ani
+lease token jobu. Databáze ukládá pouze hashe SHA-256 obou typů credentialu.
+Držení dlouhodobého credentialu opravňuje pouze k fyzickému targetu, ke kterému
+jej enrollment navázal. Každý převzatý job navíc vyžaduje svůj krátkodobý
+fencing token.
 
-## Docker lifecycle boundary
+## Hranice Docker lifecycle
 
-Agent 0.4.0 accepts a strict, versioned payload containing only allocation ID,
-namespace, project/environment identity, revision, immutable image digest,
-container port, health path and a keyed config fingerprint. Unknown fields are
-rejected. The engine never accepts a command, entrypoint, bind mount,
-privileged mode or host network. Config values are resolved only for the
-winning lease and remain in memory; they are never stored in the durable job,
-progress or completion result.
+Agent 0.4.0 přijímá přísný verzovaný payload, který obsahuje pouze ID allocation,
+namespace, identitu projektu a prostředí, revizi, immutable digest image, port
+kontejneru, health cestu a klíčovaný otisk konfigurace. Neznámá pole se
+odmítají. Engine nikdy nepřijme příkaz, entrypoint, bind mount, privilegovaný
+režim ani host network. Hodnoty konfigurace se vyhodnocují pouze pro vítězný
+lease a zůstávají v paměti. Neukládají se do trvalého jobu, průběhu ani
+výsledku dokončení.
 
-Container and network labels must match the target and allocation before every
-mutation. A same-named foreign object is treated as a collision and left
-untouched. Candidate workloads receive CPU, memory, PID and log limits,
-`no-new-privileges` and a small capability allow-list. A candidate starts with
-no restart policy, becomes `unless-stopped` only after health succeeds, and
-replaces the current revision atomically enough for the single-host prototype.
-Application logs are tail-bounded to 32 KiB.
+Labely kontejnerů a sítí musí před každou mutací odpovídat targetu a allocation.
+Objekt cizího vlastníka se stejným názvem se považuje za kolizi a ponechá se beze
+změny. Kandidátní workloady dostávají limity CPU, paměti, PID a logů,
+`no-new-privileges` a malý povolený seznam capabilities. Kandidát startuje bez
+restart policy, `unless-stopped` získá až po úspěšném health checku a nahradí
+aktuální revizi dostatečně atomicky pro jednohostový prototyp. Aplikační logy
+jsou omezeny na posledních 32 KiB.

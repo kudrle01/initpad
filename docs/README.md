@@ -1,7 +1,7 @@
 # Dokumentace InitPadu
 
 Tento rozcestník odděluje cestu uživatele a správce od detailů určených
-vývojářům projektu. Začni dokumentem, který odpovídá tomu, co právě potřebuješ
+vývojářům projektu. Začněte dokumentem, který odpovídá tomu, co potřebujete
 udělat.
 
 ## Instalace a provoz
@@ -27,25 +27,31 @@ udělat.
 
 ## Bezpečnost a vývoj
 
-- [Threat model](../THREAT_MODEL.md) — aktiva, útočníci a produkční hranice.
-- [Security policy](../SECURITY.md) — podporované verze a hlášení zranitelností.
-- [Contributing](../CONTRIBUTING.md) — vývojové kontroly a pravidla příspěvků.
-- [Observability contract](OBSERVABILITY.md) — telemetry boundary, retence a
+- [Model hrozeb](../THREAT_MODEL.md) — aktiva, útočníci a produkční hranice.
+- [Bezpečnostní zásady](../SECURITY.md) — podporované verze a hlášení zranitelností.
+- [Pravidla přispívání](../CONTRIBUTING.md) — vývojové kontroly a pravidla příspěvků.
+- [Pravidla observability](OBSERVABILITY.md) — hranice telemetrie, retence a
   alerting.
 
 ## InitPad Agent
 
 - [Agent](../apps/agent/README.md) — instalace, bezpečnostní model a lokální lab.
-- [Release acceptance](../apps/agent/ACCEPTANCE.md) — ověření vydané verze.
-- [Releasing](../apps/agent/RELEASING.md) — sestavení a publikace releasu.
+- [Ověření vydané verze](../apps/agent/ACCEPTANCE.md) — acceptance postup pro release.
+- [Vydávání Agenta](../apps/agent/RELEASING.md) — sestavení a publikace releasu.
 
 ## Jazyk dokumentace
 
-Dokumenty určené k diplomové práci, pilotnímu českému týmu a obsluze
-self-hosted instalace jsou česky. Veřejná rozhraní pro přispěvatele,
-bezpečnostní proces, distribuci Agenta, SaaS a observability jsou anglicky,
-protože cílí také na nástroje a správce mimo české prostředí. Jeden dokument
-jazyky nemíchá s výjimkou názvů prvků UI a zavedených technických pojmů.
+Soubory README jsou česky, protože slouží jako podklad pro diplomovou práci a pro
+správce self-hosted instalace. Používají neutrální formulace nebo zdvořilé
+vykání. Názvy prvků UI, příkazy, proměnné, názvy protokolových stavů a zavedené
+technické pojmy zůstávají v podobě použité v aplikaci a ve zdrojovém kódu.
+Jeden dokument jazyky zbytečně nemíchá.
+
+Dokumenty pro přispěvatele, bezpečnostní proces, distribuci Agenta, SaaS a
+observability, například `CONTRIBUTING.md`, `SECURITY.md` a
+`apps/agent/ACCEPTANCE.md`, zůstávají anglicky, protože cílí také na nástroje a
+správce mimo české prostředí. README generovaná do projektů ze šablon patří k
+produktu a jejich jazyk určuje šablona, nikoli tento rozcestník.
 
 Osobní poznámky, auditní pracovní záznamy a návody pro konkrétní zařízení do
 veřejné dokumentace nepatří. Repository audit jejich náhodné přidání odmítne.

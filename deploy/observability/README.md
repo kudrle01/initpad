@@ -1,30 +1,32 @@
-# OpenTelemetry Collector boundary
+# Hranice OpenTelemetry Collectoru
 
-`otel-collector.example.yaml` is a vendor-neutral starting point for the
-infrastructure-owned collector. It receives only OTLP/HTTP traces and metrics
-from InitPad API replicas, applies memory and batching limits and forwards both
-signals to a private backend.
+Soubor `otel-collector.example.yaml` je technologicky neutrálním výchozím
+bodem pro Collector spravovaný provozovatelem infrastruktury. Přijímá pouze
+OTLP/HTTP traces a metriky z replik InitPad API, uplatňuje paměťové a dávkové
+limity a předává oba typy signálů do privátního backendu.
 
-Run the collector on the same private network as the API and set:
+Collector spusťte ve stejné privátní síti jako API a nastavte:
 
 ```ini
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 ```
 
-The backend endpoint and authorization header are collector secrets:
+Adresa backendu a autorizační hlavička jsou secrety Collectoru:
 
 ```ini
 INITPAD_OBSERVABILITY_BACKEND_OTLP_ENDPOINT=https://observability.example/otlp
 INITPAD_OBSERVABILITY_BACKEND_AUTHORIZATION=Bearer REPLACE
 ```
 
-Do not put those values in the InitPad `.env` file or commit them. Mount the
-reviewed collector configuration read-only and inject its secrets from the
-deployment secret manager. API JSON stdout requires the runtime's normal log
-collector; OpenTelemetry JavaScript log export is not used while that SDK is
-still experimental.
+Tyto hodnoty nevkládejte do souboru InitPad `.env` ani je necommitujte.
+Zkontrolovanou konfiguraci Collectoru připojte pouze pro čtení a její secrety
+vložte prostřednictvím správce secretů daného prostředí. Strukturované JSON
+logy API na standardním výstupu zpracovává běžný log collector runtime
+prostředí. Export logů z OpenTelemetry JavaScript se nepoužívá, dokud je jeho
+SDK experimentální.
 
-The example deliberately does not choose a storage vendor. Before production,
-connect a maintained backend, implement the retention/access/alert policy in
-[`docs/OBSERVABILITY.md`](../../docs/OBSERVABILITY.md), and run its staging
-acceptance. A collector that merely prints signals is not a production setup.
+Ukázková konfigurace záměrně neurčuje konkrétní úložiště. Před produkčním
+nasazením připojte udržovaný backend, zaveďte pravidla retence, přístupu a
+alertingu popsaná v [pravidlech observability](../../docs/OBSERVABILITY.md) a
+proveďte jejich staging acceptance. Collector, který signály pouze vypisuje,
+není produkční řešení.

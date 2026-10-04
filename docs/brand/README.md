@@ -1,4 +1,4 @@
-# InitPad brand assets
+# Vizuální identita InitPadu
 
 Tato složka obsahuje kanonické zdroje a exporty vizuální identity InitPadu.
 
@@ -21,7 +21,7 @@ Tato složka obsahuje kanonické zdroje a exporty vizuální identity InitPadu.
 
 ## Použití v repozitáři
 
-Web do produkčního buildu přebírá potřebné velikosti z
+Webová aplikace do produkčního buildu přebírá potřebné velikosti z
 `apps/web/public/brand` a `favicon.ico` z `apps/web/public`. Nové exporty musí
 vycházet z `approved-master.png`, aby symbol zůstal konzistentní napříč UI,
 instalátorem a dokumentací.

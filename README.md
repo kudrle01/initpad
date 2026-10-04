@@ -5,7 +5,7 @@
 <h1 align="center">InitPad</h1>
 
 <p align="center">
-  <a href="https://github.com/kudrle01/initpad/actions/workflows/ci.yml"><img src="https://github.com/kudrle01/initpad/actions/workflows/ci.yml/badge.svg" alt="Repository checks"></a>
+  <a href="https://github.com/kudrle01/initpad/actions/workflows/ci.yml"><img src="https://github.com/kudrle01/initpad/actions/workflows/ci.yml/badge.svg" alt="Kontroly repozitáře"></a>
 </p>
 
 InitPad je interní vývojářská platforma pro školy, menší týmy a firemní
@@ -32,6 +32,8 @@ credentials. Aktuální omezení a podmínky produkčního použití jsou v
 [release readiness](docs/RELEASE_READINESS.md).
 
 ## Hlavní funkce
+
+InitPad nabízí:
 
 - registraci nebo administrátorem spravované účty;
 - osobní a týmové workspaces s rolemi;
@@ -68,7 +70,7 @@ cd initpad/deploy
 ./install.sh
 ```
 
-Po dokončení otevři:
+Po dokončení otevřete:
 
 - InitPad: <http://localhost:8080>
 - Gitea: <http://gitea.localhost:3001>
@@ -85,8 +87,8 @@ důvěryhodné single-node instalace. Veřejná produkce musí použít samostat
 udržované S3-compatible úložiště; konkrétní provozní hranice popisuje
 [deploy/OPERATIONS.md](deploy/OPERATIONS.md#object-storage-produkční-hranice).
 
-První ověření je jednoduché: vytvoř účet, založ projekt, otevři jeho CI
-pipeline a počkej na dev URL. Podrobné nasazení na server, DNS a HTTPS popisuje
+První ověření je jednoduché: vytvořte účet, založte projekt, otevřete jeho CI
+pipeline a počkejte na dev URL. Podrobné nasazení na server, DNS a HTTPS popisuje
 [deploy/README.md](deploy/README.md).
 
 ## Projektové šablony
@@ -121,7 +123,7 @@ npm run dev:web
 
 Web běží na <http://localhost:5173>, API na
 <http://localhost:3000/api>. Vývojový stack v `infra/` a kompletní stack v
-`deploy/` nespouštěj současně; záměrně sdílejí Compose project name.
+`deploy/` nespouštějte současně; záměrně sdílejí Compose project name.
 
 ## Kontrola změn
 
@@ -154,7 +156,7 @@ image, takže vyžaduje Docker, síť a dostatek volného místa.
 Self-hosted profil je single-node systém určený pro důvěryhodnou organizaci.
 Workspace RBAC odděluje data aplikace, ale není bezpečnostní hranicí proti
 škodlivému workloadu na sdíleném Docker hostu. Tento profil proto bez další
-izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
+izolace nevystavujte jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
 [THREAT_MODEL.md](THREAT_MODEL.md).
 
 ## Dokumentace
@@ -176,5 +178,5 @@ releaseům a zdokumentovaným acceptance testům.
 
 InitPad je dostupný pod [Apache License 2.0](LICENSE). Postup pro lokální vývoj,
 testy a pull requesty je v [CONTRIBUTING.md](CONTRIBUTING.md).
-Bezpečnostní problémy se nehlásí veřejným issue; použij
+Bezpečnostní problémy se nehlásí veřejným issue; použijte
 [SECURITY.md](SECURITY.md). Copyright © 2026 Jan Kudrlička.
