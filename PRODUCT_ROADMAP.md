@@ -147,11 +147,12 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   části. Dne 27. září 2026 prošel repository gate nad 895
   verzovanými soubory, kompatibilní npm aktualizace, všechny čtyři
   produkční buildy a celá automatizovaná sada. Dne 2. října nová bezpečnostní
-  upozornění bez
-  upstream opravy odhalila chybně produkční Tailwind build dependency a
-  transitivní HTTP cache klient Sigstore. Build větev je oddělená a zbývající
-  přesný řetězec má veřejnou fail-closed výjimku s expirací 2. listopadu 2026
-  (ADR-127). Aktualizované stream typy
+  upozornění odhalila chybně produkční Tailwind build dependency a transitivní
+  HTTP cache klient Sigstore. Build větev byla oddělena a přesný runtime
+  řetězec dočasně dostal veřejnou fail-closed výjimku podle ADR-127. Dne
+  4. října byla transitivní závislost `http-cache-semantics` aktualizována na
+  opravenou verzi 4.3.0 a výjimka odstraněna; produkční audit je znovu bez
+  známého nálezu. Aktualizované stream typy
   odhalily a opravily explicitní adaptér `tar-fs` → Dockerode a
   fail-closed validaci dat Docker manifestu. Nest 12, Prisma 7, React 19,
   Tailwind 4, Jest 30, Node types 26 a TypeScript 7 jsou samostatné major
@@ -173,8 +174,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   finální diagramy se skutečně ověřeným stavem. Veřejný přehled nyní uvádí
   platformu 0.2.10, uvádí doporučený Agent 0.14.3 a
   odkazuje na 130 samostatných ADR. Repository gate hlídá souvislou řadu,
-  shodu nadpisů s indexem i zákaz osiřelého ADR; původní `DECISIONS.md`
-  zůstává jako stabilní kompatibilní rozcestník.
+  shodu nadpisů a statusů s indexem i zákaz osiřelého ADR. Revize klasifikovala
+  124 rozhodnutí jako `Accepted`, pět jako `Superseded` a jedno jako
+  `Deprecated`; nahrazená rozhodnutí odkazují na současný kontrakt. Redundantní
+  kompatibilní rozcestník `DECISIONS.md` byl odstraněn a jediným autoritativním
+  indexem je `docs/adr/README.md`.
 
 ### P2 — produkční public SaaS
 

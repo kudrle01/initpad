@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,7 +13,9 @@ function git(args) {
   });
 }
 
-const trackedFiles = git(['ls-files', '-z']).split('\0').filter(Boolean);
+const trackedFiles = git(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+  .split('\0')
+  .filter((path) => path && existsSync(resolve(root, path)));
 const tracked = new Set(trackedFiles);
 const failures = [];
 const notices = [];
@@ -50,8 +52,8 @@ const requiredPublicDocs = [
   'SECURITY.md',
   'CONTRIBUTING.md',
   'PRODUCT_ROADMAP.md',
-  'DECISIONS.md',
   'THREAT_MODEL.md',
+  'docs/README.md',
   'docs/ARCHITECTURE.md',
   'docs/adr/README.md',
   'docs/EVALUATION.md',
@@ -71,11 +73,13 @@ for (const path of requiredPublicDocs) {
 const adrIndexPath = 'docs/adr/README.md';
 const adrIndex = tracked.has(adrIndexPath) ? readFileSync(resolve(root, adrIndexPath), 'utf8') : '';
 const indexedAdrs = [
-  ...adrIndex.matchAll(/\| \[(ADR-(\d{3}))\]\(\.\/(ADR-\d{3}\.md)\) \| ([^|]+) \|/g),
+  ...adrIndex.matchAll(
+    /\| \[(ADR-(\d{3}))\]\(\.\/(ADR-\d{3}\.md)\) \| (Accepted|Superseded|Deprecated) \| ([^|]+) \|/g,
+  ),
 ];
 const indexedAdrPaths = new Set();
 for (const [position, match] of indexedAdrs.entries()) {
-  const [, id, number, file, title] = match;
+  const [, id, number, file, indexedStatus, title] = match;
   const expectedNumber = String(position + 1).padStart(3, '0');
   if (number !== expectedNumber || file !== `${id}.md`) {
     failures.push(`${adrIndexPath}: ADR index is not contiguous at ${id}`);
@@ -86,22 +90,29 @@ for (const [position, match] of indexedAdrs.entries()) {
     failures.push(`${path}: indexed ADR file is missing`);
     continue;
   }
+  const content = readFileSync(resolve(root, path), 'utf8');
   const heading = `# ${id} — ${title.trim()}`;
-  if (!readFileSync(resolve(root, path), 'utf8').startsWith(`${heading}\n`)) {
+  if (!content.startsWith(`${heading}\n`)) {
     failures.push(`${path}: heading does not match the ADR index`);
+  }
+  const status = content.match(/^\*\*Status:\*\* (Accepted|Superseded|Deprecated)\s*$/m)?.[1];
+  if (!status) {
+    failures.push(`${path}: missing Accepted, Superseded or Deprecated status`);
+  } else if (status !== indexedStatus) {
+    failures.push(`${path}: status does not match the ADR index`);
+  }
+  const metadata = content.split('\n').slice(0, 10).join('\n');
+  if (status === 'Superseded' && !metadata.includes('**Nahrazeno:**')) {
+    failures.push(`${path}: superseded ADR must link to its replacement`);
+  }
+  if (status === 'Deprecated' && !metadata.includes('**Aktuální rozhodnutí:**')) {
+    failures.push(`${path}: deprecated ADR must link to the current decision`);
   }
 }
 if (indexedAdrs.length === 0) failures.push(`${adrIndexPath}: ADR index is empty`);
 for (const path of trackedFiles.filter((path) => /^docs\/adr\/ADR-\d{3}\.md$/.test(path))) {
   if (!indexedAdrPaths.has(path)) failures.push(`${path}: ADR is missing from the index`);
 }
-if (!(
-  tracked.has('DECISIONS.md') &&
-  readFileSync(resolve(root, 'DECISIONS.md'), 'utf8').includes(adrIndexPath)
-)) {
-  failures.push('DECISIONS.md: compatibility entry must link to the ADR index');
-}
-
 const executableOperations = [
   'deploy/install.sh',
   'deploy/saas-check.sh',
@@ -463,7 +474,7 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log(`Repository audit passed (${trackedFiles.length} tracked files).`);
+  console.log(`Repository audit passed (${trackedFiles.length} repository files).`);
 }
 
 for (const notice of notices) console.log(`Notice: ${notice}`);

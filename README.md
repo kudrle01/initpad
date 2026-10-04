@@ -159,19 +159,13 @@ izolace nevystavuj jako nepřátelský multi-tenant SaaS. Podrobnosti jsou v
 
 ## Dokumentace
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — skutečné komponenty a datové
-  toky;
-- [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) — známá omezení a
-  podmínky vydání;
-- [docs/EVALUATION.md](docs/EVALUATION.md) — nezávislý uživatelský test;
-- [deploy/README.md](deploy/README.md) — instalace;
-- [deploy/OPERATIONS.md](deploy/OPERATIONS.md) — provoz, zálohy a obnova;
-- [deploy/SELF_HOSTED_ACCEPTANCE.md](deploy/SELF_HOSTED_ACCEPTANCE.md) — živé ověření;
-- [apps/agent/README.md](apps/agent/README.md) — izolovaný Agent lab;
-- [apps/agent/RELEASING.md](apps/agent/RELEASING.md) — vydání a ověření Agenta;
-- [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) — stav a další milníky;
-- [docs/adr/README.md](docs/adr/README.md) — index architektonických rozhodnutí;
-- [THREAT_MODEL.md](THREAT_MODEL.md) — hranice důvěry a produkční podmínky.
+- [Dokumentační rozcestník](docs/README.md) — architektura, provoz, bezpečnost,
+  ověřování a vývoj;
+- [Instalace](deploy/README.md) — self-hosted a SaaS deployment profily;
+- [Provozní runbook](deploy/OPERATIONS.md) — aktualizace, zálohy, obnova a
+  řešení problémů;
+- [Release readiness](docs/RELEASE_READINESS.md) — ověřený stav a otevřené
+  produkční podmínky.
 
 ## Autor, licence a přispívání
 

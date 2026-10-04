@@ -1,10 +1,11 @@
 # Release readiness a známá omezení
 
-Stav dokumentu odpovídá doporučenému Agentu 0.14.3, odmítnutým release
-0.13.0 a 0.14.0 a podepsanému
-platformnímu releasu 0.2.10. Seznam je záměrně
-otevřený: odděluje funkční prototyp od tvrzení, že je služba připravená pro
-veřejný produkční provoz.
+Release baseline tohoto dokumentu je doporučený Agent 0.14.3, odmítnuté
+release 0.13.0 a 0.14.0 a podepsaná platforma 0.2.10. Dokument současně
+sleduje novější změny na `main`; ty nejsou automaticky součástí digest-pinned
+image 0.2.10. Proto níže výslovně odděluje vydaný a živě ověřený self-hosted
+profil od post-release mechanismů, které mají automatizované testy, ale teprve
+čekají na živý SaaS staging důkaz.
 
 ## Co je připravené
 
@@ -30,17 +31,31 @@ veřejný produkční provoz.
   → workload.
 - PostgreSQL-backed per-IP a per-account rate limit sdílený všemi API
   replikami bez ukládání zdrojových identit.
-- PostgreSQL-backed GitHub OAuth state a interní OIDC granty. Náhodné
-  browserové hodnoty, authorization codes ani bearer tokeny se neukládají
-  v plaintextu; jednorázové hodnoty se spotřebují atomicky napříč API
-  replikami a přežijí restart procesu.
 - Finální repository, dependency, maintainability, responsive a accessibility
   audit. Vedle produkčních buildů a automatizované sady prošly 1. října
   2026 ownerovi dostupné obrazovky živým průchodem při 390 × 844 px bez
   horizontálního přetečení, chybějícího hlavního nadpisu nebo nepopsaného
   viditelného ovladače. Mobilní navigace i formuláře zůstaly ovladatelné.
-  Nové advisory z 2. října oddělilo Tailwind tooling od runtime grafu; jediná
-  zbývající Sigstore větev je explicitně evidovaná v ADR-127.
+  Nové advisory z 2. října oddělilo Tailwind tooling od runtime grafu;
+  transitivní `http-cache-semantics` bylo následně aktualizováno na opravenou
+  verzi 4.3.0 a produkční dependency audit už nemá žádnou výjimku.
+
+### Implementováno na `main` po releasu 0.2.10
+
+Následující mechanismy prošly automatizovanými testy, ale nejsou součástí
+veřejných image 0.2.10 a samy o sobě nejsou živým SaaS staging důkazem:
+
+- PostgreSQL-backed GitHub OAuth state a interní OIDC granty. Náhodné
+  browserové hodnoty, authorization codes ani bearer tokeny se neukládají
+  v plaintextu; jednorázové hodnoty se spotřebují atomicky napříč API
+  replikami a přežijí restart procesu.
+- Workspace-wide capacity admission pro projekty, členy, targety, souběžné
+  operace a artifact storage.
+- Šifrovaný transakční SMTP outbox.
+- Leader, deployment execution a artifact ingestion leases s generačním
+  fencingem.
+- Samostatný SaaS runtime contract, read-only secret-file rozhraní a OTLP
+  traces/metrics export boundary.
 
 ## Blokátory veřejného SaaS
 
