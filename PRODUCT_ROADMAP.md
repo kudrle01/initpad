@@ -213,8 +213,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     Provider-neutral acceptance je připravené: load gate měří p50/p95/p99,
     chybovost, propustnost a odpovědi alespoň dvou procesů; outage gate
     dokládá zachovaný šifrovaný retry, dostupné API a vymazání payloadu po
-    doručení. Živý SaaS staging run a zbývající execution fencing procesních
-    operací ještě chybí (ADR-124).
+    doručení. Failover varianta při zátěži restartuje jednu API repliku a
+    znovu ověří edge readiness; živý SaaS staging run, in-flight mutation
+    recovery a provozní důkaz ještě chybí (ADR-124 a ADR-129).
   - [x] Zvolit jediného vlastníka startup recovery, artifact retention a
     environment expiry přes atomický PostgreSQL lease. Follower repliky zůstanou
     pasivní, nový leader pozná takeover podle rostoucí generace a dlouhý recovery

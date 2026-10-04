@@ -183,6 +183,9 @@ test('keeps live acceptance explicit, provider-neutral and secret-file based', (
   assert.match(acceptance, /after-backup\) after_backup/);
   assert.match(acceptance, /after-restore\) after_restore/);
   assert.match(acceptance, /load\) check_load/);
+  assert.match(acceptance, /load-failover\) check_load_failover/);
+  assert.match(acceptance, /docker restart --time 5/);
+  assert.match(acceptance, /grep -qx 'LOAD_STARTED'/);
   assert.match(acceptance, /smtp-outage-before\) smtp_outage_before/);
   assert.match(acceptance, /smtp-outage-after\) smtp_outage_after/);
   assert.match(acceptance, /smtp-outage-cleanup\) smtp_outage_cleanup/);
@@ -203,6 +206,7 @@ test('keeps live acceptance explicit, provider-neutral and secret-file based', (
   assert.match(probeSource, /DeleteObjectCommand/);
   assert.match(probeSource, /_prisma_migrations/);
   assert.match(loadProbeSource, /Load acceptance requires a quiescent staging control plane/);
+  assert.match(loadProbeSource, /console\.log\('LOAD_STARTED'\)/);
   assert.match(loadProbeSource, /INITPAD_LOAD_ACCEPTANCE_MIN_INSTANCES/);
   assert.match(smtpOutageProbeSource, /SMTP_OUTAGE_PREPARED/);
   assert.match(smtpOutageProbeSource, /payload_erased=true/);

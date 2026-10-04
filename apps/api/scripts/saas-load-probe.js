@@ -160,6 +160,10 @@ async function main() {
     const startedAt = performance.now();
     const deadline = startedAt + durationSeconds * 1_000;
 
+    // The staging orchestrator waits for this bounded marker before injecting
+    // a replica restart. It contains no identity, URL or fixture data.
+    console.log('LOAD_STARTED');
+
     async function worker() {
       while (performance.now() < deadline) {
         const path = endpoints[sequence++ % endpoints.length];

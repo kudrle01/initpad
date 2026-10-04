@@ -15,11 +15,11 @@ used as a first restore test on production data.
   operations as InitPad's artifact lifecycle.
 - Configure a trusted public HTTPS origin and start both `api` and `web` behind
   the intended edge proxy.
-- Keep the staging control plane quiescent before scaling API replicas: no
+- Keep the staging control plane quiescent for the baseline load command: no
   provisioning, deployment, promotion, rollback or target mutation may be in
-  progress. Background lifecycle and operation-backed deployment have database
-  leases, but artifact ingestion and synchronous lifecycle mutations do not yet
-  have complete active-active execution fencing.
+  progress. Artifact ingestion and deployment/start/stop/remove now have
+  database execution fencing, but their live concurrent mutation proof remains
+  a separate staging gate.
 - Prepare provider-native backup and restore procedures for the whole InitPad
   PostgreSQL database and the complete artifact bucket.
 
@@ -43,9 +43,8 @@ migration state and performs an S3 write/read/hash/delete round-trip.
 ## Bounded public-edge load check
 
 This check measures authenticated read paths through the real HTTPS edge and
-proves that at least two distinct API processes answered. It is deliberately a
-quiescent staging gate, not evidence that concurrent project mutations are safe
-on an active-active control plane.
+proves that at least two distinct API processes answered. The baseline command
+is deliberately quiescent and does not by itself prove concurrent mutations.
 
 First confirm in the UI that no project operation is active. Then scale the API
 and recreate the web edge so its upstream resolution includes both replicas:
@@ -75,7 +74,30 @@ reviewed staging capacity plan with:
 - `INITPAD_LOAD_ACCEPTANCE_MAX_ERROR_RATE`
 
 Do not leave more than one public API replica serving mutating production
-traffic until the remaining artifact/lifecycle execution-fencing gate is completed.
+traffic until the live mutation and recovery gates have passed on this topology.
+
+## API replica restart under load
+
+After the baseline load command passes, inject one controlled API restart while
+the same bounded probe is active:
+
+```bash
+INITPAD_SAAS_ACCEPTANCE=1 \
+  ./saas-acceptance.sh load-failover /secure/runtime/initpad-saas.env
+```
+
+This command starts the probe, waits for its explicit start marker, restarts one
+of at least two healthy API containers, waits for that replica to become healthy
+again and reruns public readiness. The original request-volume, p95, error-rate
+and multi-instance thresholds still apply. Output and the local report contain
+no container ID, URL, account or secret.
+
+The command intentionally requires the destructive staging opt-in. Passing it
+proves edge availability during one API process restart; it does **not** prove
+that an in-flight deployment or artifact ingestion safely survived a process
+failure. Exercise those operations separately with an online disposable Agent,
+verify exactly one terminal operation/job, and keep public mutating traffic
+single-replica until that live evidence has been recorded.
 
 ## SMTP outage and retry drill
 
@@ -148,5 +170,5 @@ be committed.
 
 Passing this helper proves only the commands that were actually run against the
 configured staging deployment. GitHub OAuth/App, Agent deployment, tenant
-isolation, WAF/egress, observability and active-active mutation scheduling
-remain separate gates.
+isolation, WAF/egress, observability and in-flight mutation recovery remain
+separate gates.

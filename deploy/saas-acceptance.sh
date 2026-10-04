@@ -22,6 +22,7 @@ Usage: ./saas-acceptance.sh <command> [env-file]
   dependencies   Verify public readiness, applied migrations and S3 round-trip
   email          Submit one staging message through the configured SMTP relay
   load           Exercise the public edge through at least two API replicas
+  load-failover  Exercise the public edge while restarting one API replica
   smtp-outage-before  Prove an SMTP outage queues a retry without failing the API
   smtp-outage-after   Prove the queued message is delivered after SMTP recovers
   smtp-outage-cleanup Remove a failed drill's isolated fixture
@@ -29,9 +30,10 @@ Usage: ./saas-acceptance.sh <command> [env-file]
   after-backup   Write markers which must disappear after external restore
   after-restore  Prove PostgreSQL and S3 returned to the same baseline
 
-Recovery and SMTP outage commands require INITPAD_SAAS_ACCEPTANCE=1 and are
-intended only for a disposable staging deployment. Secret values are read only
-inside the API probe container and are never printed or sourced.
+Recovery, SMTP outage and load-failover commands require
+INITPAD_SAAS_ACCEPTANCE=1 and are intended only for a disposable staging
+deployment. Secret values are read only inside the API probe container and are
+never printed or sourced.
 EOF
 }
 
@@ -143,14 +145,8 @@ check_email() {
   pass "SMTP accepted the staging message. Confirm its arrival in the inbox."
 }
 
-check_load() {
-  ensure_runtime
-  public_readiness
-  local replicas result summary
-  replicas=$("${COMPOSE[@]}" ps -q api | awk 'NF { count += 1 } END { print count + 0 }')
-  [ "$replicas" -ge 2 ] || \
-    fail "Load acceptance requires at least two healthy API replicas behind the public edge."
-  result=$("${COMPOSE[@]}" run --rm --no-deps \
+load_probe() {
+  "${COMPOSE[@]}" run --rm --no-deps \
     -e INITPAD_ACCEPTANCE_ALLOW_DB_FIXTURES=1 \
     -e INITPAD_LOAD_ACCEPTANCE_URL \
     -e INITPAD_LOAD_ACCEPTANCE_DURATION_SECONDS \
@@ -160,12 +156,112 @@ check_load() {
     -e INITPAD_LOAD_ACCEPTANCE_MIN_INSTANCES \
     -e INITPAD_LOAD_ACCEPTANCE_MAX_P95_MS \
     -e INITPAD_LOAD_ACCEPTANCE_MAX_ERROR_RATE \
-    api node scripts/run-with-secrets.js node scripts/saas-load-probe.js)
+    api node scripts/run-with-secrets.js node scripts/saas-load-probe.js
+}
+
+load_summary() {
+  awk '/^LOAD_RESULT / { line = $0 } END { print line }'
+}
+
+require_api_replicas() {
+  local replicas
+  replicas=$("${COMPOSE[@]}" ps -q api | awk 'NF { count += 1 } END { print count + 0 }')
+  [ "$replicas" -ge 2 ] || \
+    fail "Load acceptance requires at least two healthy API replicas behind the public edge."
+  printf '%s\n' "$replicas"
+}
+
+wait_container_healthy() {
+  local container=$1 status attempt=0
+  while [ "$attempt" -lt 60 ]; do
+    status=$(docker inspect --format \
+      '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+      "$container" 2>/dev/null || true)
+    [ "$status" = healthy ] && return 0
+    case "$status" in unhealthy|exited|dead) return 1;; esac
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  return 1
+}
+
+check_load() {
+  ensure_runtime
+  public_readiness
+  local replicas result summary
+  replicas=$(require_api_replicas)
+  result=$(load_probe)
   printf '%s\n' "$result"
-  summary=$(printf '%s\n' "$result" | awk '/^LOAD_RESULT / { line = $0 } END { print line }')
+  summary=$(printf '%s\n' "$result" | load_summary)
   [ -n "$summary" ] || fail "Load probe did not return a bounded result."
   record saas-load "${summary#LOAD_RESULT }"
   pass "Public edge load passed through $replicas healthy API replicas."
+}
+
+check_load_failover() {
+  require_recovery_opt_in
+  ensure_runtime
+  public_readiness
+  local replicas containers victim output probe_pid probe_status result summary ready attempt
+  replicas=$(require_api_replicas)
+  containers=$("${COMPOSE[@]}" ps -q api)
+  victim=$(printf '%s\n' "$containers" | awk 'NF { print; exit }')
+  [ -n "$victim" ] || fail "Could not select an API replica for failover."
+
+  output=$(mktemp "$ACCEPTANCE_DIR/load-failover.XXXXXX")
+  chmod 600 "$output"
+  probe_pid=
+  cleanup_load_failover() {
+    if [ -n "$probe_pid" ] && kill -0 "$probe_pid" 2>/dev/null; then
+      kill "$probe_pid" 2>/dev/null || true
+      wait "$probe_pid" 2>/dev/null || true
+    fi
+    rm -f "$output"
+  }
+  trap cleanup_load_failover EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  load_probe > "$output" 2>&1 &
+  probe_pid=$!
+  ready=no
+  attempt=0
+  while [ "$attempt" -lt 120 ]; do
+    if grep -qx 'LOAD_STARTED' "$output"; then
+      ready=yes
+      break
+    fi
+    kill -0 "$probe_pid" 2>/dev/null || break
+    attempt=$((attempt + 1))
+    sleep 0.5
+  done
+  if [ "$ready" != yes ]; then
+    wait "$probe_pid" 2>/dev/null || true
+    probe_pid=
+    cat "$output"
+    fail "Load probe did not reach its synchronized start marker."
+  fi
+
+  say "Restarting one API replica while the public load probe is active"
+  docker restart --time 5 "$victim" >/dev/null || fail "Could not restart the selected API replica."
+  wait_container_healthy "$victim" || fail "Restarted API replica did not become healthy."
+
+  set +e
+  wait "$probe_pid"
+  probe_status=$?
+  set -e
+  probe_pid=
+  result=$(cat "$output")
+  printf '%s\n' "$result"
+  [ "$probe_status" -eq 0 ] || fail "Public load probe failed during API replica restart."
+  summary=$(printf '%s\n' "$result" | load_summary)
+  [ -n "$summary" ] || fail "Load failover probe did not return a bounded result."
+  public_readiness
+  record saas-load-failover "${summary#LOAD_RESULT } replica_restart=true"
+
+  trap - EXIT INT TERM
+  rm -f "$output"
+  pass "Public edge remained within its load thresholds while one of $replicas API replicas restarted."
 }
 
 smtp_outage_probe() {
@@ -275,6 +371,7 @@ case "$COMMAND" in
   dependencies) check_dependencies ;;
   email) check_email ;;
   load) check_load ;;
+  load-failover) check_load_failover ;;
   smtp-outage-before) smtp_outage_before ;;
   smtp-outage-after) smtp_outage_after ;;
   smtp-outage-cleanup) smtp_outage_cleanup ;;
