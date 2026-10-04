@@ -66,9 +66,7 @@ zákazníků musí být hotové alespoň:
 8. spustit připravený omezený load test na SaaS stagingu; background lifecycle,
    operation-backed deployment/start/stop/remove i GitHub/Gitea artifact
    publication už vlastní lease (ADR-125, ADR-126, ADR-128, ADR-129);
-9. po upstream opravě aktualizovat Sigstore HTTP cache řetězec a odstranit
-   dočasnou výjimku `GHSA-ch52-4w7c-c8xp` před její expirací 2. listopadu 2026;
-10. nezávislé uživatelské a provozní ověření release kandidáta.
+9. nezávislé uživatelské a provozní ověření release kandidáta.
 
 ## Známá provozní omezení
 
@@ -88,15 +86,6 @@ obnovovaný lease a fenced terminální publikaci; leader recovery opakuje v ka�
 minutovém maintenance cyklu. Kódová mutační hranice je připravená pro více
 replik, ale active-active tvrzení vznikne až po load/failover testu na skutečné
 SaaS staging topologii s externí databází a object storem.
-
-### Sigstore má časově omezenou dependency výjimku
-
-`http-cache-semantics` do verze 4.2.0 má high-severity advisory bez dostupné
-opravené verze. Zasažená cesta se v InitPadu používá pouze pro veřejná trust
-metadata v privátní cache, nikoli jako sdílená cache uživatelských odpovědí,
-proto chybí předpoklady popsaného cross-user útoku. Release gate přesto povoluje
-jen přesný Sigstore řetězec, odmítne jakýkoli další nález a výjimka automaticky
-vyprší 2. listopadu 2026. Jde o evidované dočasné riziko, ne tvrzení o opravě.
 
 ### Vestavěný object store je pouze důvěryhodný profil
 

@@ -193,9 +193,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     a ověřit obnovu bez lokálních stavových služeb.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
-- [ ] Po vydání opraveného `http-cache-semantics`/Sigstore dependency řetězce
-  provést kompatibilní aktualizaci a odstranit dočasnou auditní výjimku
-  `GHSA-ch52-4w7c-c8xp`; gate ji nejpozději 2. listopadu 2026 odmítne.
+- [x] Aktualizovat transitivní `http-cache-semantics` na opravenou verzi 4.3.0
+  v rámci stávajícího Sigstore rozsahu a odstranit dočasnou auditní výjimku
+  `GHSA-ch52-4w7c-c8xp`; produkční audit je znovu bez známých nálezů.
 - [ ] Doplnit persistentní OAuth/OIDC stav, kompletní tenant/capacity kvóty,
   produkční e-mail delivery a load test.
   - [x] Přesunout GitHub OAuth state a interní OIDC authorization
