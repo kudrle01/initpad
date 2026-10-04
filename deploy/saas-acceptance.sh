@@ -8,6 +8,7 @@ ENV_FILE=${2:-${INITPAD_SAAS_ENV_FILE:-.env.saas}}
 ACCEPTANCE_DIR=.runtime/saas-acceptance
 CHECKPOINT=$ACCEPTANCE_DIR/recovery.checkpoint
 SMTP_OUTAGE_CHECKPOINT=$ACCEPTANCE_DIR/smtp-outage.checkpoint
+MUTATION_FAILOVER_CHECKPOINT=$ACCEPTANCE_DIR/mutation-failover.checkpoint
 REPORT=$ACCEPTANCE_DIR/results.tsv
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f saas.compose.yml)
 
@@ -23,6 +24,9 @@ Usage: ./saas-acceptance.sh <command> [env-file]
   email          Submit one staging message through the configured SMTP relay
   load           Exercise the public edge through at least two API replicas
   load-failover  Exercise the public edge while restarting one API replica
+  agent-failover-before  Queue one redeploy, then restart its accepting API replica
+  agent-failover-after   Prove the restarted control plane completed that Agent job once
+  agent-failover-cleanup Remove only a failed drill's temporary user fixture
   smtp-outage-before  Prove an SMTP outage queues a retry without failing the API
   smtp-outage-after   Prove the queued message is delivered after SMTP recovers
   smtp-outage-cleanup Remove a failed drill's isolated fixture
@@ -30,7 +34,7 @@ Usage: ./saas-acceptance.sh <command> [env-file]
   after-backup   Write markers which must disappear after external restore
   after-restore  Prove PostgreSQL and S3 returned to the same baseline
 
-Recovery, SMTP outage and load-failover commands require
+Recovery, SMTP outage, load-failover and Agent failover commands require
 INITPAD_SAAS_ACCEPTANCE=1 and are intended only for a disposable staging
 deployment. Secret values are read only inside the API probe container and are
 never printed or sourced.
@@ -59,6 +63,11 @@ checkpoint_value() {
   awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$CHECKPOINT"
 }
 
+file_value() {
+  local file=$1 key=$2
+  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$file"
+}
+
 valid_uuid() {
   [[ "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]
 }
@@ -77,6 +86,20 @@ write_checkpoint() {
     [ -z "$post_backup" ] || printf 'post_backup=%s\n' "$post_backup"
   } > "$temporary"
   mv "$temporary" "$CHECKPOINT"
+}
+
+write_mutation_checkpoint() {
+  local marker=$1 operation=$2 instance=$3 project=$4 environment=$5 temporary
+  temporary=$(mktemp "$ACCEPTANCE_DIR/mutation-failover.XXXXXX")
+  chmod 600 "$temporary"
+  {
+    printf 'marker=%s\n' "$marker"
+    printf 'operation=%s\n' "$operation"
+    printf 'instance=%s\n' "$instance"
+    printf 'project=%s\n' "$project"
+    printf 'environment=%s\n' "$environment"
+  } > "$temporary"
+  mv "$temporary" "$MUTATION_FAILOVER_CHECKPOINT"
 }
 
 ensure_runtime() {
@@ -167,8 +190,42 @@ require_api_replicas() {
   local replicas
   replicas=$("${COMPOSE[@]}" ps -q api | awk 'NF { count += 1 } END { print count + 0 }')
   [ "$replicas" -ge 2 ] || \
-    fail "Load acceptance requires at least two healthy API replicas behind the public edge."
+    fail "This acceptance command requires at least two healthy API replicas behind the public edge."
   printf '%s\n' "$replicas"
+}
+
+summary_field() {
+  local key=$1
+  awk -v key="$key" '{
+    for (index = 1; index <= NF; index += 1) {
+      if ($index ~ ("^" key "=")) {
+        print substr($index, length(key) + 2)
+        exit
+      }
+    }
+  }'
+}
+
+api_container_for_instance() {
+  local desired=$1 container observed selected= matches=0
+  while IFS= read -r container; do
+    [ -n "$container" ] || continue
+    observed=$(docker exec "$container" node -e '
+      fetch("http://127.0.0.1:3000/api/health/live", {
+        signal: AbortSignal.timeout(5000),
+      }).then((response) => {
+        const instance = response.headers.get("x-initpad-instance");
+        if (!instance) process.exit(1);
+        process.stdout.write(instance);
+      }).catch(() => process.exit(1));
+    ' 2>/dev/null || true)
+    if [ "$observed" = "$desired" ]; then
+      selected=$container
+      matches=$((matches + 1))
+    fi
+  done <<< "$("${COMPOSE[@]}" ps -q api)"
+  [ "$matches" -eq 1 ] || return 1
+  printf '%s\n' "$selected"
 }
 
 wait_container_healthy() {
@@ -262,6 +319,95 @@ check_load_failover() {
   trap - EXIT INT TERM
   rm -f "$output"
   pass "Public edge remained within its load thresholds while one of $replicas API replicas restarted."
+}
+
+agent_failover_probe() {
+  local command=$1 marker=$2 project=$3 environment=$4 operation=${5:-}
+  local arguments=("$command" "$marker")
+  [ -z "$operation" ] || arguments+=("$operation")
+  "${COMPOSE[@]}" run --rm --no-deps \
+    -e INITPAD_ACCEPTANCE_ALLOW_DB_FIXTURES=1 \
+    -e INITPAD_MUTATION_ACCEPTANCE_URL \
+    -e INITPAD_MUTATION_ACCEPTANCE_TIMEOUT_SECONDS \
+    -e INITPAD_MUTATION_ACCEPTANCE_PROJECT_ID="$project" \
+    -e INITPAD_MUTATION_ACCEPTANCE_ENVIRONMENT="$environment" \
+    api node scripts/run-with-secrets.js node scripts/saas-agent-failover-probe.js \
+    "${arguments[@]}"
+}
+
+agent_failover_before() {
+  require_recovery_opt_in
+  ensure_runtime
+  public_readiness
+  [ ! -e "$MUTATION_FAILOVER_CHECKPOINT" ] || \
+    fail "An Agent failover checkpoint already exists."
+  local replicas project environment marker result summary operation instance victim
+  replicas=$(require_api_replicas)
+  project=${INITPAD_MUTATION_ACCEPTANCE_PROJECT_ID:-}
+  environment=${INITPAD_MUTATION_ACCEPTANCE_ENVIRONMENT:-dev}
+  valid_uuid "$project" || \
+    fail "Set INITPAD_MUTATION_ACCEPTANCE_PROJECT_ID to a disposable project UUID."
+  case "$environment" in dev|test) ;; *) fail "Agent failover environment must be dev or test.";; esac
+  marker=$(new_uuid)
+  result=$(agent_failover_probe before "$marker" "$project" "$environment")
+  printf '%s\n' "$result"
+  summary=$(printf '%s\n' "$result" | awk '/^MUTATION_FAILOVER_PREPARED / { line = $0 } END { print line }')
+  [ -n "$summary" ] || fail "Agent failover probe did not return its bounded checkpoint."
+  operation=$(printf '%s\n' "$summary" | summary_field operation)
+  instance=$(printf '%s\n' "$summary" | summary_field instance)
+  valid_uuid "$operation" || fail "Agent failover probe returned an invalid operation."
+  valid_uuid "$instance" || fail "Agent failover probe returned an invalid API instance."
+  write_mutation_checkpoint "$marker" "$operation" "$instance" "$project" "$environment"
+  victim=$(api_container_for_instance "$instance") || \
+    fail "The accepting API instance does not map to exactly one local Compose replica."
+
+  say "Restarting the API replica which accepted the durable Agent redeploy"
+  docker restart --time 5 "$victim" >/dev/null || fail "Could not restart the accepting API replica."
+  wait_container_healthy "$victim" || fail "Restarted API replica did not become healthy."
+  public_readiness
+  record saas-agent-failover-before \
+    "replicas=$replicas durable_job_queued=true accepting_replica_restarted=true"
+  pass "The accepting API replica restarted. Start the disposable target Agent, then run agent-failover-after."
+}
+
+agent_failover_after() {
+  require_recovery_opt_in
+  ensure_runtime
+  public_readiness
+  [ -r "$MUTATION_FAILOVER_CHECKPOINT" ] || fail "No Agent failover checkpoint exists."
+  local marker operation project environment result summary
+  marker=$(file_value "$MUTATION_FAILOVER_CHECKPOINT" marker)
+  operation=$(file_value "$MUTATION_FAILOVER_CHECKPOINT" operation)
+  project=$(file_value "$MUTATION_FAILOVER_CHECKPOINT" project)
+  environment=$(file_value "$MUTATION_FAILOVER_CHECKPOINT" environment)
+  valid_uuid "$marker" || fail "The Agent failover marker is invalid."
+  valid_uuid "$operation" || fail "The Agent failover operation is invalid."
+  valid_uuid "$project" || fail "The Agent failover project is invalid."
+  case "$environment" in dev|test) ;; *) fail "The Agent failover environment is invalid.";; esac
+  result=$(agent_failover_probe after "$marker" "$project" "$environment" "$operation")
+  printf '%s\n' "$result"
+  summary=$(printf '%s\n' "$result" | awk '/^MUTATION_FAILOVER_RECOVERED / { line = $0 } END { print line }')
+  [ -n "$summary" ] || fail "Agent failover recovery did not return bounded evidence."
+  public_readiness
+  rm -f "$MUTATION_FAILOVER_CHECKPOINT"
+  record saas-agent-failover-after "${summary#MUTATION_FAILOVER_RECOVERED } api_ready=true"
+  pass "The durable Agent redeploy completed exactly once after its accepting API replica restarted."
+}
+
+agent_failover_cleanup() {
+  require_recovery_opt_in
+  ensure_runtime
+  [ -r "$MUTATION_FAILOVER_CHECKPOINT" ] || fail "No Agent failover checkpoint exists."
+  local marker project environment
+  marker=$(file_value "$MUTATION_FAILOVER_CHECKPOINT" marker)
+  project=$(file_value "$MUTATION_FAILOVER_CHECKPOINT" project)
+  environment=$(file_value "$MUTATION_FAILOVER_CHECKPOINT" environment)
+  valid_uuid "$marker" || fail "The Agent failover marker is invalid."
+  valid_uuid "$project" || fail "The Agent failover project is invalid."
+  case "$environment" in dev|test) ;; *) fail "The Agent failover environment is invalid.";; esac
+  agent_failover_probe cleanup "$marker" "$project" "$environment"
+  rm -f "$MUTATION_FAILOVER_CHECKPOINT"
+  pass "The temporary Agent failover user was removed; inspect the disposable project operation separately."
 }
 
 smtp_outage_probe() {
@@ -372,6 +518,9 @@ case "$COMMAND" in
   email) check_email ;;
   load) check_load ;;
   load-failover) check_load_failover ;;
+  agent-failover-before) agent_failover_before ;;
+  agent-failover-after) agent_failover_after ;;
+  agent-failover-cleanup) agent_failover_cleanup ;;
   smtp-outage-before) smtp_outage_before ;;
   smtp-outage-after) smtp_outage_after ;;
   smtp-outage-cleanup) smtp_outage_cleanup ;;

@@ -214,8 +214,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     chybovost, propustnost a odpovědi alespoň dvou procesů; outage gate
     dokládá zachovaný šifrovaný retry, dostupné API a vymazání payloadu po
     doručení. Failover varianta při zátěži restartuje jednu API repliku a
-    znovu ověří edge readiness; živý SaaS staging run, in-flight mutation
-    recovery a provozní důkaz ještě chybí (ADR-124 a ADR-129).
+    znovu ověří edge readiness. Připravený dvoufázový Agent handoff gate
+    navíc sváže queued redeploy s přesnou přijímající replikou, tu restartuje
+    a po reconnectu vyžaduje právě jednu terminální operation/job chain bez
+    zámku nebo lease. Živý SaaS staging run, GitHub artifact-ingestion
+    failover a provozní důkaz ještě chybí (ADR-124 a ADR-129).
   - [x] Zvolit jediného vlastníka startup recovery, artifact retention a
     environment expiry přes atomický PostgreSQL lease. Follower repliky zůstanou
     pasivní, nový leader pozná takeover podle rostoucí generace a dlouhý recovery

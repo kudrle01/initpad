@@ -94,10 +94,60 @@ no container ID, URL, account or secret.
 
 The command intentionally requires the destructive staging opt-in. Passing it
 proves edge availability during one API process restart; it does **not** prove
-that an in-flight deployment or artifact ingestion safely survived a process
-failure. Exercise those operations separately with an online disposable Agent,
-verify exactly one terminal operation/job, and keep public mutating traffic
-single-replica until that live evidence has been recorded.
+that an in-flight mutation safely survived a process failure. Use the following
+Agent handoff drill for deployment. GitHub artifact-ingestion failover remains a
+separate live gate. Keep public mutating traffic single-replica until both have
+been recorded.
+
+## Durable Agent handoff during an API restart
+
+Use an existing disposable GitHub project whose `dev` or `test` environment is
+running on an enrolled workspace Agent and has a verified object-store build
+artifact. The drill intentionally redeploys that real environment. It creates
+only a temporary owner identity and stores opaque UUIDs in a mode-0600 local
+checkpoint; it does not copy a token or secret to disk.
+
+1. Stop the disposable target Agent. Wait until InitPad reports it offline
+   (at least 90 seconds) and confirm the target has no other queued job.
+2. Queue one redeploy and restart exactly the API replica which accepted it:
+
+   ```bash
+   export INITPAD_MUTATION_ACCEPTANCE_PROJECT_ID='00000000-0000-4000-8000-000000000000'
+   export INITPAD_MUTATION_ACCEPTANCE_ENVIRONMENT=dev
+
+   INITPAD_SAAS_ACCEPTANCE=1 \
+     ./saas-acceptance.sh agent-failover-before /secure/runtime/initpad-saas.env
+   ```
+
+   Replace the UUID with the disposable project's real ID. The command refuses
+   `prod`, requires at least two healthy local Compose API replicas, proves that
+   exactly one durable deploy job is queued, maps the response's opaque instance
+   identity to one replica and restarts only that replica.
+3. Start the same Agent and wait for its heartbeat. Then verify recovery:
+
+   ```bash
+   INITPAD_SAAS_ACCEPTANCE=1 \
+     ./saas-acceptance.sh agent-failover-after /secure/runtime/initpad-saas.env
+   ```
+
+The second command accepts only the saved project, environment and operation.
+It requires one successful terminal operation and audit event, no duplicate
+operation, no live environment lock or Agent lease, and the exact requested
+artifact/version. A managed-gateway deployment must finish its deploy and route
+steps once each.
+
+If the drill is aborted, preserve the project operation for diagnosis and
+remove only the temporary identity/checkpoint with:
+
+```bash
+INITPAD_SAAS_ACCEPTANCE=1 \
+  ./saas-acceptance.sh agent-failover-cleanup /secure/runtime/initpad-saas.env
+```
+
+This proves durable Agent handoff across failure of the accepting control-plane
+process. It does not exercise process-bound GitHub artifact download/upload;
+that needs its own live two-replica acceptance before active-active mutations
+are approved.
 
 ## SMTP outage and retry drill
 

@@ -9,10 +9,12 @@ const require = createRequire(import.meta.url);
 const probePath = resolve('apps/api/scripts/saas-dependency-probe.js');
 const loadProbePath = resolve('apps/api/scripts/saas-load-probe.js');
 const smtpOutageProbePath = resolve('apps/api/scripts/saas-smtp-outage-probe.js');
+const agentFailoverProbePath = resolve('apps/api/scripts/saas-agent-failover-probe.js');
 const acceptance = readFileSync('deploy/saas-acceptance.sh', 'utf8');
 const probeSource = readFileSync(probePath, 'utf8');
 const loadProbeSource = readFileSync(loadProbePath, 'utf8');
 const smtpOutageProbeSource = readFileSync(smtpOutageProbePath, 'utf8');
+const agentFailoverProbeSource = readFileSync(agentFailoverProbePath, 'utf8');
 const {
   artifactRoundTrip,
   createRecoveryMarker,
@@ -186,6 +188,11 @@ test('keeps live acceptance explicit, provider-neutral and secret-file based', (
   assert.match(acceptance, /load-failover\) check_load_failover/);
   assert.match(acceptance, /docker restart --time 5/);
   assert.match(acceptance, /grep -qx 'LOAD_STARTED'/);
+  assert.match(acceptance, /agent-failover-before\) agent_failover_before/);
+  assert.match(acceptance, /agent-failover-after\) agent_failover_after/);
+  assert.match(acceptance, /agent-failover-cleanup\) agent_failover_cleanup/);
+  assert.match(acceptance, /api_container_for_instance/);
+  assert.match(acceptance, /docker restart --time 5 "\$victim"/);
   assert.match(acceptance, /smtp-outage-before\) smtp_outage_before/);
   assert.match(acceptance, /smtp-outage-after\) smtp_outage_after/);
   assert.match(acceptance, /smtp-outage-cleanup\) smtp_outage_cleanup/);
@@ -210,4 +217,8 @@ test('keeps live acceptance explicit, provider-neutral and secret-file based', (
   assert.match(loadProbeSource, /INITPAD_LOAD_ACCEPTANCE_MIN_INSTANCES/);
   assert.match(smtpOutageProbeSource, /SMTP_OUTAGE_PREPARED/);
   assert.match(smtpOutageProbeSource, /payload_erased=true/);
+  assert.match(agentFailoverProbeSource, /MUTATION_FAILOVER_PREPARED/);
+  assert.match(agentFailoverProbeSource, /MUTATION_FAILOVER_RECOVERED/);
+  assert.match(agentFailoverProbeSource, /status: \{ in: \['blocked', 'queued', 'leased'\] \}/);
+  assert.match(agentFailoverProbeSource, /duplicateOperations/);
 });

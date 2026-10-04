@@ -203,10 +203,14 @@ firewallového precondition je v [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md).
 Stejný staging helper obsahuje omezený read-heavy load test veřejného HTTPS
 edge. Vyžaduje nejméně dvě zdravé API repliky; baseline běží bez aktivních
 projektových operací. Příkaz `load-failover` navíc při stejné zátěži restartuje
-jednu API repliku a znovu ověří readiness. Background lifecycle i známé
-process-bound projektové operace už mají databázový fencing, ale dokud jejich
-živá mutation/recovery acceptance neprojde na cílové topologii, nejde o
-schválení active-active mutačního provozu.
+jednu API repliku a znovu ověří readiness. Dvoufázový
+`agent-failover-before/after` nad disposable GitHub projektem navíc prokáže,
+že právě jeden durable Agent deploy přežije restart repliky, která ho přijala,
+a po reconnectu skončí bez zámku nebo lease. Přesné preconditions a cleanup
+jsou v [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md). Background lifecycle i známé
+process-bound projektové operace už mají databázový fencing, ale živý GitHub
+artifact-ingestion failover a ostatní mutation/recovery acceptance musí na
+cílové topologii projít před schválením active-active mutačního provozu.
 
 ## HTTPS
 
