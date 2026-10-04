@@ -41,17 +41,16 @@ udělat.
 
 ## Jazyk dokumentace
 
-Soubory README jsou česky, protože slouží jako podklad pro diplomovou práci a pro
-správce self-hosted instalace. Používají neutrální formulace nebo zdvořilé
-vykání. Názvy prvků UI, příkazy, proměnné, názvy protokolových stavů a zavedené
-technické pojmy zůstávají v podobě použité v aplikaci a ve zdrojovém kódu.
-Jeden dokument jazyky zbytečně nemíchá.
+Dokumentace je česky, protože slouží jako podklad pro diplomovou práci a pro
+správce self-hosted instalace. Soubory README používají neutrální formulace nebo
+zdvořilé vykání. Názvy prvků UI, příkazy, proměnné, názvy protokolových stavů a
+zavedené technické pojmy zůstávají v podobě použité v aplikaci a ve zdrojovém
+kódu. Jeden dokument jazyky zbytečně nemíchá.
 
-Dokumenty pro přispěvatele, bezpečnostní proces, distribuci Agenta, SaaS a
-observability, například `CONTRIBUTING.md`, `SECURITY.md` a
-`apps/agent/ACCEPTANCE.md`, zůstávají anglicky, protože cílí také na nástroje a
-správce mimo české prostředí. README generovaná do projektů ze šablon patří k
-produktu a jejich jazyk určuje šablona, nikoli tento rozcestník.
+Anglicky zůstávají pouze `CONTRIBUTING.md` a `SECURITY.md`. GitHub je zobrazuje
+jako pravidla repozitáře a čtou je přispěvatelé a nahlašovatelé zranitelností
+mimo české prostředí. README generovaná do projektů ze šablon patří k produktu a
+jejich jazyk určuje šablona, nikoli tento rozcestník.
 
 Osobní poznámky, auditní pracovní záznamy a návody pro konkrétní zařízení do
 veřejné dokumentace nepatří. Repository audit jejich náhodné přidání odmítne.

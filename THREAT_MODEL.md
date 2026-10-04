@@ -1,157 +1,166 @@
-# InitPad threat model
+# Model hrozeb InitPadu
 
-## Scope and trust assumptions
+## Rozsah a předpoklady důvěry
 
-The implemented profile is a self-hosted control plane with multiple
-workspace-scoped users. Workspace members are not trusted to access another
-workspace's metadata, repositories or targets. Members with the appropriate
-role are trusted to create application code and register deployment targets;
-generated CI code is treated as untrusted. The public internet, repository
-content, webhook requests and target endpoints are untrusted.
+Implementovaný profil je self-hosted control plane s více uživateli vymezenými
+workspace. Členům workspace se nedůvěřuje natolik, aby měli přístup k
+metadatům, repozitářům nebo targetům jiného workspace. Členům s odpovídající
+rolí se důvěřuje, že vytvářejí aplikační kód a registrují deployment targety.
+Vygenerovaný CI kód se považuje za nedůvěryhodný. Nedůvěryhodné jsou veřejný
+internet, obsah repozitářů, požadavky webhooků a endpointy targetů.
 
-The API intentionally controls the local Docker daemon to create application
-containers. Docker daemon access is host-root-equivalent, so the API container
-and its dependencies are part of the trusted computing base. This is acceptable
-for the thesis/single-node profile, but not a hard multi-tenant boundary. A
-hosted multi-tenant edition must use a remote deployment agent or Kubernetes
-API with a restricted service account instead of the host socket. Workspace
-RBAC is an application authorization boundary, not a hostile-workload compute
-boundary. The implemented Agent performs trust bootstrap, bounded Docker
-discovery, heartbeat, a leased outbound job protocol and an allocation-scoped
-Docker lifecycle allow-list. Project delivery passes only an immutable verified
-artifact and bounded in-memory configuration through the fenced job protocol.
+API záměrně ovládá lokální Docker daemon, aby vytvářelo aplikační kontejnery.
+Přístup k Docker daemonu je ekvivalentní právům root na hostu, takže kontejner
+API a jeho závislosti patří do důvěryhodné výpočetní základny. To je přijatelné
+pro diplomovou práci a single-node profil, ale nejde o pevnou multi-tenant
+hranici. Hostovaná multi-tenant edice musí místo socketu hostu použít vzdáleného
+deployment agenta nebo Kubernetes API s omezeným service accountem. Workspace
+RBAC je autorizační hranicí aplikace, nikoli výpočetní hranicí proti
+nepřátelskému workloadu. Implementovaný Agent zajišťuje trust bootstrap,
+omezené zjišťování Dockeru, heartbeat, odchozí job protokol s lease a allow-list
+životního cyklu Dockeru omezený na allocation. Doručení projektu předává přes
+job protokol chráněný fencingem pouze immutable ověřený artefakt a omezenou
+konfiguraci v paměti.
 
-## Assets
+## Aktiva
 
-- Gitea admin token, user PATs, per-repository deploy tokens and webhook secret;
-- JWT/OIDC signing keys and encryption key;
-- source repositories, OCI images and deployment target credentials;
-- Agent enrollment tokens, rotating per-target credentials and short-lived
-  job lease tokens;
-- PostgreSQL project/identity state and availability of the host.
+- token správce Gitey, osobní přístupové tokeny uživatelů, deploy tokeny
+  jednotlivých repozitářů a secret webhooku;
+- podpisové klíče JWT/OIDC a šifrovací klíč;
+- zdrojové repozitáře, OCI images a přihlašovací údaje deployment targetů;
+- enrollment tokeny Agentů, rotující credentialy jednotlivých targetů a
+  krátkodobé lease tokeny jobů;
+- stav projektů a identit v PostgreSQL a dostupnost hostu.
 
-## Main controls
+## Hlavní opatření
 
-- Gitea self-registration is disabled. InitPad owns account creation and lets
-  the instance administrator choose open or admin-provisioned registration.
-  Authentication, GitHub OAuth/setup and Agent enrollment have explicit
-  operation-specific limits. Atomic PostgreSQL counters are shared by every API
-  replica and combine trusted client IP with an HMACed account/token subject;
-  the database never stores the source IP, username, e-mail or plaintext token.
-- Projects and user targets belong to a workspace. Every request resolves an
-  authenticated membership server-side; `X-Workspace-Id` is only a selector,
-  never proof of access. Viewer/member/maintainer/admin/owner roles separate
-  reading, delivery, destructive maintenance and membership administration.
-- Personal workspaces cannot accept additional members. Team membership and
-  role changes are synchronized to private Gitea repository collaborator
-  permissions, with compensating rollback when either side fails.
-- Sessions are HTTP-only, SameSite and Secure under HTTPS. OIDC redirects use
-  exact origin/path validation and authorization codes are one-time/expiring.
-- Sensitive database values use AES-256-GCM. CI callback tokens are random per
-  repository and only their SHA-256 hashes are stored by InitPad.
-- Gitea webhooks use an HMAC signature (with bearer compatibility) and never put
-  secrets in URLs.
-- The Actions runner uses a dedicated rootless DinD daemon. It mounts no host
-  socket or host workspace and allows no workflow-defined volumes. Concurrency
-  is explicitly bounded (one job by default) and its control network is
-  separate from PostgreSQL and deployment networks.
-- DTO allow-list validation, bounded lengths, workspace policy checks and target
-  endpoint/path validation reduce injection, IDOR and resource-exhaustion risk.
-- User-managed SSH/SFTP connections pin the server's OpenSSH SHA-256 host-key
-  fingerprint. A changed or missing identity stops the connection instead of
-  silently trusting a replacement host. New direct-port deployments bind only
-  to loopback unless the administrator explicitly exposes them.
-- Agent enrollment is workspace-admin-only, short-lived and single-use. The
-  database stores only enrollment/credential hashes; the target stores its
-  credential atomically as `0600`. Heartbeat is outbound-only and reports a
-  bounded Docker capability object, not host or workload inventory. Agent 0.10+
-  rotates an active credential after 30 days through a two-phase overlap: the
-  previous credential remains usable until the Agent atomically stores and
-  proves possession of the next generation. A lost response or restart therefore
-  cannot strand an otherwise reachable target. Unconfirmed pending material is
-  reissued after 24 hours and the control plane never stores its plaintext.
-- Agent jobs are target-scoped, atomically claimed and fenced by a short lease
-  whose plaintext token is never persisted or logged. Monotonic progress,
-  idempotency keys and idempotent completion make response loss and lease
-  reassignment safe. Unknown job kinds are failed without interpreting their
-  payload as a command. Lifecycle payloads reject unknown fields and contain no
-  command, entrypoint, mount or secret. Docker mutations require matching
-  target/allocation/workload labels; foreign name collisions are left intact.
-- Agent workloads use immutable image digests, resource/log limits,
-  `no-new-privileges`, dropped capabilities plus a small runtime allow-list and
-  health-gated replacement. Failed candidates do not enter restart loops;
-  diagnostic cleanup preserves images that existed before the job.
-- Deployment operations atomically lock one environment. Cancellation is a
-  persisted request; stale background work cannot publish over a newer state.
-- The API writes structured JSON logs with a server-generated request ID.
-  Deployments and Agent jobs share a stable correlation ID; the Agent accepts
-  it only as diagnostic metadata. The centralized logger removes sensitive
-  keys, known token formats and URL credentials, while the HTTP access log
-  stores neither query strings nor request bodies.
-- App containers receive memory/CPU/PID/log limits, dropped capabilities and
-  `no-new-privileges`. Platform web/API containers are read-only where possible.
-- Dependencies and actions are locked; npm and Composer audits are part of the
-  release checks. Versioned database migrations replace schema pushing.
+- Samoregistrace v Gitee je vypnutá. Zakládání účtů vlastní InitPad a správce
+  instance si volí otevřenou registraci, nebo účty zakládané administrátorem.
+  Autentizace, GitHub OAuth a setup i enrollment Agenta mají explicitní limity
+  specifické pro danou operaci. Atomické čítače PostgreSQL sdílí každá replika
+  API a kombinují důvěryhodnou IP klienta s HMAC subjektu účtu nebo tokenu.
+  Databáze nikdy neukládá zdrojovou IP, uživatelské jméno, e-mail ani token v
+  čitelné podobě.
+- Projekty a uživatelské targety patří do workspace. Každý požadavek na serveru
+  vyhodnotí autentizované členství. `X-Workspace-Id` je pouze selektor, nikdy
+  důkaz oprávnění. Role viewer, member, maintainer, admin a owner oddělují čtení,
+  doručení, destruktivní údržbu a správu členství.
+- Osobní workspace nemohou přijímat další členy. Změny členství a rolí v týmu se
+  synchronizují do oprávnění spolupracovníků v privátních repozitářích Gitey s
+  kompenzačním rollbackem, pokud selže kterákoli strana.
+- Sessions jsou HTTP-only, SameSite a pod HTTPS Secure. Přesměrování OIDC
+  používají přesnou validaci originu a cesty a autorizační kódy jsou jednorázové
+  a expirují.
+- Citlivé hodnoty v databázi používají AES-256-GCM. Callback tokeny CI jsou pro
+  každý repozitář náhodné a InitPad ukládá pouze jejich hashe SHA-256.
+- Webhooky Gitey používají podpis HMAC se zachovanou kompatibilitou s bearer
+  tokenem a nikdy nevkládají secrety do URL.
+- Runner Actions používá vyhrazený rootless DinD daemon. Nepřipojuje socket ani
+  workspace hostu a nepovoluje žádné volumes definované workflow. Souběžnost je
+  explicitně omezená, ve výchozím stavu na jeden job, a jeho řídicí síť je
+  oddělená od PostgreSQL i od nasazovacích sítí.
+- Validace DTO pomocí allow-listu, omezené délky, kontroly politik workspace a
+  validace endpointu a cesty targetu snižují riziko injection, IDOR a vyčerpání
+  zdrojů.
+- Uživatelsky spravovaná spojení SSH/SFTP připínají otisk SHA-256 hostitelského
+  klíče serveru OpenSSH. Změněná nebo chybějící identita spojení zastaví, místo
+  aby se tiše důvěřovalo náhradnímu hostu. Nová nasazení s přímými porty se vážou
+  pouze na loopback, pokud je administrátor výslovně nezpřístupní.
+- Enrollment Agenta smí provést pouze admin workspace, je krátkodobý a
+  jednorázový. Databáze ukládá pouze hashe enrollmentu a credentialu a target
+  ukládá svůj credential atomicky s oprávněním `0600`. Heartbeat je pouze
+  odchozí a hlásí omezený objekt schopností Dockeru, nikoli inventář hostu nebo
+  workloadů. Agent 0.10 a novější rotuje aktivní credential po 30 dnech
+  dvoufázovým překryvem. Předchozí credential zůstává použitelný, dokud Agent
+  atomicky neuloží a neprokáže držení další generace. Ztracená odpověď nebo
+  restart proto nemůže odříznout jinak dosažitelný target. Nepotvrzený čekající
+  materiál se po 24 hodinách vydá znovu a control plane jeho čitelnou podobu
+  nikdy neukládá.
+- Joby Agenta jsou omezeny na target, atomicky převzaty a chráněny fencingem
+  krátkého lease, jehož token se v čitelné podobě nikdy neukládá ani nezapisuje
+  do logů. Monotónní průběh, idempotency klíče a idempotentní dokončení činí
+  ztrátu odpovědi a přeřazení lease bezpečnými. Neznámé druhy jobů selžou bez
+  interpretace jejich payloadu jako příkazu. Payloady životního cyklu odmítají
+  neznámá pole a neobsahují příkaz, entrypoint, mount ani secret. Mutace Dockeru
+  vyžadují odpovídající labely targetu, allocation a workloadu a cizí kolize
+  názvů zůstanou nedotčeny.
+- Workloady Agenta používají immutable digesty image, limity zdrojů a logů,
+  `no-new-privileges`, odebrané capabilities doplněné malým runtime allow-listem
+  a výměnu řízenou health checkem. Neúspěšní kandidáti nevstupují do restart
+  smyček a úklid diagnostiky zachovává images, které existovaly před jobem.
+- Deployment operace atomicky zamykají jedno prostředí. Zrušení je uložený
+  požadavek a zastaralá práce na pozadí nemůže publikovat přes novější stav.
+- API zapisuje strukturované JSON logy s ID požadavku generovaným serverem.
+  Deploymenty a joby Agenta sdílejí stabilní korelační ID a Agent ho přijímá
+  pouze jako diagnostická metadata. Centralizovaný logger odstraňuje citlivé
+  klíče, známé formáty tokenů a credentials v URL, zatímco HTTP access log
+  neukládá query stringy ani těla požadavků.
+- Aplikační kontejnery dostávají limity paměti, CPU, PID a logů, odebrané
+  capabilities a `no-new-privileges`. Webové a API kontejnery platformy jsou,
+  kde je to možné, pouze pro čtení.
+- Závislosti a actions jsou uzamčeny, audity npm a Composeru jsou součástí
+  kontrol releasu. Verzované databázové migrace nahrazují schema push.
 
-## Residual risks
+## Zbytková rizika
 
-- API remote-code execution can become host compromise through Docker control.
-- The application limiter covers targeted and small distributed attacks across
-  API replicas, but it deliberately does not replace edge connection limits or
-  volumetric DDoS protection. `INITPAD_TRUST_PROXY_HOPS` must match the fixed
-  reverse-proxy path; trusting more hops than actually exist lets a direct
-  client forge the address used by the IP dimension.
-- OIDC codes/tokens are in-memory, so API restart invalidates active SSO flows.
-- Registered SSH/SFTP hosts are powerful outbound destinations. Host syntax,
-  reserved local/link-local addresses and URL credentials are rejected, while
-  RFC1918 targets remain allowed for the intended school/company LAN use case.
-  This exception applies only to the trusted self-hosted edition. The hosted
-  edition resolves every tenant-controlled SFTP hostname before configuration
-  and again before every SSH/SFTP/HTTP socket, rejects the whole DNS response
-  when any A/AAAA record is not globally routable and connects to the approved
-  IP without a second lookup. HTTP probes retain TLS hostname verification and
-  never follow redirects. A production network-level egress firewall remains
-  required as defence in depth. The SSH fingerprint must be verified over an
-  independent admin channel because accepting an attacker's first key would
-  only pin the attack.
-- Rootless DinD still requires a privileged outer container. It protects the
-  host from ordinary workflow Docker control but is not equivalent to a
-  dedicated runner VM.
-- Workspace RBAC isolates application data but all deployments still share the
-  self-hosted control plane's provider credentials and Docker trust boundary.
-  Do not expose this profile as a hostile public SaaS.
-- Agent access to a Docker daemon is root-equivalent on that target. A stolen
-  Agent credential is target-scoped, revocable and automatically rotated by
-  Agent 0.10+; older enrolled Agents retain their credential until upgraded or
-  explicitly re-enrolled. Individual claims use short-lived fencing tokens.
-  Allocation enforcement, verified artifact
-  authorization, secret-safe config delivery and a non-shell Docker allow-list
-  exist. Agent 0.13.0 has a signed public multi-arch image, SBOM, provenance
-  and an immutable reviewed release channel; clean-host update and rollback
-  acceptance and an independent security review are still required. The
-  installer checksum
-  delivered by the same control-plane HTTPS origin detects corruption and binds
-  the UI to exact bytes, but it does not create an independent trust root.
-  Read-only filesystems and dropped capabilities do not reduce the authority
-  conveyed by the mounted Docker socket. HTTP enrollment is permitted only by
-  an explicit test flag and provides no protection against a hostile LAN.
-- Gitea collaborator synchronization spans two systems and therefore uses
-  compensation rather than a distributed transaction. Reconciliation and an
-  audit log are required before hosted production use.
-- Backups contain credentials. They must be encrypted, stored off-host and
-  tested with periodic restore drills.
-- JSON output is only a local stdout/stderr contract. Hosted operation still
-  requires an access-controlled central collector, retention, alerting,
-  metrics and OpenTelemetry export; a correlation ID is neither an
-  authentication credential nor a replacement for an audit trail.
+- Vzdálené spuštění kódu v API se může přes řízení Dockeru změnit v kompromitaci
+  hostu.
+- Aplikační limiter pokrývá cílené a malé distribuované útoky napříč replikami
+  API, ale záměrně nenahrazuje limity spojení na edge ani ochranu proti
+  volumetrickému DDoS. `INITPAD_TRUST_PROXY_HOPS` musí odpovídat pevné cestě
+  reverzní proxy. Důvěra ve více hopů, než skutečně existuje, umožní přímému
+  klientovi zfalšovat adresu používanou dimenzí IP.
+- Kódy a tokeny OIDC jsou v paměti, takže restart API zneplatní aktivní toky SSO.
+- Registrované hosty SSH/SFTP jsou mocnými odchozími cíli. Syntaxe hostu,
+  rezervované lokální a link-local adresy i credentials v URL se odmítají,
+  zatímco cíle RFC1918 zůstávají povolené pro zamýšlené použití v LAN školy nebo
+  firmy. Tato výjimka platí pouze pro důvěryhodnou self-hosted edici. Hostovaná
+  edice přeloží každý hostname SFTP řízený tenantem před konfigurací i znovu před
+  každým socketem SSH, SFTP a HTTP, odmítne celou odpověď DNS, pokud některý
+  záznam A nebo AAAA není globálně směrovatelný, a připojí se ke schválené IP
+  bez druhého vyhledávání. HTTP probes si ponechávají ověření hostname v TLS a
+  nikdy nenásledují přesměrování. Produkční síťový egress firewall zůstává
+  požadován jako obrana do hloubky. Otisk SSH je nutné ověřit nezávislým
+  administrátorským kanálem, protože přijetí prvního klíče útočníka by útok
+  pouze připnulo.
+- Rootless DinD stále vyžaduje privilegovaný vnější kontejner. Chrání host před
+  běžným ovládáním Dockeru z workflow, ale není rovnocenný vyhrazené VM pro
+  runner.
+- Workspace RBAC izoluje aplikační data, ale všechna nasazení stále sdílejí
+  přihlašovací údaje poskytovatele a hranici důvěry Dockeru self-hosted control
+  plane. Tento profil nezpřístupňujte jako nepřátelský veřejný SaaS.
+- Přístup Agenta k Docker daemonu je na daném targetu ekvivalentní právům root.
+  Odcizený credential Agenta je omezen na target, lze jej odvolat a Agent 0.10 a
+  novější jej automaticky rotuje. Starší zaregistrovaní Agenti si credential
+  ponechají, dokud nebudou aktualizováni nebo explicitně znovu zaregistrováni.
+  Jednotlivé claimy používají krátkodobé fencing tokeny. Existuje vynucování
+  allocation, ověřená autorizace artefaktů, doručování konfigurace bezpečné vůči
+  secretům a Docker allow-list bez shellu. Agent 0.13.0 má podepsaný veřejný
+  multi-arch image, SBOM, provenance a immutable zkontrolovaný kanál releasů.
+  Stále je nutná acceptance aktualizace a rollbacku na clean hostu a nezávislá
+  bezpečnostní revize. Checksum instalátoru doručený ze stejného HTTPS originu
+  control plane odhalí poškození a naváže UI na přesné bajty, ale nevytváří
+  nezávislý kořen důvěry. Souborové systémy pouze pro čtení a odebrané
+  capabilities nesnižují oprávnění, které předává připojený Docker socket.
+  Enrollment přes HTTP je povolen pouze explicitním testovacím příznakem a
+  nechrání před nepřátelskou LAN.
+- Synchronizace spolupracovníků v Gitee zahrnuje dva systémy, a proto používá
+  kompenzaci místo distribuované transakce. Před hostovaným produkčním použitím
+  je nutná rekonciliace a auditní log.
+- Zálohy obsahují credentials. Musí být šifrované, uložené mimo host a testované
+  pravidelnými cvičeními obnovy.
+- Výstup JSON je pouze lokálním kontraktem stdout a stderr. Hostovaný provoz
+  stále vyžaduje centrální collector s řízením přístupu, retenci, alerting,
+  metriky a export OpenTelemetry. Korelační ID není autentizačním credentialem
+  ani náhradou auditní stopy.
 
-## Production gates
+## Produkční gate
 
-Before calling InitPad hosted multi-tenant or enterprise-ready: remove the host
-Docker socket from the control plane, add production e-mail delivery, reconcile
-SCM permissions, use an external secret manager, add centralized audit logs,
-metrics and traces, enforce the application egress policy again at the
-network/firewall layer and test disaster recovery. Workspace admission quotas,
-persistent OIDC grants, production approvals, image/SBOM scanning, signed
-artifacts and recovery tests are implemented, but still require the complete
-hosted staging acceptance described in the roadmap.
+Než bude InitPad označen za hostovaný multi-tenant nebo enterprise-ready, je
+nutné odebrat Docker socket hostu z control plane, doplnit produkční doručování
+e-mailu, sladit oprávnění SCM, použít externí správce secretů, doplnit
+centralizované auditní logy, metriky a traces, vynutit aplikační egress politiku
+znovu na úrovni sítě a firewallu a otestovat obnovu po havárii. Kvóty přijímání
+nových workspace, trvalé granty OIDC, produkční approvals, skenování image a
+SBOM, podepsané artefakty a testy obnovy jsou implementovány, ale stále vyžadují
+úplnou hostovanou stagingovou acceptance popsanou v roadmapě.

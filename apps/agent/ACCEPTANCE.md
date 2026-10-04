@@ -1,46 +1,46 @@
-# InitPad Agent release acceptance
+# Acceptance releasu InitPad Agenta
 
-Run this acceptance on a separate, disposable Linux Docker host before an
-Agent release is approved for production. Do not use the control-plane host:
-the test must prove that a server with no source checkout or registry login can
-install the public release.
+Tuto acceptance spusťte na samostatném disposable Linux Docker hostu dříve, než
+bude release Agenta schválen pro produkci. Nepoužívejte host control plane. Test
+musí prokázat, že server bez checkoutu zdrojového kódu a bez přihlášení do
+registry dokáže nainstalovat veřejný release.
 
-Record the host OS, CPU architecture, Docker version, release version, immutable
-image digest and the result of every checkpoint. Never include the enrollment
-token or `/var/lib/initpad-agent/agent.json` in the report.
+Zaznamenejte operační systém hostu, architekturu CPU, verzi Dockeru, verzi
+releasu, immutable digest image a výsledek každého checkpointu. Do reportu
+nikdy nezahrnujte enrollment token ani `/var/lib/initpad-agent/agent.json`.
 
-## Prerequisites
+## Předpoklady
 
-- Linux with a running Docker Engine and `curl` plus `sha256sum`;
-- outbound access to the InitPad control plane and `ghcr.io`;
-- a control plane configured with `INITPAD_AGENT_IMAGE` and
-  `INITPAD_AGENT_RELEASE_VERSION` from the signed release manifest;
-- a new **Docker (InitPad Agent)** target whose public application URL is
-  reachable from the intended users.
+- Linux se spuštěným Docker Engine, `curl` a `sha256sum`;
+- odchozí přístup k control plane InitPadu a k `ghcr.io`;
+- control plane nakonfigurovaná s `INITPAD_AGENT_IMAGE` a
+  `INITPAD_AGENT_RELEASE_VERSION` z podepsaného release manifestu;
+- nový target **Docker (InitPad Agent)**, jehož veřejná URL aplikace je
+  dosažitelná pro zamýšlené uživatele.
 
-The host must not already contain an Agent identity:
+Host nesmí již obsahovat identitu Agenta:
 
 ```sh
 sudo test ! -e /var/lib/initpad-agent
 ! sudo docker container inspect initpad-agent >/dev/null 2>&1
 ```
 
-Use a new disposable target if either check fails. Do not remove an existing
-identity merely to make this precondition pass.
+Pokud některá kontrola selže, použijte nový disposable target. Existující
+identitu neodstraňujte jen proto, aby tento předpoklad prošel.
 
-## 1. First installation
+## 1. První instalace
 
-In **Servers**, open the target, choose **Manage Agent**, generate the one-time
-enrollment token and keep the dialog open. Copy its complete **Run on the Docker
-server** command to the Linux host. The command downloads the installer from
-the control plane, verifies its signed-release SHA-256 and passes an immutable
-image digest. Paste the enrollment token only into the hidden prompt.
+V části **Servers** otevřete target, zvolte **Manage Agent**, vygenerujte
+jednorázový enrollment token a dialog ponechte otevřený. Kompletní příkaz **Run
+on the Docker server** zkopírujte na Linux host. Příkaz stáhne instalátor z
+control plane, ověří jeho SHA-256 z podepsaného releasu a předá immutable digest
+image. Enrollment token vložte pouze do skrytého promptu.
 
-HTTP is accepted only when the control plane itself generated the explicit
-`--allow-insecure-http` flag for a trusted LAN test. Internet-facing acceptance
-requires HTTPS.
+HTTP je přijato pouze tehdy, když control plane sama vygenerovala explicitní
+příznak `--allow-insecure-http` pro test v důvěryhodné LAN. Acceptance dostupná z
+internetu vyžaduje HTTPS.
 
-On the host, verify the installed state without printing the credential:
+Na hostu ověřte nainstalovaný stav bez výpisu credentialu:
 
 ```sh
 sudo docker inspect initpad-agent \
@@ -50,42 +50,41 @@ sudo docker exec initpad-agent node /app/dist/cli.js once
 sudo stat -c 'identity-mode=%a owner=%u:%g' /var/lib/initpad-agent/agent.json
 ```
 
-Expected results are the release digest, `unless-stopped`, `true`, the declared
-Agent version, an accepted heartbeat and identity mode `600`. The target must
-become **online** in InitPad. Run **Test protocol** and **Test Docker**; both
-jobs must succeed.
+Očekávané výsledky jsou digest releasu, `unless-stopped`, `true`, deklarovaná
+verze Agenta, přijatý heartbeat a režim identity `600`. Target se musí v InitPadu
+stát **online**. Spusťte **Test protocol** a **Test Docker**. Oba joby musí
+uspět.
 
-## 2. Reboot recovery
+## 2. Obnova po restartu
 
-Deploy at least one disposable project to this Agent target and confirm that
-its workload is running. The reboot gate deliberately refuses an empty target:
-otherwise it could not prove that application workloads survive the host
-restart.
+Nasaďte na tento target Agenta alespoň jeden disposable projekt a ověřte, že
+jeho workload běží. Gate restartu záměrně odmítne prázdný target, protože jinak
+by neprokázal, že aplikační workloady restart hostu přežijí.
 
-Use the verified `initpad-agent-host-acceptance.sh` asset from the same release
-to check the Docker boot service, Agent restart policy, identity, container and
-any existing workloads before restarting the Linux host:
+Pomocí ověřeného assetu `initpad-agent-host-acceptance.sh` ze stejného releasu
+zkontrolujte před restartem Linux hostu službu Dockeru při startu, restart
+policy Agenta, identitu, kontejner i všechny existující workloady:
 
 ```sh
 sudo ./initpad-agent-host-acceptance.sh before-reboot
 sudo reboot
 ```
 
-Do not run the installer or create another enrollment after reconnecting. The
-same Agent must recover automatically:
+Po opětovném připojení nespouštějte instalátor ani nevytvářejte další
+enrollment. Stejný Agent se musí obnovit automaticky:
 
 ```sh
 sudo ./initpad-agent-host-acceptance.sh after-reboot
 ```
 
-InitPad must show the same target identity online. A reboot must not issue a new
-enrollment or increment the Agent credential generation. On a conventional
-systemd host, `before-reboot` fails early when `docker.service` is not enabled.
-The installer reports the same condition but deliberately does not change host
-boot policy without an operator decision.
+InitPad musí zobrazit tutéž identitu targetu jako online. Restart nesmí vydat
+nový enrollment ani zvýšit generaci credentialu Agenta. Na běžném hostu se
+systemd `before-reboot` selže brzy, pokud není povolena služba `docker.service`.
+Instalátor hlásí stejný stav, ale boot policy hostu záměrně nemění bez
+rozhodnutí operátora.
 
-If an existing installation is already offline after a reboot, diagnose and
-recover it without re-enrollment:
+Pokud je existující instalace po restartu již offline, diagnostikujte ji a
+obnovte bez re-enrollmentu:
 
 ```sh
 sudo systemctl is-enabled docker
@@ -93,23 +92,23 @@ sudo systemctl is-active docker
 sudo docker inspect initpad-agent \
   --format 'running={{.State.Running}} restart={{.HostConfig.RestartPolicy.Name}} exit={{.State.ExitCode}}'
 sudo docker logs --tail=100 initpad-agent
-sudo systemctl enable --now docker  # only when the service was disabled/inactive
-sudo docker start initpad-agent     # only when Docker is active and the container is stopped
+sudo systemctl enable --now docker  # pouze pokud byla služba zakázaná nebo neaktivní
+sudo docker start initpad-agent     # pouze pokud Docker běží a kontejner je zastavený
 ```
 
-`unless-stopped` is intentional: a running Agent recovers after reboot, while
-an Agent that an administrator explicitly stopped remains stopped. Starting an
-existing container preserves its target identity; generating a new token is
-not a recovery step.
+Hodnota `unless-stopped` je záměrná: běžící Agent se po restartu obnoví, zatímco
+Agent, kterého administrátor výslovně zastavil, zůstane zastavený. Spuštění
+existujícího kontejneru zachová identitu targetu. Generování nového tokenu není
+krokem obnovy.
 
-## 3. Workload preservation while disconnected
+## 3. Zachování workloadů při odpojení
 
-Keep the disposable project from the reboot test deployed and record its
-workload container ID. Download `initpad-agent-host-acceptance.sh` with its
-checksum and Sigstore bundle from the same tagged Agent release and verify them
-as described in `RELEASING.md`. The helper records only non-secret
-target/container identifiers in a root-only local report and never stops or
-starts anything itself:
+Ponechte disposable projekt z testu restartu nasazený a zaznamenejte ID
+kontejneru jeho workloadu. Stáhněte `initpad-agent-host-acceptance.sh` s jeho
+checksumem a Sigstore bundle ze stejného označeného releasu Agenta a ověřte je
+podle `RELEASING.md`. Pomocný skript zaznamenává pouze necitlivé identifikátory
+targetu a kontejnerů do lokálního reportu přístupného jen uživateli root a sám
+nikdy nic nezastavuje ani nespouští:
 
 ```sh
 sudo ./initpad-agent-host-acceptance.sh before-disconnect
@@ -117,9 +116,8 @@ sudo docker stop initpad-agent
 sudo ./initpad-agent-host-acceptance.sh disconnected
 ```
 
-The workload must remain running. Request **Test protocol** while the Agent is
-offline; the job must remain queued and must not execute locally. Restore the
-Agent:
+Workload musí zůstat běžet. Zadejte **Test protocol**, zatímco je Agent offline.
+Job musí zůstat ve frontě a nesmí se provést lokálně. Obnovte Agenta:
 
 ```sh
 sudo docker start initpad-agent
@@ -127,23 +125,23 @@ sudo ./initpad-agent-host-acceptance.sh after-reconnect
 sudo cat /var/lib/initpad-agent/acceptance/results.tsv
 ```
 
-The queued protocol test must complete exactly once and the original target
-must return online. The report must contain `before-disconnect`, `disconnected`
-and `after-reconnect` PASS rows. The helper also proves that the target
-identity, credential generation, Agent container and every existing workload
-container were preserved.
+Test protokolu ve frontě musí skončit právě jednou a původní target se musí
+vrátit do stavu online. Report musí obsahovat řádky PASS pro `before-disconnect`,
+`disconnected` a `after-reconnect`. Pomocný skript také prokáže, že se zachovala
+identita targetu, generace credentialu, kontejner Agenta i každý existující
+kontejner workloadu.
 
-## 4. Idempotent reinstall and failed-update rollback
+## 4. Idempotentní přeinstalace a rollback neúspěšné aktualizace
 
-Run the same installer command from step 1 again with the same release digest.
-It must retain `/var/lib/initpad-agent/agent.json`, replace the Agent container
-and reconnect without another token. The target ID and workload container ID
-must remain unchanged.
+Znovu spusťte stejný instalační příkaz z kroku 1 se stejným digestem releasu.
+Musí zachovat `/var/lib/initpad-agent/agent.json`, nahradit kontejner Agenta a
+znovu se připojit bez dalšího tokenu. ID targetu a ID kontejneru workloadu musí
+zůstat beze změny.
 
-Then exercise automatic rollback with this deliberately incompatible,
-digest-pinned image. Reuse the verified installer already downloaded in step 1
-and the same control-plane URL; add `--allow-insecure-http` only for the trusted
-LAN setup that used it originally.
+Poté vyzkoušejte automatický rollback pomocí tohoto záměrně nekompatibilního
+image připnutého digestem. Použijte ověřený instalátor stažený již v kroku 1 a
+stejnou URL control plane. Parametr `--allow-insecure-http` přidejte pouze pro
+důvěryhodné nastavení LAN, které jej původně používalo.
 
 ```sh
 sudo sh ./initpad-agent-install.sh \
@@ -151,9 +149,9 @@ sudo sh ./initpad-agent-install.sh \
   --image 'nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa'
 ```
 
-The command must fail because the replacement cannot send an Agent heartbeat.
-The installer must remove that container, restore the previous Agent and leave
-the workload running:
+Příkaz musí selhat, protože náhradní kontejner nemůže odeslat heartbeat Agenta.
+Instalátor musí tento kontejner odstranit, obnovit předchozího Agenta a ponechat
+workload běžet:
 
 ```sh
 sudo docker exec initpad-agent node /app/dist/cli.js version
@@ -162,29 +160,28 @@ sudo docker inspect "$workload_id" --format 'running={{.State.Running}}'
 ! sudo docker container inspect initpad-agent-previous >/dev/null 2>&1
 ```
 
-The version must still be the accepted release, the heartbeat must pass, the
-workload must be running and no parked `initpad-agent-previous` container may
-remain.
+Verze musí být stále přijatým releasem, heartbeat musí projít, workload musí
+běžet a nesmí zůstat odstavený kontejner `initpad-agent-previous`.
 
-For Agent 0.14.3 or newer, also expose the same disposable control plane
-through a second trusted URL. Before rerunning the verified installer with that
-URL, save an evidence checkpoint:
+Pro Agenta 0.14.3 nebo novějšího zpřístupněte stejnou disposable control plane
+také přes druhou důvěryhodnou URL. Před opětovným spuštěním ověřeného instalátoru
+s touto URL uložte checkpoint s důkazy:
 
 ```sh
 sudo ./initpad-agent-host-acceptance.sh before-url-migration 0.14.3
-# Rerun the verified installer with --url set to the second URL.
+# Znovu spusťte ověřený instalátor s parametrem --url nastaveným na druhou URL.
 sudo ./initpad-agent-host-acceptance.sh \
   after-url-migration 0.14.3 'https://SECOND_CONTROL_PLANE_URL'
 ```
 
-The installer must print a verified URL migration and reconnect without an
-enrollment token. The second command proves that the target ID, credential
-generation, digest-pinned image and workloads were preserved while the Agent
-container was safely replaced.
+Instalátor musí vypsat ověřenou migraci URL a znovu se připojit bez enrollment
+tokenu. Druhý příkaz prokáže, že se zachovalo ID targetu, generace credentialu,
+image připnutý digestem i workloady, zatímco byl kontejner Agenta bezpečně
+nahrazen.
 
-Then create a fresh checkpoint and rerun the already verified installer with a
-third, deliberately unreachable URL. Do not download anything from that URL
-and do not use a URL belonging to another InitPad database:
+Poté vytvořte nový checkpoint a znovu spusťte již ověřený instalátor s třetí,
+záměrně nedostupnou URL. Z této URL nic nestahujte a nepoužívejte URL patřící
+jiné databázi InitPadu:
 
 ```sh
 sudo ./initpad-agent-host-acceptance.sh before-url-migration 0.14.3
@@ -197,78 +194,80 @@ fi
 sudo ./initpad-agent-host-acceptance.sh after-url-rollback 0.14.3
 ```
 
-Retain every other option from the verified command, including
-`--published-host`, gateway/CA settings and `--allow-insecure-http` when the
-trusted LAN test requires it. The final check proves that the failed migration
-did not change the saved URL, container, identity or workloads and that no
-temporary migration config remains. Changing InitPad instances requires
-explicit re-enrollment and is not URL migration.
+Ponechte všechny ostatní volby z ověřeného příkazu, včetně `--published-host`,
+nastavení gateway a CA a `--allow-insecure-http`, pokud to test v důvěryhodné LAN
+vyžaduje. Závěrečná kontrola prokáže, že neúspěšná migrace nezměnila uloženou
+URL, kontejner, identitu ani workloady a že nezůstala žádná dočasná konfigurace
+migrace. Změna instance InitPadu vyžaduje explicitní re-enrollment a není
+migrací URL.
 
-## 5. Real release update
+## 5. Skutečná aktualizace releasu
 
-A real update requires a second signed release with a different immutable
-digest. Do not move a tag, retag the old image or substitute a locally built
-image to claim this checkpoint.
+Skutečná aktualizace vyžaduje druhý podepsaný release s jiným immutable
+digestem. Pro splnění tohoto checkpointu nepřesouvejte tag, neoznačujte znovu
+starý image a nenahrazujte jej lokálně sestaveným image.
 
-After the next Agent version is published, configure its manifest pair on the
-control plane and copy the newly generated installer command. Running it on the
-same host must preserve the identity and workloads, report the new version and
-remove the previous Agent container only after the first new heartbeat succeeds.
+Po publikaci další verze Agenta nastavte její dvojici manifestu na control plane
+a zkopírujte nově vygenerovaný instalační příkaz. Jeho spuštění na stejném hostu
+musí zachovat identitu a workloady, ohlásit novou verzi a odstranit předchozí
+kontejner Agenta až po prvním úspěšném novém heartbeatu.
 
-Before stopping the old container, the installer must verify the saved identity
-with the candidate image. Test a revoked credential separately: the default
-update must stop without changing either container or config and must instruct
-the operator to issue a fresh enrollment and use `--re-enroll`. That explicit
-path must redeem a new token, replace the identity and return the target online;
-it is recovery evidence, not a successful identity-preserving upgrade.
+Před zastavením starého kontejneru musí instalátor ověřit uloženou identitu
+pomocí image kandidáta. Zrušený credential otestujte samostatně. Výchozí
+aktualizace musí skončit bez změny kontejnerů i konfigurace a musí operátora
+instruovat, aby vydal nový enrollment a použil `--re-enroll`. Tato explicitní
+cesta musí uplatnit nový token, nahradit identitu a vrátit target do stavu
+online. Je to důkaz obnovy, nikoli úspěšného upgradu se zachováním identity.
 
-Agent 0.13 introduced the remote-update protocol in source, but the published
-0.13.0 image and candidate 0.14.0 both omitted the production `sigstore`
-dependency. They are runtime-revoked and must not be used as the working side
-of this test. Their candidate preflight failure is valid rejection evidence:
-the installer stopped before replacing the existing Agent.
+Agent 0.13 zavedl v kódu protokol vzdálené aktualizace, ale publikovaný image
+0.13.0 i kandidát 0.14.0 vynechaly produkční závislost `sigstore`. Jsou na
+úrovni runtime zrušeny a nesmějí sloužit jako funkční strana tohoto testu.
+Selhání jejich preflightu kandidáta je platným důkazem odmítnutí, protože se
+instalátor zastavil před nahrazením existujícího Agenta.
 
-Corrected release 0.14.1 is public, signed and passed its final-image runtime
-probe and anonymous distribution audit. Release 0.14.2 is also public, signed,
-runtime-probed and anonymously audited. To reproduce the accepted transition,
-keep 0.14.1 installed on the disposable target, open **Manage Agent**, review
-0.14.2 and choose
-**Install update**. Do not use `--re-enroll`: retaining the same target identity
-is part of this test. Confirm all of the following:
+Opravený release 0.14.1 je veřejný, podepsaný a prošel runtime probe finálního
+image i anonymním auditem distribuce. Release 0.14.2 je také veřejný, podepsaný,
+ověřený runtime probe a anonymně auditovaný. Přijatý přechod zopakujete tak, že
+na disposable targetu ponecháte nainstalovanou verzi 0.14.1, otevřete **Manage
+Agent**, zkontrolujete verzi 0.14.2 a zvolíte **Install update**. Nepoužívejte
+`--re-enroll`, protože zachování stejné identity targetu je součástí tohoto
+testu. Potvrďte všechny následující body:
 
-- one `agent-update` job advances through signature verification, immutable
-  pull, candidate preflight and heartbeat verification;
-- the target briefly reconnects with the new version while application
-  workloads and their container IDs stay unchanged;
-- the audit log contains accepted and terminal Agent update events without a
-  manifest, credential or runtime log;
-- a candidate that cannot heartbeat produces `agent_update_rolled_back`, the
-  old version returns online and no `initpad-agent-previous` container remains;
-- a second target is updated only after the first target passes **Test
-  protocol** and **Test Docker**. No fleet-wide automatic rollout occurs.
+- jeden job `agent-update` projde ověřením podpisu, immutable pull, preflightem
+  kandidáta a ověřením heartbeatu;
+- target se krátce znovu připojí s novou verzí, zatímco aplikační workloady a ID
+  jejich kontejnerů zůstanou beze změny;
+- auditní log obsahuje události přijetí a ukončení aktualizace Agenta bez
+  manifestu, credentialu nebo runtime logu;
+- kandidát, který nemůže odeslat heartbeat, vyvolá `agent_update_rolled_back`,
+  stará verze se vrátí do stavu online a nezůstane kontejner
+  `initpad-agent-previous`;
+- druhý target se aktualizuje až poté, co první target projde **Test protocol**
+  a **Test Docker**. Nedojde k automatickému nasazení na celou flotilu.
 
-Use the signed host helper to capture reproducible evidence. First run
-`before-update 0.14.1`. For the rollback pass, run `inject-failure` in a second
-terminal before choosing **Install update**, then verify the failed operation
-with `after-rollback 0.14.1`. The fault injector waits for a different running
-`initpad-agent` container and pauses only that replacement; it does not alter
-the release, identity, control plane or application workload. Repeat
-`before-update 0.14.1`, install the update without fault injection and finish
-with `after-update 0.14.2`.
+Pro získání reprodukovatelného důkazu použijte podepsaný pomocný skript hostu.
+Nejprve spusťte `before-update 0.14.1`. Pro průchod s rollbackem spusťte
+`inject-failure` ve druhém terminálu před volbou **Install update** a poté
+ověřte neúspěšnou operaci příkazem `after-rollback 0.14.1`. Injektor chyby čeká
+na jiný běžící kontejner `initpad-agent` a pozastaví pouze tento náhradní
+kontejner. Nemění release, identitu, control plane ani aplikační workload.
+Zopakujte `before-update 0.14.1`, nainstalujte aktualizaci bez injekce chyby a
+dokončete příkazem `after-update 0.14.2`.
 
-## Acceptance result
+## Výsledek acceptance
 
-Sections 1–4 and the real `0.14.1 → 0.14.2` transition in section 5 passed on
-separate Linux hosts by 21 September 2026. A fault-injected replacement failed
-closed and restored 0.14.1; the subsequent clean update preserved the target
-identity and application workloads and connected as 0.14.2. Releases 0.13.0
-and 0.14.0 remain documented runtime rejections rather than accepted baselines.
-Any future manual repair, new enrollment, lost workload or mutable image
-reference is a failure and must be documented rather than worked around.
+Sekce 1 až 4 a skutečný přechod `0.14.1 → 0.14.2` v sekci 5 prošly na
+samostatných Linux hostech do 21. září 2026. Náhradní kontejner s vloženou chybou
+selhal bezpečně a obnovil verzi 0.14.1. Následná čistá aktualizace zachovala
+identitu targetu i aplikační workloady a připojila se jako 0.14.2. Releasy 0.13.0
+a 0.14.0 zůstávají zdokumentovanými odmítnutími na úrovni runtime, nikoli
+přijatými základy. Jakákoli budoucí ruční oprava, nový enrollment, ztracený
+workload nebo mutable reference na image je selhání a musí být zdokumentována,
+ne obejita.
 
-Agent 0.14.3 subsequently passed the extended lifecycle gate on a separate
-Linux host on 1 October 2026. A real host reboot preserved the same Agent
-container ID, target identity and managed workload IDs. The reviewed installer
-then moved the existing identity to a reachable second control-plane URL, an
-unreachable URL was rejected while the previous URL and workloads stayed
-unchanged, and the Agent returned to the original URL without re-enrollment.
+Agent 0.14.3 následně prošel rozšířeným gate životního cyklu na samostatném
+Linux hostu dne 1. října 2026. Skutečný restart hostu zachoval stejné ID
+kontejneru Agenta, identitu targetu i ID managed workloadů. Zkontrolovaný
+instalátor poté přesunul existující identitu na dostupnou druhou URL control
+plane, nedostupná URL byla odmítnuta a předchozí URL i workloady zůstaly beze
+změny. Agent se bez re-enrollmentu vrátil na původní URL.

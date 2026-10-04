@@ -1,17 +1,17 @@
-# Releasing InitPad Agent
+# Vydávání InitPad Agenta
 
-Agent releases are created only from a version tag. The workflow builds one OCI
-index for Linux `amd64` and `arm64`, attaches BuildKit SBOM and maximum
-provenance, signs the immutable digest and release files with keyless Cosign,
-and creates a GitHub prerelease. It never publishes a mutable `latest` image
-tag. The release is promoted to stable only after live host acceptance.
+Release Agenta vzniká pouze z verzovacího tagu. Workflow sestaví jeden OCI index
+pro Linux `amd64` a `arm64`, připojí SBOM z BuildKitu a maximální provenance,
+podepíše immutable digest a release soubory pomocí keyless Cosign a vytvoří
+GitHub prerelease. Nikdy nepublikuje měnitelný tag image `latest`. Release se
+povýší na stable teprve po živé acceptance na hostu.
 
-## Publish
+## Publikace
 
-1. Change the version in `apps/agent/package.json`, `apps/agent/src/types.ts`
-   and the OCI version label in `apps/agent/Dockerfile`. Run
-   `npm run check:release` and commit the change.
-2. Create and push an annotated tag matching the version exactly:
+1. Změňte verzi v `apps/agent/package.json`, `apps/agent/src/types.ts` a v
+   labelu verze OCI v `apps/agent/Dockerfile`. Spusťte `npm run check:release` a
+   změnu commitněte.
+2. Vytvořte a odešlete anotovaný tag, který přesně odpovídá verzi:
 
    ```sh
    version=$(node -p "require('./apps/agent/package.json').version")
@@ -19,53 +19,51 @@ tag. The release is promoted to stable only after live host acceptance.
    git push origin "agent-v${version}"
    ```
 
-   Protect the `agent-v*` tag pattern so only release maintainers can create or
-   update it. Never move a published release tag.
+   Chraňte vzor tagů `agent-v*`, aby je mohli vytvářet nebo měnit pouze správci
+   releasů. Publikovaný release tag nikdy nepřesouvejte.
 
-3. The **Release InitPad Agent** workflow refuses a mismatched tag or an
-   existing version tag before it builds. It publishes the signed result as a
-   GitHub prerelease so the default stable catalog cannot offer an unaccepted
-   runtime to customer installations.
-4. Audit the candidate while it is still a prerelease:
+3. Workflow **Release InitPad Agent** před sestavením odmítne neodpovídající tag
+   i již existující verzovací tag. Podepsaný výsledek publikuje jako GitHub
+   prerelease, aby výchozí stable katalog nemohl zákaznickým instalacím nabídnout
+   runtime, který neprošel acceptance.
+4. Dokud je kandidát prerelease, proveďte jeho audit:
 
    ```sh
    npm run audit:public-release -- --tag "agent-v${version}" --allow-prerelease
    ```
 
-5. On a disposable acceptance control plane set
-   `INITPAD_AGENT_UPDATE_CHANNEL=candidate`, restart the API and follow
-   [`ACCEPTANCE.md`](./ACCEPTANCE.md). The UI labels this channel explicitly.
-   Stable installations keep the default `stable` value and ignore the
-   prerelease.
-6. After every required live check passes, promote the existing release without
-   rebuilding or moving its tag:
+5. Na disposable acceptance control plane nastavte
+   `INITPAD_AGENT_UPDATE_CHANNEL=candidate`, restartujte API a postupujte podle
+   [`ACCEPTANCE.md`](./ACCEPTANCE.md). UI tento kanál výslovně označuje. Stable
+   instalace ponechávají výchozí hodnotu `stable` a prerelease ignorují.
+6. Po splnění všech požadovaných živých kontrol povyšte existující release bez
+   opětovného sestavení a bez přesouvání jeho tagu:
 
    ```sh
    gh release edit "agent-v${version}" --prerelease=false --latest
    npm run audit:public-release -- --tag "agent-v${version}"
    ```
 
-   Then update `deploy/agent-release.env` from the signed manifest and include
-   that reviewed bootstrap pair in the next platform release. Existing Agents
-   discover the newly stable release through the signed catalog; operators do
-   not edit `.env` for every Agent update.
+   Poté aktualizujte `deploy/agent-release.env` z podepsaného manifestu a
+   zahrňte tuto zkontrolovanou bootstrap dvojici do dalšího releasu platformy.
+   Existující Agenti nově stabilní release objeví přes podepsaný katalog.
+   Provozovatelé neupravují `.env` při každé aktualizaci Agenta.
 
-For unauthenticated customer installation, the GHCR package must be public.
-After its first publication, change the package visibility once in GitHub
-Packages. This cannot safely be automated and GitHub warns that changing a
-package to public cannot be undone. The source repository may remain private;
-the image's signature identity intentionally still names its repository and
-workflow.
+Pro anonymní zákaznickou instalaci musí být balíček GHCR veřejný. Po jeho první
+publikaci změňte viditelnost balíčku jednorázově v GitHub Packages. Tento krok
+nelze bezpečně automatizovat a GitHub upozorňuje, že změnu balíčku na veřejný
+nelze vrátit zpět. Zdrojový repozitář může zůstat privátní. Identita podpisu
+image záměrně nadále uvádí jeho repozitář a workflow.
 
-GitHub artifact attestations are added automatically for public repositories.
-For a private GitHub Enterprise Cloud repository, set the repository variable
-`INITPAD_ENABLE_PRIVATE_ATTESTATIONS=true`. Standard private Free/Pro/Team
-repositories do not support GitHub artifact attestations, so Cosign remains the
-portable release signature in every case.
+GitHub artifact attestations se u veřejných repozitářů přidávají automaticky.
+Pro privátní repozitář GitHub Enterprise Cloud nastavte proměnnou repozitáře
+`INITPAD_ENABLE_PRIVATE_ATTESTATIONS=true`. Standardní privátní repozitáře
+Free, Pro a Team GitHub artifact attestations nepodporují, takže Cosign zůstává
+ve všech případech přenositelným podpisem releasu.
 
-## Verify
+## Ověření
 
-Replace the placeholders with the release values:
+Zástupné hodnoty nahraďte hodnotami releasu:
 
 ```sh
 TAG=agent-vX.Y.Z
@@ -75,8 +73,8 @@ cosign verify \
   'ghcr.io/OWNER/initpad-agent@sha256:DIGEST'
 ```
 
-Download the release assets into one directory, then verify their checksums and
-the checksum signature:
+Stáhněte release assets do jednoho adresáře a poté ověřte jejich checksumy a
+podpis checksumů:
 
 ```sh
 TAG=agent-vX.Y.Z
@@ -88,28 +86,28 @@ cosign verify-blob \
   SHA256SUMS
 ```
 
-The signed release also contains `initpad-agent-host-acceptance.sh`. Verify it
-through the same `SHA256SUMS` before copying it to the disposable Agent host;
-it supplies the non-destructive disconnect/reconnect evidence checkpoints in
-`ACCEPTANCE.md`.
+Podepsaný release obsahuje také `initpad-agent-host-acceptance.sh`. Před
+zkopírováním na disposable host Agenta jej ověřte prostřednictvím stejného
+souboru `SHA256SUMS`. Skript poskytuje nedestruktivní checkpointy s důkazy o
+odpojení a opětovném připojení, které popisuje `ACCEPTANCE.md`.
 
-The image SBOM is both a release asset and attached to the OCI image. Inspect a
-platform-specific SPDX document without pulling the image:
+SBOM image je zároveň release asset i přílohou OCI image. Platformově specifický
+dokument SPDX si lze prohlédnout bez stažení image:
 
 ```sh
 docker buildx imagetools inspect 'ghcr.io/OWNER/initpad-agent@sha256:DIGEST' \
   --format '{{ json (index .SBOM "linux/amd64").SPDX }}'
 ```
 
-Publishing a prerelease is not the acceptance result. Follow the reproducible clean-host
-[`ACCEPTANCE.md`](./ACCEPTANCE.md) runbook before approving a release for
-production. It verifies first enrollment, restart after a host reboot,
-idempotent reinstall, rollback from a deliberately unhealthy digest and
-preservation of existing workloads when the Agent is disconnected. A genuine
-upgrade checkpoint closes only when a later signed release exists.
+Publikace prerelease není výsledkem acceptance. Před schválením releasu pro
+produkci postupujte podle reprodukovatelného clean-host runbooku
+[`ACCEPTANCE.md`](./ACCEPTANCE.md). Ověřuje první enrollment, restart po
+restartu hostu, idempotentní přeinstalaci, rollback ze záměrně nezdravého
+digestu a zachování existujících workloadů při odpojení Agenta. Skutečný
+checkpoint aktualizace se uzavře až po vydání pozdějšího podepsaného releasu.
 
-For the reboot checkpoint, run the release asset's `before-reboot` command
-before restarting the host and `after-reboot` after login. The pair rejects a
-disabled systemd Docker service, an incorrect restart policy, a container
-replacement and a changed target identity instead of relying on a visual
-online/offline observation.
+Pro checkpoint restartu spusťte příkaz `before-reboot` z release assetu před
+restartem hostu a `after-reboot` po přihlášení. Dvojice odmítne zakázanou službu
+Dockeru v systemd, nesprávnou restart policy, náhradu kontejneru i změněnou
+identitu targetu, takže se nespoléhá na vizuální pozorování stavu online nebo
+offline.

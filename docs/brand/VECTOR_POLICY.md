@@ -1,9 +1,10 @@
-# Vector source policy
+# Pravidla pro vektorový zdroj
 
-The canonical InitPad symbol is the raster master `approved-master.png`.
-No automatically traced SVG is distributed because an approximate path changes
-the approved geometry at small sizes.
+Kanonickým symbolem InitPadu je rastrový master `approved-master.png`. Žádné
+automaticky vektorizované SVG se nedistribuuje, protože přibližná křivka mění
+schválenou geometrii při malých velikostech.
 
-A future vector master must be reconstructed and reviewed as a separate design
-change. Before it replaces the raster source, compare its silhouette, spacing
-and optical weight with the canonical master at 16, 32, 64, 256 and 512 pixels.
+Budoucí vektorový master musí být zrekonstruován a posouzen jako samostatná
+designová změna. Než nahradí rastrový zdroj, porovnejte jeho siluetu, rozestupy
+a optickou váhu s kanonickým masterem při velikostech 16, 32, 64, 256 a 512
+pixelů.

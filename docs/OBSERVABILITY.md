@@ -1,30 +1,29 @@
-# Observability contract
+# Kontrakt observability
 
-InitPad emits three distinct kinds of operational evidence. Audit events
-answer who requested a change, deployment operations describe its durable
-state, and telemetry helps an operator locate a runtime failure. Telemetry is
-never an authorization or consistency boundary.
+InitPad produkuje tři odlišné druhy provozních důkazů. Auditní události
+odpovídají na to, kdo změnu vyžádal, deployment operace popisují její trvalý
+stav a telemetrie pomáhá operátorovi lokalizovat selhání za běhu. Telemetrie
+nikdy není autorizační ani konzistenční hranicí.
 
-## Signals
+## Signály
 
-- The API writes bounded, redacted JSON logs to stdout. A runtime log collector
-  should ingest these lines without rewriting `requestId`, `correlationId`,
-  `traceId` or `spanId`.
-- With `INITPAD_OTEL_ENABLED=true`, every API replica exports traces and metrics
-  over OTLP/HTTP to one private OpenTelemetry Collector endpoint.
-- Automatic instrumentation covers Node runtime, inbound and outbound HTTP,
-  Nest/Express and supported database/client libraries. Health probes are
-  excluded from traces; successful probes are also excluded from access logs.
-- `initpad.http.requests` and `initpad.http.request.duration` are bounded custom
-  metrics. Their attributes contain only method, numeric status and status
-  class; raw paths, query strings, workspace IDs and user IDs are deliberately
-  absent.
-- Every process reports `service.name`, platform `service.version` and a fresh
-  `service.instance.id`. The same opaque value appears in the existing
-  `X-InitPad-Instance` header, connecting black-box active-active acceptance to
-  telemetry without making it an identity credential.
+- API zapisuje omezené, redigované JSON logy na standardní výstup. Log collector
+  runtime prostředí by měl tyto řádky přijímat bez přepisování `requestId`,
+  `correlationId`, `traceId` nebo `spanId`.
+- S nastavením `INITPAD_OTEL_ENABLED=true` každá replika API exportuje traces a
+  metriky přes OTLP/HTTP na jeden privátní endpoint OpenTelemetry Collectoru.
+- Automatická instrumentace pokrývá runtime Node, příchozí i odchozí HTTP,
+  Nest/Express a podporované knihovny pro databázi a klienty. Health probes jsou
+  z traces vyloučeny. Úspěšné probes jsou vyloučeny také z access logů.
+- `initpad.http.requests` a `initpad.http.request.duration` jsou omezené vlastní
+  metriky. Jejich atributy obsahují pouze metodu, číselný stav a třídu stavu.
+  Surové cesty, query stringy, ID workspace a ID uživatelů v nich záměrně chybějí.
+- Každý proces hlásí `service.name`, `service.version` platformy a nové
+  `service.instance.id`. Stejná neprůhledná hodnota se objevuje v existující
+  hlavičce `X-InitPad-Instance`, takže black-box active-active acceptance
+  propojuje s telemetrií, aniž by se stala identitním credentialem.
 
-Self-hosted export is disabled by default. Enabling it requires:
+Export ve self-hosted režimu je ve výchozím stavu vypnutý. Zapnutí vyžaduje:
 
 ```ini
 INITPAD_OTEL_ENABLED=true
@@ -33,75 +32,76 @@ OTEL_SERVICE_NAME=initpad-api
 OTEL_METRIC_EXPORT_INTERVAL=60000
 ```
 
-The endpoint may use HTTP on a private deployment network. Use HTTPS when it
-crosses a trust boundary. Credentials, query parameters and fragments are
-rejected; vendor authentication belongs on the collector, not in the API
-configuration. Collector unavailability must create a telemetry-gap alert but
-must not make the application unavailable.
+Endpoint může v privátní síti nasazení používat HTTP. Pokud překračuje hranici
+důvěry, použijte HTTPS. Credentials, query parametry a fragmenty se odmítají.
+Autentizace vůči dodavateli patří na collector, ne do konfigurace API.
+Nedostupnost collectoru musí vyvolat alert na mezeru v telemetrii, ale nesmí
+způsobit nedostupnost aplikace.
 
-The SaaS Compose contract makes OTLP export mandatory but does not bundle a
-backend. The collector and its storage are infrastructure-owned services. A
-vendor-neutral starting configuration is in
+Compose kontrakt SaaS činí export OTLP povinným, ale nepřibaluje backend.
+Collector a jeho úložiště jsou služby ve vlastnictví infrastruktury.
+Technologicky neutrální výchozí konfigurace je v
 [`deploy/observability`](../deploy/observability/README.md).
 
-## Retention and access baseline
+## Základ retence a přístupu
 
-Before admitting untrusted tenants, the operator records the actual backend
-policy and verifies automatic deletion:
+Dříve než operátor připustí nedůvěryhodné tenanty, zaznamená skutečnou politiku
+backendu a ověří automatické mazání:
 
-| Signal                      |          Default minimum | Access                                              |
-| --------------------------- | -----------------------: | --------------------------------------------------- |
-| Metrics                     |                  30 days | on-call and platform operators                      |
-| Traces                      |                   7 days | on-call and platform operators                      |
-| Structured application logs |                  30 days | on-call; security review by explicit grant          |
-| Audit events                | product retention policy | workspace-authorized UI and platform administrators |
+| Signál                       |         Výchozí minimum | Přístup                                                  |
+| ---------------------------- | ----------------------: | -------------------------------------------------------- |
+| Metriky                      |                 30 dní | on-call a provozovatelé platformy                        |
+| Traces                       |                  7 dní | on-call a provozovatelé platformy                        |
+| Strukturované aplikační logy |                 30 dní | on-call, bezpečnostní revize na základě výslovného práva |
+| Auditní události             | produktová retenční politika | UI s oprávněním workspace a správci platformy      |
 
-These are operational defaults, not a reason to retain personal data. Request
-or response bodies, cookies, authorization headers, URL credentials and secret
-environment values must never be collected. Backend access and policy changes
-must themselves be audited.
+Jde o provozní výchozí hodnoty, nikoli o důvod uchovávat osobní údaje. Těla
+požadavků a odpovědí, cookies, autorizační hlavičky, credentials v URL a hodnoty
+tajných proměnných prostředí se nesmějí nikdy sbírat. Přístup do backendu i
+změny jeho politiky se samy musí auditovat.
 
-## Alert baseline
+## Základ alertů
 
-Alert names are stable even if the backend query language differs:
+Názvy alertů jsou stabilní, i když se jazyk dotazů backendu liší:
 
-| Alert                     | Initial threshold                                        | First action                                             |
-| ------------------------- | -------------------------------------------------------- | -------------------------------------------------------- |
-| `InitPadApiUnavailable`   | readiness fails for 2 minutes                            | check edge, API replicas and PostgreSQL                  |
-| `InitPadHighErrorRate`    | at least 20 requests and more than 2% 5xx for 5 minutes  | group traces by route/status and inspect correlated logs |
-| `InitPadHighLatency`      | p95 over 2 seconds for 10 minutes                        | separate database, SCM, S3 and target latency            |
-| `InitPadTelemetryGap`     | no telemetry from an expected API instance for 5 minutes | check collector reachability before trusting dashboards  |
-| `InitPadMailOutboxFailed` | any terminal `mail.outbox.failed` event                  | inspect relay health without printing encrypted payloads |
-| `InitPadLeaderChurn`      | more than 3 leader takeovers in 15 minutes               | inspect database connectivity and replica restarts       |
+| Alert                     | Počáteční práh                                                       | První krok                                                        |
+| ------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `InitPadApiUnavailable`   | readiness selhává 2 minuty                                           | zkontrolujte edge, repliky API a PostgreSQL                       |
+| `InitPadHighErrorRate`    | alespoň 20 požadavků a více než 2 % odpovědí 5xx po dobu 5 minut     | seskupte traces podle routy a stavu a prohlédněte související logy |
+| `InitPadHighLatency`      | p95 nad 2 sekundy po dobu 10 minut                                   | oddělte latenci databáze, SCM, S3 a targetu                       |
+| `InitPadTelemetryGap`     | 5 minut bez telemetrie z očekávané instance API                      | dříve než dashboardům uvěříte, ověřte dosažitelnost collectoru    |
+| `InitPadMailOutboxFailed` | jakákoli koncová událost `mail.outbox.failed`                        | zkontrolujte stav relay bez výpisu zašifrovaných payloadů         |
+| `InitPadLeaderChurn`      | více než 3 převzetí role leadera za 15 minut                         | zkontrolujte připojení k databázi a restarty replik               |
 
-Tune thresholds from staging measurements rather than silently weakening the
-initial policy in production.
+Prahy upravujte podle měření ze stagingu a počáteční politiku v produkci tiše
+neoslabujte.
 
-## Incident sequence
+## Postup při incidentu
 
-1. Record the alert time, affected public origin and release version. Do not
-   copy secrets or request bodies into the incident record.
-2. Use `requestId` or `correlationId` from the UI/API response to locate the
-   structured log. Follow its `traceId` to the trace backend.
-3. Determine whether the failure is edge, API, PostgreSQL, object storage, SCM
-   or deployment-target related. Check at least two API instance IDs before
-   calling an active-active incident replica-specific.
-4. Prefer a documented rollback or target disconnect over manual database
-   edits. Preserve audit and deployment-operation history.
-5. After recovery, record the detection gap, customer impact, remediation and
-   whether the alert/retention policy needs a reviewed change.
+1. Zaznamenejte čas alertu, dotčený veřejný origin a verzi releasu. Do záznamu
+   incidentu nekopírujte secrety ani těla požadavků.
+2. Pomocí `requestId` nebo `correlationId` z odpovědi UI či API najděte
+   strukturovaný log. Podle jeho `traceId` přejděte do backendu s traces.
+3. Určete, zda selhání souvisí s edge, API, PostgreSQL, object storage, SCM nebo
+   deployment targetem. Než označíte active-active incident za specifický pro
+   jednu repliku, zkontrolujte alespoň dvě ID instancí API.
+4. Upřednostněte zdokumentovaný rollback nebo odpojení targetu před ručními
+   zásahy do databáze. Zachovejte historii auditu a deployment operací.
+5. Po obnově zaznamenejte mezeru v detekci, dopad na zákazníky, nápravu a to, zda
+   alert nebo retenční politika vyžaduje zkontrolovanou změnu.
 
 ## Staging acceptance
 
-The observability gate is complete only after a live staging run proves:
+Gate observability je dokončen až poté, co živý běh na stagingu prokáže, že:
 
-1. two API replicas emit distinct `service.instance.id` values;
-2. one request is connected across access log and trace by `traceId`;
-3. request counters and duration histograms arrive without raw URL cardinality;
-4. stopping the collector leaves API readiness healthy and fires the telemetry
-   gap alert;
-5. restarting it resumes export without an API restart; and
-6. expired test logs, traces and metrics are actually deleted by the backend.
+1. dvě repliky API emitují odlišné hodnoty `service.instance.id`,
+2. jeden požadavek je propojen mezi access logem a trace pomocí `traceId`,
+3. čítače požadavků a histogramy doby trvání přicházejí bez kardinality surových
+   URL,
+4. zastavení collectoru ponechá readiness API zdravou a vyvolá alert na mezeru v
+   telemetrii,
+5. jeho restart obnoví export bez restartu API a
+6. prošlé testovací logy, traces a metriky backend skutečně smaže.
 
-Configuration and unit tests establish the export boundary; they do not count
-as this live production evidence.
+Konfigurace a unit testy stanovují hranici exportu, ale nepočítají se jako tento
+živý produkční důkaz.
