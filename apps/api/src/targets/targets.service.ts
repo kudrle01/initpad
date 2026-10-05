@@ -26,6 +26,7 @@ import type { ProviderConnection, VerifyResult } from '../deployment/deployment-
 import { normalizeManagedGatewayOrigin } from './managed-gateway';
 import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
+import { InspectTargetHostKeyDto } from './dto/inspect-target-host-key.dto';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
   serializableCapacityTransaction,
@@ -478,6 +479,32 @@ export class TargetsService implements OnModuleInit {
     return this.toSummary(row, false);
   }
 
+  async inspectHostKey(
+    userId: string,
+    dto: InspectTargetHostKeyDto,
+    requestedWorkspaceId?: string,
+  ): Promise<{ host: string; port: number; algorithm: string; fingerprint: string }> {
+    const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
+    await this.workspaces.require(userId, workspaceId, 'maintain');
+    const host = this.assertSafeTargetHost(dto.host);
+    try {
+      const identity = await this.deployment.inspectSshHostKey(host, dto.port);
+      return { host, port: dto.port, ...identity };
+    } catch (error) {
+      if (error instanceof UnsafeOutboundDestinationError) {
+        throw new BadRequestException(
+          'Hosted SFTP targets must resolve only to public internet addresses',
+        );
+      }
+      this.logger.warn({
+        event: 'target.host_key_inspection_failed',
+        workspaceId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      throw new BadRequestException('Could not retrieve the SSH host key from this server');
+    }
+  }
+
   async update(id: string, ownerId: string, dto: UpdateTargetDto): Promise<Target> {
     const row = await this.getUserTarget(id, ownerId, 'maintain');
     if (this.managementState(row) === 'retired') {
@@ -904,10 +931,7 @@ export class TargetsService implements OnModuleInit {
   }
 
   private async assertSafeEndpoint(host: string, publicUrl: string): Promise<void> {
-    const normalizedHost = normalizeTargetHost(host);
-    if (!hasValidTargetHostSyntax(normalizedHost) || isBlockedTargetHost(normalizedHost)) {
-      throw new BadRequestException('This target host is reserved or unsafe');
-    }
+    const normalizedHost = this.assertSafeTargetHost(host);
     const publicHostname = this.assertSafePublicUrl(publicUrl);
     if (config.edition !== 'saas') return;
     try {
@@ -926,6 +950,14 @@ export class TargetsService implements OnModuleInit {
       }
       throw error;
     }
+  }
+
+  private assertSafeTargetHost(host: string): string {
+    const normalizedHost = normalizeTargetHost(host);
+    if (!hasValidTargetHostSyntax(normalizedHost) || isBlockedTargetHost(normalizedHost)) {
+      throw new BadRequestException('This target host is reserved or unsafe');
+    }
+    return normalizedHost;
   }
 
   private assertSafePublicUrl(publicUrl: string): string {

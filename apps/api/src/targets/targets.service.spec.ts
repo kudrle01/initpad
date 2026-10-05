@@ -63,6 +63,45 @@ describe('connectionForTarget', () => {
 });
 
 describe('target authorization', () => {
+  it('requires maintainer access and returns only a public SSH host identity', async () => {
+    const deployment = {
+      inspectSshHostKey: jest.fn(async () => ({
+        algorithm: 'ssh-ed25519',
+        fingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
+      })),
+    };
+    const workspaces = {
+      resolve: jest.fn(async () => ({ id: 'w1', role: 'maintainer' })),
+      require: jest.fn(async () => 'maintainer'),
+    };
+    const service = new TargetsService({} as never, deployment as never, workspaces as never);
+
+    await expect(
+      service.inspectHostKey('u1', { host: 'SFTP.Example.EDU', port: 22 }, 'w1'),
+    ).resolves.toEqual({
+      host: 'sftp.example.edu',
+      port: 22,
+      algorithm: 'ssh-ed25519',
+      fingerprint: 'SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg',
+    });
+    expect(workspaces.require).toHaveBeenCalledWith('u1', 'w1', 'maintain');
+    expect(deployment.inspectSshHostKey).toHaveBeenCalledWith('sftp.example.edu', 22);
+  });
+
+  it('rejects unsafe host-key inspection before opening a socket', async () => {
+    const deployment = { inspectSshHostKey: jest.fn() };
+    const workspaces = {
+      resolve: jest.fn(async () => ({ id: 'w1', role: 'maintainer' })),
+      require: jest.fn(async () => 'maintainer'),
+    };
+    const service = new TargetsService({} as never, deployment as never, workspaces as never);
+
+    await expect(
+      service.inspectHostKey('u1', { host: '169.254.169.254', port: 22 }, 'w1'),
+    ).rejects.toThrow('reserved or unsafe');
+    expect(deployment.inspectSshHostKey).not.toHaveBeenCalled();
+  });
+
   it('requires maintainer access before testing a built-in target', async () => {
     const prisma = {
       target: {

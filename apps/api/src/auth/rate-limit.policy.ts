@@ -105,4 +105,11 @@ export const RATE_LIMITS = {
     windowMs: 5 * minute,
     ipLimit: 30,
   },
+  targetHostKeyInspect: {
+    name: 'targets.host-key.inspect',
+    windowMs: 5 * minute,
+    ipLimit: 30,
+    subjectLimit: 15,
+    subject: { source: 'user', normalization: 'opaque' },
+  },
 } as const satisfies Record<string, RateLimitPolicy>;

@@ -5,6 +5,7 @@ import {
   portSlot,
   sftpRmrf,
   shellQuote,
+  sshHostKeyAlgorithm,
   sshHostKeyFingerprint,
 } from './ssh-utils';
 
@@ -17,6 +18,16 @@ describe('SSH host identity', () => {
 
   it('normalizes optional base64 padding from administrator input', () => {
     expect(normalizeHostKeyFingerprint(' SHA256:abc= ')).toBe('SHA256:abc');
+  });
+
+  it('reads the negotiated algorithm from a bounded SSH public-key blob', () => {
+    const algorithm = Buffer.from('ssh-ed25519');
+    const key = Buffer.alloc(4 + algorithm.length + 32);
+    key.writeUInt32BE(algorithm.length);
+    algorithm.copy(key, 4);
+
+    expect(sshHostKeyAlgorithm(key)).toBe('ssh-ed25519');
+    expect(() => sshHostKeyAlgorithm(Buffer.from([0, 0, 1, 0]))).toThrow('malformed');
   });
 });
 

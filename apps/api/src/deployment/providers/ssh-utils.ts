@@ -29,6 +29,11 @@ export interface ExecResult {
   stderr: string;
 }
 
+export interface SshHostKeyIdentity {
+  algorithm: string;
+  fingerprint: string;
+}
+
 // POSIX-shell single-quote escaping for remote commands. Target paths are
 // validated before storage, but quoting here keeps command construction safe
 // and makes these helpers robust when reused with less restrictive input.
@@ -86,6 +91,79 @@ export function sshHostKeyFingerprint(key: Buffer): string {
 
 export function normalizeHostKeyFingerprint(value: string): string {
   return value.trim().replace(/=+$/, '');
+}
+
+export function sshHostKeyAlgorithm(key: Buffer): string {
+  if (key.length < 5) throw new Error('SSH server returned a malformed host key');
+  const length = key.readUInt32BE(0);
+  if (length < 1 || length > 128 || length + 4 > key.length) {
+    throw new Error('SSH server returned a malformed host key');
+  }
+  const algorithm = key.subarray(4, 4 + length).toString('ascii');
+  if (!/^[A-Za-z0-9@._+-]+$/.test(algorithm)) {
+    throw new Error('SSH server returned an invalid host-key algorithm');
+  }
+  return algorithm;
+}
+
+/**
+ * Read the public server identity and deliberately reject the handshake before
+ * authentication. No password or private key is accepted by this operation.
+ */
+export async function inspectSshHostKey(
+  host: string,
+  port: number,
+  timeoutMs = 8_000,
+): Promise<SshHostKeyIdentity> {
+  const pinned =
+    config.edition === 'saas' ? await resolvePublicInternetHost(host) : { address: host };
+
+  return await new Promise<SshHostKeyIdentity>((resolve, reject) => {
+    const connection = new Client();
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      connection.destroy();
+      reject(new Error('SSH host-key inspection timed out'));
+    }, timeoutMs);
+
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      connection.destroy();
+      reject(error);
+    };
+
+    connection.once('error', rejectOnce);
+    try {
+      connection.connect({
+        host: pinned.address,
+        port,
+        username: 'initpad-host-key-inspection',
+        readyTimeout: timeoutMs,
+        hostVerifier: (key: Buffer) => {
+          if (settled) return false;
+          try {
+            const identity = {
+              algorithm: sshHostKeyAlgorithm(key),
+              fingerprint: sshHostKeyFingerprint(key),
+            };
+            settled = true;
+            clearTimeout(timer);
+            resolve(identity);
+          } catch (error) {
+            rejectOnce(error as Error);
+          }
+          // Stop before user authentication. Trust is a separate UI action.
+          return false;
+        },
+      });
+    } catch (error) {
+      rejectOnce(error as Error);
+    }
+  });
 }
 
 // Runs a command and collects its output. Does not throw on a non-zero exit

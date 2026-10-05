@@ -1,5 +1,6 @@
 import { validate } from 'class-validator';
 import { CreateTargetDto } from './create-target.dto';
+import { InspectTargetHostKeyDto } from './inspect-target-host-key.dto';
 
 function sftpDto(hostKeyFingerprint?: string): CreateTargetDto {
   return Object.assign(new CreateTargetDto(), {
@@ -26,5 +27,19 @@ describe('CreateTargetDto host identity', () => {
   it('accepts an OpenSSH SHA-256 fingerprint', async () => {
     const errors = await validate(sftpDto('SHA256:OQnj8QkyP0DwPcCH2RppMp1ARe0QOs/7G8aFAdhEErg'));
     expect(errors).toHaveLength(0);
+  });
+
+  it('bounds host-key inspection to a hostname and TCP port', async () => {
+    const valid = Object.assign(new InspectTargetHostKeyDto(), {
+      host: 'sftp.example.test',
+      port: 22,
+    });
+    const invalid = Object.assign(new InspectTargetHostKeyDto(), {
+      host: 'sftp.example.test',
+      port: 70_000,
+    });
+
+    expect(await validate(valid)).toHaveLength(0);
+    expect((await validate(invalid)).some(({ property }) => property === 'port')).toBe(true);
   });
 });

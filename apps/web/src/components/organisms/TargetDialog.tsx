@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Server } from 'lucide-react';
+import { AlertTriangle, ScanSearch, Server } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -14,8 +14,10 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/atoms/Spinner';
 import { InfoTip } from '@/components/molecules/InfoTip';
 import { cn } from '@/lib/utils';
-import type { TargetInput } from '@/api';
+import { api, type TargetInput } from '@/api';
 import type { ProviderKind, RuntimeKind, Target, TargetRoutingMode } from '@/types';
+import { useConfirmation } from '@/confirmation';
+import { useToast } from '@/toast';
 
 const ALL_CAPS: { id: RuntimeKind; label: string }[] = [
   { id: 'static', label: 'Static' },
@@ -70,9 +72,15 @@ function validManagedGatewayOrigin(value: string): boolean {
   }
 }
 
+function normalizeHostKeyFingerprint(value: string): string {
+  return value.trim().replace(/=+$/, '');
+}
+
 // Register or edit one of the user's own deployment servers. Built-in servers
 // are read-only and never edited here.
 export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }: Props) {
+  const confirmAction = useConfirmation();
+  const toast = useToast();
   const editing = !!target;
   const legacySsh = target?.kind === 'ssh';
   const reconnectingRemote = Boolean(
@@ -91,6 +99,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
   const [hostKeyFingerprint, setHostKeyFingerprint] = useState('');
   const [remotePath, setRemotePath] = useState('');
   const [publicUrl, setPublicUrl] = useState('');
+  const [inspectingHostKey, setInspectingHostKey] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -106,6 +115,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
     setHostKeyFingerprint(target?.hostKeyFingerprint ?? '');
     setRemotePath(target?.remotePath ?? '');
     setPublicUrl(target?.publicUrl ?? '');
+    setInspectingHostKey(false);
   }, [open, target]);
 
   function toggleCap(c: RuntimeKind) {
@@ -116,6 +126,82 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
     setKind(next);
     if (next !== 'docker') setRoutingMode('direct-port');
     if (!editing) setCaps(defaultCapabilities(next));
+  }
+
+  function changeHost(next: string) {
+    if (next.trim() !== host.trim()) setHostKeyFingerprint('');
+    setHost(next);
+  }
+
+  function changePort(next: string) {
+    if (next !== port) setHostKeyFingerprint('');
+    setPort(next);
+  }
+
+  async function inspectHostKey() {
+    const inspectedHost = host.trim();
+    const inspectedPort = Number(port);
+    if (
+      !inspectedHost ||
+      !Number.isInteger(inspectedPort) ||
+      inspectedPort < 1 ||
+      inspectedPort > 65535
+    ) {
+      toast.error('Enter a valid server host and port first');
+      return;
+    }
+
+    setInspectingHostKey(true);
+    try {
+      const identity = await api.inspectTargetHostKey({ host: inspectedHost, port: inspectedPort });
+      if (inspectedHost !== host.trim() || inspectedPort !== Number(port)) {
+        toast.error('The server address changed during host-key inspection. Try again.');
+        return;
+      }
+
+      const previousFingerprint = hostKeyFingerprint || target?.hostKeyFingerprint || null;
+      if (
+        previousFingerprint &&
+        normalizeHostKeyFingerprint(previousFingerprint) ===
+          normalizeHostKeyFingerprint(identity.fingerprint)
+      ) {
+        setHostKeyFingerprint(identity.fingerprint);
+        toast.success('The server identity matches the trusted fingerprint');
+        return;
+      }
+
+      const replacingIdentity = Boolean(previousFingerprint);
+      const confirmed = await confirmAction({
+        title: replacingIdentity
+          ? 'The server identity has changed'
+          : 'Trust this server identity?',
+        description: replacingIdentity
+          ? 'A changed SSH host key can mean that the server was reinstalled, its key was rotated, or the connection is being intercepted.'
+          : 'Compare this fingerprint with the value provided by the server administrator before trusting it.',
+        confirmLabel: replacingIdentity ? 'Replace trusted key' : 'Trust and save',
+        tone: replacingIdentity ? 'danger' : 'warning',
+        details: [
+          { label: 'Server', value: `${identity.host}:${identity.port}` },
+          { label: 'Key type', value: identity.algorithm },
+          ...(previousFingerprint
+            ? [{ label: 'Previously trusted', value: previousFingerprint }]
+            : []),
+          {
+            label: replacingIdentity ? 'New fingerprint' : 'Fingerprint',
+            value: identity.fingerprint,
+          },
+        ],
+        consequences: [
+          'InitPad will pin this exact key for every future SFTP connection.',
+          'A different key will stop the connection before any credential is sent.',
+        ],
+      });
+      if (confirmed) setHostKeyFingerprint(identity.fingerprint);
+    } catch (cause) {
+      toast.error((cause as Error).message);
+    } finally {
+      setInspectingHostKey(false);
+    }
   }
 
   const valid =
@@ -207,8 +293,9 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Connection method</Label>
+            <Label htmlFor="t-kind">Connection method</Label>
             <select
+              id="t-kind"
               className={selectCls}
               value={kind}
               disabled={editing}
@@ -225,7 +312,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               <Input
                 id="t-port"
                 value={port}
-                onChange={(e) => setPort(e.target.value)}
+                onChange={(e) => changePort(e.target.value)}
                 inputMode="numeric"
               />
             </div>
@@ -288,7 +375,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                   id="t-host"
                   value={host}
                   placeholder="eso.example.edu"
-                  onChange={(e) => setHost(e.target.value)}
+                  onChange={(e) => changeHost(e.target.value)}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -296,8 +383,9 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                 <Input id="t-user" value={username} onChange={(e) => setUsername(e.target.value)} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>Auth</Label>
+                <Label htmlFor="t-auth">Auth</Label>
                 <select
+                  id="t-auth"
                   className={selectCls}
                   value={auth}
                   onChange={(e) => setAuth(e.target.value as 'password' | 'key')}
@@ -360,18 +448,33 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                     </span>
                   </InfoTip>
                 </div>
-                <Input
-                  id="t-host-key"
-                  value={hostKeyFingerprint}
-                  placeholder="SHA256:AbCd…"
-                  spellCheck={false}
-                  className="font-mono text-xs"
-                  onChange={(e) => setHostKeyFingerprint(e.target.value)}
-                  aria-invalid={
-                    hostKeyFingerprint.length > 0 &&
-                    !/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(hostKeyFingerprint.trim())
-                  }
-                />
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="t-host-key"
+                    value={hostKeyFingerprint}
+                    placeholder="Not trusted yet"
+                    spellCheck={false}
+                    readOnly
+                    className="min-w-0 flex-1 font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={busy || inspectingHostKey || !host.trim()}
+                    onClick={() => void inspectHostKey()}
+                  >
+                    {inspectingHostKey ? (
+                      <Spinner className="h-4 w-4" />
+                    ) : (
+                      <ScanSearch className="h-4 w-4" />
+                    )}
+                    {hostKeyFingerprint ? 'Check identity' : 'Get fingerprint'}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  InitPad retrieves the public key without sending the password or private key. You
+                  must confirm it before the connection is saved.
+                </p>
               </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="t-path">Remote path</Label>
@@ -423,10 +526,14 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
         </div>
 
         <DialogFooter>
-          <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>
+          <Button
+            variant="secondary"
+            disabled={busy || inspectingHostKey}
+            onClick={() => onOpenChange(false)}
+          >
             Cancel
           </Button>
-          <Button disabled={busy || !valid} onClick={submit}>
+          <Button disabled={busy || inspectingHostKey || !valid} onClick={submit}>
             {busy && <Spinner className="h-4 w-4" />}
             {reconnectingRemote ? 'Save connection' : editing ? 'Save server' : 'Add server'}
           </Button>

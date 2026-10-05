@@ -15,6 +15,9 @@ import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { InspectTargetHostKeyDto } from './dto/inspect-target-host-key.dto';
+import { RateLimited } from '../auth/rate-limited.decorator';
+import { RATE_LIMITS } from '../auth/rate-limit.policy';
 
 // Deployment targets: the built-in simulated infrastructure plus the servers
 // the user registers themselves. Every operation is scoped to the signed-in
@@ -27,6 +30,16 @@ export class TargetsController {
   @Get()
   list(@CurrentUser() userId: string, @Headers('x-workspace-id') workspaceId?: string) {
     return this.targets.listForUser(userId, workspaceId);
+  }
+
+  @Post('host-key/inspect')
+  @RateLimited(RATE_LIMITS.targetHostKeyInspect)
+  inspectHostKey(
+    @Body() dto: InspectTargetHostKeyDto,
+    @CurrentUser() userId: string,
+    @Headers('x-workspace-id') workspaceId?: string,
+  ) {
+    return this.targets.inspectHostKey(userId, dto, workspaceId);
   }
 
   @Post()

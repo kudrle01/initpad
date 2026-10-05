@@ -8,6 +8,7 @@ import { GitHubAuthController } from '../scm/github/github-auth.controller';
 import { GitHubSetupController } from '../scm/github/github-setup.controller';
 import { GitHubWebhookController } from '../scm/github/github-webhook.controller';
 import { TemplatesController } from '../templates/templates.controller';
+import { TargetsController } from '../targets/targets.controller';
 import { AuthController } from './auth.controller';
 import { PUBLIC_ENDPOINT, type PublicEndpointReason } from './public-endpoint.decorator';
 import { RATE_LIMIT_POLICY, RATE_LIMITS } from './rate-limit.policy';
@@ -80,6 +81,7 @@ describe('public HTTP boundary contract', () => {
     [GitHubSetupController.prototype, 'start', RATE_LIMITS.githubSetup.name],
     [GitHubSetupController.prototype, 'recover', RATE_LIMITS.githubSetup.name],
     [GitHubSetupController.prototype, 'callback', RATE_LIMITS.githubSetupCallback.name],
+    [TargetsController.prototype, 'inspectHostKey', RATE_LIMITS.targetHostKeyInspect.name],
   ] as const)('rate-limits %s.%s as %s', (controller, method, policyName) => {
     expect(methodRateLimit(controller, method)?.name).toBe(policyName);
   });

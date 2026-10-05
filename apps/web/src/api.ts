@@ -56,6 +56,13 @@ export interface TargetInput {
   publicUrl: string;
 }
 
+export interface HostKeyInspection {
+  host: string;
+  port: number;
+  algorithm: string;
+  fingerprint: string;
+}
+
 // Workspace-scoped usage of a physical target (ADR-060).
 export interface TargetAllocation {
   id: string;
@@ -453,6 +460,11 @@ export const api = {
     }),
   // Deployment targets (built-in infra + the user's own servers).
   listTargets: () => http<Target[]>('/targets'),
+  inspectTargetHostKey: (body: { host: string; port: number }) =>
+    http<HostKeyInspection>('/targets/host-key/inspect', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   createTarget: (body: TargetInput) =>
     http<Target>('/targets', { method: 'POST', body: JSON.stringify(body) }),
   updateTarget: (id: string, body: Partial<TargetInput>) =>

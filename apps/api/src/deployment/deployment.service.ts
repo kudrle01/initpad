@@ -13,6 +13,7 @@ import {
 import { DockerProvider } from './providers/docker.provider';
 import { SftpProvider } from './providers/sftp.provider';
 import { SshProvider } from './providers/ssh.provider';
+import { inspectSshHostKey } from './providers/ssh-utils';
 
 /**
  * Provider registry. Picks the implementation by ProviderKind and delegates
@@ -81,6 +82,10 @@ export class DeploymentService {
       throw new BadRequestException(`Provider '${provider}' does not support connection tests`);
     }
     return impl.verify(connection);
+  }
+
+  inspectSshHostKey(host: string, port: number) {
+    return inspectSshHostKey(host, port);
   }
 
   // Removes local images of the repository (across providers that support it).
