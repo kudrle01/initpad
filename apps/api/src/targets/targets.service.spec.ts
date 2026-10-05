@@ -543,13 +543,20 @@ describe('target capability updates', () => {
         })),
         delete: jest.fn(async () => current),
       },
+      targetAllocation: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
       environment: {
         count: jest.fn(async ({ where }: { where: { activeOperationId?: unknown } }) =>
           where.activeOperationId ? 0 : 2,
         ),
         updateMany: jest.fn(),
       },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+      run(prisma),
+    );
     const workspaces = { require: jest.fn(async () => 'maintainer') };
     const audit = { record: jest.fn(async () => undefined) };
     return {
@@ -600,6 +607,37 @@ describe('target capability updates', () => {
       }),
     );
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain('rotated-password');
+  });
+
+  it('keeps derived workspace access in sync when the SFTP root changes', async () => {
+    const { service, prisma } = serviceWithTarget();
+
+    await service.update('target-1', 'u1', {
+      remotePath: '/home/student/www',
+    });
+
+    expect(prisma.targetAllocation.updateMany).toHaveBeenCalledWith({
+      where: { targetId: 'target-1' },
+      data: { rootPath: '/home/student/www' },
+    });
+  });
+
+  it('updates inherited allocation defaults without replacing explicit overrides', async () => {
+    const { service, prisma } = serviceWithTarget();
+
+    await service.update('target-1', 'u1', {
+      capabilities: ['static', 'php'],
+      publicUrl: 'https://new.example.edu/~student',
+    });
+
+    expect(prisma.targetAllocation.updateMany).toHaveBeenCalledWith({
+      where: { targetId: 'target-1', publicUrl: row.publicUrl },
+      data: { publicUrl: 'https://new.example.edu/~student' },
+    });
+    expect(prisma.targetAllocation.updateMany).toHaveBeenCalledWith({
+      where: { targetId: 'target-1', capabilities: 'static' },
+      data: { capabilities: 'php,static' },
+    });
   });
 
   it('does not create an audit event when submitted values are unchanged', async () => {

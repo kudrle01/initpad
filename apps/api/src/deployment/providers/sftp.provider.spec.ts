@@ -1,7 +1,8 @@
 import { SftpProvider } from './sftp.provider';
-import { getSftp, sshConnect, sshEnd, sshExec } from './ssh-utils';
+import { assertSftpWritable, getSftp, sshConnect, sshEnd, sshExec, uploadTar } from './ssh-utils';
 
 jest.mock('./ssh-utils', () => ({
+  assertSftpWritable: jest.fn(),
   getSftp: jest.fn(),
   shellQuote: jest.fn((value: string) => `'${value}'`),
   sshConnect: jest.fn(),
@@ -9,6 +10,7 @@ jest.mock('./ssh-utils', () => ({
   sshExec: jest.fn(),
   sftpRmrf: jest.fn(),
   sftpUnlink: jest.fn(),
+  uploadTar: jest.fn(),
 }));
 
 describe('SftpProvider teardown', () => {
@@ -112,6 +114,52 @@ describe('SftpProvider teardown', () => {
     });
 
     expect(result?.warning).toContain('could not be verified');
+  });
+});
+
+describe('SftpProvider deploy preflight', () => {
+  it('names the effective allocation root and uploads nothing when it is not writable', async () => {
+    jest.clearAllMocks();
+    jest.mocked(sshConnect).mockResolvedValue({} as never);
+    jest.mocked(getSftp).mockResolvedValue({} as never);
+    jest
+      .mocked(assertSftpWritable)
+      .mockRejectedValue(new Error('mkdir /initpad failed: No such file'));
+
+    const result = await new SftpProvider().deploy({
+      projectName: 'team-app',
+      env: 'prod',
+      version: 'v1',
+      repoPath: __dirname,
+      connection: {
+        host: 'sftp.example.test',
+        port: 22,
+        username: 'student',
+        password: 'test-only',
+        remoteRoot: '/home/student/www',
+        publicUrl: 'https://example.test/~student',
+      },
+      allocation: {
+        id: 'allocation-1',
+        targetId: 'target-1',
+        namespace: 'personal',
+        rootPath: '/initpad',
+        publicUrl: null,
+        cpuLimitMillicores: 1000,
+        memoryLimitMb: 512,
+        pidsLimit: 256,
+        devTtlHours: null,
+        testTtlHours: null,
+      },
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.reason).toContain('Deployment path /initpad on sftp.example.test');
+    expect(result.reason).toContain('No such file');
+    expect(assertSftpWritable).toHaveBeenCalledWith(expect.anything(), '/initpad');
+    expect(uploadTar).not.toHaveBeenCalled();
+    expect(sshExec).not.toHaveBeenCalled();
+    expect(sshEnd).toHaveBeenCalled();
   });
 });
 

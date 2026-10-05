@@ -599,35 +599,63 @@ export class TargetsService implements OnModuleInit {
         dto.remotePath !== undefined ||
         dto.publicUrl !== undefined ||
         capabilitiesChanged);
-    const updated = (await this.prisma.target.update({
-      where: { id: row.id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.capabilities !== undefined ? { capabilities: this.toCsv(dto.capabilities) } : {}),
-        ...(dto.host !== undefined ? { host: dto.host } : {}),
-        ...(dto.port !== undefined ? { port: dto.port } : {}),
-        ...(dto.username !== undefined ? { username: dto.username } : {}),
-        ...(dto.auth !== undefined ? { auth: dto.auth } : {}),
-        ...(dto.secret ? { secret: encryptSecret(dto.secret) } : {}),
-        ...(dto.hostKeyFingerprint !== undefined
-          ? { hostKeyFingerprint: dto.hostKeyFingerprint }
-          : {}),
-        ...(dto.remotePath !== undefined ? { remotePath: dto.remotePath } : {}),
-        ...(dto.publicUrl !== undefined || routingChanged ? { publicUrl } : {}),
-        ...(dto.routingMode !== undefined ? { routingMode } : {}),
-        ...(routingChanged
-          ? { gatewayAdapter: routingMode === 'managed-gateway' ? 'caddy' : null }
-          : {}),
-        ...(agentBacked && (routingChanged || dto.publicUrl !== undefined)
-          ? {
-              gatewayPreflightStatus: 'not-run',
-              gatewayPreflightJobId: null,
-              gatewayPreflightAt: null,
-              gatewayPreflightError: null,
-            }
-          : {}),
-        ...(connectionChanged ? { verifiedAt: null } : {}),
-      },
+    const updated = (await this.prisma.$transaction(async (transaction) => {
+      const target = await transaction.target.update({
+        where: { id: row.id },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.capabilities !== undefined ? { capabilities: this.toCsv(dto.capabilities) } : {}),
+          ...(dto.host !== undefined ? { host: dto.host } : {}),
+          ...(dto.port !== undefined ? { port: dto.port } : {}),
+          ...(dto.username !== undefined ? { username: dto.username } : {}),
+          ...(dto.auth !== undefined ? { auth: dto.auth } : {}),
+          ...(dto.secret ? { secret: encryptSecret(dto.secret) } : {}),
+          ...(dto.hostKeyFingerprint !== undefined
+            ? { hostKeyFingerprint: dto.hostKeyFingerprint }
+            : {}),
+          ...(dto.remotePath !== undefined ? { remotePath: dto.remotePath } : {}),
+          ...(dto.publicUrl !== undefined || routingChanged ? { publicUrl } : {}),
+          ...(dto.routingMode !== undefined ? { routingMode } : {}),
+          ...(routingChanged
+            ? { gatewayAdapter: routingMode === 'managed-gateway' ? 'caddy' : null }
+            : {}),
+          ...(agentBacked && (routingChanged || dto.publicUrl !== undefined)
+            ? {
+                gatewayPreflightStatus: 'not-run',
+                gatewayPreflightJobId: null,
+                gatewayPreflightAt: null,
+                gatewayPreflightError: null,
+              }
+            : {}),
+          ...(connectionChanged ? { verifiedAt: null } : {}),
+        },
+      });
+
+      // A user-owned server gets one derived workspace access record when it
+      // is registered. Its root path is not independently editable, so leaving
+      // the old value here would make Test connection succeed against the new
+      // target root while deployments continue writing to a stale path. Public
+      // URL and capabilities are synchronised only while they still equal the
+      // previous target defaults, preserving intentional allocation overrides.
+      if (!agentBacked && dto.remotePath !== undefined) {
+        await transaction.targetAllocation.updateMany({
+          where: { targetId: row.id },
+          data: { rootPath: dto.remotePath },
+        });
+      }
+      if ((dto.publicUrl !== undefined || routingChanged) && publicUrl !== row.publicUrl) {
+        await transaction.targetAllocation.updateMany({
+          where: { targetId: row.id, publicUrl: row.publicUrl },
+          data: { publicUrl },
+        });
+      }
+      if (capabilitiesChanged) {
+        await transaction.targetAllocation.updateMany({
+          where: { targetId: row.id, capabilities: row.capabilities },
+          data: { capabilities: this.toCsv(dto.capabilities!) },
+        });
+      }
+      return target;
     })) as TargetRow;
     const changedFields = changedTargetFields(dto, row, publicUrl, routingMode);
     if (changedFields) {

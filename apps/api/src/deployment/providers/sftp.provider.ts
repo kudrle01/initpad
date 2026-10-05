@@ -168,6 +168,16 @@ export class SftpProvider implements DeploymentProvider {
 
     try {
       const sftp = await getSftp(conn);
+      // Fail before any upload when the effective root is missing or read-only,
+      // and name it: a bare SFTP "No such file" does not say which path.
+      input.onProgress?.('Checking target path');
+      try {
+        await assertSftpWritable(sftp, cfg.remoteRoot);
+      } catch (e) {
+        const reason = `Deployment path ${cfg.remoteRoot} on ${cfg.host} does not exist or is not writable (${(e as Error).message})`;
+        this.logger.warn(reason);
+        return { status: 'failed', url: '', reason };
+      }
       if (cfg.custom) {
         await this.uploadCustom(conn, sftp, cfg, slug, localDir, input);
       } else {
