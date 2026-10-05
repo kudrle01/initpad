@@ -1,5 +1,17 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const compose = readFileSync('deploy/saas.compose.yml', 'utf8');
@@ -33,6 +45,7 @@ test('requires immutable platform images and validates without printing secrets'
   assert.match(checker, /config --services/);
   assert.match(checker, /@sha256:/);
   assert.doesNotMatch(checker, /\bcat\b|\bset -x\b/);
+  assert.doesNotMatch(checker, /(^|\s)(source|\.)\s+["']?\$env_file/m);
 });
 
 test('mounts deployment-owned secrets as files without placing values in the environment', () => {
@@ -59,4 +72,173 @@ test('mounts deployment-owned secrets as files without placing values in the env
   }
   assert.doesNotMatch(example, /EXTERNAL_SECRET|__GENERATE__/);
   assert.match(example, /INITPAD_WEB_BIND_ADDRESS=127\.0\.0\.1/);
+});
+
+const secretFileVariables = [
+  'INITPAD_DATABASE_URL_FILE',
+  'INITPAD_JWT_SECRET_FILE',
+  'INITPAD_ENCRYPTION_KEY_FILE',
+  'INITPAD_SMTP_PASSWORD_FILE',
+  'INITPAD_SCM_WEBHOOK_TOKEN_FILE',
+  'INITPAD_OIDC_CLIENT_SECRET_FILE',
+  'INITPAD_GITHUB_CLIENT_SECRET_FILE',
+  'INITPAD_GITHUB_PRIVATE_KEY_FILE',
+  'INITPAD_GITHUB_WEBHOOK_SECRET_FILE',
+  'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID_FILE',
+  'INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY_FILE',
+];
+
+function acceptanceFixture(overrides = {}) {
+  const directory = mkdtempSync(join(tmpdir(), 'initpad-saas-check-'));
+  const binDirectory = join(directory, 'bin');
+  const secretDirectory = join(directory, 'secrets');
+  mkdirSync(binDirectory);
+  mkdirSync(secretDirectory);
+
+  const docker = join(binDirectory, 'docker');
+  writeFileSync(
+    docker,
+    `#!/bin/sh
+case "$*" in
+  *"config --quiet") exit 0 ;;
+  *"config --services") printf 'api\\nweb\\n' ;;
+  *"config --images")
+    printf '%s\\n' \\
+      'ghcr.io/example/initpad-api@sha256:${'a'.repeat(64)}' \\
+      'ghcr.io/example/initpad-web@sha256:${'b'.repeat(64)}'
+    ;;
+  *) exit 2 ;;
+esac
+`,
+    { mode: 0o755 },
+  );
+  chmodSync(docker, 0o755);
+
+  const values = {
+    INITPAD_PUBLIC_URL: 'https://initpad.test.example.org',
+    INITPAD_PLATFORM_VERSION: '0.2.10',
+    INITPAD_API_IMAGE: `ghcr.io/example/initpad-api@sha256:${'a'.repeat(64)}`,
+    INITPAD_WEB_IMAGE: `ghcr.io/example/initpad-web@sha256:${'b'.repeat(64)}`,
+    INITPAD_AGENT_IMAGE: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+    INITPAD_AGENT_RELEASE_VERSION: '0.14.3',
+    INITPAD_ARTIFACT_S3_ENDPOINT: 'https://s3.fr-par.scw.cloud',
+    INITPAD_ARTIFACT_S3_BUCKET: 'initpad-staging-artifacts',
+    INITPAD_SMTP_HOST: 'smtp.tem.scaleway.com',
+    INITPAD_SMTP_USERNAME: 'project-id',
+    INITPAD_SMTP_FROM: 'InitPad <no-reply@test.example.org>',
+    INITPAD_GITHUB_APP_ID: '12345',
+    INITPAD_GITHUB_CLIENT_ID: 'Iv1.client',
+    INITPAD_GITHUB_APP_SLUG: 'initpad-staging',
+    OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318',
+  };
+
+  for (const variable of secretFileVariables) {
+    const secretFile = join(secretDirectory, variable.toLowerCase());
+    writeFileSync(secretFile, 'fixture-secret\n', { mode: 0o600 });
+    values[variable] = secretFile;
+  }
+  Object.assign(values, overrides);
+
+  const envFile = join(directory, 'saas.env');
+  writeFileSync(
+    envFile,
+    `${Object.entries(values)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n')}\n`,
+    { mode: 0o600 },
+  );
+  return { binDirectory, envFile, values };
+}
+
+function runChecker(fixture) {
+  return spawnSync('sh', ['deploy/saas-check.sh', fixture.envFile], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${fixture.binDirectory}:${process.env.PATH}` },
+  });
+}
+
+test('accepts a complete SaaS preflight without printing secret values', () => {
+  const fixture = acceptanceFixture();
+  const result = runChecker(fixture);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /SaaS Compose contract is valid/);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /fixture-secret/);
+});
+
+test('rejects unsafe SaaS URLs, placeholders and direct secrets before Compose', () => {
+  for (const [overrides, message] of [
+    [{ INITPAD_PUBLIC_URL: 'http://initpad.test.example.org' }, /must use HTTPS/],
+    [{ INITPAD_PUBLIC_URL: 'https://initpad.test.example.org/path' }, /without a path/],
+    [{ INITPAD_GITHUB_APP_ID: 'REPLACE' }, /placeholder in INITPAD_GITHUB_APP_ID/],
+    [{ DATABASE_URL: 'postgresql://secret' }, /must be supplied through its _FILE/],
+  ]) {
+    const fixture = acceptanceFixture(overrides);
+    const result = runChecker(fixture);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /fixture-secret/);
+  }
+
+  const duplicateFixture = acceptanceFixture();
+  appendFileSync(
+    duplicateFixture.envFile,
+    'INITPAD_PUBLIC_URL=https://different.test.example.org\n',
+  );
+  const duplicateResult = runChecker(duplicateFixture);
+  assert.notEqual(duplicateResult.status, 0);
+  assert.match(duplicateResult.stderr, /duplicate keys: INITPAD_PUBLIC_URL/);
+});
+
+test('rejects missing, relative, empty and checkout-local secret files', () => {
+  const cases = [
+    ['/missing/initpad-secret', /does not point to a regular file/],
+    ['relative-secret', /must contain an absolute path/],
+  ];
+  for (const [value, message] of cases) {
+    const fixture = acceptanceFixture({ INITPAD_JWT_SECRET_FILE: value });
+    const result = runChecker(fixture);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
+
+  const fixture = acceptanceFixture();
+  const emptySecret = join(tmpdir(), `initpad-empty-secret-${process.pid}`);
+  writeFileSync(emptySecret, '', { mode: 0o600 });
+  const emptyValues = readFileSync(fixture.envFile, 'utf8').replace(
+    /^INITPAD_JWT_SECRET_FILE=.*$/m,
+    `INITPAD_JWT_SECRET_FILE=${emptySecret}`,
+  );
+  writeFileSync(fixture.envFile, emptyValues, { mode: 0o600 });
+  const emptyResult = runChecker(fixture);
+  assert.notEqual(emptyResult.status, 0);
+  assert.match(emptyResult.stderr, /points to an empty file/);
+
+  const checkoutSecret = join(process.cwd(), '.saas-check-secret-fixture');
+  const linkedSecret = join(tmpdir(), `initpad-linked-secret-${process.pid}`);
+  writeFileSync(checkoutSecret, 'not-a-real-secret\n', { mode: 0o600 });
+  symlinkSync(checkoutSecret, linkedSecret);
+  try {
+    const localValues = readFileSync(fixture.envFile, 'utf8').replace(
+      /^INITPAD_JWT_SECRET_FILE=.*$/m,
+      `INITPAD_JWT_SECRET_FILE=${checkoutSecret}`,
+    );
+    writeFileSync(fixture.envFile, localValues, { mode: 0o600 });
+    const localResult = runChecker(fixture);
+    assert.notEqual(localResult.status, 0);
+    assert.match(localResult.stderr, /must point outside the source checkout/);
+
+    const linkedValues = readFileSync(fixture.envFile, 'utf8').replace(
+      /^INITPAD_JWT_SECRET_FILE=.*$/m,
+      `INITPAD_JWT_SECRET_FILE=${linkedSecret}`,
+    );
+    writeFileSync(fixture.envFile, linkedValues, { mode: 0o600 });
+    const linkedResult = runChecker(fixture);
+    assert.notEqual(linkedResult.status, 0);
+    assert.match(linkedResult.stderr, /must not point to a symbolic link/);
+  } finally {
+    unlinkSync(checkoutSecret);
+    unlinkSync(linkedSecret);
+  }
 });

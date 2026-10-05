@@ -104,6 +104,11 @@ docker compose --env-file /secure/runtime/initpad-saas.env \
   -f saas.compose.yml up -d
 ```
 
+Kontrola selže ještě před startem kontejnerů, pokud zůstal placeholder, veřejná
+URL nepoužívá HTTPS, S3 endpoint nepoužívá HTTPS, secret byl vložen přímo místo
+souboru nebo některá cesta k secretu není absolutní, čitelná, neprázdná a mimo
+checkout zdrojového kódu. Hodnoty secretů ani výsledný Compose model nevypisuje.
+
 Po spuštění profilu pokračujte podle
 [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md). Pomocný skript ověří veřejný HTTPS
 edge, provedené migrace a skutečný S3 round-trip. Na disposable stagingu také
@@ -151,7 +156,7 @@ alerty a incident acceptance popsané v
   zachová instalované image. Pro další verzi platformy použijte release UI.
 - **Recovery / air-gap:** stáhněte jeden adresář releasu platformy, ověřte jej
   na serveru a spusťte jeho `initpad-install-release.sh --project-root
-  /absolute/path/to/initpad`. Tato explicitní záložní cesta navíc vyžaduje
+/absolute/path/to/initpad`. Tato explicitní záložní cesta navíc vyžaduje
   Cosign a vytvoří úplnou zálohu před aktualizací.
 - **Release Agenta:** `./install.sh` doplní prázdnou dvojici údajů o releasu ze
   souboru `agent-release.env`. Úplnou explicitní dvojici zachová, takže lokální
