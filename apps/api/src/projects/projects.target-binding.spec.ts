@@ -114,7 +114,6 @@ describe('ProjectsService target binding', () => {
         status: 'empty',
         url: null,
         statusReason: null,
-        allocatedPort: null,
         deploymentRequired: true,
       },
     });

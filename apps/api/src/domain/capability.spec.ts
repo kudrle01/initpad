@@ -30,8 +30,9 @@ describe('targetCanRun', () => {
   it('rejects a static-only SFTP host for a PHP app', () => {
     expect(targetCanRun(nette, { kind: 'sftp', capabilities: ['static'] })).toBe(false);
   });
-  it('rejects a target kind the template does not accept', () => {
-    expect(targetCanRun(nette, { kind: 'ssh', capabilities: ['php'] })).toBe(false);
+  it('rejects a provider that the template does not accept', () => {
+    const dockerOnly = { ...nette, compatibleProviders: ['docker'] as ProviderKind[] };
+    expect(targetCanRun(dockerOnly, { kind: 'sftp', capabilities: ['php'] })).toBe(false);
   });
   it('accepts Docker (runs anything) for a PHP app', () => {
     expect(

@@ -212,11 +212,6 @@ export class ProjectEnvironmentTargets {
   }
 
   assertUsable(target: TargetRow, template: TemplateManifest): void {
-    if (target.kind === 'ssh') {
-      throw new BadRequestException(
-        `Target '${target.name}' uses the legacy SSH runtime and cannot receive new environment assignments. Use an InitPad Agent target instead.`,
-      );
-    }
     const managementState = target.managementState ?? 'active';
     if (target.scope === 'user' && managementState !== 'active') {
       throw new BadRequestException(

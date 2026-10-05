@@ -7,7 +7,7 @@ import { config } from '../../config';
 import { resolvePublicInternetHost } from '../../common/outbound-network-policy';
 
 /**
- * Shared helpers for the SSH/SFTP providers: promisified connect/exec/SFTP,
+ * Shared helpers for the SFTP provider: promisified connect/exec/SFTP,
  * directory upload (as a tar stream or file-by-file) and remote file-system
  * utilities. Kept outside the providers so the adapters themselves stay
  * focused on deployment logic.
@@ -383,11 +383,4 @@ export function sshEnd(conn: Client): void {
   } catch {
     // The connection may already be gone — nothing to do.
   }
-}
-
-// Deterministic slot (0..slots-1) derived from a key — gives each project a
-// stable port on the shared SSH target.
-export function portSlot(key: string, slots: number): number {
-  const hash = createHash('sha1').update(key).digest();
-  return hash[0] % Math.max(1, slots);
 }

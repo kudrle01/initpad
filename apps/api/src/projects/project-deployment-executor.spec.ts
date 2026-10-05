@@ -74,15 +74,12 @@ function make(
     allocation: jest.fn(() => undefined),
   };
   const lifecycle = overrides.lifecycle ?? {
-    usesSharedSshPort: jest.fn(() => false),
-    allocateSharedSshPort: jest.fn(),
     emptyState: jest.fn((statusReason: string | null) => ({
       status: 'empty',
       version: null,
       buildArtifactId: null,
       url: null,
       statusReason,
-      allocatedPort: null,
       activeOperationId: null,
       deploymentRequired: false,
     })),

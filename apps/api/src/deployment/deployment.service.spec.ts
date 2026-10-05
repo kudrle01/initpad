@@ -10,8 +10,7 @@ describe('DeploymentService image lifecycle', () => {
       kind: 'sftp',
       teardown: jest.fn(async () => ({ warning: 'remote cleanup pending' })),
     };
-    const ssh = { kind: 'ssh' };
-    const service = new DeploymentService(docker as never, sftp as never, ssh as never);
+    const service = new DeploymentService(docker as never, sftp as never);
     return { service, docker, sftp };
   }
 

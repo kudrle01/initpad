@@ -58,7 +58,6 @@ export function InfrastructureTargetList({
   );
   const orderedTargets = [...targets].sort((left, right) => {
     const rank = (target: Target) => {
-      if (target.kind === 'ssh') return 3;
       if (target.kind === 'sftp') return 2;
       return target.scope === 'user' ? 0 : 1;
     };

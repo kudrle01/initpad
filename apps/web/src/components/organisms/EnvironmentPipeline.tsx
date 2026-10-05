@@ -46,7 +46,6 @@ const STRIPE: Record<string, string> = {
 
 const PROVIDER_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
-  ssh: Server,
   sftp: Cloud,
 };
 
@@ -189,7 +188,7 @@ export function EnvironmentPipeline({
         // end-to-end bar; a moving highlight communicates activity inside a
         // stage without pretending that elapsed time equals real completion.
         const pct = env.status === 'deploying' ? deploymentProgress(env.statusReason) : null;
-        // Stop/Start only makes sense for process targets (Docker/SSH), not static hosting (SFTP).
+        // Stop/Start only makes sense for Docker workloads, not static hosting (SFTP).
         const canStopStart = env.provider !== 'sftp';
         const hasDeployment = env.status !== 'empty' && !!env.version;
         const cleanupPending = env.status === 'empty' && !!env.statusReason;

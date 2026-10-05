@@ -19,7 +19,6 @@ updates:
     directories:
       - /apps/*
       - /templates/*/files
-      - /infra/fake-vps
     schedule:
       interval: weekly
       day: monday

@@ -136,7 +136,6 @@ export class ProjectDeletion {
           buildArtifactId: null,
           url: null,
           statusReason: warning ? `Cleanup pending: ${warning}` : null,
-          allocatedPort: null,
           activeOperationId: null,
           deploymentRequired: false,
         },

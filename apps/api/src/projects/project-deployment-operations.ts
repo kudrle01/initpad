@@ -126,7 +126,6 @@ export class ProjectDeploymentOperations {
                   version: null,
                   buildArtifactId: null,
                   url: null,
-                  allocatedPort: null,
                   deploymentRequired: false,
                 }
               : {}),

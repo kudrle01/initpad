@@ -71,7 +71,7 @@ export class DockerProvider implements DeploymentProvider {
     input.onProgress?.('Preparing container runtime');
 
     // No fake "running": without a daemon the deployment honestly fails with
-    // a reason (consistent with the SSH/SFTP providers).
+    // a reason (consistent with the SFTP provider).
     if (!(await this.isAvailable())) {
       this.logger.warn('Docker daemon unavailable — deployment failed');
       return {

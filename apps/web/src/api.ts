@@ -43,7 +43,7 @@ export interface EnvConfig {
 // Body for registering / editing a user deployment target.
 export interface TargetInput {
   name: string;
-  kind: 'docker' | 'ssh' | 'sftp';
+  kind: 'docker' | 'sftp';
   routingMode?: 'direct-port' | 'managed-gateway';
   capabilities: RuntimeKind[];
   host?: string;

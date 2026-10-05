@@ -26,8 +26,8 @@ export class UpdateTargetDto {
   name?: string;
 
   @IsOptional()
-  @IsIn(['docker', 'ssh', 'sftp'])
-  kind?: 'docker' | 'ssh' | 'sftp';
+  @IsIn(['docker', 'sftp'])
+  kind?: 'docker' | 'sftp';
 
   @IsOptional()
   @IsIn(['direct-port', 'managed-gateway'])

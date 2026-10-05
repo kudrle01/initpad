@@ -286,30 +286,6 @@ describe('Agent-backed Docker target creation', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it('rejects creation of the deprecated source-based SSH runtime', async () => {
-    const { service, create } = setup();
-
-    await expect(
-      service.create(
-        'owner-1',
-        {
-          name: 'Legacy VPS',
-          kind: 'ssh',
-          capabilities: ['node'],
-          publicUrl: 'https://apps.example.test',
-          host: 'vps.example.test',
-          port: 22,
-          username: 'deploy',
-          auth: 'password',
-          secret: 'secret',
-          remotePath: '/srv/apps',
-        },
-        'workspace-1',
-      ),
-    ).rejects.toThrow('no longer supported');
-    expect(create).not.toHaveBeenCalled();
-  });
-
   it('rejects malformed and link-local remote target hosts', async () => {
     const base = {
       name: 'Shared hosting',

@@ -56,9 +56,8 @@ Self-hosted edice používá vestavěnou Giteu, Gitea Actions a privátní OCI
 registry. GitHub varianta umí přihlášení, instalaci GitHub App, založení nebo
 import repozitáře a převzetí ověřeného Actions artefaktu. Produkční gateway
 režim poskytuje stabilní HTTPS adresu a health-gated přepnutí s rollbackem.
-Původní source-based SSH runtime je pouze migrační legacy konektor: existující
-deploymenty lze dál spravovat, ale nové servery ani prostředí se na něj
-nevážou.
+SFTP zůstává kompatibilní cestou pro statické a PHP aplikace na hostingu, kam
+nelze nainstalovat Agent; obecný vzdálený SSH runtime platforma neposkytuje.
 
 ## Rychlé spuštění
 

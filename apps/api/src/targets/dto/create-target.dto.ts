@@ -19,17 +19,15 @@ const RUNTIMES = ['static', 'node', 'php', 'python'] as const;
 
 // Registers a workspace-owned deployment target. SFTP carries a remote
 // connection; Docker targets are outbound-only and connect through InitPad
-// Agent, so they deliberately accept no host credentials. The `ssh` literal
-// remains parseable only so older clients receive the service's explicit
-// migration error instead of a generic validation failure.
+// Agent, so they deliberately accept no host credentials.
 export class CreateTargetDto {
   @IsString()
   @MinLength(2)
   @MaxLength(80)
   name!: string;
 
-  @IsIn(['docker', 'ssh', 'sftp'])
-  kind!: 'docker' | 'ssh' | 'sftp';
+  @IsIn(['docker', 'sftp'])
+  kind!: 'docker' | 'sftp';
 
   @IsOptional()
   @IsIn(['direct-port', 'managed-gateway'])
@@ -77,7 +75,7 @@ export class CreateTargetDto {
   })
   hostKeyFingerprint?: string;
 
-  // Writable root on the remote (SFTP web dir; legacy SSH deploy dir).
+  // Writable root on the remote SFTP host.
   @ValidateIf((dto: CreateTargetDto) => dto.kind !== 'docker')
   @IsString()
   @Matches(/^(?!.*(?:^|\/)\.\.(?:\/|$))\/[A-Za-z0-9._/-]+$/, {

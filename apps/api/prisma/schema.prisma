@@ -344,10 +344,10 @@ model AuditEvent {
 }
 
 // A first-class deployment target: a place an environment can deploy to.
-// "Everything is a target" — the built-in simulated infrastructure (Docker,
-// the SSH VPS, the SFTP static host) is seeded as `builtin` targets, and users
-// register their own servers (e.g. a school SFTP host, a VPS) as `user`
-// targets. An Environment references one Target.
+// "Everything is a target" — the built-in simulated infrastructure (Docker
+// and the SFTP static host) is seeded as `builtin` targets, and users register
+// their own Agent-backed Docker servers or SFTP hosting as `user` targets. An
+// Environment references one Target.
 //
 // Built-in targets carry only display metadata; their live connection details
 // come from config (single source of truth for the simulated infra), so the
@@ -356,7 +356,7 @@ model AuditEvent {
 model Target {
   id                       String             @id @default(uuid())
   name                     String
-  kind                     String // 'docker' | 'ssh' | 'sftp'
+  kind                     String // 'docker' | 'sftp'
   scope                    String // 'builtin' | 'user'
   // What runtimes this target can execute (comma-separated): a subset of
   // 'static','node','php','python'. An environment can bind to a target only
@@ -455,7 +455,7 @@ model TargetAllocation {
   workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId     String
   // Isolating prefix for this workspace on the (possibly shared) target:
-  // a container-name prefix for docker/ssh, the releases root for sftp.
+  // a container-name prefix for Docker, the releases root for SFTP.
   namespace       String
   rootPath        String?
   // Public address apps deployed through this allocation are reached at.
@@ -582,12 +582,6 @@ model Environment {
   // published successfully. Distinguishes the UI action Deploy from an idle,
   // explicitly cancelled first run (Run again).
   deploymentRequired Boolean @default(false)
-  // Application port allocated on the shared SSH target (fake-vps). Assigned
-  // from a configured range on the first SSH deploy, released on teardown.
-  // The unique constraint makes port collisions impossible by construction
-  // (Postgres allows multiple NULLs in a unique column).
-  allocatedPort      Int?    @unique
-
   // The deployment target this environment runs on. dev/test point at a
   // built-in target (the simulated infra); prod points at a built-in or a
   // user-registered target. `provider` mirrors target.kind (denormalised for
@@ -661,8 +655,8 @@ model GatewayRoute {
 // Runtime configuration and secrets for a deployed application (ADR-061),
 // scoped to a single Environment. Non-secret values are stored in clear for
 // editing; secret values are encrypted at rest (INITPAD_ENCRYPTION_KEY) and are
-// never returned in plaintext by the API. Applied to the app at deploy time
-// (Docker Env / SSH runtime), never baked into the build-once image.
+// never returned in plaintext by the API. Applied to the Docker workload at
+// deploy time, never baked into the build-once image.
 model AppConfigVar {
   id            String      @id @default(uuid())
   environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)

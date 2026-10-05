@@ -12,7 +12,6 @@ import {
 } from './deployment-provider.interface';
 import { DockerProvider } from './providers/docker.provider';
 import { SftpProvider } from './providers/sftp.provider';
-import { SshProvider } from './providers/ssh.provider';
 import { inspectSshHostKey } from './providers/ssh-utils';
 
 /**
@@ -24,12 +23,11 @@ export class DeploymentService {
   private readonly registry: Map<ProviderKind, DeploymentProvider>;
   private readonly docker: DockerProvider;
 
-  constructor(docker: DockerProvider, sftp: SftpProvider, ssh: SshProvider) {
+  constructor(docker: DockerProvider, sftp: SftpProvider) {
     this.docker = docker;
     this.registry = new Map<ProviderKind, DeploymentProvider>([
       [docker.kind, docker],
       [sftp.kind, sftp],
-      [ssh.kind, ssh],
     ]);
   }
 
@@ -47,7 +45,7 @@ export class DeploymentService {
     try {
       return await this.registry.get(provider)?.teardown?.(input);
     } finally {
-      // SFTP and SSH deployments can also pull/extract the CI image locally.
+      // SFTP deployments can also pull/extract the CI image locally.
       // Releasing an environment therefore always releases its exact local
       // image cache entry, independently of where the workload was deployed.
       if (input.imageRef) await this.docker.cleanupImage(input.imageRef);

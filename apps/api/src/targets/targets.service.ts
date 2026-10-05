@@ -140,7 +140,6 @@ function changedTargetFields(
 
 // Stable ids for the seeded built-in targets (the simulated infrastructure).
 export const BUILTIN_DOCKER = 'builtin-docker';
-export const BUILTIN_SSH = 'builtin-ssh';
 export const BUILTIN_SFTP = 'builtin-sftp';
 
 // Structural shape of a Target row (avoids importing the generated Prisma type).
@@ -207,10 +206,10 @@ export class TargetsService implements OnModuleInit {
     if (config.edition === 'self-hosted') await this.seedBuiltins();
   }
 
-  // Upserts the three built-in targets from config. Idempotent — safe on every
+  // Upserts the two built-in targets from config. Idempotent — safe on every
   // boot; connection details for these come from config at deploy time.
   private async seedBuiltins(): Promise<void> {
-    const { ssh, sftp } = config.providers;
+    const { sftp } = config.providers;
     const builtins: Array<Omit<TargetRow, 'verifiedAt' | 'createdAt' | 'agent'>> = [
       {
         id: BUILTIN_DOCKER,
@@ -225,24 +224,6 @@ export class TargetsService implements OnModuleInit {
         secret: null,
         hostKeyFingerprint: null,
         remotePath: null,
-        publicUrl: null,
-        routingMode: 'direct-port',
-        ownerId: null,
-        workspaceId: null,
-      },
-      {
-        id: BUILTIN_SSH,
-        name: 'Legacy VPS (SSH)',
-        kind: 'ssh',
-        scope: 'builtin',
-        capabilities: 'node',
-        host: ssh.host,
-        port: ssh.port,
-        username: ssh.username,
-        auth: 'password',
-        secret: null,
-        hostKeyFingerprint: null,
-        remotePath: ssh.remoteRoot,
         publicUrl: null,
         routingMode: 'direct-port',
         ownerId: null,
@@ -304,7 +285,7 @@ export class TargetsService implements OnModuleInit {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const rows = (await this.prisma.target.findMany({
       // Built-ins live inside one self-hosted installation. A public SaaS
-      // control plane cannot deploy into its own local Docker/SSH demo stack;
+      // control plane cannot deploy into its own local demo stack;
       // only targets explicitly owned by the active workspace are real there.
       where:
         config.edition === 'saas'
@@ -370,11 +351,6 @@ export class TargetsService implements OnModuleInit {
   ): Promise<Target> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspaceId, 'maintain');
-    if (dto.kind === 'ssh') {
-      throw new BadRequestException(
-        'New SSH runtime targets are no longer supported. Use an InitPad Agent for Docker workloads or SFTP for shared web hosting.',
-      );
-    }
     const agentBacked = dto.kind === 'docker';
     const routingMode = agentBacked ? (dto.routingMode ?? 'direct-port') : 'direct-port';
     let publicUrl = dto.publicUrl;

@@ -95,7 +95,7 @@ const template = {
   language: 'TypeScript',
   runtime: 'node',
   artifact: 'runtime',
-  compatibleProviders: ['docker', 'ssh'],
+  compatibleProviders: ['docker'],
   description: 'test',
 };
 const dockerTarget = {

@@ -180,12 +180,8 @@ services:
       INITPAD_CI_REGISTRY_HOST: ${INITPAD_CI_REGISTRY_HOST:-host.docker.internal:3001}
       INITPAD_PLATFORM_INTERNAL_URL: http://host.docker.internal:${INITPAD_WEB_PORT:-8080}
       # Simulated deployment targets (service names inside the compose net).
-      # The credentials MUST match how fake-vps/fake-sftp were created below,
+      # The credentials MUST match how fake-sftp was created below,
       # otherwise the API authenticates with the wrong password.
-      INITPAD_SSH_HOST: fake-vps
-      INITPAD_SSH_PORT: '2222'
-      INITPAD_SSH_USER: deploy
-      INITPAD_SSH_PASSWORD: ${INITPAD_SSH_PASSWORD:-deploy}
       INITPAD_SFTP_HOST: fake-sftp
       INITPAD_SFTP_PORT: '22'
       INITPAD_SFTP_USER: deploy
@@ -421,21 +417,6 @@ services:
     mem_limit: 96m
     cpus: 0.5
     pids_limit: 100
-    restart: unless-stopped
-
-  fake-vps:
-    build: ../infra/fake-vps
-    environment:
-      PUID: '1000'
-      PGID: '1000'
-      USER_NAME: deploy
-      USER_PASSWORD: ${INITPAD_SSH_PASSWORD:-deploy}
-      PASSWORD_ACCESS: 'true'
-      SUDO_ACCESS: 'false'
-    ports:
-      # App ports published 1:1 — must match INITPAD_SSH_APP_PORT_* config.
-      - '8090-8189:8090-8189'
-    networks: [net-prod]
     restart: unless-stopped
 
   # --- reverse proxy with automatic HTTPS (server installs only) -----------

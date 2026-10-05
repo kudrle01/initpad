@@ -1,6 +1,6 @@
 export type ArtifactKind = 'static' | 'runtime';
 
-export type ProviderKind = 'docker' | 'sftp' | 'ssh';
+export type ProviderKind = 'docker' | 'sftp';
 
 // What a template needs in order to run — matched against a target's
 // capabilities when binding an environment to a target.
@@ -28,15 +28,12 @@ export interface TemplateManifest {
   // The runtime the app needs (used for target-capability matching). Defaults
   // to 'static' for static artifacts and 'node' otherwise when omitted.
   runtime?: RuntimeKind;
-  // Target kinds acceptable for this template (docker/ssh/sftp). A concrete
+  // Target kinds acceptable for this template (docker/sftp). A concrete
   // target must additionally be able to run `runtime` (see Target.capabilities).
   compatibleProviders: ProviderKind[];
   port?: number;
   // Path used for the post-deploy health check (defaults to '/health').
   healthPath?: string;
-  // Command retained for already-bound legacy source-based SSH deployments.
-  // New runtime assignments use an Agent-backed Docker target.
-  startCommand?: string;
   // Subdirectory containing the build artifact for static deployments
   // (e.g. 'dist'). When omitted, the repository root is deployed.
   artifactDir?: string;

@@ -1,7 +1,7 @@
 # Self-hosted acceptance na Ubuntu VM
 
 Tento scénář ověřuje **self-hosted edici** InitPadu s vestavěnou Giteou,
-Gitea Actions runnerem, object storem a simulovanými Docker/SSH/SFTP targety.
+Gitea Actions runnerem, object storem a simulovanými Docker/SFTP targety.
 Agent běží na odděleném Docker hostu a má vlastní clean-host runbook, na který
 tento scénář v závěru odkazuje. Veřejný SaaS se zde neověřuje.
 
@@ -226,7 +226,7 @@ změň `INITPAD_PUBLIC_URL` i `INITPAD_GITEA_PUBLIC_URL` v `.env`, spusť
 `./install.sh` a obnov stránku. Instalátor zachová existující Gitea identity,
 ale znovu načte OIDC endpointy a podle potřeby přeregistruje CI runner.
 Existující karta musí ukázat novou IP bez nového deploymentu; uživatelské
-SFTP/SSH URL se změnit nesmí. Běžící konfiguraci ověř:
+SFTP URL se změnit nesmí. Běžící konfiguraci ověř:
 
 ```bash
 grep -E '^INITPAD_(PUBLIC_URL|GITEA_PUBLIC_URL)=' .env

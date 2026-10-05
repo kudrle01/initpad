@@ -179,11 +179,6 @@ export class TargetAllocationsService {
     ) {
       throw new NotFoundException(`Target '${dto.targetId}' not found`);
     }
-    if (target.kind === 'ssh') {
-      throw new BadRequestException(
-        'New workspace access cannot be enabled for a legacy SSH runtime target',
-      );
-    }
     if (target.scope === 'user' && (target.managementState ?? 'active') !== 'active') {
       throw new BadRequestException(
         `Server '${target.name}' is ${target.managementState}; restore and reconnect it before enabling workspace access`,
@@ -359,7 +354,7 @@ export class TargetAllocationsService {
     } catch {
       throw new BadRequestException('Workspace public URL must be a clean HTTP(S) address');
     }
-    if (config.edition !== 'saas' || !['sftp', 'ssh'].includes(targetKind)) return;
+    if (config.edition !== 'saas' || targetKind !== 'sftp') return;
     try {
       await resolvePublicInternetHost(hostname);
     } catch (error) {

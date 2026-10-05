@@ -185,24 +185,8 @@ export const config = {
     pidsLimit: Number(process.env.INITPAD_DEPLOY_PIDS_LIMIT || 256),
   },
   // Non-Docker deployment targets (simulated company infrastructure). Must
-  // match infra/docker-compose.yml (published ports of fake-vps / fake-sftp
-  // / nginx).
+  // match infra/docker-compose.yml (published ports of fake-sftp / nginx).
   providers: {
-    // Runtime apps over SSH → the fake-vps container (sshd + Node).
-    ssh: {
-      host: process.env.INITPAD_SSH_HOST || 'localhost',
-      port: Number(process.env.INITPAD_SSH_PORT || 2200),
-      username: process.env.INITPAD_SSH_USER || 'deploy',
-      password: process.env.INITPAD_SSH_PASSWORD || 'deploy',
-      // Root for release directories on the remote host (the SSH user's home).
-      remoteRoot: process.env.INITPAD_SSH_REMOTE_ROOT || '/config/deploys',
-      // Host port range mapped 1:1 onto fake-vps. Ports are allocated from
-      // this range in the database (Environment.allocatedPort), so every SSH
-      // deployment gets a unique port. Must match the range published in
-      // infra/docker-compose.yml.
-      appPortBase: Number(process.env.INITPAD_SSH_APP_PORT_BASE || 8090),
-      appPortSlots: Number(process.env.INITPAD_SSH_APP_PORT_SLOTS || 100),
-    },
     // Static/PHP apps over SFTP → the fake-sftp container; served by nginx.
     sftp: {
       host: process.env.INITPAD_SFTP_HOST || 'localhost',

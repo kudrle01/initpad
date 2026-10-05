@@ -25,7 +25,6 @@ import type { EnvName, Environment, ProviderKind, Project } from '@/types';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
-  ssh: Server,
   sftp: Cloud,
 };
 

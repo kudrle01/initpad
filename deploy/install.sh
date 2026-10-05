@@ -240,7 +240,7 @@ DOMAIN=$(get_env INITPAD_DOMAIN || true)
 
 # ---- 2. core services -------------------------------------------------------
 say "Starting core services (postgres, gitea, deployment targets)"
-$COMPOSE up -d postgres gitea fake-vps fake-sftp static-web
+$COMPOSE up -d postgres gitea fake-sftp static-web
 
 say "Waiting for PostgreSQL"
 wait_healthy postgres 30

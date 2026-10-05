@@ -128,7 +128,7 @@ describe('ProjectDeploymentPreparation', () => {
     expect(existsSync(extractedDir)).toBe(false);
   });
 
-  it('cleans a downloaded source archive when config loading fails', async () => {
+  it('cleans a downloaded source archive when Docker bootstrap config loading fails', async () => {
     const cleanup = jest.fn();
     const scm = {
       downloadArchive: jest.fn(async () => ({ dir: '/tmp/source', cleanup })),
@@ -143,14 +143,14 @@ describe('ProjectDeploymentPreparation', () => {
     await expect(
       preparation.prepare(
         input({
-          provider: 'ssh',
-          useRegistry: true,
+          provider: 'docker',
+          useRegistry: false,
           template: {
             id: 'node',
             name: 'Node',
             language: 'TypeScript',
             artifact: 'runtime',
-            compatibleProviders: ['ssh'],
+            compatibleProviders: ['docker'],
             description: 'Node service',
           },
         }),

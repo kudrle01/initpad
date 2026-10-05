@@ -1962,7 +1962,6 @@ export class ProjectsService {
             buildArtifactId: null,
             url: null,
             statusReason: `Cleanup pending: ${teardown.warning}`,
-            allocatedPort: null,
           },
         });
         throw new BadRequestException(
@@ -1982,7 +1981,6 @@ export class ProjectsService {
               status: 'empty',
               url: null,
               statusReason: null,
-              allocatedPort: null,
             }
           : {}),
         ...(targetChanged ? { deploymentRequired: true } : {}),

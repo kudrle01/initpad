@@ -22,7 +22,7 @@ stabilní.
 | [ADR-009](./ADR-009.md) | Superseded | Reálné SSH a SFTP nasazení (heterogenní cíle) |
 | [ADR-010](./ADR-010.md) | Accepted | „Connect Git": jednorázové nastavení přístupu ke klonování |
 | [ADR-011](./ADR-011.md) | Accepted | Hardening source-based nasazení (izolace, integrita verzí, vlastnictví) |
-| [ADR-012](./ADR-012.md) | Deprecated | Přidělování aplikačních portů z databáze (SSH cíl) |
+| [ADR-012](./ADR-012.md) | Superseded | Přidělování aplikačních portů z databáze (SSH cíl) |
 | [ADR-013](./ADR-013.md) | Accepted | Trunk-based development + promotion artefaktu (ne environment branches) |
 | [ADR-014](./ADR-014.md) | Accepted | Bezstavové zacházení se zdrojáky (žádné trvalé lokální kopie) |
 | [ADR-015](./ADR-015.md) | Accepted | Instalace jedním příkazem (plně kontejnerizovaný stack + bootstrap) |
@@ -105,7 +105,7 @@ stabilní.
 | [ADR-092](./ADR-092.md) | Accepted | Agent je výchozí správa Docker targetu, nikoli jediný konektor |
 | [ADR-093](./ADR-093.md) | Accepted | Agent release je tag-gated, multi-arch a ověřitelný bez důvěry v tag |
 | [ADR-094](./ADR-094.md) | Accepted | Navigace kopíruje uživatelské úlohy a scope nastavení |
-| [ADR-095](./ADR-095.md) | Accepted | Docker je Agent-first, SFTP kompatibilní a SSH runtime pouze migrační |
+| [ADR-095](./ADR-095.md) | Superseded | Docker je Agent-first, SFTP kompatibilní a SSH runtime pouze migrační |
 | [ADR-096](./ADR-096.md) | Accepted | Agent credential se rotuje dvoufázově s potvrzením nové generace |
 | [ADR-097](./ADR-097.md) | Accepted | Statická kontrola je povinná, type-aware a odděluje produkční kód od test doubles |
 | [ADR-098](./ADR-098.md) | Accepted | Údržba projektů má vlastní lifecycle a reconciliation hranici |
@@ -141,3 +141,4 @@ stabilní.
 | [ADR-128](./ADR-128.md) | Accepted | Artifact ingestion používá vlastní generační execution lease |
 | [ADR-129](./ADR-129.md) | Accepted | Sdílený artifact fence a operation-backed lifecycle uzavírají mutační hranici |
 | [ADR-130](./ADR-130.md) | Accepted | API exportuje traces a metriky přes explicitní OTLP hranici |
+| [ADR-131](./ADR-131.md) | Accepted | Source-based SSH runtime je odstraněn, SFTP zůstává kompatibilní konektor |

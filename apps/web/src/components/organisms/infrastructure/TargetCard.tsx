@@ -30,7 +30,6 @@ import type { ProviderKind, Target } from '@/types';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
-  ssh: Server,
   sftp: Cloud,
 };
 
@@ -126,7 +125,6 @@ export function TargetCard({
   const agentState = target.agent?.state ?? 'not-enrolled';
   const managementState = target.managementState ?? 'active';
   const unavailable = managementState !== 'active';
-  const legacySsh = target.kind === 'ssh';
   const accessDisabled = allocation?.status === 'disabled';
   const usage = allocation?.usage ?? target.usage ?? [];
 
@@ -150,30 +148,14 @@ export function TargetCard({
               <div className="mt-0.5 text-xs text-muted-foreground">
                 {isAgentTarget
                   ? 'INITPAD AGENT · Workspace server'
-                  : legacySsh
-                    ? 'SSH · Legacy connector'
-                    : target.kind === 'docker'
-                      ? 'DOCKER · Self-hosted direct'
-                      : `SFTP · ${target.scope === 'builtin' ? 'Self-hosted demo' : 'Shared web hosting'}`}
+                  : target.kind === 'docker'
+                    ? 'DOCKER · Self-hosted direct'
+                    : `SFTP · ${target.scope === 'builtin' ? 'Self-hosted demo' : 'Shared web hosting'}`}
               </div>
             </div>
           </div>
           <TargetState target={target} />
         </div>
-
-        {legacySsh && (
-          <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <div>
-              <p className="font-medium text-foreground">Legacy SSH runtime</p>
-              <p className="mt-0.5 text-muted-foreground">
-                Existing deployments can remain online and be maintained. New environment
-                assignments are disabled; use an Agent-backed Docker server for runtime
-                applications.
-              </p>
-            </div>
-          </div>
-        )}
 
         {isAgentTarget && agentState === 'offline' && managementState === 'active' && (
           <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
@@ -345,16 +327,12 @@ export function TargetCard({
         ) : (
           <div className="mt-4 flex flex-col gap-3 rounded-md border border-dashed border-border bg-card/60 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-medium text-foreground">
-                {legacySsh ? 'Legacy access unavailable' : 'Not enabled for this workspace'}
-              </p>
+              <p className="text-sm font-medium text-foreground">Not enabled for this workspace</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {legacySsh
-                  ? 'New workspace access is disabled. Existing SSH deployments remain visible for migration.'
-                  : 'Enable access before assigning environments to this server.'}
+                Enable access before assigning environments to this server.
               </p>
             </div>
-            {canManageAccess && !legacySsh && (
+            {canManageAccess && (
               <Button
                 size="sm"
                 disabled={busy || unavailable}

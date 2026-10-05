@@ -128,9 +128,6 @@ export class ProjectDeploymentExecutor {
       return false;
     }
 
-    const appPort = this.environmentLifecycle.usesSharedSshPort(environment)
-      ? await this.environmentLifecycle.allocateSharedSshPort(projectId, envName)
-      : undefined;
     const reportProgress = (message: string) =>
       this.operations.reportProgress(operationId, projectId, envName, message);
     const prepared = await this.preparation.prepare({
@@ -154,12 +151,10 @@ export class ProjectDeploymentExecutor {
         repoPath: prepared.repoPath,
         port: template.port,
         healthPath: template.healthPath ?? '/health',
-        startCommand: template.startCommand,
         artifactDir: prepared.artifactDir,
         webRoot: template.webRoot,
         protectedWebLayout: prepared.protectedWebLayout,
         writableDirs: prepared.writableDirs,
-        appPort,
         onProgress: reportProgress,
         connection: this.targets.connection(environment),
         allocation,

@@ -28,7 +28,6 @@ import type {
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
-  ssh: Server,
   sftp: Cloud,
 };
 
@@ -152,12 +151,7 @@ export function TargetPickerDialog({
                     {isCurrent && (
                       <span className="text-[11px] text-muted-foreground">current</span>
                     )}
-                    {t.kind === 'ssh' && (
-                      <span className="text-[11px] font-medium text-warning">
-                        legacy · move away
-                      </span>
-                    )}
-                    {t.kind !== 'ssh' && !targetIsReady(t) && (
+                    {!targetIsReady(t) && (
                       <span className="text-[11px] text-warning">
                         {t.scope === 'user' && t.managementState === 'retired'
                           ? 'retired'

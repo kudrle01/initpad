@@ -231,7 +231,7 @@ export default function Infrastructure() {
         'Existing applications and their public URLs are left untouched.',
         target.kind === 'docker'
           ? 'The Agent credential and unused enrollment token are revoked.'
-          : 'The stored SSH/SFTP credential is permanently removed.',
+          : 'The stored SFTP credential is permanently removed.',
         'Deploy, start, stop, diagnostics and cleanup remain unavailable until this server is reconnected.',
       ],
     });

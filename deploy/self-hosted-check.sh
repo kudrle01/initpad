@@ -262,7 +262,7 @@ check_running() {
   "${COMPOSE[@]}" config --quiet
 
   local service domain web_port response mapping channel running_version users
-  for service in postgres minio gitea api web supervisor runner-docker act_runner fake-vps fake-sftp static-web; do
+  for service in postgres minio gitea api web supervisor runner-docker act_runner fake-sftp static-web; do
     assert_service "$service"
   done
   domain=$(get_env INITPAD_DOMAIN)

@@ -20,7 +20,7 @@ export function targetSupports(target: Target, template: TemplateManifest): bool
 }
 
 export function targetAcceptsNewAssignments(target: Target): boolean {
-  return target.kind !== 'ssh';
+  return target.scope === 'builtin' || (target.managementState ?? 'active') === 'active';
 }
 
 export function targetIsReady(target: Target): boolean {

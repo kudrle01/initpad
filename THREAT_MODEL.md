@@ -62,7 +62,7 @@ konfiguraci v paměti.
 - Validace DTO pomocí allow-listu, omezené délky, kontroly politik workspace a
   validace endpointu a cesty targetu snižují riziko injection, IDOR a vyčerpání
   zdrojů.
-- Uživatelsky spravovaná spojení SSH/SFTP připínají otisk SHA-256 hostitelského
+- Uživatelsky spravovaná spojení SFTP přes SSH připínají otisk SHA-256 hostitelského
   klíče serveru OpenSSH. Změněná nebo chybějící identita spojení zastaví, místo
   aby se tiše důvěřovalo náhradnímu hostu. Nová nasazení s přímými porty se vážou
   pouze na loopback, pokud je administrátor výslovně nezpřístupní.
@@ -114,7 +114,7 @@ konfiguraci v paměti.
   krátkodobé, jednorázové a uložené v PostgreSQL pouze jako SHA-256 hashe.
   Aktivní tok proto může bezpečně dokončit jiná replika i po restartu procesu;
   plaintext browserové a bearer hodnoty se do databáze neukládají.
-- Registrované hosty SSH/SFTP jsou mocnými odchozími cíli. Syntaxe hostu,
+- Registrované hosty SFTP jsou mocnými odchozími cíli. Syntaxe hostu,
   rezervované lokální a link-local adresy i credentials v URL se odmítají,
   zatímco cíle RFC1918 zůstávají povolené pro zamýšlené použití v LAN školy nebo
   firmy. Tato výjimka platí pouze pro důvěryhodnou self-hosted edici. Hostovaná

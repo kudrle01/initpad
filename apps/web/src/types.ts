@@ -208,7 +208,7 @@ export interface LinkedIdentity {
   canUnlink: boolean;
 }
 
-export type ProviderKind = 'docker' | 'sftp' | 'ssh';
+export type ProviderKind = 'docker' | 'sftp';
 export type RuntimeKind = 'static' | 'node' | 'php' | 'python';
 export type TargetScope = 'builtin' | 'user';
 export type TargetRoutingMode = 'direct-port' | 'managed-gateway';
@@ -300,8 +300,6 @@ export interface TemplateManifest {
   // Runtime the app needs — matched against a target's capabilities.
   runtime?: RuntimeKind;
   compatibleProviders: ProviderKind[];
-  // Template properties for source-based deployments (informational in the UI).
-  startCommand?: string;
   artifactDir?: string;
   description: string;
 }

@@ -1,8 +1,8 @@
 import { ProviderKind } from '../domain/types';
 
 // Connection to a user-provided deployment target (typically prod: an externally
-// managed server, e.g. a school SFTP host or a VPS over SSH). When absent, the provider
-// uses the platform's built-in demo target (fake-vps / fake-sftp).
+// managed SFTP host). When absent, the provider uses the platform's built-in
+// fake-sftp target.
 export interface ProviderConnection {
   host: string;
   port: number;
@@ -10,10 +10,10 @@ export interface ProviderConnection {
   password?: string;
   privateKey?: string;
   // OpenSSH-style SHA-256 host-key fingerprint (SHA256:<base64>, no padding).
-  // Required for user-managed SSH/SFTP targets; omitted only for built-in lab
+  // Required for user-managed SFTP targets; omitted only for built-in lab
   // services that live inside the trusted self-hosted Compose network.
   hostKeyFingerprint?: string;
-  // Writable root on the remote (SFTP: web dir; SSH: deploy dir).
+  // Writable web root on the remote SFTP host.
   remoteRoot: string;
   // Public URL where the deployed app/site is reachable (used for the health
   // check and shown to the user). The user knows their own server's address.
@@ -56,9 +56,6 @@ export interface DeployInput {
   // deployments keep this false → strict build-once: if the tested image is
   // missing, the deployment fails rather than running a different artifact.
   allowBuildFallback?: boolean;
-  // Command that starts the app for source-based deployments (from the
-  // template manifest).
-  startCommand?: string;
   // Subdirectory containing the artifact for static deployments (from the
   // template manifest).
   artifactDir?: string;
@@ -72,10 +69,6 @@ export interface DeployInput {
   // Directories prepared for the remote web runtime after an SFTP upload
   // (framework runtime dirs, e.g. Nette 'temp'/'log').
   writableDirs?: string[];
-  // Application port allocated by the platform for source-based deployments
-  // on a shared host (SSH). Allocated from the database, so it is unique
-  // across all environments.
-  appPort?: number;
   // Optional progress reporter — the provider calls it with a short
   // human-readable stage/step (e.g. 'Uploading 340/1200 files') so the platform
   // can surface live deploy progress in the UI.
@@ -126,10 +119,6 @@ export interface StartInput {
   healthPath?: string;
   // Version that was last deployed (SFTP re-links the release symlink to it).
   version?: string;
-  // Command that starts the app for source-based deployments (SSH).
-  startCommand?: string;
-  // Application port allocated by the platform (see DeployInput.appPort).
-  appPort?: number;
   // User target for this environment (prod); absent → platform demo target.
   connection?: ProviderConnection;
   allocation?: DeploymentAllocation;
@@ -137,7 +126,7 @@ export interface StartInput {
 
 /**
  * Pluggable deployment adapter. The platform delegates the "where and how"
- * of a deployment to a concrete implementation (Docker, SFTP, SSH).
+ * of a deployment to a concrete implementation (Docker or SFTP).
  * Supporting a new target means implementing this interface.
  */
 export interface DeploymentProvider {

@@ -785,7 +785,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
   Rutinní vratné akce zůstávají bez nadbytečného potvrzování; celý projekt nebo
   workspace navíc vyžadují opsání názvu.
 - ✅ **Průřezový lifecycle správy targetu.** `Disconnect` a `Retire` ruší
-  Agent/SSH/SFTP důvěru bez teardownu běžících workloadů; `Restore` vyžaduje
+  důvěru Agenta nebo SFTP bez teardownu běžících workloadů; `Restore` vyžaduje
   nový enrollment nebo credential a ověření. Neaktivní target nepřijímá žádné
   management operace ani nové allocation, zatímco projektové vazby, URL a
   historie zůstávají pravdivě viditelné. Infrastructure vypisuje přesné
@@ -1069,7 +1069,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
       změně SFTP targetu či jeho allocation překládá hostname a odmítne celou
       odpověď, pokud kterýkoli A/AAAA záznam míří na loopback, private,
       link-local, metadata, dokumentační, multicast nebo jiný neglobální
-      rozsah. Stejná kontrola se opakuje těsně před každým hosted SSH/SFTP a
+      rozsah. Stejná kontrola se opakuje těsně před každým hosted SFTP a
       HTTP spojením; socket dostane přímo schválenou IP, takže nenastane druhý
       DNS lookup. Health/protection probe má timeout, nestahuje body, nesleduje
       redirect a u HTTPS stále ověřuje certifikát vůči původnímu hostname
@@ -1181,12 +1181,11 @@ jen konkrétní provozní a vyhodnocovací scénář.
          má samostatnou administraci. Vytvoření projektu zůstává výraznou akcí
          v obsahu, ne duplicitním cílem navigace (ADR-094).
        - ✅ **8e-d-c2 — provider policy a dokončení Agent-first UX.** Nový
-         Docker server vždy používá outbound InitPad Agent a SFTP je explicitní
-         kompatibilní cesta pro shared PHP/static hosting. Vestavěný přímý
-         Docker se vytváří a zpřístupňuje jen v self-hosted edici. Zdrojový SSH
-         runtime je migrační legacy provider: existující vazby zůstávají
-         provozovatelné, ale nelze vytvořit nový target, allocation ani na něj
-         nově přiřadit prostředí (ADR-095).
+       Docker server vždy používá outbound InitPad Agent a SFTP je explicitní
+       kompatibilní cesta pro shared PHP/static hosting. Vestavěný přímý
+         Docker se vytváří a zpřístupňuje jen v self-hosted edici. Původní
+         source-based SSH runtime, portový allocator a simulovaný VPS byly po
+         dokončení migrace odstraněny (ADR-131).
      - ◐ **8e-d-d — dokumentace release kandidáta.** Aktuální implementaci,
        hranice edic, hlavní datové a delivery toky popisuje
        `docs/ARCHITECTURE.md`; `docs/RELEASE_READINESS.md` otevřeně odděluje

@@ -2,7 +2,6 @@ import type { SFTPWrapper } from 'ssh2';
 import {
   assertSftpWritable,
   normalizeHostKeyFingerprint,
-  portSlot,
   sftpRmrf,
   shellQuote,
   sshHostKeyAlgorithm,
@@ -28,20 +27,6 @@ describe('SSH host identity', () => {
 
     expect(sshHostKeyAlgorithm(key)).toBe('ssh-ed25519');
     expect(() => sshHostKeyAlgorithm(Buffer.from([0, 0, 1, 0]))).toThrow('malformed');
-  });
-});
-
-describe('portSlot', () => {
-  it('is within [0, slots)', () => {
-    for (const key of ['a-dev', 'b-test', 'c-prod', 'my-project-prod']) {
-      const slot = portSlot(key, 100);
-      expect(slot).toBeGreaterThanOrEqual(0);
-      expect(slot).toBeLessThan(100);
-    }
-  });
-
-  it('is deterministic for the same key', () => {
-    expect(portSlot('proj-dev', 50)).toBe(portSlot('proj-dev', 50));
   });
 });
 

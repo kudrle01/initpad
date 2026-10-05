@@ -42,7 +42,7 @@ function defaultCapabilities(kind: ProviderKind): RuntimeKind[] {
   // The primary SFTP use case is shared PHP hosting (ESO included). Keeping
   // both choices visible below still lets the user opt into static-only.
   if (kind === 'docker') return ['static', 'node', 'php', 'python'];
-  return kind === 'sftp' ? ['static', 'php'] : ['node'];
+  return ['static', 'php'];
 }
 
 function validManagedGatewayOrigin(value: string): boolean {
@@ -82,7 +82,6 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
   const confirmAction = useConfirmation();
   const toast = useToast();
   const editing = !!target;
-  const legacySsh = target?.kind === 'ssh';
   const reconnectingRemote = Boolean(
     target && target.kind !== 'docker' && target.managementState !== 'active',
   );
@@ -252,25 +251,11 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           <DialogDescription>
             {kind === 'docker'
               ? 'Recommended for application workloads. The server connects outbound through InitPad Agent; no inbound SSH credential is stored.'
-              : kind === 'sftp'
-                ? 'Compatibility option for shared PHP or static hosting. Connection credentials are encrypted at rest.'
-                : 'Legacy source-based SSH connection. Existing servers remain manageable while their workloads are migrated.'}
+              : 'Compatibility option for shared PHP or static hosting. Connection credentials are encrypted at rest.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {legacySsh && (
-            <div className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm sm:col-span-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-              <div>
-                <p className="font-medium">Legacy SSH runtime</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Existing deployments keep working, but new environments cannot be assigned here.
-                  Move runtime applications to an Agent-backed Docker server.
-                </p>
-              </div>
-            </div>
-          )}
           {requiresReconnectCredential && (
             <div className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm sm:col-span-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -303,7 +288,6 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             >
               <option value="docker">InitPad Agent for Docker (recommended)</option>
               <option value="sftp">SFTP shared web hosting</option>
-              {legacySsh && <option value="ssh">Legacy SSH runtime (existing only)</option>}
             </select>
           </div>
           {kind !== 'docker' && (
