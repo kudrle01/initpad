@@ -358,6 +358,11 @@ function requireSaasConfig(): void {
   if (config.github.webhookSecret.length < 32) {
     throw new Error('INITPAD_GITHUB_WEBHOOK_SECRET must contain at least 32 characters');
   }
+  if (config.http.trustProxyHops !== 2) {
+    throw new Error(
+      'SaaS edition requires INITPAD_TRUST_PROXY_HOPS=2 for public edge -> web proxy -> API',
+    );
+  }
 }
 
 export function validateConfig(): void {

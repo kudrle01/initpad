@@ -15,6 +15,10 @@ používat jako první test obnovy na produkčních datech.
   Head/Get/Put/Delete jako životní cyklus artefaktů InitPadu.
 - Nastavte důvěryhodný veřejný HTTPS origin a spusťte `api` i `web` za
   zamýšleným edge proxy.
+- Dodržte jedinou podporovanou proxy cestu `klient -> veřejný edge/WAF -> web
+  proxy -> API` s `INITPAD_TRUST_PROXY_HOPS=2`. Edge musí zahodit klientské
+  `Forwarded` a `X-Forwarded-*` hlavičky a vytvořit vlastní řetězec z adresy
+  spojení. Port webu zůstává svázaný s `127.0.0.1`, aby edge nešlo obejít.
 - Udržujte staging control plane v klidu po dobu základního load příkazu. Nesmí
   probíhat žádné provisioning, nasazení, povýšení, rollback ani změna targetu.
   Ingesce artefaktů a operace deploy, start, stop a remove už mají databázový

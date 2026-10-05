@@ -35,7 +35,9 @@ test('keeps the SaaS runtime separate from bundled self-hosted dependencies', ()
     compose,
     /OTEL_EXPORTER_OTLP_ENDPOINT:\?set the private OTLP HTTP collector endpoint/,
   );
+  assert.match(compose, /INITPAD_TRUST_PROXY_HOPS:\?set to 2 for public edge plus web proxy/);
   assert.match(example, /^OTEL_EXPORTER_OTLP_ENDPOINT=http:\/\/otel-collector:4318$/m);
+  assert.match(example, /^INITPAD_TRUST_PROXY_HOPS=2$/m);
 });
 
 test('requires immutable platform images and validates without printing secrets', () => {
@@ -129,6 +131,8 @@ esac
     INITPAD_GITHUB_APP_ID: '12345',
     INITPAD_GITHUB_CLIENT_ID: 'Iv1.client',
     INITPAD_GITHUB_APP_SLUG: 'initpad-staging',
+    INITPAD_TRUST_PROXY_HOPS: '2',
+    INITPAD_WEB_BIND_ADDRESS: '127.0.0.1',
     OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318',
   };
 
@@ -173,6 +177,9 @@ test('rejects unsafe SaaS URLs, placeholders and direct secrets before Compose',
     [{ INITPAD_PUBLIC_URL: 'https://initpad.test.example.org/path' }, /without a path/],
     [{ INITPAD_GITHUB_APP_ID: 'REPLACE' }, /placeholder in INITPAD_GITHUB_APP_ID/],
     [{ DATABASE_URL: 'postgresql://secret' }, /must be supplied through its _FILE/],
+    [{ INITPAD_TRUST_PROXY_HOPS: '1' }, /must be 2 for public edge/],
+    [{ INITPAD_TRUST_PROXY_HOPS: '3' }, /must be 2 for public edge/],
+    [{ INITPAD_WEB_BIND_ADDRESS: '0.0.0.0' }, /must be 127\.0\.0\.1/],
   ]) {
     const fixture = acceptanceFixture(overrides);
     const result = runChecker(fixture);

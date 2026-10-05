@@ -17,7 +17,10 @@ services:
       INITPAD_PLATFORM_PUBLIC_URL: ${INITPAD_PUBLIC_URL:?set the public HTTPS origin}
       INITPAD_PLATFORM_INTERNAL_URL: ${INITPAD_PUBLIC_URL:?set the public HTTPS origin}
       INITPAD_SCM_WEBHOOK_URL: ${INITPAD_PUBLIC_URL:?set the public HTTPS origin}
-      INITPAD_TRUST_PROXY_HOPS: ${INITPAD_TRUST_PROXY_HOPS:-1}
+      # Supported topology: public edge/WAF -> bundled web proxy -> API.
+      # The API refuses a different value in SaaS so client-IP rate limits
+      # cannot silently collapse onto the edge address or trust extra hops.
+      INITPAD_TRUST_PROXY_HOPS: ${INITPAD_TRUST_PROXY_HOPS:?set to 2 for public edge plus web proxy}
       INITPAD_COOKIE_SECURE: 'true'
       INITPAD_JWT_SECRET_FILE: /run/secrets/jwt_secret
       INITPAD_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key

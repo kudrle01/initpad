@@ -64,6 +64,8 @@ for variable in \
   INITPAD_GITHUB_APP_ID \
   INITPAD_GITHUB_CLIENT_ID \
   INITPAD_GITHUB_APP_SLUG \
+  INITPAD_TRUST_PROXY_HOPS \
+  INITPAD_WEB_BIND_ADDRESS \
   OTEL_EXPORTER_OTLP_ENDPOINT
 do
   require_env_value "$variable"
@@ -81,6 +83,18 @@ public_authority=${public_url#https://}
 case "$public_authority" in
   '' | */*) fail "INITPAD_PUBLIC_URL must contain only an HTTPS origin without a path." ;;
 esac
+
+# The reviewed Compose topology has two and only two trusted proxies between
+# the client and API: the deployment-owned public edge and the bundled web
+# proxy. A smaller value rate-limits the edge instead of the client; a larger
+# value lets an untrusted forwarding entry influence the security identity.
+trust_proxy_hops=$(env_value INITPAD_TRUST_PROXY_HOPS)
+[ "$trust_proxy_hops" = 2 ] || \
+  fail "INITPAD_TRUST_PROXY_HOPS must be 2 for public edge -> web proxy -> API."
+
+web_bind_address=$(env_value INITPAD_WEB_BIND_ADDRESS)
+[ "$web_bind_address" = 127.0.0.1 ] || \
+  fail "INITPAD_WEB_BIND_ADDRESS must be 127.0.0.1 so the public edge cannot be bypassed."
 
 s3_endpoint=$(env_value INITPAD_ARTIFACT_S3_ENDPOINT)
 case "$s3_endpoint" in

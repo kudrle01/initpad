@@ -110,7 +110,10 @@ konfiguraci v paměti.
   volumetrickému DDoS. `INITPAD_TRUST_PROXY_HOPS` musí odpovídat pevné cestě
   reverzní proxy. Důvěra ve více hopů, než skutečně existuje, umožní přímému
   klientovi zfalšovat adresu používanou dimenzí IP.
-- Kódy a tokeny OIDC jsou v paměti, takže restart API zneplatní aktivní toky SSO.
+- GitHub OAuth state, interní OIDC authorization codes a access tokeny jsou
+  krátkodobé, jednorázové a uložené v PostgreSQL pouze jako SHA-256 hashe.
+  Aktivní tok proto může bezpečně dokončit jiná replika i po restartu procesu;
+  plaintext browserové a bearer hodnoty se do databáze neukládají.
 - Registrované hosty SSH/SFTP jsou mocnými odchozími cíli. Syntaxe hostu,
   rezervované lokální a link-local adresy i credentials v URL se odmítají,
   zatímco cíle RFC1918 zůstávají povolené pro zamýšlené použití v LAN školy nebo

@@ -143,6 +143,7 @@ describe('validateConfig production secrets', () => {
 
   it('accepts a complete same-origin HTTPS SaaS configuration', () => {
     config.edition = 'saas';
+    config.http.trustProxyHops = 2;
     config.ci.publicUrl = 'https://initpad.example';
     Object.assign(config.github, {
       appId: '12345',
@@ -168,6 +169,7 @@ describe('validateConfig production secrets', () => {
 
   it('rejects an HTTP or cross-origin GitHub callback in SaaS', () => {
     config.edition = 'saas';
+    config.http.trustProxyHops = 2;
     config.ci.publicUrl = 'https://initpad.example';
     Object.assign(config.github, {
       appId: '12345',
@@ -189,5 +191,31 @@ describe('validateConfig production secrets', () => {
     });
 
     expect(() => validateConfig()).toThrow('INITPAD_GITHUB_CALLBACK_URL');
+  });
+
+  it('rejects a SaaS proxy path that does not match edge -> web -> API', () => {
+    config.edition = 'saas';
+    config.http.trustProxyHops = 1;
+    config.ci.publicUrl = 'https://initpad.example';
+    Object.assign(config.github, {
+      appId: '12345',
+      clientId: 'Iv1.example',
+      clientSecret: 'github-client-secret',
+      privateKey: fakePrivateKey,
+      webhookSecret: 'w'.repeat(32),
+      appSlug: 'initpad-example',
+      callbackUrl: 'https://initpad.example/api/auth/github/callback',
+    });
+    Object.assign(config.mail, {
+      host: 'smtp.example',
+      port: 587,
+      secure: false,
+      requireTls: true,
+      username: 'initpad',
+      password: 'smtp-secret',
+      from: 'InitPad <no-reply@initpad.example>',
+    });
+
+    expect(() => validateConfig()).toThrow('INITPAD_TRUST_PROXY_HOPS=2');
   });
 });

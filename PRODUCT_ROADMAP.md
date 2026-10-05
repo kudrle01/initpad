@@ -197,6 +197,13 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     a ověřit obnovu bez lokálních stavových služeb.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
+  - [x] Uzamknout podporovanou SaaS proxy cestu na veřejný edge/WAF, loopback
+    web proxy a API. Preflight i API fail-closed vyžadují přesně dva důvěryhodné
+    hopy, aby per-IP limiter neviděl edge a současně nedůvěřoval klientskému
+    vstupu navíc; edge musí forwarding hlavičky nahradit.
+  - [ ] Na konkrétním staging provideru vynutit default-deny egress allow-list,
+    zákaz obejití originu, connection/body limity a volumetrickou ochranu a
+    uložit provozní důkaz bez provider credentials.
 - [x] Aktualizovat transitivní `http-cache-semantics` na opravenou verzi 4.3.0
   v rámci stávajícího Sigstore rozsahu a odstranit dočasnou auditní výjimku
   `GHSA-ch52-4w7c-c8xp`; produkční audit je znovu bez známých nálezů.
