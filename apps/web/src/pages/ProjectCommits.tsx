@@ -13,6 +13,7 @@ import {
   mergeCommitHead,
 } from '@/lib/commit-polling';
 import type { Commit, Project } from '@/types';
+import { t } from '@/i18n';
 
 const HISTORY_LIMIT = 100;
 
@@ -93,26 +94,28 @@ export default function ProjectCommits() {
 
   return (
     <div>
-      <BackLink to={id ? `/projects/${id}` : '/projects'}>Back to project</BackLink>
+      <BackLink to={id ? `/projects/${id}` : '/projects'}>{t('Back to project')}</BackLink>
 
       <PageHeader
-        title="Commit history"
+        title={t('Commit history')}
         description={project?.name}
         help={[
           {
-            title: 'History',
-            description: `The ${HISTORY_LIMIT} most recent commits.`,
+            title: t('History'),
+            description: t('The {HISTORY_LIMIT} most recent commits.', {
+              HISTORY_LIMIT: HISTORY_LIMIT,
+            }),
           },
           {
-            title: 'Pipeline status',
-            description: 'Stages update from CI/CD and link to their exact runner jobs.',
+            title: t('Pipeline status'),
+            description: t('Stages update from CI/CD and link to their exact runner jobs.'),
           },
         ]}
       />
 
       {error && <LoadErrorState className="mb-4" message={error} onRetry={() => void load(true)} />}
       {loading ? (
-        <ContentLoading label="Loading commit history" />
+        <ContentLoading label={t('Loading commit history')} />
       ) : project ? (
         <Card className="overflow-hidden">
           <CommitList

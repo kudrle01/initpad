@@ -14,6 +14,7 @@ import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { useAuth } from '@/auth';
 import { useLoadable } from '@/hooks/useLoadable';
 import type { Project, TemplateManifest } from '@/types';
+import { t, plural } from '@/i18n';
 
 export default function Projects() {
   const [query, setQuery] = useState('');
@@ -49,11 +50,11 @@ export default function Projects() {
   return (
     <div>
       <PageHeader
-        title="Projects"
+        title={t('Projects')}
         actions={
           <Button asChild>
             <Link to="/new">
-              <Plus className="h-4 w-4" /> New project
+              <Plus className="h-4 w-4" /> {t('New project')}
             </Link>
           </Button>
         }
@@ -66,15 +67,15 @@ export default function Projects() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter projects…"
+              placeholder={t('Filter projects…')}
               className="pl-9"
-              aria-label="Filter projects"
+              aria-label={t('Filter projects')}
             />
           </div>
           <p className="text-sm text-muted-foreground" aria-live="polite">
             {filtered.length === projects.length
-              ? `${projects.length} ${projects.length === 1 ? 'project' : 'projects'}`
-              : `${filtered.length} of ${projects.length}`}
+              ? plural('{count} projects', projects.length)
+              : t('{shown} of {total}', { shown: filtered.length, total: projects.length })}
           </p>
         </div>
       )}
@@ -82,16 +83,18 @@ export default function Projects() {
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />
       ) : loading ? (
-        <ContentLoading label="Loading projects" />
+        <ContentLoading label={t('Loading projects')} />
       ) : projects.length === 0 && !error ? (
         <EmptyState
           icon={Layers}
-          title="No projects yet"
-          description="Create your first project from a template — you'll get a Git repository, CI/CD pipeline and a running dev environment out of the box."
+          title={t('No projects yet')}
+          description={t(
+            "Create your first project from a template — you'll get a Git repository, CI/CD pipeline and a running dev environment out of the box.",
+          )}
           action={
             <Button asChild>
               <Link to="/new">
-                <Plus className="h-4 w-4" /> New project
+                <Plus className="h-4 w-4" /> {t('New project')}
               </Link>
             </Button>
           }
@@ -99,8 +102,8 @@ export default function Projects() {
       ) : filtered.length === 0 && projects.length > 0 ? (
         <EmptyState
           icon={Search}
-          title="No matches"
-          description={`No projects match “${query.trim()}”.`}
+          title={t('No matches')}
+          description={t('No projects match “{query}”.', { query: query.trim() })}
         />
       ) : projects.length > 0 ? (
         <Card className="overflow-hidden">

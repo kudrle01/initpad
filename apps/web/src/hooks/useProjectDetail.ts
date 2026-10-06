@@ -21,6 +21,7 @@ import type {
   Target,
   TemplateManifest,
 } from '@/types';
+import { t } from '@/i18n';
 
 const DETAIL_COMMIT_LIMIT = 6;
 
@@ -198,7 +199,7 @@ export function useProjectDetail() {
     setBusy(target);
     try {
       setProject(await api.promote(id, target));
-      toast.success(`Deploying to ${target}…`);
+      toast.success(t('Deploying to {target}…', { target: target }));
     } catch (actionError) {
       toast.error((actionError as Error).message);
     } finally {
@@ -213,8 +214,11 @@ export function useProjectDetail() {
       setProject(await api.redeploy(id, environment));
       toast.success(
         project?.scm.provider === 'github'
-          ? `Deploying the verified build to ${environment} through InitPad — no new GitHub runner is required.`
-          : `Redeploying ${environment}`,
+          ? t(
+              'Deploying the verified build to {environment} through InitPad — no new GitHub runner is required.',
+              { environment: environment },
+            )
+          : t('Redeploying {environment}', { environment: environment }),
       );
     } catch (actionError) {
       toast.error((actionError as Error).message);
@@ -229,7 +233,11 @@ export function useProjectDetail() {
     try {
       const preview = await api.getRollbackPreview(id, environment);
       if (!preview) {
-        toast.warning(`No previous verified ${environment} deployment is available to roll back.`);
+        toast.warning(
+          t('No previous verified {environment} deployment is available to roll back.', {
+            environment: environment,
+          }),
+        );
         return;
       }
       setRollbackPreview(preview);
@@ -252,7 +260,7 @@ export function useProjectDetail() {
             stateToken: rollbackPreview.stateToken,
           }),
         );
-        toast.success('Production rollback requested');
+        toast.success(t('Production rollback requested'));
       } else {
         setProject(
           await api.rollback(
@@ -263,7 +271,10 @@ export function useProjectDetail() {
           ),
         );
         toast.success(
-          `Rolling back ${rollbackPreview.environment} to ${rollbackPreview.rollbackVersion.slice(0, 7)} without a new CI build.`,
+          t('Rolling back {environment} to {rollbackVersion} without a new CI build.', {
+            environment: rollbackPreview.environment,
+            rollbackVersion: rollbackPreview.rollbackVersion.slice(0, 7),
+          }),
         );
       }
       setRollbackPreview(null);
@@ -280,7 +291,9 @@ export function useProjectDetail() {
     try {
       setProductionRequest(await api.requestProductionDeployment(id, { kind }));
       toast.success(
-        kind === 'promote' ? 'Production deployment requested' : 'Production redeploy requested',
+        kind === 'promote'
+          ? t('Production deployment requested')
+          : t('Production redeploy requested'),
       );
     } catch (actionError) {
       toast.error((actionError as Error).message);
@@ -304,11 +317,13 @@ export function useProjectDetail() {
             : await api.cancelProductionDeployment(id, productionRequest.id);
       setProductionRequest(updated);
       if (action === 'approve') {
-        toast.success('Production deployment approved and queued');
+        toast.success(t('Production deployment approved and queued'));
         await load('head');
       } else {
         toast.success(
-          action === 'reject' ? 'Production request rejected' : 'Production request cancelled',
+          action === 'reject'
+            ? t('Production request rejected')
+            : t('Production request cancelled'),
         );
       }
     } catch (actionError) {
@@ -326,8 +341,10 @@ export function useProjectDetail() {
       setProject(await api.runAgain(id));
       toast.success(
         project?.scm.provider === 'github'
-          ? 'Preparing dev deployment through InitPad. An existing verified build is reused when available.'
-          : 'Preparing dev deployment…',
+          ? t(
+              'Preparing dev deployment through InitPad. An existing verified build is reused when available.',
+            )
+          : t('Preparing dev deployment…'),
       );
     } catch (actionError) {
       toast.error((actionError as Error).message);
@@ -342,7 +359,7 @@ export function useProjectDetail() {
     try {
       const { runId } = await api.rerunFailedJobs(id);
       setCiRerunRequested(true);
-      toast.success(`GitHub is re-running failed jobs from run ${runId}.`);
+      toast.success(t('GitHub is re-running failed jobs from run {runId}.', { runId: runId }));
     } catch (actionError) {
       toast.error((actionError as Error).message);
     } finally {
@@ -383,7 +400,7 @@ export function useProjectDetail() {
         (candidate) => candidate.name === environment,
       )?.statusReason;
       if (warning) toast.warning(cleanupNotice(warning));
-      else toast.success(`Removed ${environment} deployment`);
+      else toast.success(t('Removed {environment} deployment', { environment: environment }));
     } catch (actionError) {
       toast.error((actionError as Error).message);
     } finally {
@@ -396,7 +413,7 @@ export function useProjectDetail() {
     setBusy(`target-${environment}`);
     try {
       setProject(await api.bindEnvTarget(id, environment, targetId));
-      toast.success(`Updated ${environment} target`);
+      toast.success(t('Updated {environment} target', { environment: environment }));
       setTargetEnv(null);
     } catch (actionError) {
       toast.error((actionError as Error).message);
@@ -414,7 +431,7 @@ export function useProjectDetail() {
     try {
       setProject(await api.updatePipelinePreset(id, pipelinePreset, environments));
       setProductionRequest(null);
-      toast.success('Pipeline updated');
+      toast.success(t('Pipeline updated'));
     } catch (actionError) {
       toast.error((actionError as Error).message);
     } finally {
@@ -427,7 +444,7 @@ export function useProjectDetail() {
     setDeleting(true);
     try {
       await api.deleteProject(id, options);
-      toast.success(`Deleted ${project.name}`);
+      toast.success(t('Deleted {name}', { name: project.name }));
       void navigate('/');
     } catch (actionError) {
       try {

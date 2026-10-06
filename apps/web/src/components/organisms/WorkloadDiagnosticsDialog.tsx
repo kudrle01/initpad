@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { Environment, WorkloadDiagnostic, WorkloadHealth } from '@/types';
+import { t, msg, formatDateTime, type MessageKey } from '@/i18n';
 
 interface Props {
   projectId: string;
@@ -29,11 +30,11 @@ interface Props {
   onOpenChange: (open: boolean) => void;
 }
 
-const HEALTH_PRESENTATION: Record<WorkloadHealth, { status: string; label: string }> = {
-  healthy: { status: 'success', label: 'healthy' },
-  unhealthy: { status: 'failed', label: 'unhealthy' },
-  'not-running': { status: 'stopped', label: 'not running' },
-  missing: { status: 'empty', label: 'missing' },
+const HEALTH_PRESENTATION: Record<WorkloadHealth, { status: string; label: MessageKey }> = {
+  healthy: { status: 'success', label: msg('healthy') },
+  unhealthy: { status: 'failed', label: msg('unhealthy') },
+  'not-running': { status: 'stopped', label: msg('not running') },
+  missing: { status: 'empty', label: msg('missing') },
 };
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -115,17 +116,20 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>
-            <Activity className="h-[18px] w-[18px]" /> Workload diagnostics — {environmentName}
+            <Activity className="h-[18px] w-[18px]" />{' '}
+            {t('Workload diagnostics — {environment}', { environment: environmentName ?? '' })}
           </DialogTitle>
           <DialogDescription>
-            A read-only snapshot from {environment?.target?.name ?? 'the Agent target'}. It does not
-            deploy, restart or execute a shell command in the workload.
+            {t(
+              'A read-only snapshot from {target}. It does not deploy, restart or execute a shell command in the workload.',
+              { target: environment?.target?.name ?? t('the Agent target') },
+            )}
           </DialogDescription>
         </DialogHeader>
 
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-            <Spinner className="h-5 w-5" /> Loading diagnostics
+            <Spinner className="h-5 w-5" /> {t('Loading diagnostics')}
           </div>
         ) : (
           <div className="flex min-w-0 flex-col gap-4">
@@ -146,11 +150,15 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
               >
                 <WifiOff className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
                 <div>
-                  <p className="text-sm font-semibold">Agent is offline</p>
+                  <p className="text-sm font-semibold">{t('Agent is offline')}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {active
-                      ? 'This request is safely queued and will continue when the Agent reconnects.'
-                      : 'The last successful snapshot remains available, but it may no longer describe the current workload.'}
+                      ? t(
+                          'This request is safely queued and will continue when the Agent reconnects.',
+                        )
+                      : t(
+                          'The last successful snapshot remains available, but it may no longer describe the current workload.',
+                        )}
                   </p>
                 </div>
               </div>
@@ -160,11 +168,11 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
               <div className="rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-sm font-medium">Diagnostic request</p>
+                    <p className="text-sm font-medium">{t('Diagnostic request')}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {snapshot.requestedAt
-                        ? new Date(snapshot.requestedAt).toLocaleString()
-                        : 'Not requested yet'}
+                        ? formatDateTime(snapshot.requestedAt)
+                        : t('Not requested yet')}
                     </p>
                   </div>
                   <StatusBadge status={snapshot.status} />
@@ -172,13 +180,13 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                 {active && (
                   <div className="mt-3">
                     <div className="mb-1 flex justify-between gap-3 text-xs text-muted-foreground">
-                      <span className="truncate">{snapshot.message ?? 'Waiting for Agent'}</span>
+                      <span className="truncate">{snapshot.message ?? t('Waiting for Agent')}</span>
                       <span className="shrink-0">{progress}%</span>
                     </div>
                     <div
                       className="h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]"
                       role="progressbar"
-                      aria-label="Workload diagnostics progress"
+                      aria-label={t('Workload diagnostics progress')}
                       aria-valuemin={0}
                       aria-valuemax={100}
                       aria-valuenow={progress}
@@ -207,37 +215,43 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                     ) : (
                       <CircleStop className="h-4 w-4 text-muted-foreground" />
                     )}
-                    Last successful snapshot
+                    {t('Last successful snapshot')}
                   </p>
                   <span className="text-xs text-muted-foreground">
-                    Observed {new Date(snapshot.observedAt!).toLocaleString()}
+                    {t('Observed {date}', {
+                      date: formatDateTime(snapshot.observedAt!),
+                    })}
                   </span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <Detail label="Runtime" value={snapshot.runtimeState ?? 'unknown'} />
+                  <Detail label={t('Runtime')} value={snapshot.runtimeState ?? 'unknown'} />
                   <div className="min-w-0 rounded-lg bg-muted p-3">
-                    <p className="eyebrow">Health</p>
+                    <p className="eyebrow">{t('Health')}</p>
                     <div className="mt-1">
                       <StatusBadge
                         status={health?.status ?? 'idle'}
-                        label={health?.label ?? 'unknown'}
+                        label={health ? t(health.label) : t('unknown')}
                       />
                     </div>
                   </div>
                   <Detail
-                    label="Exit code"
+                    label={t('Exit code')}
                     value={snapshot.exitCode === null ? '—' : String(snapshot.exitCode)}
                     mono
                   />
-                  <Detail label="Revision" value={snapshot.revision?.slice(0, 12) ?? '—'} mono />
+                  <Detail
+                    label={t('Revision')}
+                    value={snapshot.revision?.slice(0, 12) ?? '—'}
+                    mono
+                  />
                 </div>
                 <div className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-muted">
                   <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3.5 py-2.5">
                     <p className="flex items-center gap-1.5 text-sm font-medium">
-                      <ScrollText className="h-4 w-4" /> Application output
+                      <ScrollText className="h-4 w-4" /> {t('Application output')}
                     </p>
                     <span className="text-xs text-muted-foreground">
-                      last 200 lines · max 32 KiB
+                      {t('last 200 lines · max 32 KiB')}
                     </span>
                   </div>
                   {snapshot.logs ? (
@@ -249,7 +263,7 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                     </pre>
                   ) : (
                     <p className="p-4 text-sm text-muted-foreground">
-                      No output was captured in the bounded window.
+                      {t('No output was captured in the bounded window.')}
                     </p>
                   )}
                 </div>
@@ -257,25 +271,26 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
             ) : !snapshot ? (
               <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
                 <ScrollText className="mx-auto h-7 w-7 text-muted-foreground" />
-                <p className="mt-2 text-sm font-medium">No diagnostic snapshot yet</p>
+                <p className="mt-2 text-sm font-medium">{t('No diagnostic snapshot yet')}</p>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                  Run diagnostics to read container state, health, exit code and bounded recent
-                  output.
+                  {t(
+                    'Run diagnostics to read container state, health, exit code and bounded recent output.',
+                  )}
                 </p>
               </div>
             ) : null}
 
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Application output can contain sensitive business data. Access is limited to project
-              members who can change the project, and each refresh replaces the previous stored
-              output.
+              {t(
+                'Application output can contain sensitive business data. Access is limited to project members who can change the project, and each refresh replaces the previous stored output.',
+              )}
             </p>
           </div>
         )}
 
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Close
+            {t('Close')}
           </Button>
           <Button disabled={loading || requesting || active} onClick={requestSnapshot}>
             {requesting || active ? (
@@ -283,7 +298,11 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
             ) : (
               <RefreshCw className="h-4 w-4" />
             )}
-            {active ? 'Diagnostics running' : observed ? 'Refresh diagnostics' : 'Run diagnostics'}
+            {active
+              ? t('Diagnostics running')
+              : observed
+                ? t('Refresh diagnostics')
+                : t('Run diagnostics')}
           </Button>
         </DialogFooter>
       </DialogContent>

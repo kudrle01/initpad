@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/atoms/Spinner';
 import type { DeleteProjectOptions } from '@/api';
 import type { Environment } from '@/types';
+import { t, rich } from '@/i18n';
+import { statusLabel } from '@/i18n/labels';
 
 interface Props {
   open: boolean;
@@ -81,17 +83,17 @@ export function DeleteProjectDialog({
       <DialogContent hideClose>
         <DialogHeader>
           <DialogTitle>
-            <Trash2 className="h-[18px] w-[18px] text-destructive" /> Delete project
+            <Trash2 className="h-[18px] w-[18px] text-destructive" /> {t('Delete project')}
           </DialogTitle>
           <DialogDescription>
-            InitPad will remove every managed deployment before deleting its project record. Cleanup
-            must succeed on every target by default. Protected leftovers can only be detached
-            through a separate explicit acknowledgement.
+            {t(
+              'InitPad will remove every managed deployment before deleting its project record. Cleanup must succeed on every target by default. Protected leftovers can only be detached through a separate explicit acknowledgement.',
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="rounded-lg bg-muted p-3 text-sm">
-          <p className="font-medium">Cleanup plan</p>
+          <p className="font-medium">{t('Cleanup plan')}</p>
           <ul className="mt-2 space-y-1.5 text-muted-foreground">
             {deployed.length ? (
               deployed.map((env) => (
@@ -99,32 +101,34 @@ export function DeleteProjectDialog({
                   key={env.name}
                   className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                 >
-                  <span className="capitalize">{env.name} deployment</span>
+                  <span className="capitalize">{t('{name} deployment', { name: env.name })}</span>
                   <span className="break-words text-xs sm:text-right">
-                    {env.target?.name ?? env.provider} · {env.status}
+                    {env.target?.name ?? env.provider} · {statusLabel(env.status)}
                   </span>
                 </li>
               ))
             ) : (
-              <li>No active deployments</li>
+              <li>{t('No active deployments')}</li>
             )}
             {cleanupPending.map((env) => (
               <li key={`${env.name}-cleanup`} className="text-warning">
-                <span className="capitalize">{env.name} cleanup pending</span>
+                <span className="capitalize">
+                  {t('{name} cleanup pending', { name: env.name })}
+                </span>
                 <span className="mt-0.5 block break-all text-xs">{env.statusReason}</span>
               </li>
             ))}
             <li className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-              <span>Generated images and packages</span>
-              <span className="text-xs">remove</span>
+              <span>{t('Generated images and packages')}</span>
+              <span className="text-xs">{t('remove')}</span>
             </li>
             <li className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-              <span>InitPad project record</span>
-              <span className="text-xs">remove · release workspace name</span>
+              <span>{t('InitPad project record')}</span>
+              <span className="text-xs">{t('remove · release workspace name')}</span>
             </li>
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
-            Deployment targets and unrelated server files are never deleted.
+            {t('Deployment targets and unrelated server files are never deleted.')}
           </p>
         </div>
 
@@ -139,9 +143,9 @@ export function DeleteProjectDialog({
                 disabled={deleting}
               />
               <span>
-                <span className="block font-medium">Remove the production deployment</span>
+                <span className="block font-medium">{t('Remove the production deployment')}</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Production will become unavailable and its deployed files will be deleted.
+                  {t('Production will become unavailable and its deployed files will be deleted.')}
                 </span>
               </span>
             </label>
@@ -158,12 +162,12 @@ export function DeleteProjectDialog({
               />
               <span>
                 <span className="block font-medium">
-                  Delete the InitPad record with protected cleanup still pending
+                  {t('Delete the InitPad record with protected cleanup still pending')}
                 </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  The public application is already gone. A target administrator must still delete
-                  the listed quarantined paths. InitPad cannot retry that cleanup after this project
-                  record is deleted.
+                  {t(
+                    'The public application is already gone. A target administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.',
+                  )}
                 </span>
               </span>
             </label>
@@ -180,19 +184,22 @@ export function DeleteProjectDialog({
               />
               <span>
                 <span className="block font-medium">
-                  Also delete the source repository and release its name
+                  {t('Also delete the source repository and release its name')}
                 </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Optional and irreversible. If you preserve the repository, its name remains
-                  occupied in Gitea and should later be added back as an existing project. Delete it
-                  if a brand-new project must reuse the same name.
+                  {t(
+                    'Optional and irreversible. If you preserve the repository, its name remains occupied in Gitea and should later be added back as an existing project. Delete it if a brand-new project must reuse the same name.',
+                  )}
                 </span>
               </span>
             </label>
           )}
 
           <p className="break-words text-sm">
-            Type <strong className="font-semibold">{projectName}</strong> to confirm:
+            {rich('Type <b>{projectName}</b> to confirm:', {
+              projectName: projectName,
+              b: (chunk) => <strong className="font-semibold">{chunk}</strong>,
+            })}
           </p>
           <Input
             value={text}
@@ -207,11 +214,11 @@ export function DeleteProjectDialog({
 
         <DialogFooter>
           <Button variant="secondary" onClick={close} disabled={deleting}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button variant="danger" onClick={confirm} disabled={!confirmed || deleting}>
             {deleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-            {deleting ? 'deleting…' : 'Delete project'}
+            {deleting ? t('deleting…') : t('Delete project')}
           </Button>
         </DialogFooter>
       </DialogContent>

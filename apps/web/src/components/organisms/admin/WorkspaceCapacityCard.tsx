@@ -12,6 +12,7 @@ import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Spinner } from '@/components/atoms/Spinner';
 import { cn } from '@/lib/utils';
+import { t } from '@/i18n';
 
 function artifactGiB(value: string): number {
   return Number(BigInt(value) / (1024n * 1024n * 1024n));
@@ -51,21 +52,21 @@ export function WorkspaceCapacityCard() {
   return (
     <SettingsSection
       icon={Gauge}
-      title="Workspace limits"
-      description="Tenant-wide limits for control-plane work and artifact storage."
+      title={t('Workspace limits')}
+      description={t('Tenant-wide limits for control-plane work and artifact storage.')}
       flush={!error && !loading && items.length > 0}
       actions={
         <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}>
-          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} /> Refresh
+          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} /> {t('Refresh')}
         </Button>
       }
     >
       {error ? (
         <LoadErrorState message={error} onRetry={load} />
       ) : loading ? (
-        <ContentLoading label="Loading workspace limits" count={2} />
+        <ContentLoading label={t('Loading workspace limits')} count={2} />
       ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No workspaces found.</p>
+        <p className="text-sm text-muted-foreground">{t('No workspaces found.')}</p>
       ) : (
         <List>
           {items.map((capacity) => (
@@ -121,10 +122,13 @@ function CapacityEditor({
         BigInt(capacity.usage.artifactBytes);
     if (belowCurrentUsage) {
       const confirmed = await confirmAction({
-        title: `Put ${capacity.workspaceName} over its new limit?`,
-        description:
+        title: t('Put {workspaceName} over its new limit?', {
+          workspaceName: capacity.workspaceName,
+        }),
+        description: t(
           'Existing resources remain available, but new work in the affected category will be blocked.',
-        confirmLabel: 'Apply lower limit',
+        ),
+        confirmLabel: t('Apply lower limit'),
         tone: 'warning',
       });
       if (!confirmed) return;
@@ -133,7 +137,9 @@ function CapacityEditor({
     try {
       const updated = await api.adminUpdateWorkspaceCapacity(capacity.workspaceId, values);
       onSaved(updated);
-      toast.success(`Updated limits for ${capacity.workspaceName}`);
+      toast.success(
+        t('Updated limits for {workspaceName}', { workspaceName: capacity.workspaceName }),
+      );
     } catch (cause) {
       toast.error((cause as Error).message);
     } finally {
@@ -146,17 +152,17 @@ function CapacityEditor({
     label: string;
     used: number | string;
   }> = [
-    { key: 'maxProjects', label: 'Projects', used: capacity.usage.projects },
-    { key: 'maxMembers', label: 'Members', used: capacity.usage.members },
-    { key: 'maxTargets', label: 'Servers', used: capacity.usage.targets },
+    { key: 'maxProjects', label: t('Projects'), used: capacity.usage.projects },
+    { key: 'maxMembers', label: t('Members'), used: capacity.usage.members },
+    { key: 'maxTargets', label: t('Servers'), used: capacity.usage.targets },
     {
       key: 'maxConcurrentOperations',
-      label: 'Active operations',
+      label: t('Active operations'),
       used: capacity.usage.concurrentOperations,
     },
     {
       key: 'maxArtifactStorageGiB',
-      label: 'Artifact GiB',
+      label: t('Artifact GiB'),
       used: artifactGiB(capacity.usage.artifactBytes),
     },
   ];
@@ -179,9 +185,11 @@ function CapacityEditor({
           </span>
         </span>
         <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground md:inline">
-          {capacity.usage.projects}/{capacity.limits.projects} projects · {capacity.usage.members}/
-          {capacity.limits.members} members · {capacity.usage.targets}/{capacity.limits.targets}{' '}
-          servers
+          {t('{projects} projects · {members} members · {servers} servers', {
+            projects: `${capacity.usage.projects}/${capacity.limits.projects}`,
+            members: `${capacity.usage.members}/${capacity.limits.members}`,
+            servers: `${capacity.usage.targets}/${capacity.limits.targets}`,
+          })}
         </span>
         <ChevronDown
           className={cn(
@@ -199,7 +207,7 @@ function CapacityEditor({
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="truncate">{label}</span>
                   <span className="shrink-0 text-xs font-normal text-muted-foreground">
-                    ({used} used)
+                    {t('({used} used)', { used: used })}
                   </span>
                 </span>
                 <Input
@@ -217,7 +225,7 @@ function CapacityEditor({
           </div>
           <div className="mt-4 flex justify-end">
             <Button size="sm" disabled={!changed || !valid || saving} onClick={() => void save()}>
-              {saving && <Spinner className="h-3.5 w-3.5" />} Save limits
+              {saving && <Spinner className="h-3.5 w-3.5" />} {t('Save limits')}
             </Button>
           </div>
         </div>

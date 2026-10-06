@@ -8,6 +8,7 @@ import { Notice } from '@/components/molecules/Notice';
 import { SegmentedControl } from '@/components/molecules/SegmentedControl';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { t } from '@/i18n';
 
 type Mode = 'signin' | 'register';
 
@@ -70,7 +71,7 @@ export default function Login() {
   const registering = mode === 'register';
 
   return (
-    <AuthCard title="InitPad" description="Internal developer platform" align="center">
+    <AuthCard title="InitPad" description={t('Internal developer platform')} align="center">
       {oauthError && (
         <Notice tone="danger" role="alert" className="mt-6 text-left">
           {oauthError}
@@ -79,13 +80,13 @@ export default function Login() {
 
       {configLoading && (
         <p role="status" className="mt-6 text-center text-sm text-muted-foreground">
-          Loading sign-in options…
+          {t('Loading sign-in options…')}
         </p>
       )}
 
       {configError && (
         <Notice tone="danger" role="alert" className="mt-6 text-left">
-          Authentication service is unavailable. Refresh and try again.
+          {t('Authentication service is unavailable. Refresh and try again.')}
         </Notice>
       )}
 
@@ -93,12 +94,12 @@ export default function Login() {
         <div className="mt-6">
           <Button asChild variant="secondary" className="w-full">
             <a href="/api/auth/github?mode=login">
-              <GithubIcon /> Continue with GitHub
+              <GithubIcon /> {t('Continue with GitHub')}
             </a>
           </Button>
           {passwordAuthEnabled && (
             <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="h-px flex-1 bg-border" /> or{' '}
+              <span className="h-px flex-1 bg-border" /> {t('or')}{' '}
               <span className="h-px flex-1 bg-border" />
             </div>
           )}
@@ -109,12 +110,12 @@ export default function Login() {
         <>
           {registrationAvailable && (
             <SegmentedControl
-              label="Sign in or create an account"
+              label={t('Sign in or create an account')}
               stretch
               className={cn('mb-5', !githubEnabled && 'mt-6')}
               options={[
-                { value: 'signin', label: 'Sign in' },
-                { value: 'register', label: 'Create account' },
+                { value: 'signin', label: t('Sign in') },
+                { value: 'register', label: t('Create account') },
               ]}
               value={mode}
               onChange={(next) => {
@@ -133,7 +134,7 @@ export default function Login() {
           >
             <FormField
               id="login-username"
-              label={registering ? 'Username' : 'Username or e-mail'}
+              label={registering ? t('Username') : t('Username or e-mail')}
               autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
@@ -144,7 +145,7 @@ export default function Login() {
             {registering && (
               <FormField
                 id="login-email"
-                label="E-mail"
+                label={t('E-mail')}
                 type="email"
                 autoComplete="email"
                 value={email}
@@ -154,14 +155,14 @@ export default function Login() {
             )}
             <FormField
               id="login-password"
-              label="Password"
+              label={t('Password')}
               type="password"
               autoComplete={registering ? 'new-password' : 'current-password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={registering ? 12 : undefined}
-              hint={registering ? 'Use at least 12 characters.' : undefined}
+              hint={registering ? t('Use at least 12 characters.') : undefined}
             />
 
             {error && (
@@ -170,7 +171,7 @@ export default function Login() {
               </Notice>
             )}
             <Button type="submit" disabled={busy} className="w-full">
-              {busy ? 'Please wait…' : registering ? 'Create account' : 'Sign in'}
+              {busy ? t('Please wait…') : registering ? t('Create account') : t('Sign in')}
             </Button>
           </form>
 
@@ -180,7 +181,7 @@ export default function Login() {
                 to="/forgot-password"
                 className="text-link inline-flex min-h-11 items-center justify-center text-sm font-medium sm:min-h-0"
               >
-                Forgot your password?
+                {t('Forgot your password?')}
               </Link>
             </div>
           )}
@@ -189,8 +190,9 @@ export default function Login() {
 
       {!configLoading && passwordAuthEnabled && !registrationAvailable && !configError && (
         <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
-          Accounts are created by the instance administrator. Ask your InitPad admin for a sign-in
-          link.
+          {t(
+            'Accounts are created by the instance administrator. Ask your InitPad admin for a sign-in link.',
+          )}
         </p>
       )}
 
@@ -200,14 +202,15 @@ export default function Login() {
         githubEnabled &&
         !configError && (
           <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
-            Your GitHub account creates or opens your InitPad account. Repository access is granted
-            separately through the GitHub App.
+            {t(
+              'Your GitHub account creates or opens your InitPad account. Repository access is granted separately through the GitHub App.',
+            )}
           </p>
         )}
 
       {!configLoading && !passwordAuthEnabled && !githubEnabled && !configError && (
         <Notice tone="danger" role="alert" className="mt-5 text-left">
-          GitHub sign-in is not configured for this SaaS installation.
+          {t('GitHub sign-in is not configured for this SaaS installation.')}
         </Notice>
       )}
     </AuthCard>
@@ -225,17 +228,19 @@ function GithubIcon() {
 function oauthErrorMessage(code: string | null): string | null {
   switch (code) {
     case 'github_no_account':
-      return 'No InitPad account is linked to that GitHub account. Sign in another way, then link GitHub in Settings.';
+      return t(
+        'No InitPad account is linked to that GitHub account. Sign in another way, then link GitHub in Settings.',
+      );
     case 'account_deactivated':
-      return 'This account has been deactivated. Contact your administrator.';
+      return t('This account has been deactivated. Contact your administrator.');
     case 'github_state':
-      return 'The GitHub sign-in could not be verified. Please try again.';
+      return t('The GitHub sign-in could not be verified. Please try again.');
     case 'github_exchange':
-      return 'GitHub sign-in failed. Please try again.';
+      return t('GitHub sign-in failed. Please try again.');
     case 'github_unavailable':
-      return 'GitHub sign-in is not enabled on this instance.';
+      return t('GitHub sign-in is not enabled on this instance.');
     case 'login_required':
-      return 'Please sign in first, then link your GitHub account.';
+      return t('Please sign in first, then link your GitHub account.');
     default:
       return null;
   }

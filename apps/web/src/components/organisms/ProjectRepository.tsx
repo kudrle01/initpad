@@ -4,12 +4,13 @@ import { CopyField } from '@/components/molecules/CopyField';
 import { DetailSection } from '@/components/molecules/DetailSection';
 import { scmLink } from '@/lib/utils';
 import type { Project } from '@/types';
+import { t, rich } from '@/i18n';
 
 export function ProjectRepository({ project }: { project: Project }) {
   const cloneUrl = project.repoUrl ? `${project.repoUrl}.git` : null;
 
   return (
-    <DetailSection title="Repository">
+    <DetailSection title={t('Repository')}>
       <div className="flex min-w-0 flex-col gap-3">
         {project.repoUrl && (
           <a
@@ -27,17 +28,23 @@ export function ProjectRepository({ project }: { project: Project }) {
         {cloneUrl && <CopyField command={`git clone ${cloneUrl}`} />}
         {project.scm.provider === 'github' ? (
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Private GitHub repository — open it in a browser signed into an authorized GitHub
-            account. For cloning, use your normal GitHub credential manager, SSH key or{' '}
-            <code className="font-mono">gh auth login</code>.
+            {rich(
+              'Private GitHub repository — open it in a browser signed into an authorized GitHub account. For cloning, use your normal GitHub credential manager, SSH key or <code>gh auth login</code>.',
+              { code: (chunk) => <code className="font-mono">{chunk}</code> },
+            )}
           </p>
         ) : (
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Private repository — first time?{' '}
-            <Link to="/settings/account" className="text-link">
-              Connect Git
-            </Link>{' '}
-            once and cloning works without a password.
+            {rich(
+              'Private repository — first time? <link>Connect Git</link> once and cloning works without a password.',
+              {
+                link: (chunk) => (
+                  <Link to="/settings/account" className="text-link">
+                    {chunk}
+                  </Link>
+                ),
+              },
+            )}
           </p>
         )}
       </div>

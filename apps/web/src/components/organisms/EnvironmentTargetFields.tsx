@@ -5,6 +5,7 @@ import { Notice } from '@/components/molecules/Notice';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import type { EnvName, RuntimeKind, Target, TemplateManifest } from '@/types';
+import { t, rich } from '@/i18n';
 
 export const ENV_NAMES: EnvName[] = ['dev', 'test', 'prod'];
 export type EnvironmentTargets = Record<EnvName, string>;
@@ -62,40 +63,44 @@ export function environmentTargetHelp(hosted: boolean): InfoTipItem[] {
   return hosted
     ? [
         {
-          title: 'Selection',
-          description:
+          title: t('Selection'),
+          description: t(
             'Choose a deployment server for each environment. One server may host several environments.',
+          ),
         },
         {
-          title: 'Isolation',
-          description: 'InitPad keeps dev, test and prod workloads separate.',
+          title: t('Isolation'),
+          description: t('InitPad keeps dev, test and prod workloads separate.'),
         },
         {
-          title: 'Private servers',
-          description: 'Local or private Docker servers connect outbound through InitPad Agent.',
+          title: t('Private servers'),
+          description: t('Local or private Docker servers connect outbound through InitPad Agent.'),
         },
       ]
     : [
         {
-          title: 'Defaults',
-          description: 'Self-hosted deployment targets are selected automatically when compatible.',
+          title: t('Defaults'),
+          description: t(
+            'Self-hosted deployment targets are selected automatically when compatible.',
+          ),
         },
         {
-          title: 'Changes',
-          description:
+          title: t('Changes'),
+          description: t(
             'Each environment can use a different target, now or from the project detail later.',
+          ),
         },
       ];
 }
 
 function targetOptionNote(target: Target): string {
   if (targetIsReady(target)) return '';
-  if (target.scope === 'user' && target.managementState === 'retired') return ' · retired';
+  if (target.scope === 'user' && target.managementState === 'retired') return ` · ${t('retired')}`;
   if (target.scope === 'user' && target.managementState === 'disconnected')
-    return ' · reconnect first';
+    return ` · ${t('reconnect first')}`;
   if (target.scope === 'user' && target.kind === 'docker')
-    return ` · ${target.agentVersion ? 'update or enable Agent' : 'enroll Agent'}`;
-  return ' · verify first';
+    return ` · ${target.agentVersion ? t('update or enable Agent') : t('enroll Agent')}`;
+  return ` · ${t('verify first')}`;
 }
 
 interface Props {
@@ -130,8 +135,8 @@ export function EnvironmentTargetFields({
     <div className="flex min-w-0 flex-col gap-3">
       {!hideLabel && (
         <div className="-mb-1 flex items-center gap-1">
-          <Label>Environments &amp; targets</Label>
-          <InfoTip label="About environment targets" items={environmentTargetHelp(hosted)} />
+          <Label>{t('Environments & targets')}</Label>
+          <InfoTip label={t('About environment targets')} items={environmentTargetHelp(hosted)} />
         </div>
       )}
       {/* auto-fit: one field per stage side by side, stacked in a narrow column. */}
@@ -147,10 +152,10 @@ export function EnvironmentTargetFields({
             <Select
               id={`target-${environment}`}
               value={values[environment]}
-              aria-label={`${environment} target`}
+              aria-label={t('{environment} target', { environment: environment })}
               onChange={(event) => onChange(environment, event.target.value)}
             >
-              <option value="">Choose target…</option>
+              <option value="">{t('Choose target…')}</option>
               {options.map((target) => (
                 <option key={target.id} value={target.id} disabled={!targetIsReady(target)}>
                   {target.name} · {target.kind}
@@ -164,21 +169,32 @@ export function EnvironmentTargetFields({
 
       {template && verifiedOptions.length === 0 && (
         <Notice tone="warning" role="alert" icon={ShieldAlert}>
-          No connected and verified target can run{' '}
-          <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
-          <Link to="/infrastructure" className="text-link font-medium">
-            Add or reconnect a server
-          </Link>{' '}
-          before creating the project.
+          {rich(
+            'No connected and verified target can run <b>{template}</b>. <link>Add or reconnect a server</link> before creating the project.',
+            {
+              template: runtimeOf(template),
+              b: (chunk) => <b className="font-semibold text-foreground">{chunk}</b>,
+              link: (chunk) => (
+                <Link to="/infrastructure" className="text-link font-medium">
+                  {chunk}
+                </Link>
+              ),
+            },
+          )}
         </Notice>
       )}
       {hasUnverified && verifiedOptions.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Some compatible targets are disabled until their connection or Agent is ready in{' '}
-          <Link to="/infrastructure" className="text-link font-medium">
-            Servers
-          </Link>
-          .
+          {rich(
+            'Some compatible targets are disabled until their connection or Agent is ready in <link>Servers</link>.',
+            {
+              link: (chunk) => (
+                <Link to="/infrastructure" className="text-link font-medium">
+                  {chunk}
+                </Link>
+              ),
+            },
+          )}
         </p>
       )}
     </div>

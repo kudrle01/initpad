@@ -35,6 +35,8 @@ import { cn } from '@/lib/utils';
 import { cleanupNotice } from '@/lib/deployment';
 import { deploymentProgress } from '@/lib/deployment-progress';
 import type { Commit, EnvName, Project, ProviderKind } from '@/types';
+import { t, rich, formatDateTime } from '@/i18n';
+import { statusLabel } from '@/i18n/labels';
 
 // One stage of the pipeline. The promote control between two stages is the
 // only primary action here; everything else lives in the stage menu.
@@ -136,7 +138,7 @@ export function EnvironmentPipeline({
             <div className={STAGE_CARD}>
               <div className="flex min-h-8 items-center justify-between gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Verified build
+                  {t('Verified build')}
                 </span>
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
                   <PackageCheck className="h-4 w-4" />
@@ -148,13 +150,13 @@ export function EnvironmentPipeline({
               {verifiedBuild ? (
                 <div
                   className="mt-1 truncate font-mono text-[11px] text-muted-foreground"
-                  title={`Verified build sha256:${verifiedBuild.digest}`}
+                  title={t('Verified build sha256:{digest}', { digest: verifiedBuild.digest })}
                 >
-                  build {verifiedBuild.digest.slice(0, 12)}
+                  {t('build {digest}', { digest: verifiedBuild.digest.slice(0, 12) })}
                 </div>
               ) : (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Push to the default branch and wait for CI verification.
+                  {t('Push to the default branch and wait for CI verification.')}
                 </p>
               )}
             </div>
@@ -163,17 +165,17 @@ export function EnvironmentPipeline({
                 type="button"
                 disabled={!canRequestVerifiedBuild}
                 onClick={() => onPromote('prod')}
-                aria-label="Request verified build for production"
+                aria-label={t('Request verified build for production')}
                 title={
                   canRequestVerifiedBuild
-                    ? 'Request this verified build for production'
-                    : 'A verified build and available production target are required'
+                    ? t('Request this verified build for production')
+                    : t('A verified build and available production target are required')
                 }
                 className={promoteButtonClass(canRequestVerifiedBuild)}
               >
                 <ArrowRight className={layout.arrow} />
               </button>
-              <span className={CONNECTOR_LABEL}>Request prod</span>
+              <span className={CONNECTOR_LABEL}>{t('Request prod')}</span>
             </div>
           </>
         )}
@@ -261,12 +263,12 @@ export function EnvironmentPipeline({
                     {env.status !== 'empty' ? (
                       <Link
                         to={deploymentHistoryUrl}
-                        title="View InitPad deployment history"
+                        title={t('View InitPad deployment history')}
                         className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                       >
                         <StatusBadge
                           status={waitingForRunner ? 'pending' : env.status}
-                          label={waitingForRunner ? 'queued' : undefined}
+                          label={waitingForRunner ? t('queued') : undefined}
                           kind={waitingForRunner ? 'ci' : 'deploy'}
                           className="cursor-pointer hover:bg-foreground/10"
                         />
@@ -274,7 +276,7 @@ export function EnvironmentPipeline({
                     ) : (
                       <StatusBadge
                         status={waitingForRunner ? 'pending' : env.status}
-                        label={waitingForRunner ? 'queued' : undefined}
+                        label={waitingForRunner ? t('queued') : undefined}
                         kind={waitingForRunner ? 'ci' : 'deploy'}
                       />
                     )}
@@ -286,7 +288,7 @@ export function EnvironmentPipeline({
                               variant="ghost"
                               size="icon-sm"
                               disabled={busy !== null}
-                              aria-label="Environment actions"
+                              aria-label={t('Environment actions')}
                             >
                               <MoreVertical className="h-4 w-4" />
                             </Button>
@@ -294,7 +296,7 @@ export function EnvironmentPipeline({
                           <DropdownMenuContent>
                             {hasFailedGitHubJobs && targetAcceptsDeployments && (
                               <DropdownMenuItem onSelect={onRerunFailedJobs}>
-                                <RefreshCw className="h-4 w-4" /> Re-run failed GitHub jobs
+                                <RefreshCw className="h-4 w-4" /> {t('Re-run failed GitHub jobs')}
                               </DropdownMenuItem>
                             )}
                             {canDeployToTarget && (
@@ -302,20 +304,20 @@ export function EnvironmentPipeline({
                                 onSelect={() => (env.version ? onRedeploy(env.name) : onRunAgain())}
                               >
                                 <Play className="h-4 w-4" />{' '}
-                                {env.version ? 'Deploy verified build' : 'Deploy'}
+                                {env.version ? t('Deploy verified build') : t('Deploy')}
                               </DropdownMenuItem>
                             )}
                             {canRunAgain && (
                               <DropdownMenuItem onSelect={onRunAgain}>
-                                <Play className="h-4 w-4" /> Deploy
+                                <Play className="h-4 w-4" /> {t('Deploy')}
                               </DropdownMenuItem>
                             )}
                             {hasDeployment && targetAcceptsDeployments && !targetNeedsDeploy && (
                               <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
                                 <RefreshCw className="h-4 w-4" />
                                 {env.name === 'prod'
-                                  ? 'Request production redeploy'
-                                  : 'Redeploy verified build'}
+                                  ? t('Request production redeploy')
+                                  : t('Redeploy verified build')}
                               </DropdownMenuItem>
                             )}
                             {hasDeployment &&
@@ -326,13 +328,13 @@ export function EnvironmentPipeline({
                                 <DropdownMenuItem onSelect={() => onRollback(env.name)}>
                                   <Undo2 className="h-4 w-4" />
                                   {env.name === 'prod'
-                                    ? 'Request production rollback…'
-                                    : 'Roll back to previous version…'}
+                                    ? t('Request production rollback…')
+                                    : t('Roll back to previous version…')}
                                 </DropdownMenuItem>
                               )}
                             {canInspectWorkload && (
                               <DropdownMenuItem onSelect={() => onDiagnostics(env.name)}>
-                                <Activity className="h-4 w-4" /> Workload diagnostics…
+                                <Activity className="h-4 w-4" /> {t('Workload diagnostics…')}
                               </DropdownMenuItem>
                             )}
                             {hasDeployment &&
@@ -340,19 +342,19 @@ export function EnvironmentPipeline({
                               canStopStart &&
                               (env.status === 'stopped' ? (
                                 <DropdownMenuItem onSelect={() => onStart(env.name)}>
-                                  <Play className="h-4 w-4" /> Start
+                                  <Play className="h-4 w-4" /> {t('Start')}
                                 </DropdownMenuItem>
                               ) : (
                                 <DropdownMenuItem
                                   onSelect={() => onStop(env.name)}
                                   disabled={env.status !== 'running'}
                                 >
-                                  <Square className="h-4 w-4" /> Stop
+                                  <Square className="h-4 w-4" /> {t('Stop')}
                                 </DropdownMenuItem>
                               ))}
                             {canTarget && (
                               <DropdownMenuItem onSelect={() => onConfigureTarget(env.name)}>
-                                <Server className="h-4 w-4" /> Change target
+                                <Server className="h-4 w-4" /> {t('Change target')}
                               </DropdownMenuItem>
                             )}
                             {targetAcceptsManagement &&
@@ -365,10 +367,10 @@ export function EnvironmentPipeline({
                                   >
                                     <Trash2 className="h-4 w-4" />{' '}
                                     {env.status === 'deploying'
-                                      ? 'Cancel deploy'
+                                      ? t('Cancel deploy')
                                       : cleanupPending
-                                        ? 'Retry cleanup'
-                                        : 'Remove deployment'}
+                                        ? t('Retry cleanup')
+                                        : t('Remove deployment')}
                                   </DropdownMenuItem>
                                 </>
                               )}
@@ -385,9 +387,9 @@ export function EnvironmentPipeline({
                   {env.artifact && (
                     <span
                       className="min-w-0 truncate font-mono text-[11px] text-muted-foreground"
-                      title={`Verified build sha256:${env.artifact.digest}`}
+                      title={t('Verified build sha256:{digest}', { digest: env.artifact.digest })}
                     >
-                      build {env.artifact.digest.slice(0, 12)}
+                      {t('build {digest}', { digest: env.artifact.digest.slice(0, 12) })}
                     </span>
                   )}
                 </div>
@@ -400,7 +402,9 @@ export function EnvironmentPipeline({
                   </div>
                 ) : (
                   !env.version && (
-                    <div className="mt-1 text-sm text-muted-foreground">Nothing deployed yet</div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {t('Nothing deployed yet')}
+                    </div>
                   )
                 )}
 
@@ -413,7 +417,7 @@ export function EnvironmentPipeline({
                     <span className="truncate">{env.target?.name ?? env.provider}</span>
                     {env.target?.scope === 'user' && (
                       <span className="shrink-0 rounded-full bg-foreground/[0.06] px-1.5 text-[11px] font-medium leading-4">
-                        yours
+                        {t('yours')}
                       </span>
                     )}
                   </div>
@@ -440,12 +444,17 @@ export function EnvironmentPipeline({
                   >
                     <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                     <span className="min-w-0">
-                      Server is {env.target!.managementState ?? 'disconnected'}. The URL may remain
-                      online, but InitPad management is unavailable.{' '}
-                      <Link to="/infrastructure" className="text-link font-medium">
-                        Reconnect server
-                      </Link>
-                      .
+                      {rich(
+                        'Server is {state}. The URL may remain online, but InitPad management is unavailable. <link>Reconnect server</link>.',
+                        {
+                          state: statusLabel(env.target!.managementState ?? 'disconnected'),
+                          link: (chunk) => (
+                            <Link to="/infrastructure" className="text-link font-medium">
+                              {chunk}
+                            </Link>
+                          ),
+                        },
+                      )}
                     </span>
                   </div>
                 )}
@@ -459,12 +468,16 @@ export function EnvironmentPipeline({
                   >
                     <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                     <span className="min-w-0">
-                      Workspace access is paused. Existing workloads remain manageable, but deploy,
-                      redeploy and rollback are unavailable.{' '}
-                      <Link to="/infrastructure" className="text-link font-medium">
-                        Manage access
-                      </Link>
-                      .
+                      {rich(
+                        'Workspace access is paused. Existing workloads remain manageable, but deploy, redeploy and rollback are unavailable. <link>Manage access</link>.',
+                        {
+                          link: (chunk) => (
+                            <Link to="/infrastructure" className="text-link font-medium">
+                              {chunk}
+                            </Link>
+                          ),
+                        },
+                      )}
                     </span>
                   </div>
                 )}
@@ -479,8 +492,8 @@ export function EnvironmentPipeline({
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>
                       {workspaceAccessPaused
-                        ? 'Target change pending — resume workspace access before deploying.'
-                        : 'Target changed — deploy to apply it.'}
+                        ? t('Target change pending — resume workspace access before deploying.')
+                        : t('Target changed — deploy to apply it.')}
                     </span>
                   </div>
                 )}
@@ -494,18 +507,18 @@ export function EnvironmentPipeline({
                         <Spinner className="h-3 w-3 shrink-0" />
                       )}
                       <span className="truncate">
-                        {env.statusReason ?? 'Deploying…'}
+                        {env.statusReason ?? t('Deploying…')}
                         {pct !== null ? ` · ${pct}%` : ''}
                       </span>
                     </div>
                     {!waitingForRunner && (
                       <div
                         role="progressbar"
-                        aria-label={`${env.name} deployment progress`}
+                        aria-label={t('{name} deployment progress', { name: env.name })}
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={pct ?? undefined}
-                        aria-valuetext={env.statusReason ?? 'Deploying'}
+                        aria-valuetext={env.statusReason ?? t('Deploying')}
                         className="relative h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.08]"
                       >
                         {pct === null ? (
@@ -553,8 +566,9 @@ export function EnvironmentPipeline({
                   >
                     <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>
-                      Scheduled cleanup {new Date(env.expiresAt).toLocaleString()}. Redeploy to
-                      renew.
+                      {t('Scheduled cleanup {date}. Redeploy to renew.', {
+                        date: formatDateTime(env.expiresAt),
+                      })}
                     </span>
                   </div>
                 )}
@@ -574,14 +588,14 @@ export function EnvironmentPipeline({
                       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success sm:h-9 sm:w-9">
                         <Check className="h-4 w-4" />
                       </span>
-                      <span className={CONNECTOR_LABEL}>in sync</span>
+                      <span className={CONNECTOR_LABEL}>{t('in sync')}</span>
                     </>
                   ) : deploying ? (
                     <>
                       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-warning/10 text-warning sm:h-9 sm:w-9">
                         <Spinner className="h-4 w-4" />
                       </span>
-                      <span className={CONNECTOR_LABEL}>deploying…</span>
+                      <span className={CONNECTOR_LABEL}>{t('deploying…')}</span>
                     </>
                   ) : (
                     <>
@@ -592,14 +606,23 @@ export function EnvironmentPipeline({
                         title={
                           canPromote
                             ? next === 'prod'
-                              ? `Request v${env.version} from ${env.name} for production`
-                              : `Deploy v${env.version} from ${env.name} to ${next}`
+                              ? t('Request v{version} from {name} for production', {
+                                  version: env.version ?? '',
+                                  name: env.name,
+                                })
+                              : t('Deploy v{version} from {name} to {next}', {
+                                  version: env.version ?? '',
+                                  name: env.name,
+                                  next: next,
+                                })
                             : target?.workspaceAccessStatus === 'disabled'
-                              ? `Resume workspace access before deploying to ${next}`
+                              ? t('Resume workspace access before deploying to {next}', {
+                                  next: next,
+                                })
                               : target?.target?.scope === 'user' &&
                                   (target.target.managementState ?? 'active') !== 'active'
-                                ? `Reconnect the ${next} server before deploying`
-                                : `Deploy to ${env.name} first`
+                                ? t('Reconnect the {next} server before deploying', { next: next })
+                                : t('Deploy to {name} first', { name: env.name })
                         }
                         className={promoteButtonClass(canPromote)}
                       >
@@ -608,8 +631,8 @@ export function EnvironmentPipeline({
                       <span className={CONNECTOR_LABEL}>
                         {canPromote
                           ? next === 'prod'
-                            ? 'Request prod'
-                            : `Deploy to ${next}`
+                            ? t('Request prod')
+                            : t('Deploy to {next}', { next: next })
                           : next}
                       </span>
                     </>

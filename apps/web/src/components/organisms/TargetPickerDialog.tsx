@@ -26,14 +26,15 @@ import type {
   Target,
   TemplateManifest,
 } from '@/types';
+import { t, rich, richPlural } from '@/i18n';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
   sftp: Cloud,
 };
 
-function runtimeOf(t: TemplateManifest): RuntimeKind {
-  return t.runtime ?? (t.artifact === 'static' ? 'static' : 'node');
+function runtimeOf(template: TemplateManifest): RuntimeKind {
+  return template.runtime ?? (template.artifact === 'static' ? 'static' : 'node');
 }
 
 // A target is usable for a template when the template accepts its kind and the
@@ -97,34 +98,42 @@ export function TargetPickerDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            <Network className="h-[18px] w-[18px]" /> Deployment target ({env})
+            <Network className="h-[18px] w-[18px]" />{' '}
+            {t('Deployment target ({env})', { env: env ?? '' })}
           </DialogTitle>
           <DialogDescription>
-            Choose where <b className="font-semibold text-foreground">{env}</b> deploys. Changing it
-            on a live environment tears down the old deployment first.
+            {rich(
+              'Choose where <b>{env}</b> deploys. Changing it on a live environment tears down the old deployment first.',
+              { env: env, b: (chunk) => <b className="font-semibold text-foreground">{chunk}</b> },
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="-mx-1 flex max-h-[52vh] flex-col gap-2 overflow-y-auto px-1 py-0.5">
           {selectableOptions.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No supported and verified replacement target yet. Add or test a server in{' '}
-              <Link to="/infrastructure" className="text-link">
-                Servers
-              </Link>
-              .
+              {rich(
+                'No supported and verified replacement target yet. Add or test a server in <link>Servers</link>.',
+                {
+                  link: (chunk) => (
+                    <Link to="/infrastructure" className="text-link">
+                      {chunk}
+                    </Link>
+                  ),
+                },
+              )}
             </p>
           )}
-          {options.map((t) => {
-            const Icon = KIND_ICON[t.kind] ?? Server;
-            const active = selected === t.id;
-            const isCurrent = current?.id === t.id;
-            const selectable = targetAcceptsNewAssignments(t) && targetIsReady(t);
+          {options.map((option) => {
+            const Icon = KIND_ICON[option.kind] ?? Server;
+            const active = selected === option.id;
+            const isCurrent = current?.id === option.id;
+            const selectable = targetAcceptsNewAssignments(option) && targetIsReady(option);
             return (
               <button
-                key={t.id}
+                key={option.id}
                 type="button"
-                onClick={() => selectable && setSelected(t.id)}
+                onClick={() => selectable && setSelected(option.id)}
                 disabled={!selectable}
                 aria-pressed={active}
                 className={cn(
@@ -139,32 +148,35 @@ export function TargetPickerDialog({
                 <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="min-w-0 break-words text-sm font-medium">{t.name}</span>
+                    <span className="min-w-0 break-words text-sm font-medium">{option.name}</span>
                     <Badge className="px-2 py-0">
-                      {t.scope === 'builtin' ? 'built-in' : 'yours'}
+                      {option.scope === 'builtin' ? t('built-in') : t('yours')}
                     </Badge>
-                    {t.verifiedAt && (
+                    {option.verifiedAt && (
                       <ShieldCheck
                         className="h-3.5 w-3.5 shrink-0 text-success"
-                        aria-label="Verified"
+                        aria-label={t('Verified')}
                       />
                     )}
-                    {isCurrent && <span className="text-xs text-muted-foreground">current</span>}
-                    {!targetIsReady(t) && (
+                    {isCurrent && (
+                      <span className="text-xs text-muted-foreground">{t('current')}</span>
+                    )}
+                    {!targetIsReady(option) && (
                       <span className="text-xs text-warning">
-                        {t.scope === 'user' && t.managementState === 'retired'
-                          ? 'retired'
-                          : t.scope === 'user' && t.managementState === 'disconnected'
-                            ? 'reconnect first'
-                            : t.kind === 'docker' && t.scope === 'user'
-                              ? 'Agent not ready'
-                              : 'verify first'}
+                        {option.scope === 'user' && option.managementState === 'retired'
+                          ? t('retired')
+                          : option.scope === 'user' && option.managementState === 'disconnected'
+                            ? t('reconnect first')
+                            : option.kind === 'docker' && option.scope === 'user'
+                              ? t('Agent not ready')
+                              : t('verify first')}
                       </span>
                     )}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {t.kind}
-                    {t.host ? ` · ${t.host}` : ''} · runs {t.capabilities.join(', ')}
+                    {option.kind}
+                    {option.host ? ` · ${option.host}` : ''} ·{' '}
+                    {t('runs {runtimes}', { runtimes: option.capabilities.join(', ') })}
                   </div>
                 </div>
                 <span
@@ -183,23 +195,34 @@ export function TargetPickerDialog({
           })}
           {missingCapability.length > 0 && template && (
             <p className="tint-warning rounded-lg border border-warning/30 p-3 text-xs text-muted-foreground">
-              {missingCapability.map((target) => target.name).join(', ')}{' '}
-              {missingCapability.length === 1 ? 'is' : 'are'} hidden because the target capability
-              list does not include{' '}
-              <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
-              <Link to="/infrastructure" className="text-link font-medium">
-                Update capabilities
-              </Link>
-              .
+              {richPlural(
+                '{names} are hidden because the target capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.',
+                missingCapability.length,
+                {
+                  names: missingCapability.map((target) => target.name).join(', '),
+                  runtime: runtimeOf(template),
+                  b: (chunk) => <b className="font-semibold text-foreground">{chunk}</b>,
+                  link: (chunk) => (
+                    <Link to="/infrastructure" className="text-link font-medium">
+                      {chunk}
+                    </Link>
+                  ),
+                },
+              )}
             </p>
           )}
           {selectedTarget && selectedTarget.id !== current?.id && (
             <div className="tint-warning rounded-lg border border-warning/30 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Confirm target change</p>
+              <p className="font-medium text-foreground">{t('Confirm target change')}</p>
               <p className="mt-1">
                 {current
-                  ? `${current.name} will be replaced by ${selectedTarget.name}. A live deployment is removed from the old target and must be deployed to the new one.`
-                  : `${selectedTarget.name} will become the deployment target for this environment.`}
+                  ? t(
+                      '{name} will be replaced by {name2}. A live deployment is removed from the old target and must be deployed to the new one.',
+                      { name: current.name, name2: selectedTarget.name },
+                    )
+                  : t('{name} will become the deployment target for this environment.', {
+                      name: selectedTarget.name,
+                    })}
               </p>
             </div>
           )}
@@ -210,17 +233,17 @@ export function TargetPickerDialog({
             to="/infrastructure"
             className="text-link mr-auto self-start py-2 text-sm font-medium sm:self-center sm:py-0"
           >
-            Manage servers
+            {t('Manage servers')}
           </Link>
           <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button
             disabled={busy || !selected || selected === current?.id}
             onClick={() => env && selected && onPick(env, selected)}
           >
             {busy && <Spinner className="h-4 w-4" />}
-            {current ? 'Change target' : 'Use target'}
+            {current ? t('Change target') : t('Use target')}
           </Button>
         </DialogFooter>
       </DialogContent>

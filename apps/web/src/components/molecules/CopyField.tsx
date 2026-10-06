@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { t } from '@/i18n';
 
 type CopyState = 'idle' | 'copied' | 'failed';
 
@@ -61,7 +62,7 @@ export function CopyField({ command }: { command: string }) {
         <button
           type="button"
           onClick={() => void copy()}
-          aria-label="Copy to clipboard"
+          aria-label={t('Copy to clipboard')}
           className="flex h-9 shrink-0 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-8"
         >
           {state === 'copied' ? (
@@ -69,12 +70,12 @@ export function CopyField({ command }: { command: string }) {
           ) : (
             <Copy className="h-3.5 w-3.5" />
           )}
-          {state === 'copied' ? 'copied' : 'copy'}
+          {state === 'copied' ? t('copied') : t('copy')}
         </button>
       </div>
       {state === 'failed' && (
         <p className="mt-1.5 text-xs text-destructive" role="alert">
-          Clipboard access is blocked. Select the text and press Ctrl+C (Cmd+C on macOS).
+          {t('Clipboard access is blocked. Select the text and press Ctrl+C (Cmd+C on macOS).')}
         </p>
       )}
     </div>

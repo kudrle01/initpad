@@ -13,13 +13,15 @@ import { Select } from '@/components/ui/select';
 import { useToast } from '@/toast';
 import { useConfirmation } from '@/confirmation';
 import type { WorkspaceMember, WorkspaceRole } from '@/types';
+import { t, msg, type MessageKey } from '@/i18n';
+import { roleLabel } from '@/i18n/labels';
 
 type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
-const ASSIGNABLE_ROLES: Array<{ value: AssignableRole; label: string }> = [
-  { value: 'member', label: 'Member' },
-  { value: 'maintainer', label: 'Maintainer' },
-  { value: 'viewer', label: 'Viewer' },
-  { value: 'admin', label: 'Admin' },
+const ASSIGNABLE_ROLES: Array<{ value: AssignableRole; label: MessageKey }> = [
+  { value: 'member', label: msg('Member') },
+  { value: 'maintainer', label: msg('Maintainer') },
+  { value: 'viewer', label: msg('Viewer') },
+  { value: 'admin', label: msg('Admin') },
 ];
 
 export function WorkspaceMembersSettings() {
@@ -64,13 +66,15 @@ export function WorkspaceMembersSettings() {
     if (!activeWorkspace) return;
     if (role === 'admin') {
       const confirmed = await confirmAction({
-        title: `Add ${identity.trim()} as workspace admin?`,
-        description: `Administrators can manage members and infrastructure in ${activeWorkspace.name}.`,
-        confirmLabel: 'Add workspace admin',
+        title: t('Add {identity} as workspace admin?', { identity: identity.trim() }),
+        description: t('Administrators can manage members and infrastructure in {name}.', {
+          name: activeWorkspace.name,
+        }),
+        confirmLabel: t('Add workspace admin'),
         tone: 'warning',
         consequences: [
-          'This account receives elevated workspace permissions immediately.',
-          'The workspace owner can later change or remove the role.',
+          t('This account receives elevated workspace permissions immediately.'),
+          t('The workspace owner can later change or remove the role.'),
         ],
       });
       if (!confirmed) return;
@@ -79,7 +83,7 @@ export function WorkspaceMembersSettings() {
     try {
       setMembers(await api.addWorkspaceMember(activeWorkspace.id, identity.trim(), role));
       setIdentity('');
-      toast.success('Workspace member added');
+      toast.success(t('Workspace member added'));
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -90,29 +94,32 @@ export function WorkspaceMembersSettings() {
   async function changeRole(member: WorkspaceMember, nextRole: AssignableRole) {
     if (!activeWorkspace || nextRole === member.role) return;
     const confirmed = await confirmAction({
-      title: `Change @${member.username}'s role?`,
-      description:
+      title: t("Change @{username}'s role?", { username: member.username }),
+      description: t(
         'Workspace role changes take effect immediately across projects and infrastructure.',
-      confirmLabel: `Change role to ${nextRole}`,
+      ),
+      confirmLabel: t('Change role to {role}', { role: roleLabel(nextRole) }),
       tone: 'warning',
       details: [
-        { label: 'Current role', value: member.role },
-        { label: 'New role', value: nextRole },
+        { label: t('Current role'), value: roleLabel(member.role) },
+        { label: t('New role'), value: roleLabel(nextRole) },
       ],
       consequences: [
         nextRole === 'admin'
-          ? 'The member gains permission to manage workspace membership and infrastructure.'
+          ? t('The member gains permission to manage workspace membership and infrastructure.')
           : nextRole === 'maintainer'
-            ? 'The member can maintain deployments and review production requests without workspace administration rights.'
-            : 'The member may immediately lose access to actions allowed by the current role.',
-        'Private repository access is reconciled to the new role.',
+            ? t(
+                'The member can maintain deployments and review production requests without workspace administration rights.',
+              )
+            : t('The member may immediately lose access to actions allowed by the current role.'),
+        t('Private repository access is reconciled to the new role.'),
       ],
     });
     if (!confirmed) return;
     setBusyMemberId(member.userId);
     try {
       setMembers(await api.updateWorkspaceMember(activeWorkspace.id, member.userId, nextRole));
-      toast.success(`Updated @${member.username}`);
+      toast.success(t('Updated @{username}', { username: member.username }));
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -123,14 +130,20 @@ export function WorkspaceMembersSettings() {
   async function removeMember(member: WorkspaceMember) {
     if (!activeWorkspace) return;
     const confirmed = await confirmAction({
-      title: `Remove @${member.username} from ${activeWorkspace.name}?`,
-      description:
+      title: t('Remove @{username} from {name}?', {
+        username: member.username,
+        name: activeWorkspace.name,
+      }),
+      description: t(
         'The user account remains active, but its access to this team workspace is revoked.',
-      confirmLabel: 'Remove member',
+      ),
+      confirmLabel: t('Remove member'),
       tone: 'danger',
       consequences: [
-        'Workspace projects, infrastructure and audit events are no longer visible to this member.',
-        'Private repository access is removed during reconciliation.',
+        t(
+          'Workspace projects, infrastructure and audit events are no longer visible to this member.',
+        ),
+        t('Private repository access is removed during reconciliation.'),
       ],
     });
     if (!confirmed) return;
@@ -138,7 +151,7 @@ export function WorkspaceMembersSettings() {
     try {
       await api.removeWorkspaceMember(activeWorkspace.id, member.userId);
       setMembers((rows) => rows.filter((row) => row.userId !== member.userId));
-      toast.success(`Removed @${member.username}`);
+      toast.success(t('Removed @{username}', { username: member.username }));
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -149,16 +162,16 @@ export function WorkspaceMembersSettings() {
   return (
     <SettingsSection
       icon={Users}
-      title="Workspace members"
-      description="People who can see and work on this workspace's projects."
+      title={t('Workspace members')}
+      description={t("People who can see and work on this workspace's projects.")}
       flush
     >
       {canManage && (
         <div className="border-b border-border/70 bg-muted/50 px-4 py-4 sm:px-6">
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
             <Input
-              placeholder="Username or e-mail"
-              aria-label="New member username or e-mail"
+              placeholder={t('Username or e-mail')}
+              aria-label={t('New member username or e-mail')}
               value={identity}
               onChange={(event) => setIdentity(event.target.value)}
               onKeyDown={(event) => {
@@ -166,23 +179,24 @@ export function WorkspaceMembersSettings() {
               }}
             />
             <Select
-              aria-label="New member role"
+              aria-label={t('New member role')}
               value={role}
               onChange={(event) => setRole(event.target.value as AssignableRole)}
             >
               {ASSIGNABLE_ROLES.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.label)}
                 </option>
               ))}
             </Select>
             <Button onClick={() => void addMember()} disabled={adding || !identity.trim()}>
-              <Plus className="h-4 w-4" /> Add member
+              <Plus className="h-4 w-4" /> {t('Add member')}
             </Button>
           </div>
           <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
-            Maintainers can manage deployments, rollbacks and production reviews without managing
-            workspace membership or policy.
+            {t(
+              'Maintainers can manage deployments, rollbacks and production reviews without managing workspace membership or policy.',
+            )}
           </p>
         </div>
       )}
@@ -190,8 +204,9 @@ export function WorkspaceMembersSettings() {
       {activeWorkspace?.type === 'personal' && (
         <div className="border-b border-border/70 px-4 py-4 sm:px-6">
           <Notice>
-            Personal workspaces stay private. Use “Add new workspace” in the workspace switcher to
-            create a shared team space.
+            {t(
+              'Personal workspaces stay private. Use “Add new workspace” in the workspace switcher to create a shared team space.',
+            )}
           </Notice>
         </div>
       )}
@@ -201,10 +216,10 @@ export function WorkspaceMembersSettings() {
           <LoadErrorState message={loadError} onRetry={() => setReloadKey((value) => value + 1)} />
         </div>
       ) : loading ? (
-        <p className="px-4 py-6 text-sm text-muted-foreground sm:px-6">Loading members…</p>
+        <p className="px-4 py-6 text-sm text-muted-foreground sm:px-6">{t('Loading members…')}</p>
       ) : members.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted-foreground sm:px-6">
-          No workspace members found.
+          {t('No workspace members found.')}
         </p>
       ) : (
         <List>
@@ -231,7 +246,7 @@ export function WorkspaceMembersSettings() {
                 <>
                   <Select
                     className="w-32 shrink-0"
-                    aria-label={`Role for ${member.username}`}
+                    aria-label={t('Role for {username}', { username: member.username })}
                     value={member.role}
                     disabled={busyMemberId === member.userId}
                     onChange={(event) =>
@@ -240,7 +255,7 @@ export function WorkspaceMembersSettings() {
                   >
                     {ASSIGNABLE_ROLES.map((option) => (
                       <option key={option.value} value={option.value}>
-                        {option.label}
+                        {t(option.label)}
                       </option>
                     ))}
                   </Select>
@@ -248,8 +263,8 @@ export function WorkspaceMembersSettings() {
                     variant="ghost"
                     size="icon"
                     className="rounded-full hover:bg-destructive/10 hover:text-destructive"
-                    aria-label={`Remove ${member.username}`}
-                    title={`Remove ${member.username}`}
+                    aria-label={t('Remove {username}', { username: member.username })}
+                    title={t('Remove {username}', { username: member.username })}
                     disabled={busyMemberId === member.userId}
                     onClick={() => void removeMember(member)}
                   >
@@ -257,7 +272,9 @@ export function WorkspaceMembersSettings() {
                   </Button>
                 </>
               ) : (
-                <Badge variant={member.role === 'owner' ? 'brand' : 'default'}>{member.role}</Badge>
+                <Badge variant={member.role === 'owner' ? 'brand' : 'default'}>
+                  {roleLabel(member.role)}
+                </Badge>
               )}
             </ListRow>
           ))}

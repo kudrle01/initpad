@@ -3,15 +3,18 @@ import { PageHeader } from '@/components/molecules/PageHeader';
 import { WorkspaceAdministrationSettings } from '@/components/organisms/settings/WorkspaceAdministrationSettings';
 import { WorkspaceMembersSettings } from '@/components/organisms/settings/WorkspaceMembersSettings';
 import { WorkspaceCapacitySettings } from '@/components/organisms/settings/WorkspaceCapacitySettings';
+import { t } from '@/i18n';
 
 export default function WorkspaceSettings() {
   const { activeWorkspace } = useAuth();
   return (
     <div>
       <PageHeader
-        title="Workspace settings"
+        title={t('Workspace settings')}
         description={
-          activeWorkspace ? `Members, policy and limits of ${activeWorkspace.name}.` : undefined
+          activeWorkspace
+            ? t('Members, policy and limits of {name}.', { name: activeWorkspace.name })
+            : undefined
         }
       />
       {/* People and policy are the working area; capacity is reference data. */}

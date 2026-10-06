@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { StatusDot, type StatusDotKind } from '@/components/atoms/StatusDot';
+import { statusLabel } from '@/i18n/labels';
 
 // Molecule: presentational badge with a status dot + label. Interactive
 // contexts wrap it in a semantic link/button owned by the caller.
@@ -15,7 +16,7 @@ export function StatusBadge({ status, label, kind, className, title }: StatusBad
   return (
     <Badge className={className} title={title}>
       <StatusDot status={status} kind={kind} />
-      <span className="truncate">{label ?? status}</span>
+      <span className="truncate">{label ?? statusLabel(status)}</span>
     </Badge>
   );
 }

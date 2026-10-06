@@ -24,80 +24,76 @@ import { PageHeader } from '@/components/molecules/PageHeader';
 import { useLoadable } from '@/hooks/useLoadable';
 import { cn } from '@/lib/utils';
 import type { AuditEvent, AuditEventPage } from '@/types';
+import { t, msg, formatDateTime, relativeTime, type MessageKey } from '@/i18n';
+import { statusLabel, termLabel } from '@/i18n/labels';
 
 const EMPTY_PAGE: AuditEventPage = { items: [], nextCursor: null };
 
-const ACTION_LABELS: Record<string, string> = {
-  'workspace.created': 'Workspace created',
-  'workspace.updated': 'Workspace updated',
-  'workspace.production_policy_changed': 'Production policy changed',
-  'workspace.metrics_exported': 'Workspace metrics exported',
-  'workspace.member_added': 'Member added',
-  'workspace.member_role_changed': 'Member role changed',
-  'workspace.member_removed': 'Member removed',
-  'project.created': 'Project created',
-  'project.imported': 'Project imported',
-  'project.creation_requested': 'Project creation requested',
-  'project.creation_completed': 'Project creation completed',
-  'project.import_requested': 'Project import requested',
-  'project.import_completed': 'Project import completed',
-  'project.deleted': 'Project deleted',
-  'environment.target_changed': 'Environment target changed',
-  'environment.promotion_requested': 'Promotion requested',
-  'environment.promotion_completed': 'Promotion completed',
-  'environment.rollback_requested': 'Rollback requested',
-  'environment.rollback_completed': 'Rollback completed',
-  'environment.deployment_requested': 'Deployment requested',
-  'environment.deployment_completed': 'Deployment completed',
-  'environment.start_requested': 'Start requested',
-  'environment.start_completed': 'Start completed',
-  'environment.stop_requested': 'Stop requested',
-  'environment.stop_completed': 'Stop completed',
-  'environment.teardown_requested': 'Removal requested',
-  'environment.teardown_completed': 'Removal completed',
-  'environment.diagnostic_requested': 'Diagnostics requested',
-  'environment.expired': 'Environment lifetime expired',
-  'production.requested': 'Production requested',
-  'production.request_approved': 'Production request approved',
-  'production.approval_accepted': 'Production approval accepted',
-  'production.approval_failed': 'Production approval failed',
-  'production.request_rejected': 'Production request rejected',
-  'production.request_cancelled': 'Production request cancelled',
-  'production.request_stale': 'Production request became stale',
-  'target.created': 'Target created',
-  'target.updated': 'Target updated',
-  'target.connected': 'Target connected',
-  'target.disconnected': 'Target disconnected',
-  'target.retired': 'Target retired',
-  'target.restored': 'Target restored',
-  'target.deleted': 'Target deleted',
-  'allocation.created': 'Allocation created',
-  'allocation.updated': 'Allocation updated',
-  'allocation.deleted': 'Allocation deleted',
-  'agent.enrollment_issued': 'Agent enrollment issued',
-  'agent.disabled': 'Agent disabled',
-  'agent.update_requested': 'Agent update requested',
-  'agent.update_completed': 'Agent update completed',
+const ACTION_LABELS: Record<string, MessageKey> = {
+  'workspace.created': msg('Workspace created'),
+  'workspace.updated': msg('Workspace updated'),
+  'workspace.production_policy_changed': msg('Production policy changed'),
+  'workspace.metrics_exported': msg('Workspace metrics exported'),
+  'workspace.member_added': msg('Member added'),
+  'workspace.member_role_changed': msg('Member role changed'),
+  'workspace.member_removed': msg('Member removed'),
+  'project.created': msg('Project created'),
+  'project.imported': msg('Project imported'),
+  'project.creation_requested': msg('Project creation requested'),
+  'project.creation_completed': msg('Project creation completed'),
+  'project.import_requested': msg('Project import requested'),
+  'project.import_completed': msg('Project import completed'),
+  'project.deleted': msg('Project deleted'),
+  'environment.target_changed': msg('Environment target changed'),
+  'environment.promotion_requested': msg('Promotion requested'),
+  'environment.promotion_completed': msg('Promotion completed'),
+  'environment.rollback_requested': msg('Rollback requested'),
+  'environment.rollback_completed': msg('Rollback completed'),
+  'environment.deployment_requested': msg('Deployment requested'),
+  'environment.deployment_completed': msg('Deployment completed'),
+  'environment.start_requested': msg('Start requested'),
+  'environment.start_completed': msg('Start completed'),
+  'environment.stop_requested': msg('Stop requested'),
+  'environment.stop_completed': msg('Stop completed'),
+  'environment.teardown_requested': msg('Removal requested'),
+  'environment.teardown_completed': msg('Removal completed'),
+  'environment.diagnostic_requested': msg('Diagnostics requested'),
+  'environment.expired': msg('Environment lifetime expired'),
+  'production.requested': msg('Production requested'),
+  'production.request_approved': msg('Production request approved'),
+  'production.approval_accepted': msg('Production approval accepted'),
+  'production.approval_failed': msg('Production approval failed'),
+  'production.request_rejected': msg('Production request rejected'),
+  'production.request_cancelled': msg('Production request cancelled'),
+  'production.request_stale': msg('Production request became stale'),
+  'target.created': msg('Target created'),
+  'target.updated': msg('Target updated'),
+  'target.connected': msg('Target connected'),
+  'target.disconnected': msg('Target disconnected'),
+  'target.retired': msg('Target retired'),
+  'target.restored': msg('Target restored'),
+  'target.deleted': msg('Target deleted'),
+  'allocation.created': msg('Allocation created'),
+  'allocation.updated': msg('Allocation updated'),
+  'allocation.deleted': msg('Allocation deleted'),
+  'agent.enrollment_issued': msg('Agent enrollment issued'),
+  'agent.disabled': msg('Agent disabled'),
+  'agent.update_requested': msg('Agent update requested'),
+  'agent.update_completed': msg('Agent update completed'),
 };
 
+// Title-cases an API identifier ("agent_job" → "Agent Job"); Czech uses the
+// shared vocabulary where it knows the term.
 function label(value: string): string {
+  const term = termLabel(value);
+  const text = term === value ? statusLabel(value) : term;
+  if (text !== value) return text.charAt(0).toUpperCase() + text.slice(1);
   return value.replace(/[._-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function eventLabel(action: string): string {
-  return ACTION_LABELS[action] ?? label(action);
-}
-
-function relativeTime(iso: string): string {
-  const milliseconds = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(milliseconds)) return '';
-  const minutes = Math.max(0, Math.floor(milliseconds / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return days < 30 ? `${days}d ago` : new Date(iso).toLocaleDateString('en-GB');
+  const known = ACTION_LABELS[action];
+  return known ? t(known) : label(action);
 }
 
 const OUTCOME_BADGE = {
@@ -125,7 +121,7 @@ const OUTCOME_ICONS = {
 // operation and the recorded details open on demand.
 function EventRow({ event }: { event: AuditEvent }) {
   const [open, setOpen] = useState(false);
-  const exactTime = new Date(event.createdAt).toLocaleString();
+  const exactTime = formatDateTime(event.createdAt);
   const details = Object.entries(event.details ?? {});
   const OutcomeIcon = OUTCOME_ICONS[event.outcome];
   const operationLink = event.operation?.projectId
@@ -142,9 +138,9 @@ function EventRow({ event }: { event: AuditEvent }) {
     : '';
   const actor = event.actor.userId
     ? `${event.actor.displayName || event.actor.username} (@${event.actor.username})`
-    : event.actor.displayName || 'InitPad system';
+    : event.actor.displayName || t('InitPad system');
   const resource = `${label(event.resource.type)}: ${
-    event.resource.name || event.resource.id || 'unknown'
+    event.resource.name || event.resource.id || t('unknown')
   }`;
   const expandable = Boolean(event.operation) || details.length > 0;
 
@@ -163,9 +159,9 @@ function EventRow({ event }: { event: AuditEvent }) {
           <span className="truncate text-sm font-medium">{eventLabel(event.action)}</span>
           {/* The tinted icon already carries the outcome on a narrow screen. */}
           <Badge variant={OUTCOME_BADGE[event.outcome]} className="hidden px-2 py-0 sm:inline-flex">
-            {event.outcome}
+            {statusLabel(event.outcome)}
           </Badge>
-          <span className="sr-only sm:hidden">{event.outcome}</span>
+          <span className="sr-only sm:hidden">{statusLabel(event.outcome)}</span>
         </span>
         <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <UserRound className="h-3.5 w-3.5 shrink-0" />
@@ -304,17 +300,18 @@ export default function AuditLog() {
   return (
     <div>
       <PageHeader
-        title="Audit log"
-        description="Who changed what in this workspace, newest first."
+        title={t('Audit log')}
+        description={t('Who changed what in this workspace, newest first.')}
         help={[
           {
-            title: 'Records',
-            description: 'Workspace changes with immutable actor and resource snapshots.',
+            title: t('Records'),
+            description: t('Workspace changes with immutable actor and resource snapshots.'),
           },
           {
-            title: 'Privacy',
-            description:
+            title: t('Privacy'),
+            description: t(
               'Secrets, configuration values and application logs are never stored here.',
+            ),
           },
         ]}
       />
@@ -323,54 +320,54 @@ export default function AuditLog() {
         <Select
           value={action}
           onChange={(event) => setAction(event.target.value)}
-          aria-label="Filter by action"
+          aria-label={t('Filter by action')}
           className="col-span-2 sm:col-span-1"
         >
-          <option value="">All actions</option>
+          <option value="">{t('All actions')}</option>
           {Object.entries(ACTION_LABELS).map(([value, text]) => (
             <option key={value} value={value}>
-              {text}
+              {t(text)}
             </option>
           ))}
         </Select>
         <Select
           value={resourceType}
           onChange={(event) => setResourceType(event.target.value)}
-          aria-label="Filter by resource"
+          aria-label={t('Filter by resource')}
         >
-          <option value="">All resources</option>
-          <option value="workspace">Workspace</option>
-          <option value="member">Member</option>
-          <option value="project">Project</option>
-          <option value="target">Target</option>
-          <option value="allocation">Allocation</option>
-          <option value="agent">Agent</option>
+          <option value="">{t('All resources')}</option>
+          <option value="workspace">{t('Workspace')}</option>
+          <option value="member">{t('Member')}</option>
+          <option value="project">{t('Project')}</option>
+          <option value="target">{t('Target')}</option>
+          <option value="allocation">{t('Allocation')}</option>
+          <option value="agent">{t('Agent')}</option>
         </Select>
         <Select
           value={outcome}
           onChange={(event) => setOutcome(event.target.value as typeof outcome)}
-          aria-label="Filter by outcome"
+          aria-label={t('Filter by outcome')}
         >
-          <option value="">All outcomes</option>
-          <option value="accepted">Accepted</option>
-          <option value="succeeded">Succeeded</option>
-          <option value="failed">Failed</option>
-          <option value="cancelled">Cancelled</option>
+          <option value="">{t('All outcomes')}</option>
+          <option value="accepted">{t('Accepted')}</option>
+          <option value="succeeded">{t('Succeeded')}</option>
+          <option value="failed">{t('Failed')}</option>
+          <option value="cancelled">{t('Cancelled')}</option>
         </Select>
       </div>
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />
       ) : loading ? (
-        <ContentLoading label="Loading audit log" />
+        <ContentLoading label={t('Loading audit log')} />
       ) : items.length === 0 ? (
         <EmptyState
           icon={ScrollText}
-          title={filtered ? 'No matching events' : 'No audit events yet'}
+          title={filtered ? t('No matching events') : t('No audit events yet')}
           description={
             filtered
-              ? 'Change or clear the filters to see other workspace events.'
-              : 'Security-relevant workspace changes will appear here.'
+              ? t('Change or clear the filters to see other workspace events.')
+              : t('Security-relevant workspace changes will appear here.')
           }
           action={
             filtered ? (
@@ -382,7 +379,7 @@ export default function AuditLog() {
                   setOutcome('');
                 }}
               >
-                Clear filters
+                {t('Clear filters')}
               </Button>
             ) : undefined
           }
@@ -408,7 +405,7 @@ export default function AuditLog() {
               disabled={loadingMore}
               onClick={() => void loadMore()}
             >
-              {loadingMore ? 'Loading…' : 'Load more'}
+              {loadingMore ? t('Loading…') : t('Load more')}
             </Button>
           )}
         </div>

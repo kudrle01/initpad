@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { RuntimeKind, Target } from '@/types';
+import { t, formatNumber } from '@/i18n';
 
 interface Props {
   open: boolean;
@@ -104,8 +105,14 @@ export function AllocationDialog({
   ]
     .filter(Boolean)
     .join(', ');
-  const limitsSummary = `${cpu / 1000} CPU · ${memory} MB · ${pids} processes · ${
-    cleanupSummary ? `cleanup ${cleanupSummary}` : 'no automatic cleanup'
+  const limitsSummary = `${t('{cpu} CPU · {memory} MB · {processes} processes', {
+    cpu: formatNumber(cpu / 1000),
+    memory,
+    processes: pids,
+  })} · ${
+    cleanupSummary
+      ? t('cleanup {schedule}', { schedule: cleanupSummary })
+      : t('no automatic cleanup')
   }`;
   const validOptionalHours = (value: string) =>
     value === '' ||
@@ -135,10 +142,10 @@ export function AllocationDialog({
         <DialogHeader>
           <DialogTitle>
             <Users className="h-[18px] w-[18px]" />
-            {editing ? 'Edit workspace access' : 'Enable workspace access'}
+            {editing ? t('Edit workspace access') : t('Enable workspace access')}
           </DialogTitle>
           <DialogDescription>
-            Set this workspace’s deployment limits on the server.
+            {t('Set this workspace’s deployment limits on the server.')}
           </DialogDescription>
         </DialogHeader>
 
@@ -148,22 +155,23 @@ export function AllocationDialog({
               htmlFor="allocation-target"
               help={
                 <InfoTip
-                  label="About the workspace namespace"
+                  label={t('About the workspace namespace')}
                   items={[
                     {
-                      title: 'Namespace',
-                      description: 'InitPad derives an isolated namespace from the workspace.',
+                      title: t('Namespace'),
+                      description: t('InitPad derives an isolated namespace from the workspace.'),
                     },
                     {
-                      title: 'Credentials',
-                      description:
+                      title: t('Credentials'),
+                      description: t(
                         'Server credentials stay separate and are never copied into the workspace.',
+                      ),
                     },
                   ]}
                 />
               }
             >
-              Server
+              {t('Server')}
             </FieldLabel>
             <Select
               id="allocation-target"
@@ -182,12 +190,12 @@ export function AllocationDialog({
           <div className={FIELD}>
             <FieldLabel
               help={
-                <InfoTip label="About allowed runtimes">
-                  Access can use all or only some of the runtimes supported by this server.
+                <InfoTip label={t('About allowed runtimes')}>
+                  {t('Access can use all or only some of the runtimes supported by this server.')}
                 </InfoTip>
               }
             >
-              Allowed runtimes
+              {t('Allowed runtimes')}
             </FieldLabel>
             <div className="flex flex-wrap gap-2">
               {(selectedTarget?.capabilities ?? []).map((capability) => (
@@ -203,7 +211,7 @@ export function AllocationDialog({
           </div>
 
           <div className={FIELD}>
-            <FieldLabel htmlFor="allocation-quota">Environment quota</FieldLabel>
+            <FieldLabel htmlFor="allocation-quota">{t('Environment quota')}</FieldLabel>
             <Input
               id="allocation-quota"
               type="number"
@@ -214,7 +222,7 @@ export function AllocationDialog({
               onChange={(event) => setMaxEnvironments(event.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              How many environments this workspace may run on the server.
+              {t('How many environments this workspace may run on the server.')}
             </p>
           </div>
 
@@ -227,7 +235,7 @@ export function AllocationDialog({
             contentClassName="border-t border-border/70 p-3.5"
             summary={
               <span className="min-w-0">
-                <span className="block text-foreground">Limits, cleanup and address</span>
+                <span className="block text-foreground">{t('Limits, cleanup and address')}</span>
                 <span className="block truncate text-xs font-normal text-muted-foreground">
                   {limitsSummary}
                 </span>
@@ -236,7 +244,7 @@ export function AllocationDialog({
           >
             <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-3">
               <div className={FIELD}>
-                <FieldLabel htmlFor="allocation-cpu">CPU (millicores)</FieldLabel>
+                <FieldLabel htmlFor="allocation-cpu">{t('CPU (millicores)')}</FieldLabel>
                 <Input
                   id="allocation-cpu"
                   type="number"
@@ -247,7 +255,7 @@ export function AllocationDialog({
                 />
               </div>
               <div className={FIELD}>
-                <FieldLabel htmlFor="allocation-memory">Memory (MB)</FieldLabel>
+                <FieldLabel htmlFor="allocation-memory">{t('Memory (MB)')}</FieldLabel>
                 <Input
                   id="allocation-memory"
                   type="number"
@@ -258,7 +266,7 @@ export function AllocationDialog({
                 />
               </div>
               <div className={FIELD}>
-                <FieldLabel htmlFor="allocation-pids">Processes</FieldLabel>
+                <FieldLabel htmlFor="allocation-pids">{t('Processes')}</FieldLabel>
                 <Input
                   id="allocation-pids"
                   type="number"
@@ -269,7 +277,7 @@ export function AllocationDialog({
                 />
               </div>
               <p className="-mt-1 text-xs text-muted-foreground sm:col-span-3">
-                Applied to every environment of this workspace on the server.
+                {t('Applied to every environment of this workspace on the server.')}
               </p>
             </div>
 
@@ -278,13 +286,14 @@ export function AllocationDialog({
                 <FieldLabel
                   htmlFor="allocation-dev-ttl"
                   help={
-                    <InfoTip label="About automatic cleanup">
-                      Expired dev/test workloads are removed automatically. Repositories and
-                      production are never affected.
+                    <InfoTip label={t('About automatic cleanup')}>
+                      {t(
+                        'Expired dev/test workloads are removed automatically. Repositories and production are never affected.',
+                      )}
                     </InfoTip>
                   }
                 >
-                  Dev lifetime (hours)
+                  {t('Dev lifetime (hours)')}
                 </FieldLabel>
                 <Input
                   id="allocation-dev-ttl"
@@ -292,19 +301,19 @@ export function AllocationDialog({
                   min={1}
                   max={8760}
                   value={devTtlHours}
-                  placeholder="Keep until removed"
+                  placeholder={t('Keep until removed')}
                   onChange={(event) => setDevTtlHours(event.target.value)}
                 />
               </div>
               <div className={FIELD}>
-                <FieldLabel htmlFor="allocation-test-ttl">Test lifetime (hours)</FieldLabel>
+                <FieldLabel htmlFor="allocation-test-ttl">{t('Test lifetime (hours)')}</FieldLabel>
                 <Input
                   id="allocation-test-ttl"
                   type="number"
                   min={1}
                   max={8760}
                   value={testTtlHours}
-                  placeholder="Keep until removed"
+                  placeholder={t('Keep until removed')}
                   onChange={(event) => setTestTtlHours(event.target.value)}
                 />
               </div>
@@ -312,18 +321,19 @@ export function AllocationDialog({
                 <FieldLabel
                   htmlFor="allocation-url"
                   help={
-                    <InfoTip label="About the public URL override">
-                      Leave this blank to inherit the server address. Shared platform servers add
-                      the workspace namespace automatically.
+                    <InfoTip label={t('About the public URL override')}>
+                      {t(
+                        'Leave this blank to inherit the server address. Shared platform servers add the workspace namespace automatically.',
+                      )}
                     </InfoTip>
                   }
                 >
-                  Public URL override
+                  {t('Public URL override')}
                 </FieldLabel>
                 <Input
                   id="allocation-url"
                   value={publicUrl}
-                  placeholder={selectedTarget?.publicUrl ?? 'Derived from the server'}
+                  placeholder={selectedTarget?.publicUrl ?? t('Derived from the server')}
                   onChange={(event) => setPublicUrl(event.target.value)}
                 />
               </div>
@@ -333,7 +343,7 @@ export function AllocationDialog({
 
         <DialogFooter>
           <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button
             disabled={busy || !valid}
@@ -356,7 +366,7 @@ export function AllocationDialog({
             }
           >
             {busy && <Spinner className="h-4 w-4" />}
-            {editing ? 'Save access' : 'Enable access'}
+            {editing ? t('Save access') : t('Enable access')}
           </Button>
         </DialogFooter>
       </DialogContent>

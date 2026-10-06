@@ -7,6 +7,7 @@ import { Notice } from '@/components/molecules/Notice';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Spinner } from '@/components/atoms/Spinner';
 import { Button } from '@/components/ui/button';
+import { t, rich } from '@/i18n';
 
 interface GitAccess {
   username: string;
@@ -46,23 +47,23 @@ export function GitAccessSettings() {
   return (
     <SettingsSection
       icon={GitBranch}
-      title="Connect Git"
-      description="Clone, pull and push from this machine without a password prompt."
+      title={t('Connect Git')}
+      description={t('Clone, pull and push from this machine without a password prompt.')}
       help={[
         {
-          title: 'Connection',
-          description: 'Link this machine to the platform Git server once.',
+          title: t('Connection'),
+          description: t('Link this machine to the platform Git server once.'),
         },
         {
-          title: 'Authentication',
-          description: 'Future clone, pull and push commands work without a password prompt.',
+          title: t('Authentication'),
+          description: t('Future clone, pull and push commands work without a password prompt.'),
         },
       ]}
     >
       {!access && (
         <Button variant="soft" onClick={reveal} disabled={loading}>
           {loading ? <Spinner className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
-          {loading ? 'Loading…' : 'Show setup command'}
+          {loading ? t('Loading…') : t('Show setup command')}
         </Button>
       )}
 
@@ -74,25 +75,30 @@ export function GitAccessSettings() {
 
       {access?.token && (
         <div className="flex flex-col gap-3">
-          <p className="text-sm font-medium">1. Run this once in your terminal</p>
+          <p className="text-sm font-medium">{t('1. Run this once in your terminal')}</p>
           <CopyField command={setupCommand(access)} />
           <p className="mt-1 text-sm font-medium">
-            2. Clone any project with the plain URL shown on its page
+            {t('2. Clone any project with the plain URL shown on its page')}
           </p>
           <CopyField command={`git clone ${access.giteaUrl}/${access.username}/<project>.git`} />
           <Notice tone="warning" className="mt-1">
-            The command embeds your personal Gitea token in{' '}
-            <code className="font-mono">~/.gitconfig</code>. Keep it private; you can revoke it
-            anytime in{' '}
-            <a
-              href={`${access.giteaUrl}/user/settings/applications`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-link inline-flex items-center gap-0.5"
-            >
-              Gitea → Settings → Applications <ExternalLink className="h-3 w-3" />
-            </a>
-            .
+            {rich(
+              'The command embeds your personal Gitea token in <code>~/.gitconfig</code>. Keep it private; you can revoke it anytime in <link>Gitea → Settings → Applications {icon}</link>.',
+              {
+                code: (chunk) => <code className="font-mono">{chunk}</code>,
+                icon: <ExternalLink className="h-3 w-3" />,
+                link: (chunk) => (
+                  <a
+                    href={`${access.giteaUrl}/user/settings/applications`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-link inline-flex items-center gap-0.5"
+                  >
+                    {chunk}
+                  </a>
+                ),
+              },
+            )}
           </Notice>
         </div>
       )}
@@ -100,8 +106,9 @@ export function GitAccessSettings() {
       {access && !access.token && (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
-            No personal access token is available. Generate one in Gitea with repository scope and
-            use it as the password when cloning.
+            {t(
+              'No personal access token is available. Generate one in Gitea with repository scope and use it as the password when cloning.',
+            )}
           </p>
           <a
             href={`${access.giteaUrl}/user/settings/applications`}
@@ -109,7 +116,7 @@ export function GitAccessSettings() {
             rel="noreferrer"
             className="text-link inline-flex items-center gap-1 font-medium"
           >
-            Open Gitea token settings <ExternalLink className="h-3.5 w-3.5" />
+            {t('Open Gitea token settings')} <ExternalLink className="h-3.5 w-3.5" />
           </a>
         </div>
       )}

@@ -7,6 +7,7 @@ import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { cn } from '@/lib/utils';
 import type { WorkspaceCapacity } from '@/types';
+import { t, formatNumber } from '@/i18n';
 
 function meter(label: string, used: number, limit: number) {
   return {
@@ -18,7 +19,7 @@ function meter(label: string, used: number, limit: number) {
 
 function bytesLabel(value: string): string {
   const gib = Number(BigInt(value)) / 1024 ** 3;
-  return `${gib.toLocaleString(undefined, { maximumFractionDigits: 1 })} GiB`;
+  return `${formatNumber(gib, { maximumFractionDigits: 1 })} GiB`;
 }
 
 export function WorkspaceCapacitySettings() {
@@ -50,16 +51,16 @@ export function WorkspaceCapacitySettings() {
 
   const meters = capacity
     ? [
-        meter('Projects', capacity.usage.projects, capacity.limits.projects),
-        meter('Members', capacity.usage.members, capacity.limits.members),
-        meter('Servers', capacity.usage.targets, capacity.limits.targets),
+        meter(t('Projects'), capacity.usage.projects, capacity.limits.projects),
+        meter(t('Members'), capacity.usage.members, capacity.limits.members),
+        meter(t('Servers'), capacity.usage.targets, capacity.limits.targets),
         meter(
-          'Active operations',
+          t('Active operations'),
           capacity.usage.concurrentOperations,
           capacity.limits.concurrentOperations,
         ),
         {
-          label: 'Artifact storage',
+          label: t('Artifact storage'),
           value: `${bytesLabel(capacity.usage.artifactBytes)} / ${bytesLabel(capacity.limits.artifactBytes)}`,
           percentage: Math.min(
             100,
@@ -74,24 +75,26 @@ export function WorkspaceCapacitySettings() {
   return (
     <SettingsSection
       icon={Gauge}
-      title="Workspace capacity"
+      title={t('Workspace capacity')}
       help={[
         {
-          title: 'Control-plane limits',
-          description:
+          title: t('Control-plane limits'),
+          description: t(
             'Projects, members, servers and simultaneous provisioning or deployment operations share this workspace policy.',
+          ),
         },
         {
-          title: 'Server limits',
-          description:
+          title: t('Server limits'),
+          description: t(
             'CPU, memory, process and environment limits remain specific to each server access.',
+          ),
         },
       ]}
     >
       {error ? (
         <LoadErrorState message={error} onRetry={() => setReloadKey((value) => value + 1)} />
       ) : !capacity ? (
-        <ContentLoading label="Loading workspace capacity" count={2} />
+        <ContentLoading label={t('Loading workspace capacity')} count={2} />
       ) : (
         <>
           <dl className="grid gap-x-6 gap-y-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr))]">
@@ -121,8 +124,9 @@ export function WorkspaceCapacitySettings() {
             ))}
           </dl>
           <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
-            Platform administrators manage these limits. Reaching one blocks only new work; existing
-            projects and workloads are preserved.
+            {t(
+              'Platform administrators manage these limits. Reaching one blocks only new work; existing projects and workloads are preserved.',
+            )}
           </p>
         </>
       )}

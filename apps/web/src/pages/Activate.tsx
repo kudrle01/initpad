@@ -6,6 +6,7 @@ import { AuthCard } from '@/components/molecules/AuthCard';
 import { FormField } from '@/components/molecules/FormField';
 import { Notice } from '@/components/molecules/Notice';
 import { Button } from '@/components/ui/button';
+import { t } from '@/i18n';
 
 // Public page reached from an admin activation link (/activate/:token). The
 // user sets their own password and is signed in immediately.
@@ -21,7 +22,7 @@ export default function Activate() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (password !== confirm) {
-      setError('Passwords do not match.');
+      setError(t('Passwords do not match.'));
       return;
     }
     setBusy(true);
@@ -38,22 +39,22 @@ export default function Activate() {
 
   return (
     <AuthCard
-      title="Activate your account"
-      description="Choose a password to finish setting up your InitPad account."
+      title={t('Activate your account')}
+      description={t('Choose a password to finish setting up your InitPad account.')}
     >
       <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
         <FormField
-          label="Password"
+          label={t('Password')}
           type="password"
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
           minLength={12}
-          hint="Use at least 12 characters."
+          hint={t('Use at least 12 characters.')}
         />
         <FormField
-          label="Confirm password"
+          label={t('Confirm password')}
           type="password"
           autoComplete="new-password"
           value={confirm}
@@ -67,14 +68,14 @@ export default function Activate() {
           </Notice>
         )}
         <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? 'Please wait…' : 'Activate and sign in'}
+          {busy ? t('Please wait…') : t('Activate and sign in')}
         </Button>
       </form>
       <Link
         to="/login"
         className="text-link mt-5 inline-flex min-h-11 items-center text-sm font-medium sm:min-h-0"
       >
-        Back to sign in
+        {t('Back to sign in')}
       </Link>
     </AuthCard>
   );

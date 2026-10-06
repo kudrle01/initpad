@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } f
 import { createPortal } from 'react-dom';
 import { Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { t } from '@/i18n';
 
 export interface InfoTipItem {
   title: string;
@@ -19,7 +20,7 @@ interface Props {
  * Compact supplementary help. Hover works with a pointer; focus and click
  * make the same content available to keyboard and touch users.
  */
-export function InfoTip({ children, items, label = 'More information', className }: Props) {
+export function InfoTip({ children, items, label, className }: Props) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const id = useId();
@@ -99,7 +100,7 @@ export function InfoTip({ children, items, label = 'More information', className
     >
       <button
         type="button"
-        aria-label={label}
+        aria-label={label ?? t('More information')}
         aria-describedby={open ? id : undefined}
         aria-expanded={open}
         className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/80 transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"

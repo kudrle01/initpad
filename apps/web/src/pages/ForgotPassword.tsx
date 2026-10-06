@@ -4,6 +4,7 @@ import { api } from '@/api';
 import { AuthCard } from '@/components/molecules/AuthCard';
 import { FormField } from '@/components/molecules/FormField';
 import { Button } from '@/components/ui/button';
+import { t } from '@/i18n';
 
 // Public password-reset request. The response is intentionally identical whether
 // or not the account exists, so it cannot be used to probe for users.
@@ -25,17 +26,19 @@ export default function ForgotPassword() {
 
   return (
     <AuthCard
-      title="Reset your password"
+      title={t('Reset your password')}
       description={
         done
-          ? 'If an account matches that username or e-mail, a reset link has been created. Check your inbox — or, on a self-hosted instance without e-mail, ask your administrator for the link.'
-          : 'Enter your username or e-mail and we’ll send a reset link.'
+          ? t(
+              'If an account matches that username or e-mail, a reset link has been created. Check your inbox — or, on a self-hosted instance without e-mail, ask your administrator for the link.',
+            )
+          : t('Enter your username or e-mail and we’ll send a reset link.')
       }
     >
       {!done && (
         <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
           <FormField
-            label="Username or e-mail"
+            label={t('Username or e-mail')}
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
@@ -44,7 +47,7 @@ export default function ForgotPassword() {
             required
           />
           <Button type="submit" className="w-full" disabled={busy || !identity.trim()}>
-            {busy ? 'Please wait…' : 'Send reset link'}
+            {busy ? t('Please wait…') : t('Send reset link')}
           </Button>
         </form>
       )}
@@ -52,7 +55,7 @@ export default function ForgotPassword() {
         to="/login"
         className="text-link mt-5 inline-flex min-h-11 items-center text-sm font-medium sm:min-h-0"
       >
-        Back to sign in
+        {t('Back to sign in')}
       </Link>
     </AuthCard>
   );

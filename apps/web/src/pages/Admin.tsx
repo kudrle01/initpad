@@ -40,6 +40,7 @@ import { useConfirmation } from '@/confirmation';
 import { createRequestId } from '@/lib/request-id';
 import { WorkspaceCapacityCard } from '@/components/organisms/admin/WorkspaceCapacityCard';
 import { cn } from '@/lib/utils';
+import { t, rich } from '@/i18n';
 
 // One-time credentials surfaced after create/reset. Shown once; there is no way
 // to retrieve them again. Either a temporary password (admin reads it out) or an
@@ -140,14 +141,15 @@ export default function Admin() {
     e.preventDefault();
     if (role === 'admin') {
       const confirmed = await confirmAction({
-        title: `Create @${username.trim()} as platform administrator?`,
-        description:
+        title: t('Create @{username} as platform administrator?', { username: username.trim() }),
+        description: t(
           'Platform administrators manage every account in this self-hosted InitPad instance.',
-        confirmLabel: 'Create administrator',
+        ),
+        confirmLabel: t('Create administrator'),
         tone: 'warning',
         consequences: [
-          'The new account receives instance-wide user administration permissions.',
-          'A temporary password is shown once; activation uses e-mail when configured.',
+          t('The new account receives instance-wide user administration permissions.'),
+          t('A temporary password is shown once; activation uses e-mail when configured.'),
         ],
       });
       if (!confirmed) return;
@@ -177,7 +179,7 @@ export default function Admin() {
       setRole('user');
       setAdding(false);
       await refresh();
-      toast.success(`Created @${created.username}`);
+      toast.success(t('Created @{username}', { username: created.username }));
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -188,14 +190,14 @@ export default function Admin() {
   async function setActive(target: AdminUser, active: boolean) {
     if (!active) {
       const confirmed = await confirmAction({
-        title: `Deactivate @${target.username}?`,
-        description: 'The account will be blocked at both InitPad and its private Gitea SCM.',
-        confirmLabel: 'Deactivate account',
+        title: t('Deactivate @{username}?', { username: target.username }),
+        description: t('The account will be blocked at both InitPad and its private Gitea SCM.'),
+        confirmLabel: t('Deactivate account'),
         tone: 'danger',
         consequences: [
-          'All current InitPad sessions are revoked immediately.',
-          'The user cannot sign in or access private repositories until reactivated.',
-          'Projects, memberships and audit history are preserved.',
+          t('All current InitPad sessions are revoked immediately.'),
+          t('The user cannot sign in or access private repositories until reactivated.'),
+          t('Projects, memberships and audit history are preserved.'),
         ],
       });
       if (!confirmed) return;
@@ -206,7 +208,11 @@ export default function Admin() {
         ? await api.adminActivateUser(target.id)
         : await api.adminDeactivateUser(target.id);
       setUsers((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
-      toast.success(`${active ? 'Activated' : 'Deactivated'} @${target.username}`);
+      toast.success(
+        active
+          ? t('Activated @{username}', { username: target.username })
+          : t('Deactivated @{username}', { username: target.username }),
+      );
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -216,14 +222,14 @@ export default function Admin() {
 
   async function resetPassword(target: AdminUser) {
     const confirmed = await confirmAction({
-      title: `Reset @${target.username}'s password?`,
-      description: 'A random temporary password will replace the current password.',
-      confirmLabel: 'Reset password',
+      title: t("Reset @{username}'s password?", { username: target.username }),
+      description: t('A random temporary password will replace the current password.'),
+      confirmLabel: t('Reset password'),
       tone: 'danger',
       consequences: [
-        'Every current session for this account is revoked.',
-        'The user must change the one-time password at their next sign-in.',
-        'The temporary password is shown only once.',
+        t('Every current session for this account is revoked.'),
+        t('The user must change the one-time password at their next sign-in.'),
+        t('The temporary password is shown only once.'),
       ],
     });
     if (!confirmed) return;
@@ -232,7 +238,7 @@ export default function Admin() {
       const { temporaryPassword } = await api.adminResetPassword(target.id);
       setOneTime({ username: target.username, password: temporaryPassword });
       await refresh();
-      toast.success(`Reset password for @${target.username}`);
+      toast.success(t('Reset password for @{username}', { username: target.username }));
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -242,14 +248,15 @@ export default function Admin() {
 
   async function activationLink(target: AdminUser) {
     const confirmed = await confirmAction({
-      title: `Create a new activation link for @${target.username}?`,
-      description:
+      title: t('Create a new activation link for @{username}?', { username: target.username }),
+      description: t(
         'Activation links are single-use credentials that let the user choose a password.',
-      confirmLabel: 'Create new link',
+      ),
+      confirmLabel: t('Create new link'),
       tone: 'warning',
       consequences: [
-        'Any earlier unused activation link for this account becomes invalid.',
-        'The new link is e-mailed when delivery is configured; otherwise it is shown once.',
+        t('Any earlier unused activation link for this account becomes invalid.'),
+        t('The new link is e-mailed when delivery is configured; otherwise it is shown once.'),
       ],
     });
     if (!confirmed) return;
@@ -263,8 +270,8 @@ export default function Admin() {
       });
       toast.success(
         delivery === 'email'
-          ? `Activation e-mail queued for @${target.username}`
-          : `Activation link created for @${target.username}`,
+          ? t('Activation e-mail queued for @{username}', { username: target.username })
+          : t('Activation link created for @{username}', { username: target.username }),
       );
     } catch (err) {
       toast.error((err as Error).message);
@@ -276,21 +283,25 @@ export default function Admin() {
   async function installPlatformUpdate() {
     if (!updates?.latestVersion || !updates.canInstall) return;
     const confirmed = await confirmAction({
-      title: `Install InitPad ${updates.latestVersion}?`,
+      title: t('Install InitPad {latestVersion}?', { latestVersion: updates.latestVersion }),
       description:
         updates.channel === 'candidate'
-          ? 'This signed prerelease is available only because this instance uses the candidate channel. Install it only for acceptance testing.'
-          : 'The signed release will be installed by the local Supervisor after a verified database backup.',
-      confirmLabel: 'Install update',
+          ? t(
+              'This signed prerelease is available only because this instance uses the candidate channel. Install it only for acceptance testing.',
+            )
+          : t(
+              'The signed release will be installed by the local Supervisor after a verified database backup.',
+            ),
+      confirmLabel: t('Install update'),
       tone: 'warning',
       consequences: [
         ...(updates.channel === 'candidate'
-          ? ['This version has not completed the live stable-release acceptance gate.']
+          ? [t('This version has not completed the live stable-release acceptance gate.')]
           : []),
-        'The API and web UI will restart briefly; this page may be unavailable for a moment.',
-        'Running project workloads are not restarted.',
-        'If readiness fails, the previous platform images are restored automatically.',
-        'Only expand-contract, image-compatible database releases are accepted automatically.',
+        t('The API and web UI will restart briefly; this page may be unavailable for a moment.'),
+        t('Running project workloads are not restarted.'),
+        t('If readiness fails, the previous platform images are restored automatically.'),
+        t('Only expand-contract, image-compatible database releases are accepted automatically.'),
       ],
     });
     if (!confirmed) return;
@@ -313,7 +324,9 @@ export default function Admin() {
             }
           : current,
       );
-      toast.success(`InitPad ${updates.latestVersion} update started`);
+      toast.success(
+        t('InitPad {latestVersion} update started', { latestVersion: updates.latestVersion }),
+      );
       await loadUpdates();
     } catch (cause) {
       toast.error((cause as Error).message);
@@ -328,8 +341,8 @@ export default function Admin() {
   return (
     <div>
       <PageHeader
-        title="Platform administration"
-        description="Instance-wide settings. Only platform administrators can open this page."
+        title={t('Platform administration')}
+        description={t('Instance-wide settings. Only platform administrators can open this page.')}
       />
 
       <div className="flex flex-col gap-4 lg:gap-6">
@@ -352,12 +365,14 @@ export default function Admin() {
               </span>
               <div className="min-w-0">
                 <h2 className="break-words text-base font-semibold tracking-tight">
-                  Onboarding for @{oneTime.username}
+                  {t('Onboarding for @{username}', { username: oneTime.username })}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {oneTime.activationEmailed
-                    ? 'The activation e-mail is queued. Any temporary password below is shown once.'
-                    : 'Share securely. Credentials shown here cannot be retrieved again.'}
+                    ? t(
+                        'The activation e-mail is queued. Any temporary password below is shown once.',
+                      )
+                    : t('Share securely. Credentials shown here cannot be retrieved again.')}
                 </p>
               </div>
             </div>
@@ -365,33 +380,35 @@ export default function Admin() {
               {oneTime.activationUrl && (
                 <div>
                   <p className="mb-1.5 text-sm font-medium">
-                    Activation link{' '}
-                    <span className="font-normal text-muted-foreground">
-                      — the user sets their own password
-                    </span>
+                    {rich('Activation link <span>— the user sets their own password</span>', {
+                      span: (chunk) => (
+                        <span className="font-normal text-muted-foreground">{chunk}</span>
+                      ),
+                    })}
                   </p>
                   <CopyField command={oneTime.activationUrl} />
                 </div>
               )}
               {oneTime.activationEmailed && (
                 <p className="text-sm text-primary">
-                  Activation link queued for delivery to the account e-mail address.
+                  {t('Activation link queued for delivery to the account e-mail address.')}
                 </p>
               )}
               {oneTime.password && (
                 <div>
                   <p className="mb-1.5 text-sm font-medium">
-                    Temporary password{' '}
-                    <span className="font-normal text-muted-foreground">
-                      — must be changed at first sign-in
-                    </span>
+                    {rich('Temporary password <span>— must be changed at first sign-in</span>', {
+                      span: (chunk) => (
+                        <span className="font-normal text-muted-foreground">{chunk}</span>
+                      ),
+                    })}
                   </p>
                   <CopyField command={oneTime.password} />
                 </div>
               )}
             </div>
             <Button className="mt-5" onClick={() => setOneTime(null)}>
-              Done
+              {t('Done')}
             </Button>
           </Card>
         )}
@@ -399,13 +416,15 @@ export default function Admin() {
         {selfHosted && (
           <SettingsSection
             icon={Users}
-            title="Users"
-            description="Accounts on this instance. New users receive a one-time password and must set their own before using the platform."
+            title={t('Users')}
+            description={t(
+              'Accounts on this instance. New users receive a one-time password and must set their own before using the platform.',
+            )}
             flush
             actions={
               !adding && (
                 <Button size="sm" onClick={() => setAdding(true)}>
-                  <UserPlus className="h-3.5 w-3.5" /> Add user
+                  <UserPlus className="h-3.5 w-3.5" /> {t('Add user')}
                 </Button>
               )
             }
@@ -414,11 +433,11 @@ export default function Admin() {
               <form
                 className="border-b border-border/70 bg-muted/50 px-4 py-4 sm:px-6 sm:py-5"
                 onSubmit={createUser}
-                aria-label="Provision a user"
+                aria-label={t('Provision a user')}
               >
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField
-                    label="Username"
+                    label={t('Username')}
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     autoComplete="off"
@@ -426,7 +445,7 @@ export default function Admin() {
                     required
                   />
                   <FormField
-                    label="E-mail"
+                    label={t('E-mail')}
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -434,31 +453,31 @@ export default function Admin() {
                     required
                   />
                   <FormField
-                    label="Full name"
-                    placeholder="Optional"
+                    label={t('Full name')}
+                    placeholder={t('Optional')}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     autoComplete="off"
                   />
                   <div className="flex min-w-0 flex-col gap-1.5">
-                    <Label htmlFor="new-user-role">Platform role</Label>
+                    <Label htmlFor="new-user-role">{t('Platform role')}</Label>
                     <Select
                       id="new-user-role"
                       value={role}
                       onChange={(e) => setRole(e.target.value as 'admin' | 'user')}
                     >
-                      <option value="user">User</option>
-                      <option value="admin">Administrator</option>
+                      <option value="user">{t('User')}</option>
+                      <option value="admin">{t('Administrator')}</option>
                     </Select>
                   </div>
                 </div>
                 <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Button type="button" variant="secondary" onClick={() => setAdding(false)}>
-                    Cancel
+                    {t('Cancel')}
                   </Button>
                   <Button type="submit" disabled={creating || !username.trim() || !email.trim()}>
                     {creating ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}{' '}
-                    Create user
+                    {t('Create user')}
                   </Button>
                 </div>
               </form>
@@ -470,7 +489,7 @@ export default function Admin() {
               </div>
             ) : loading ? (
               <div className="p-4 sm:p-6">
-                <ContentLoading label="Loading users" count={2} />
+                <ContentLoading label={t('Loading users')} count={2} />
               </div>
             ) : (
               <List>
@@ -485,7 +504,7 @@ export default function Admin() {
                         {u.platformRole === 'admin' && (
                           <ShieldCheck
                             className="h-4 w-4 shrink-0 text-primary"
-                            aria-label="Administrator"
+                            aria-label={t('Administrator')}
                           />
                         )}
                       </span>
@@ -506,7 +525,7 @@ export default function Admin() {
                           size="icon"
                           className="rounded-full"
                           disabled={busyUserId === u.id}
-                          aria-label={`Actions for @${u.username}`}
+                          aria-label={t('Actions for @{username}', { username: u.username })}
                         >
                           {busyUserId === u.id ? (
                             <Spinner className="h-4 w-4" />
@@ -517,10 +536,12 @@ export default function Admin() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
                         <DropdownMenuItem onSelect={() => void activationLink(u)}>
-                          <Link2 className="h-4 w-4 text-muted-foreground" /> New activation link
+                          <Link2 className="h-4 w-4 text-muted-foreground" />{' '}
+                          {t('New activation link')}
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => void resetPassword(u)}>
-                          <KeyRound className="h-4 w-4 text-muted-foreground" /> Reset password
+                          <KeyRound className="h-4 w-4 text-muted-foreground" />{' '}
+                          {t('Reset password')}
                         </DropdownMenuItem>
                         {u.id !== user?.id && (
                           <>
@@ -530,11 +551,12 @@ export default function Admin() {
                                 destructive
                                 onSelect={() => void setActive(u, false)}
                               >
-                                <UserX className="h-4 w-4" /> Deactivate
+                                <UserX className="h-4 w-4" /> {t('Deactivate')}
                               </DropdownMenuItem>
                             ) : (
                               <DropdownMenuItem onSelect={() => void setActive(u, true)}>
-                                <UserCheck className="h-4 w-4 text-muted-foreground" /> Activate
+                                <UserCheck className="h-4 w-4 text-muted-foreground" />{' '}
+                                {t('Activate')}
                               </DropdownMenuItem>
                             )}
                           </>
@@ -558,9 +580,9 @@ function UserFlags({ user, className }: { user: AdminUser; className?: string })
   if (user.active && !user.mustChangePassword && user.emailVerified) return null;
   return (
     <span className={cn('flex flex-wrap items-center gap-1.5', className)}>
-      {!user.active && <Badge variant="danger">Deactivated</Badge>}
-      {user.mustChangePassword && <Badge variant="warning">Must change password</Badge>}
-      {!user.emailVerified && <Badge>E-mail unverified</Badge>}
+      {!user.active && <Badge variant="danger">{t('Deactivated')}</Badge>}
+      {user.mustChangePassword && <Badge variant="warning">{t('Must change password')}</Badge>}
+      {!user.emailVerified && <Badge>{t('E-mail unverified')}</Badge>}
     </span>
   );
 }

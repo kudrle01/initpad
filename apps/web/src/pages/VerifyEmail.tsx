@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '@/api';
 import { AuthCard } from '@/components/molecules/AuthCard';
 import { Button } from '@/components/ui/button';
+import { t } from '@/i18n';
 
 type State = 'verifying' | 'ok' | 'error';
 
@@ -30,22 +31,22 @@ export default function VerifyEmail() {
       align="center"
       title={
         state === 'verifying'
-          ? 'Verifying your e-mail…'
+          ? t('Verifying your e-mail…')
           : state === 'ok'
-            ? 'E-mail verified'
-            : 'Verification failed'
+            ? t('E-mail verified')
+            : t('Verification failed')
       }
       description={
         state === 'verifying'
-          ? 'This only takes a moment.'
+          ? t('This only takes a moment.')
           : state === 'ok'
-            ? 'Thanks — your e-mail address is confirmed.'
-            : (error ?? 'This link is invalid or has expired.')
+            ? t('Thanks — your e-mail address is confirmed.')
+            : (error ?? t('This link is invalid or has expired.'))
       }
     >
       {state !== 'verifying' && (
         <Button asChild className="mt-6 w-full">
-          <Link to="/">Go to InitPad</Link>
+          <Link to="/">{t('Go to InitPad')}</Link>
         </Button>
       )}
     </AuthCard>

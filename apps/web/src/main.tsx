@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from '@/auth';
 import { ThemeProvider } from '@/theme';
+import { I18nProvider } from '@/i18n/provider';
 import { ToastProvider } from '@/toast';
 import { ConfirmationProvider } from '@/confirmation';
 import App from '@/App';
@@ -81,11 +82,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider>
       <ToastProvider>
-        <ConfirmationProvider>
-          <AuthProvider>
-            <RouterProvider router={router} />
-          </AuthProvider>
-        </ConfirmationProvider>
+        <AuthProvider>
+          {/* Everything that renders text sits inside the language boundary. */}
+          <I18nProvider>
+            <ConfirmationProvider>
+              <RouterProvider router={router} />
+            </ConfirmationProvider>
+          </I18nProvider>
+        </AuthProvider>
       </ToastProvider>
     </ThemeProvider>
   </React.StrictMode>,

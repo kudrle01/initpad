@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/toast';
+import { t } from '@/i18n';
 
 function localDate(date: Date): string {
   const year = date.getFullYear();
@@ -66,7 +67,7 @@ export function WorkspaceMetricsDialog({
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      toast.success(`${format.toUpperCase()} metrics downloaded`);
+      toast.success(t('{format} metrics downloaded', { format: format.toUpperCase() }));
       onOpenChange(false);
     } catch (error) {
       toast.error((error as Error).message);
@@ -80,16 +81,18 @@ export function WorkspaceMetricsDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            <TableProperties className="h-[18px] w-[18px]" /> Export workspace metrics
+            <TableProperties className="h-[18px] w-[18px]" /> {t('Export workspace metrics')}
           </DialogTitle>
           <DialogDescription>
-            Deployment counts and durations only. Logs, secrets and account data are excluded.
+            {t(
+              'Deployment counts and durations only. Logs, secrets and account data are excluded.',
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-1.5">
-            <Label htmlFor="metrics-from">From</Label>
+            <Label htmlFor="metrics-from">{t('From')}</Label>
             <Input
               id="metrics-from"
               type="date"
@@ -99,7 +102,7 @@ export function WorkspaceMetricsDialog({
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="metrics-to">Through</Label>
+            <Label htmlFor="metrics-to">{t('Through')}</Label>
             <Input
               id="metrics-to"
               type="date"
@@ -111,13 +114,13 @@ export function WorkspaceMetricsDialog({
         </div>
         {!valid && from && to && (
           <p role="alert" className="text-xs text-destructive">
-            End date must not be before start date.
+            {t('End date must not be before start date.')}
           </p>
         )}
 
         <DialogFooter>
           <Button variant="secondary" disabled={!!busy} onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button
             variant="secondary"

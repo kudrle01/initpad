@@ -3,6 +3,7 @@ import { api } from '@/api';
 import { createRequestId } from '@/lib/request-id';
 import { useToast } from '@/toast';
 import type { AgentJobSummary, AgentStatus, Target } from '@/types';
+import { t } from '@/i18n';
 
 /** Live, dialog-scoped view of one physical Agent and its recent durable jobs. */
 export function useAgentProtocol(target: Target | null) {
@@ -61,7 +62,7 @@ export function useAgentProtocol(target: Target | null) {
       setJobs((current) =>
         [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
       );
-      toast.success('Durable Agent protocol probe queued');
+      toast.success(t('Durable Agent protocol probe queued'));
       await refresh();
     } catch (cause) {
       toast.error((cause as Error).message);
@@ -78,7 +79,7 @@ export function useAgentProtocol(target: Target | null) {
       setJobs((current) =>
         [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
       );
-      toast.success('Docker lifecycle test queued');
+      toast.success(t('Docker lifecycle test queued'));
       await refresh();
       return true;
     } catch (cause) {
@@ -97,7 +98,7 @@ export function useAgentProtocol(target: Target | null) {
       setJobs((current) =>
         [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
       );
-      toast.success('Gateway preflight queued');
+      toast.success(t('Gateway preflight queued'));
       await refresh();
       return true;
     } catch (cause) {
@@ -116,7 +117,7 @@ export function useAgentProtocol(target: Target | null) {
       setJobs((current) =>
         [created, ...current.filter((job) => job.id !== created.id)].slice(0, 10),
       );
-      toast.success('Verified Agent update queued');
+      toast.success(t('Verified Agent update queued'));
       await refresh();
       return true;
     } catch (cause) {

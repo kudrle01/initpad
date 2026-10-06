@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/toast';
 import type { LinkedIdentity } from '@/types';
 import { useConfirmation } from '@/confirmation';
+import { t, rich, formatDate } from '@/i18n';
+import { termLabel } from '@/i18n/labels';
 
 function openGithubWindow(url?: string): Window | null {
   const width = 760;
@@ -22,8 +24,8 @@ function openGithubWindow(url?: string): Window | null {
   );
   if (!popup) return null;
   popup.opener = null;
-  popup.document.title = 'Opening GitHub…';
-  popup.document.body.textContent = 'Opening GitHub…';
+  popup.document.title = t('Opening GitHub…');
+  popup.document.body.textContent = t('Opening GitHub…');
   if (url) popup.location.replace(url);
   popup.focus();
   return popup;
@@ -59,20 +61,24 @@ export function GitHubIntegrationSettings() {
     const query = new URLSearchParams(window.location.search);
     const result = query.get('github');
     if (result === 'linked') {
-      toast.success('GitHub account linked');
+      toast.success(t('GitHub account linked'));
       api
         .listIdentities()
         .then(setIdentities)
         .catch(() => undefined);
     } else if (result === 'installed') {
       const account = query.get('account');
-      toast.success(`GitHub App authorized${account ? ` for ${account}` : ''}`);
+      toast.success(
+        account
+          ? t('GitHub App authorized for {account}', { account })
+          : t('GitHub App authorized'),
+      );
     } else if (result === 'installation_requested') {
-      toast.success('GitHub organization owner has been asked to approve the App');
+      toast.success(t('GitHub organization owner has been asked to approve the App'));
     } else if (result === 'installation_error') {
-      toast.error(query.get('reason') || 'Could not authorize GitHub installation');
+      toast.error(query.get('reason') || t('Could not authorize GitHub installation'));
     } else if (result === 'error') {
-      toast.error(query.get('reason') || 'Could not link GitHub account');
+      toast.error(query.get('reason') || t('Could not link GitHub account'));
     }
     if (result) window.history.replaceState({}, '', '/settings/account');
   }, [toast]);
@@ -101,7 +107,9 @@ export function GitHubIntegrationSettings() {
           setSetupBusy(false);
           if (recovery.recovered) {
             toast.success(
-              `GitHub App authorized${recovery.accountLogin ? ` for ${recovery.accountLogin}` : ''}`,
+              recovery.accountLogin
+                ? t('GitHub App authorized for {account}', { account: recovery.accountLogin })
+                : t('GitHub App authorized'),
             );
           }
         }
@@ -132,14 +140,14 @@ export function GitHubIntegrationSettings() {
 
   function linkGithub() {
     if (!openGithubWindow('/api/auth/github?mode=link')) {
-      toast.error('Allow pop-ups for InitPad to connect GitHub');
+      toast.error(t('Allow pop-ups for InitPad to connect GitHub'));
     }
   }
 
   async function startSetup() {
     const popup = openGithubWindow();
     if (!popup) {
-      toast.error('Allow pop-ups for InitPad to install the GitHub App');
+      toast.error(t('Allow pop-ups for InitPad to install the GitHub App'));
       return;
     }
     setSetupBusy(true);
@@ -155,13 +163,15 @@ export function GitHubIntegrationSettings() {
 
   async function unlinkGithub(identity: LinkedIdentity) {
     const confirmed = await confirmAction({
-      title: `Unlink ${identity.username ? `@${identity.username}` : 'GitHub'}?`,
-      description: 'This removes the GitHub identity from your InitPad account.',
-      confirmLabel: 'Unlink GitHub',
+      title: t('Unlink {account}?', {
+        account: identity.username ? `@${identity.username}` : 'GitHub',
+      }),
+      description: t('This removes the GitHub identity from your InitPad account.'),
+      confirmLabel: t('Unlink GitHub'),
       tone: 'danger',
       consequences: [
-        'GitHub sign-in through this identity stops working.',
-        'Existing projects and GitHub App installations are not deleted.',
+        t('GitHub sign-in through this identity stops working.'),
+        t('Existing projects and GitHub App installations are not deleted.'),
       ],
     });
     if (!confirmed) return;
@@ -169,7 +179,7 @@ export function GitHubIntegrationSettings() {
     try {
       await api.unlinkIdentity(identity.provider);
       setIdentities((rows) => rows.filter((row) => row.provider !== identity.provider));
-      toast.success('GitHub account unlinked');
+      toast.success(t('GitHub account unlinked'));
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -180,27 +190,28 @@ export function GitHubIntegrationSettings() {
   return (
     <SettingsSection
       icon={Github}
-      title="GitHub account"
-      description="Sign in with GitHub and let InitPad create or import selected repositories."
+      title={t('GitHub account')}
+      description={t('Sign in with GitHub and let InitPad create or import selected repositories.')}
       help={[
         {
-          title: 'Account',
-          description: 'Links your GitHub identity as a sign-in method.',
+          title: t('Account'),
+          description: t('Links your GitHub identity as a sign-in method.'),
         },
         {
-          title: 'GitHub App',
-          description: 'Gives InitPad access to create or import selected repositories.',
+          title: t('GitHub App'),
+          description: t('Gives InitPad access to create or import selected repositories.'),
         },
         {
-          title: 'Permissions',
-          description:
+          title: t('Permissions'),
+          description: t(
             'Job retry needs Actions read and write. No organization or account permission is required.',
+          ),
         },
       ]}
     >
       {githubIdentities.length === 0 ? (
         <Button variant="soft" onClick={linkGithub}>
-          <Github className="h-4 w-4" /> Link GitHub account
+          <Github className="h-4 w-4" /> {t('Link GitHub account')}
           <ExternalLink className="h-3.5 w-3.5" />
         </Button>
       ) : (
@@ -217,44 +228,46 @@ export function GitHubIntegrationSettings() {
                   </span>
                   {status?.installation.present && !status.installation.suspended && (
                     <Badge variant="success" className="px-2 py-0">
-                      <CircleCheck className="h-3 w-3" /> App authorized
+                      <CircleCheck className="h-3 w-3" /> {t('App authorized')}
                     </Badge>
                   )}
                 </span>
                 <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                  linked {new Date(identity.linkedAt).toLocaleDateString()}
+                  {t('linked {date}', { date: formatDate(identity.linkedAt) })}
                   {status &&
-                    (status.installation.suspended
-                      ? ' · App installation suspended'
-                      : status.installation.present
-                        ? ' · App installed'
-                        : ' · App not installed')}
+                    ` · ${
+                      status.installation.suspended
+                        ? t('App installation suspended')
+                        : status.installation.present
+                          ? t('App installed')
+                          : t('App not installed')
+                    }`}
                 </span>
               </span>
               <span className="flex flex-wrap items-center gap-2">
                 {status?.canInstall && (
                   <Button variant="secondary" size="sm" disabled={setupBusy} onClick={startSetup}>
                     {setupBusy
-                      ? 'Opening GitHub…'
+                      ? t('Opening GitHub…')
                       : status.installation.present
-                        ? 'Add installation'
-                        : 'Install GitHub App'}
+                        ? t('Add installation')
+                        : t('Install GitHub App')}
                     {!setupBusy && <ExternalLink className="ml-1 h-3.5 w-3.5" />}
                   </Button>
                 )}
                 {status && !status.credentialReady && (
                   <Button variant="secondary" size="sm" onClick={linkGithub}>
-                    Renew authorization <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                    {t('Renew authorization')} <ExternalLink className="ml-1 h-3.5 w-3.5" />
                   </Button>
                 )}
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={!identity.canUnlink || unlinkingProvider === identity.provider}
-                  title={identity.canUnlink ? undefined : 'This is your only sign-in method'}
+                  title={identity.canUnlink ? undefined : t('This is your only sign-in method')}
                   onClick={() => void unlinkGithub(identity)}
                 >
-                  {identity.canUnlink ? 'Unlink' : 'Required for sign-in'}
+                  {identity.canUnlink ? t('Unlink') : t('Required for sign-in')}
                 </Button>
               </span>
             </div>
@@ -268,11 +281,16 @@ export function GitHubIntegrationSettings() {
                 {installation.accountLogin}
               </span>
               <span className="min-w-0 break-words text-muted-foreground">
-                {installation.accountType.toLowerCase()} · {installation.repositorySelection}{' '}
-                repositories
+                {termLabel(installation.accountType.toLowerCase())} ·{' '}
+                {installation.repositorySelection === 'all'
+                  ? t('all repositories')
+                  : t('selected repositories')}{' '}
+                ·{' '}
                 {installation.suspended
-                  ? ' · suspended'
-                  : ` · authorized for ${activeWorkspace?.name ?? 'workspace'}`}
+                  ? t('suspended')
+                  : t('authorized for {workspace}', {
+                      workspace: activeWorkspace?.name ?? t('this workspace'),
+                    })}
               </span>
             </div>
           ))}
@@ -281,15 +299,22 @@ export function GitHubIntegrationSettings() {
 
       {status && !status.appConfigured && (
         <p className="mt-3 text-xs text-muted-foreground">
-          GitHub sign-in is available, but repository access has not been configured by the platform
-          administrator.
+          {t(
+            'GitHub sign-in is available, but repository access has not been configured by the platform administrator.',
+          )}
         </p>
       )}
       {status && !status.ciCallbackReady && (
-        <Notice tone="danger" role="alert" className="mt-3" title="GitHub delivery is paused">
-          {status.ciCallbackIssue} The platform administrator must configure a public HTTPS{' '}
-          <code className="font-mono">INITPAD_PUBLIC_URL</code>. Current value:{' '}
-          <code className="break-all font-mono">{status.ciCallbackUrl ?? 'not set'}</code>.
+        <Notice tone="danger" role="alert" className="mt-3" title={t('GitHub delivery is paused')}>
+          {rich(
+            '{issue} The platform administrator must configure a public HTTPS <code>INITPAD_PUBLIC_URL</code>. Current value: <value>{url}</value>.',
+            {
+              issue: status.ciCallbackIssue,
+              url: status.ciCallbackUrl ?? t('not set'),
+              code: (chunk) => <code className="font-mono">{chunk}</code>,
+              value: (chunk) => <code className="break-all font-mono">{chunk}</code>,
+            },
+          )}
         </Notice>
       )}
     </SettingsSection>

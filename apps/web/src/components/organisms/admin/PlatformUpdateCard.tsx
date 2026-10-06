@@ -6,6 +6,8 @@ import { Notice } from '@/components/molecules/Notice';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { t, formatDateTime } from '@/i18n';
+import { statusLabel } from '@/i18n/labels';
 
 const UPDATE_STAGE_PROGRESS: Record<string, number> = {
   requesting: 5,
@@ -52,28 +54,28 @@ export function PlatformUpdateCard({
   return (
     <SettingsSection
       icon={PackageCheck}
-      title="Platform updates"
-      description="Signed releases with automatic backup, readiness checks and image rollback."
+      title={t('Platform updates')}
+      description={t('Signed releases with automatic backup, readiness checks and image rollback.')}
       actions={
         <Button variant="ghost" size="sm" disabled={loading} onClick={onRefresh}>
           <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-          Refresh
+          {t('Refresh')}
         </Button>
       }
     >
       {loading && !status ? (
-        <ContentLoading label="Checking platform updates" count={1} />
+        <ContentLoading label={t('Checking platform updates')} count={1} />
       ) : (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="min-w-0 rounded-lg bg-muted p-4">
-              <p className="eyebrow">Installed</p>
+              <p className="eyebrow">{t('Installed')}</p>
               <p className="mt-1 font-mono text-xl font-semibold tracking-tight">
-                {status?.currentVersion ?? 'Unknown'}
+                {status?.currentVersion ?? t('Unknown')}
               </p>
             </div>
             <div className="min-w-0 rounded-lg bg-muted p-4">
-              <p className="eyebrow">Latest verified</p>
+              <p className="eyebrow">{t('Latest verified')}</p>
               <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className="font-mono text-xl font-semibold tracking-tight">
                   {status?.latestVersion ?? '—'}
@@ -85,7 +87,7 @@ export function PlatformUpdateCard({
                     rel="noreferrer"
                     className="text-link inline-flex items-center gap-1 text-xs font-medium"
                   >
-                    Release <ExternalLink className="h-3.5 w-3.5" />
+                    {t('Release')} <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 )}
               </div>
@@ -94,7 +96,7 @@ export function PlatformUpdateCard({
 
           {status?.channel === 'candidate' && (
             <Notice tone="warning" role="status">
-              Candidate update channel · use only on a disposable acceptance server.
+              {t('Candidate update channel · use only on a disposable acceptance server.')}
             </Notice>
           )}
 
@@ -106,7 +108,7 @@ export function PlatformUpdateCard({
               icon={RefreshCw}
               iconClassName="animate-spin"
             >
-              Connection interrupted while InitPad restarts. Reconnecting…
+              {t('Connection interrupted while InitPad restarts. Reconnecting…')}
             </Notice>
           ) : (
             (error || status?.catalogError || status?.supervisorError) && (
@@ -121,8 +123,13 @@ export function PlatformUpdateCard({
             !status.catalogError &&
             !status.catalogStale &&
             !active && (
-              <Notice tone="success" title={`InitPad ${status.currentVersion} is current`}>
-                Supervisor online · no newer verified release.
+              <Notice
+                tone="success"
+                title={t('InitPad {currentVersion} is current', {
+                  currentVersion: status.currentVersion,
+                })}
+              >
+                {t('Supervisor online · no newer verified release.')}
               </Notice>
             )}
 
@@ -133,7 +140,7 @@ export function PlatformUpdateCard({
                   {operation.fromVersion} → {operation.toVersion}
                 </p>
                 <span className={cn('text-xs font-semibold', updateTone(operation.status))}>
-                  {operation.status}
+                  {statusLabel(operation.status)}
                 </span>
               </div>
               <p className="mt-1 break-words text-sm text-muted-foreground">
@@ -143,7 +150,7 @@ export function PlatformUpdateCard({
                 <div
                   className="mt-3 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]"
                   role="progressbar"
-                  aria-label="Platform update progress"
+                  aria-label={t('Platform update progress')}
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-valuenow={progress}
@@ -166,12 +173,12 @@ export function PlatformUpdateCard({
                   ) : (
                     <PackageCheck className="h-4 w-4" />
                   )}
-                  {active ? 'Installing…' : 'Install update'}
+                  {active ? t('Installing…') : t('Install update')}
                 </Button>
               )}
               {status?.catalogStale && (
                 <span className="text-xs text-warning">
-                  Release information is stale; refresh before installing.
+                  {t('Release information is stale; refresh before installing.')}
                 </span>
               )}
             </div>
@@ -179,7 +186,7 @@ export function PlatformUpdateCard({
 
           {status && status.history.length > 0 && (
             <div>
-              <p className="eyebrow">Recent update history</p>
+              <p className="eyebrow">{t('Recent update history')}</p>
               <ul className="mt-2 divide-y divide-border/70 overflow-hidden rounded-lg border border-border/70">
                 {status.history.slice(0, 3).map((item) => (
                   <li
@@ -190,11 +197,11 @@ export function PlatformUpdateCard({
                       {item.fromVersion} → {item.toVersion}
                     </span>
                     <span className={cn('font-semibold', updateTone(item.status))}>
-                      {item.status}
+                      {statusLabel(item.status)}
                     </span>
                     <span className="ml-auto text-muted-foreground">
                       {item.requestedByUsername ? `@${item.requestedByUsername} · ` : ''}
-                      {new Date(item.startedAt).toLocaleString()}
+                      {formatDateTime(item.startedAt)}
                     </span>
                   </li>
                 ))}

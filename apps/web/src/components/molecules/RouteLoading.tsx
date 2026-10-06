@@ -1,4 +1,5 @@
 import { Spinner } from '@/components/atoms/Spinner';
+import { t } from '@/i18n';
 
 export function RouteLoading() {
   return (
@@ -8,7 +9,7 @@ export function RouteLoading() {
       aria-live="polite"
     >
       <Spinner className="h-5 w-5 text-primary" />
-      <span>Loading page…</span>
+      <span>{t('Loading page…')}</span>
     </div>
   );
 }

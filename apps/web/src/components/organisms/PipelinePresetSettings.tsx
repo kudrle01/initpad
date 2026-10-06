@@ -10,6 +10,7 @@ import {
 } from './EnvironmentTargetFields';
 import { pipelineStages } from '@/lib/pipeline-presets';
 import type { EnvName, PipelinePreset, Project, Target, TemplateManifest } from '@/types';
+import { t } from '@/i18n';
 
 interface Props {
   project: Project;
@@ -84,15 +85,16 @@ export function PipelinePresetSettings({
 
       {removed.length > 0 && (
         <Notice tone="warning">
-          Removing {removed.join(', ')} is allowed only after its deployment and pending cleanup are
-          gone. Deployment history for the removed stage is deleted with that environment; the audit
-          event remains.
+          {t(
+            'Removing {removed} is allowed only after its deployment and pending cleanup are gone. Deployment history for the removed stage is deleted with that environment; the audit event remains.',
+            { removed: removed.join(', ') },
+          )}
         </Notice>
       )}
 
       {!canMaintain && (
         <p className="text-sm text-muted-foreground">
-          A maintainer, admin or owner can change the project pipeline.
+          {t('A maintainer, admin or owner can change the project pipeline.')}
         </p>
       )}
 
@@ -111,7 +113,7 @@ export function PipelinePresetSettings({
               )
             }
           >
-            <Save className="h-4 w-4" /> {busy ? 'Saving…' : 'Save pipeline'}
+            <Save className="h-4 w-4" /> {busy ? t('Saving…') : t('Save pipeline')}
           </Button>
         </div>
       )}

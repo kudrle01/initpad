@@ -5,39 +5,41 @@ import { StatusDot } from '@/components/atoms/StatusDot';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { cn, scmLink } from '@/lib/utils';
 import type { Commit } from '@/types';
+import { t, msg, type MessageKey } from '@/i18n';
 
 // SCM verification and InitPad publication are separate state machines. Keep
 // their labels explicit so a failed/pending redeploy is never described as CI
 // waiting and a verified commit does not appear to require another runner.
 function commitStatus(pipeline: { status: string; source?: 'scm' | 'platform' }[]): {
-  label: string;
+  // Message key, translated where it is shown; the logic below compares the key.
+  label: MessageKey;
   dot: string;
 } {
   const scmStages = pipeline.filter((stage) => stage.source !== 'platform');
   const platformStage = pipeline.find((stage) => stage.source === 'platform');
 
   if (scmStages.some((stage) => stage.status === 'failed')) {
-    return { label: 'CI failed', dot: 'failed' };
+    return { label: msg('CI failed'), dot: 'failed' };
   }
   if (scmStages.some((stage) => stage.status === 'running')) {
-    return { label: 'CI running', dot: 'running' };
+    return { label: msg('CI running'), dot: 'running' };
   }
   if (scmStages.some((stage) => stage.status === 'pending')) {
-    return { label: 'awaiting CI', dot: 'pending' };
+    return { label: msg('awaiting CI'), dot: 'pending' };
   }
   if (platformStage?.status === 'failed') {
-    return { label: 'deploy failed', dot: 'failed' };
+    return { label: msg('deploy failed'), dot: 'failed' };
   }
   if (platformStage?.status === 'running') {
-    return { label: 'deploying', dot: 'running' };
+    return { label: msg('deploying'), dot: 'running' };
   }
   if (platformStage?.status === 'pending') {
-    return { label: 'deploy required', dot: 'pending' };
+    return { label: msg('deploy required'), dot: 'pending' };
   }
   if (scmStages.length > 0 && scmStages.every((stage) => stage.status === 'success')) {
-    return { label: 'passed', dot: 'success' };
+    return { label: msg('passed'), dot: 'success' };
   }
-  return { label: 'awaiting CI', dot: 'pending' };
+  return { label: msg('awaiting CI'), dot: 'pending' };
 }
 
 interface Props {
@@ -63,11 +65,12 @@ export function CommitList({
   deploymentHistoryUrl,
 }: Props) {
   const disclosureId = useId();
+  const scmName = scmProvider === 'github' ? 'GitHub' : 'Gitea';
 
   if (commits.length === 0) {
     return (
       <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-        No commits yet — clone the repository and push to trigger the CI/CD pipeline.
+        {t('No commits yet — clone the repository and push to trigger the CI/CD pipeline.')}
       </div>
     );
   }
@@ -90,7 +93,17 @@ export function CommitList({
                 type="button"
                 aria-expanded={open}
                 aria-controls={detailsId}
-                aria-label={`${open ? 'Collapse' : 'Expand'} commit ${c.sha.slice(0, 7)}: ${c.message}`}
+                aria-label={
+                  open
+                    ? t('Collapse commit {sha}: {message}', {
+                        sha: c.sha.slice(0, 7),
+                        message: c.message,
+                      })
+                    : t('Expand commit {sha}: {message}', {
+                        sha: c.sha.slice(0, 7),
+                        message: c.message,
+                      })
+                }
                 onClick={() => onToggle(c.sha)}
                 className="absolute inset-0 z-0 cursor-pointer rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
               />
@@ -105,7 +118,7 @@ export function CommitList({
                   href={scmLink(`${repoUrl}/commit/${c.sha}`, scmProvider)}
                   target="_blank"
                   rel="noreferrer"
-                  title={`View commit in ${scmProvider === 'github' ? 'GitHub' : 'Gitea'}`}
+                  title={t('View commit in {provider}', { provider: scmName })}
                   className="text-link relative z-10 shrink-0 font-mono text-xs"
                 >
                   {c.sha.slice(0, 7)}
@@ -123,8 +136,8 @@ export function CommitList({
               </span>
               <span
                 className="pointer-events-none relative z-10 sm:hidden"
-                title={ci.label}
-                aria-label={ci.label}
+                title={t(ci.label)}
+                aria-label={t(ci.label)}
               >
                 <StatusDot status={ci.dot} kind="ci" />
               </span>
@@ -138,7 +151,7 @@ export function CommitList({
               )}
               <StatusBadge
                 status={ci.dot}
-                label={ci.label}
+                label={t(ci.label)}
                 kind="ci"
                 className="pointer-events-none relative z-10 hidden sm:inline-flex"
               />
@@ -155,7 +168,7 @@ export function CommitList({
                       {s.source === 'platform' && deploymentHistoryUrl ? (
                         <Link
                           to={deploymentHistoryUrl}
-                          title="View this publication in InitPad deployment history"
+                          title={t('View this publication in InitPad deployment history')}
                           className="text-link inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium hover:bg-muted"
                         >
                           <StatusDot status={s.status} kind="ci" /> {s.name}
@@ -166,7 +179,7 @@ export function CommitList({
                           href={scmLink(s.url, scmProvider)}
                           target="_blank"
                           rel="noreferrer"
-                          title={`View job log in ${scmProvider === 'github' ? 'GitHub' : 'Gitea'}`}
+                          title={t('View job log in {provider}', { provider: scmName })}
                           className="text-link inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium hover:bg-muted"
                         >
                           <StatusDot status={s.status} kind="ci" /> {s.name}
@@ -185,8 +198,9 @@ export function CommitList({
                 </div>
                 {recoveredPublication && (
                   <p className="mt-2.5 text-xs text-muted-foreground">
-                    The original SCM handoff job failed. InitPad later published the same verified
-                    build successfully, so another runner was not started.
+                    {t(
+                      'The original SCM handoff job failed. InitPad later published the same verified build successfully, so another runner was not started.',
+                    )}
                   </p>
                 )}
                 {(() => {
@@ -195,25 +209,27 @@ export function CommitList({
                   if (ci.label === 'awaiting CI') {
                     return (
                       <p className="mt-2.5 text-xs text-muted-foreground">
-                        Waiting for the{' '}
-                        {scmProvider === 'github' ? 'GitHub Actions' : 'Gitea Actions'} runner to
-                        pick up this commit.
+                        {t('Waiting for the {provider} Actions runner to pick up this commit.', {
+                          provider: scmName,
+                        })}
                       </p>
                     );
                   }
                   if (ci.label === 'deploy required') {
                     return (
                       <p className="mt-2.5 text-xs text-muted-foreground">
-                        CI has verified this commit. Deploy the existing build through InitPad;
-                        another runner is not required.
+                        {t(
+                          'CI has verified this commit. Deploy the existing build through InitPad; another runner is not required.',
+                        )}
                       </p>
                     );
                   }
                   if (ci.label === 'deploy failed') {
                     return (
                       <p className="mt-2.5 text-xs text-muted-foreground">
-                        CI has verified this commit, but its latest InitPad deployment failed. The
-                        verified build remains available for retry.
+                        {t(
+                          'CI has verified this commit, but its latest InitPad deployment failed. The verified build remains available for retry.',
+                        )}
                       </p>
                     );
                   }
@@ -224,7 +240,7 @@ export function CommitList({
                       rel="noreferrer"
                       className="text-link mt-2.5 inline-flex items-center gap-1 text-xs font-medium"
                     >
-                      View run &amp; logs in {scmProvider === 'github' ? 'GitHub' : 'Gitea'}{' '}
+                      {t('View run & logs in {provider}', { provider: scmName })}{' '}
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   ) : null;

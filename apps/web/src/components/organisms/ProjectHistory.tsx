@@ -5,6 +5,7 @@ import { CommitList } from '@/components/organisms/CommitList';
 import { DeploymentActivity } from '@/components/organisms/DeploymentActivity';
 import { DetailSection } from '@/components/molecules/DetailSection';
 import type { Commit, DeploymentOperation, Project } from '@/types';
+import { t } from '@/i18n';
 
 const DEPLOYMENT_PREVIEW = 4;
 const COMMIT_PREVIEW = 5;
@@ -31,21 +32,21 @@ export function ProjectHistory({ project, commits, deployments, openSha, onToggl
   return (
     <>
       <DetailSection
-        title="Deployment activity"
+        title={t('Deployment activity')}
         flush
         help={[
           {
-            title: 'Source build',
-            description: 'CI builds and tests one immutable artifact.',
+            title: t('Source build'),
+            description: t('CI builds and tests one immutable artifact.'),
           },
           {
-            title: 'Deploy and redeploy',
-            description: 'Publish that verified artifact without starting another CI runner.',
+            title: t('Deploy and redeploy'),
+            description: t('Publish that verified artifact without starting another CI runner.'),
           },
         ]}
         actions={
           deployments.length > DEPLOYMENT_PREVIEW && (
-            <ViewAll to={`/projects/${project.id}/deployments`} label="Show all deployments" />
+            <ViewAll to={`/projects/${project.id}/deployments`} label={t('Show all deployments')} />
           )
         }
       >
@@ -58,11 +59,11 @@ export function ProjectHistory({ project, commits, deployments, openSha, onToggl
       </DetailSection>
 
       <DetailSection
-        title="Commits"
+        title={t('Commits')}
         flush
         actions={
           commits.length > COMMIT_PREVIEW && (
-            <ViewAll to={`/projects/${project.id}/commits`} label="Show all commits" />
+            <ViewAll to={`/projects/${project.id}/commits`} label={t('Show all commits')} />
           )
         }
       >

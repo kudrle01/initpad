@@ -5,6 +5,7 @@ import { AuthCard } from '@/components/molecules/AuthCard';
 import { FormField } from '@/components/molecules/FormField';
 import { Notice } from '@/components/molecules/Notice';
 import { Button } from '@/components/ui/button';
+import { t, rich } from '@/i18n';
 
 // Full-screen gate shown while an account is under a forced password change
 // (admin-provisioned temporary credentials, post-reset). It is the only view
@@ -20,7 +21,7 @@ export default function ChangePassword() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (newPassword !== confirm) {
-      setError('New passwords do not match.');
+      setError(t('New passwords do not match.'));
       return;
     }
     setBusy(true);
@@ -36,23 +37,25 @@ export default function ChangePassword() {
 
   return (
     <AuthCard
-      title="Choose a new password"
+      title={t('Choose a new password')}
       description={
         <>
           {user?.username ? (
             <>
-              Signed in as <strong className="font-medium text-foreground">@{user.username}</strong>
-              .{' '}
+              {rich('Signed in as <b>@{username}</b>.', {
+                username: user.username,
+                b: (chunk) => <strong className="font-medium text-foreground">{chunk}</strong>,
+              })}{' '}
             </>
           ) : null}
-          Your account uses a temporary password. Set a new one to continue.
+          {t('Your account uses a temporary password. Set a new one to continue.')}
         </>
       }
     >
       <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
         <FormField
           id="cp-current"
-          label="Temporary password"
+          label={t('Temporary password')}
           type="password"
           autoComplete="current-password"
           value={currentPassword}
@@ -61,18 +64,18 @@ export default function ChangePassword() {
         />
         <FormField
           id="cp-new"
-          label="New password"
+          label={t('New password')}
           type="password"
           autoComplete="new-password"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           required
           minLength={12}
-          hint="Use at least 12 characters."
+          hint={t('Use at least 12 characters.')}
         />
         <FormField
           id="cp-confirm"
-          label="Confirm new password"
+          label={t('Confirm new password')}
           type="password"
           autoComplete="new-password"
           value={confirm}
@@ -86,12 +89,12 @@ export default function ChangePassword() {
           </Notice>
         )}
         <Button type="submit" disabled={busy} className="w-full">
-          {busy ? 'Please wait…' : 'Update password'}
+          {busy ? t('Please wait…') : t('Update password')}
         </Button>
       </form>
 
       <Button variant="ghost" className="mt-3 w-full" onClick={() => void logout()}>
-        Sign out
+        {t('Sign out')}
       </Button>
     </AuthCard>
   );

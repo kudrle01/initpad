@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { BrandMark } from '@/components/atoms/BrandMark';
+import { LanguageToggle } from '@/components/molecules/LanguageSwitch';
 import { ThemeToggle } from '@/components/molecules/ThemeToggle';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +18,10 @@ export function AuthCard({
 }) {
   return (
     <div className="relative flex min-h-dvh items-center justify-center bg-background px-4 py-16 sm:p-6">
-      <ThemeToggle className="absolute right-3 top-3 sm:right-5 sm:top-5" />
+      <div className="absolute right-3 top-3 flex items-center gap-1.5 sm:right-5 sm:top-5">
+        <LanguageToggle />
+        <ThemeToggle />
+      </div>
       <main className="w-full max-w-[400px] rounded-2xl border border-border/70 bg-card p-6 shadow-md sm:p-8">
         <div className={cn(align === 'center' && 'text-center')}>
           <BrandMark className={cn('h-11 w-11', align === 'center' && 'mx-auto')} />

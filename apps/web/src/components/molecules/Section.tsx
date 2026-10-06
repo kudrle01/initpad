@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
 import { InfoTip, type InfoTipItem } from '@/components/molecules/InfoTip';
 import { cn } from '@/lib/utils';
+import { t } from '@/i18n';
 
 interface SectionHeaderProps {
   title: string;
@@ -46,7 +47,9 @@ export function SectionHeader({
             >
               {title}
             </h2>
-            {help && <InfoTip label={helpLabel ?? `About ${title}`} items={help} />}
+            {help && (
+              <InfoTip label={helpLabel ?? t('About {title}', { title: title })} items={help} />
+            )}
           </div>
           {description && <div className="mt-1 text-sm text-muted-foreground">{description}</div>}
         </div>

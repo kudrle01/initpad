@@ -7,6 +7,7 @@ import type { Target } from '@/types';
 import { Card } from '@/components/ui/card';
 import { List } from '@/components/molecules/List';
 import { TargetRow } from './TargetRow';
+import { t } from '@/i18n';
 
 interface Props {
   targets: Target[];
@@ -69,22 +70,26 @@ export function InfrastructureTargetList({
   return (
     <section>
       <div className="mb-3 flex items-center gap-1">
-        <h2 className="text-base font-semibold tracking-tight">Deployment servers</h2>
+        <h2 className="text-base font-semibold tracking-tight">{t('Deployment servers')}</h2>
         <InfoTip
-          label="How infrastructure is organized"
+          label={t('How infrastructure is organized')}
           items={[
             {
-              title: 'Server',
-              description: 'The machine or hosting endpoint that receives deployments.',
+              title: t('Server'),
+              description: t('The machine or hosting endpoint that receives deployments.'),
             },
             {
-              title: 'Workspace access',
-              description: `The isolated namespace, allowed runtimes and quota for ${workspaceName}.`,
+              title: t('Workspace access'),
+              description: t(
+                'The isolated namespace, allowed runtimes and quota for {workspaceName}.',
+                { workspaceName: workspaceName },
+              ),
             },
             {
-              title: 'Environment',
-              description:
+              title: t('Environment'),
+              description: t(
                 'A project’s dev, test or prod application deployed through that access.',
+              ),
             },
           ]}
         />
@@ -93,12 +98,14 @@ export function InfrastructureTargetList({
       {targets.length === 0 ? (
         <EmptyState
           icon={Server}
-          title="No deployment servers"
-          description="Connect a Docker server through InitPad Agent, or add compatible SFTP hosting for PHP and static sites."
+          title={t('No deployment servers')}
+          description={t(
+            'Connect a Docker server through InitPad Agent, or add compatible SFTP hosting for PHP and static sites.',
+          )}
           action={
             !readOnly ? (
               <Button onClick={onAdd}>
-                <Plus className="h-4 w-4" /> Add server
+                <Plus className="h-4 w-4" /> {t('Add server')}
               </Button>
             ) : undefined
           }

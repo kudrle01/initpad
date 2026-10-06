@@ -4,6 +4,7 @@ import { Spinner } from '@/components/atoms/Spinner';
 import { InfoTip } from '@/components/molecules/InfoTip';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Button } from '@/components/ui/button';
+import { t, formatDateTime } from '@/i18n';
 
 interface Props {
   target: Target;
@@ -27,7 +28,7 @@ function hasExpiredLease(job: AgentJobSummary, now = Date.now()): boolean {
 
 function agentJobMessage(job: AgentJobSummary, leaseExpired: boolean): string {
   if (leaseExpired) {
-    return 'Lease expired. Waiting for the Agent to reconnect and retry automatically.';
+    return t('Lease expired. Waiting for the Agent to reconnect and retry automatically.');
   }
   if (
     job.kind === 'lifecycle-test' &&
@@ -35,7 +36,9 @@ function agentJobMessage(job: AgentJobSummary, leaseExpired: boolean): string {
     job.progressPercent <= 8 &&
     job.message === 'Docker API timed out'
   ) {
-    return 'The diagnostic image pull timed out. Docker may have cached partial layers; verify registry access and run Test Docker again.';
+    return t(
+      'The diagnostic image pull timed out. Docker may have cached partial layers; verify registry access and run Test Docker again.',
+    );
   }
   return job.message ?? job.progressStage;
 }
@@ -57,33 +60,35 @@ export function AgentDiagnosticsPanel({
         <div className="min-w-0">
           <div className="flex items-center gap-1">
             <p className="flex items-center gap-1.5 text-sm font-medium">
-              <Activity className="h-4 w-4 text-primary" /> Durable job protocol
+              <Activity className="h-4 w-4 text-primary" /> {t('Durable job protocol')}
             </p>
             <InfoTip
-              label="About the Agent protocol test"
+              label={t('About the Agent protocol test')}
               items={[
                 {
-                  title: 'Checks',
-                  description:
+                  title: t('Checks'),
+                  description: t(
                     'Claim, progress reporting, lease renewal and completion over 35 seconds.',
+                  ),
                 },
                 {
-                  title: 'Impact',
-                  description:
+                  title: t('Impact'),
+                  description: t(
                     'Does not run a shell command or create a workload. Offline jobs wait safely in the queue.',
+                  ),
                 },
               ]}
             />
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Checks Agent queue and lease handling without creating a workload.
+            {t('Checks Agent queue and lease handling without creating a workload.')}
           </p>
         </div>
         <Button
           variant="secondary"
           size="sm"
           disabled={busy || testBusy !== null || !canQueueProbe}
-          title={canQueueProbe ? 'Queue a protocol probe' : 'The Agent must be enrolled'}
+          title={canQueueProbe ? t('Queue a protocol probe') : t('The Agent must be enrolled')}
           onClick={onTestProtocol}
         >
           {testBusy === 'protocol' ? (
@@ -91,7 +96,7 @@ export function AgentDiagnosticsPanel({
           ) : (
             <Activity className="h-4 w-4" />
           )}
-          Test protocol
+          {t('Test protocol')}
         </Button>
       </div>
 
@@ -99,31 +104,34 @@ export function AgentDiagnosticsPanel({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             <p className="flex items-center gap-1.5 text-sm font-medium">
-              <Container className="h-4 w-4 text-primary" /> Restricted Docker lifecycle
+              <Container className="h-4 w-4 text-primary" /> {t('Restricted Docker lifecycle')}
             </p>
             <InfoTip
-              label="About the Docker lifecycle test"
+              label={t('About the Docker lifecycle test')}
               items={[
                 {
-                  title: 'Checks',
-                  description:
+                  title: t('Checks'),
+                  description: t(
                     'Deploy, health, bounded logs, replacement, rollback, stop and restart.',
+                  ),
                 },
                 {
-                  title: 'Cleanup',
-                  description:
+                  title: t('Cleanup'),
+                  description: t(
                     'Removes the temporary container, diagnostic image and empty network afterwards.',
+                  ),
                 },
                 {
-                  title: 'Restrictions',
-                  description:
+                  title: t('Restrictions'),
+                  description: t(
                     'No shell command, host mount or deployment secret is sent to the Agent.',
+                  ),
                 },
               ]}
             />
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Runs a temporary isolated workload and removes it after the test.
+            {t('Runs a temporary isolated workload and removes it after the test.')}
           </p>
         </div>
         <Button
@@ -132,8 +140,8 @@ export function AgentDiagnosticsPanel({
           disabled={busy || testBusy !== null || !canQueueProbe}
           title={
             canQueueProbe
-              ? 'Queue a Docker lifecycle test'
-              : 'Agent 0.3.0 or newer must be enrolled'
+              ? t('Queue a Docker lifecycle test')
+              : t('Agent 0.3.0 or newer must be enrolled')
           }
           onClick={onTestLifecycle}
         >
@@ -142,7 +150,7 @@ export function AgentDiagnosticsPanel({
           ) : (
             <Container className="h-4 w-4" />
           )}
-          Test Docker
+          {t('Test Docker')}
         </Button>
       </div>
 
@@ -151,26 +159,28 @@ export function AgentDiagnosticsPanel({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1">
               <p className="flex items-center gap-1.5 text-sm font-medium">
-                <Globe2 className="h-4 w-4 text-primary" /> Production gateway preflight
+                <Globe2 className="h-4 w-4 text-primary" /> {t('Production gateway preflight')}
               </p>
               <InfoTip
-                label="About the gateway preflight"
+                label={t('About the gateway preflight')}
                 items={[
                   {
-                    title: 'Checks',
-                    description:
+                    title: t('Checks'),
+                    description: t(
                       'The configured DNS zone, trusted TLS on port 443 and the private Caddy adapter.',
+                    ),
                   },
                   {
-                    title: 'Impact',
-                    description:
+                    title: t('Impact'),
+                    description: t(
                       'Read-only: no route is created and gateway configuration is not changed.',
+                    ),
                   },
                 ]}
               />
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Checks DNS, TLS and the private gateway without changing routes.
+              {t('Checks DNS, TLS and the private gateway without changing routes.')}
             </p>
             {target.gatewayPreflight && (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -180,11 +190,11 @@ export function AgentDiagnosticsPanel({
                       ? 'success'
                       : target.gatewayPreflight.status
                   }
-                  label={`preflight ${target.gatewayPreflight.status}`}
+                  label={t('preflight {status}', { status: target.gatewayPreflight.status })}
                 />
                 {target.gatewayPreflight.checkedAt && (
                   <span className="text-muted-foreground">
-                    {new Date(target.gatewayPreflight.checkedAt).toLocaleString()}
+                    {formatDateTime(target.gatewayPreflight.checkedAt)}
                   </span>
                 )}
               </div>
@@ -199,8 +209,8 @@ export function AgentDiagnosticsPanel({
             disabled={busy || testBusy !== null || !canQueueProbe}
             title={
               canQueueProbe
-                ? 'Queue a read-only gateway preflight (Agent 0.5.0 or newer)'
-                : 'The Agent must be enrolled'
+                ? t('Queue a read-only gateway preflight (Agent 0.5.0 or newer)')
+                : t('The Agent must be enrolled')
             }
             onClick={onTestGateway}
           >
@@ -209,18 +219,18 @@ export function AgentDiagnosticsPanel({
             ) : (
               <Globe2 className="h-4 w-4" />
             )}
-            Test gateway
+            {t('Test gateway')}
           </Button>
         </div>
       )}
 
       {protocolError && <p className="text-xs text-destructive">{protocolError}</p>}
       {jobs.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No protocol jobs yet.</p>
+        <p className="text-xs text-muted-foreground">{t('No protocol jobs yet.')}</p>
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-xs font-medium text-muted-foreground">
-            Recent Agent tests · newest first
+            {t('Recent Agent tests · newest first')}
           </p>
           {jobs.slice(0, 3).map((job) => {
             const leaseExpired = hasExpiredLease(job);
@@ -230,7 +240,7 @@ export function AgentDiagnosticsPanel({
               <div key={job.id} className="min-w-0 rounded-lg bg-muted p-3">
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="font-medium">
-                    {job.kind} · attempt {job.attempt}
+                    {t('{kind} · attempt {attempt}', { kind: job.kind, attempt: job.attempt })}
                   </span>
                   <StatusBadge status={displayStatus} />
                 </div>
@@ -238,13 +248,13 @@ export function AgentDiagnosticsPanel({
                   className="mt-0.5 block text-xs text-muted-foreground"
                   dateTime={job.createdAt}
                 >
-                  {new Date(job.createdAt).toLocaleString()}
+                  {formatDateTime(job.createdAt)}
                 </time>
                 <p className="mt-1 break-words text-xs text-muted-foreground">{displayMessage}</p>
                 <div
                   className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/[0.1]"
                   role="progressbar"
-                  aria-label={`${job.kind} job progress`}
+                  aria-label={t('{kind} job progress', { kind: job.kind })}
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-valuenow={job.progressPercent}

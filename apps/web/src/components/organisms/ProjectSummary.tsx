@@ -11,6 +11,8 @@ import { BackLink } from '@/components/molecules/BackLink';
 import { Notice } from '@/components/molecules/Notice';
 import { scmLink } from '@/lib/utils';
 import type { Project, ProvisioningStatus, TemplateManifest } from '@/types';
+import { t, formatDate } from '@/i18n';
+import { statusLabel, termLabel } from '@/i18n/labels';
 
 interface Props {
   project: Project;
@@ -21,11 +23,11 @@ interface Props {
 }
 
 export function ProjectSummary({ project, template, provisioning, canMaintain, onDelete }: Props) {
-  const created = new Date(project.createdAt).toLocaleDateString('en-GB');
+  const created = formatDate(project.createdAt);
 
   return (
     <div>
-      <BackLink to="/projects">Projects</BackLink>
+      <BackLink to="/projects">{t('Projects')}</BackLink>
 
       <div className="flex items-start justify-between gap-3 sm:gap-4">
         <div className="flex min-w-0 items-start gap-3 sm:gap-4">
@@ -35,7 +37,10 @@ export function ProjectSummary({ project, template, provisioning, canMaintain, o
               {project.name}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {template?.name ?? project.templateId} · created {created}
+              {t('{template} · created {date}', {
+                template: template?.name ?? project.templateId,
+                date: created,
+              })}
             </p>
           </div>
         </div>
@@ -46,23 +51,23 @@ export function ProjectSummary({ project, template, provisioning, canMaintain, o
                 href={scmLink(project.repoUrl, project.scm.provider)}
                 target="_blank"
                 rel="noreferrer"
-                aria-label="Open repository"
+                aria-label={t('Open repository')}
               >
                 <GitBranch className="h-4 w-4" />
-                <span className="hidden sm:inline">Open repo</span>
+                <span className="hidden sm:inline">{t('Open repo')}</span>
               </a>
             </Button>
           )}
           {canMaintain && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size="icon" aria-label="More actions">
+                <Button variant="secondary" size="icon" aria-label={t('More actions')}>
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
                 <DropdownMenuItem destructive onSelect={onDelete}>
-                  <Trash2 className="h-4 w-4" /> Delete project
+                  <Trash2 className="h-4 w-4" /> {t('Delete project')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -86,13 +91,16 @@ function ProvisioningNotice({ provisioning }: { provisioning: ProvisioningStatus
       className="mt-5"
       title={
         failed
-          ? `Setup (${provisioning.kind}) failed at the ${provisioning.step} step`
-          : `Setting up (${provisioning.kind})…`
+          ? t('Setup ({kind}) failed at the {step} step', {
+              kind: termLabel(provisioning.kind),
+              step: provisioning.step,
+            })
+          : t('Setting up ({kind})…', { kind: termLabel(provisioning.kind) })
       }
     >
       {failed
-        ? (provisioning.message ?? 'No further detail was recorded.')
-        : `Current step: ${provisioning.step}.`}
+        ? (provisioning.message ?? t('No further detail was recorded.'))
+        : t('Current step: {step}.', { step: provisioning.step })}
       {provisioning.effects.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-current/15 pt-2">
           {provisioning.effects.map((effect) => (
@@ -100,11 +108,13 @@ function ProvisioningNotice({ provisioning }: { provisioning: ProvisioningStatus
               key={effect.key}
               className="flex flex-col items-start gap-1 sm:flex-row sm:justify-between sm:gap-3"
             >
-              <span>{effect.kind === 'collaborator' ? 'Repository access' : effect.kind}</span>
+              <span>
+                {effect.kind === 'collaborator' ? t('Repository access') : termLabel(effect.kind)}
+              </span>
               <span className="break-words font-mono sm:text-right">
                 {['compensation_failed', 'reconciliation_required'].includes(effect.status)
-                  ? 'cleanup required'
-                  : effect.status.replaceAll('_', ' ')}
+                  ? t('cleanup required')
+                  : statusLabel(effect.status).replaceAll('_', ' ')}
                 {effect.error ? ` — ${effect.error}` : ''}
               </span>
             </li>

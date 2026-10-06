@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { InfoTip, type InfoTipItem } from '@/components/molecules/InfoTip';
+import { t } from '@/i18n';
 
 export function PageHeader({
   title,
@@ -21,7 +22,9 @@ export function PageHeader({
           <h1 className="min-w-0 break-words text-2xl font-semibold leading-tight tracking-tight">
             {title}
           </h1>
-          {help && <InfoTip label={helpLabel ?? `About ${title}`} items={help} />}
+          {help && (
+            <InfoTip label={helpLabel ?? t('About {title}', { title: title })} items={help} />
+          )}
         </div>
         {description && (
           <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">{description}</p>

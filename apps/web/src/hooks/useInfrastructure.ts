@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type TargetAllocation, type TargetAllocationInput, type TargetInput } from '@/api';
 import { useToast } from '@/toast';
 import type { Target } from '@/types';
+import { t } from '@/i18n';
 
 /** Owns Infrastructure data and mutations independently of its presentation. */
 export function useInfrastructure(workspaceId?: string) {
@@ -72,7 +73,7 @@ export function useInfrastructure(workspaceId?: string) {
       const saved = target
         ? await api.updateTarget(target.id, values)
         : await api.createTarget(values);
-      toast.success(target ? 'Server saved' : 'Server added with workspace access');
+      toast.success(target ? t('Server saved') : t('Server added with workspace access'));
       await refresh();
       return saved;
     } catch (cause) {
@@ -87,7 +88,7 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       const enrollment = await api.issueAgentEnrollment(target.id);
-      toast.success('One-time Agent enrollment created');
+      toast.success(t('One-time Agent enrollment created'));
       await refresh();
       return enrollment;
     } catch (cause) {
@@ -102,7 +103,7 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       await api.disableAgent(target.id);
-      toast.success('Agent disconnected; running workloads were left untouched');
+      toast.success(t('Agent disconnected; running workloads were left untouched'));
       await refresh();
       return true;
     } catch (cause) {
@@ -117,7 +118,9 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       await api.disconnectTarget(target.id);
-      toast.success(`${target.name} disconnected; running workloads were left untouched`);
+      toast.success(
+        t('{name} disconnected; running workloads were left untouched', { name: target.name }),
+      );
       await refresh();
       return true;
     } catch (cause) {
@@ -132,7 +135,7 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       await api.retireTarget(target.id);
-      toast.success(`${target.name} is now retained as unmanaged infrastructure`);
+      toast.success(t('{name} is now retained as unmanaged infrastructure', { name: target.name }));
       await refresh();
       return true;
     } catch (cause) {
@@ -147,7 +150,9 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       await api.restoreTarget(target.id);
-      toast.success(`${target.name} restored; reconnect its credentials to resume management`);
+      toast.success(
+        t('{name} restored; reconnect its credentials to resume management', { name: target.name }),
+      );
       await refresh();
       return true;
     } catch (cause) {
@@ -176,7 +181,7 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       await api.deleteTarget(target.id);
-      toast.success(`Removed server ${target.name}`);
+      toast.success(t('Removed server {name}', { name: target.name }));
       await refresh();
     } catch (cause) {
       toast.error((cause as Error).message);
@@ -202,10 +207,10 @@ export function useInfrastructure(workspaceId?: string) {
           devTtlHours: values.devTtlHours ?? null,
           testTtlHours: values.testTtlHours ?? null,
         });
-        toast.success('Workspace access saved');
+        toast.success(t('Workspace access saved'));
       } else {
         await api.createAllocation(values);
-        toast.success('Workspace access enabled');
+        toast.success(t('Workspace access enabled'));
       }
       await refresh();
       return true;
@@ -224,7 +229,9 @@ export function useInfrastructure(workspaceId?: string) {
         status: allocation.status === 'active' ? 'disabled' : 'active',
       });
       toast.success(
-        allocation.status === 'active' ? 'Workspace access paused' : 'Workspace access resumed',
+        allocation.status === 'active'
+          ? t('Workspace access paused')
+          : t('Workspace access resumed'),
       );
       await refresh();
     } catch (cause) {
@@ -238,7 +245,9 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyAllocationId(allocation.id);
     try {
       await api.deleteAllocation(allocation.id);
-      toast.success(`Removed workspace access to ${allocation.targetName}`);
+      toast.success(
+        t('Removed workspace access to {targetName}', { targetName: allocation.targetName }),
+      );
       await refresh();
     } catch (cause) {
       toast.error((cause as Error).message);

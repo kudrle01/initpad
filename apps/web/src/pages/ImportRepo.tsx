@@ -32,6 +32,7 @@ import type {
   Target,
   TemplateManifest,
 } from '@/types';
+import { t, rich } from '@/i18n';
 
 // Import an existing repository: pick a repo + template, run a preflight against
 // the runtime contract, then record the project without touching the code.
@@ -80,14 +81,14 @@ export default function ImportRepo() {
       api.listTargets(),
       hosted ? api.githubStatus() : Promise.resolve(null),
     ])
-      .then(([r, t, targetRows, github]) => {
+      .then(([repoRows, templateRows, targetRows, github]) => {
         if (!current) return;
-        setRepos(r);
-        setTemplates(t);
+        setRepos(repoRows);
+        setTemplates(templateRows);
         setTargets(targetRows);
         setGhStatus(github);
-        if (t[0]) setTemplateId(t[0].id);
-        const firstImportable = r.find((x) => !x.alreadyImported && !x.empty);
+        if (templateRows[0]) setTemplateId(templateRows[0].id);
+        const firstImportable = repoRows.find((x) => !x.alreadyImported && !x.empty);
         if (firstImportable) setRepositoryId(firstImportable.repositoryId);
       })
       .catch((e) => {
@@ -151,7 +152,7 @@ export default function ImportRepo() {
         })),
         pipelinePreset,
       );
-      toast.success('Repository imported');
+      toast.success(t('Repository imported'));
       void navigate(`/projects/${project.id}`);
     } catch (e) {
       toast.error((e as Error).message);
@@ -172,7 +173,7 @@ export default function ImportRepo() {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      toast.success('Starter workflow downloaded');
+      toast.success(t('Starter workflow downloaded'));
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -191,22 +192,24 @@ export default function ImportRepo() {
   return (
     <div>
       <PageHeader
-        title="Import existing repository"
-        description="Connect a repository you already have. InitPad validates it — your code is never rewritten."
+        title={t('Import existing repository')}
+        description={t(
+          'Connect a repository you already have. InitPad validates it — your code is never rewritten.',
+        )}
         help={[
           {
-            title: 'Import',
-            description: 'Records the project, connects CI and prepares its environments.',
+            title: t('Import'),
+            description: t('Records the project, connects CI and prepares its environments.'),
           },
           {
-            title: 'Source code',
-            description: 'Your repository contents are validated, never rewritten.',
+            title: t('Source code'),
+            description: t('Your repository contents are validated, never rewritten.'),
           },
         ]}
         actions={
           <Button asChild variant="secondary">
             <Link to="/new">
-              <LayoutTemplate className="h-4 w-4" /> Start from a template
+              <LayoutTemplate className="h-4 w-4" /> {t('Start from a template')}
             </Link>
           </Button>
         }
@@ -216,14 +219,21 @@ export default function ImportRepo() {
         <div className="mb-4 flex flex-col gap-3">
           {readOnly && (
             <Notice tone="warning" role="alert">
-              Viewer access is read-only. Ask a workspace admin for a member or maintainer role to
-              import projects.
+              {t(
+                'Viewer access is read-only. Ask a workspace admin for a member or maintainer role to import projects.',
+              )}
             </Notice>
           )}
           {hosted && ghStatus && !ghStatus.ciCallbackReady && (
             <Notice tone="danger" role="alert">
-              {ghStatus.ciCallbackIssue ?? 'GitHub cannot reach the InitPad CI callback.'} Configure
-              a public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code> before importing.
+              {rich(
+                '{issue} Configure a public HTTPS <code>INITPAD_PUBLIC_URL</code> before importing.',
+                {
+                  issue:
+                    ghStatus.ciCallbackIssue ?? t('GitHub cannot reach the InitPad CI callback.'),
+                  code: (chunk) => <code className="font-mono">{chunk}</code>,
+                },
+              )}
             </Notice>
           )}
         </div>
@@ -232,26 +242,28 @@ export default function ImportRepo() {
       {loadError ? (
         <LoadErrorState message={loadError} onRetry={() => setReloadKey((value) => value + 1)} />
       ) : loading ? (
-        <ContentLoading label="Loading repositories" variant="detail" />
+        <ContentLoading label={t('Loading repositories')} variant="detail" />
       ) : (
         <div className="grid items-start gap-4 lg:gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
             <Section
-              title="Repository"
-              description="The repository to import and the runtime contract it already follows."
+              title={t('Repository')}
+              description={t(
+                'The repository to import and the runtime contract it already follows.',
+              )}
               media={<StepBadge step={1} />}
             >
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="flex min-w-0 flex-col gap-1.5">
-                  <Label htmlFor="import-repository">Repository</Label>
+                  <Label htmlFor="import-repository">{t('Repository')}</Label>
                   <Select
                     id="import-repository"
                     value={repositoryId}
-                    aria-label="Repository"
+                    aria-label={t('Repository')}
                     onChange={(e) => setRepositoryId(e.target.value)}
                   >
                     <option value="" disabled>
-                      Choose a repository…
+                      {t('Choose a repository…')}
                     </option>
                     {repos.map((r) => (
                       <option
@@ -260,7 +272,11 @@ export default function ImportRepo() {
                         disabled={r.alreadyImported || r.empty}
                       >
                         {r.fullName}
-                        {r.alreadyImported ? ' — already imported' : r.empty ? ' — empty' : ''}
+                        {r.alreadyImported
+                          ? ` — ${t('already imported')}`
+                          : r.empty
+                            ? ` — ${t('empty')}`
+                            : ''}
                       </option>
                     ))}
                   </Select>
@@ -268,21 +284,22 @@ export default function ImportRepo() {
 
                 <div className="flex min-w-0 flex-col gap-1.5">
                   <div className="flex h-5 items-center gap-1">
-                    <Label htmlFor="import-template">Runtime template</Label>
-                    <InfoTip label="About the runtime template">
-                      Choose the runtime contract this repository already follows. Import validates
-                      the repository but never rewrites its code.
+                    <Label htmlFor="import-template">{t('Runtime template')}</Label>
+                    <InfoTip label={t('About the runtime template')}>
+                      {t(
+                        'Choose the runtime contract this repository already follows. Import validates the repository but never rewrites its code.',
+                      )}
                     </InfoTip>
                   </div>
                   <Select
                     id="import-template"
                     value={templateId}
-                    aria-label="Template"
+                    aria-label={t('Template')}
                     onChange={(e) => setTemplateId(e.target.value)}
                   >
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} · {t.language}
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name} · {template.language}
                       </option>
                     ))}
                   </Select>
@@ -292,31 +309,37 @@ export default function ImportRepo() {
                 !loadError &&
                 (hosted && ghStatus?.installations.length === 0 ? (
                   <Notice icon={Github} className="mt-3">
-                    No GitHub installation is authorized for this workspace.{' '}
-                    <Link to="/settings/account" className="text-link font-medium">
-                      Open account settings
-                    </Link>
+                    {rich(
+                      'No GitHub installation is authorized for this workspace. <link>Open account settings</link>',
+                      {
+                        link: (chunk) => (
+                          <Link to="/settings/account" className="text-link font-medium">
+                            {chunk}
+                          </Link>
+                        ),
+                      },
+                    )}
                   </Notice>
                 ) : (
                   <p className="mt-3 text-sm text-muted-foreground">
-                    No repositories available to import.
+                    {t('No repositories available to import.')}
                   </p>
                 ))}
             </Section>
 
             <Section
-              title="Pipeline"
-              description="The stages a verified build moves through."
+              title={t('Pipeline')}
+              description={t('The stages a verified build moves through.')}
               media={<StepBadge step={2} />}
             >
               <PipelinePresetField value={pipelinePreset} onChange={setPipelinePreset} hideLegend />
             </Section>
 
             <Section
-              title="Deployment targets"
-              description="Where each environment runs."
+              title={t('Deployment targets')}
+              description={t('Where each environment runs.')}
               help={environmentTargetHelp(hosted)}
-              helpLabel="About environment targets"
+              helpLabel={t('About environment targets')}
               media={<StepBadge step={3} />}
             >
               <EnvironmentTargetFields
@@ -337,10 +360,10 @@ export default function ImportRepo() {
               <StepBadge step={4} />
               <div className="min-w-0">
                 <h2 className="text-base font-semibold leading-snug tracking-tight">
-                  Check and import
+                  {t('Check and import')}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Preflight inspects the repository before anything is changed.
+                  {t('Preflight inspects the repository before anything is changed.')}
                 </p>
               </div>
             </div>
@@ -352,24 +375,30 @@ export default function ImportRepo() {
               disabled={!repositoryId || !templateId || checking}
             >
               {checking ? <Spinner className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-              {checking ? 'Checking…' : preflight ? 'Run preflight again' : 'Run preflight check'}
+              {checking
+                ? t('Checking…')
+                : preflight
+                  ? t('Run preflight again')
+                  : t('Run preflight check')}
             </Button>
 
             {preflight && (
               <div className="mt-5 border-t border-border/70 pt-5" aria-live="polite">
-                <h3 className="break-words text-sm font-semibold">Preflight — {preflight.repo}</h3>
+                <h3 className="break-words text-sm font-semibold">
+                  {t('Preflight — {repo}', { repo: preflight.repo })}
+                </h3>
                 <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-                  <dt className="text-muted-foreground">Default branch</dt>
+                  <dt className="text-muted-foreground">{t('Default branch')}</dt>
                   <dd className="break-all text-right font-medium">{preflight.branch}</dd>
-                  <dt className="text-muted-foreground">Runtime</dt>
+                  <dt className="text-muted-foreground">{t('Runtime')}</dt>
                   <dd className="text-right font-medium">{preflight.runtime}</dd>
-                  <dt className="text-muted-foreground">Dockerfile</dt>
+                  <dt className="text-muted-foreground">{t('Dockerfile')}</dt>
                   <dd className="text-right font-medium">
-                    {preflight.hasDockerfile ? 'found' : 'not found'}
+                    {preflight.hasDockerfile ? t('found') : t('not found')}
                   </dd>
-                  <dt className="text-muted-foreground">InitPad workflow</dt>
+                  <dt className="text-muted-foreground">{t('InitPad workflow')}</dt>
                   <dd className="text-right font-medium">
-                    {preflight.hasCompatibleWorkflow ? 'compatible' : 'not found'}
+                    {preflight.hasCompatibleWorkflow ? t('compatible') : t('not found')}
                   </dd>
                 </dl>
                 {preflight.warnings.length > 0 && (
@@ -383,14 +412,19 @@ export default function ImportRepo() {
                   </ul>
                 )}
                 {!preflight.hasCompatibleWorkflow && selectedRepo && (
-                  <Notice className="mt-4" title="Add the starter CI workflow">
-                    Download it, save it as{' '}
-                    <code className="break-all font-mono text-xs">
-                      {selectedRepo.provider === 'github'
-                        ? '.github/workflows/ci.yml'
-                        : '.gitea/workflows/ci.yml'}
-                    </code>
-                    , review the build and test commands, commit it, then run preflight again.
+                  <Notice className="mt-4" title={t('Add the starter CI workflow')}>
+                    {rich(
+                      'Download it, save it as <code>{path}</code>, review the build and test commands, commit it, then run preflight again.',
+                      {
+                        path:
+                          selectedRepo.provider === 'github'
+                            ? '.github/workflows/ci.yml'
+                            : '.gitea/workflows/ci.yml',
+                        code: (chunk) => (
+                          <code className="break-all font-mono text-xs">{chunk}</code>
+                        ),
+                      },
+                    )}
                     <Button
                       className="mt-3 w-full"
                       size="sm"
@@ -399,19 +433,21 @@ export default function ImportRepo() {
                       onClick={downloadStarterWorkflow}
                     >
                       <DownloadCloud className="h-3.5 w-3.5" />
-                      {downloadingWorkflow ? 'Downloading…' : 'Download starter workflow'}
+                      {downloadingWorkflow ? t('Downloading…') : t('Download starter workflow')}
                     </Button>
                   </Notice>
                 )}
                 <Button className="mt-5 w-full" disabled={!canImport} onClick={doImport}>
                   {busy ? <Spinner className="h-4 w-4" /> : <DownloadCloud className="h-4 w-4" />}
                   <span className="truncate">
-                    {busy ? 'Importing…' : `Import ${selectedRepo?.name ?? 'repository'}`}
+                    {busy
+                      ? t('Importing…')
+                      : t('Import {name}', { name: selectedRepo?.name ?? t('repository') })}
                   </span>
                 </Button>
                 {!preflight.canImport && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Resolve the issues above before importing.
+                    {t('Resolve the issues above before importing.')}
                   </p>
                 )}
               </div>

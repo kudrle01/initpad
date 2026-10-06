@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { t, rich } from '@/i18n';
 
 export interface ConfirmationDetail {
   label: string;
@@ -114,7 +115,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
                       : 'border-warning/30 bg-warning/[0.08]',
                   )}
                 >
-                  <p className="font-medium">What will happen</p>
+                  <p className="font-medium">{t('What will happen')}</p>
                   <ul className="mt-1.5 list-disc space-y-1 break-words pl-5 text-[13px] leading-relaxed text-muted-foreground">
                     {options.consequences.map((consequence, index) => (
                       <li key={index}>{consequence}</li>
@@ -126,8 +127,10 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
               {options.requireText && (
                 <div className="flex min-w-0 flex-col gap-1.5">
                   <label htmlFor="confirmation-text" className="break-words text-sm">
-                    Type <strong className="font-semibold">{options.requireText}</strong> to
-                    confirm:
+                    {rich('Type <b>{requireText}</b> to confirm:', {
+                      requireText: options.requireText,
+                      b: (chunk) => <strong className="font-semibold">{chunk}</strong>,
+                    })}
                   </label>
                   <Input
                     id="confirmation-text"
@@ -144,7 +147,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
 
               <DialogFooter>
                 <Button variant="secondary" onClick={() => finish(false)}>
-                  Cancel
+                  {t('Cancel')}
                 </Button>
                 <Button
                   variant={danger ? 'danger' : 'default'}

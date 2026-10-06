@@ -22,10 +22,12 @@ import { api, type TargetInput } from '@/api';
 import type { ProviderKind, RuntimeKind, Target, TargetRoutingMode } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { useToast } from '@/toast';
+import { t, rich } from '@/i18n';
 
 const FIELD = 'flex min-w-0 flex-col gap-1';
 
 const ALL_CAPS: { id: RuntimeKind; label: string }[] = [
+  // Runtime names are product names; they read the same in every language.
   { id: 'static', label: 'Static' },
   { id: 'node', label: 'Node' },
   { id: 'php', label: 'PHP' },
@@ -149,7 +151,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
       inspectedPort < 1 ||
       inspectedPort > 65535
     ) {
-      toast.error('Enter a valid server host and port first');
+      toast.error(t('Enter a valid server host and port first'));
       return;
     }
 
@@ -157,7 +159,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
     try {
       const identity = await api.inspectTargetHostKey({ host: inspectedHost, port: inspectedPort });
       if (inspectedHost !== host.trim() || inspectedPort !== Number(port)) {
-        toast.error('The server address changed during host-key inspection. Try again.');
+        toast.error(t('The server address changed during host-key inspection. Try again.'));
         return;
       }
 
@@ -168,34 +170,38 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           normalizeHostKeyFingerprint(identity.fingerprint)
       ) {
         setHostKeyFingerprint(identity.fingerprint);
-        toast.success('The server identity matches the trusted fingerprint');
+        toast.success(t('The server identity matches the trusted fingerprint'));
         return;
       }
 
       const replacingIdentity = Boolean(previousFingerprint);
       const confirmed = await confirmAction({
         title: replacingIdentity
-          ? 'The server identity has changed'
-          : 'Trust this server identity?',
+          ? t('The server identity has changed')
+          : t('Trust this server identity?'),
         description: replacingIdentity
-          ? 'A changed SSH host key can mean that the server was reinstalled, its key was rotated, or the connection is being intercepted.'
-          : 'Compare this fingerprint with the value provided by the server administrator before trusting it.',
-        confirmLabel: replacingIdentity ? 'Replace trusted key' : 'Trust and save',
+          ? t(
+              'A changed SSH host key can mean that the server was reinstalled, its key was rotated, or the connection is being intercepted.',
+            )
+          : t(
+              'Compare this fingerprint with the value provided by the server administrator before trusting it.',
+            ),
+        confirmLabel: replacingIdentity ? t('Replace trusted key') : t('Trust and save'),
         tone: replacingIdentity ? 'danger' : 'warning',
         details: [
-          { label: 'Server', value: `${identity.host}:${identity.port}` },
-          { label: 'Key type', value: identity.algorithm },
+          { label: t('Server'), value: `${identity.host}:${identity.port}` },
+          { label: t('Key type'), value: identity.algorithm },
           ...(previousFingerprint
-            ? [{ label: 'Previously trusted', value: previousFingerprint }]
+            ? [{ label: t('Previously trusted'), value: previousFingerprint }]
             : []),
           {
-            label: replacingIdentity ? 'New fingerprint' : 'Fingerprint',
+            label: replacingIdentity ? t('New fingerprint') : t('Fingerprint'),
             value: identity.fingerprint,
           },
         ],
         consequences: [
-          'InitPad will pin this exact key for every future SFTP connection.',
-          'A different key will stop the connection before any credential is sent.',
+          t('InitPad will pin this exact key for every future SFTP connection.'),
+          t('A different key will stop the connection before any credential is sent.'),
         ],
       });
       if (confirmed) setHostKeyFingerprint(identity.fingerprint);
@@ -249,46 +255,55 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
         <DialogHeader>
           <DialogTitle>
             <Server className="h-[18px] w-[18px]" />{' '}
-            {editing ? 'Edit server' : 'Add deployment server'}
+            {editing ? t('Edit server') : t('Add deployment server')}
           </DialogTitle>
           <DialogDescription>
             {kind === 'docker'
-              ? 'Recommended for application workloads. The server connects outbound through InitPad Agent; no inbound SSH credential is stored.'
-              : 'Compatibility option for shared PHP or static hosting. Connection credentials are encrypted at rest.'}
+              ? t(
+                  'Recommended for application workloads. The server connects outbound through InitPad Agent; no inbound SSH credential is stored.',
+                )
+              : t(
+                  'Compatibility option for shared PHP or static hosting. Connection credentials are encrypted at rest.',
+                )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid min-w-0 grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
           {requiresReconnectCredential && (
-            <Notice tone="warning" title="A new credential is required" className="sm:col-span-2">
-              The previous credential was permanently removed. Save a replacement, then run Test
-              connection to resume InitPad management.
+            <Notice
+              tone="warning"
+              title={t('A new credential is required')}
+              className="sm:col-span-2"
+            >
+              {t(
+                'The previous credential was permanently removed. Save a replacement, then run Test connection to resume InitPad management.',
+              )}
             </Notice>
           )}
           <div className={cn(FIELD, 'sm:col-span-2')}>
-            <FieldLabel htmlFor="t-name">Name</FieldLabel>
+            <FieldLabel htmlFor="t-name">{t('Name')}</FieldLabel>
             <Input
               id="t-name"
               value={name}
-              placeholder="ESO school server"
+              placeholder={t('ESO school server')}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div className={FIELD}>
-            <FieldLabel htmlFor="t-kind">Connection method</FieldLabel>
+            <FieldLabel htmlFor="t-kind">{t('Connection method')}</FieldLabel>
             <Select
               id="t-kind"
               value={kind}
               disabled={editing}
               onChange={(e) => changeKind(e.target.value as ProviderKind)}
             >
-              <option value="docker">InitPad Agent for Docker (recommended)</option>
-              <option value="sftp">SFTP shared web hosting</option>
+              <option value="docker">{t('InitPad Agent for Docker (recommended)')}</option>
+              <option value="sftp">{t('SFTP shared web hosting')}</option>
             </Select>
           </div>
           {kind !== 'docker' && (
             <div className={FIELD}>
-              <FieldLabel htmlFor="t-port">Port</FieldLabel>
+              <FieldLabel htmlFor="t-port">{t('Port')}</FieldLabel>
               <Input
                 id="t-port"
                 value={port}
@@ -299,14 +314,14 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           )}
           {kind === 'docker' && (
             <div className={FIELD}>
-              <FieldLabel htmlFor="t-routing">Application exposure</FieldLabel>
+              <FieldLabel htmlFor="t-routing">{t('Application exposure')}</FieldLabel>
               <Select
                 id="t-routing"
                 value={routingMode}
                 onChange={(e) => setRoutingMode(e.target.value as TargetRoutingMode)}
               >
-                <option value="direct-port">Direct ports (local / lab)</option>
-                <option value="managed-gateway">Managed gateway (production)</option>
+                <option value="direct-port">{t('Direct ports (local / lab)')}</option>
+                <option value="managed-gateway">{t('Managed gateway (production)')}</option>
               </Select>
             </div>
           )}
@@ -314,16 +329,22 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           <div className={cn(FIELD, 'sm:col-span-2')}>
             <FieldLabel
               help={
-                <InfoTip label="About supported runtimes">
+                <InfoTip label={t('About supported runtimes')}>
                   {kind === 'sftp'
-                    ? 'Static sites need SFTP only. PHP enables Nette, Laravel and Symfony and also requires shell access through the same account for isolated, removable releases.'
+                    ? t(
+                        'Static sites need SFTP only. PHP enables Nette, Laravel and Symfony and also requires shell access through the same account for isolated, removable releases.',
+                      )
                     : kind === 'docker'
-                      ? 'The Agent confirms Docker support after enrollment. Deployment stays disabled until the delivery path is ready.'
-                      : 'Choose only runtimes installed on this server. Test connection reports the detected command-line runtimes.'}
+                      ? t(
+                          'The Agent confirms Docker support after enrollment. Deployment stays disabled until the delivery path is ready.',
+                        )
+                      : t(
+                          'Choose only runtimes installed on this server. Test connection reports the detected command-line runtimes.',
+                        )}
                 </InfoTip>
               }
             >
-              Can run
+              {t('Can run')}
             </FieldLabel>
             <div className="flex flex-wrap gap-2">
               {ALL_CAPS.map((c) => (
@@ -341,7 +362,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           {kind !== 'docker' && (
             <>
               <div className={cn(FIELD, 'sm:col-span-2')}>
-                <FieldLabel htmlFor="t-host">Host</FieldLabel>
+                <FieldLabel htmlFor="t-host">{t('Host')}</FieldLabel>
                 <Input
                   id="t-host"
                   value={host}
@@ -350,23 +371,23 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                 />
               </div>
               <div className={FIELD}>
-                <FieldLabel htmlFor="t-user">Username</FieldLabel>
+                <FieldLabel htmlFor="t-user">{t('Username')}</FieldLabel>
                 <Input id="t-user" value={username} onChange={(e) => setUsername(e.target.value)} />
               </div>
               <div className={FIELD}>
-                <FieldLabel htmlFor="t-auth">Auth</FieldLabel>
+                <FieldLabel htmlFor="t-auth">{t('Auth')}</FieldLabel>
                 <Select
                   id="t-auth"
                   value={auth}
                   onChange={(e) => setAuth(e.target.value as 'password' | 'key')}
                 >
-                  <option value="password">Password</option>
-                  <option value="key">SSH key</option>
+                  <option value="password">{t('Password')}</option>
+                  <option value="key">{t('SSH key')}</option>
                 </Select>
               </div>
               <div className={cn(FIELD, 'sm:col-span-2')}>
                 <FieldLabel htmlFor="t-secret">
-                  {auth === 'key' ? 'Private key (PEM)' : 'Password'}
+                  {auth === 'key' ? t('Private key (PEM)') : t('Password')}
                 </FieldLabel>
                 {auth === 'key' ? (
                   <textarea
@@ -375,10 +396,10 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                     onChange={(e) => setSecret(e.target.value)}
                     placeholder={
                       requiresReconnectCredential
-                        ? 'Paste the replacement OpenSSH private key'
+                        ? t('Paste the replacement OpenSSH private key')
                         : editing
-                          ? 'Leave blank to keep the existing key'
-                          : 'Paste an OpenSSH private key'
+                          ? t('Leave blank to keep the existing key')
+                          : t('Paste an OpenSSH private key')
                     }
                     className={cn(fieldClassName, 'min-h-[96px] px-3 py-2 font-mono sm:text-xs')}
                   />
@@ -390,9 +411,9 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                     onChange={(e) => setSecret(e.target.value)}
                     placeholder={
                       requiresReconnectCredential
-                        ? 'Enter a new password'
+                        ? t('Enter a new password')
                         : editing
-                          ? 'Leave blank to keep the existing password'
+                          ? t('Leave blank to keep the existing password')
                           : ''
                     }
                   />
@@ -400,21 +421,23 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               </div>
               <div className={cn(FIELD, 'sm:col-span-2')}>
                 <div className="flex min-h-7 items-center gap-1">
-                  <Label htmlFor="t-host-key">Host key fingerprint</Label>
-                  <InfoTip label="How to verify the server identity">
+                  <Label htmlFor="t-host-key">{t('Host key fingerprint')}</Label>
+                  <InfoTip label={t('How to verify the server identity')}>
                     <span className="block">
-                      <strong>Trusted source:</strong> compare the value with the server
-                      administrator.
+                      {rich(
+                        '<b>Trusted source:</b> compare the value with the server administrator.',
+                        { b: (chunk) => <strong>{chunk}</strong> },
+                      )}
                     </span>
                     <span className="mt-2 block">
-                      <strong>Inspect:</strong>
+                      <strong>{t('Inspect:')}</strong>
                     </span>
                     <code className="mt-1 block break-all text-xs">
                       ssh-keyscan -p {Number(port) || 22} {host || 'host'} 2&gt;/dev/null |
                       ssh-keygen -lf - -E sha256
                     </code>
                     <span className="mt-2 block">
-                      Do not trust the first scan alone on an untrusted network.
+                      {t('Do not trust the first scan alone on an untrusted network.')}
                     </span>
                   </InfoTip>
                 </div>
@@ -422,7 +445,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                   <Input
                     id="t-host-key"
                     value={hostKeyFingerprint}
-                    placeholder="Not trusted yet"
+                    placeholder={t('Not trusted yet')}
                     spellCheck={false}
                     readOnly
                     className="min-w-0 flex-1 font-mono text-xs"
@@ -438,16 +461,17 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                     ) : (
                       <ScanSearch className="h-4 w-4" />
                     )}
-                    {hostKeyFingerprint ? 'Check identity' : 'Get fingerprint'}
+                    {hostKeyFingerprint ? t('Check identity') : t('Get fingerprint')}
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  InitPad retrieves the public key without sending the password or private key. You
-                  must confirm it before the connection is saved.
+                  {t(
+                    'InitPad retrieves the public key without sending the password or private key. You must confirm it before the connection is saved.',
+                  )}
                 </p>
               </div>
               <div className={cn(FIELD, 'sm:col-span-2')}>
-                <FieldLabel htmlFor="t-path">Remote path</FieldLabel>
+                <FieldLabel htmlFor="t-path">{t('Remote path')}</FieldLabel>
                 <Input
                   id="t-path"
                   value={remotePath}
@@ -461,16 +485,20 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             <div className="flex min-h-7 items-center gap-1">
               <Label htmlFor="t-url">
                 {kind === 'docker' && routingMode === 'managed-gateway'
-                  ? 'Gateway base URL'
+                  ? t('Gateway base URL')
                   : kind === 'docker'
-                    ? 'Application base URL'
-                    : 'Public URL'}
+                    ? t('Application base URL')
+                    : t('Public URL')}
               </Label>
               {kind === 'docker' && (
-                <InfoTip label="About the application address">
+                <InfoTip label={t('About the application address')}>
                   {routingMode === 'managed-gateway'
-                    ? 'Use an HTTPS DNS origin for stable application hostnames. Run gateway preflight before the first deployment.'
-                    : 'Use the browser-reachable address of this server. Each local or lab application receives its own published port.'}
+                    ? t(
+                        'Use an HTTPS DNS origin for stable application hostnames. Run gateway preflight before the first deployment.',
+                      )
+                    : t(
+                        'Use the browser-reachable address of this server. Each local or lab application receives its own published port.',
+                      )}
                 </InfoTip>
               )}
             </div>
@@ -501,11 +529,15 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             disabled={busy || inspectingHostKey}
             onClick={() => onOpenChange(false)}
           >
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button disabled={busy || inspectingHostKey || !valid} onClick={submit}>
             {busy && <Spinner className="h-4 w-4" />}
-            {reconnectingRemote ? 'Save connection' : editing ? 'Save server' : 'Add server'}
+            {reconnectingRemote
+              ? t('Save connection')
+              : editing
+                ? t('Save server')
+                : t('Add server')}
           </Button>
         </DialogFooter>
       </DialogContent>

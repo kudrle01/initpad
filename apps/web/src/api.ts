@@ -33,6 +33,7 @@ import type {
   WorkspaceCapacity,
   WorkspaceCapacityUpdate,
 } from '@/types';
+import { t } from '@/i18n';
 
 export interface EnvConfig {
   name: EnvName;
@@ -270,7 +271,7 @@ async function boundedFetch(
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted && !sourceSignal?.aborted) {
-      throw new ApiError('The server did not respond in time. Try again.', 408);
+      throw new ApiError(t('The server did not respond in time. Try again.'), 408);
     }
     throw error;
   } finally {

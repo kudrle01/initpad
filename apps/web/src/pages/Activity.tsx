@@ -12,20 +12,7 @@ import { StatusDot } from '@/components/atoms/StatusDot';
 import { useAuth } from '@/auth';
 import { useLoadable } from '@/hooks/useLoadable';
 import type { ActivityEvent } from '@/types';
-
-function relTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return '';
-  const s = Math.round((Date.now() - t) / 1000);
-  if (s < 60) return 'just now';
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.round(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString('en-GB');
-}
+import { t, relativeTime } from '@/i18n';
 
 export default function Activity() {
   const { activeWorkspace } = useAuth();
@@ -39,19 +26,19 @@ export default function Activity() {
   return (
     <div>
       <PageHeader
-        title="Development activity"
-        description="Recent commits and their pipeline runs across this workspace."
+        title={t('Development activity')}
+        description={t('Recent commits and their pipeline runs across this workspace.')}
       />
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />
       ) : loading ? (
-        <ContentLoading label="Loading activity" />
+        <ContentLoading label={t('Loading activity')} />
       ) : events.length === 0 ? (
         <EmptyState
           icon={ActivityIcon}
-          title="No activity yet"
-          description="Commits and CI runs across your projects will show up here."
+          title={t('No activity yet')}
+          description={t('Commits and CI runs across your projects will show up here.')}
         />
       ) : (
         <Card className="overflow-hidden">
@@ -74,7 +61,7 @@ export default function Activity() {
                       {e.sha !== 'initial' ? e.sha.slice(0, 7) : '—'}
                     </span>
                     <span className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-                      {relTime(e.date)}
+                      {relativeTime(e.date)}
                     </span>
                   </div>
                   <div className="truncate text-sm" title={e.message}>
@@ -91,7 +78,7 @@ export default function Activity() {
                         <Link
                           key={s.name}
                           to={`/projects/${e.projectId}/deployments`}
-                          title="View InitPad deployment history"
+                          title={t('View InitPad deployment history')}
                           className="text-link flex items-center gap-1.5 whitespace-nowrap"
                         >
                           {inner}

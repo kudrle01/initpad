@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { t } from '@/i18n';
 
 interface Props {
   open: boolean;
@@ -76,32 +77,34 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
         <form className="grid gap-4" onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>
-              <Building2 className="h-[18px] w-[18px]" /> Add new workspace
+              <Building2 className="h-[18px] w-[18px]" /> {t('Add new workspace')}
             </DialogTitle>
             <DialogDescription>
-              Create a shared space for a team. You will become its owner and can invite members
-              afterwards.
+              {t(
+                'Create a shared space for a team. You will become its owner and can invite members afterwards.',
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="workspace-name">Workspace name</Label>
+              <Label htmlFor="workspace-name">{t('Workspace name')}</Label>
               <Input
                 id="workspace-name"
                 autoFocus
                 maxLength={80}
-                placeholder="Platform team"
+                placeholder={t('Platform team')}
                 value={name}
                 onChange={(event) => changeName(event.target.value)}
               />
             </div>
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-1">
-                <Label htmlFor="workspace-slug">Workspace slug</Label>
-                <InfoTip label="About the workspace slug">
-                  A stable identifier used in namespaces and URLs. Use lowercase letters, numbers
-                  and hyphens.
+                <Label htmlFor="workspace-slug">{t('Workspace slug')}</Label>
+                <InfoTip label={t('About the workspace slug')}>
+                  {t(
+                    'A stable identifier used in namespaces and URLs. Use lowercase letters, numbers and hyphens.',
+                  )}
                 </InfoTip>
               </div>
               <Input
@@ -119,7 +122,9 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
               />
               {slug.length > 0 && !slugValid && (
                 <p className="text-xs text-destructive">
-                  Use 2–40 characters, start with a letter and avoid the reserved personal- prefix.
+                  {t(
+                    'Use 2–40 characters, start with a letter and avoid the reserved personal- prefix.',
+                  )}
                 </p>
               )}
             </div>
@@ -132,11 +137,11 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
               disabled={busy}
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button type="submit" disabled={busy || !nameValid || !slugValid}>
               {busy && <Spinner className="h-4 w-4" />}
-              {busy ? 'Creating…' : 'Create workspace'}
+              {busy ? t('Creating…') : t('Create workspace')}
             </Button>
           </DialogFooter>
         </form>

@@ -14,6 +14,7 @@ import { useInfrastructure } from '@/hooks/useInfrastructure';
 import { useAgentProtocol } from '@/hooks/useAgentProtocol';
 import { useConfirmation } from '@/confirmation';
 import type { AgentEnrollment, Target } from '@/types';
+import { t } from '@/i18n';
 
 function sameCapabilities(left: string[], right: string[]): boolean {
   return [...left].sort().join(',') === [...right].sort().join(',');
@@ -22,20 +23,20 @@ function sameCapabilities(left: string[], right: string[]): boolean {
 function changedTargetSettings(target: Target, values: TargetInput): string[] {
   const fields: string[] = [];
   if (!sameCapabilities(target.capabilities, values.capabilities))
-    fields.push('runtime capabilities');
-  if (target.publicUrl !== values.publicUrl) fields.push('public URL');
+    fields.push(t('runtime capabilities'));
+  if (target.publicUrl !== values.publicUrl) fields.push(t('public URL'));
   if ((target.routingMode ?? 'direct-port') !== (values.routingMode ?? 'direct-port'))
-    fields.push('routing mode');
+    fields.push(t('routing mode'));
   if (target.kind !== 'docker') {
-    if ((target.host ?? '') !== (values.host ?? '')) fields.push('host');
-    if ((target.port ?? 22) !== (values.port ?? 22)) fields.push('port');
-    if ((target.username ?? '') !== (values.username ?? '')) fields.push('username');
+    if ((target.host ?? '') !== (values.host ?? '')) fields.push(t('host'));
+    if ((target.port ?? 22) !== (values.port ?? 22)) fields.push(t('port'));
+    if ((target.username ?? '') !== (values.username ?? '')) fields.push(t('username'));
     if ((target.auth ?? 'password') !== (values.auth ?? 'password'))
-      fields.push('authentication method');
-    if (values.secret) fields.push('authentication credentials');
+      fields.push(t('authentication method'));
+    if (values.secret) fields.push(t('authentication credentials'));
     if ((target.hostKeyFingerprint ?? '') !== (values.hostKeyFingerprint ?? ''))
-      fields.push('host key fingerprint');
-    if ((target.remotePath ?? '') !== (values.remotePath ?? '')) fields.push('remote path');
+      fields.push(t('host key fingerprint'));
+    if ((target.remotePath ?? '') !== (values.remotePath ?? '')) fields.push(t('remote path'));
   }
   return fields;
 }
@@ -46,15 +47,15 @@ function changedAllocationSettings(
 ): string[] {
   const fields: string[] = [];
   if (!sameCapabilities(allocation.capabilities, values.capabilities))
-    fields.push('runtime capabilities');
+    fields.push(t('runtime capabilities'));
   if (values.publicUrl !== undefined && allocation.publicUrl !== values.publicUrl)
-    fields.push('public URL');
-  if (allocation.maxEnvironments !== values.maxEnvironments) fields.push('environment quota');
-  if (allocation.cpuLimitMillicores !== values.cpuLimitMillicores) fields.push('CPU limit');
-  if (allocation.memoryLimitMb !== values.memoryLimitMb) fields.push('memory limit');
-  if (allocation.pidsLimit !== values.pidsLimit) fields.push('process limit');
-  if (allocation.devTtlHours !== (values.devTtlHours ?? null)) fields.push('dev lifetime');
-  if (allocation.testTtlHours !== (values.testTtlHours ?? null)) fields.push('test lifetime');
+    fields.push(t('public URL'));
+  if (allocation.maxEnvironments !== values.maxEnvironments) fields.push(t('environment quota'));
+  if (allocation.cpuLimitMillicores !== values.cpuLimitMillicores) fields.push(t('CPU limit'));
+  if (allocation.memoryLimitMb !== values.memoryLimitMb) fields.push(t('memory limit'));
+  if (allocation.pidsLimit !== values.pidsLimit) fields.push(t('process limit'));
+  if (allocation.devTtlHours !== (values.devTtlHours ?? null)) fields.push(t('dev lifetime'));
+  if (allocation.testTtlHours !== (values.testTtlHours ?? null)) fields.push(t('test lifetime'));
   return fields;
 }
 
@@ -142,16 +143,18 @@ export default function Infrastructure() {
       const changedSettings = changedTargetSettings(editingTarget, values);
       if (changedSettings.length > 0) {
         const confirmed = await confirmAction({
-          title: `Save changes to ${editingTarget.name}?`,
-          description: 'Target settings control where and how future deployments are published.',
-          confirmLabel: 'Save server changes',
+          title: t('Save changes to {name}?', { name: editingTarget.name }),
+          description: t('Target settings control where and how future deployments are published.'),
+          confirmLabel: t('Save server changes'),
           tone: 'warning',
-          details: [{ label: 'Changed settings', value: changedSettings.join(', ') }],
+          details: [{ label: t('Changed settings'), value: changedSettings.join(', ') }],
           consequences: [
-            'Existing running deployments are not moved automatically.',
+            t('Existing running deployments are not moved automatically.'),
             editingTarget.kind === 'docker'
-              ? 'Routing changes reset gateway readiness and require a new preflight.'
-              : 'Connection or runtime changes clear the previous verification and must be tested again.',
+              ? t('Routing changes reset gateway readiness and require a new preflight.')
+              : t(
+                  'Connection or runtime changes clear the previous verification and must be tested again.',
+                ),
           ],
         });
         if (!confirmed) return;
@@ -173,18 +176,21 @@ export default function Infrastructure() {
       const changedSettings = changedAllocationSettings(editingAllocation, values);
       if (changedSettings.length > 0) {
         const confirmed = await confirmAction({
-          title: `Save workspace access changes for ${editingAllocation.targetName}?`,
-          description:
+          title: t('Save workspace access changes for {targetName}?', {
+            targetName: editingAllocation.targetName,
+          }),
+          description: t(
             'Workspace access controls how this workspace may use the deployment server.',
-          confirmLabel: 'Save access changes',
+          ),
+          confirmLabel: t('Save access changes'),
           tone: 'warning',
           details: [
-            { label: 'Namespace', value: editingAllocation.namespace },
-            { label: 'Changed settings', value: changedSettings.join(', ') },
+            { label: t('Namespace'), value: editingAllocation.namespace },
+            { label: t('Changed settings'), value: changedSettings.join(', ') },
           ],
           consequences: [
-            'New deployments immediately use the updated capabilities, quota and URL.',
-            'Existing running workloads are not restarted by this change.',
+            t('New deployments immediately use the updated capabilities, quota and URL.'),
+            t('Existing running workloads are not restarted by this change.'),
           ],
         });
         if (!confirmed) return;
@@ -199,18 +205,21 @@ export default function Infrastructure() {
 
   async function deleteTarget(target: Target) {
     const confirmed = await confirmAction({
-      title: `Delete server ${target.name}?`,
-      description:
+      title: t('Delete server {name}?', { name: target.name }),
+      description: t(
         'InitPad will forget this server connection. The physical server itself is never deleted.',
-      confirmLabel: 'Delete server',
+      ),
+      confirmLabel: t('Delete server'),
       tone: 'danger',
       details: [
-        { label: 'Server', value: target.name },
-        { label: 'Type', value: target.kind.toUpperCase() },
+        { label: t('Server'), value: target.name },
+        { label: t('Type'), value: target.kind.toUpperCase() },
       ],
       consequences: [
-        'Stored connection settings, workspace access and any Agent identity are permanently removed from InitPad.',
-        'You must add and verify or enroll the server again before reusing it.',
+        t(
+          'Stored connection settings, workspace access and any Agent identity are permanently removed from InitPad.',
+        ),
+        t('You must add and verify or enroll the server again before reusing it.'),
       ],
     });
     if (confirmed) await infrastructure.deleteTarget(target);
@@ -219,20 +228,24 @@ export default function Infrastructure() {
   async function disconnectTarget(target: Target) {
     const usage = target.usage ?? [];
     const confirmed = await confirmAction({
-      title: `Disconnect ${target.name} from InitPad?`,
-      description: 'Management access is revoked without sending a teardown command to the server.',
-      confirmLabel: 'Disconnect server',
+      title: t('Disconnect {name} from InitPad?', { name: target.name }),
+      description: t(
+        'Management access is revoked without sending a teardown command to the server.',
+      ),
+      confirmLabel: t('Disconnect server'),
       tone: 'danger',
       details: [
-        { label: 'Server', value: target.name },
-        { label: 'Bound environments', value: usage.length },
+        { label: t('Server'), value: target.name },
+        { label: t('Bound environments'), value: usage.length },
       ],
       consequences: [
-        'Existing applications and their public URLs are left untouched.',
+        t('Existing applications and their public URLs are left untouched.'),
         target.kind === 'docker'
-          ? 'The Agent credential and unused enrollment token are revoked.'
-          : 'The stored SFTP credential is permanently removed.',
-        'Deploy, start, stop, diagnostics and cleanup remain unavailable until this server is reconnected.',
+          ? t('The Agent credential and unused enrollment token are revoked.')
+          : t('The stored SFTP credential is permanently removed.'),
+        t(
+          'Deploy, start, stop, diagnostics and cleanup remain unavailable until this server is reconnected.',
+        ),
       ],
     });
     if (confirmed) await infrastructure.disconnectTarget(target);
@@ -241,17 +254,20 @@ export default function Infrastructure() {
   async function retireTarget(target: Target) {
     const usage = target.usage ?? [];
     const confirmed = await confirmAction({
-      title: `Retire ${target.name} as unmanaged?`,
-      description:
+      title: t('Retire {name} as unmanaged?', { name: target.name }),
+      description: t(
         'Use this when the server and its applications should remain, but InitPad must stop managing them.',
-      confirmLabel: 'Retire server',
+      ),
+      confirmLabel: t('Retire server'),
       tone: 'danger',
       requireText: target.name,
-      details: [{ label: 'Environments retained', value: usage.length }],
+      details: [{ label: t('Environments retained'), value: usage.length }],
       consequences: [
-        'All management credentials are revoked and cannot be recovered.',
-        'Existing workload records, URLs and deployment history remain visible as unmanaged.',
-        'Restore the server and provide a new credential or Agent enrollment to manage it again.',
+        t('All management credentials are revoked and cannot be recovered.'),
+        t('Existing workload records, URLs and deployment history remain visible as unmanaged.'),
+        t(
+          'Restore the server and provide a new credential or Agent enrollment to manage it again.',
+        ),
       ],
     });
     if (confirmed) await infrastructure.retireTarget(target);
@@ -264,13 +280,16 @@ export default function Infrastructure() {
   async function toggleAllocation(allocation: TargetAllocation) {
     if (allocation.status === 'active') {
       const confirmed = await confirmAction({
-        title: `Pause workspace access to ${allocation.targetName}?`,
-        description: `The ${allocation.namespace} workspace namespace will stop accepting deployments on this server.`,
-        confirmLabel: 'Pause access',
+        title: t('Pause workspace access to {targetName}?', { targetName: allocation.targetName }),
+        description: t(
+          'The {namespace} workspace namespace will stop accepting deployments on this server.',
+          { namespace: allocation.namespace },
+        ),
+        confirmLabel: t('Pause access'),
         tone: 'warning',
         consequences: [
-          'Existing running workloads remain untouched.',
-          'New deploys through this workspace access are blocked until it is resumed.',
+          t('Existing running workloads remain untouched.'),
+          t('New deploys through this workspace access are blocked until it is resumed.'),
         ],
       });
       if (!confirmed) return;
@@ -280,17 +299,17 @@ export default function Infrastructure() {
 
   async function deleteAllocation(allocation: TargetAllocation) {
     const confirmed = await confirmAction({
-      title: `Remove workspace access to ${allocation.targetName}?`,
-      description: 'This removes the workspace namespace and quota, not the physical server.',
-      confirmLabel: 'Remove access',
+      title: t('Remove workspace access to {targetName}?', { targetName: allocation.targetName }),
+      description: t('This removes the workspace namespace and quota, not the physical server.'),
+      confirmLabel: t('Remove access'),
       tone: 'danger',
       details: [
-        { label: 'Namespace', value: allocation.namespace },
-        { label: 'Server', value: allocation.targetName },
+        { label: t('Namespace'), value: allocation.namespace },
+        { label: t('Server'), value: allocation.targetName },
       ],
       consequences: [
-        'The workspace loses this namespace, quota and its allowed runtimes on the server.',
-        'Workspace access must be enabled again before deploying to this server.',
+        t('The workspace loses this namespace, quota and its allowed runtimes on the server.'),
+        t('Workspace access must be enabled again before deploying to this server.'),
       ],
     });
     if (confirmed) await infrastructure.deleteAllocation(allocation);
@@ -299,12 +318,14 @@ export default function Infrastructure() {
   return (
     <div>
       <PageHeader
-        title="Servers"
-        description="Machines and hosting that receive deployments, and what this workspace may use on each."
+        title={t('Servers')}
+        description={t(
+          'Machines and hosting that receive deployments, and what this workspace may use on each.',
+        )}
         actions={
           !readOnly ? (
             <Button onClick={openNewTarget}>
-              <Plus className="h-4 w-4" /> Add server
+              <Plus className="h-4 w-4" /> {t('Add server')}
             </Button>
           ) : undefined
         }
@@ -313,12 +334,12 @@ export default function Infrastructure() {
       {infrastructure.error ? (
         <LoadErrorState message={infrastructure.error} onRetry={infrastructure.reload} />
       ) : infrastructure.loading ? (
-        <ContentLoading label="Loading servers" />
+        <ContentLoading label={t('Loading servers')} />
       ) : (
         <InfrastructureTargetList
           targets={infrastructure.targets}
           allocations={infrastructure.allocations}
-          workspaceName={activeWorkspace?.name ?? 'this workspace'}
+          workspaceName={activeWorkspace?.name ?? t('this workspace')}
           readOnly={readOnly}
           canManageAgent={canManageAgent}
           canManageLifecycle={canManageAllocations}

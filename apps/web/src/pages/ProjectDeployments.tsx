@@ -8,6 +8,7 @@ import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { DeploymentActivity } from '@/components/organisms/DeploymentActivity';
 import type { DeploymentOperation, Project } from '@/types';
+import { t } from '@/i18n';
 
 const HISTORY_LIMIT = 100;
 
@@ -22,8 +23,8 @@ export default function ProjectDeployments() {
     (location.state as { deploymentHistoryOrigin?: unknown } | null)?.deploymentHistoryOrigin ===
     'audit';
   const backLink = openedFromAudit
-    ? { to: '/audit', label: 'Back to audit log' }
-    : { to: id ? `/projects/${id}` : '/projects', label: 'Back to project' };
+    ? { to: '/audit', label: t('Back to audit log') }
+    : { to: id ? `/projects/${id}` : '/projects', label: t('Back to project') };
 
   const load = useCallback(
     async (showLoading = false) => {
@@ -67,23 +68,25 @@ export default function ProjectDeployments() {
       <BackLink to={backLink.to}>{backLink.label}</BackLink>
 
       <PageHeader
-        title="Deployment history"
+        title={t('Deployment history')}
         description={project?.name}
         help={[
           {
-            title: 'History',
-            description: `The ${HISTORY_LIMIT} most recent deployment operations.`,
+            title: t('History'),
+            description: t('The {HISTORY_LIMIT} most recent deployment operations.', {
+              HISTORY_LIMIT: HISTORY_LIMIT,
+            }),
           },
           {
-            title: 'Build reuse',
-            description: 'Several deployments can publish the same verified source artifact.',
+            title: t('Build reuse'),
+            description: t('Several deployments can publish the same verified source artifact.'),
           },
         ]}
       />
 
       {error && <LoadErrorState className="mb-4" message={error} onRetry={() => void load(true)} />}
       {loading ? (
-        <ContentLoading label="Loading deployment history" />
+        <ContentLoading label={t('Loading deployment history')} />
       ) : project ? (
         <Card className="overflow-hidden">
           <DeploymentActivity

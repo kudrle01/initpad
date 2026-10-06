@@ -37,6 +37,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { ProviderKind, Target } from '@/types';
+import { t, plural, formatDateTime, formatNumber } from '@/i18n';
+import { statusLabel } from '@/i18n/labels';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
@@ -76,7 +78,7 @@ function TargetState({ target }: { target: Target }) {
     return (
       <StatusBadge
         status={managementState === 'retired' ? 'disabled' : 'offline'}
-        label={managementState}
+        label={statusLabel(managementState)}
         className={managementState === 'disconnected' ? 'bg-warning/10 text-warning' : undefined}
       />
     );
@@ -85,18 +87,21 @@ function TargetState({ target }: { target: Target }) {
     return (
       <StatusBadge
         status={agentState}
-        label={agentState.replace('-', ' ')}
+        label={statusLabel(agentState).replace('-', ' ')}
         className={agentState === 'offline' ? 'bg-warning/10 text-warning' : undefined}
       />
     );
   }
   return target.verifiedAt ? (
-    <Badge variant="success" title={`Verified ${new Date(target.verifiedAt).toLocaleString()}`}>
-      <ShieldCheck className="h-3.5 w-3.5" /> verified
+    <Badge
+      variant="success"
+      title={t('Verified {date}', { date: formatDateTime(target.verifiedAt) })}
+    >
+      <ShieldCheck className="h-3.5 w-3.5" /> {t('verified')}
     </Badge>
   ) : (
     <Badge>
-      <ShieldAlert className="h-3.5 w-3.5" /> not verified
+      <ShieldAlert className="h-3.5 w-3.5" /> {t('not verified')}
     </Badge>
   );
 }
@@ -152,17 +157,21 @@ export function TargetRow({
     managementState === 'disconnected';
 
   const kindLabel = isAgentTarget
-    ? 'InitPad Agent · workspace server'
+    ? t('InitPad Agent · workspace server')
     : target.kind === 'docker'
-      ? 'Docker · self-hosted direct'
-      : `SFTP · ${target.scope === 'builtin' ? 'self-hosted demo' : 'shared web hosting'}`;
+      ? t('Docker · self-hosted direct')
+      : target.scope === 'builtin'
+        ? t('SFTP · self-hosted demo')
+        : t('SFTP · shared web hosting');
   const accessSummary = !allocation
-    ? 'No workspace access'
+    ? t('No workspace access')
     : unavailable
-      ? `Server ${managementState}`
+      ? t('Server {state}', { state: statusLabel(managementState) })
       : accessDisabled
-        ? 'Access paused'
-        : `${allocation.inUse} of ${allocation.maxEnvironments} environments`;
+        ? t('Access paused')
+        : plural('{used} of {count} environments', allocation.maxEnvironments, {
+            used: allocation.inUse,
+          });
 
   // Delete is offered for every workspace server; the rest depend on the role.
   const hasLifecycleActions = isUserTarget;
@@ -209,38 +218,45 @@ export function TargetRow({
       {open && (
         <div id={panelId} className="space-y-3 bg-muted/50 px-4 pb-4 pt-1 sm:px-6 sm:pb-5">
           {isAgentTarget && agentState === 'offline' && managementState === 'active' && (
-            <Notice tone="warning" icon={WifiOff} title="Agent is offline">
-              Running applications are unaffected. New jobs wait safely until the Agent reconnects.
+            <Notice tone="warning" icon={WifiOff} title={t('Agent is offline')}>
+              {t(
+                'Running applications are unaffected. New jobs wait safely until the Agent reconnects.',
+              )}
             </Notice>
           )}
           {managementState === 'disconnected' && (
-            <Notice tone="warning" icon={Link2Off} title="Disconnected from InitPad">
-              Existing workloads stay online, but InitPad cannot deploy, stop, inspect or remove
-              them.
+            <Notice tone="warning" icon={Link2Off} title={t('Disconnected from InitPad')}>
+              {t(
+                'Existing workloads stay online, but InitPad cannot deploy, stop, inspect or remove them.',
+              )}
             </Notice>
           )}
           {managementState === 'retired' && (
-            <Notice icon={Archive} title="Retained as unmanaged" className="bg-card">
-              History and URLs remain visible. InitPad no longer manages this server.
+            <Notice icon={Archive} title={t('Retained as unmanaged')} className="bg-card">
+              {t('History and URLs remain visible. InitPad no longer manages this server.')}
             </Notice>
           )}
 
           <div className="grid gap-3 lg:grid-cols-2">
-            <section className={PANEL} aria-label="Workspace access">
+            <section className={PANEL} aria-label={t('Workspace access')}>
               <div className="flex min-h-7 items-center justify-between gap-3">
                 <div className="flex items-center gap-1">
-                  <h3 className="text-sm font-semibold">Workspace access</h3>
+                  <h3 className="text-sm font-semibold">{t('Workspace access')}</h3>
                   <InfoTip
-                    label="About workspace access"
+                    label={t('About workspace access')}
                     items={[
                       {
-                        title: 'Isolation',
-                        description: `${workspaceName} receives a separate namespace on this server.`,
+                        title: t('Isolation'),
+                        description: t(
+                          '{workspaceName} receives a separate namespace on this server.',
+                          { workspaceName: workspaceName },
+                        ),
                       },
                       {
-                        title: 'Policy',
-                        description:
+                        title: t('Policy'),
+                        description: t(
                           'Allowed runtimes and the environment quota apply only to this workspace.',
+                        ),
                       },
                     ]}
                   />
@@ -248,10 +264,10 @@ export function TargetRow({
                 {allocation && (
                   <Badge variant={accessDisabled || unavailable ? 'default' : 'success'}>
                     {unavailable
-                      ? `server ${managementState}`
+                      ? t('server {state}', { state: statusLabel(managementState) })
                       : accessDisabled
-                        ? 'paused'
-                        : 'enabled'}
+                        ? t('paused')
+                        : t('enabled')}
                   </Badge>
                 )}
               </div>
@@ -259,7 +275,7 @@ export function TargetRow({
               {allocation ? (
                 <>
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
-                    <Detail label="Isolated namespace">
+                    <Detail label={t('Isolated namespace')}>
                       <span
                         className="block truncate font-mono text-[13px]"
                         title={allocation.namespace}
@@ -267,12 +283,15 @@ export function TargetRow({
                         {allocation.namespace}
                       </span>
                     </Detail>
-                    <Detail label="Environment usage">
+                    <Detail label={t('Environment usage')}>
                       <span className="font-medium tabular-nums">
-                        {allocation.inUse} of {allocation.maxEnvironments}
+                        {t('{inUse} of {maxEnvironments}', {
+                          inUse: allocation.inUse,
+                          maxEnvironments: allocation.maxEnvironments,
+                        })}
                       </span>
                     </Detail>
-                    <Detail label="Allowed runtimes">
+                    <Detail label={t('Allowed runtimes')}>
                       <span className="flex flex-wrap gap-1">
                         {allocation.capabilities.map((capability) => (
                           <Badge key={capability} variant="brand" className="px-2 py-0">
@@ -281,15 +300,18 @@ export function TargetRow({
                         ))}
                       </span>
                     </Detail>
-                    <Detail label="Limits per environment">
+                    <Detail label={t('Limits per environment')}>
                       <span className="text-[13px]">
-                        {allocation.cpuLimitMillicores / 1000} CPU · {allocation.memoryLimitMb} MB ·{' '}
-                        {allocation.pidsLimit} processes
+                        {t('{cpu} CPU · {memory} MB · {processes} processes', {
+                          cpu: formatNumber(allocation.cpuLimitMillicores / 1000),
+                          memory: allocation.memoryLimitMb,
+                          processes: allocation.pidsLimit,
+                        })}
                       </span>
                     </Detail>
                     {allocation.publicUrl && (
                       <div className="col-span-2 min-w-0">
-                        <dt className="eyebrow">Public address</dt>
+                        <dt className="eyebrow">{t('Public address')}</dt>
                         <dd
                           className="mt-0.5 truncate font-mono text-[13px]"
                           title={allocation.publicUrl}
@@ -300,11 +322,15 @@ export function TargetRow({
                     )}
                     {(allocation.devTtlHours || allocation.testTtlHours) && (
                       <div className="col-span-2 min-w-0">
-                        <dt className="eyebrow">Automatic cleanup</dt>
+                        <dt className="eyebrow">{t('Automatic cleanup')}</dt>
                         <dd className="mt-0.5 text-[13px]">
-                          {allocation.devTtlHours ? `dev after ${allocation.devTtlHours}h` : ''}
+                          {allocation.devTtlHours
+                            ? t('dev after {hours}h', { hours: allocation.devTtlHours })
+                            : ''}
                           {allocation.devTtlHours && allocation.testTtlHours ? ', ' : ''}
-                          {allocation.testTtlHours ? `test after ${allocation.testTtlHours}h` : ''}
+                          {allocation.testTtlHours
+                            ? t('test after {hours}h', { hours: allocation.testTtlHours })
+                            : ''}
                         </dd>
                       </div>
                     )}
@@ -312,8 +338,9 @@ export function TargetRow({
 
                   {unavailable && (
                     <Notice tone="warning" className="mt-3">
-                      Access settings are preserved, but management remains unavailable until the
-                      server is reconnected.
+                      {t(
+                        'Access settings are preserved, but management remains unavailable until the server is reconnected.',
+                      )}
                     </Notice>
                   )}
 
@@ -326,7 +353,7 @@ export function TargetRow({
                   {canManageAccess && (
                     <div className="mt-4 flex flex-wrap gap-2">
                       <Button variant="secondary" size="sm" disabled={busy} onClick={onEditAccess}>
-                        <Pencil className="h-3.5 w-3.5" /> Edit access
+                        <Pencil className="h-3.5 w-3.5" /> {t('Edit access')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -334,7 +361,7 @@ export function TargetRow({
                         disabled={busy || (accessDisabled && unavailable)}
                         title={
                           accessDisabled && unavailable
-                            ? 'Reconnect the server before resuming access'
+                            ? t('Reconnect the server before resuming access')
                             : undefined
                         }
                         onClick={onToggleAccess}
@@ -344,7 +371,7 @@ export function TargetRow({
                         ) : (
                           <PowerOff className="h-3.5 w-3.5" />
                         )}
-                        {accessDisabled ? 'Resume access' : 'Pause access'}
+                        {accessDisabled ? t('Resume access') : t('Pause access')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -352,21 +379,21 @@ export function TargetRow({
                         disabled={busy || usage.length > 0}
                         title={
                           usage.length > 0
-                            ? `Used by ${usage.length} environment${usage.length === 1 ? '' : 's'}`
-                            : 'Remove workspace access'
+                            ? plural('Used by {count} environments', usage.length)
+                            : t('Remove workspace access')
                         }
                         onClick={onRemoveAccess}
                       >
-                        <Trash2 className="h-3.5 w-3.5" /> Remove access
+                        <Trash2 className="h-3.5 w-3.5" /> {t('Remove access')}
                       </Button>
                     </div>
                   )}
                 </>
               ) : (
                 <div className="mt-3">
-                  <p className="text-sm font-medium">Not enabled for this workspace</p>
+                  <p className="text-sm font-medium">{t('Not enabled for this workspace')}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Enable access before assigning environments to this server.
+                    {t('Enable access before assigning environments to this server.')}
                   </p>
                   {canManageAccess && (
                     <Button
@@ -375,38 +402,40 @@ export function TargetRow({
                       disabled={busy || unavailable}
                       title={
                         unavailable
-                          ? 'Reconnect the server before enabling workspace access'
+                          ? t('Reconnect the server before enabling workspace access')
                           : undefined
                       }
                       onClick={onEnableAccess}
                     >
-                      <span className="truncate">Enable for {workspaceName}</span>
+                      <span className="truncate">
+                        {t('Enable for {workspaceName}', { workspaceName: workspaceName })}
+                      </span>
                     </Button>
                   )}
                 </div>
               )}
             </section>
 
-            <section className={PANEL} aria-label="Server connection and settings">
+            <section className={PANEL} aria-label={t('Server connection and settings')}>
               <h3 className="flex min-h-7 items-center text-sm font-semibold">
-                Server connection and settings
+                {t('Server connection and settings')}
               </h3>
               <dl className="mt-3 grid grid-cols-1 gap-3">
-                <Detail label="Connection">
+                <Detail label={t('Connection')}>
                   <span className="break-all font-mono text-[13px]">
                     {target.host
                       ? `${target.username ? `${target.username}@` : ''}${target.host}${target.port ? `:${target.port}` : ''}`
                       : isAgentTarget
-                        ? 'Outbound InitPad Agent'
-                        : 'Platform configuration'}
+                        ? t('Outbound InitPad Agent')
+                        : t('Platform configuration')}
                   </span>
                 </Detail>
-                <Detail label="Application address">
+                <Detail label={t('Application address')}>
                   <span className="break-all font-mono text-[13px]">
-                    {target.publicUrl ?? 'Assigned during deployment'}
+                    {target.publicUrl ?? t('Assigned during deployment')}
                   </span>
                 </Detail>
-                <Detail label="Server supports">{target.capabilities.join(', ')}</Detail>
+                <Detail label={t('Server supports')}>{target.capabilities.join(', ')}</Detail>
               </dl>
 
               {!readOnly && (
@@ -425,7 +454,9 @@ export function TargetRow({
                           ) : (
                             <Bot className="h-3.5 w-3.5" />
                           )}
-                          {managementState === 'disconnected' ? 'Reconnect Agent' : 'Manage Agent'}
+                          {managementState === 'disconnected'
+                            ? t('Reconnect Agent')
+                            : t('Manage Agent')}
                         </Button>
                       )
                     ) : !isAgentTarget && managementState === 'active' ? (
@@ -435,7 +466,7 @@ export function TargetRow({
                         ) : (
                           <Wifi className="h-3.5 w-3.5" />
                         )}
-                        Test connection
+                        {t('Test connection')}
                       </Button>
                     ) : !isAgentTarget && managementState === 'disconnected' ? (
                       <Button
@@ -445,13 +476,13 @@ export function TargetRow({
                         onClick={target.credentialConfigured ? onVerify : onEdit}
                       >
                         <RotateCcw className="h-3.5 w-3.5" />
-                        {target.credentialConfigured ? 'Verify & reconnect' : 'Reconnect'}
+                        {target.credentialConfigured ? t('Verify & reconnect') : t('Reconnect')}
                       </Button>
                     ) : null}
 
                     {isUserTarget && canManageLifecycle && managementState === 'retired' && (
                       <Button variant="secondary" size="sm" disabled={busy} onClick={onRestore}>
-                        <RotateCcw className="h-3.5 w-3.5" /> Restore
+                        <RotateCcw className="h-3.5 w-3.5" /> {t('Restore')}
                       </Button>
                     )}
                     {isUserTarget && (
@@ -461,12 +492,12 @@ export function TargetRow({
                         disabled={busy || unavailable}
                         title={
                           unavailable
-                            ? 'Restore or reconnect this server before editing it'
+                            ? t('Restore or reconnect this server before editing it')
                             : undefined
                         }
                         onClick={onEdit}
                       >
-                        <Pencil className="h-3.5 w-3.5" /> Edit server
+                        <Pencil className="h-3.5 w-3.5" /> {t('Edit server')}
                       </Button>
                     )}
                   </div>
@@ -480,7 +511,7 @@ export function TargetRow({
                           size="icon-sm"
                           className="h-10 w-10 shrink-0 rounded-full sm:h-8 sm:w-8"
                           disabled={busy}
-                          aria-label={`More actions for ${target.name}`}
+                          aria-label={t('More actions for {name}', { name: target.name })}
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
@@ -488,12 +519,12 @@ export function TargetRow({
                       <DropdownMenuContent>
                         {canManageLifecycle && managementState === 'active' && (
                           <DropdownMenuItem onSelect={onDisconnect}>
-                            <Link2Off className="h-4 w-4 text-muted-foreground" /> Disconnect
+                            <Link2Off className="h-4 w-4 text-muted-foreground" /> {t('Disconnect')}
                           </DropdownMenuItem>
                         )}
                         {canManageLifecycle && managementState !== 'retired' && (
                           <DropdownMenuItem onSelect={onRetire}>
-                            <Archive className="h-4 w-4 text-muted-foreground" /> Retire
+                            <Archive className="h-4 w-4 text-muted-foreground" /> {t('Retire')}
                           </DropdownMenuItem>
                         )}
                         {canManageLifecycle && managementState !== 'retired' && (
@@ -504,15 +535,15 @@ export function TargetRow({
                           disabled={usage.length > 0}
                           title={
                             usage.length > 0
-                              ? `Used by ${usage.length} environment${usage.length === 1 ? '' : 's'}`
+                              ? plural('Used by {count} environments', usage.length)
                               : undefined
                           }
                           onSelect={onDelete}
                         >
-                          <Trash2 className="h-4 w-4" /> Delete server
+                          <Trash2 className="h-4 w-4" /> {t('Delete server')}
                           {usage.length > 0 && (
                             <span className="ml-auto pl-3 text-xs text-muted-foreground">
-                              in use
+                              {t('in use')}
                             </span>
                           )}
                         </DropdownMenuItem>

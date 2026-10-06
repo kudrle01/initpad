@@ -6,6 +6,7 @@ import { CopyField } from '@/components/molecules/CopyField';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/toast';
+import { t, rich } from '@/i18n';
 
 export function EmailVerificationSettings() {
   const { user } = useAuth();
@@ -21,7 +22,9 @@ export function EmailVerificationSettings() {
       setVerifyLink(result.verifyUrl ?? null);
       setEmailQueued(result.delivery === 'email');
       toast.success(
-        result.delivery === 'email' ? 'Verification e-mail queued' : 'Verification link created',
+        result.delivery === 'email'
+          ? t('Verification e-mail queued')
+          : t('Verification link created'),
       );
     } catch (error) {
       toast.error((error as Error).message);
@@ -31,27 +34,31 @@ export function EmailVerificationSettings() {
   return (
     <SettingsSection
       icon={Mail}
-      title="Verify your e-mail"
+      title={t('Verify your e-mail')}
       tone="warning"
       description={
         <>
-          Confirm <strong className="font-medium text-foreground">{user.email}</strong> to secure
-          account recovery. Configured instances deliver the link by e-mail; otherwise it is shown
-          here once.
+          {rich(
+            'Confirm <b>{email}</b> to secure account recovery. Configured instances deliver the link by e-mail; otherwise it is shown here once.',
+            {
+              email: user.email,
+              b: (chunk) => <strong className="font-medium text-foreground">{chunk}</strong>,
+            },
+          )}
         </>
       }
     >
       {emailQueued ? (
         <p className="text-sm text-primary">
-          Check your inbox. The single-use verification link has been queued for delivery.
+          {t('Check your inbox. The single-use verification link has been queued for delivery.')}
         </p>
       ) : !verifyLink ? (
         <Button variant="secondary" onClick={sendVerification}>
-          Send verification link
+          {t('Send verification link')}
         </Button>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">Open this link to verify (shown once)</p>
+          <p className="text-sm font-medium">{t('Open this link to verify (shown once)')}</p>
           <CopyField command={verifyLink} />
         </div>
       )}

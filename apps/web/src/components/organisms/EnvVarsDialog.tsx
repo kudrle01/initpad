@@ -14,6 +14,7 @@ import { api, type ConfigVar } from '@/api';
 import { useToast } from '@/toast';
 import type { EnvName } from '@/types';
 import { useConfirmation } from '@/confirmation';
+import { t, rich } from '@/i18n';
 
 interface Props {
   projectId: string;
@@ -56,15 +57,17 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
     const existing = vars.find((variable) => variable.key === normalizedKey);
     if (existing) {
       const confirmed = await confirmAction({
-        title: `Replace ${normalizedKey} in ${env}?`,
-        description: 'The current value cannot be recovered from InitPad after it is overwritten.',
-        confirmLabel: existing.isSecret ? 'Replace secret' : 'Replace variable',
+        title: t('Replace {normalizedKey} in {env}?', { normalizedKey: normalizedKey, env: env }),
+        description: t(
+          'The current value cannot be recovered from InitPad after it is overwritten.',
+        ),
+        confirmLabel: existing.isSecret ? t('Replace secret') : t('Replace variable'),
         tone: 'warning',
         consequences: [
           existing.isSecret
-            ? 'The stored secret value is replaced.'
-            : 'The stored configuration value is replaced.',
-          'The running workload is unchanged until the environment is redeployed.',
+            ? t('The stored secret value is replaced.')
+            : t('The stored configuration value is replaced.'),
+          t('The running workload is unchanged until the environment is redeployed.'),
         ],
       });
       if (!confirmed) return;
@@ -72,7 +75,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
     setSaving(true);
     try {
       await api.upsertConfigVar(projectId, env, normalizedKey, { value, isSecret });
-      toast.success(`Saved ${normalizedKey}`);
+      toast.success(t('Saved {normalizedKey}', { normalizedKey: normalizedKey }));
       setKey('');
       setValue('');
       setIsSecret(false);
@@ -89,15 +92,15 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
     if (!env) return;
     const variable = vars.find((candidate) => candidate.key === k);
     const confirmed = await confirmAction({
-      title: `Delete ${k} from ${env}?`,
+      title: t('Delete {k} from {env}?', { k: k, env: env }),
       description: variable?.isSecret
-        ? 'The encrypted secret value cannot be recovered after deletion.'
-        : 'The configuration value cannot be recovered after deletion.',
-      confirmLabel: variable?.isSecret ? 'Delete secret' : 'Delete variable',
+        ? t('The encrypted secret value cannot be recovered after deletion.')
+        : t('The configuration value cannot be recovered after deletion.'),
+      confirmLabel: variable?.isSecret ? t('Delete secret') : t('Delete variable'),
       tone: 'danger',
       consequences: [
-        'The variable is removed from the next deployment configuration.',
-        'The currently running workload is unchanged until the environment is redeployed.',
+        t('The variable is removed from the next deployment configuration.'),
+        t('The currently running workload is unchanged until the environment is redeployed.'),
       ],
     });
     if (!confirmed) return;
@@ -122,12 +125,16 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
           <DialogTitle>
             <KeyRound className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
             <span>
-              Environment variables — <span className="uppercase">{env}</span>
+              {rich('Environment variables — <span>{env}</span>', {
+                env: env,
+                span: (chunk) => <span className="uppercase">{chunk}</span>,
+              })}
             </span>
           </DialogTitle>
           <DialogDescription>
-            Runtime config and secrets injected into this environment on the next deploy. Redeploy
-            to apply changes. Secret values are stored encrypted and never shown again.
+            {t(
+              'Runtime config and secrets injected into this environment on the next deploy. Redeploy to apply changes. Secret values are stored encrypted and never shown again.',
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -139,7 +146,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
           <div className="flex min-w-0 flex-col gap-4">
             {vars.length === 0 ? (
               <p className="rounded-lg bg-muted px-3.5 py-3 text-sm text-muted-foreground">
-                No variables yet.
+                {t('No variables yet.')}
               </p>
             ) : (
               <ul className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/70">
@@ -164,7 +171,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Delete ${v.key}`}
+                        aria-label={t('Delete {key}', { key: v.key })}
                         className="shrink-0 rounded-full hover:bg-destructive/10 hover:text-destructive"
                         disabled={deletingKey === v.key}
                         onClick={() => void remove(v.key)}
@@ -179,11 +186,11 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
 
             {canManage && (
               <div className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted p-3.5">
-                <p className="text-sm font-medium">Add or update a variable</p>
+                <p className="text-sm font-medium">{t('Add or update a variable')}</p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Input
                     placeholder="KEY"
-                    aria-label="Variable key"
+                    aria-label={t('Variable key')}
                     value={key}
                     autoComplete="off"
                     spellCheck={false}
@@ -191,8 +198,8 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
                     className="font-mono"
                   />
                   <Input
-                    placeholder="value"
-                    aria-label="Variable value"
+                    placeholder={t('value')}
+                    aria-label={t('Variable value')}
                     value={value}
                     autoComplete="off"
                     spellCheck={false}
@@ -203,7 +210,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
                 </div>
                 {key.trim() && !validKey && (
                   <p className="text-xs text-destructive">
-                    Key must be UPPER_SNAKE_CASE (A–Z, 0–9, _).
+                    {t('Key must be UPPER_SNAKE_CASE (A–Z, 0–9, _).')}
                   </p>
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -214,8 +221,9 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
                       checked={isSecret}
                       onChange={(e) => setIsSecret(e.target.checked)}
                     />
-                    Secret
-                    <span className="text-muted-foreground">(encrypted, hidden)</span>
+                    {rich('Secret<span>(encrypted, hidden)</span>', {
+                      span: (chunk) => <span className="text-muted-foreground">{chunk}</span>,
+                    })}
                   </label>
                   <Button size="sm" disabled={!validKey || saving} onClick={() => void save()}>
                     {saving ? (
@@ -223,7 +231,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
                     ) : (
                       <Plus className="h-3.5 w-3.5" />
                     )}{' '}
-                    Save
+                    {t('Save')}
                   </Button>
                 </div>
               </div>

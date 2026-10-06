@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth';
 import { useLoadable } from '@/hooks/useLoadable';
 import type { EnvName, Environment, ProviderKind, Project } from '@/types';
+import { t } from '@/i18n';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
@@ -36,7 +37,7 @@ const FILTERS: (EnvName | 'all')[] = ['all', 'dev', 'test', 'prod'];
 
 const FILTER_OPTIONS = FILTERS.map((value) => ({
   value,
-  label: value === 'all' ? 'All' : value,
+  label: value === 'all' ? t('All') : value,
 }));
 
 // One environment = one line. On a phone the version and URL wrap onto a
@@ -54,7 +55,7 @@ function EnvironmentRow({ environment }: { environment: Environment }) {
         <span className="truncate" title={targetName}>
           {targetName}
         </span>
-        {environment.target?.scope === 'user' && <Badge className="px-2 py-0">yours</Badge>}
+        {environment.target?.scope === 'user' && <Badge className="px-2 py-0">{t('yours')}</Badge>}
       </span>
       <StatusBadge status={environment.status} className="justify-self-end md:justify-self-start" />
       <div
@@ -123,24 +124,26 @@ export default function Environments() {
   return (
     <div>
       <PageHeader
-        title="Deployments"
-        description="Where every project is running right now, grouped by project."
+        title={t('Deployments')}
+        description={t('Where every project is running right now, grouped by project.')}
       />
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />
       ) : loading ? (
-        <ContentLoading label="Loading environments" />
+        <ContentLoading label={t('Loading environments')} />
       ) : projects.length === 0 ? (
         <EmptyState
           icon={Layers}
-          title="No environments yet"
-          description="Create a project and its configured deployment environments will appear here."
+          title={t('No environments yet')}
+          description={t(
+            'Create a project and its configured deployment environments will appear here.',
+          )}
         />
       ) : (
         <>
           <SegmentedControl
-            label="Filter by environment"
+            label={t('Filter by environment')}
             options={FILTER_OPTIONS}
             value={filter}
             onChange={setFilter}
@@ -150,15 +153,21 @@ export default function Environments() {
           {groups.length === 0 ? (
             <EmptyState
               icon={Layers}
-              title={`No ${filter} environments`}
-              description={`None of this workspace's projects currently has a ${filter} environment.`}
+              title={t('No {filter} environments', { filter: filter })}
+              description={t(
+                "None of this workspace's projects currently has a {filter} environment.",
+                { filter: filter },
+              )}
             />
           ) : (
             <Card className="divide-y divide-border/70 overflow-hidden">
               {groups.map(({ project, envs }) => {
                 const open = !collapsed.has(project.id);
                 return (
-                  <section key={project.id} aria-label={`${project.name} environments`}>
+                  <section
+                    key={project.id}
+                    aria-label={t('{name} environments', { name: project.name })}
+                  >
                     <div className="flex min-w-0 items-center gap-2 bg-muted/50 py-1 pl-2 pr-2 sm:pl-4 sm:pr-4">
                       <button
                         type="button"
@@ -185,8 +194,8 @@ export default function Environments() {
                       <Button asChild variant="ghost" size="icon-sm" className="rounded-full">
                         <Link
                           to={`/projects/${project.id}`}
-                          title="Open project"
-                          aria-label={`Open ${project.name}`}
+                          title={t('Open project')}
+                          aria-label={t('Open {name}', { name: project.name })}
                         >
                           <ArrowRight className="h-4 w-4" />
                         </Link>

@@ -37,6 +37,8 @@ import type { WorkspacePortfolio } from '@/api';
 import type { ProvisioningStatus, TemplateManifest } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { WorkspaceMetricsDialog } from '@/components/organisms/WorkspaceMetricsDialog';
+import { t, plural } from '@/i18n';
+import { statusLabel, termLabel } from '@/i18n/labels';
 
 const RECENT_LIMIT = 6;
 
@@ -123,19 +125,23 @@ export default function Dashboard() {
   async function retryCleanup(id: string) {
     const operation = provisioning.find((candidate) => candidate.id === id);
     const confirmed = await confirmAction({
-      title: `Retry cleanup for ${operation?.projectName ?? 'incomplete project'}?`,
-      description: 'Cleanup reconciles resources left behind by an interrupted or failed setup.',
-      confirmLabel: 'Retry cleanup',
+      title: t('Retry cleanup for {project}?', {
+        project: operation?.projectName ?? t('incomplete project'),
+      }),
+      description: t('Cleanup reconciles resources left behind by an interrupted or failed setup.'),
+      confirmLabel: t('Retry cleanup'),
       tone: 'warning',
       details: operation
         ? [
-            { label: 'Operation', value: operation.kind },
-            { label: 'Attempt', value: operation.attempt },
+            { label: t('Operation'), value: termLabel(operation.kind) },
+            { label: t('Attempt'), value: operation.attempt },
           ]
         : undefined,
       consequences: [
-        'InitPad may delete the partial repository, generated files or project record owned by this failed setup.',
-        'Successfully provisioned unrelated resources are not touched.',
+        t(
+          'InitPad may delete the partial repository, generated files or project record owned by this failed setup.',
+        ),
+        t('Successfully provisioned unrelated resources are not touched.'),
       ],
     });
     if (!confirmed) return;
@@ -166,24 +172,24 @@ export default function Dashboard() {
 
   const stats = portfolio?.stats;
   const figure = (value: number | undefined) => (loading || loadError ? '—' : (value ?? 0));
-  const plural = (count: number, noun: string, many = `${noun}s`) =>
-    `${count} ${count === 1 ? noun : many}`;
 
   return (
     <div>
       <PageHeader
-        title="Overview"
-        description={activeWorkspace ? `${activeWorkspace.name} workspace` : undefined}
+        title={t('Overview')}
+        description={
+          activeWorkspace ? t('{name} workspace', { name: activeWorkspace.name }) : undefined
+        }
         actions={
           <>
             {canExportMetrics && (
               <Button variant="secondary" onClick={() => setMetricsOpen(true)}>
-                <Download className="h-4 w-4" /> Export metrics
+                <Download className="h-4 w-4" /> {t('Export metrics')}
               </Button>
             )}
             <Button asChild>
               <Link to="/new">
-                <Plus className="h-4 w-4" /> New project
+                <Plus className="h-4 w-4" /> {t('New project')}
               </Link>
             </Button>
           </>
@@ -208,39 +214,35 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard
-            label="Projects"
+            label={t('Projects')}
             value={figure(stats?.projects)}
-            hint={stats ? plural(stats.environments, 'environment') : undefined}
+            hint={stats ? plural('{count} environments', stats.environments) : undefined}
             icon={Layers}
           />
           <StatCard
-            label="Running"
+            label={t('Running')}
             value={figure(stats?.runningEnvironments)}
-            hint={
-              stats
-                ? plural(stats.activeAllocations, 'server access', 'server accesses')
-                : undefined
-            }
+            hint={stats ? plural('{count} server accesses', stats.activeAllocations) : undefined}
             icon={Play}
             tone="brand"
           />
           <StatCard
-            label="Needs attention"
+            label={t('Needs attention')}
             value={figure(stats?.attentionProjects)}
             hint={
               stats
                 ? stats.cleanupDebt > 0
-                  ? plural(stats.cleanupDebt, 'cleanup item')
-                  : 'Nothing to clean up'
+                  ? plural('{count} cleanup items', stats.cleanupDebt)
+                  : t('Nothing to clean up')
                 : undefined
             }
             icon={AlertTriangle}
             tone={stats && stats.attentionProjects + stats.cleanupDebt > 0 ? 'warning' : 'neutral'}
           />
           <StatCard
-            label="Pending approvals"
+            label={t('Pending approvals')}
             value={figure(stats?.pendingApprovals)}
-            hint={stats ? 'Production requests' : undefined}
+            hint={stats ? t('Production requests') : undefined}
             icon={ShieldCheck}
             tone={stats && stats.pendingApprovals > 0 ? 'warning' : 'neutral'}
           />
@@ -248,17 +250,19 @@ export default function Dashboard() {
 
         {operationsNeedingAttention.length > 0 && (
           <Section
-            title="Provisioning needs attention"
+            title={t('Provisioning needs attention')}
             headingId="provisioning-heading"
-            description="A project setup did not finish. Retry it, or clean up what it left behind."
+            description={t(
+              'A project setup did not finish. Retry it, or clean up what it left behind.',
+            )}
             flush
           >
             <List aria-labelledby="provisioning-heading">
               {operationsNeedingAttention.map((operation) => {
                 const detail =
                   operation.status === 'interrupted'
-                    ? 'Interrupted — external state must be reconciled.'
-                    : operation.message || `Current step: ${operation.step}`;
+                    ? t('Interrupted — external state must be reconciled.')
+                    : operation.message || t('Current step: {step}', { step: operation.step });
                 return (
                   <ListRow
                     key={operation.id}
@@ -273,7 +277,10 @@ export default function Dashboard() {
                           {operation.projectName}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {operation.kind} · attempt {operation.attempt}
+                          {t('{kind} · attempt {attempt}', {
+                            kind: termLabel(operation.kind),
+                            attempt: operation.attempt,
+                          })}
                         </p>
                         <p
                           className="mt-1 line-clamp-2 break-words text-xs text-muted-foreground"
@@ -286,7 +293,7 @@ export default function Dashboard() {
                     <div className="flex shrink-0 flex-wrap gap-2 pl-11 xl:pl-0">
                       {operation.projectId && (
                         <Button asChild size="sm" variant="ghost">
-                          <Link to={`/projects/${operation.projectId}`}>View project</Link>
+                          <Link to={`/projects/${operation.projectId}`}>{t('View project')}</Link>
                         </Button>
                       )}
                       {operation.needsCleanup && canMaintain && (
@@ -296,7 +303,7 @@ export default function Dashboard() {
                           disabled={operationBusy === operation.id}
                           onClick={() => retryCleanup(operation.id)}
                         >
-                          <Wrench className="h-3.5 w-3.5" /> Retry cleanup
+                          <Wrench className="h-3.5 w-3.5" /> {t('Retry cleanup')}
                         </Button>
                       )}
                       {operation.canRetry && (
@@ -305,7 +312,7 @@ export default function Dashboard() {
                           disabled={operationBusy === operation.id}
                           onClick={() => retryOperation(operation.id)}
                         >
-                          <RotateCcw className="h-3.5 w-3.5" /> Retry setup
+                          <RotateCcw className="h-3.5 w-3.5" /> {t('Retry setup')}
                         </Button>
                       )}
                     </div>
@@ -319,25 +326,27 @@ export default function Dashboard() {
         {!loadError && !loading && stats?.projects === 0 ? (
           <EmptyState
             icon={Layers}
-            title="No projects yet"
-            description="Create your first project from a template — you'll get a Git repository, CI/CD pipeline and a running dev environment out of the box."
+            title={t('No projects yet')}
+            description={t(
+              "Create your first project from a template — you'll get a Git repository, CI/CD pipeline and a running dev environment out of the box.",
+            )}
             action={
               <Button asChild>
                 <Link to="/new">
-                  <Plus className="h-4 w-4" /> New project
+                  <Plus className="h-4 w-4" /> {t('New project')}
                 </Link>
               </Button>
             }
           />
         ) : !loadError && !loading ? (
           <Section
-            title="Recent projects"
+            title={t('Recent projects')}
             flush
             actions={
               (stats?.projects ?? 0) > 0 && (
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/projects">
-                    View all <ArrowRight className="h-3.5 w-3.5" />
+                    {t('View all')} <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                 </Button>
               )
@@ -363,25 +372,28 @@ export default function Dashboard() {
                             {project.name}
                           </span>
                           {project.health === 'attention' && (
-                            <Badge variant="danger">attention</Badge>
+                            <Badge variant="danger">{t('attention')}</Badge>
                           )}
                           {project.health === 'deploying' && (
-                            <Badge variant="warning">deploying</Badge>
+                            <Badge variant="warning">{t('deploying')}</Badge>
                           )}
                           {project.pendingApprovals > 0 && (
                             <Badge variant="warning" className="hidden sm:inline-flex">
-                              {project.pendingApprovals} approval
-                              {project.pendingApprovals === 1 ? '' : 's'}
+                              {plural('{count} approvals', project.pendingApprovals)}
                             </Badge>
                           )}
                         </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {templateName}
+                          {' · '}
                           {project.lastBuild
-                            ? ` · build ${project.lastBuild.commitSha.slice(0, 7)} ${project.lastBuild.status}`
-                            : ' · no verified build yet'}
+                            ? t('build {sha} {status}', {
+                                sha: project.lastBuild.commitSha.slice(0, 7),
+                                status: statusLabel(project.lastBuild.status),
+                              })
+                            : t('no verified build yet')}
                           {project.lastDeployment
-                            ? ` · ${project.lastDeployment.environment} ${project.lastDeployment.kind} ${project.lastDeployment.status}`
+                            ? ` · ${project.lastDeployment.environment} ${termLabel(project.lastDeployment.kind)} ${statusLabel(project.lastDeployment.status)}`
                             : ''}
                         </p>
                         <EnvironmentStatusList
@@ -401,7 +413,7 @@ export default function Dashboard() {
             </List>
           </Section>
         ) : !loadError ? (
-          <ContentLoading label="Loading projects" />
+          <ContentLoading label={t('Loading projects')} />
         ) : null}
       </div>
     </div>

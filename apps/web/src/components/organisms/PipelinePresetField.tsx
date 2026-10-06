@@ -2,6 +2,7 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PIPELINE_PRESET_OPTIONS } from '@/lib/pipeline-presets';
 import type { PipelinePreset } from '@/types';
+import { t } from '@/i18n';
 
 interface Props {
   value: PipelinePreset;
@@ -19,7 +20,9 @@ export function PipelinePresetField({
 }: Props) {
   return (
     <fieldset className="min-w-0" disabled={disabled}>
-      <legend className={hideLegend ? 'sr-only' : 'mb-2 text-sm font-medium'}>Pipeline</legend>
+      <legend className={hideLegend ? 'sr-only' : 'mb-2 text-sm font-medium'}>
+        {t('Pipeline')}
+      </legend>
       {/* auto-fit: three across in a wide form, stacked in a narrow column. */}
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,11.5rem),1fr))]">
         {PIPELINE_PRESET_OPTIONS.map((option) => {
@@ -45,7 +48,7 @@ export function PipelinePresetField({
                 className="sr-only"
               />
               <span className="flex items-start justify-between gap-2 text-sm font-medium">
-                <span className="min-w-0">{option.label}</span>
+                <span className="min-w-0">{t(option.label)}</span>
                 <span
                   aria-hidden="true"
                   className={cn(
@@ -59,7 +62,7 @@ export function PipelinePresetField({
                 </span>
               </span>
               <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
-                {option.description}
+                {t(option.description)}
               </span>
               <span className="mt-3 block font-mono text-[11px] font-medium uppercase tracking-wide text-primary">
                 {option.stages.join(' → ')}
