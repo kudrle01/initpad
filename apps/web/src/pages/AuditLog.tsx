@@ -1,16 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Ban, CheckCircle2, CircleX, Clock3, ScrollText, UserRound } from 'lucide-react';
+import {
+  Ban,
+  CheckCircle2,
+  ChevronDown,
+  CircleX,
+  Clock3,
+  ScrollText,
+  UserRound,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, type AuditEventFilters } from '@/api';
 import { useAuth } from '@/auth';
-import { Badge } from '@/components/ui/badge';
+import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { List, listRowClassName, listRowInteractiveClassName } from '@/components/molecules/List';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
+import { Notice } from '@/components/molecules/Notice';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { useLoadable } from '@/hooks/useLoadable';
+import { cn } from '@/lib/utils';
 import type { AuditEvent, AuditEventPage } from '@/types';
 
 const EMPTY_PAGE: AuditEventPage = { items: [], nextCursor: null };
@@ -88,11 +100,18 @@ function relativeTime(iso: string): string {
   return days < 30 ? `${days}d ago` : new Date(iso).toLocaleDateString('en-GB');
 }
 
-const OUTCOME_STYLES: Record<AuditEvent['outcome'], string> = {
-  accepted: 'border-warning/40 bg-warning/10 text-warning',
-  succeeded: 'border-success/30 bg-success/10 text-success',
-  failed: 'border-destructive/30 bg-destructive/10 text-destructive',
-  cancelled: 'border-border bg-secondary text-muted-foreground',
+const OUTCOME_BADGE = {
+  accepted: 'warning',
+  succeeded: 'success',
+  failed: 'danger',
+  cancelled: 'default',
+} satisfies Record<AuditEvent['outcome'], BadgeProps['variant']>;
+
+const OUTCOME_CHIP: Record<AuditEvent['outcome'], string> = {
+  accepted: 'bg-warning/10 text-warning',
+  succeeded: 'bg-success/10 text-success',
+  failed: 'bg-destructive/10 text-destructive',
+  cancelled: 'bg-muted text-muted-foreground',
 };
 
 const OUTCOME_ICONS = {
@@ -102,7 +121,10 @@ const OUTCOME_ICONS = {
   cancelled: Ban,
 } satisfies Record<AuditEvent['outcome'], typeof Clock3>;
 
-function EventCard({ event }: { event: AuditEvent }) {
+// One event is one line: what happened, to what, by whom, when. The linked
+// operation and the recorded details open on demand.
+function EventRow({ event }: { event: AuditEvent }) {
+  const [open, setOpen] = useState(false);
   const exactTime = new Date(event.createdAt).toLocaleString();
   const details = Object.entries(event.details ?? {});
   const OutcomeIcon = OUTCOME_ICONS[event.outcome];
@@ -118,74 +140,110 @@ function EventCard({ event }: { event: AuditEvent }) {
           : ''
       }`
     : '';
+  const actor = event.actor.userId
+    ? `${event.actor.displayName || event.actor.username} (@${event.actor.username})`
+    : event.actor.displayName || 'InitPad system';
+  const resource = `${label(event.resource.type)}: ${
+    event.resource.name || event.resource.id || 'unknown'
+  }`;
+  const expandable = Boolean(event.operation) || details.length > 0;
+
+  const summary = (
+    <>
+      <span
+        className={cn(
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+          OUTCOME_CHIP[event.outcome],
+        )}
+      >
+        <OutcomeIcon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium">{eventLabel(event.action)}</span>
+          {/* The tinted icon already carries the outcome on a narrow screen. */}
+          <Badge variant={OUTCOME_BADGE[event.outcome]} className="hidden px-2 py-0 sm:inline-flex">
+            {event.outcome}
+          </Badge>
+          <span className="sr-only sm:hidden">{event.outcome}</span>
+        </span>
+        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <UserRound className="h-3.5 w-3.5 shrink-0" />
+          <span className="max-w-[45%] shrink-0 truncate" title={actor}>
+            {actor}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span className="min-w-0 truncate" title={resource}>
+            {resource}
+          </span>
+        </span>
+      </span>
+      <time
+        dateTime={event.createdAt}
+        title={exactTime}
+        className="shrink-0 whitespace-nowrap text-xs text-muted-foreground"
+      >
+        {relativeTime(event.createdAt)}
+      </time>
+    </>
+  );
 
   return (
-    <article className="rounded-lg border border-border bg-card p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
-          <OutcomeIcon className="h-4 w-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold">{eventLabel(event.action)}</h2>
-            <Badge variant="outline" className={OUTCOME_STYLES[event.outcome]}>
-              {event.outcome}
-            </Badge>
-            <time
-              dateTime={event.createdAt}
-              title={exactTime}
-              className="text-xs text-muted-foreground sm:ml-auto"
-            >
-              {relativeTime(event.createdAt)}
-            </time>
-          </div>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span className="inline-flex min-w-0 items-center gap-1">
-              <UserRound className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">
-                {event.actor.userId
-                  ? `${event.actor.displayName || event.actor.username} (@${event.actor.username})`
-                  : event.actor.displayName || 'InitPad system'}
-              </span>
-            </span>
-            <span aria-hidden="true">·</span>
-            <span className="break-all">
-              {label(event.resource.type)}: {event.resource.name || event.resource.id || 'unknown'}
-            </span>
-          </div>
-          {event.operation && (
-            <div className="mt-2 text-xs">
-              {operationLink ? (
-                <Link
-                  to={operationLink}
-                  state={{ deploymentHistoryOrigin: 'audit' }}
-                  className="text-link inline-flex min-w-0 items-center gap-1 font-medium"
-                >
-                  <span>{operationSummary}</span>
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {event.operation.id.slice(0, 8)}
-                  </span>
-                </Link>
-              ) : (
-                <span className="text-muted-foreground">
-                  {operationSummary} · {event.operation.id.slice(0, 8)}
+    <li>
+      {expandable ? (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+          className={cn(listRowClassName, listRowInteractiveClassName, 'w-full text-left')}
+        >
+          {summary}
+          <ChevronDown
+            className={cn(
+              'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+            aria-hidden="true"
+          />
+        </button>
+      ) : (
+        <div className={listRowClassName}>
+          {summary}
+          <span className="w-4 shrink-0" aria-hidden="true" />
+        </div>
+      )}
+      {open && (
+        <div className="space-y-3 bg-muted/50 px-4 pb-4 pt-3 text-xs sm:pl-[4.5rem] sm:pr-6">
+          {event.operation &&
+            (operationLink ? (
+              <Link
+                to={operationLink}
+                state={{ deploymentHistoryOrigin: 'audit' }}
+                className="text-link inline-flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 font-medium"
+              >
+                <span>{operationSummary}</span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {event.operation.id.slice(0, 8)}
                 </span>
-              )}
-            </div>
-          )}
+              </Link>
+            ) : (
+              <p className="break-words text-muted-foreground">
+                {operationSummary} · {event.operation.id.slice(0, 8)}
+              </p>
+            ))}
           {details.length > 0 && (
-            <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 rounded-md bg-secondary/50 px-3 py-2 text-xs">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
               {details.map(([key, value]) => (
-                <div key={key} className="flex min-w-0 gap-1">
-                  <dt className="text-muted-foreground">{label(key)}:</dt>
-                  <dd className="break-all font-medium">{String(value)}</dd>
+                <div key={key} className="contents">
+                  <dt className="text-muted-foreground">{label(key)}</dt>
+                  <dd className="min-w-0 break-words font-medium">{String(value)}</dd>
                 </div>
               ))}
             </dl>
           )}
         </div>
-      </div>
-    </article>
+      )}
+    </li>
   );
 }
 
@@ -247,6 +305,7 @@ export default function AuditLog() {
     <div>
       <PageHeader
         title="Audit log"
+        description="Who changed what in this workspace, newest first."
         help={[
           {
             title: 'Records',
@@ -260,11 +319,12 @@ export default function AuditLog() {
         ]}
       />
 
-      <div className="mb-5 grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-3">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Select
           value={action}
           onChange={(event) => setAction(event.target.value)}
           aria-label="Filter by action"
+          className="col-span-2 sm:col-span-1"
         >
           <option value="">All actions</option>
           {Object.entries(ACTION_LABELS).map(([value, text]) => (
@@ -328,14 +388,18 @@ export default function AuditLog() {
           }
         />
       ) : (
-        <div className="flex flex-col gap-3">
-          {items.map((event) => (
-            <EventCard key={event.id} event={event} />
-          ))}
+        <div className="flex flex-col gap-4">
+          <Card className="overflow-hidden">
+            <List>
+              {items.map((event) => (
+                <EventRow key={event.id} event={event} />
+              ))}
+            </List>
+          </Card>
           {moreError && (
-            <p role="alert" className="text-sm text-destructive">
+            <Notice tone="danger" role="alert">
               {moreError}
-            </p>
+            </Notice>
           )}
           {nextCursor && (
             <Button

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { api } from '@/api';
+import { Card } from '@/components/ui/card';
+import { BackLink } from '@/components/molecules/BackLink';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
@@ -92,15 +93,11 @@ export default function ProjectCommits() {
 
   return (
     <div>
-      <Link
-        to={id ? `/projects/${id}` : '/projects'}
-        className="text-link mb-4 inline-flex items-center gap-1 text-sm font-medium"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to project
-      </Link>
+      <BackLink to={id ? `/projects/${id}` : '/projects'}>Back to project</BackLink>
 
       <PageHeader
-        title={project ? `${project.name} · commits` : 'Commit history'}
+        title="Commit history"
+        description={project?.name}
         help={[
           {
             title: 'History',
@@ -117,14 +114,16 @@ export default function ProjectCommits() {
       {loading ? (
         <ContentLoading label="Loading commit history" />
       ) : project ? (
-        <CommitList
-          commits={commits}
-          repoUrl={project.repoUrl}
-          scmProvider={project.scm.provider}
-          openSha={openSha}
-          onToggle={(sha) => setOpenSha((current) => (current === sha ? null : sha))}
-          deploymentHistoryUrl={`/projects/${project.id}/deployments`}
-        />
+        <Card className="overflow-hidden">
+          <CommitList
+            commits={commits}
+            repoUrl={project.repoUrl}
+            scmProvider={project.scm.provider}
+            openSha={openSha}
+            onToggle={(sha) => setOpenSha((current) => (current === sha ? null : sha))}
+            deploymentHistoryUrl={`/projects/${project.id}/deployments`}
+          />
+        </Card>
       ) : null}
     </div>
   );

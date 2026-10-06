@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { ExternalLink, GitBranch, KeyRound, ShieldAlert } from 'lucide-react';
+import { ExternalLink, GitBranch, KeyRound } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { CopyField } from '@/components/molecules/CopyField';
+import { Notice } from '@/components/molecules/Notice';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Spinner } from '@/components/atoms/Spinner';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,7 @@ export function GitAccessSettings() {
     <SettingsSection
       icon={GitBranch}
       title="Connect Git"
+      description="Clone, pull and push from this machine without a password prompt."
       help={[
         {
           title: 'Connection',
@@ -58,39 +60,40 @@ export function GitAccessSettings() {
       ]}
     >
       {!access && (
-        <Button onClick={reveal} disabled={loading}>
+        <Button variant="soft" onClick={reveal} disabled={loading}>
           {loading ? <Spinner className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
           {loading ? 'Loading…' : 'Show setup command'}
         </Button>
       )}
 
-      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      {error && (
+        <Notice tone="danger" role="alert" className="mt-3">
+          {error}
+        </Notice>
+      )}
 
       {access?.token && (
         <div className="flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">Run this once in your terminal:</p>
+          <p className="text-sm font-medium">1. Run this once in your terminal</p>
           <CopyField command={setupCommand(access)} />
-          <p className="text-sm text-muted-foreground">
-            Then clone any project with the plain URL shown on its page:
+          <p className="mt-1 text-sm font-medium">
+            2. Clone any project with the plain URL shown on its page
           </p>
           <CopyField command={`git clone ${access.giteaUrl}/${access.username}/<project>.git`} />
-          <div className="mt-1 flex items-start gap-2 rounded-md border border-border bg-secondary p-3 text-xs text-muted-foreground">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <span>
-              The command embeds your personal Gitea token in{' '}
-              <code className="font-mono">~/.gitconfig</code>. Keep it private; you can revoke it
-              anytime in{' '}
-              <a
-                href={`${access.giteaUrl}/user/settings/applications`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-link inline-flex items-center gap-0.5"
-              >
-                Gitea → Settings → Applications <ExternalLink className="h-3 w-3" />
-              </a>
-              .
-            </span>
-          </div>
+          <Notice tone="warning" className="mt-1">
+            The command embeds your personal Gitea token in{' '}
+            <code className="font-mono">~/.gitconfig</code>. Keep it private; you can revoke it
+            anytime in{' '}
+            <a
+              href={`${access.giteaUrl}/user/settings/applications`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-link inline-flex items-center gap-0.5"
+            >
+              Gitea → Settings → Applications <ExternalLink className="h-3 w-3" />
+            </a>
+            .
+          </Notice>
         </div>
       )}
 

@@ -235,8 +235,8 @@ export function AgentSetupDialog({
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-3">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted p-3.5">
+            <div className="min-w-0">
               <p className="text-sm font-medium">Agent status</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {agent?.version
@@ -255,15 +255,13 @@ export function AgentSetupDialog({
             <StatusBadge
               status={state}
               label={STATE_LABEL[state]}
-              className={
-                state === 'offline' ? 'border-warning/50 bg-warning/10 text-foreground' : undefined
-              }
+              className={state === 'offline' ? 'bg-warning/10 text-warning' : undefined}
             />
           </div>
 
           {state === 'offline' && (
             <div
-              className="flex items-start gap-3 rounded-lg border border-warning/60 bg-warning/10 p-4"
+              className="tint-warning flex items-start gap-3 rounded-lg border border-warning/30 p-4"
               role="status"
               aria-live="polite"
             >
@@ -287,7 +285,7 @@ export function AgentSetupDialog({
 
           {agent?.credentialRotationPending && (
             <div
-              className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm"
+              className="tint-warning flex items-start gap-2 rounded-lg border border-warning/30 p-3 text-sm"
               role="status"
             >
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -300,10 +298,10 @@ export function AgentSetupDialog({
 
           {updateStatus?.updateAvailable && (
             <div
-              className="flex items-start gap-3 rounded-lg border border-primary/35 bg-primary/5 p-4"
+              className="flex items-start gap-3 rounded-lg border border-primary/30 bg-secondary/60 p-4"
               role="status"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                 <Sparkles className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1">
@@ -332,13 +330,17 @@ export function AgentSetupDialog({
                       }
                       onClick={() => void updateAgent()}
                     >
-                      {testBusy === 'update' ? <Spinner className="h-4 w-4" /> : <Sparkles />}
+                      {testBusy === 'update' ? (
+                        <Spinner className="h-3.5 w-3.5" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
                       Install update
                     </Button>
                   )}
                   {updateStatus.releaseUrl && (
                     <a
-                      className="app-link"
+                      className="text-link inline-flex items-center gap-1 font-medium"
                       href={updateStatus.releaseUrl}
                       target="_blank"
                       rel="noreferrer"
@@ -355,13 +357,13 @@ export function AgentSetupDialog({
           )}
 
           {updateStatus?.error && !updateStatus.releaseUrl && (
-            <p className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs text-muted-foreground">
+            <p className="tint-warning rounded-lg border border-warning/30 p-2.5 text-xs text-muted-foreground">
               {updateStatus.error} Agent management remains available.
             </p>
           )}
 
           {agent?.capabilities && (
-            <div className="grid gap-1 rounded-lg border border-border bg-secondary/20 p-3 text-xs text-muted-foreground sm:grid-cols-2">
+            <div className="grid gap-1 rounded-lg bg-muted p-3 text-xs text-muted-foreground sm:grid-cols-2">
               <span>
                 Docker {agent.capabilities.engineVersion} · API {agent.capabilities.apiVersion}
               </span>
@@ -377,7 +379,7 @@ export function AgentSetupDialog({
           )}
 
           {enrollment ? (
-            <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
+            <div className="tint-warning flex min-w-0 flex-col gap-3 rounded-lg border border-warning/30 p-3">
               <div className="flex items-start gap-2 text-sm">
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 <p>
@@ -389,14 +391,12 @@ export function AgentSetupDialog({
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Enrollment token
-                </p>
+                <p className="mb-1.5 eyebrow">Enrollment token</p>
                 <CopyField command={enrollment.enrollmentToken} />
               </div>
               <div className="min-w-0">
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <p className="eyebrow">
                     {installCommand ? 'Install and enroll on the Docker server' : 'Agent installer'}
                   </p>
                   {installCommand && installerUrl && (
@@ -424,7 +424,7 @@ export function AgentSetupDialog({
                       prompt, so it never enters shell history.
                     </p>
                     {reEnrollCommand && (
-                      <details className="mt-2 rounded-md border border-border bg-secondary/20 p-2.5 text-xs">
+                      <details className="mt-2 rounded-lg bg-muted p-2.5 text-xs">
                         <summary className="cursor-pointer font-medium text-foreground">
                           Replace an invalid existing identity
                         </summary>
@@ -437,7 +437,7 @@ export function AgentSetupDialog({
                       </details>
                     )}
                     {window.location.protocol === 'http:' && (
-                      <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-foreground">
+                      <p className="mt-2 tint-warning flex items-start gap-1.5 rounded-lg border border-warning/30 p-2.5 text-xs text-foreground">
                         <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                         HTTP enrollment is for a trusted local test only. Use HTTPS before exposing
                         InitPad or this Agent connection outside an isolated network.
@@ -446,7 +446,7 @@ export function AgentSetupDialog({
                   </>
                 ) : (
                   <div
-                    className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm"
+                    className="tint-warning flex items-start gap-2 rounded-lg border border-warning/30 p-3 text-sm"
                     role="status"
                   >
                     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -475,14 +475,14 @@ export function AgentSetupDialog({
               </div>
             </div>
           ) : isCurrentOnline ? (
-            <div className="rounded-lg border border-success/35 bg-success/5 p-3">
+            <div className="tint-success rounded-lg border border-success/25 p-3">
               <p className="text-sm font-medium">Agent {agent?.version} is current</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Connected to this target and ready to receive jobs. No action is required.
               </p>
             </div>
           ) : hasRemoteUpdateOnline ? null : showManualInstaller ? (
-            <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-secondary/20 p-3">
+            <div className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">
@@ -520,7 +520,7 @@ export function AgentSetupDialog({
                     heartbeat, it restores the previous container.
                   </p>
                   {window.location.protocol === 'http:' && (
-                    <p className="flex items-start gap-1.5 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-foreground">
+                    <p className="tint-warning flex items-start gap-1.5 rounded-lg border border-warning/30 p-2.5 text-xs text-foreground">
                       <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                       HTTP is suitable only for a trusted local test network. Use HTTPS in
                       production.
@@ -529,7 +529,7 @@ export function AgentSetupDialog({
                 </>
               ) : (
                 <div
-                  className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm"
+                  className="tint-warning flex items-start gap-2 rounded-lg border border-warning/30 p-3 text-sm"
                   role="status"
                 >
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -561,7 +561,7 @@ export function AgentSetupDialog({
               )}
             </div>
           ) : (
-            <div className="rounded-lg border border-border bg-secondary/20 p-3 text-sm text-muted-foreground">
+            <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
               Generate a short-lived, single-use enrollment when you are ready at the Docker server.
               A new enrollment does not disconnect the current Agent until it is redeemed.
             </div>

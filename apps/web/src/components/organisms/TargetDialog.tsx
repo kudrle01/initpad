@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ScanSearch, Server } from 'lucide-react';
+import { ScanSearch, Server } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,15 +9,21 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { fieldClassName, Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Spinner } from '@/components/atoms/Spinner';
+import { ChoiceChip } from '@/components/molecules/ChoiceChip';
+import { FieldLabel } from '@/components/molecules/FieldLabel';
 import { InfoTip } from '@/components/molecules/InfoTip';
+import { Notice } from '@/components/molecules/Notice';
 import { cn } from '@/lib/utils';
 import { api, type TargetInput } from '@/api';
 import type { ProviderKind, RuntimeKind, Target, TargetRoutingMode } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { useToast } from '@/toast';
+
+const FIELD = 'flex min-w-0 flex-col gap-1';
 
 const ALL_CAPS: { id: RuntimeKind; label: string }[] = [
   { id: 'static', label: 'Static' },
@@ -34,9 +40,6 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: TargetInput) => void;
 }
-
-const selectCls =
-  'h-11 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9';
 
 function defaultCapabilities(kind: ProviderKind): RuntimeKind[] {
   // The primary SFTP use case is shared PHP hosting (ESO included). Keeping
@@ -255,21 +258,15 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
           {requiresReconnectCredential && (
-            <div className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm sm:col-span-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-              <div>
-                <p className="font-medium">A new credential is required</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  The previous credential was permanently removed. Save a replacement, then run Test
-                  connection to resume InitPad management.
-                </p>
-              </div>
-            </div>
+            <Notice tone="warning" title="A new credential is required" className="sm:col-span-2">
+              The previous credential was permanently removed. Save a replacement, then run Test
+              connection to resume InitPad management.
+            </Notice>
           )}
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="t-name">Name</Label>
+          <div className={cn(FIELD, 'sm:col-span-2')}>
+            <FieldLabel htmlFor="t-name">Name</FieldLabel>
             <Input
               id="t-name"
               value={name}
@@ -277,22 +274,21 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               onChange={(e) => setName(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="t-kind">Connection method</Label>
-            <select
+          <div className={FIELD}>
+            <FieldLabel htmlFor="t-kind">Connection method</FieldLabel>
+            <Select
               id="t-kind"
-              className={selectCls}
               value={kind}
               disabled={editing}
               onChange={(e) => changeKind(e.target.value as ProviderKind)}
             >
               <option value="docker">InitPad Agent for Docker (recommended)</option>
               <option value="sftp">SFTP shared web hosting</option>
-            </select>
+            </Select>
           </div>
           {kind !== 'docker' && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="t-port">Port</Label>
+            <div className={FIELD}>
+              <FieldLabel htmlFor="t-port">Port</FieldLabel>
               <Input
                 id="t-port"
                 value={port}
@@ -302,59 +298,50 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
             </div>
           )}
           {kind === 'docker' && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="t-routing">Application exposure</Label>
-              <select
+            <div className={FIELD}>
+              <FieldLabel htmlFor="t-routing">Application exposure</FieldLabel>
+              <Select
                 id="t-routing"
-                className={selectCls}
                 value={routingMode}
                 onChange={(e) => setRoutingMode(e.target.value as TargetRoutingMode)}
               >
                 <option value="direct-port">Direct ports (local / lab)</option>
                 <option value="managed-gateway">Managed gateway (production)</option>
-              </select>
+              </Select>
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <div className="flex items-center gap-1">
-              <Label>Can run</Label>
-              <InfoTip label="About supported runtimes">
-                {kind === 'sftp'
-                  ? 'Static sites need SFTP only. PHP enables Nette, Laravel and Symfony and also requires shell access through the same account for isolated, removable releases.'
-                  : kind === 'docker'
-                    ? 'The Agent confirms Docker support after enrollment. Deployment stays disabled until the delivery path is ready.'
-                    : 'Choose only runtimes installed on this server. Test connection reports the detected command-line runtimes.'}
-              </InfoTip>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_CAPS.map((c) => {
-                const on = caps.includes(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => toggleCap(c.id)}
-                    aria-pressed={on}
-                    className={cn(
-                      'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                      on
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border text-muted-foreground hover:border-primary/40',
-                    )}
-                  >
-                    {c.label}
-                  </button>
-                );
-              })}
+          <div className={cn(FIELD, 'sm:col-span-2')}>
+            <FieldLabel
+              help={
+                <InfoTip label="About supported runtimes">
+                  {kind === 'sftp'
+                    ? 'Static sites need SFTP only. PHP enables Nette, Laravel and Symfony and also requires shell access through the same account for isolated, removable releases.'
+                    : kind === 'docker'
+                      ? 'The Agent confirms Docker support after enrollment. Deployment stays disabled until the delivery path is ready.'
+                      : 'Choose only runtimes installed on this server. Test connection reports the detected command-line runtimes.'}
+                </InfoTip>
+              }
+            >
+              Can run
+            </FieldLabel>
+            <div className="flex flex-wrap gap-2">
+              {ALL_CAPS.map((c) => (
+                <ChoiceChip
+                  key={c.id}
+                  selected={caps.includes(c.id)}
+                  onToggle={() => toggleCap(c.id)}
+                >
+                  {c.label}
+                </ChoiceChip>
+              ))}
             </div>
           </div>
 
           {kind !== 'docker' && (
             <>
-              <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <Label htmlFor="t-host">Host</Label>
+              <div className={cn(FIELD, 'sm:col-span-2')}>
+                <FieldLabel htmlFor="t-host">Host</FieldLabel>
                 <Input
                   id="t-host"
                   value={host}
@@ -362,26 +349,25 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                   onChange={(e) => changeHost(e.target.value)}
                 />
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="t-user">Username</Label>
+              <div className={FIELD}>
+                <FieldLabel htmlFor="t-user">Username</FieldLabel>
                 <Input id="t-user" value={username} onChange={(e) => setUsername(e.target.value)} />
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="t-auth">Auth</Label>
-                <select
+              <div className={FIELD}>
+                <FieldLabel htmlFor="t-auth">Auth</FieldLabel>
+                <Select
                   id="t-auth"
-                  className={selectCls}
                   value={auth}
                   onChange={(e) => setAuth(e.target.value as 'password' | 'key')}
                 >
                   <option value="password">Password</option>
                   <option value="key">SSH key</option>
-                </select>
+                </Select>
               </div>
-              <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <Label htmlFor="t-secret">
+              <div className={cn(FIELD, 'sm:col-span-2')}>
+                <FieldLabel htmlFor="t-secret">
                   {auth === 'key' ? 'Private key (PEM)' : 'Password'}
-                </Label>
+                </FieldLabel>
                 {auth === 'key' ? (
                   <textarea
                     id="t-secret"
@@ -394,7 +380,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                           ? 'Leave blank to keep the existing key'
                           : 'Paste an OpenSSH private key'
                     }
-                    className="min-h-[84px] w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    className={cn(fieldClassName, 'min-h-[96px] px-3 py-2 font-mono sm:text-xs')}
                   />
                 ) : (
                   <Input
@@ -412,8 +398,8 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                   />
                 )}
               </div>
-              <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <div className="flex items-center gap-1">
+              <div className={cn(FIELD, 'sm:col-span-2')}>
+                <div className="flex min-h-7 items-center gap-1">
                   <Label htmlFor="t-host-key">Host key fingerprint</Label>
                   <InfoTip label="How to verify the server identity">
                     <span className="block">
@@ -460,8 +446,8 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                   must confirm it before the connection is saved.
                 </p>
               </div>
-              <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <Label htmlFor="t-path">Remote path</Label>
+              <div className={cn(FIELD, 'sm:col-span-2')}>
+                <FieldLabel htmlFor="t-path">Remote path</FieldLabel>
                 <Input
                   id="t-path"
                   value={remotePath}
@@ -471,8 +457,8 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               </div>
             </>
           )}
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <div className="flex items-center gap-1">
+          <div className={cn(FIELD, 'sm:col-span-2')}>
+            <div className="flex min-h-7 items-center gap-1">
               <Label htmlFor="t-url">
                 {kind === 'docker' && routingMode === 'managed-gateway'
                   ? 'Gateway base URL'

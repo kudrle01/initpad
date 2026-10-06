@@ -1,21 +1,45 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { KeyRound, Plus, ShieldCheck, UserPlus } from 'lucide-react';
+import {
+  KeyRound,
+  Link2,
+  MoreHorizontal,
+  Plus,
+  ShieldCheck,
+  UserCheck,
+  UserPlus,
+  Users,
+  UserX,
+} from 'lucide-react';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { useToast } from '@/toast';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { CopyField } from '@/components/molecules/CopyField';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { FormField } from '@/components/molecules/FormField';
+import { List, ListRow } from '@/components/molecules/List';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
+import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Spinner } from '@/components/atoms/Spinner';
 import { PlatformUpdateCard } from '@/components/organisms/admin/PlatformUpdateCard';
 import type { AdminUser, PlatformUpdateStatus } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { createRequestId } from '@/lib/request-id';
 import { WorkspaceCapacityCard } from '@/components/organisms/admin/WorkspaceCapacityCard';
+import { cn } from '@/lib/utils';
 
 // One-time credentials surfaced after create/reset. Shown once; there is no way
 // to retrieve them again. Either a temporary password (admin reads it out) or an
@@ -39,6 +63,8 @@ export default function Admin() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<'admin' | 'user'>('user');
   const [creating, setCreating] = useState(false);
+  // The provisioning form is opened on demand; the user list is the default view.
+  const [adding, setAdding] = useState(false);
   const [oneTime, setOneTime] = useState<OneTime | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [updates, setUpdates] = useState<PlatformUpdateStatus | null>(null);
@@ -149,6 +175,7 @@ export default function Admin() {
       setEmail('');
       setName('');
       setRole('user');
+      setAdding(false);
       await refresh();
       toast.success(`Created @${created.username}`);
     } catch (err) {
@@ -296,13 +323,17 @@ export default function Admin() {
     }
   }
 
+  const selfHosted = user?.edition === 'self-hosted';
+
   return (
     <div>
-      <PageHeader title="Platform administration" />
+      <PageHeader
+        title="Platform administration"
+        description="Instance-wide settings. Only platform administrators can open this page."
+      />
 
-      <div className="flex max-w-3xl flex-col gap-6">
-        {user?.platformRole === 'admin' && <WorkspaceCapacityCard />}
-        {user?.edition === 'self-hosted' && (
+      <div className="flex flex-col gap-4 lg:gap-6">
+        {selfHosted && (
           <PlatformUpdateCard
             status={updates}
             loading={updatesLoading}
@@ -312,14 +343,17 @@ export default function Admin() {
             onInstall={() => void installPlatformUpdate()}
           />
         )}
-        {user?.edition === 'self-hosted' && oneTime && (
-          <div className="rounded-lg border border-primary/40 bg-primary/5 p-5">
+
+        {selfHosted && oneTime && (
+          <Card className="border-primary/30 bg-secondary/50 p-5 sm:p-6" role="status">
             <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                 <KeyRound className="h-5 w-5" />
               </span>
               <div className="min-w-0">
-                <h2 className="text-[15px] font-semibold">Onboarding for @{oneTime.username}</h2>
+                <h2 className="break-words text-base font-semibold tracking-tight">
+                  Onboarding for @{oneTime.username}
+                </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {oneTime.activationEmailed
                     ? 'The activation e-mail is queued. Any temporary password below is shown once.'
@@ -327,182 +361,206 @@ export default function Admin() {
                 </p>
               </div>
             </div>
-            {oneTime.activationUrl && (
-              <div className="mt-4">
-                <p className="mb-1 text-xs text-muted-foreground">
-                  Activation link — the user sets their own password:
+            <div className="mt-4 space-y-4">
+              {oneTime.activationUrl && (
+                <div>
+                  <p className="mb-1.5 text-sm font-medium">
+                    Activation link{' '}
+                    <span className="font-normal text-muted-foreground">
+                      — the user sets their own password
+                    </span>
+                  </p>
+                  <CopyField command={oneTime.activationUrl} />
+                </div>
+              )}
+              {oneTime.activationEmailed && (
+                <p className="text-sm text-primary">
+                  Activation link queued for delivery to the account e-mail address.
                 </p>
-                <CopyField command={oneTime.activationUrl} />
-              </div>
-            )}
-            {oneTime.activationEmailed && (
-              <p className="mt-4 text-sm text-primary">
-                Activation link queued for delivery to the account e-mail address.
-              </p>
-            )}
-            {oneTime.password && (
-              <div className="mt-3">
-                <p className="mb-1 text-xs text-muted-foreground">
-                  Temporary password (must be changed at first sign-in):
-                </p>
-                <CopyField command={oneTime.password} />
-              </div>
-            )}
-            <Button variant="secondary" className="mt-3" onClick={() => setOneTime(null)}>
+              )}
+              {oneTime.password && (
+                <div>
+                  <p className="mb-1.5 text-sm font-medium">
+                    Temporary password{' '}
+                    <span className="font-normal text-muted-foreground">
+                      — must be changed at first sign-in
+                    </span>
+                  </p>
+                  <CopyField command={oneTime.password} />
+                </div>
+              )}
+            </div>
+            <Button className="mt-5" onClick={() => setOneTime(null)}>
               Done
             </Button>
-          </div>
+          </Card>
         )}
 
-        {user?.edition === 'self-hosted' && (
-          <div className="rounded-lg border border-border bg-card p-6">
-            <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-                <UserPlus className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="text-[15px] font-semibold">Provision a user</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Creates the account and a one-time password. The user must set a new password
-                  before using the platform.
-                </p>
-              </div>
-            </div>
-            <form className="mt-5 grid gap-2 sm:grid-cols-2" onSubmit={createUser}>
-              <Input
-                placeholder="Username"
-                aria-label="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-              />
-              <Input
-                type="email"
-                placeholder="E-mail"
-                aria-label="E-mail"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-              <Input
-                placeholder="Full name (optional)"
-                aria-label="Full name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <select
-                className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
-                aria-label="Platform role"
-                value={role}
-                onChange={(e) => setRole(e.target.value as 'admin' | 'user')}
-              >
-                <option value="user">User</option>
-                <option value="admin">Administrator</option>
-              </select>
-              <div className="sm:col-span-2">
-                <Button type="submit" disabled={creating || !username.trim() || !email.trim()}>
-                  {creating ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Create
-                  user
+        {selfHosted && (
+          <SettingsSection
+            icon={Users}
+            title="Users"
+            description="Accounts on this instance. New users receive a one-time password and must set their own before using the platform."
+            flush
+            actions={
+              !adding && (
+                <Button size="sm" onClick={() => setAdding(true)}>
+                  <UserPlus className="h-3.5 w-3.5" /> Add user
                 </Button>
-              </div>
-            </form>
-          </div>
-        )}
+              )
+            }
+          >
+            {adding && (
+              <form
+                className="border-b border-border/70 bg-muted/50 px-4 py-4 sm:px-6 sm:py-5"
+                onSubmit={createUser}
+                aria-label="Provision a user"
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    label="Username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    autoComplete="off"
+                    autoFocus
+                    required
+                  />
+                  <FormField
+                    label="E-mail"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="off"
+                    required
+                  />
+                  <FormField
+                    label="Full name"
+                    placeholder="Optional"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                    <Label htmlFor="new-user-role">Platform role</Label>
+                    <Select
+                      id="new-user-role"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value as 'admin' | 'user')}
+                    >
+                      <option value="user">User</option>
+                      <option value="admin">Administrator</option>
+                    </Select>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setAdding(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={creating || !username.trim() || !email.trim()}>
+                    {creating ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}{' '}
+                    Create user
+                  </Button>
+                </div>
+              </form>
+            )}
 
-        {user?.edition === 'self-hosted' && (
-          <div className="rounded-lg border border-border bg-card p-6">
-            <h2 className="text-[15px] font-semibold">Users</h2>
             {loadError ? (
-              <LoadErrorState className="mt-4" message={loadError} onRetry={loadUsers} />
+              <div className="p-4 sm:p-6">
+                <LoadErrorState message={loadError} onRetry={loadUsers} />
+              </div>
             ) : loading ? (
-              <ContentLoading className="mt-4" label="Loading users" count={2} />
+              <div className="p-4 sm:p-6">
+                <ContentLoading label="Loading users" count={2} />
+              </div>
             ) : (
-              <div className="mt-4 divide-y divide-border rounded-md border border-border">
+              <List>
                 {users.map((u) => (
-                  <div key={u.id} className="flex flex-wrap items-center gap-3 p-3">
+                  <ListRow key={u.id}>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                      {(u.name || u.username).slice(0, 2).toUpperCase()}
+                    </span>
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5 truncate text-sm font-medium">
-                        {u.name || `@${u.username}`}
+                      <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+                        <span className="truncate">{u.name || `@${u.username}`}</span>
                         {u.platformRole === 'admin' && (
                           <ShieldCheck
-                            className="h-3.5 w-3.5 text-primary"
+                            className="h-4 w-4 shrink-0 text-primary"
                             aria-label="Administrator"
                           />
                         )}
                       </span>
-                      <span className="block truncate text-xs text-muted-foreground">
+                      <span
+                        className="block truncate text-xs text-muted-foreground"
+                        title={u.email ?? undefined}
+                      >
                         @{u.username}
                         {u.email ? ` · ${u.email}` : ''}
                       </span>
+                      <UserFlags user={u} className="mt-1.5 lg:hidden" />
                     </span>
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      {!u.active && <Badge tone="destructive">Deactivated</Badge>}
-                      {u.mustChangePassword && <Badge tone="warning">Must change password</Badge>}
-                      {!u.emailVerified && <Badge tone="muted">E-mail unverified</Badge>}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busyUserId === u.id}
-                        onClick={() => void activationLink(u)}
-                      >
-                        Activation link
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busyUserId === u.id}
-                        onClick={() => void resetPassword(u)}
-                      >
-                        Reset password
-                      </Button>
-                      {u.id !== user?.id &&
-                        (u.active ? (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            disabled={busyUserId === u.id}
-                            onClick={() => void setActive(u, false)}
-                          >
-                            Deactivate
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={busyUserId === u.id}
-                            onClick={() => void setActive(u, true)}
-                          >
-                            Activate
-                          </Button>
-                        ))}
-                    </span>
-                  </div>
+                    <UserFlags user={u} className="hidden shrink-0 justify-end lg:flex" />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="rounded-full"
+                          disabled={busyUserId === u.id}
+                          aria-label={`Actions for @${u.username}`}
+                        >
+                          {busyUserId === u.id ? (
+                            <Spinner className="h-4 w-4" />
+                          ) : (
+                            <MoreHorizontal className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onSelect={() => void activationLink(u)}>
+                          <Link2 className="h-4 w-4 text-muted-foreground" /> New activation link
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => void resetPassword(u)}>
+                          <KeyRound className="h-4 w-4 text-muted-foreground" /> Reset password
+                        </DropdownMenuItem>
+                        {u.id !== user?.id && (
+                          <>
+                            <DropdownMenuSeparator />
+                            {u.active ? (
+                              <DropdownMenuItem
+                                destructive
+                                onSelect={() => void setActive(u, false)}
+                              >
+                                <UserX className="h-4 w-4" /> Deactivate
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem onSelect={() => void setActive(u, true)}>
+                                <UserCheck className="h-4 w-4 text-muted-foreground" /> Activate
+                              </DropdownMenuItem>
+                            )}
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </ListRow>
                 ))}
-              </div>
+              </List>
             )}
-          </div>
+          </SettingsSection>
         )}
+
+        {user?.platformRole === 'admin' && <WorkspaceCapacityCard />}
       </div>
     </div>
   );
 }
 
-function Badge({
-  tone,
-  children,
-}: {
-  tone: 'destructive' | 'warning' | 'muted';
-  children: React.ReactNode;
-}) {
-  const cls =
-    tone === 'destructive'
-      ? 'bg-destructive/10 text-destructive'
-      : tone === 'warning'
-        ? 'bg-warning/10 text-warning'
-        : 'bg-secondary text-muted-foreground';
+function UserFlags({ user, className }: { user: AdminUser; className?: string }) {
+  if (user.active && !user.mustChangePassword && user.emailVerified) return null;
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}`}>{children}</span>
+    <span className={cn('flex flex-wrap items-center gap-1.5', className)}>
+      {!user.active && <Badge variant="danger">Deactivated</Badge>}
+      {user.mustChangePassword && <Badge variant="warning">Must change password</Badge>}
+      {!user.emailVerified && <Badge>E-mail unverified</Badge>}
+    </span>
   );
 }

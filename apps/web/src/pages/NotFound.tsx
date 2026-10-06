@@ -11,6 +11,7 @@ export default function NotFound() {
       <PageHeader title="Page not found" />
       <EmptyState
         icon={Layers}
+        title="Nothing here"
         description="This page doesn’t exist or may have moved."
         action={
           <Button asChild>

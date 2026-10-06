@@ -12,15 +12,10 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, label, kind, className, title }: StatusBadgeProps) {
-  const content = (
-    <>
-      <StatusDot status={status} kind={kind} />
-      {label ?? status}
-    </>
-  );
   return (
     <Badge className={className} title={title}>
-      {content}
+      <StatusDot status={status} kind={kind} />
+      <span className="truncate">{label ?? status}</span>
     </Badge>
   );
 }

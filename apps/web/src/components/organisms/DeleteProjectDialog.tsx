@@ -90,7 +90,7 @@ export function DeleteProjectDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-lg border border-border bg-secondary/30 p-3 text-sm">
+        <div className="rounded-lg bg-muted p-3 text-sm">
           <p className="font-medium">Cleanup plan</p>
           <ul className="mt-2 space-y-1.5 text-muted-foreground">
             {deployed.length ? (
@@ -128,9 +128,9 @@ export function DeleteProjectDialog({
           </p>
         </div>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           {productionDeployed && (
-            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
+            <label className="flex cursor-pointer items-start gap-3 tint-danger rounded-lg border border-destructive/25 p-3 text-sm">
               <input
                 type="checkbox"
                 className="mt-0.5 h-4 w-4 accent-destructive"
@@ -148,7 +148,7 @@ export function DeleteProjectDialog({
           )}
 
           {cleanupPending.length > 0 && (
-            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
+            <label className="flex cursor-pointer items-start gap-3 tint-warning rounded-lg border border-warning/30 p-3 text-sm">
               <input
                 type="checkbox"
                 className="mt-0.5 h-4 w-4 accent-warning"
@@ -170,7 +170,7 @@ export function DeleteProjectDialog({
           )}
 
           {hasRepository && (
-            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 text-sm">
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3.5 text-sm">
               <input
                 type="checkbox"
                 className="mt-0.5 h-4 w-4 accent-destructive"
@@ -191,7 +191,7 @@ export function DeleteProjectDialog({
             </label>
           )}
 
-          <p className="text-sm">
+          <p className="break-words text-sm">
             Type <strong className="font-semibold">{projectName}</strong> to confirm:
           </p>
           <Input
@@ -209,7 +209,7 @@ export function DeleteProjectDialog({
           <Button variant="secondary" onClick={close} disabled={deleting}>
             Cancel
           </Button>
-          <Button variant="destructive" onClick={confirm} disabled={!confirmed || deleting}>
+          <Button variant="danger" onClick={confirm} disabled={!confirmed || deleting}>
             {deleting ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
             {deleting ? 'deleting…' : 'Delete project'}
           </Button>

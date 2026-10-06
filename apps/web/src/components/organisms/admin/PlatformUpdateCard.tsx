@@ -1,8 +1,11 @@
-import { CheckCircle2, ExternalLink, PackageCheck, RefreshCw, TriangleAlert } from 'lucide-react';
+import { ExternalLink, PackageCheck, RefreshCw } from 'lucide-react';
 import type { PlatformUpdateOperation, PlatformUpdateStatus } from '@/types';
 import { Spinner } from '@/components/atoms/Spinner';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { Notice } from '@/components/molecules/Notice';
+import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 const UPDATE_STAGE_PROGRESS: Record<string, number> = {
   requesting: 5,
@@ -47,48 +50,40 @@ export function PlatformUpdateCard({
   const progress = operation ? (UPDATE_STAGE_PROGRESS[operation.stage] ?? (active ? 15 : 100)) : 0;
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <PackageCheck className="h-5 w-5" />
-          </span>
-          <div>
-            <h2 className="text-[15px] font-semibold">Platform updates</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Signed releases with automatic backup, readiness checks and image rollback.
-            </p>
-          </div>
-        </div>
+    <SettingsSection
+      icon={PackageCheck}
+      title="Platform updates"
+      description="Signed releases with automatic backup, readiness checks and image rollback."
+      actions={
         <Button variant="ghost" size="sm" disabled={loading} onClick={onRefresh}>
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
           Refresh
         </Button>
-      </div>
-
+      }
+    >
       {loading && !status ? (
-        <ContentLoading className="mt-5" label="Checking platform updates" count={1} />
+        <ContentLoading label="Checking platform updates" count={1} />
       ) : (
-        <div className="mt-5 space-y-4">
-          <div className="grid gap-3 rounded-md border border-border p-4 sm:grid-cols-2">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Installed
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="min-w-0 rounded-lg bg-muted p-4">
+              <p className="eyebrow">Installed</p>
+              <p className="mt-1 font-mono text-xl font-semibold tracking-tight">
+                {status?.currentVersion ?? 'Unknown'}
               </p>
-              <p className="mt-1 font-mono text-sm">{status?.currentVersion ?? 'Unknown'}</p>
             </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Latest verified
-              </p>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="font-mono text-sm">{status?.latestVersion ?? '—'}</span>
+            <div className="min-w-0 rounded-lg bg-muted p-4">
+              <p className="eyebrow">Latest verified</p>
+              <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="font-mono text-xl font-semibold tracking-tight">
+                  {status?.latestVersion ?? '—'}
+                </span>
                 {status?.releaseUrl && (
                   <a
                     href={status.releaseUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    className="text-link inline-flex items-center gap-1 text-xs font-medium"
                   >
                     Release <ExternalLink className="h-3.5 w-3.5" />
                   </a>
@@ -98,30 +93,26 @@ export function PlatformUpdateCard({
           </div>
 
           {status?.channel === 'candidate' && (
-            <div
-              className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning"
-              role="status"
-            >
-              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>Candidate update channel · use only on a disposable acceptance server.</span>
-            </div>
+            <Notice tone="warning" role="status">
+              Candidate update channel · use only on a disposable acceptance server.
+            </Notice>
           )}
 
           {reconnecting ? (
-            <div
-              className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning"
+            <Notice
+              tone="warning"
               role="status"
               aria-live="polite"
+              icon={RefreshCw}
+              iconClassName="animate-spin"
             >
-              <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
-              <span>Connection interrupted while InitPad restarts. Reconnecting…</span>
-            </div>
+              Connection interrupted while InitPad restarts. Reconnecting…
+            </Notice>
           ) : (
             (error || status?.catalogError || status?.supervisorError) && (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{error || status?.supervisorError || status?.catalogError}</span>
-              </div>
+              <Notice tone="danger">
+                {error || status?.supervisorError || status?.catalogError}
+              </Notice>
             )
           )}
 
@@ -130,31 +121,27 @@ export function PlatformUpdateCard({
             !status.catalogError &&
             !status.catalogStale &&
             !active && (
-              <div className="flex items-start gap-2 rounded-md border border-success/30 bg-success/5 p-3 text-success">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium">InitPad {status.currentVersion} is current</p>
-                  <p className="mt-0.5 text-xs">Supervisor online · no newer verified release.</p>
-                </div>
-              </div>
+              <Notice tone="success" title={`InitPad ${status.currentVersion} is current`}>
+                Supervisor online · no newer verified release.
+              </Notice>
             )}
 
           {operation && operation.status !== 'succeeded' && (
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-lg border border-border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium">
+                <p className="font-mono text-sm font-medium">
                   {operation.fromVersion} → {operation.toVersion}
                 </p>
-                <span className={`text-xs font-semibold ${updateTone(operation.status)}`}>
+                <span className={cn('text-xs font-semibold', updateTone(operation.status))}>
                   {operation.status}
                 </span>
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="mt-1 break-words text-sm text-muted-foreground">
                 {operation.message || operation.stage}
               </p>
               {active && (
                 <div
-                  className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary"
+                  className="mt-3 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]"
                   role="progressbar"
                   aria-label="Platform update progress"
                   aria-valuemin={0}
@@ -170,52 +157,52 @@ export function PlatformUpdateCard({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-3">
-            {(status?.updateAvailable || active) && (
-              <Button disabled={!status?.canInstall || installing} onClick={onInstall}>
-                {installing || active ? (
-                  <Spinner className="h-4 w-4" />
-                ) : (
-                  <PackageCheck className="h-4 w-4" />
-                )}
-                {active ? 'Installing…' : 'Install update'}
-              </Button>
-            )}
-            {status?.catalogStale && (
-              <span className="text-xs text-warning">
-                Release information is stale; refresh before installing.
-              </span>
-            )}
-          </div>
+          {(status?.updateAvailable || active || status?.catalogStale) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {(status?.updateAvailable || active) && (
+                <Button disabled={!status?.canInstall || installing} onClick={onInstall}>
+                  {installing || active ? (
+                    <Spinner className="h-4 w-4" />
+                  ) : (
+                    <PackageCheck className="h-4 w-4" />
+                  )}
+                  {active ? 'Installing…' : 'Install update'}
+                </Button>
+              )}
+              {status?.catalogStale && (
+                <span className="text-xs text-warning">
+                  Release information is stale; refresh before installing.
+                </span>
+              )}
+            </div>
+          )}
 
           {status && status.history.length > 0 && (
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Recent update history
-              </p>
-              <div className="mt-2 divide-y divide-border rounded-md border border-border">
+              <p className="eyebrow">Recent update history</p>
+              <ul className="mt-2 divide-y divide-border/70 overflow-hidden rounded-lg border border-border/70">
                 {status.history.slice(0, 3).map((item) => (
-                  <div
+                  <li
                     key={item.id}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs"
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2.5 text-xs"
                   >
-                    <span className="font-mono">
+                    <span className="font-mono text-[13px]">
                       {item.fromVersion} → {item.toVersion}
                     </span>
-                    <span className={`font-semibold ${updateTone(item.status)}`}>
+                    <span className={cn('font-semibold', updateTone(item.status))}>
                       {item.status}
                     </span>
                     <span className="ml-auto text-muted-foreground">
                       {item.requestedByUsername ? `@${item.requestedByUsername} · ` : ''}
                       {new Date(item.startedAt).toLocaleString()}
                     </span>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
         </div>
       )}
-    </section>
+    </SettingsSection>
   );
 }

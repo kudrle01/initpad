@@ -102,10 +102,20 @@ const BRANDS: Brand[] = [
 ];
 
 const SIZES = {
-  sm: { chip: 'h-8 w-8 rounded-md', icon: 'h-4 w-4' },
+  sm: { chip: 'h-9 w-9 rounded-md', icon: 'h-[18px] w-[18px]' },
   md: { chip: 'h-10 w-10 rounded-md', icon: 'h-5 w-5' },
-  lg: { chip: 'h-11 w-11 rounded-lg', icon: 'h-6 w-6' },
+  lg: { chip: 'h-12 w-12 rounded-lg', icon: 'h-6 w-6' },
 } as const;
+
+// Black and near-black marks (Next.js, Express, Flask…) would vanish on a dark
+// surface, so they follow the text color instead of their literal brand hex.
+function isMonochrome(hex: string): boolean {
+  const value = Number.parseInt(hex.slice(1), 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 48;
+}
 
 export function TemplateIcon({
   templateId,
@@ -126,18 +136,28 @@ export function TemplateIcon({
     return (
       <span
         aria-hidden="true"
-        className={cn('flex shrink-0 items-center justify-center bg-secondary', s.chip, className)}
+        className={cn(
+          'flex shrink-0 items-center justify-center bg-foreground/[0.06]',
+          s.chip,
+          className,
+        )}
       >
         <Box className={cn(s.icon, 'text-muted-foreground')} />
       </span>
     );
   }
 
+  const monochrome = isMonochrome(brand.hex);
   return (
     <span
       aria-hidden="true"
-      className={cn('flex shrink-0 items-center justify-center', s.chip, className)}
-      style={{ color: brand.hex, backgroundColor: `${brand.hex}1c` }}
+      className={cn(
+        'flex shrink-0 items-center justify-center',
+        monochrome && 'bg-foreground/[0.07] text-foreground',
+        s.chip,
+        className,
+      )}
+      style={monochrome ? undefined : { color: brand.hex, backgroundColor: `${brand.hex}1f` }}
     >
       <svg viewBox="0 0 24 24" className={s.icon} fill="currentColor" role="img">
         <path d={brand.path} />

@@ -3,8 +3,13 @@ import { Plus, Trash2, Users } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
+import { List, ListRow } from '@/components/molecules/List';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
+import { Notice } from '@/components/molecules/Notice';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useToast } from '@/toast';
 import { useConfirmation } from '@/confirmation';
 import type { WorkspaceMember, WorkspaceRole } from '@/types';
@@ -142,19 +147,25 @@ export function WorkspaceMembersSettings() {
   }
 
   return (
-    <SettingsSection icon={Users} title="Workspace members">
+    <SettingsSection
+      icon={Users}
+      title="Workspace members"
+      description="People who can see and work on this workspace's projects."
+      flush
+    >
       {canManage && (
-        <div>
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
-            <input
-              className="h-11 min-w-0 rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9"
+        <div className="border-b border-border/70 bg-muted/50 px-4 py-4 sm:px-6">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
+            <Input
               placeholder="Username or e-mail"
               aria-label="New member username or e-mail"
               value={identity}
               onChange={(event) => setIdentity(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && identity.trim() && !adding) void addMember();
+              }}
             />
-            <select
-              className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
+            <Select
               aria-label="New member role"
               value={role}
               onChange={(event) => setRole(event.target.value as AssignableRole)}
@@ -164,12 +175,12 @@ export function WorkspaceMembersSettings() {
                   {option.label}
                 </option>
               ))}
-            </select>
+            </Select>
             <Button onClick={() => void addMember()} disabled={adding || !identity.trim()}>
-              <Plus className="h-4 w-4" /> Add
+              <Plus className="h-4 w-4" /> Add member
             </Button>
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
             Maintainers can manage deployments, rollbacks and production reviews without managing
             workspace membership or policy.
           </p>
@@ -177,70 +188,80 @@ export function WorkspaceMembersSettings() {
       )}
 
       {activeWorkspace?.type === 'personal' && (
-        <p className="rounded-md bg-secondary p-3 text-sm text-muted-foreground">
-          Personal workspaces stay private. Use “Add new workspace” in the workspace switcher to
-          create a shared team space.
-        </p>
+        <div className="border-b border-border/70 px-4 py-4 sm:px-6">
+          <Notice>
+            Personal workspaces stay private. Use “Add new workspace” in the workspace switcher to
+            create a shared team space.
+          </Notice>
+        </div>
       )}
 
       {loadError ? (
-        <LoadErrorState
-          className="mt-4"
-          message={loadError}
-          onRetry={() => setReloadKey((value) => value + 1)}
-        />
-      ) : (
-        <div className="mt-4 divide-y divide-border rounded-md border border-border">
-          {loading && <p className="p-3 text-sm text-muted-foreground">Loading members…</p>}
-          {!loading && members.length === 0 && (
-            <p className="p-3 text-sm text-muted-foreground">No workspace members found.</p>
-          )}
-          {!loading &&
-            members.map((member) => (
-              <div key={member.userId} className="flex flex-wrap items-center gap-3 p-3">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
-                    {member.name || `@${member.username}`}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    @{member.username}
-                  </span>
-                </span>
-                {canManage && member.role !== 'owner' ? (
-                  <>
-                    <select
-                      className="h-11 rounded-md border border-input bg-card px-2 text-xs sm:h-8"
-                      aria-label={`Role for ${member.username}`}
-                      value={member.role}
-                      disabled={busyMemberId === member.userId}
-                      onChange={(event) =>
-                        void changeRole(member, event.target.value as AssignableRole)
-                      }
-                    >
-                      {ASSIGNABLE_ROLES.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Remove ${member.username}`}
-                      disabled={busyMemberId === member.userId}
-                      onClick={() => void removeMember(member)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </>
-                ) : (
-                  <span className="rounded-full bg-secondary px-2 py-1 text-xs text-muted-foreground">
-                    {member.role}
-                  </span>
-                )}
-              </div>
-            ))}
+        <div className="p-4 sm:p-6">
+          <LoadErrorState message={loadError} onRetry={() => setReloadKey((value) => value + 1)} />
         </div>
+      ) : loading ? (
+        <p className="px-4 py-6 text-sm text-muted-foreground sm:px-6">Loading members…</p>
+      ) : members.length === 0 ? (
+        <p className="px-4 py-6 text-sm text-muted-foreground sm:px-6">
+          No workspace members found.
+        </p>
+      ) : (
+        <List>
+          {members.map((member) => (
+            <ListRow key={member.userId}>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                {(member.name || member.username).slice(0, 2).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span
+                  className="block truncate text-sm font-medium"
+                  title={member.name || `@${member.username}`}
+                >
+                  {member.name || `@${member.username}`}
+                </span>
+                <span
+                  className="block truncate text-xs text-muted-foreground"
+                  title={`@${member.username}`}
+                >
+                  @{member.username}
+                </span>
+              </span>
+              {canManage && member.role !== 'owner' ? (
+                <>
+                  <Select
+                    className="w-32 shrink-0"
+                    aria-label={`Role for ${member.username}`}
+                    value={member.role}
+                    disabled={busyMemberId === member.userId}
+                    onChange={(event) =>
+                      void changeRole(member, event.target.value as AssignableRole)
+                    }
+                  >
+                    {ASSIGNABLE_ROLES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={`Remove ${member.username}`}
+                    title={`Remove ${member.username}`}
+                    disabled={busyMemberId === member.userId}
+                    onClick={() => void removeMember(member)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <Badge variant={member.role === 'owner' ? 'brand' : 'default'}>{member.role}</Badge>
+              )}
+            </ListRow>
+          ))}
+        </List>
       )}
     </SettingsSection>
   );

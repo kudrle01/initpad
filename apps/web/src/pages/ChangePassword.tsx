@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
-import { BrandMark } from '@/components/atoms/BrandMark';
+import { AuthCard } from '@/components/molecules/AuthCard';
+import { FormField } from '@/components/molecules/FormField';
+import { Notice } from '@/components/molecules/Notice';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 // Full-screen gate shown while an account is under a forced password change
 // (admin-provisioned temporary credentials, post-reset). It is the only view
@@ -34,11 +35,10 @@ export default function ChangePassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
-      <div className="w-full max-w-[380px] rounded-lg border border-border bg-card p-6 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
-        <BrandMark className="mb-4 h-10 w-10" />
-        <h1 className="text-[20px] font-semibold tracking-tight">Choose a new password</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+    <AuthCard
+      title="Choose a new password"
+      description={
+        <>
           {user?.username ? (
             <>
               Signed in as <strong className="font-medium text-foreground">@{user.username}</strong>
@@ -46,59 +46,53 @@ export default function ChangePassword() {
             </>
           ) : null}
           Your account uses a temporary password. Set a new one to continue.
-        </p>
+        </>
+      }
+    >
+      <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
+        <FormField
+          id="cp-current"
+          label="Temporary password"
+          type="password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          required
+        />
+        <FormField
+          id="cp-new"
+          label="New password"
+          type="password"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          required
+          minLength={12}
+          hint="Use at least 12 characters."
+        />
+        <FormField
+          id="cp-confirm"
+          label="Confirm new password"
+          type="password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          required
+          minLength={12}
+        />
+        {error && (
+          <Notice tone="danger" role="alert">
+            {error}
+          </Notice>
+        )}
+        <Button type="submit" disabled={busy} className="w-full">
+          {busy ? 'Please wait…' : 'Update password'}
+        </Button>
+      </form>
 
-        <form className="mt-6 flex flex-col gap-2.5" onSubmit={submit}>
-          <label htmlFor="cp-current" className="text-xs font-medium text-muted-foreground">
-            Temporary password
-          </label>
-          <Input
-            id="cp-current"
-            type="password"
-            autoComplete="current-password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            required
-          />
-          <label htmlFor="cp-new" className="mt-1 text-xs font-medium text-muted-foreground">
-            New password
-          </label>
-          <Input
-            id="cp-new"
-            type="password"
-            autoComplete="new-password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
-            minLength={12}
-          />
-          <label htmlFor="cp-confirm" className="mt-1 text-xs font-medium text-muted-foreground">
-            Confirm new password
-          </label>
-          <Input
-            id="cp-confirm"
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            required
-            minLength={12}
-          />
-          <p className="text-xs text-muted-foreground">Use at least 12 characters.</p>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" disabled={busy} className="mt-1 w-full">
-            {busy ? 'Please wait…' : 'Update password'}
-          </Button>
-        </form>
-
-        <button
-          type="button"
-          onClick={() => void logout()}
-          className="text-link mt-4 w-full text-center text-xs font-medium"
-        >
-          Sign out
-        </button>
-      </div>
-    </div>
+      <Button variant="ghost" className="mt-3 w-full" onClick={() => void logout()}>
+        Sign out
+      </Button>
+    </AuthCard>
   );
 }

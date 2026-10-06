@@ -3,12 +3,17 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const badgeVariants = cva(
-  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium leading-[1.55] transition-colors',
+  'inline-flex max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-transparent px-2.5 py-0.5 text-xs font-medium leading-5 transition-colors',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-secondary text-muted-foreground',
-        outline: 'text-foreground',
+        // Translucent so the chip reads on the canvas and on a card alike.
+        default: 'bg-foreground/[0.06] text-muted-foreground',
+        outline: 'border-border text-foreground',
+        brand: 'bg-secondary text-secondary-foreground',
+        success: 'bg-success/10 text-success',
+        warning: 'bg-warning/10 text-warning',
+        danger: 'bg-destructive/10 text-destructive',
       },
     },
     defaultVariants: { variant: 'default' },

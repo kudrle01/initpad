@@ -4,7 +4,9 @@ import { EmptyState } from '@/components/molecules/EmptyState';
 import { InfoTip } from '@/components/molecules/InfoTip';
 import { Button } from '@/components/ui/button';
 import type { Target } from '@/types';
-import { TargetCard } from './TargetCard';
+import { Card } from '@/components/ui/card';
+import { List } from '@/components/molecules/List';
+import { TargetRow } from './TargetRow';
 
 interface Props {
   targets: Target[];
@@ -65,9 +67,9 @@ export function InfrastructureTargetList({
   });
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center gap-1">
-        <h2 className="text-sm font-semibold text-foreground">Deployment servers</h2>
+    <section>
+      <div className="mb-3 flex items-center gap-1">
+        <h2 className="text-base font-semibold tracking-tight">Deployment servers</h2>
         <InfoTip
           label="How infrastructure is organized"
           items={[
@@ -102,35 +104,38 @@ export function InfrastructureTargetList({
           }
         />
       ) : (
-        <div className="flex flex-col gap-4">
-          {orderedTargets.map((target) => {
-            const allocation = allocationByTarget.get(target.id) ?? null;
-            return (
-              <TargetCard
-                key={target.id}
-                target={target}
-                allocation={allocation}
-                workspaceName={workspaceName}
-                busy={busyTargetId === target.id || busyAllocationId === allocation?.id}
-                readOnly={readOnly}
-                canManageAgent={canManageAgent}
-                canManageLifecycle={canManageLifecycle}
-                canManageAccess={canManageAccess}
-                onVerify={() => onVerify(target)}
-                onManageAgent={() => onManageAgent(target)}
-                onEdit={() => onEdit(target)}
-                onDelete={() => onDelete(target)}
-                onDisconnect={() => onDisconnect(target)}
-                onRetire={() => onRetire(target)}
-                onRestore={() => onRestore(target)}
-                onEnableAccess={() => onEnableAccess(target)}
-                onEditAccess={() => allocation && onEditAccess(allocation)}
-                onToggleAccess={() => allocation && onToggleAccess(allocation)}
-                onRemoveAccess={() => allocation && onRemoveAccess(allocation)}
-              />
-            );
-          })}
-        </div>
+        <Card className="overflow-hidden">
+          <List>
+            {orderedTargets.map((target) => {
+              const allocation = allocationByTarget.get(target.id) ?? null;
+              return (
+                <TargetRow
+                  key={target.id}
+                  target={target}
+                  allocation={allocation}
+                  workspaceName={workspaceName}
+                  busy={busyTargetId === target.id || busyAllocationId === allocation?.id}
+                  readOnly={readOnly}
+                  canManageAgent={canManageAgent}
+                  canManageLifecycle={canManageLifecycle}
+                  canManageAccess={canManageAccess}
+                  onVerify={() => onVerify(target)}
+                  onManageAgent={() => onManageAgent(target)}
+                  onEdit={() => onEdit(target)}
+                  onDelete={() => onDelete(target)}
+                  onDisconnect={() => onDisconnect(target)}
+                  onRetire={() => onRetire(target)}
+                  onRestore={() => onRestore(target)}
+                  onEnableAccess={() => onEnableAccess(target)}
+                  onEditAccess={() => allocation && onEditAccess(allocation)}
+                  onToggleAccess={() => allocation && onToggleAccess(allocation)}
+                  onRemoveAccess={() => allocation && onRemoveAccess(allocation)}
+                  defaultOpen={orderedTargets.length === 1}
+                />
+              );
+            })}
+          </List>
+        </Card>
       )}
     </section>
   );

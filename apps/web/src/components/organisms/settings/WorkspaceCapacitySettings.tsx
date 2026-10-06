@@ -5,7 +5,16 @@ import { useAuth } from '@/auth';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
+import { cn } from '@/lib/utils';
 import type { WorkspaceCapacity } from '@/types';
+
+function meter(label: string, used: number, limit: number) {
+  return {
+    label,
+    value: `${used} / ${limit}`,
+    percentage: limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100,
+  };
+}
 
 function bytesLabel(value: string): string {
   const gib = Number(BigInt(value)) / 1024 ** 3;
@@ -39,17 +48,27 @@ export function WorkspaceCapacitySettings() {
 
   if (!workspaceId) return null;
 
-  const rows = capacity
-    ? ([
-        ['Projects', capacity.usage.projects, capacity.limits.projects],
-        ['Members', capacity.usage.members, capacity.limits.members],
-        ['Servers', capacity.usage.targets, capacity.limits.targets],
-        [
+  const meters = capacity
+    ? [
+        meter('Projects', capacity.usage.projects, capacity.limits.projects),
+        meter('Members', capacity.usage.members, capacity.limits.members),
+        meter('Servers', capacity.usage.targets, capacity.limits.targets),
+        meter(
           'Active operations',
           capacity.usage.concurrentOperations,
           capacity.limits.concurrentOperations,
-        ],
-      ] as const)
+        ),
+        {
+          label: 'Artifact storage',
+          value: `${bytesLabel(capacity.usage.artifactBytes)} / ${bytesLabel(capacity.limits.artifactBytes)}`,
+          percentage: Math.min(
+            100,
+            Number(
+              (BigInt(capacity.usage.artifactBytes) * 100n) / BigInt(capacity.limits.artifactBytes),
+            ),
+          ),
+        },
+      ]
     : [];
 
   return (
@@ -74,54 +93,38 @@ export function WorkspaceCapacitySettings() {
       ) : !capacity ? (
         <ContentLoading label="Loading workspace capacity" count={2} />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {rows.map(([label, used, limit]) => {
-            const percentage = Math.min(100, Math.round((used / limit) * 100));
-            return (
-              <div key={label} className="rounded-md border border-border p-3">
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <span>{label}</span>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {used} / {limit}
-                  </span>
+        <>
+          <dl className="grid gap-x-6 gap-y-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr))]">
+            {meters.map(({ label, value, percentage }) => (
+              <div key={label} className="min-w-0">
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="truncate text-sm font-medium">{label}</dt>
+                  <dd className="shrink-0 text-xs tabular-nums text-muted-foreground">{value}</dd>
                 </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]"
+                  role="presentation"
+                >
                   <div
-                    className="h-full rounded-full bg-primary transition-[width]"
+                    className={cn(
+                      'h-full rounded-full transition-[width]',
+                      percentage >= 100
+                        ? 'bg-destructive'
+                        : percentage >= 85
+                          ? 'bg-warning'
+                          : 'bg-primary',
+                    )}
                     style={{ width: `${percentage}%` }}
                   />
                 </div>
               </div>
-            );
-          })}
-          <div className="rounded-md border border-border p-3 sm:col-span-2">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span>Artifact storage</span>
-              <span className="font-mono text-xs text-muted-foreground">
-                {bytesLabel(capacity.usage.artifactBytes)} /{' '}
-                {bytesLabel(capacity.limits.artifactBytes)}
-              </span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
-              <div
-                className="h-full rounded-full bg-primary transition-[width]"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    Number(
-                      (BigInt(capacity.usage.artifactBytes) * 100n) /
-                        BigInt(capacity.limits.artifactBytes),
-                    ),
-                  )}%`,
-                }}
-              />
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground sm:col-span-2">
+            ))}
+          </dl>
+          <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
             Platform administrators manage these limits. Reaching one blocks only new work; existing
             projects and workloads are preserved.
           </p>
-        </div>
+        </>
       )}
     </SettingsSection>
   );

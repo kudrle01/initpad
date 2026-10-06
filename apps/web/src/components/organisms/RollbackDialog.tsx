@@ -47,8 +47,8 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
               </DialogDescription>
             </DialogHeader>
 
-            <div className="rounded-lg border border-border bg-secondary/30 p-3 text-sm">
-              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+            <div className="rounded-lg bg-muted p-3.5 text-sm">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
                 <span className="text-muted-foreground">Environment</span>
                 <span className="text-right font-medium uppercase">{preview.environment}</span>
                 <span className="text-muted-foreground">Target</span>
@@ -56,7 +56,7 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
                 <span className="text-muted-foreground">Current version</span>
                 <span className="text-right font-mono">{short(preview.currentVersion)}</span>
                 <span className="text-muted-foreground">Rollback version</span>
-                <span className="text-right font-mono font-semibold text-warning">
+                <span className="text-right font-mono font-semibold text-primary">
                   {short(preview.rollbackVersion)}
                 </span>
                 <span className="text-muted-foreground">Verified output</span>
@@ -71,8 +71,8 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
             <div
               className={
                 preview.environment === 'prod'
-                  ? 'rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm'
-                  : 'rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm'
+                  ? 'tint-danger rounded-lg border border-destructive/25 p-3 text-sm'
+                  : 'tint-warning rounded-lg border border-warning/30 p-3 text-sm'
               }
             >
               <p className="font-medium">Impact</p>
@@ -96,11 +96,11 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
             </div>
 
             <DialogFooter>
-              <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
+              <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
               <Button
-                variant={preview.environment === 'prod' ? 'destructive' : 'default'}
+                variant={preview.environment === 'prod' ? 'danger' : 'default'}
                 disabled={busy}
                 onClick={onConfirm}
               >

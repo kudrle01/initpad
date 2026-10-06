@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { CircleCheck, ExternalLink, Github, ShieldAlert } from 'lucide-react';
+import { CircleCheck, ExternalLink, Github } from 'lucide-react';
 import { api, type GitHubStatus } from '@/api';
 import { useAuth } from '@/auth';
+import { Notice } from '@/components/molecules/Notice';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/toast';
 import type { LinkedIdentity } from '@/types';
@@ -179,6 +181,7 @@ export function GitHubIntegrationSettings() {
     <SettingsSection
       icon={Github}
       title="GitHub account"
+      description="Sign in with GitHub and let InitPad create or import selected repositories."
       help={[
         {
           title: 'Account',
@@ -196,24 +199,29 @@ export function GitHubIntegrationSettings() {
       ]}
     >
       {githubIdentities.length === 0 ? (
-        <Button variant="secondary" onClick={linkGithub}>
+        <Button variant="soft" onClick={linkGithub}>
           <Github className="h-4 w-4" /> Link GitHub account
           <ExternalLink className="h-3.5 w-3.5" />
         </Button>
       ) : (
-        <div className="divide-y divide-border rounded-md border border-border">
+        <div className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/70">
           {githubIdentities.map((identity) => (
-            <div key={identity.provider} className="flex flex-wrap items-center gap-3 p-3">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">
-                  {identity.username ? `@${identity.username}` : 'GitHub'}
+            <div
+              key={identity.provider}
+              className="flex flex-col gap-3 p-3.5 sm:flex-row sm:flex-wrap sm:items-center"
+            >
+              <span className="min-w-0 sm:flex-1 sm:basis-48">
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+                  <span className="truncate">
+                    {identity.username ? `@${identity.username}` : 'GitHub'}
+                  </span>
                   {status?.installation.present && !status.installation.suspended && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-success">
-                      <CircleCheck className="h-3.5 w-3.5" /> App authorized
-                    </span>
+                    <Badge variant="success" className="px-2 py-0">
+                      <CircleCheck className="h-3 w-3" /> App authorized
+                    </Badge>
                   )}
                 </span>
-                <span className="block truncate text-xs text-muted-foreground">
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                   linked {new Date(identity.linkedAt).toLocaleDateString()}
                   {status &&
                     (status.installation.suspended
@@ -223,39 +231,43 @@ export function GitHubIntegrationSettings() {
                         : ' · App not installed')}
                 </span>
               </span>
-              {status?.canInstall && (
-                <Button variant="secondary" size="sm" disabled={setupBusy} onClick={startSetup}>
-                  {setupBusy
-                    ? 'Opening GitHub…'
-                    : status.installation.present
-                      ? 'Add installation'
-                      : 'Install GitHub App'}
-                  {!setupBusy && <ExternalLink className="ml-1 h-3.5 w-3.5" />}
+              <span className="flex flex-wrap items-center gap-2">
+                {status?.canInstall && (
+                  <Button variant="secondary" size="sm" disabled={setupBusy} onClick={startSetup}>
+                    {setupBusy
+                      ? 'Opening GitHub…'
+                      : status.installation.present
+                        ? 'Add installation'
+                        : 'Install GitHub App'}
+                    {!setupBusy && <ExternalLink className="ml-1 h-3.5 w-3.5" />}
+                  </Button>
+                )}
+                {status && !status.credentialReady && (
+                  <Button variant="secondary" size="sm" onClick={linkGithub}>
+                    Renew authorization <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!identity.canUnlink || unlinkingProvider === identity.provider}
+                  title={identity.canUnlink ? undefined : 'This is your only sign-in method'}
+                  onClick={() => void unlinkGithub(identity)}
+                >
+                  {identity.canUnlink ? 'Unlink' : 'Required for sign-in'}
                 </Button>
-              )}
-              {status && !status.credentialReady && (
-                <Button variant="secondary" size="sm" onClick={linkGithub}>
-                  Renew authorization <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!identity.canUnlink || unlinkingProvider === identity.provider}
-                title={identity.canUnlink ? undefined : 'This is your only sign-in method'}
-                onClick={() => void unlinkGithub(identity)}
-              >
-                {identity.canUnlink ? 'Unlink' : 'Required for sign-in'}
-              </Button>
+              </span>
             </div>
           ))}
           {status?.installations.map((installation) => (
             <div
               key={installation.id}
-              className="flex flex-wrap items-center gap-2 bg-secondary/30 px-3 py-2 text-xs"
+              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 bg-muted/60 px-3.5 py-2.5 text-xs"
             >
-              <span className="font-medium">{installation.accountLogin}</span>
-              <span className="text-muted-foreground">
+              <span className="min-w-0 truncate font-medium" title={installation.accountLogin}>
+                {installation.accountLogin}
+              </span>
+              <span className="min-w-0 break-words text-muted-foreground">
                 {installation.accountType.toLowerCase()} · {installation.repositorySelection}{' '}
                 repositories
                 {installation.suspended
@@ -268,23 +280,17 @@ export function GitHubIntegrationSettings() {
       )}
 
       {status && !status.appConfigured && (
-        <p className="mt-2 text-xs text-muted-foreground">
+        <p className="mt-3 text-xs text-muted-foreground">
           GitHub sign-in is available, but repository access has not been configured by the platform
           administrator.
         </p>
       )}
       {status && !status.ciCallbackReady && (
-        <p
-          role="alert"
-          className="mt-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground"
-        >
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <span>
-            GitHub delivery is paused: {status.ciCallbackIssue} The platform administrator must
-            configure a public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code>. Current
-            value: <code className="font-mono">{status.ciCallbackUrl ?? 'not set'}</code>.
-          </span>
-        </p>
+        <Notice tone="danger" role="alert" className="mt-3" title="GitHub delivery is paused">
+          {status.ciCallbackIssue} The platform administrator must configure a public HTTPS{' '}
+          <code className="font-mono">INITPAD_PUBLIC_URL</code>. Current value:{' '}
+          <code className="break-all font-mono">{status.ciCallbackUrl ?? 'not set'}</code>.
+        </Notice>
       )}
     </SettingsSection>
   );

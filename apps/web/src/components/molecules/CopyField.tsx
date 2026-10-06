@@ -54,18 +54,18 @@ export function CopyField({ command }: { command: string }) {
 
   return (
     <div className="min-w-0 max-w-full">
-      <div className="flex min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-md border border-border bg-secondary/50 px-3 py-2.5">
-        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[13px] text-foreground/90">
+      <div className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md border border-border bg-muted py-1 pl-3 pr-1">
+        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-1.5 font-mono text-[13px] text-foreground/90">
           {command}
         </code>
         <button
           type="button"
           onClick={() => void copy()}
           aria-label="Copy to clipboard"
-          className="flex shrink-0 items-center gap-1 rounded text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-8"
         >
           {state === 'copied' ? (
-            <Check className="h-3.5 w-3.5" />
+            <Check className="h-3.5 w-3.5 text-success" />
           ) : (
             <Copy className="h-3.5 w-3.5" />
           )}

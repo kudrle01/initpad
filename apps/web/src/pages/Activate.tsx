@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
-import { BrandMark } from '@/components/atoms/BrandMark';
+import { AuthCard } from '@/components/molecules/AuthCard';
+import { FormField } from '@/components/molecules/FormField';
+import { Notice } from '@/components/molecules/Notice';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 // Public page reached from an admin activation link (/activate/:token). The
 // user sets their own password and is signed in immediately.
@@ -36,42 +37,45 @@ export default function Activate() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
-      <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-6 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
-        <BrandMark className="mx-auto h-11 w-11" />
-        <h1 className="mt-4 text-[20px] font-semibold tracking-tight">Activate your account</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Choose a password to finish setting up your InitPad account.
-        </p>
-        <form className="mt-6 flex flex-col gap-2.5" onSubmit={submit}>
-          <Input
-            type="password"
-            placeholder="Password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={12}
-          />
-          <Input
-            type="password"
-            placeholder="Confirm password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            required
-            minLength={12}
-          />
-          <p className="text-xs text-muted-foreground">Use at least 12 characters.</p>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? 'Please wait…' : 'Activate and sign in'}
-          </Button>
-        </form>
-        <Link to="/login" className="text-link mt-4 inline-block text-xs font-medium">
-          Back to sign in
-        </Link>
-      </div>
-    </div>
+    <AuthCard
+      title="Activate your account"
+      description="Choose a password to finish setting up your InitPad account."
+    >
+      <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
+        <FormField
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          minLength={12}
+          hint="Use at least 12 characters."
+        />
+        <FormField
+          label="Confirm password"
+          type="password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          required
+          minLength={12}
+        />
+        {error && (
+          <Notice tone="danger" role="alert">
+            {error}
+          </Notice>
+        )}
+        <Button type="submit" className="w-full" disabled={busy}>
+          {busy ? 'Please wait…' : 'Activate and sign in'}
+        </Button>
+      </form>
+      <Link
+        to="/login"
+        className="text-link mt-5 inline-flex min-h-11 items-center text-sm font-medium sm:min-h-0"
+      >
+        Back to sign in
+      </Link>
+    </AuthCard>
   );
 }

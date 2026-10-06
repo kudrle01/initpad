@@ -10,34 +10,37 @@ export function ProjectRepository({ project }: { project: Project }) {
 
   return (
     <DetailSection title="Repository">
-      {project.repoUrl && (
-        <a
-          href={scmLink(project.repoUrl, project.scm.provider)}
-          target="_blank"
-          rel="noreferrer"
-          className="text-link mb-2 inline-flex max-w-full items-start gap-1.5 break-all text-sm font-medium"
-        >
-          <GitBranch className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{project.repoUrl}</span>
-          <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
-        </a>
-      )}
-      {cloneUrl && <CopyField command={`git clone ${cloneUrl}`} />}
-      {project.scm.provider === 'github' ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Private GitHub repository — open it in a browser signed into an authorized GitHub account.
-          For cloning, use your normal GitHub credential manager, SSH key or{' '}
-          <code className="font-mono">gh auth login</code>.
-        </p>
-      ) : (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Private repository — first time?{' '}
-          <Link to="/settings/account" className="text-link">
-            Connect Git
-          </Link>{' '}
-          once and cloning works without a password.
-        </p>
-      )}
+      <div className="flex min-w-0 flex-col gap-3">
+        {project.repoUrl && (
+          <a
+            href={scmLink(project.repoUrl, project.scm.provider)}
+            target="_blank"
+            rel="noreferrer"
+            title={project.repoUrl}
+            className="text-link flex min-w-0 items-center gap-2 text-sm font-medium"
+          >
+            <GitBranch className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 truncate">{project.scm.fullName}</span>
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+          </a>
+        )}
+        {cloneUrl && <CopyField command={`git clone ${cloneUrl}`} />}
+        {project.scm.provider === 'github' ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Private GitHub repository — open it in a browser signed into an authorized GitHub
+            account. For cloning, use your normal GitHub credential manager, SSH key or{' '}
+            <code className="font-mono">gh auth login</code>.
+          </p>
+        ) : (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Private repository — first time?{' '}
+            <Link to="/settings/account" className="text-link">
+              Connect Git
+            </Link>{' '}
+            once and cloning works without a password.
+          </p>
+        )}
+      </div>
     </DetailSection>
   );
 }

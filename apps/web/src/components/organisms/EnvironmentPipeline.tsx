@@ -36,13 +36,40 @@ import { cleanupNotice } from '@/lib/deployment';
 import { deploymentProgress } from '@/lib/deployment-progress';
 import type { Commit, EnvName, Project, ProviderKind } from '@/types';
 
-const STRIPE: Record<string, string> = {
-  running: 'bg-success',
-  deploying: 'bg-warning',
-  failed: 'bg-destructive',
-  stopped: 'bg-muted-foreground/50',
-  empty: 'bg-muted-foreground/25',
-};
+// One stage of the pipeline. The promote control between two stages is the
+// only primary action here; everything else lives in the stage menu.
+const STAGE_CARD = 'min-w-0 flex-1 rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-5';
+const STAGE_NOTE = 'mt-3 flex items-start gap-2 rounded-md border p-2.5 text-xs leading-relaxed';
+// The stages sit side by side only when the pipeline itself is wide enough for
+// them — a container query, because the same component lives in a full-width
+// page, beside a sidebar and on a phone. Fewer stages need less room.
+const LAYOUT = {
+  three: {
+    track:
+      'flex flex-col gap-3 [@container(min-width:52rem)]:flex-row [@container(min-width:52rem)]:items-stretch',
+    connector:
+      'flex shrink-0 flex-row items-center justify-center gap-2 [@container(min-width:52rem)]:w-[4.5rem] [@container(min-width:52rem)]:flex-col [@container(min-width:52rem)]:gap-1.5',
+    arrow: 'h-4 w-4 rotate-90 [@container(min-width:52rem)]:rotate-0',
+  },
+  two: {
+    track:
+      'flex flex-col gap-3 [@container(min-width:34rem)]:flex-row [@container(min-width:34rem)]:items-stretch',
+    connector:
+      'flex shrink-0 flex-row items-center justify-center gap-2 [@container(min-width:34rem)]:w-[4.5rem] [@container(min-width:34rem)]:flex-col [@container(min-width:34rem)]:gap-1.5',
+    arrow: 'h-4 w-4 rotate-90 [@container(min-width:34rem)]:rotate-0',
+  },
+} as const;
+const CONNECTOR_LABEL = 'text-center text-xs leading-tight text-muted-foreground';
+
+function promoteButtonClass(enabled: boolean) {
+  return cn(
+    'flex h-10 w-10 items-center justify-center rounded-full border transition-colors sm:h-9 sm:w-9',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+    enabled
+      ? 'border-primary bg-primary text-primary-foreground shadow-xs hover:bg-primary/90'
+      : 'border-border bg-card text-muted-foreground/50',
+  );
+}
 
 const PROVIDER_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
@@ -98,485 +125,501 @@ export function EnvironmentPipeline({
     ),
   );
 
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
-      {project.pipelinePreset === 'prod-only' && (
-        <>
-          <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card p-4">
-            <span className="absolute inset-x-0 top-0 h-1 bg-primary" />
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">Verified build</span>
-              <PackageCheck className="h-4 w-4 text-primary" />
-            </div>
-            <div className="mt-2 font-mono text-sm">
-              {verifiedBuild ? `v${verifiedBuild.version.slice(0, 7)}` : '—'}
-            </div>
-            {verifiedBuild ? (
-              <div
-                className="truncate font-mono text-[10px] text-muted-foreground"
-                title={`Verified build sha256:${verifiedBuild.digest}`}
-              >
-                build {verifiedBuild.digest.slice(0, 12)}
-              </div>
-            ) : (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Push to the default branch and wait for CI verification.
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 flex-row items-center justify-center gap-2 sm:w-16 sm:flex-col">
-            <button
-              type="button"
-              disabled={!canRequestVerifiedBuild}
-              onClick={() => onPromote('prod')}
-              aria-label="Request verified build for production"
-              title={
-                canRequestVerifiedBuild
-                  ? 'Request this verified build for production'
-                  : 'A verified build and available production target are required'
-              }
-              className={cn(
-                'flex h-9 w-9 items-center justify-center rounded-full border transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                canRequestVerifiedBuild
-                  ? 'border-primary bg-primary text-primary-foreground shadow-sm hover:brightness-95'
-                  : 'border-border text-muted-foreground/50',
-              )}
-            >
-              <ArrowRight className="h-4 w-4" />
-            </button>
-            <span className="text-[11px] text-muted-foreground">Request prod</span>
-          </div>
-        </>
-      )}
-      {project.environments.map((env, index) => {
-        const target = project.environments[index + 1];
-        const next = target?.name ?? null;
-        const synced =
-          !!target &&
-          !!env.version &&
-          target.status === 'running' &&
-          target.version === env.version &&
-          (env.artifact ? target.artifact?.id === env.artifact.id : !target.artifact);
-        const canPromote =
-          !readOnly &&
-          busy === null &&
-          env.status === 'running' &&
-          !synced &&
-          target?.workspaceAccessStatus !== 'disabled' &&
-          !(
-            target?.target?.scope === 'user' &&
-            (target.target.managementState ?? 'active') !== 'active'
-          );
-        const deploying = busy === next || target?.status === 'deploying';
-        const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
-        const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
-        const hasFailedGitHubJobs =
-          env.name === 'dev' &&
-          project.scm.provider === 'github' &&
-          !!env.artifact?.runId &&
-          !!deployedCommit?.pipeline.some(
-            (stage) => stage.source !== 'platform' && stage.status === 'failed',
-          ) &&
-          !!deployedCommit?.pipeline.some(
-            (stage) => stage.source === 'platform' && stage.status === 'success',
-          );
-        const deploymentHistoryUrl = `/projects/${project.id}/deployments`;
-        const waitingForRunner =
-          env.status === 'deploying' && env.statusReason === 'Waiting for an available CI runner';
-        // Providers publish named deployment stages. Known stages advance the
-        // end-to-end bar; a moving highlight communicates activity inside a
-        // stage without pretending that elapsed time equals real completion.
-        const pct = env.status === 'deploying' ? deploymentProgress(env.statusReason) : null;
-        // Stop/Start only makes sense for Docker workloads, not static hosting (SFTP).
-        const canStopStart = env.provider !== 'sftp';
-        const hasDeployment = env.status !== 'empty' && !!env.version;
-        const cleanupPending = env.status === 'empty' && !!env.statusReason;
-        const targetNeedsDeploy =
-          env.deploymentRequired && ['empty', 'failed'].includes(env.status);
-        const targetUnavailable = Boolean(
-          env.target?.scope === 'user' && (env.target.managementState ?? 'active') !== 'active',
-        );
-        const workspaceAccessPaused = env.workspaceAccessStatus === 'disabled';
-        const targetAcceptsManagement = !targetUnavailable;
-        const targetAcceptsDeployments = targetAcceptsManagement && !workspaceAccessPaused;
-        const canDeployToTarget =
-          targetAcceptsDeployments && targetNeedsDeploy && (!!env.version || env.name === 'dev');
-        const canRunAgain =
-          targetAcceptsDeployments &&
-          env.name === 'dev' &&
-          !env.version &&
-          (env.status === 'empty' || env.status === 'failed') &&
-          !targetNeedsDeploy;
-        // Any environment can be pointed at a different target.
-        const canTarget = targetAcceptsManagement || env.status === 'empty';
-        const canInspectWorkload =
-          targetAcceptsManagement &&
-          hasDeployment &&
-          env.provider === 'docker' &&
-          env.target?.kind === 'docker' &&
-          env.target.scope === 'user';
-        const expiryWarning = Boolean(
-          env.expiresAt &&
-          env.expiryWarningAt &&
-          Date.now() >= new Date(env.expiryWarningAt).getTime(),
-        );
+  const stageCount = project.environments.length + (project.pipelinePreset === 'prod-only' ? 1 : 0);
+  const layout = LAYOUT[stageCount >= 3 ? 'three' : 'two'];
 
-        return (
-          <Fragment key={env.name}>
-            <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card p-4">
-              <span
-                className={cn(
-                  'absolute inset-x-0 top-0 h-1',
-                  waitingForRunner
-                    ? 'bg-muted-foreground/25'
-                    : (STRIPE[env.status] ?? 'bg-muted-foreground/25'),
-                )}
-              />
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider">{env.name}</h3>
-                <div className="flex items-center gap-1.5">
-                  {env.status !== 'empty' ? (
-                    <Link
-                      to={deploymentHistoryUrl}
-                      title="View InitPad deployment history"
-                      className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
+  return (
+    <div className="[container-type:inline-size]">
+      <div className={layout.track}>
+        {project.pipelinePreset === 'prod-only' && (
+          <>
+            <div className={STAGE_CARD}>
+              <div className="flex min-h-8 items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Verified build
+                </span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+                  <PackageCheck className="h-4 w-4" />
+                </span>
+              </div>
+              <div className="mt-2 font-mono text-xl font-semibold tracking-tight">
+                {verifiedBuild ? `v${verifiedBuild.version.slice(0, 7)}` : '—'}
+              </div>
+              {verifiedBuild ? (
+                <div
+                  className="mt-1 truncate font-mono text-[11px] text-muted-foreground"
+                  title={`Verified build sha256:${verifiedBuild.digest}`}
+                >
+                  build {verifiedBuild.digest.slice(0, 12)}
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Push to the default branch and wait for CI verification.
+                </p>
+              )}
+            </div>
+            <div className={layout.connector}>
+              <button
+                type="button"
+                disabled={!canRequestVerifiedBuild}
+                onClick={() => onPromote('prod')}
+                aria-label="Request verified build for production"
+                title={
+                  canRequestVerifiedBuild
+                    ? 'Request this verified build for production'
+                    : 'A verified build and available production target are required'
+                }
+                className={promoteButtonClass(canRequestVerifiedBuild)}
+              >
+                <ArrowRight className={layout.arrow} />
+              </button>
+              <span className={CONNECTOR_LABEL}>Request prod</span>
+            </div>
+          </>
+        )}
+        {project.environments.map((env, index) => {
+          const target = project.environments[index + 1];
+          const next = target?.name ?? null;
+          const synced =
+            !!target &&
+            !!env.version &&
+            target.status === 'running' &&
+            target.version === env.version &&
+            (env.artifact ? target.artifact?.id === env.artifact.id : !target.artifact);
+          const canPromote =
+            !readOnly &&
+            busy === null &&
+            env.status === 'running' &&
+            !synced &&
+            target?.workspaceAccessStatus !== 'disabled' &&
+            !(
+              target?.target?.scope === 'user' &&
+              (target.target.managementState ?? 'active') !== 'active'
+            );
+          const deploying = busy === next || target?.status === 'deploying';
+          const ProviderIcon = PROVIDER_ICON[env.provider] ?? Server;
+          const deployedCommit = env.version ? commitsBySha[env.version] : undefined;
+          const hasFailedGitHubJobs =
+            env.name === 'dev' &&
+            project.scm.provider === 'github' &&
+            !!env.artifact?.runId &&
+            !!deployedCommit?.pipeline.some(
+              (stage) => stage.source !== 'platform' && stage.status === 'failed',
+            ) &&
+            !!deployedCommit?.pipeline.some(
+              (stage) => stage.source === 'platform' && stage.status === 'success',
+            );
+          const deploymentHistoryUrl = `/projects/${project.id}/deployments`;
+          const waitingForRunner =
+            env.status === 'deploying' && env.statusReason === 'Waiting for an available CI runner';
+          // Providers publish named deployment stages. Known stages advance the
+          // end-to-end bar; a moving highlight communicates activity inside a
+          // stage without pretending that elapsed time equals real completion.
+          const pct = env.status === 'deploying' ? deploymentProgress(env.statusReason) : null;
+          // Stop/Start only makes sense for Docker workloads, not static hosting (SFTP).
+          const canStopStart = env.provider !== 'sftp';
+          const hasDeployment = env.status !== 'empty' && !!env.version;
+          const cleanupPending = env.status === 'empty' && !!env.statusReason;
+          const targetNeedsDeploy =
+            env.deploymentRequired && ['empty', 'failed'].includes(env.status);
+          const targetUnavailable = Boolean(
+            env.target?.scope === 'user' && (env.target.managementState ?? 'active') !== 'active',
+          );
+          const workspaceAccessPaused = env.workspaceAccessStatus === 'disabled';
+          const targetAcceptsManagement = !targetUnavailable;
+          const targetAcceptsDeployments = targetAcceptsManagement && !workspaceAccessPaused;
+          const canDeployToTarget =
+            targetAcceptsDeployments && targetNeedsDeploy && (!!env.version || env.name === 'dev');
+          const canRunAgain =
+            targetAcceptsDeployments &&
+            env.name === 'dev' &&
+            !env.version &&
+            (env.status === 'empty' || env.status === 'failed') &&
+            !targetNeedsDeploy;
+          // Any environment can be pointed at a different target.
+          const canTarget = targetAcceptsManagement || env.status === 'empty';
+          const canInspectWorkload =
+            targetAcceptsManagement &&
+            hasDeployment &&
+            env.provider === 'docker' &&
+            env.target?.kind === 'docker' &&
+            env.target.scope === 'user';
+          const expiryWarning = Boolean(
+            env.expiresAt &&
+            env.expiryWarningAt &&
+            Date.now() >= new Date(env.expiryWarningAt).getTime(),
+          );
+
+          return (
+            <Fragment key={env.name}>
+              <div className={STAGE_CARD}>
+                <div className="flex min-h-8 items-center justify-between gap-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {env.name}
+                  </h3>
+                  <div className="flex items-center gap-1">
+                    {env.status !== 'empty' ? (
+                      <Link
+                        to={deploymentHistoryUrl}
+                        title="View InitPad deployment history"
+                        className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      >
+                        <StatusBadge
+                          status={waitingForRunner ? 'pending' : env.status}
+                          label={waitingForRunner ? 'queued' : undefined}
+                          kind={waitingForRunner ? 'ci' : 'deploy'}
+                          className="cursor-pointer hover:bg-foreground/10"
+                        />
+                      </Link>
+                    ) : (
                       <StatusBadge
                         status={waitingForRunner ? 'pending' : env.status}
                         label={waitingForRunner ? 'queued' : undefined}
                         kind={waitingForRunner ? 'ci' : 'deploy'}
-                        className="cursor-pointer hover:bg-secondary/70"
                       />
-                    </Link>
-                  ) : (
-                    <StatusBadge
-                      status={waitingForRunner ? 'pending' : env.status}
-                      label={waitingForRunner ? 'queued' : undefined}
-                      kind={waitingForRunner ? 'ci' : 'deploy'}
-                    />
-                  )}
-                  {!readOnly &&
-                    (targetAcceptsManagement ? hasDeployment || canTarget : canTarget) && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            disabled={busy !== null}
-                            aria-label="Environment actions"
-                          >
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          {hasFailedGitHubJobs && targetAcceptsDeployments && (
-                            <DropdownMenuItem onSelect={onRerunFailedJobs}>
-                              <RefreshCw className="h-4 w-4" /> Re-run failed GitHub jobs
-                            </DropdownMenuItem>
-                          )}
-                          {canDeployToTarget && (
-                            <DropdownMenuItem
-                              onSelect={() => (env.version ? onRedeploy(env.name) : onRunAgain())}
+                    )}
+                    {!readOnly &&
+                      (targetAcceptsManagement ? hasDeployment || canTarget : canTarget) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              disabled={busy !== null}
+                              aria-label="Environment actions"
                             >
-                              <Play className="h-4 w-4" />{' '}
-                              {env.version ? 'Deploy verified build' : 'Deploy'}
-                            </DropdownMenuItem>
-                          )}
-                          {canRunAgain && (
-                            <DropdownMenuItem onSelect={onRunAgain}>
-                              <Play className="h-4 w-4" /> Deploy
-                            </DropdownMenuItem>
-                          )}
-                          {hasDeployment && targetAcceptsDeployments && !targetNeedsDeploy && (
-                            <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
-                              <RefreshCw className="h-4 w-4" />
-                              {env.name === 'prod'
-                                ? 'Request production redeploy'
-                                : 'Redeploy verified build'}
-                            </DropdownMenuItem>
-                          )}
-                          {hasDeployment &&
-                            targetAcceptsManagement &&
-                            !workspaceAccessPaused &&
-                            canRollback &&
-                            !targetNeedsDeploy && (
-                              <DropdownMenuItem onSelect={() => onRollback(env.name)}>
-                                <Undo2 className="h-4 w-4" />
-                                {env.name === 'prod'
-                                  ? 'Request production rollback…'
-                                  : 'Roll back to previous version…'}
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            {hasFailedGitHubJobs && targetAcceptsDeployments && (
+                              <DropdownMenuItem onSelect={onRerunFailedJobs}>
+                                <RefreshCw className="h-4 w-4" /> Re-run failed GitHub jobs
                               </DropdownMenuItem>
                             )}
-                          {canInspectWorkload && (
-                            <DropdownMenuItem onSelect={() => onDiagnostics(env.name)}>
-                              <Activity className="h-4 w-4" /> Workload diagnostics…
-                            </DropdownMenuItem>
-                          )}
-                          {hasDeployment &&
-                            targetAcceptsManagement &&
-                            canStopStart &&
-                            (env.status === 'stopped' ? (
-                              <DropdownMenuItem onSelect={() => onStart(env.name)}>
-                                <Play className="h-4 w-4" /> Start
-                              </DropdownMenuItem>
-                            ) : (
+                            {canDeployToTarget && (
                               <DropdownMenuItem
-                                onSelect={() => onStop(env.name)}
-                                disabled={env.status !== 'running'}
+                                onSelect={() => (env.version ? onRedeploy(env.name) : onRunAgain())}
                               >
-                                <Square className="h-4 w-4" /> Stop
+                                <Play className="h-4 w-4" />{' '}
+                                {env.version ? 'Deploy verified build' : 'Deploy'}
                               </DropdownMenuItem>
-                            ))}
-                          {canTarget && (
-                            <DropdownMenuItem onSelect={() => onConfigureTarget(env.name)}>
-                              <Server className="h-4 w-4" /> Change target
-                            </DropdownMenuItem>
-                          )}
-                          {targetAcceptsManagement &&
-                            (hasDeployment || env.status === 'deploying' || cleanupPending) && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  destructive
-                                  onSelect={() => onRemoveEnv(env.name)}
-                                >
-                                  <Trash2 className="h-4 w-4" />{' '}
-                                  {env.status === 'deploying'
-                                    ? 'Cancel deploy'
-                                    : cleanupPending
-                                      ? 'Retry cleanup'
-                                      : 'Remove deployment'}
-                                </DropdownMenuItem>
-                              </>
                             )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                            {canRunAgain && (
+                              <DropdownMenuItem onSelect={onRunAgain}>
+                                <Play className="h-4 w-4" /> Deploy
+                              </DropdownMenuItem>
+                            )}
+                            {hasDeployment && targetAcceptsDeployments && !targetNeedsDeploy && (
+                              <DropdownMenuItem onSelect={() => onRedeploy(env.name)}>
+                                <RefreshCw className="h-4 w-4" />
+                                {env.name === 'prod'
+                                  ? 'Request production redeploy'
+                                  : 'Redeploy verified build'}
+                              </DropdownMenuItem>
+                            )}
+                            {hasDeployment &&
+                              targetAcceptsManagement &&
+                              !workspaceAccessPaused &&
+                              canRollback &&
+                              !targetNeedsDeploy && (
+                                <DropdownMenuItem onSelect={() => onRollback(env.name)}>
+                                  <Undo2 className="h-4 w-4" />
+                                  {env.name === 'prod'
+                                    ? 'Request production rollback…'
+                                    : 'Roll back to previous version…'}
+                                </DropdownMenuItem>
+                              )}
+                            {canInspectWorkload && (
+                              <DropdownMenuItem onSelect={() => onDiagnostics(env.name)}>
+                                <Activity className="h-4 w-4" /> Workload diagnostics…
+                              </DropdownMenuItem>
+                            )}
+                            {hasDeployment &&
+                              targetAcceptsManagement &&
+                              canStopStart &&
+                              (env.status === 'stopped' ? (
+                                <DropdownMenuItem onSelect={() => onStart(env.name)}>
+                                  <Play className="h-4 w-4" /> Start
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  onSelect={() => onStop(env.name)}
+                                  disabled={env.status !== 'running'}
+                                >
+                                  <Square className="h-4 w-4" /> Stop
+                                </DropdownMenuItem>
+                              ))}
+                            {canTarget && (
+                              <DropdownMenuItem onSelect={() => onConfigureTarget(env.name)}>
+                                <Server className="h-4 w-4" /> Change target
+                              </DropdownMenuItem>
+                            )}
+                            {targetAcceptsManagement &&
+                              (hasDeployment || env.status === 'deploying' || cleanupPending) && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    destructive
+                                    onSelect={() => onRemoveEnv(env.name)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />{' '}
+                                    {env.status === 'deploying'
+                                      ? 'Cancel deploy'
+                                      : cleanupPending
+                                        ? 'Retry cleanup'
+                                        : 'Remove deployment'}
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-2 font-mono text-sm">
-                {env.version ? `v${env.version.slice(0, 7)}` : '—'}
-              </div>
-              {env.artifact && (
-                <div
-                  className="truncate font-mono text-[10px] text-muted-foreground"
-                  title={`Verified build sha256:${env.artifact.digest}`}
-                >
-                  build {env.artifact.digest.slice(0, 12)}
-                </div>
-              )}
-              {deployedCommit && (
-                <div
-                  className="truncate text-xs text-muted-foreground"
-                  title={deployedCommit.message}
-                >
-                  {deployedCommit.message}
-                </div>
-              )}
-              <div
-                className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"
-                title={env.target?.host ?? env.provider}
-              >
-                <ProviderIcon className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{env.target?.name ?? env.provider}</span>
-                {env.target?.scope === 'user' && (
-                  <span className="shrink-0 rounded-full bg-secondary px-1.5 text-[10px] font-medium uppercase tracking-wide">
-                    yours
+                <div className="mt-2 flex min-w-0 items-baseline gap-2">
+                  <span className="font-mono text-xl font-semibold tracking-tight">
+                    {env.version ? `v${env.version.slice(0, 7)}` : '—'}
                   </span>
-                )}
-              </div>
-
-              {targetUnavailable && (
-                <div className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-muted-foreground">
-                  <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-                  <span>
-                    Server is {env.target!.managementState ?? 'disconnected'}. The URL may remain
-                    online, but InitPad management is unavailable.{' '}
-                    <Link to="/infrastructure" className="text-link font-medium">
-                      Reconnect server
-                    </Link>
-                    .
-                  </span>
-                </div>
-              )}
-
-              {workspaceAccessPaused && (
-                <div className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-foreground">
-                  <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-                  <span>
-                    Workspace access is paused. Existing workloads remain manageable, but deploy,
-                    redeploy and rollback are unavailable.{' '}
-                    <Link to="/infrastructure" className="text-link font-medium">
-                      Manage access
-                    </Link>
-                    .
-                  </span>
-                </div>
-              )}
-
-              {targetNeedsDeploy && (
-                <div
-                  className={cn(
-                    'mt-2 flex items-start gap-1 text-xs',
-                    workspaceAccessPaused ? 'text-warning' : 'text-primary',
+                  {env.artifact && (
+                    <span
+                      className="min-w-0 truncate font-mono text-[11px] text-muted-foreground"
+                      title={`Verified build sha256:${env.artifact.digest}`}
+                    >
+                      build {env.artifact.digest.slice(0, 12)}
+                    </span>
                   )}
-                >
-                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>
-                    {workspaceAccessPaused
-                      ? 'Target change pending — resume workspace access before deploying.'
-                      : 'Target changed — deploy to apply it.'}
-                  </span>
                 </div>
-              )}
-
-              <a
-                href={env.url ?? undefined}
-                target="_blank"
-                rel="noreferrer"
-                className={cn(
-                  'text-link mt-2 flex min-w-0 items-center gap-1 text-xs',
-                  !env.url && 'invisible',
+                {deployedCommit ? (
+                  <div
+                    className="mt-1 truncate text-sm text-muted-foreground"
+                    title={deployedCommit.message}
+                  >
+                    {deployedCommit.message}
+                  </div>
+                ) : (
+                  !env.version && (
+                    <div className="mt-1 text-sm text-muted-foreground">Nothing deployed yet</div>
+                  )
                 )}
-              >
-                <ExternalLink className="h-3 w-3 shrink-0" />
-                <span className="truncate">{env.url?.replace(/^https?:\/\//, '') ?? '—'}</span>
-              </a>
 
-              {env.status === 'deploying' && (
-                <div className="mt-2">
-                  <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    {waitingForRunner ? (
-                      <Clock3 className="h-3 w-3 shrink-0" />
-                    ) : (
-                      <Spinner className="h-3 w-3 shrink-0" />
+                <div className="mt-3 space-y-1.5 border-t border-border/70 pt-3 text-xs">
+                  <div
+                    className="flex min-w-0 items-center gap-1.5 text-muted-foreground"
+                    title={env.target?.host ?? env.target?.name ?? env.provider}
+                  >
+                    <ProviderIcon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{env.target?.name ?? env.provider}</span>
+                    {env.target?.scope === 'user' && (
+                      <span className="shrink-0 rounded-full bg-foreground/[0.06] px-1.5 text-[11px] font-medium leading-4">
+                        yours
+                      </span>
                     )}
-                    <span className="truncate">
-                      {env.statusReason ?? 'Deploying…'}
-                      {pct !== null ? ` · ${pct}%` : ''}
+                  </div>
+                  {env.url && (
+                    <a
+                      href={env.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={env.url}
+                      className="text-link flex min-w-0 items-center gap-1.5"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{env.url.replace(/^https?:\/\//, '')}</span>
+                    </a>
+                  )}
+                </div>
+
+                {targetUnavailable && (
+                  <div
+                    className={cn(
+                      STAGE_NOTE,
+                      'border-warning/30 bg-warning/[0.08] text-muted-foreground',
+                    )}
+                  >
+                    <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                    <span className="min-w-0">
+                      Server is {env.target!.managementState ?? 'disconnected'}. The URL may remain
+                      online, but InitPad management is unavailable.{' '}
+                      <Link to="/infrastructure" className="text-link font-medium">
+                        Reconnect server
+                      </Link>
+                      .
                     </span>
                   </div>
-                  {!waitingForRunner && (
-                    <div
-                      role="progressbar"
-                      aria-label={`${env.name} deployment progress`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={pct ?? undefined}
-                      aria-valuetext={env.statusReason ?? 'Deploying'}
-                      className="relative h-1 w-full overflow-hidden rounded-full bg-secondary"
-                    >
-                      {pct === null ? (
-                        <div
-                          aria-hidden="true"
-                          className="deployment-progress-traveller absolute inset-y-0 w-2/5 rounded-full bg-gradient-to-r from-warning/10 via-warning to-warning/10 shadow-[0_0_6px_hsl(var(--warning)/0.45)]"
-                        />
-                      ) : (
-                        <div
-                          className="relative h-full overflow-hidden rounded-full bg-warning transition-[width] duration-700 ease-out"
-                          style={{ width: `${pct}%` }}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="deployment-progress-sweep absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {env.status === 'failed' &&
-                env.statusReason &&
-                !(workspaceAccessPaused && /workspace access.+paused/i.test(env.statusReason)) && (
-                  <Link
-                    to={deploymentHistoryUrl}
-                    className="mt-2 flex items-center gap-1 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                  >
-                    <AlertTriangle className="h-3 w-3 shrink-0" /> {env.statusReason}
-                    <History className="h-3 w-3 shrink-0" />
-                  </Link>
                 )}
 
-              {env.expiresAt && (
-                <div
-                  className={cn(
-                    'mt-2 flex items-start gap-1 text-xs',
-                    expiryWarning ? 'text-warning' : 'text-muted-foreground',
-                  )}
-                >
-                  <Clock3 className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>
-                    Scheduled cleanup {new Date(env.expiresAt).toLocaleString()}. Redeploy to renew.
-                  </span>
-                </div>
-              )}
-
-              {cleanupPending && (
-                <div className="mt-2 flex items-start gap-1 text-xs text-warning">
-                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>{cleanupNotice(env.statusReason!)}</span>
-                </div>
-              )}
-            </div>
-
-            {next && (
-              <div className="flex shrink-0 flex-row items-center justify-center gap-2 sm:w-16 sm:flex-col">
-                {synced ? (
-                  <>
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-success/15 text-success">
-                      <Check className="h-4 w-4" />
+                {workspaceAccessPaused && (
+                  <div
+                    className={cn(
+                      STAGE_NOTE,
+                      'border-warning/30 bg-warning/[0.08] text-foreground',
+                    )}
+                  >
+                    <Link2Off className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                    <span className="min-w-0">
+                      Workspace access is paused. Existing workloads remain manageable, but deploy,
+                      redeploy and rollback are unavailable.{' '}
+                      <Link to="/infrastructure" className="text-link font-medium">
+                        Manage access
+                      </Link>
+                      .
                     </span>
-                    <span className="text-[11px] text-muted-foreground">in sync</span>
-                  </>
-                ) : deploying ? (
-                  <>
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-warning/15 text-warning">
-                      <Spinner className="h-4 w-4" />
+                  </div>
+                )}
+
+                {targetNeedsDeploy && (
+                  <div
+                    className={cn(
+                      'mt-3 flex items-start gap-1.5 text-xs',
+                      workspaceAccessPaused ? 'text-warning' : 'text-primary',
+                    )}
+                  >
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      {workspaceAccessPaused
+                        ? 'Target change pending — resume workspace access before deploying.'
+                        : 'Target changed — deploy to apply it.'}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">deploying…</span>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      disabled={!canPromote}
-                      onClick={() => onPromote(next)}
-                      title={
-                        canPromote
-                          ? next === 'prod'
-                            ? `Request v${env.version} from ${env.name} for production`
-                            : `Deploy v${env.version} from ${env.name} to ${next}`
-                          : target?.workspaceAccessStatus === 'disabled'
-                            ? `Resume workspace access before deploying to ${next}`
-                            : target?.target?.scope === 'user' &&
-                                (target.target.managementState ?? 'active') !== 'active'
-                              ? `Reconnect the ${next} server before deploying`
-                              : `Deploy to ${env.name} first`
-                      }
-                      className={cn(
-                        'flex h-9 w-9 items-center justify-center rounded-full border transition-colors',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                        canPromote
-                          ? 'border-primary bg-primary text-primary-foreground shadow-sm hover:brightness-95'
-                          : 'border-border text-muted-foreground/50',
+                  </div>
+                )}
+
+                {env.status === 'deploying' && (
+                  <div className="mt-3">
+                    <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      {waitingForRunner ? (
+                        <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <Spinner className="h-3 w-3 shrink-0" />
                       )}
+                      <span className="truncate">
+                        {env.statusReason ?? 'Deploying…'}
+                        {pct !== null ? ` · ${pct}%` : ''}
+                      </span>
+                    </div>
+                    {!waitingForRunner && (
+                      <div
+                        role="progressbar"
+                        aria-label={`${env.name} deployment progress`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={pct ?? undefined}
+                        aria-valuetext={env.statusReason ?? 'Deploying'}
+                        className="relative h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.08]"
+                      >
+                        {pct === null ? (
+                          <div
+                            aria-hidden="true"
+                            className="deployment-progress-traveller absolute inset-y-0 w-2/5 rounded-full bg-gradient-to-r from-warning/10 via-warning to-warning/10 shadow-[0_0_6px_hsl(var(--warning)/0.45)]"
+                          />
+                        ) : (
+                          <div
+                            className="relative h-full overflow-hidden rounded-full bg-warning transition-[width] duration-700 ease-out"
+                            style={{ width: `${pct}%` }}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="deployment-progress-sweep absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/60 to-transparent"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {env.status === 'failed' &&
+                  env.statusReason &&
+                  !(
+                    workspaceAccessPaused && /workspace access.+paused/i.test(env.statusReason)
+                  ) && (
+                    <Link
+                      to={deploymentHistoryUrl}
+                      className="mt-3 flex min-w-0 items-start gap-1.5 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                    <span className="text-[11px] text-muted-foreground">
-                      {canPromote ? (next === 'prod' ? 'Request prod' : `Deploy to ${next}`) : next}
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span className="min-w-0 break-words">{env.statusReason}</span>
+                      <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    </Link>
+                  )}
+
+                {env.expiresAt && (
+                  <div
+                    className={cn(
+                      'mt-3 flex items-start gap-1.5 text-xs',
+                      expiryWarning ? 'text-warning' : 'text-muted-foreground',
+                    )}
+                  >
+                    <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      Scheduled cleanup {new Date(env.expiresAt).toLocaleString()}. Redeploy to
+                      renew.
                     </span>
-                  </>
+                  </div>
+                )}
+
+                {cleanupPending && (
+                  <div className="mt-3 flex items-start gap-1.5 text-xs text-warning">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span className="min-w-0 break-words">{cleanupNotice(env.statusReason!)}</span>
+                  </div>
                 )}
               </div>
-            )}
-          </Fragment>
-        );
-      })}
+
+              {next && (
+                <div className={layout.connector}>
+                  {synced ? (
+                    <>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success sm:h-9 sm:w-9">
+                        <Check className="h-4 w-4" />
+                      </span>
+                      <span className={CONNECTOR_LABEL}>in sync</span>
+                    </>
+                  ) : deploying ? (
+                    <>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-warning/10 text-warning sm:h-9 sm:w-9">
+                        <Spinner className="h-4 w-4" />
+                      </span>
+                      <span className={CONNECTOR_LABEL}>deploying…</span>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!canPromote}
+                        onClick={() => onPromote(next)}
+                        title={
+                          canPromote
+                            ? next === 'prod'
+                              ? `Request v${env.version} from ${env.name} for production`
+                              : `Deploy v${env.version} from ${env.name} to ${next}`
+                            : target?.workspaceAccessStatus === 'disabled'
+                              ? `Resume workspace access before deploying to ${next}`
+                              : target?.target?.scope === 'user' &&
+                                  (target.target.managementState ?? 'active') !== 'active'
+                                ? `Reconnect the ${next} server before deploying`
+                                : `Deploy to ${env.name} first`
+                        }
+                        className={promoteButtonClass(canPromote)}
+                      >
+                        <ArrowRight className={layout.arrow} />
+                      </button>
+                      <span className={CONNECTOR_LABEL}>
+                        {canPromote
+                          ? next === 'prod'
+                            ? 'Request prod'
+                            : `Deploy to ${next}`
+                          : next}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
     </div>
   );
 }

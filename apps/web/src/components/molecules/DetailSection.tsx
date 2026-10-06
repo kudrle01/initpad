@@ -1,24 +1,26 @@
 import type { ReactNode } from 'react';
-import { InfoTip, type InfoTipItem } from '@/components/molecules/InfoTip';
+import { Section } from '@/components/molecules/Section';
+import type { InfoTipItem } from '@/components/molecules/InfoTip';
 
+/** A titled block on a detail page. Thin alias of Section kept for readability. */
 export function DetailSection({
   title,
+  description,
   children,
   help,
+  actions,
+  flush,
 }: {
   title: string;
+  description?: ReactNode;
   children: ReactNode;
   help?: InfoTipItem[];
+  actions?: ReactNode;
+  flush?: boolean;
 }) {
   return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center gap-1">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {title}
-        </h2>
-        {help && <InfoTip label={`About ${title}`} items={help} />}
-      </div>
+    <Section title={title} description={description} help={help} actions={actions} flush={flush}>
       {children}
-    </section>
+    </Section>
   );
 }

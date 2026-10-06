@@ -95,7 +95,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
               </DialogHeader>
 
               {options.details && options.details.length > 0 && (
-                <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg border border-border bg-secondary/30 p-3 text-sm">
+                <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg bg-muted p-3.5 text-sm">
                   {options.details.map((detail) => (
                     <div key={detail.label} className="contents">
                       <dt className="text-muted-foreground">{detail.label}</dt>
@@ -108,14 +108,14 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
               {options.consequences && options.consequences.length > 0 && (
                 <div
                   className={cn(
-                    'rounded-lg border p-3 text-sm',
+                    'rounded-lg border p-3.5 text-sm',
                     danger
-                      ? 'border-destructive/40 bg-destructive/5'
-                      : 'border-warning/50 bg-warning/10',
+                      ? 'border-destructive/25 bg-destructive/[0.06]'
+                      : 'border-warning/30 bg-warning/[0.08]',
                   )}
                 >
                   <p className="font-medium">What will happen</p>
-                  <ul className="mt-1.5 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                  <ul className="mt-1.5 list-disc space-y-1 break-words pl-5 text-[13px] leading-relaxed text-muted-foreground">
                     {options.consequences.map((consequence, index) => (
                       <li key={index}>{consequence}</li>
                     ))}
@@ -125,7 +125,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
 
               {options.requireText && (
                 <div className="flex min-w-0 flex-col gap-1.5">
-                  <label htmlFor="confirmation-text" className="text-sm">
+                  <label htmlFor="confirmation-text" className="break-words text-sm">
                     Type <strong className="font-semibold">{options.requireText}</strong> to
                     confirm:
                   </label>
@@ -147,12 +147,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
                   Cancel
                 </Button>
                 <Button
-                  variant={danger ? 'destructive' : 'default'}
-                  className={
-                    danger
-                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                      : undefined
-                  }
+                  variant={danger ? 'danger' : 'default'}
                   disabled={!confirmedByText}
                   onClick={() => finish(true)}
                 >

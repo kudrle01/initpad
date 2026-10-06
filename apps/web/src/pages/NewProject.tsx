@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { AlertTriangle, Check, Rocket, DownloadCloud, Github, Settings2 } from 'lucide-react';
+import { Check, Rocket, DownloadCloud, Github, Settings2 } from 'lucide-react';
 import { api, type EnvConfig, type GitHubStatus } from '@/api';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { PageHeader } from '@/components/molecules/PageHeader';
@@ -12,6 +13,9 @@ import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { InfoTip } from '@/components/molecules/InfoTip';
 import { FormField } from '@/components/molecules/FormField';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
+import { Notice } from '@/components/molecules/Notice';
+import { Section } from '@/components/molecules/Section';
+import { StepBadge } from '@/components/molecules/StepBadge';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { Spinner } from '@/components/atoms/Spinner';
 import { PipelinePresetField } from '@/components/organisms/PipelinePresetField';
@@ -19,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { DEFAULT_PIPELINE_PRESET, pipelineStages } from '@/lib/pipeline-presets';
 import {
   EnvironmentTargetFields,
+  environmentTargetHelp,
   suggestedEnvironmentTargets,
   type EnvironmentTargets,
 } from '@/components/organisms/EnvironmentTargetFields';
@@ -167,178 +172,209 @@ export default function NewProject() {
     }
   }
 
+  const targetName = (environment: EnvName) =>
+    targets.find((target) => target.id === environmentTargets[environment])?.name;
+  const canSubmit =
+    !readOnly &&
+    !busy &&
+    !!templateId &&
+    validName &&
+    githubReady &&
+    !loadError &&
+    selectedStages.every((environment) => environmentTargets[environment]);
+
   return (
     <div>
-      <PageHeader title="New project" />
-
-      <Link
-        to="/import"
-        className="text-link mb-4 inline-flex items-center gap-1 text-sm font-medium"
-      >
-        <DownloadCloud className="h-4 w-4" /> Import an existing repository instead
-      </Link>
+      <PageHeader
+        title="New project"
+        description="Pick a template — InitPad creates the repository, the CI/CD pipeline and the environments."
+        actions={
+          <Button asChild variant="secondary">
+            <Link to="/import">
+              <DownloadCloud className="h-4 w-4" /> Import existing repository
+            </Link>
+          </Button>
+        }
+      />
 
       {readOnly && (
-        <p
-          role="alert"
-          className="mb-4 rounded-md border border-border bg-secondary p-3 text-sm text-muted-foreground"
-        >
+        <Notice tone="warning" role="alert" className="mb-4">
           Viewer access is read-only. Ask a workspace admin for a member or maintainer role to
           create projects.
-        </p>
+        </Notice>
       )}
 
       {loadError ? (
         <LoadErrorState message={loadError} onRetry={() => setReloadKey((value) => value + 1)} />
       ) : loading ? (
-        <ContentLoading label="Loading project setup" variant="cards" count={3} />
+        <ContentLoading label="Loading project setup" variant="detail" />
       ) : (
-        <div className="flex flex-col gap-6">
-          <FormField
-            label="Project name"
-            id="project-name"
-            value={name}
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(e) => setName(e.target.value)}
-            className="max-w-md"
-            error={
-              name && !validName
-                ? 'Use 2–41 lowercase letters, digits or hyphens; start with a letter.'
-                : null
-            }
-            aria-invalid={name && !validName ? true : undefined}
-          />
-
-          {hosted && (
-            <div className="flex max-w-md flex-col gap-1.5">
-              <div className="flex items-center gap-1">
-                <Label htmlFor="repository-owner">GitHub repository owner</Label>
-                <InfoTip
-                  label="About the repository owner"
-                  items={[
-                    {
-                      title: 'Repository',
-                      description: 'InitPad creates a private repository in the selected account.',
-                    },
-                    {
-                      title: 'Available owners',
-                      description: `Only GitHub App installations authorized for ${activeWorkspace?.name ?? 'this workspace'} appear here.`,
-                    },
-                  ]}
+        <div className="grid items-start gap-4 lg:gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
+            <Section
+              title="Name"
+              description="Also used for the repository and the application address."
+              media={<StepBadge step={1} />}
+            >
+              <div className="flex max-w-md flex-col gap-4">
+                <FormField
+                  label="Project name"
+                  id="project-name"
+                  value={name}
+                  spellCheck={false}
+                  autoComplete="off"
+                  onChange={(e) => setName(e.target.value)}
+                  hint="2–41 lowercase letters, digits or hyphens; starts with a letter."
+                  error={
+                    name && !validName
+                      ? 'Use 2–41 lowercase letters, digits or hyphens; start with a letter.'
+                      : null
+                  }
+                  aria-invalid={name && !validName ? true : undefined}
                 />
-              </div>
-              {ghStatus?.linked && ghStatus.installations.length > 0 ? (
-                <>
-                  <Select
-                    id="repository-owner"
-                    value={scmInstallationId}
-                    aria-label="GitHub repository owner"
-                    onChange={(event) => setScmInstallationId(event.target.value)}
-                  >
-                    <option value="" disabled>
-                      Choose an account or organization…
-                    </option>
-                    {ghStatus.installations.map((installation) => (
-                      <option
-                        key={installation.id}
-                        value={installation.id}
-                        disabled={installation.suspended || !installation.canCreate}
+
+                {hosted && (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="repository-owner">GitHub repository owner</Label>
+                      <InfoTip
+                        label="About the repository owner"
+                        items={[
+                          {
+                            title: 'Repository',
+                            description:
+                              'InitPad creates a private repository in the selected account.',
+                          },
+                          {
+                            title: 'Available owners',
+                            description: `Only GitHub App installations authorized for ${activeWorkspace?.name ?? 'this workspace'} appear here.`,
+                          },
+                        ]}
+                      />
+                    </div>
+                    {ghStatus?.linked && ghStatus.installations.length > 0 ? (
+                      <Select
+                        id="repository-owner"
+                        value={scmInstallationId}
+                        aria-label="GitHub repository owner"
+                        onChange={(event) => setScmInstallationId(event.target.value)}
                       >
-                        {installation.accountLogin} · {installation.accountType.toLowerCase()}
-                        {installation.suspended ? ' · suspended' : ''}
-                        {!installation.canCreate ? ' · account owner only' : ''}
-                      </option>
-                    ))}
-                  </Select>
-                </>
-              ) : (
-                <div className="rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
-                  <Github className="mr-2 inline h-4 w-4" />
-                  {!ghStatus?.linked
-                    ? 'Link GitHub before creating a hosted project.'
-                    : 'Authorize a GitHub App installation for this workspace first.'}{' '}
-                  <Link to="/settings/account" className="text-link font-medium">
-                    Open account settings
-                  </Link>
-                </div>
-              )}
-              {selectedInstallation?.accountType === 'User' && !ghStatus?.credentialReady && (
-                <p
-                  role="alert"
-                  className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-muted-foreground"
-                >
-                  Renew your GitHub authorization in{' '}
-                  <Link to="/settings/account" className="text-link font-medium">
-                    account settings
-                  </Link>{' '}
-                  before InitPad can create a repository in your personal account.
-                </p>
-              )}
-              {ghStatus && !ghStatus.ciCallbackReady && (
-                <p
-                  role="alert"
-                  className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground"
-                >
-                  <AlertTriangle className="mr-2 inline h-4 w-4 text-destructive" />
-                  {ghStatus.ciCallbackIssue ?? 'GitHub cannot reach the InitPad CI callback.'}{' '}
-                  Configure a public HTTPS <code className="font-mono">INITPAD_PUBLIC_URL</code> and
-                  restart InitPad.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Template</Label>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {templates.map((t) => {
-                const selected = t.id === templateId;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTemplateId(t.id)}
-                    aria-pressed={selected}
-                    className={cn(
-                      'relative flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-center transition-colors',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                      selected
-                        ? 'border-primary ring-2 ring-primary/20'
-                        : 'border-border hover:border-primary/40',
+                        <option value="" disabled>
+                          Choose an account or organization…
+                        </option>
+                        {ghStatus.installations.map((installation) => (
+                          <option
+                            key={installation.id}
+                            value={installation.id}
+                            disabled={installation.suspended || !installation.canCreate}
+                          >
+                            {installation.accountLogin} · {installation.accountType.toLowerCase()}
+                            {installation.suspended ? ' · suspended' : ''}
+                            {!installation.canCreate ? ' · account owner only' : ''}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Notice icon={Github}>
+                        {!ghStatus?.linked
+                          ? 'Link GitHub before creating a hosted project.'
+                          : 'Authorize a GitHub App installation for this workspace first.'}{' '}
+                        <Link to="/settings/account" className="text-link font-medium">
+                          Open account settings
+                        </Link>
+                      </Notice>
                     )}
-                  >
-                    {selected && (
-                      <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                        <Check className="h-3 w-3" />
-                      </span>
+                    {selectedInstallation?.accountType === 'User' && !ghStatus?.credentialReady && (
+                      <Notice tone="warning" role="alert">
+                        Renew your GitHub authorization in{' '}
+                        <Link to="/settings/account" className="text-link font-medium">
+                          account settings
+                        </Link>{' '}
+                        before InitPad can create a repository in your personal account.
+                      </Notice>
                     )}
-                    <TemplateIcon templateId={t.id} language={t.language} size="lg" />
-                    <div className="text-sm font-medium">{t.name}</div>
-                    <div className="text-xs text-muted-foreground">{t.language}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                    {ghStatus && !ghStatus.ciCallbackReady && (
+                      <Notice tone="danger" role="alert">
+                        {ghStatus.ciCallbackIssue ?? 'GitHub cannot reach the InitPad CI callback.'}{' '}
+                        Configure a public HTTPS{' '}
+                        <code className="font-mono">INITPAD_PUBLIC_URL</code> and restart InitPad.
+                      </Notice>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Section>
 
-          <div className="flex flex-col gap-1.5">
-            <PipelinePresetField value={pipelinePreset} onChange={setPipelinePreset} />
-          </div>
+            <Section
+              title="Template"
+              description={template?.description ?? 'The language and runtime to start from.'}
+              media={<StepBadge step={2} />}
+            >
+              <div
+                role="group"
+                aria-label="Template"
+                className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+              >
+                {templates.map((t) => {
+                  const selected = t.id === templateId;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTemplateId(t.id)}
+                      aria-pressed={selected}
+                      className={cn(
+                        'relative flex min-w-0 flex-col items-center gap-2 rounded-lg border p-4 text-center transition-colors',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                        selected
+                          ? 'border-primary/60 bg-secondary/60'
+                          : 'border-border bg-card hover:border-input hover:bg-muted/50',
+                      )}
+                    >
+                      {selected && (
+                        <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          <Check className="h-3 w-3" strokeWidth={3} />
+                        </span>
+                      )}
+                      <TemplateIcon templateId={t.id} language={t.language} size="lg" />
+                      <div className="w-full">
+                        <div className="break-words text-sm font-medium leading-snug">{t.name}</div>
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {t.language}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
 
-          <div className="flex flex-col gap-1.5">
-            <EnvironmentTargetFields
-              template={template ?? null}
-              targets={targets}
-              values={environmentTargets}
-              hosted={hosted}
-              onChange={chooseTarget}
-              environments={selectedStages}
-            />
-            {template && capabilityMismatches.length > 0 && (
-              <div className="mt-2 flex max-w-2xl items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                <span>
+            <Section
+              title="Pipeline"
+              description="The stages a verified build moves through."
+              media={<StepBadge step={3} />}
+            >
+              <PipelinePresetField value={pipelinePreset} onChange={setPipelinePreset} hideLegend />
+            </Section>
+
+            <Section
+              title="Deployment targets"
+              description="Where each environment runs."
+              help={environmentTargetHelp(hosted)}
+              helpLabel="About environment targets"
+              media={<StepBadge step={4} />}
+            >
+              <EnvironmentTargetFields
+                template={template ?? null}
+                targets={targets}
+                values={environmentTargets}
+                hosted={hosted}
+                onChange={chooseTarget}
+                environments={selectedStages}
+                hideLabel
+              />
+              {template && capabilityMismatches.length > 0 && (
+                <Notice tone="warning" className="mt-3">
                   {capabilityMismatches.map((target) => target.name).join(', ')}{' '}
                   {capabilityMismatches.length === 1 ? 'is' : 'are'} not offered because{' '}
                   {capabilityMismatches.length === 1 ? 'it is' : 'they are'} marked as unable to run{' '}
@@ -349,54 +385,73 @@ export default function NewProject() {
                   >
                     Update target capabilities <Settings2 className="h-3.5 w-3.5" />
                   </Link>
-                </span>
-              </div>
-            )}
-            {template && (
-              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{template.description}</p>
-            )}
+                </Notice>
+              )}
+            </Section>
           </div>
 
-          <div className="flex items-start gap-2.5 rounded-lg border border-border bg-secondary/40 p-4 text-sm text-muted-foreground">
-            <Rocket className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
-            <span>
+          {/* The summary stays in view while the form scrolls and owns the one primary action. */}
+          <Card className="p-5 sm:p-6 xl:sticky xl:top-10">
+            <h2 className="text-base font-semibold tracking-tight">Summary</h2>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="min-w-0">
+                <dt className="eyebrow">Project</dt>
+                <dd className="mt-0.5 truncate font-mono text-[13px]" title={name}>
+                  {name || '—'}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="eyebrow">Template</dt>
+                <dd className="mt-0.5 truncate font-medium">{template?.name ?? '—'}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="eyebrow">Environments</dt>
+                <dd className="mt-1 space-y-1">
+                  {selectedStages.map((environment) => (
+                    <div key={environment} className="flex min-w-0 items-baseline gap-2">
+                      <span className="w-10 shrink-0 text-xs font-semibold uppercase tracking-wide">
+                        {environment}
+                      </span>
+                      <span
+                        className={cn(
+                          'min-w-0 truncate text-[13px]',
+                          !targetName(environment) && 'text-warning',
+                        )}
+                        title={targetName(environment)}
+                      >
+                        {targetName(environment) ?? 'No target chosen'}
+                      </span>
+                    </div>
+                  ))}
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-4 border-t border-border/70 pt-4 text-xs leading-relaxed text-muted-foreground">
               The project moves through{' '}
               <b className="font-semibold text-foreground">{selectedStages.join(' → ')}</b>.{' '}
               {pipelinePreset === 'prod-only'
                 ? 'CI verifies the build without publishing it; request production from the project detail.'
                 : 'The first successful CI run deploys to dev; promote the same build from the project detail.'}
-            </span>
-          </div>
-
-          <div>
-            <Button
-              disabled={
-                readOnly ||
-                busy ||
-                !templateId ||
-                !validName ||
-                !githubReady ||
-                !!loadError ||
-                selectedStages.some((environment) => !environmentTargets[environment])
-              }
-              onClick={submit}
-            >
+            </p>
+            <Button className="mt-5 w-full" disabled={!canSubmit} onClick={submit}>
               {busy ? <Spinner className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}
               {busy ? 'Creating…' : 'Create project'}
             </Button>
-          </div>
+          </Card>
         </div>
       )}
 
       {busy && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 backdrop-blur-sm animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[3px] animate-in fade-in"
           role="status"
           aria-live="polite"
         >
-          <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col items-center gap-3 overflow-y-auto rounded-lg border border-border bg-card p-6 text-center shadow-xl animate-in zoom-in-95 sm:p-8">
+          <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col items-center gap-3 overflow-y-auto rounded-xl border border-border/70 bg-card p-6 text-center shadow-xl animate-in zoom-in-95 sm:p-8">
             <Spinner className="h-7 w-7 text-primary" />
-            <div className="text-sm font-semibold">Setting up “{name}”</div>
+            <div className="break-words text-base font-semibold tracking-tight">
+              Setting up “{name}”
+            </div>
             <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
               <li>Creating {hosted ? 'GitHub' : 'Gitea'} repository</li>
               <li>Generating project scaffold</li>

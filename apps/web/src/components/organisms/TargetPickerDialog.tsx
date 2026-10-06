@@ -10,6 +10,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/atoms/Spinner';
 import {
@@ -104,7 +105,7 @@ export function TargetPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto">
+        <div className="-mx-1 flex max-h-[52vh] flex-col gap-2 overflow-y-auto px-1 py-0.5">
           {selectableOptions.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No supported and verified replacement target yet. Add or test a server in{' '}
@@ -127,32 +128,30 @@ export function TargetPickerDialog({
                 disabled={!selectable}
                 aria-pressed={active}
                 className={cn(
-                  'flex items-start gap-3 rounded-lg border p-3 text-left transition-colors',
+                  'flex min-w-0 items-start gap-3 rounded-lg border p-3.5 text-left transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                   !selectable && 'cursor-not-allowed opacity-55',
                   active
-                    ? 'border-primary ring-2 ring-primary/20'
-                    : 'border-border hover:border-primary/40',
+                    ? 'border-primary/60 bg-secondary/60'
+                    : 'border-border bg-card hover:border-input hover:bg-muted/50',
                 )}
               >
                 <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-medium">{t.name}</span>
-                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="min-w-0 break-words text-sm font-medium">{t.name}</span>
+                    <Badge className="px-2 py-0">
                       {t.scope === 'builtin' ? 'built-in' : 'yours'}
-                    </span>
+                    </Badge>
                     {t.verifiedAt && (
                       <ShieldCheck
                         className="h-3.5 w-3.5 shrink-0 text-success"
                         aria-label="Verified"
                       />
                     )}
-                    {isCurrent && (
-                      <span className="text-[11px] text-muted-foreground">current</span>
-                    )}
+                    {isCurrent && <span className="text-xs text-muted-foreground">current</span>}
                     {!targetIsReady(t) && (
-                      <span className="text-[11px] text-warning">
+                      <span className="text-xs text-warning">
                         {t.scope === 'user' && t.managementState === 'retired'
                           ? 'retired'
                           : t.scope === 'user' && t.managementState === 'disconnected'
@@ -163,17 +162,27 @@ export function TargetPickerDialog({
                       </span>
                     )}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {t.kind}
                     {t.host ? ` · ${t.host}` : ''} · runs {t.capabilities.join(', ')}
                   </div>
                 </div>
-                {active && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+                    active
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-input bg-card',
+                  )}
+                >
+                  {active && <Check className="h-3 w-3" strokeWidth={3} />}
+                </span>
               </button>
             );
           })}
           {missingCapability.length > 0 && template && (
-            <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground">
+            <p className="tint-warning rounded-lg border border-warning/30 p-3 text-xs text-muted-foreground">
               {missingCapability.map((target) => target.name).join(', ')}{' '}
               {missingCapability.length === 1 ? 'is' : 'are'} hidden because the target capability
               list does not include{' '}
@@ -185,7 +194,7 @@ export function TargetPickerDialog({
             </p>
           )}
           {selectedTarget && selectedTarget.id !== current?.id && (
-            <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-xs text-muted-foreground">
+            <div className="tint-warning rounded-lg border border-warning/30 p-3 text-xs text-muted-foreground">
               <p className="font-medium text-foreground">Confirm target change</p>
               <p className="mt-1">
                 {current
@@ -199,7 +208,7 @@ export function TargetPickerDialog({
         <DialogFooter className="items-stretch sm:items-center">
           <Link
             to="/infrastructure"
-            className="text-link mr-auto self-start py-2 text-xs font-medium sm:py-0"
+            className="text-link mr-auto self-start py-2 text-sm font-medium sm:self-center sm:py-0"
           >
             Manage servers
           </Link>

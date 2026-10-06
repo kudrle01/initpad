@@ -5,8 +5,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#FBF8F0",
-  "theme_color": "#3A6B40",
+  "background_color": "#F0F2F5",
+  "theme_color": "#075E54",
   "icons": [
     {
       "src": "/brand/initpad-icon-256.png",

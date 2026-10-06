@@ -6,8 +6,11 @@ import { GitHubIntegrationSettings } from '@/components/organisms/settings/GitHu
 export default function AccountSettings() {
   return (
     <div>
-      <PageHeader title="Account settings" />
-      <div className="flex max-w-2xl flex-col gap-6">
+      <PageHeader
+        title="Account settings"
+        description="Sign-in methods and Git access for your own account."
+      />
+      <div className="flex max-w-3xl flex-col gap-4 lg:gap-6">
         <EmailVerificationSettings />
         <GitAccessSettings />
         <GitHubIntegrationSettings />

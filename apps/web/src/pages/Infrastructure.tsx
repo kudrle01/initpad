@@ -300,6 +300,7 @@ export default function Infrastructure() {
     <div>
       <PageHeader
         title="Servers"
+        description="Machines and hosting that receive deployments, and what this workspace may use on each."
         actions={
           !readOnly ? (
             <Button onClick={openNewTarget}>
@@ -312,7 +313,7 @@ export default function Infrastructure() {
       {infrastructure.error ? (
         <LoadErrorState message={infrastructure.error} onRetry={infrastructure.reload} />
       ) : infrastructure.loading ? (
-        <ContentLoading label="Loading servers" variant="cards" />
+        <ContentLoading label="Loading servers" />
       ) : (
         <InfrastructureTargetList
           targets={infrastructure.targets}

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/api';
-import { BrandMark } from '@/components/atoms/BrandMark';
+import { AuthCard } from '@/components/molecules/AuthCard';
+import { FormField } from '@/components/molecules/FormField';
+import { Notice } from '@/components/molecules/Notice';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 // Public page reached from a reset link (/reset-password/:token). A successful
 // reset revokes every existing session, so the user signs in fresh afterwards.
@@ -35,50 +36,53 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
-      <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-6 shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
-        <BrandMark className="mb-4 h-10 w-10" />
-        <h1 className="text-[20px] font-semibold tracking-tight">Set a new password</h1>
-        {done ? (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Your password has been reset. Redirecting you to sign in…
-          </p>
-        ) : (
-          <>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Choose a new password for your account.
-            </p>
-            <form className="mt-6 flex flex-col gap-2.5" onSubmit={submit}>
-              <Input
-                type="password"
-                placeholder="New password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={12}
-              />
-              <Input
-                type="password"
-                placeholder="Confirm new password"
-                autoComplete="new-password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-                minLength={12}
-              />
-              <p className="text-xs text-muted-foreground">Use at least 12 characters.</p>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit" className="w-full" disabled={busy}>
-                {busy ? 'Please wait…' : 'Reset password'}
-              </Button>
-            </form>
-            <Link to="/login" className="text-link mt-4 inline-block text-xs font-medium">
-              Back to sign in
-            </Link>
-          </>
-        )}
-      </div>
-    </div>
+    <AuthCard
+      title="Set a new password"
+      description={
+        done
+          ? 'Your password has been reset. Redirecting you to sign in…'
+          : 'Choose a new password for your account.'
+      }
+    >
+      {!done && (
+        <>
+          <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
+            <FormField
+              label="New password"
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={12}
+              hint="Use at least 12 characters."
+            />
+            <FormField
+              label="Confirm new password"
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              minLength={12}
+            />
+            {error && (
+              <Notice tone="danger" role="alert">
+                {error}
+              </Notice>
+            )}
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? 'Please wait…' : 'Reset password'}
+            </Button>
+          </form>
+          <Link
+            to="/login"
+            className="text-link mt-5 inline-flex min-h-11 items-center text-sm font-medium sm:min-h-0"
+          >
+            Back to sign in
+          </Link>
+        </>
+      )}
+    </AuthCard>
   );
 }

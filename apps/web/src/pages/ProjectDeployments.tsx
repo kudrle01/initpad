@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { api } from '@/api';
+import { Card } from '@/components/ui/card';
+import { BackLink } from '@/components/molecules/BackLink';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
@@ -63,15 +64,11 @@ export default function ProjectDeployments() {
 
   return (
     <div>
-      <Link
-        to={backLink.to}
-        className="text-link mb-4 inline-flex items-center gap-1 text-sm font-medium"
-      >
-        <ArrowLeft className="h-4 w-4" /> {backLink.label}
-      </Link>
+      <BackLink to={backLink.to}>{backLink.label}</BackLink>
 
       <PageHeader
-        title={project ? `${project.name} · deployments` : 'Deployment history'}
+        title="Deployment history"
+        description={project?.name}
         help={[
           {
             title: 'History',
@@ -88,11 +85,13 @@ export default function ProjectDeployments() {
       {loading ? (
         <ContentLoading label="Loading deployment history" />
       ) : project ? (
-        <DeploymentActivity
-          operations={operations}
-          repoUrl={project.repoUrl}
-          scmProvider={project.scm.provider}
-        />
+        <Card className="overflow-hidden">
+          <DeploymentActivity
+            operations={operations}
+            repoUrl={project.repoUrl}
+            scmProvider={project.scm.provider}
+          />
+        </Card>
       ) : null}
     </div>
   );

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   ChevronDown,
-  ChevronRight,
   Cloud,
   Container,
   ExternalLink,
@@ -17,7 +16,11 @@ import { EmptyState } from '@/components/molecules/EmptyState';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
-import { StatusDot } from '@/components/atoms/StatusDot';
+import { EnvironmentStatusList } from '@/components/molecules/EnvironmentStatusList';
+import { SegmentedControl } from '@/components/molecules/SegmentedControl';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth';
 import { useLoadable } from '@/hooks/useLoadable';
@@ -31,42 +34,55 @@ const KIND_ICON: Record<ProviderKind, LucideIcon> = {
 const ENV_ORDER: Record<EnvName, number> = { dev: 0, test: 1, prod: 2 };
 const FILTERS: (EnvName | 'all')[] = ['all', 'dev', 'test', 'prod'];
 
-function MobileEnvironmentCard({ environment }: { environment: Environment }) {
+const FILTER_OPTIONS = FILTERS.map((value) => ({
+  value,
+  label: value === 'all' ? 'All' : value,
+}));
+
+// One environment = one line. On a phone the version and URL wrap onto a
+// second line under the server name; from `md` up everything shares one row.
+function EnvironmentRow({ environment }: { environment: Environment }) {
   const Icon = KIND_ICON[environment.provider] ?? Server;
+  const targetName = environment.target?.name ?? environment.provider;
   return (
-    <div className="border-t border-border p-3 md:hidden">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {environment.name}
+    <li className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:px-6 md:grid-cols-[3rem_minmax(0,1fr)_7.5rem_5.5rem_minmax(0,1fr)]">
+      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {environment.name}
+      </span>
+      <span className="flex min-w-0 items-center gap-2 text-sm">
+        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="truncate" title={targetName}>
+          {targetName}
         </span>
-        <StatusBadge status={environment.status} />
-      </div>
-      <div className="mt-2 flex min-w-0 items-center gap-1.5 text-sm">
-        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate">{environment.target?.name ?? environment.provider}</span>
-        {environment.target?.scope === 'user' && (
-          <span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            yours
-          </span>
+        {environment.target?.scope === 'user' && <Badge className="px-2 py-0">yours</Badge>}
+      </span>
+      <StatusBadge status={environment.status} className="justify-self-end md:justify-self-start" />
+      <div
+        className={cn(
+          'col-span-2 col-start-2 min-w-0 items-center gap-3 text-xs text-muted-foreground md:contents',
+          // Nothing deployed yet: skip the otherwise empty second line on a phone.
+          environment.version || environment.url ? 'flex' : 'hidden',
         )}
-      </div>
-      <div className="mt-1 flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
+      >
         <span className="shrink-0 font-mono">
-          {environment.version ? `v${environment.version.slice(0, 7)}` : 'No deployment'}
+          {environment.version ? `v${environment.version.slice(0, 7)}` : '—'}
         </span>
-        {environment.url && (
+        {environment.url ? (
           <a
             href={environment.url}
             target="_blank"
             rel="noreferrer"
-            className="text-link flex min-w-0 items-center gap-1"
+            className="text-link flex min-w-0 items-center gap-1.5 md:text-sm"
+            title={environment.url}
           >
-            <ExternalLink className="h-3 w-3 shrink-0" />
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{environment.url.replace(/^https?:\/\//, '')}</span>
           </a>
+        ) : (
+          <span className="hidden md:inline">—</span>
         )}
       </div>
-    </div>
+    </li>
   );
 }
 
@@ -106,7 +122,10 @@ export default function Environments() {
 
   return (
     <div>
-      <PageHeader title="Deployments" />
+      <PageHeader
+        title="Deployments"
+        description="Where every project is running right now, grouped by project."
+      />
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />
@@ -120,24 +139,13 @@ export default function Environments() {
         />
       ) : (
         <>
-          <div className="mb-4 flex flex-wrap gap-1.5">
-            {FILTERS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilter(f)}
-                className={cn(
-                  'rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                  filter === f
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border text-muted-foreground hover:border-primary/40',
-                )}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label="Filter by environment"
+            options={FILTER_OPTIONS}
+            value={filter}
+            onChange={setFilter}
+            className="mb-4 capitalize"
+          />
 
           {groups.length === 0 ? (
             <EmptyState
@@ -146,117 +154,56 @@ export default function Environments() {
               description={`None of this workspace's projects currently has a ${filter} environment.`}
             />
           ) : (
-            <div className="flex flex-col gap-3">
+            <Card className="divide-y divide-border/70 overflow-hidden">
               {groups.map(({ project, envs }) => {
                 const open = !collapsed.has(project.id);
                 return (
-                  <div
-                    key={project.id}
-                    className="overflow-hidden rounded-lg border border-border bg-card"
-                  >
-                    <div className="flex items-center gap-2 bg-secondary/40 px-3 py-2.5">
+                  <section key={project.id} aria-label={`${project.name} environments`}>
+                    <div className="flex min-w-0 items-center gap-2 bg-muted/50 py-1 pl-2 pr-2 sm:pl-4 sm:pr-4">
                       <button
                         type="button"
                         onClick={() => toggle(project.id)}
                         aria-expanded={open}
-                        className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                        className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:min-h-10"
                       >
-                        {open ? (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        )}
-                        <span className="truncate text-sm font-medium">{project.name}</span>
+                        <ChevronDown
+                          className={cn(
+                            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                            !open && '-rotate-90',
+                          )}
+                        />
+                        <span className="truncate text-sm font-semibold" title={project.name}>
+                          {project.name}
+                        </span>
                       </button>
-                      <div className="hidden items-center gap-2.5 sm:flex">
-                        {envs.map((e) => (
-                          <span
-                            key={e.name}
-                            className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground"
-                            title={`${e.name}: ${e.status}`}
-                          >
-                            <StatusDot status={e.status} />
-                            {e.name}
-                          </span>
-                        ))}
-                      </div>
-                      <Link
-                        to={`/projects/${project.id}`}
-                        title="Open project"
-                        className="text-link shrink-0 p-1"
-                      >
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
+                      {!open && (
+                        <EnvironmentStatusList
+                          environments={envs}
+                          className="hidden shrink-0 sm:flex"
+                        />
+                      )}
+                      <Button asChild variant="ghost" size="icon-sm" className="rounded-full">
+                        <Link
+                          to={`/projects/${project.id}`}
+                          title="Open project"
+                          aria-label={`Open ${project.name}`}
+                        >
+                          <ArrowRight className="h-4 w-4" />
+                        </Link>
+                      </Button>
                     </div>
 
                     {open && (
-                      <div>
+                      <ul className="divide-y divide-border/70 border-t border-border/70">
                         {envs.map((environment) => (
-                          <MobileEnvironmentCard key={environment.name} environment={environment} />
+                          <EnvironmentRow key={environment.name} environment={environment} />
                         ))}
-                        <div
-                          className="hidden overflow-x-auto md:block"
-                          role="region"
-                          aria-label={`${project.name} environments`}
-                          tabIndex={0}
-                        >
-                          <table className="min-w-[680px] w-full text-sm">
-                            <tbody>
-                              {envs.map((env) => {
-                                const Icon = KIND_ICON[env.provider] ?? Server;
-                                return (
-                                  <tr key={env.name} className="border-t border-border">
-                                    <td className="w-14 px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                      {env.name}
-                                    </td>
-                                    <td className="px-4 py-2.5">
-                                      <span className="flex items-center gap-1.5">
-                                        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                        <span className="truncate">
-                                          {env.target?.name ?? env.provider}
-                                        </span>
-                                        {env.target?.scope === 'user' && (
-                                          <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                                            yours
-                                          </span>
-                                        )}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-2.5">
-                                      <StatusBadge status={env.status} />
-                                    </td>
-                                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-                                      {env.version ? `v${env.version.slice(0, 7)}` : '—'}
-                                    </td>
-                                    <td className="px-4 py-2.5">
-                                      {env.url ? (
-                                        <a
-                                          href={env.url}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-link inline-flex items-center gap-1"
-                                        >
-                                          <ExternalLink className="h-3 w-3 shrink-0" />
-                                          <span className="max-w-[200px] truncate">
-                                            {env.url.replace(/^https?:\/\//, '')}
-                                          </span>
-                                        </a>
-                                      ) : (
-                                        <span className="text-muted-foreground">—</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
+                      </ul>
                     )}
-                  </div>
+                  </section>
                 );
               })}
-            </div>
+            </Card>
           )}
         </>
       )}

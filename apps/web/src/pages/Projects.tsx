@@ -5,6 +5,8 @@ import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/molecules/PageHeader';
+import { Card } from '@/components/ui/card';
+import { List } from '@/components/molecules/List';
 import { ProjectRow } from '@/components/molecules/ProjectRow';
 import { EmptyState } from '@/components/molecules/EmptyState';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
@@ -58,15 +60,22 @@ export default function Projects() {
       />
 
       {!loading && projects.length > 0 && (
-        <div className="relative mb-4 max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter projects…"
-            className="pl-9"
-            aria-label="Filter projects"
-          />
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter projects…"
+              className="pl-9"
+              aria-label="Filter projects"
+            />
+          </div>
+          <p className="text-sm text-muted-foreground" aria-live="polite">
+            {filtered.length === projects.length
+              ? `${projects.length} ${projects.length === 1 ? 'project' : 'projects'}`
+              : `${filtered.length} of ${projects.length}`}
+          </p>
         </div>
       )}
 
@@ -94,15 +103,17 @@ export default function Projects() {
           description={`No projects match “${query.trim()}”.`}
         />
       ) : projects.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {filtered.map((p) => (
-            <ProjectRow
-              key={p.id}
-              project={p}
-              templateName={templates[p.templateId]?.name ?? p.templateId}
-            />
-          ))}
-        </div>
+        <Card className="overflow-hidden">
+          <List>
+            {filtered.map((p) => (
+              <ProjectRow
+                key={p.id}
+                project={p}
+                templateName={templates[p.templateId]?.name ?? p.templateId}
+              />
+            ))}
+          </List>
+        </Card>
       ) : null}
     </div>
   );

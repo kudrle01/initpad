@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom';
-import { ArrowLeft, GitBranch, MoreHorizontal, Trash2 } from 'lucide-react';
+import { GitBranch, MoreHorizontal, Trash2 } from 'lucide-react';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,7 +7,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { cn, scmLink } from '@/lib/utils';
+import { BackLink } from '@/components/molecules/BackLink';
+import { Notice } from '@/components/molecules/Notice';
+import { scmLink } from '@/lib/utils';
 import type { Project, ProvisioningStatus, TemplateManifest } from '@/types';
 
 interface Props {
@@ -23,18 +24,20 @@ export function ProjectSummary({ project, template, provisioning, canMaintain, o
   const created = new Date(project.createdAt).toLocaleDateString('en-GB');
 
   return (
-    <>
-      <Link
-        to="/projects"
-        className="text-link mb-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium sm:mb-4 sm:min-h-0"
-      >
-        <ArrowLeft className="h-4 w-4" /> Projects
-      </Link>
+    <div>
+      <BackLink to="/projects">Projects</BackLink>
 
-      <div className="flex items-start justify-between gap-3 sm:items-center sm:gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <TemplateIcon templateId={project.templateId} language={template?.language} />
-          <h1 className="truncate text-xl font-semibold tracking-tight">{project.name}</h1>
+      <div className="flex items-start justify-between gap-3 sm:gap-4">
+        <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+          <TemplateIcon templateId={project.templateId} language={template?.language} size="lg" />
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-2xl">
+              {project.name}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {template?.name ?? project.templateId} · created {created}
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {project.repoUrl && (
@@ -67,12 +70,8 @@ export function ProjectSummary({ project, template, provisioning, canMaintain, o
         </div>
       </div>
 
-      <p className="mt-2 text-sm text-muted-foreground">
-        {template?.name ?? project.templateId} · created {created}
-      </p>
-
       <ProvisioningNotice provisioning={provisioning} />
-    </>
+    </div>
   );
 }
 
@@ -81,20 +80,21 @@ function ProvisioningNotice({ provisioning }: { provisioning: ProvisioningStatus
   const failed = ['failed', 'interrupted'].includes(provisioning.status);
 
   return (
-    <div
-      className={cn(
-        'mt-4 rounded-md border p-3 text-sm',
-        failed
-          ? 'border-destructive/40 bg-destructive/5 text-destructive'
-          : 'border-border bg-secondary/50 text-muted-foreground',
-      )}
+    <Notice
+      tone={failed ? 'danger' : 'info'}
       role={failed ? 'alert' : 'status'}
+      className="mt-5"
+      title={
+        failed
+          ? `Setup (${provisioning.kind}) failed at the ${provisioning.step} step`
+          : `Setting up (${provisioning.kind})…`
+      }
     >
       {failed
-        ? `Setup (${provisioning.kind}) failed at the ${provisioning.step} step${provisioning.message ? `: ${provisioning.message}` : '.'}`
-        : `Setting up (${provisioning.kind})… current step: ${provisioning.step}.`}
+        ? (provisioning.message ?? 'No further detail was recorded.')
+        : `Current step: ${provisioning.step}.`}
       {provisioning.effects.length > 0 && (
-        <ul className="mt-2 space-y-1 border-t border-current/15 pt-2 text-xs">
+        <ul className="mt-2 space-y-1 border-t border-current/15 pt-2">
           {provisioning.effects.map((effect) => (
             <li
               key={effect.key}
@@ -111,6 +111,6 @@ function ProvisioningNotice({ provisioning }: { provisioning: ProvisioningStatus
           ))}
         </ul>
       )}
-    </div>
+    </Notice>
   );
 }

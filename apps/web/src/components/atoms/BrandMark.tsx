@@ -1,21 +1,24 @@
-import type { ImgHTMLAttributes } from 'react';
+import type { CSSProperties, HTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
 
-type BrandMarkProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'alt' | 'src' | 'srcSet'>;
+type BrandMarkProps = Omit<HTMLAttributes<HTMLSpanElement>, 'children'>;
+
+const MASK = 'url(/brand/initpad-icon-256.png) center / contain no-repeat';
+const MASK_STYLE: CSSProperties = { WebkitMask: MASK, mask: MASK };
 
 /**
- * The standalone InitPad symbol. Product name text remains real HTML so it is
- * crisp, selectable and accessible at every size.
+ * The standalone InitPad symbol. The artwork is used as a mask over the
+ * `--primary` token: in the light theme that is exactly the green of the brand
+ * files, and on dark surfaces the mark follows the lifted green so it stays
+ * legible. Product name text remains real HTML so it is crisp, selectable and
+ * accessible at every size.
  */
-export function BrandMark({ className, ...props }: BrandMarkProps) {
+export function BrandMark({ className, style, ...props }: BrandMarkProps) {
   return (
-    <img
-      src="/brand/initpad-icon-128.png"
-      srcSet="/brand/initpad-icon-128.png 1x, /brand/initpad-icon-256.png 2x"
-      alt=""
+    <span
       aria-hidden="true"
-      draggable={false}
-      className={cn('block shrink-0 select-none', className)}
+      className={cn('block shrink-0 select-none bg-primary', className)}
+      style={{ ...MASK_STYLE, ...style }}
       {...props}
     />
   );

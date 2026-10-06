@@ -1,6 +1,6 @@
-import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Notice } from '@/components/molecules/Notice';
 
 interface Props {
   message: string;
@@ -17,23 +17,20 @@ export function LoadErrorState({
   className,
 }: Props) {
   return (
-    <div
+    <Notice
+      tone="danger"
       role="alert"
-      className={cn(
-        'flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center',
-        className,
-      )}
+      title={title}
+      className={className}
+      actions={
+        onRetry && (
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            <RotateCcw className="h-3.5 w-3.5" /> Try again
+          </Button>
+        )
+      }
     >
-      <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="mt-0.5 break-words text-xs text-muted-foreground">{message}</p>
-      </div>
-      {onRetry && (
-        <Button variant="secondary" size="sm" className="self-start sm:self-auto" onClick={onRetry}>
-          <RotateCcw className="h-3.5 w-3.5" /> Try again
-        </Button>
-      )}
-    </div>
+      {message}
+    </Notice>
   );
 }

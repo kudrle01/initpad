@@ -44,12 +44,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed left-1/2 top-5 z-[100] flex -translate-x-1/2 flex-col items-center gap-2">
+      <div className="pointer-events-none fixed inset-x-0 top-4 z-[100] flex flex-col items-center gap-2 px-4">
         {toasts.map((t) => (
           <div
             key={t.id}
             className={cn(
-              'pointer-events-auto flex items-center gap-2.5 rounded-lg border bg-card px-4 py-3 text-sm font-medium shadow-lg',
+              'pointer-events-auto flex max-w-full items-start gap-2.5 break-words rounded-lg border bg-popover px-4 py-3 text-sm font-medium text-popover-foreground shadow-lg sm:max-w-md',
               'animate-in slide-in-from-top-2 fade-in',
               t.kind === 'success'
                 ? 'border-success/25'
@@ -59,13 +59,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             )}
           >
             <span
-              className={
+              className={cn(
+                'mt-px shrink-0',
                 t.kind === 'success'
                   ? 'text-success'
                   : t.kind === 'warning'
                     ? 'text-warning'
-                    : 'text-destructive'
-              }
+                    : 'text-destructive',
+              )}
             >
               {t.kind === 'success' ? (
                 <CheckCircle2 className="h-[18px] w-[18px]" />
@@ -73,7 +74,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <AlertTriangle className="h-[18px] w-[18px]" />
               )}
             </span>
-            {t.message}
+            <span className="min-w-0">{t.message}</span>
           </div>
         ))}
       </div>

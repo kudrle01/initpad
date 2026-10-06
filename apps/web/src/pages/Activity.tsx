@@ -2,6 +2,8 @@ import { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Activity as ActivityIcon, GitCommit } from 'lucide-react';
 import { api } from '@/api';
+import { Card } from '@/components/ui/card';
+import { List, ListRow } from '@/components/molecules/List';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { EmptyState } from '@/components/molecules/EmptyState';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
@@ -36,7 +38,10 @@ export default function Activity() {
 
   return (
     <div>
-      <PageHeader title="Activity" />
+      <PageHeader
+        title="Development activity"
+        description="Recent commits and their pipeline runs across this workspace."
+      />
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />
@@ -49,69 +54,76 @@ export default function Activity() {
           description="Commits and CI runs across your projects will show up here."
         />
       ) : (
-        <div className="flex flex-col gap-2">
-          {events.map((e) => (
-            <div
-              key={`${e.projectId}-${e.sha}`}
-              className="flex items-start gap-3 rounded-lg border border-border bg-card p-3"
-            >
-              <GitCommit className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <Link to={`/projects/${e.projectId}`} className="text-link text-sm font-medium">
-                    {e.projectName}
-                  </Link>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {e.sha !== 'initial' ? e.sha.slice(0, 7) : '—'}
-                  </span>
-                  <span className="ml-0 shrink-0 text-xs text-muted-foreground sm:ml-auto">
-                    {relTime(e.date)}
-                  </span>
+        <Card className="overflow-hidden">
+          <List>
+            {events.map((e) => (
+              <ListRow key={`${e.projectId}-${e.sha}`} className="items-start">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <GitCommit className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <Link
+                      to={`/projects/${e.projectId}`}
+                      className="text-link min-w-0 truncate text-sm font-medium"
+                      title={e.projectName}
+                    >
+                      {e.projectName}
+                    </Link>
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                      {e.sha !== 'initial' ? e.sha.slice(0, 7) : '—'}
+                    </span>
+                    <span className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                      {relTime(e.date)}
+                    </span>
+                  </div>
+                  <div className="truncate text-sm" title={e.message}>
+                    {e.message}
+                  </div>
+                  <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    {e.pipeline.map((s) => {
+                      const inner = (
+                        <>
+                          <StatusDot status={s.status} kind="ci" /> {s.name}
+                        </>
+                      );
+                      return s.source === 'platform' ? (
+                        <Link
+                          key={s.name}
+                          to={`/projects/${e.projectId}/deployments`}
+                          title="View InitPad deployment history"
+                          className="text-link flex items-center gap-1.5 whitespace-nowrap"
+                        >
+                          {inner}
+                        </Link>
+                      ) : s.url ? (
+                        <a
+                          key={s.name}
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-link flex items-center gap-1.5 whitespace-nowrap"
+                        >
+                          {inner}
+                        </a>
+                      ) : (
+                        <span
+                          key={s.name}
+                          className="flex items-center gap-1.5 whitespace-nowrap text-muted-foreground"
+                        >
+                          {inner}
+                        </span>
+                      );
+                    })}
+                    <span className="min-w-0 truncate text-muted-foreground" title={e.author}>
+                      · {e.author}
+                    </span>
+                  </div>
                 </div>
-                <div className="truncate text-sm" title={e.message}>
-                  {e.message}
-                </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  {e.pipeline.map((s) => {
-                    const inner = (
-                      <>
-                        <StatusDot status={s.status} kind="ci" /> {s.name}
-                      </>
-                    );
-                    return s.source === 'platform' ? (
-                      <Link
-                        key={s.name}
-                        to={`/projects/${e.projectId}/deployments`}
-                        title="View InitPad deployment history"
-                        className="text-link flex items-center gap-1 text-[11px]"
-                      >
-                        {inner}
-                      </Link>
-                    ) : s.url ? (
-                      <a
-                        key={s.name}
-                        href={s.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-link flex items-center gap-1 text-[11px]"
-                      >
-                        {inner}
-                      </a>
-                    ) : (
-                      <span
-                        key={s.name}
-                        className="flex items-center gap-1 text-[11px] text-muted-foreground"
-                      >
-                        {inner}
-                      </span>
-                    );
-                  })}
-                  <span className="text-[11px] text-muted-foreground">· {e.author}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              </ListRow>
+            ))}
+          </List>
+        </Card>
       )}
     </div>
   );

@@ -7,7 +7,7 @@ export function RouteLoading() {
       role="status"
       aria-live="polite"
     >
-      <Spinner className="h-5 w-5" />
+      <Spinner className="h-5 w-5 text-primary" />
       <span>Loading page…</span>
     </div>
   );

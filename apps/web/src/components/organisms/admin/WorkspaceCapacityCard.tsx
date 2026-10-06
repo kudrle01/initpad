@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Gauge, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useId, useState } from 'react';
+import { ChevronDown, Gauge, RefreshCw } from 'lucide-react';
 import { api } from '@/api';
 import { useConfirmation } from '@/confirmation';
 import { useToast } from '@/toast';
 import type { WorkspaceCapacity, WorkspaceCapacityUpdate } from '@/types';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
+import { List, listRowClassName, listRowInteractiveClassName } from '@/components/molecules/List';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
+import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Spinner } from '@/components/atoms/Spinner';
+import { cn } from '@/lib/utils';
 
 function artifactGiB(value: string): number {
   return Number(BigInt(value) / (1024n * 1024n * 1024n));
@@ -45,34 +49,31 @@ export function WorkspaceCapacityCard() {
   }, [load]);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-            <Gauge className="h-5 w-5" />
-          </span>
-          <div>
-            <h2 className="text-[15px] font-semibold">Workspace limits</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Tenant-wide limits for control-plane work and artifact storage.
-            </p>
-          </div>
-        </div>
+    <SettingsSection
+      icon={Gauge}
+      title="Workspace limits"
+      description="Tenant-wide limits for control-plane work and artifact storage."
+      flush={!error && !loading && items.length > 0}
+      actions={
         <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}>
-          <RefreshCw className="h-4 w-4" /> Refresh
+          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} /> Refresh
         </Button>
-      </div>
-
+      }
+    >
       {error ? (
-        <LoadErrorState className="mt-4" message={error} onRetry={load} />
+        <LoadErrorState message={error} onRetry={load} />
       ) : loading ? (
-        <ContentLoading className="mt-4" label="Loading workspace limits" count={2} />
+        <ContentLoading label="Loading workspace limits" count={2} />
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No workspaces found.</p>
       ) : (
-        <div className="mt-4 space-y-3">
+        <List>
           {items.map((capacity) => (
             <CapacityEditor
               key={capacity.workspaceId}
               capacity={capacity}
+              // A single workspace has nothing to scan past — show its limits.
+              defaultOpen={items.length === 1}
               onSaved={(updated) =>
                 setItems((rows) =>
                   rows.map((row) => (row.workspaceId === updated.workspaceId ? updated : row)),
@@ -80,28 +81,27 @@ export function WorkspaceCapacityCard() {
               }
             />
           ))}
-          {items.length === 0 && (
-            <p className="rounded-md border border-border p-3 text-sm text-muted-foreground">
-              No workspaces found.
-            </p>
-          )}
-        </div>
+        </List>
       )}
-    </div>
+    </SettingsSection>
   );
 }
 
 function CapacityEditor({
   capacity,
+  defaultOpen,
   onSaved,
 }: {
   capacity: WorkspaceCapacity;
+  defaultOpen: boolean;
   onSaved: (updated: WorkspaceCapacity) => void;
 }) {
   const toast = useToast();
   const confirmAction = useConfirmation();
   const [values, setValues] = useState(() => initialValues(capacity));
   const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  const panelId = useId();
 
   useEffect(() => setValues(initialValues(capacity)), [capacity]);
 
@@ -162,33 +162,66 @@ function CapacityEditor({
   ];
 
   return (
-    <div className="rounded-md border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium">{capacity.workspaceName}</span>
-        <span className="font-mono text-xs text-muted-foreground">{capacity.workspaceId}</span>
-      </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        {fields.map(({ key, label, used }) => (
-          <label key={key} className="text-xs text-muted-foreground">
-            {label} <span className="font-mono">({used} used)</span>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={values[key]}
-              onChange={(event) =>
-                setValues((current) => ({ ...current, [key]: Number(event.target.value) }))
-              }
-              className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 font-mono text-sm text-foreground"
-            />
-          </label>
-        ))}
-      </div>
-      <div className="mt-3 flex justify-end">
-        <Button size="sm" disabled={!changed || !valid || saving} onClick={() => void save()}>
-          {saving && <Spinner className="h-4 w-4" />} Save limits
-        </Button>
-      </div>
-    </div>
+    <li>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((current) => !current)}
+        className={cn(listRowClassName, listRowInteractiveClassName, 'w-full text-left')}
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium" title={capacity.workspaceName}>
+            {capacity.workspaceName}
+          </span>
+          <span className="block truncate font-mono text-xs text-muted-foreground">
+            {capacity.workspaceId}
+          </span>
+        </span>
+        <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground md:inline">
+          {capacity.usage.projects}/{capacity.limits.projects} projects · {capacity.usage.members}/
+          {capacity.limits.members} members · {capacity.usage.targets}/{capacity.limits.targets}{' '}
+          servers
+        </span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+            open && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
+      </button>
+      {open && (
+        <div id={panelId} className="bg-muted/50 px-4 pb-4 pt-3 sm:px-6 sm:pb-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            {fields.map(({ key, label, used }) => (
+              <label key={key} className="flex min-w-0 flex-col gap-1.5 text-sm font-medium">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="truncate">{label}</span>
+                  <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                    ({used} used)
+                  </span>
+                </span>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={values[key]}
+                  onChange={(event) =>
+                    setValues((current) => ({ ...current, [key]: Number(event.target.value) }))
+                  }
+                  className="font-mono tabular-nums"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button size="sm" disabled={!changed || !valid || saving} onClick={() => void save()}>
+              {saving && <Spinner className="h-3.5 w-3.5" />} Save limits
+            </Button>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }

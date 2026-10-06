@@ -47,6 +47,8 @@ interface Props {
   openSha: string | null;
   onToggle: (sha: string) => void;
   limit?: number;
+  /** Shown in a narrow column: drop the author to keep the message readable. */
+  dense?: boolean;
   deploymentHistoryUrl?: string;
 }
 
@@ -57,13 +59,14 @@ export function CommitList({
   openSha,
   onToggle,
   limit,
+  dense = false,
   deploymentHistoryUrl,
 }: Props) {
   const disclosureId = useId();
 
   if (commits.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card px-6 py-8 text-center text-sm text-muted-foreground">
+      <div className="px-6 py-10 text-center text-sm text-muted-foreground">
         No commits yet — clone the repository and push to trigger the CI/CD pipeline.
       </div>
     );
@@ -72,7 +75,7 @@ export function CommitList({
   const visibleCommits = limit === undefined ? commits : commits.slice(0, limit);
 
   return (
-    <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+    <div className="divide-y divide-border/70">
       {visibleCommits.map((c) => {
         const open = openSha === c.sha;
         const ci = commitStatus(c.pipeline);
@@ -82,7 +85,7 @@ export function CommitList({
         const detailsId = `${disclosureId}-${c.sha}`;
         return (
           <div key={c.sha}>
-            <div className="group relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-secondary/40">
+            <div className="group relative flex min-h-12 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/60 sm:px-6">
               <button
                 type="button"
                 aria-expanded={open}
@@ -112,7 +115,10 @@ export function CommitList({
                   {c.sha.slice(0, 7)}
                 </span>
               )}
-              <span className="pointer-events-none relative z-10 flex-1 truncate text-sm">
+              <span
+                className="pointer-events-none relative z-10 min-w-0 flex-1 truncate text-sm"
+                title={c.message}
+              >
                 {c.message}
               </span>
               <span
@@ -122,9 +128,14 @@ export function CommitList({
               >
                 <StatusDot status={ci.dot} kind="ci" />
               </span>
-              <span className="pointer-events-none relative z-10 hidden shrink-0 text-xs text-muted-foreground md:inline">
-                {c.author}
-              </span>
+              {!dense && (
+                <span
+                  className="pointer-events-none relative z-10 hidden max-w-[10rem] shrink-0 truncate text-xs text-muted-foreground md:inline"
+                  title={c.author}
+                >
+                  {c.author}
+                </span>
+              )}
               <StatusBadge
                 status={ci.dot}
                 label={ci.label}
@@ -134,7 +145,10 @@ export function CommitList({
             </div>
 
             {open && (
-              <div id={detailsId} className="border-t border-border bg-secondary/30 px-4 py-3">
+              <div
+                id={detailsId}
+                className="border-t border-border/70 bg-muted/50 px-4 py-3.5 sm:px-6 sm:pl-[3.25rem]"
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   {c.pipeline.map((s, i) => (
                     <Fragment key={s.name}>
@@ -142,7 +156,7 @@ export function CommitList({
                         <Link
                           to={deploymentHistoryUrl}
                           title="View this publication in InitPad deployment history"
-                          className="text-link inline-flex items-center gap-1.5 rounded-md border border-current/25 bg-card px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                          className="text-link inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium hover:bg-muted"
                         >
                           <StatusDot status={s.status} kind="ci" /> {s.name}
                           <History className="h-3 w-3" />
@@ -153,18 +167,18 @@ export function CommitList({
                           target="_blank"
                           rel="noreferrer"
                           title={`View job log in ${scmProvider === 'github' ? 'GitHub' : 'Gitea'}`}
-                          className="text-link inline-flex items-center gap-1.5 rounded-md border border-current/25 bg-card px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                          className="text-link inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium hover:bg-muted"
                         >
                           <StatusDot status={s.status} kind="ci" /> {s.name}
                           <ExternalLink className="h-3 w-3" />
                         </a>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs">
                           <StatusDot status={s.status} kind="ci" /> {s.name}
                         </span>
                       )}
                       {i < c.pipeline.length - 1 && (
-                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        <ChevronRight className="hidden h-3.5 w-3.5 text-muted-foreground sm:block" />
                       )}
                     </Fragment>
                   ))}

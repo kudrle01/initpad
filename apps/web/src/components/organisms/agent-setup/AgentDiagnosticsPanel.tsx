@@ -95,7 +95,7 @@ export function AgentDiagnosticsPanel({
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border pt-3">
+      <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border/70 pt-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             <p className="flex items-center gap-1.5 text-sm font-medium">
@@ -147,7 +147,7 @@ export function AgentDiagnosticsPanel({
       </div>
 
       {target.routingMode === 'managed-gateway' && (
-        <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border pt-3">
+        <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border/70 pt-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1">
               <p className="flex items-center gap-1.5 text-sm font-medium">
@@ -227,7 +227,7 @@ export function AgentDiagnosticsPanel({
             const displayStatus = leaseExpired ? 'waiting' : job.status;
             const displayMessage = agentJobMessage(job, leaseExpired);
             return (
-              <div key={job.id} className="rounded-md bg-secondary/30 p-2.5">
+              <div key={job.id} className="min-w-0 rounded-lg bg-muted p-3">
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="font-medium">
                     {job.kind} · attempt {job.attempt}
@@ -235,14 +235,14 @@ export function AgentDiagnosticsPanel({
                   <StatusBadge status={displayStatus} />
                 </div>
                 <time
-                  className="mt-0.5 block text-[11px] text-muted-foreground"
+                  className="mt-0.5 block text-xs text-muted-foreground"
                   dateTime={job.createdAt}
                 >
                   {new Date(job.createdAt).toLocaleString()}
                 </time>
-                <p className="mt-1 text-xs text-muted-foreground">{displayMessage}</p>
+                <p className="mt-1 break-words text-xs text-muted-foreground">{displayMessage}</p>
                 <div
-                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-border"
+                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/[0.1]"
                   role="progressbar"
                   aria-label={`${job.kind} job progress`}
                   aria-valuemin={0}

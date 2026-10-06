@@ -4,6 +4,8 @@ import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/toast';
 import { useConfirmation } from '@/confirmation';
@@ -108,6 +110,7 @@ export function WorkspaceAdministrationSettings() {
     <SettingsSection
       icon={Building2}
       title="Current team workspace"
+      description={workspaceName}
       help={
         canAdmin
           ? [
@@ -123,56 +126,76 @@ export function WorkspaceAdministrationSettings() {
           : undefined
       }
     >
-      {canAdmin && (
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <input
-            className="h-11 min-w-0 flex-1 rounded-md border border-input bg-card px-3 text-sm sm:h-9"
-            aria-label="Current workspace name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <Button
-            variant="secondary"
-            onClick={saveName}
-            disabled={busy || name.trim().length < 2 || name.trim() === workspaceName}
-          >
-            Rename
-          </Button>
-          {workspace.role === 'owner' && (
-            <Button variant="destructive" disabled={busy} onClick={() => void deleteWorkspace()}>
+      <div className="flex flex-col gap-5">
+        {canAdmin && (
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <Label htmlFor="workspace-name">Workspace name</Label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id="workspace-name"
+                className="sm:max-w-sm sm:flex-1"
+                aria-label="Current workspace name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <Button
+                variant="secondary"
+                onClick={saveName}
+                disabled={busy || name.trim().length < 2 || name.trim() === workspaceName}
+              >
+                Rename
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <Label htmlFor="production-approval-policy">Production approval</Label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Select
+              id="production-approval-policy"
+              className="sm:max-w-sm sm:flex-1"
+              value={approvalPolicy}
+              disabled={busy || !canChangeApprovalPolicy}
+              onChange={(event) => setApprovalPolicy(event.target.value as typeof approvalPolicy)}
+            >
+              <option value="separate-reviewer">Require a different reviewer</option>
+              <option value="self-review">Allow self-approval</option>
+            </Select>
+            {canChangeApprovalPolicy && (
+              <Button
+                variant="secondary"
+                disabled={busy || approvalPolicy === workspaceApprovalPolicy}
+                onClick={() => void saveApprovalPolicy()}
+              >
+                Update policy
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {canChangeApprovalPolicy
+              ? 'Who may approve a production deployment request in this workspace.'
+              : 'Only the workspace owner can change this policy.'}
+          </p>
+        </div>
+
+        {canAdmin && workspace.role === 'owner' && (
+          <div className="flex flex-col gap-3 rounded-lg border border-destructive/25 bg-destructive/[0.04] p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Delete this workspace</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Possible only after its projects and servers have been removed.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              className="shrink-0"
+              disabled={busy}
+              onClick={() => void deleteWorkspace()}
+            >
               Delete empty workspace
             </Button>
-          )}
-        </div>
-      )}
-      <div className={canAdmin ? 'mt-4 max-w-xl border-t border-border pt-4' : 'max-w-xl'}>
-        <label htmlFor="production-approval-policy" className="text-sm font-medium">
-          Production approval
-        </label>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <Select
-            id="production-approval-policy"
-            value={approvalPolicy}
-            disabled={busy || !canChangeApprovalPolicy}
-            onChange={(event) => setApprovalPolicy(event.target.value as typeof approvalPolicy)}
-          >
-            <option value="separate-reviewer">Require a different reviewer</option>
-            <option value="self-review">Allow self-approval</option>
-          </Select>
-          {canChangeApprovalPolicy && (
-            <Button
-              variant="secondary"
-              disabled={busy || approvalPolicy === workspaceApprovalPolicy}
-              onClick={() => void saveApprovalPolicy()}
-            >
-              Update policy
-            </Button>
-          )}
-        </div>
-        {!canChangeApprovalPolicy && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Only the workspace owner can change this policy.
-          </p>
+          </div>
         )}
       </div>
     </SettingsSection>

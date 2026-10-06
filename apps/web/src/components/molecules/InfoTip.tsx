@@ -102,7 +102,7 @@ export function InfoTip({ children, items, label = 'More information', className
         aria-label={label}
         aria-describedby={open ? id : undefined}
         aria-expanded={open}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/80 transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         onFocus={(event) => {
           // Radix moves focus into a dialog when it opens. Do not interpret
           // that programmatic entry as a request to open the first InfoTip;
@@ -123,7 +123,7 @@ export function InfoTip({ children, items, label = 'More information', className
             role="tooltip"
             style={position ? { left: position.left, top: position.top } : undefined}
             className={cn(
-              'pointer-events-none fixed z-[100] w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-card px-3 py-2.5 text-left text-xs font-normal leading-relaxed text-foreground shadow-lg transition-opacity',
+              'pointer-events-none fixed z-[100] w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-border/70 bg-popover px-3.5 py-3 text-left text-xs font-normal leading-relaxed text-popover-foreground shadow-lg transition-opacity',
               position ? 'visible opacity-100' : 'invisible opacity-0',
             )}
           >

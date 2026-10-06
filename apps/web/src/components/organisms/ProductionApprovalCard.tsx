@@ -1,19 +1,20 @@
 import { Ban, CheckCircle2, Clock3, ExternalLink, ShieldCheck, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
+import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { ProductionDeploymentRequest } from '@/types';
 
-const STATUS_STYLE: Record<ProductionDeploymentRequest['status'], string> = {
-  pending: 'border-warning/40 bg-warning/10 text-warning',
-  approving: 'border-warning/40 bg-warning/10 text-warning',
-  approved: 'border-success/30 bg-success/10 text-success',
-  rejected: 'border-destructive/30 bg-destructive/10 text-destructive',
-  stale: 'border-border bg-secondary text-muted-foreground',
-  failed: 'border-destructive/30 bg-destructive/10 text-destructive',
-  cancelled: 'border-border bg-secondary text-muted-foreground',
-};
+const STATUS_VARIANT = {
+  pending: 'warning',
+  approving: 'warning',
+  approved: 'success',
+  rejected: 'danger',
+  stale: 'default',
+  failed: 'danger',
+  cancelled: 'default',
+} satisfies Record<ProductionDeploymentRequest['status'], BadgeProps['variant']>;
 
 const STATUS_ICON = {
   pending: Clock3,
@@ -54,23 +55,22 @@ export function ProductionApprovalCard({
     !request.canApprove;
 
   return (
-    <section
-      className="mt-4 rounded-lg border border-border bg-card p-4"
-      aria-label="Production approval"
-    >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <Card className="mt-4 p-5 sm:p-6" role="region" aria-label="Production approval">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
-            <ShieldCheck className="h-4 w-4" />
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+            <ShieldCheck className="h-5 w-5" />
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold">Production {request.kind} request</h3>
-              <Badge variant="outline" className={STATUS_STYLE[request.status]}>
-                <StatusIcon className="mr-1 h-3 w-3" /> {request.status}
+              <h3 className="text-base font-semibold tracking-tight">
+                Production {request.kind} request
+              </h3>
+              <Badge variant={STATUS_VARIANT[request.status]}>
+                <StatusIcon className="h-3 w-3" /> {request.status}
               </Badge>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 break-words text-sm text-muted-foreground">
               Requested by {person(request.requester)} ·{' '}
               {new Date(request.createdAt).toLocaleString()}
             </p>
@@ -78,7 +78,7 @@ export function ProductionApprovalCard({
         </div>
 
         {request.status === 'pending' && (
-          <div className="flex flex-wrap gap-2 sm:justify-end">
+          <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
             {request.canApprove && (
               <Button size="sm" disabled={busy} onClick={onApprove}>
                 <CheckCircle2 className="h-4 w-4" /> Approve and deploy
@@ -98,24 +98,29 @@ export function ProductionApprovalCard({
         )}
       </div>
 
-      <dl className="mt-4 grid gap-3 rounded-md bg-secondary/50 p-3 text-xs sm:grid-cols-2">
-        <div>
-          <dt className="text-muted-foreground">Verified build</dt>
+      <dl className="mt-5 grid gap-x-6 gap-y-3 rounded-lg bg-muted p-4 text-sm sm:grid-cols-3">
+        <div className="min-w-0">
+          <dt className="eyebrow">Verified build</dt>
           <dd className="mt-0.5 font-mono" title={request.version}>
             {request.version.slice(0, 12)}
           </dd>
         </div>
-        <div>
-          <dt className="text-muted-foreground">Target</dt>
-          <dd className="mt-0.5 truncate font-medium">{request.target.name}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Source</dt>
+        <div className="min-w-0">
+          <dt className="eyebrow">Source</dt>
           <dd className="mt-0.5 font-medium">{request.sourceEnvironment}</dd>
         </div>
-        <div className="sm:col-span-2">
-          <dt className="text-muted-foreground">Artifact digest</dt>
-          <dd className="mt-0.5 break-all font-mono" title={request.artifact?.digest ?? undefined}>
+        <div className="min-w-0">
+          <dt className="eyebrow">Target</dt>
+          <dd className="mt-0.5 truncate font-medium" title={request.target.name}>
+            {request.target.name}
+          </dd>
+        </div>
+        <div className="min-w-0 sm:col-span-3">
+          <dt className="eyebrow">Artifact digest</dt>
+          <dd
+            className="mt-0.5 break-all font-mono text-xs"
+            title={request.artifact?.digest ?? undefined}
+          >
             {request.artifact?.digest ?? 'Not available for this legacy build'}
           </dd>
         </div>
@@ -156,6 +161,6 @@ export function ProductionApprovalCard({
           <ExternalLink className="h-3 w-3" />
         </Link>
       )}
-    </section>
+    </Card>
   );
 }

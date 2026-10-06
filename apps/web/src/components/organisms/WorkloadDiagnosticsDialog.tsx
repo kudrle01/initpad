@@ -38,10 +38,8 @@ const HEALTH_PRESENTATION: Record<WorkloadHealth, { status: string; label: strin
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="min-w-0 rounded-md border border-border bg-secondary/20 p-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
+    <div className="min-w-0 rounded-lg bg-muted p-3">
+      <p className="eyebrow">{label}</p>
       <p className={`mt-1 truncate text-sm font-medium ${mono ? 'font-mono' : ''}`} title={value}>
         {value}
       </p>
@@ -133,7 +131,7 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
           <div className="flex min-w-0 flex-col gap-4">
             {error && (
               <div
-                className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+                className="tint-danger flex items-start gap-2 rounded-lg border border-destructive/25 p-3 text-sm text-destructive"
                 role="alert"
               >
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -143,7 +141,7 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
 
             {snapshot && !snapshot.agentOnline && (
               <div
-                className="flex items-start gap-3 rounded-lg border border-warning/60 bg-warning/10 p-4"
+                className="tint-warning flex items-start gap-3 rounded-lg border border-warning/30 p-4"
                 role="status"
               >
                 <WifiOff className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
@@ -178,7 +176,7 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                       <span className="shrink-0">{progress}%</span>
                     </div>
                     <div
-                      className="h-1.5 overflow-hidden rounded-full bg-secondary"
+                      className="h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]"
                       role="progressbar"
                       aria-label="Workload diagnostics progress"
                       aria-valuemin={0}
@@ -217,10 +215,8 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   <Detail label="Runtime" value={snapshot.runtimeState ?? 'unknown'} />
-                  <div className="min-w-0 rounded-md border border-border bg-secondary/20 p-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Health
-                    </p>
+                  <div className="min-w-0 rounded-lg bg-muted p-3">
+                    <p className="eyebrow">Health</p>
                     <div className="mt-1">
                       <StatusBadge
                         status={health?.status ?? 'idle'}
@@ -235,12 +231,12 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                   />
                   <Detail label="Revision" value={snapshot.revision?.slice(0, 12) ?? '—'} mono />
                 </div>
-                <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-foreground/[0.035]">
-                  <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+                <div className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-muted">
+                  <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3.5 py-2.5">
                     <p className="flex items-center gap-1.5 text-sm font-medium">
                       <ScrollText className="h-4 w-4" /> Application output
                     </p>
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       last 200 lines · max 32 KiB
                     </span>
                   </div>

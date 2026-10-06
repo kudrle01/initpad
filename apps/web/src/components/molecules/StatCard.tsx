@@ -1,30 +1,49 @@
+import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
-// Molecule: a single statistic (label + large number) in a card, with an
-// optional icon.
+type Tone = 'neutral' | 'brand' | 'warning' | 'danger';
+
+const ICON_TONE: Record<Tone, string> = {
+  neutral: 'bg-muted text-muted-foreground',
+  brand: 'bg-secondary text-secondary-foreground',
+  warning: 'bg-warning/10 text-warning',
+  danger: 'bg-destructive/10 text-destructive',
+};
+
+// Molecule: a single headline figure — quiet label, large number, optional
+// supporting line.
 export function StatCard({
   label,
   value,
+  hint,
   icon: I,
+  tone = 'neutral',
 }: {
   label: string;
   value: number | string;
+  hint?: ReactNode;
   icon?: LucideIcon;
+  tone?: Tone;
 }) {
   return (
-    <Card className="flex items-center justify-between gap-3 px-5 py-4">
-      <div className="min-w-0">
-        <div className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+    <Card className="p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0 text-sm leading-5 text-muted-foreground">{label}</span>
+        {I && (
+          <span
+            className={cn(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+              ICON_TONE[tone],
+            )}
+          >
+            <I className="h-4 w-4" />
+          </span>
+        )}
       </div>
-      {I && (
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary/70 text-muted-foreground">
-          <I className="h-[18px] w-[18px]" />
-        </span>
-      )}
+      <div className="mt-1 text-3xl font-bold leading-9 tracking-tight tabular-nums">{value}</div>
+      {hint && <div className="mt-1 truncate text-xs text-muted-foreground">{hint}</div>}
     </Card>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Notice } from '@/components/molecules/Notice';
 import { PipelinePresetField } from './PipelinePresetField';
 import {
   EnvironmentTargetFields,
@@ -82,14 +83,11 @@ export function PipelinePresetSettings({
       )}
 
       {removed.length > 0 && (
-        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-muted-foreground">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-          <span>
-            Removing {removed.join(', ')} is allowed only after its deployment and pending cleanup
-            are gone. Deployment history for the removed stage is deleted with that environment; the
-            audit event remains.
-          </span>
-        </div>
+        <Notice tone="warning">
+          Removing {removed.join(', ')} is allowed only after its deployment and pending cleanup are
+          gone. Deployment history for the removed stage is deleted with that environment; the audit
+          event remains.
+        </Notice>
       )}
 
       {!canMaintain && (
@@ -102,7 +100,6 @@ export function PipelinePresetSettings({
         <div>
           <Button
             size="sm"
-            variant="secondary"
             disabled={!changed || busy || missingTarget || !template}
             onClick={() =>
               onSave(

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Users } from 'lucide-react';
 import type { TargetAllocation, TargetAllocationInput } from '@/api';
 import { Spinner } from '@/components/atoms/Spinner';
+import { ChoiceChip } from '@/components/molecules/ChoiceChip';
+import { Disclosure } from '@/components/molecules/Disclosure';
+import { FieldLabel } from '@/components/molecules/FieldLabel';
 import { InfoTip } from '@/components/molecules/InfoTip';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { RuntimeKind, Target } from '@/types';
 
@@ -33,8 +36,7 @@ const CAP_LABEL: Record<RuntimeKind, string> = {
   python: 'Python',
 };
 
-const selectCls =
-  'h-11 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 sm:h-9';
+const FIELD = 'flex min-w-0 flex-col gap-1';
 
 export function AllocationDialog({
   open,
@@ -96,6 +98,15 @@ export function AllocationDialog({
   const cpu = Number(cpuLimitMillicores);
   const memory = Number(memoryLimitMb);
   const pids = Number(pidsLimit);
+  const cleanupSummary = [
+    devTtlHours ? `dev ${devTtlHours}h` : '',
+    testTtlHours ? `test ${testTtlHours}h` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const limitsSummary = `${cpu / 1000} CPU · ${memory} MB · ${pids} processes · ${
+    cleanupSummary ? `cleanup ${cleanupSummary}` : 'no automatic cleanup'
+  }`;
   const validOptionalHours = (value: string) =>
     value === '' ||
     (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 8760);
@@ -131,28 +142,31 @@ export function AllocationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1">
-              <Label htmlFor="allocation-target">Server</Label>
-              <InfoTip
-                label="About the workspace namespace"
-                items={[
-                  {
-                    title: 'Namespace',
-                    description: 'InitPad derives an isolated namespace from the workspace.',
-                  },
-                  {
-                    title: 'Credentials',
-                    description:
-                      'Server credentials stay separate and are never copied into the workspace.',
-                  },
-                ]}
-              />
-            </div>
-            <select
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className={FIELD}>
+            <FieldLabel
+              htmlFor="allocation-target"
+              help={
+                <InfoTip
+                  label="About the workspace namespace"
+                  items={[
+                    {
+                      title: 'Namespace',
+                      description: 'InitPad derives an isolated namespace from the workspace.',
+                    },
+                    {
+                      title: 'Credentials',
+                      description:
+                        'Server credentials stay separate and are never copied into the workspace.',
+                    },
+                  ]}
+                />
+              }
+            >
+              Server
+            </FieldLabel>
+            <Select
               id="allocation-target"
-              className={selectCls}
               value={targetId}
               disabled={editing}
               onChange={(event) => selectTarget(event.target.value)}
@@ -162,131 +176,159 @@ export function AllocationDialog({
                   {target.name} · {target.kind}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1">
-              <Label>Allowed runtimes</Label>
-              <InfoTip label="About allowed runtimes">
-                Access can use all or only some of the runtimes supported by this server.
-              </InfoTip>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {(selectedTarget?.capabilities ?? []).map((capability) => {
-                const selected = capabilities.includes(capability);
-                return (
-                  <button
-                    key={capability}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => toggleCapability(capability)}
-                    className={cn(
-                      'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                      selected
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border text-muted-foreground hover:border-primary/40',
-                    )}
-                  >
-                    {CAP_LABEL[capability]}
-                  </button>
-                );
-              })}
+          <div className={FIELD}>
+            <FieldLabel
+              help={
+                <InfoTip label="About allowed runtimes">
+                  Access can use all or only some of the runtimes supported by this server.
+                </InfoTip>
+              }
+            >
+              Allowed runtimes
+            </FieldLabel>
+            <div className="flex flex-wrap gap-2">
+              {(selectedTarget?.capabilities ?? []).map((capability) => (
+                <ChoiceChip
+                  key={capability}
+                  selected={capabilities.includes(capability)}
+                  onToggle={() => toggleCapability(capability)}
+                >
+                  {CAP_LABEL[capability]}
+                </ChoiceChip>
+              ))}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="allocation-quota">Environment quota</Label>
-              <Input
-                id="allocation-quota"
-                type="number"
-                min={1}
-                max={1000}
-                value={maxEnvironments}
-                onChange={(event) => setMaxEnvironments(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="allocation-cpu">CPU per environment (millicores)</Label>
-              <Input
-                id="allocation-cpu"
-                type="number"
-                min={100}
-                max={64000}
-                value={cpuLimitMillicores}
-                onChange={(event) => setCpuLimitMillicores(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="allocation-memory">Memory per environment (MB)</Label>
-              <Input
-                id="allocation-memory"
-                type="number"
-                min={64}
-                max={65536}
-                value={memoryLimitMb}
-                onChange={(event) => setMemoryLimitMb(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="allocation-pids">Process limit</Label>
-              <Input
-                id="allocation-pids"
-                type="number"
-                min={32}
-                max={32768}
-                value={pidsLimit}
-                onChange={(event) => setPidsLimit(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-1">
-                <Label htmlFor="allocation-dev-ttl">Dev lifetime (hours, optional)</Label>
-                <InfoTip label="About automatic cleanup">
-                  Expired dev/test workloads are removed automatically. Repositories and production
-                  are never affected.
-                </InfoTip>
-              </div>
-              <Input
-                id="allocation-dev-ttl"
-                type="number"
-                min={1}
-                max={8760}
-                value={devTtlHours}
-                placeholder="Keep until removed"
-                onChange={(event) => setDevTtlHours(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="allocation-test-ttl">Test lifetime (hours, optional)</Label>
-              <Input
-                id="allocation-test-ttl"
-                type="number"
-                min={1}
-                max={8760}
-                value={testTtlHours}
-                placeholder="Keep until removed"
-                onChange={(event) => setTestTtlHours(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <div className="flex items-center gap-1">
-                <Label htmlFor="allocation-url">Public URL override (optional)</Label>
-                <InfoTip label="About the public URL override">
-                  Leave this blank to inherit the server address. Shared platform servers add the
-                  workspace namespace automatically.
-                </InfoTip>
-              </div>
-              <Input
-                id="allocation-url"
-                value={publicUrl}
-                placeholder={selectedTarget?.publicUrl ?? 'Derived from the server'}
-                onChange={(event) => setPublicUrl(event.target.value)}
-              />
-            </div>
+          <div className={FIELD}>
+            <FieldLabel htmlFor="allocation-quota">Environment quota</FieldLabel>
+            <Input
+              id="allocation-quota"
+              type="number"
+              min={1}
+              max={1000}
+              className="sm:max-w-[12rem]"
+              value={maxEnvironments}
+              onChange={(event) => setMaxEnvironments(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              How many environments this workspace may run on the server.
+            </p>
           </div>
+
+          {/* Sensible defaults cover most workspaces; the per-environment limits,
+              lifetimes and URL override open on demand. */}
+          <Disclosure
+            defaultOpen={editing}
+            className="rounded-lg border border-border/70"
+            summaryClassName="px-3.5"
+            contentClassName="border-t border-border/70 p-3.5"
+            summary={
+              <span className="min-w-0">
+                <span className="block text-foreground">Limits, cleanup and address</span>
+                <span className="block truncate text-xs font-normal text-muted-foreground">
+                  {limitsSummary}
+                </span>
+              </span>
+            }
+          >
+            <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-3">
+              <div className={FIELD}>
+                <FieldLabel htmlFor="allocation-cpu">CPU (millicores)</FieldLabel>
+                <Input
+                  id="allocation-cpu"
+                  type="number"
+                  min={100}
+                  max={64000}
+                  value={cpuLimitMillicores}
+                  onChange={(event) => setCpuLimitMillicores(event.target.value)}
+                />
+              </div>
+              <div className={FIELD}>
+                <FieldLabel htmlFor="allocation-memory">Memory (MB)</FieldLabel>
+                <Input
+                  id="allocation-memory"
+                  type="number"
+                  min={64}
+                  max={65536}
+                  value={memoryLimitMb}
+                  onChange={(event) => setMemoryLimitMb(event.target.value)}
+                />
+              </div>
+              <div className={FIELD}>
+                <FieldLabel htmlFor="allocation-pids">Processes</FieldLabel>
+                <Input
+                  id="allocation-pids"
+                  type="number"
+                  min={32}
+                  max={32768}
+                  value={pidsLimit}
+                  onChange={(event) => setPidsLimit(event.target.value)}
+                />
+              </div>
+              <p className="-mt-1 text-xs text-muted-foreground sm:col-span-3">
+                Applied to every environment of this workspace on the server.
+              </p>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
+              <div className={FIELD}>
+                <FieldLabel
+                  htmlFor="allocation-dev-ttl"
+                  help={
+                    <InfoTip label="About automatic cleanup">
+                      Expired dev/test workloads are removed automatically. Repositories and
+                      production are never affected.
+                    </InfoTip>
+                  }
+                >
+                  Dev lifetime (hours)
+                </FieldLabel>
+                <Input
+                  id="allocation-dev-ttl"
+                  type="number"
+                  min={1}
+                  max={8760}
+                  value={devTtlHours}
+                  placeholder="Keep until removed"
+                  onChange={(event) => setDevTtlHours(event.target.value)}
+                />
+              </div>
+              <div className={FIELD}>
+                <FieldLabel htmlFor="allocation-test-ttl">Test lifetime (hours)</FieldLabel>
+                <Input
+                  id="allocation-test-ttl"
+                  type="number"
+                  min={1}
+                  max={8760}
+                  value={testTtlHours}
+                  placeholder="Keep until removed"
+                  onChange={(event) => setTestTtlHours(event.target.value)}
+                />
+              </div>
+              <div className={cn(FIELD, 'sm:col-span-2')}>
+                <FieldLabel
+                  htmlFor="allocation-url"
+                  help={
+                    <InfoTip label="About the public URL override">
+                      Leave this blank to inherit the server address. Shared platform servers add
+                      the workspace namespace automatically.
+                    </InfoTip>
+                  }
+                >
+                  Public URL override
+                </FieldLabel>
+                <Input
+                  id="allocation-url"
+                  value={publicUrl}
+                  placeholder={selectedTarget?.publicUrl ?? 'Derived from the server'}
+                  onChange={(event) => setPublicUrl(event.target.value)}
+                />
+              </div>
+            </div>
+          </Disclosure>
         </div>
 
         <DialogFooter>

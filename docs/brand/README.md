@@ -14,10 +14,18 @@ Tato složka obsahuje kanonické zdroje a exporty vizuální identity InitPadu.
 
 ## Barvy
 
-- primární zelená `#3A6B40`
+- primární zelená `#075E54`
 - krémová `#FBF8F0`
 - espresso `#4E220F`
 - akcent `#B4472E`
+
+## Barvy webového rozhraní
+
+Webová aplikace používá vlastní sadu tokenů (světlý i tmavý režim) definovanou v
+`apps/web/src/index.css`. Se značkou sdílí primární zelenou `#075E54`; symbol se
+v UI vykresluje přes token `--primary`, takže v tmavém režimu přebírá jeho
+zesvětlenou variantu `#00A884`. Neutrální plochy rozhraní jsou chladně šedé
+(`#F0F2F5` / `#0B141A`), nikoli krémové.
 
 ## Použití v repozitáři
 

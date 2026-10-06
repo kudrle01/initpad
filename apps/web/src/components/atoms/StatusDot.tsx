@@ -4,28 +4,29 @@ import { cn } from '@/lib/utils';
 // contexts, hence two maps: for environments (deploy) `running` means the app
 // is up (green); for a CI job `running` means it is executing right now
 // (orange, pulsing) and `pending` means queued (gray).
+// `bg-accent` is the vivid "live" green; `bg-success` stays readable as text.
 const DEPLOY_CLASS: Record<string, string> = {
-  running: 'bg-success',
-  success: 'bg-success',
+  running: 'bg-accent',
+  success: 'bg-accent',
   deploying: 'bg-warning animate-pulse',
   pending: 'bg-warning',
   queued: 'bg-muted-foreground/40',
   leased: 'bg-warning animate-pulse',
   waiting: 'bg-warning',
-  succeeded: 'bg-success',
+  succeeded: 'bg-accent',
   cancelled: 'bg-muted-foreground/70',
   failed: 'bg-destructive',
   stopped: 'bg-muted-foreground/70',
   empty: 'bg-muted-foreground/40',
   idle: 'bg-muted-foreground/40',
-  online: 'bg-success',
+  online: 'bg-accent',
   offline: 'bg-warning',
   disabled: 'bg-destructive',
   'not-enrolled': 'bg-muted-foreground/40',
 };
 
 const CI_CLASS: Record<string, string> = {
-  success: 'bg-success',
+  success: 'bg-accent',
   running: 'bg-warning animate-pulse',
   pending: 'bg-muted-foreground/40',
   failed: 'bg-destructive',
@@ -47,7 +48,7 @@ export function StatusDot({
     <span
       aria-hidden="true"
       className={cn(
-        'inline-block h-[7px] w-[7px] shrink-0 rounded-full',
+        'inline-block h-2 w-2 shrink-0 rounded-full',
         map[status] ?? 'bg-muted-foreground/50',
         className,
       )}

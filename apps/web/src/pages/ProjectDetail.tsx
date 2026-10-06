@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Layers } from 'lucide-react';
+import { ArrowLeft, ChevronRight, KeyRound, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { EmptyState } from '@/components/molecules/EmptyState';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { DetailSection } from '@/components/molecules/DetailSection';
+import { Disclosure } from '@/components/molecules/Disclosure';
+import { listRowClassName, listRowInteractiveClassName } from '@/components/molecules/List';
 import { EnvironmentPipeline } from '@/components/organisms/EnvironmentPipeline';
 import { DeleteProjectDialog } from '@/components/organisms/DeleteProjectDialog';
 import { TargetPickerDialog } from '@/components/organisms/TargetPickerDialog';
@@ -19,6 +21,7 @@ import { ProductionApprovalCard } from '@/components/organisms/ProductionApprova
 import { PipelinePresetSettings } from '@/components/organisms/PipelinePresetSettings';
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useConfirmation } from '@/confirmation';
+import { cn } from '@/lib/utils';
 import type { EnvName, PipelinePreset } from '@/types';
 
 export default function ProjectDetail() {
@@ -320,9 +323,11 @@ export default function ProjectDetail() {
     if (confirmed) await updatePipelinePreset(preset, environments);
   }
 
+  const stages = project.environments.map((environment) => environment.name).join(' → ');
+
   return (
-    <div>
-      {error && <LoadErrorState className="mb-4" message={error} onRetry={retryLoad} />}
+    <div className="flex flex-col gap-6 lg:gap-8">
+      {error && <LoadErrorState message={error} onRetry={retryLoad} />}
       <ProjectSummary
         project={project}
         template={template}
@@ -331,9 +336,10 @@ export default function ProjectDetail() {
         onDelete={() => setConfirmOpen(true)}
       />
 
-      <ProjectRepository project={project} />
-
-      <DetailSection title="Environments">
+      <section aria-labelledby="environments-heading">
+        <h2 id="environments-heading" className="mb-3 text-base font-semibold tracking-tight">
+          Environments
+        </h2>
         <EnvironmentPipeline
           project={project}
           busy={busy}
@@ -361,48 +367,82 @@ export default function ProjectDetail() {
             onCancel={() => void cancelProductionWithConfirmation()}
           />
         )}
-      </DetailSection>
+      </section>
 
-      <DetailSection title="Pipeline settings">
-        <PipelinePresetSettings
-          project={project}
-          template={template}
-          targets={targets}
-          hosted={hosted}
-          canMaintain={canMaintain}
-          busy={busy === 'pipeline-preset'}
-          onSave={(preset, environments) =>
-            void changePipelinePresetWithConfirmation(preset, environments)
-          }
-        />
-      </DetailSection>
-
-      <DetailSection title="Configuration">
-        <p className="mb-3 text-sm text-muted-foreground">
-          Environment variables and secrets injected into each environment at deploy. Redeploy to
-          apply changes.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {project.environments.map((env) => (
-            <Button
-              key={env.name}
-              variant="secondary"
-              size="sm"
-              onClick={() => setConfigEnv(env.name)}
-            >
-              <Layers className="h-4 w-4" /> {env.name} variables
-            </Button>
-          ))}
+      {/* History is the main column; reference material and rarely changed
+          settings sit beside it instead of pushing it down the page. */}
+      <div className="grid items-start gap-4 lg:gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
+          <ProjectHistory
+            project={project}
+            commits={commits}
+            deployments={deployments}
+            openSha={openSha}
+            onToggleCommit={toggleCommit}
+          />
         </div>
-      </DetailSection>
 
-      <ProjectHistory
-        project={project}
-        commits={commits}
-        deployments={deployments}
-        openSha={openSha}
-        onToggleCommit={toggleCommit}
-      />
+        <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
+          <ProjectRepository project={project} />
+
+          <DetailSection
+            title="Configuration"
+            description="Variables and secrets injected at deploy. Redeploy to apply changes."
+            flush
+          >
+            <ul className="divide-y divide-border/70">
+              {project.environments.map((env) => (
+                <li key={env.name}>
+                  <button
+                    type="button"
+                    onClick={() => setConfigEnv(env.name)}
+                    aria-label={`${env.name} variables`}
+                    className={cn(
+                      listRowClassName,
+                      listRowInteractiveClassName,
+                      'w-full text-left',
+                    )}
+                  >
+                    <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 text-sm">
+                      <span className="font-semibold uppercase tracking-wide">{env.name}</span>{' '}
+                      <span className="text-muted-foreground">variables</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </DetailSection>
+
+          <DetailSection
+            title="Pipeline"
+            description={
+              <span className="font-mono text-xs font-medium uppercase tracking-wide">
+                {stages}
+              </span>
+            }
+          >
+            <Disclosure
+              summary={canMaintain ? 'Change pipeline' : 'Pipeline options'}
+              className="-mt-2"
+              contentClassName="pt-3"
+            >
+              <PipelinePresetSettings
+                project={project}
+                template={template}
+                targets={targets}
+                hosted={hosted}
+                canMaintain={canMaintain}
+                busy={busy === 'pipeline-preset'}
+                onSave={(preset, environments) =>
+                  void changePipelinePresetWithConfirmation(preset, environments)
+                }
+              />
+            </Disclosure>
+          </DetailSection>
+        </div>
+      </div>
 
       <DeleteProjectDialog
         open={confirmOpen}

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowRight,
+  ChevronRight,
   Download,
   Layers,
   Play,
@@ -17,9 +18,21 @@ import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { StatCard } from '@/components/molecules/StatCard';
-import { StatusBadge } from '@/components/molecules/StatusBadge';
+import { Badge } from '@/components/ui/badge';
+import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { EnvironmentStatusList } from '@/components/molecules/EnvironmentStatusList';
+import {
+  List,
+  ListRow,
+  listRowClassName,
+  listRowInteractiveClassName,
+} from '@/components/molecules/List';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
+import { Notice } from '@/components/molecules/Notice';
+import { Section } from '@/components/molecules/Section';
+import { TemplateIcon } from '@/components/atoms/TemplateIcon';
+import { cn } from '@/lib/utils';
 import type { WorkspacePortfolio } from '@/api';
 import type { ProvisioningStatus, TemplateManifest } from '@/types';
 import { useConfirmation } from '@/confirmation';
@@ -151,10 +164,16 @@ export default function Dashboard() {
   const canMaintain = ['owner', 'admin', 'maintainer'].includes(activeWorkspace?.role ?? '');
   const canExportMetrics = ['owner', 'admin'].includes(activeWorkspace?.role ?? '');
 
+  const stats = portfolio?.stats;
+  const figure = (value: number | undefined) => (loading || loadError ? '—' : (value ?? 0));
+  const plural = (count: number, noun: string, many = `${noun}s`) =>
+    `${count} ${count === 1 ? noun : many}`;
+
   return (
     <div>
       <PageHeader
         title="Overview"
+        description={activeWorkspace ? `${activeWorkspace.name} workspace` : undefined}
         actions={
           <>
             {canExportMetrics && (
@@ -179,202 +198,212 @@ export default function Dashboard() {
         />
       )}
 
-      {actionError && (
-        <p role="alert" className="mb-4 text-sm text-destructive">
-          {actionError}
-        </p>
-      )}
-      {loadError && <LoadErrorState className="mb-4" message={loadError} onRetry={loadDashboard} />}
-
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          label="Projects"
-          value={loading || loadError ? '—' : (portfolio?.stats.projects ?? 0)}
-          icon={Layers}
-        />
-        <StatCard
-          label="Running"
-          value={loading || loadError ? '—' : (portfolio?.stats.runningEnvironments ?? 0)}
-          icon={Play}
-        />
-        <StatCard
-          label="Needs attention"
-          value={loading || loadError ? '—' : (portfolio?.stats.attentionProjects ?? 0)}
-          icon={AlertTriangle}
-        />
-        <StatCard
-          label="Pending approvals"
-          value={loading || loadError ? '—' : (portfolio?.stats.pendingApprovals ?? 0)}
-          icon={ShieldCheck}
-        />
-      </div>
-
-      {!loading && !loadError && portfolio && (
-        <div className="mb-8 flex flex-wrap gap-x-5 gap-y-1 rounded-lg border border-border bg-secondary/30 px-4 py-3 text-xs text-muted-foreground">
-          <span>
-            <strong className="text-foreground">{portfolio.stats.environments}</strong> environments
-          </span>
-          <span>
-            <strong className="text-foreground">{portfolio.stats.activeAllocations}</strong> active
-            server accesses
-          </span>
-          <span className={portfolio.stats.cleanupDebt ? 'text-warning' : undefined}>
-            <strong className="text-foreground">{portfolio.stats.cleanupDebt}</strong> cleanup items
-          </span>
-        </div>
-      )}
-
-      {operationsNeedingAttention.length > 0 && (
-        <section className="mb-8" aria-labelledby="provisioning-heading">
-          <div className="mb-3 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <p
-              id="provisioning-heading"
-              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              Provisioning attention
-            </p>
-          </div>
-          <div className="space-y-2">
-            {operationsNeedingAttention.map((operation) => (
-              <div key={operation.id} className="rounded-lg border border-border bg-card p-3">
-                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {operation.projectName} · {operation.kind} · attempt {operation.attempt}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {operation.status === 'interrupted'
-                        ? 'Interrupted — external state must be reconciled.'
-                        : operation.message || `Current step: ${operation.step}`}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    {operation.projectId && (
-                      <Button asChild size="sm" variant="ghost">
-                        <Link to={`/projects/${operation.projectId}`}>View project</Link>
-                      </Button>
-                    )}
-                    {operation.needsCleanup && canMaintain && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={operationBusy === operation.id}
-                        onClick={() => retryCleanup(operation.id)}
-                      >
-                        <Wrench className="h-3.5 w-3.5" /> Retry cleanup
-                      </Button>
-                    )}
-                    {operation.canRetry && (
-                      <Button
-                        size="sm"
-                        disabled={operationBusy === operation.id}
-                        onClick={() => retryOperation(operation.id)}
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" /> Retry setup
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <div className="mb-3 flex items-baseline justify-between gap-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Recent projects
-        </p>
-        {(portfolio?.stats.projects ?? 0) > 0 && (
-          <Link
-            to="/projects"
-            className="text-link inline-flex items-center gap-1 text-xs font-medium"
-          >
-            View all <ArrowRight className="h-3 w-3" />
-          </Link>
+      <div className="flex flex-col gap-4 sm:gap-6">
+        {actionError && (
+          <Notice tone="danger" role="alert">
+            {actionError}
+          </Notice>
         )}
-      </div>
+        {loadError && <LoadErrorState message={loadError} onRetry={loadDashboard} />}
 
-      {!loadError && !loading && portfolio?.stats.projects === 0 ? (
-        <EmptyState
-          icon={Layers}
-          title="No projects yet"
-          description="Create your first project from a template — you'll get a Git repository, CI/CD pipeline and a running dev environment out of the box."
-          action={
-            <Button asChild>
-              <Link to="/new">
-                <Plus className="h-4 w-4" /> New project
-              </Link>
-            </Button>
-          }
-        />
-      ) : !loadError && !loading ? (
-        <div className="flex flex-col gap-2">
-          {recent.map((project) => {
-            const status =
-              project.health === 'attention'
-                ? 'failed'
-                : project.health === 'deploying'
-                  ? 'deploying'
-                  : project.health === 'healthy'
-                    ? 'running'
-                    : 'empty';
-            return (
-              <Link
-                key={project.id}
-                to={`/projects/${project.id}`}
-                className="group rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-semibold group-hover:text-primary">
-                        {project.name}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <StatCard
+            label="Projects"
+            value={figure(stats?.projects)}
+            hint={stats ? plural(stats.environments, 'environment') : undefined}
+            icon={Layers}
+          />
+          <StatCard
+            label="Running"
+            value={figure(stats?.runningEnvironments)}
+            hint={
+              stats
+                ? plural(stats.activeAllocations, 'server access', 'server accesses')
+                : undefined
+            }
+            icon={Play}
+            tone="brand"
+          />
+          <StatCard
+            label="Needs attention"
+            value={figure(stats?.attentionProjects)}
+            hint={
+              stats
+                ? stats.cleanupDebt > 0
+                  ? plural(stats.cleanupDebt, 'cleanup item')
+                  : 'Nothing to clean up'
+                : undefined
+            }
+            icon={AlertTriangle}
+            tone={stats && stats.attentionProjects + stats.cleanupDebt > 0 ? 'warning' : 'neutral'}
+          />
+          <StatCard
+            label="Pending approvals"
+            value={figure(stats?.pendingApprovals)}
+            hint={stats ? 'Production requests' : undefined}
+            icon={ShieldCheck}
+            tone={stats && stats.pendingApprovals > 0 ? 'warning' : 'neutral'}
+          />
+        </div>
+
+        {operationsNeedingAttention.length > 0 && (
+          <Section
+            title="Provisioning needs attention"
+            headingId="provisioning-heading"
+            description="A project setup did not finish. Retry it, or clean up what it left behind."
+            flush
+          >
+            <List aria-labelledby="provisioning-heading">
+              {operationsNeedingAttention.map((operation) => {
+                const detail =
+                  operation.status === 'interrupted'
+                    ? 'Interrupted — external state must be reconciled.'
+                    : operation.message || `Current step: ${operation.step}`;
+                return (
+                  <ListRow
+                    key={operation.id}
+                    className="flex-col items-stretch xl:flex-row xl:items-center"
+                  >
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
+                        <AlertTriangle className="h-4 w-4" />
                       </span>
-                      <StatusBadge
-                        status={status}
-                        label={project.health === 'attention' ? 'attention' : project.health}
-                      />
-                      {project.pendingApprovals > 0 && (
-                        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
-                          {project.pendingApprovals} approval
-                          {project.pendingApprovals === 1 ? '' : 's'}
-                        </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium" title={operation.projectName}>
+                          {operation.projectName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {operation.kind} · attempt {operation.attempt}
+                        </p>
+                        <p
+                          className="mt-1 line-clamp-2 break-words text-xs text-muted-foreground"
+                          title={detail}
+                        >
+                          {detail}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2 pl-11 xl:pl-0">
+                      {operation.projectId && (
+                        <Button asChild size="sm" variant="ghost">
+                          <Link to={`/projects/${operation.projectId}`}>View project</Link>
+                        </Button>
+                      )}
+                      {operation.needsCleanup && canMaintain && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={operationBusy === operation.id}
+                          onClick={() => retryCleanup(operation.id)}
+                        >
+                          <Wrench className="h-3.5 w-3.5" /> Retry cleanup
+                        </Button>
+                      )}
+                      {operation.canRetry && (
+                        <Button
+                          size="sm"
+                          disabled={operationBusy === operation.id}
+                          onClick={() => retryOperation(operation.id)}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Retry setup
+                        </Button>
                       )}
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {templates[project.templateId]?.name ?? project.templateId}
-                      {project.lastBuild
-                        ? ` · build ${project.lastBuild.commitSha.slice(0, 7)} ${project.lastBuild.status}`
-                        : ' · no verified build yet'}
-                      {project.lastDeployment
-                        ? ` · ${project.lastDeployment.environment} ${project.lastDeployment.kind} ${project.lastDeployment.status}`
-                        : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    {project.environments.map((environment) => (
-                      <span key={environment.name} className="text-[11px] text-muted-foreground">
-                        {environment.name}{' '}
-                        <strong className="font-medium text-foreground">
-                          {environment.status}
-                        </strong>
-                      </span>
-                    ))}
-                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      ) : !loadError ? (
-        <div
-          className="h-28 animate-pulse rounded-lg border border-border bg-card/60"
-          aria-label="Loading projects"
-        />
-      ) : null}
+                  </ListRow>
+                );
+              })}
+            </List>
+          </Section>
+        )}
+
+        {!loadError && !loading && stats?.projects === 0 ? (
+          <EmptyState
+            icon={Layers}
+            title="No projects yet"
+            description="Create your first project from a template — you'll get a Git repository, CI/CD pipeline and a running dev environment out of the box."
+            action={
+              <Button asChild>
+                <Link to="/new">
+                  <Plus className="h-4 w-4" /> New project
+                </Link>
+              </Button>
+            }
+          />
+        ) : !loadError && !loading ? (
+          <Section
+            title="Recent projects"
+            flush
+            actions={
+              (stats?.projects ?? 0) > 0 && (
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/projects">
+                    View all <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              )
+            }
+          >
+            <List>
+              {recent.map((project) => {
+                const templateName = templates[project.templateId]?.name ?? project.templateId;
+                return (
+                  <li key={project.id}>
+                    <Link
+                      to={`/projects/${project.id}`}
+                      className={cn(listRowClassName, listRowInteractiveClassName, 'group')}
+                    >
+                      <TemplateIcon
+                        templateId={project.templateId}
+                        language={templateName}
+                        size="sm"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-sm font-medium" title={project.name}>
+                            {project.name}
+                          </span>
+                          {project.health === 'attention' && (
+                            <Badge variant="danger">attention</Badge>
+                          )}
+                          {project.health === 'deploying' && (
+                            <Badge variant="warning">deploying</Badge>
+                          )}
+                          {project.pendingApprovals > 0 && (
+                            <Badge variant="warning" className="hidden sm:inline-flex">
+                              {project.pendingApprovals} approval
+                              {project.pendingApprovals === 1 ? '' : 's'}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {templateName}
+                          {project.lastBuild
+                            ? ` · build ${project.lastBuild.commitSha.slice(0, 7)} ${project.lastBuild.status}`
+                            : ' · no verified build yet'}
+                          {project.lastDeployment
+                            ? ` · ${project.lastDeployment.environment} ${project.lastDeployment.kind} ${project.lastDeployment.status}`
+                            : ''}
+                        </p>
+                        <EnvironmentStatusList
+                          environments={project.environments}
+                          className="mt-1.5 md:hidden"
+                        />
+                      </div>
+                      <EnvironmentStatusList
+                        environments={project.environments}
+                        className="hidden shrink-0 justify-end md:flex"
+                      />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </List>
+          </Section>
+        ) : !loadError ? (
+          <ContentLoading label="Loading projects" />
+        ) : null}
+      </div>
     </div>
   );
 }

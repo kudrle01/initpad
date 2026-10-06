@@ -2,6 +2,7 @@ import React, { lazy, Suspense, type ComponentType } from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from '@/auth';
+import { ThemeProvider } from '@/theme';
 import { ToastProvider } from '@/toast';
 import { ConfirmationProvider } from '@/confirmation';
 import App from '@/App';
@@ -78,12 +79,14 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ToastProvider>
-      <ConfirmationProvider>
-        <AuthProvider>
-          <RouterProvider router={router} />
-        </AuthProvider>
-      </ConfirmationProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <ConfirmationProvider>
+          <AuthProvider>
+            <RouterProvider router={router} />
+          </AuthProvider>
+        </ConfirmationProvider>
+      </ToastProvider>
+    </ThemeProvider>
   </React.StrictMode>,
 );

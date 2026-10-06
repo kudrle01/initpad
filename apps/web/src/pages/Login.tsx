@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
-import { BrandMark } from '@/components/atoms/BrandMark';
+import { AuthCard } from '@/components/molecules/AuthCard';
+import { FormField } from '@/components/molecules/FormField';
+import { Notice } from '@/components/molecules/Notice';
+import { SegmentedControl } from '@/components/molecules/SegmentedControl';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 type Mode = 'signin' | 'register';
@@ -45,8 +47,8 @@ export default function Login() {
     if (user && next) window.location.assign(next);
   }, [user, next]);
 
-  if (loading) return <div className="min-h-screen bg-background" />;
-  if (user && next) return <div className="min-h-screen bg-background" />;
+  if (loading) return <div className="min-h-dvh bg-background" />;
+  if (user && next) return <div className="min-h-dvh bg-background" />;
   if (user) return <Navigate to="/" replace />;
 
   async function submit(e: React.FormEvent) {
@@ -65,173 +67,150 @@ export default function Login() {
     }
   }
 
+  const registering = mode === 'register';
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
-      <div className="w-full max-w-[360px] rounded-lg border border-border bg-card p-6 text-center shadow-[0_6px_24px_hsl(var(--foreground)/0.09)] sm:p-9">
-        <BrandMark className="mx-auto h-12 w-12" />
-        <h1 className="mt-4 text-[22px] font-semibold tracking-tight">InitPad</h1>
-        <p className="text-sm text-muted-foreground">Internal developer platform</p>
+    <AuthCard title="InitPad" description="Internal developer platform" align="center">
+      {oauthError && (
+        <Notice tone="danger" role="alert" className="mt-6 text-left">
+          {oauthError}
+        </Notice>
+      )}
 
-        {oauthError && (
-          <p
-            role="alert"
-            className="mt-4 rounded-md bg-destructive/10 p-2.5 text-sm text-destructive"
-          >
-            {oauthError}
-          </p>
-        )}
+      {configLoading && (
+        <p role="status" className="mt-6 text-center text-sm text-muted-foreground">
+          Loading sign-in options…
+        </p>
+      )}
 
-        {configLoading && (
-          <p role="status" className="mt-6 text-sm text-muted-foreground">
-            Loading sign-in options…
-          </p>
-        )}
+      {configError && (
+        <Notice tone="danger" role="alert" className="mt-6 text-left">
+          Authentication service is unavailable. Refresh and try again.
+        </Notice>
+      )}
 
-        {configError && (
-          <p
-            role="alert"
-            className="mt-6 rounded-md bg-destructive/10 p-2.5 text-sm text-destructive"
-          >
-            Authentication service is unavailable. Refresh and try again.
-          </p>
-        )}
-
-        {!configLoading && githubEnabled && (
-          <div className="mt-6">
-            <a
-              href="/api/auth/github?mode=login"
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-input bg-card text-sm font-medium hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-9"
-            >
+      {!configLoading && githubEnabled && (
+        <div className="mt-6">
+          <Button asChild variant="secondary" className="w-full">
+            <a href="/api/auth/github?mode=login">
               <GithubIcon /> Continue with GitHub
             </a>
-            {passwordAuthEnabled && (
-              <div className="my-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">
-                <span className="h-px flex-1 bg-border" /> or{' '}
-                <span className="h-px flex-1 bg-border" />
-              </div>
-            )}
-          </div>
-        )}
-
-        {!configLoading && passwordAuthEnabled && (
-          <>
-            <div
-              className={cn(
-                'mb-4 flex gap-1 rounded-md bg-secondary p-1',
-                !githubEnabled && 'mt-6',
-              )}
-            >
-              {(['signin', ...(registrationAvailable ? ['register' as const] : [])] as const).map(
-                (m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => {
-                      setMode(m);
-                      setError(null);
-                    }}
-                    className={cn(
-                      'min-h-10 flex-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:min-h-0',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-                      mode === m
-                        ? 'bg-card text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {m === 'signin' ? 'Sign in' : 'Create account'}
-                  </button>
-                ),
-              )}
+          </Button>
+          {passwordAuthEnabled && (
+            <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" /> or{' '}
+              <span className="h-px flex-1 bg-border" />
             </div>
+          )}
+        </div>
+      )}
 
-            <form className="flex flex-col gap-2.5 text-left" onSubmit={submit}>
-              <label htmlFor="login-username" className="sr-only">
-                Username or e-mail
-              </label>
-              <Input
-                id="login-username"
-                placeholder="Username"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+      {!configLoading && passwordAuthEnabled && (
+        <>
+          {registrationAvailable && (
+            <SegmentedControl
+              label="Sign in or create an account"
+              stretch
+              className={cn('mb-5', !githubEnabled && 'mt-6')}
+              options={[
+                { value: 'signin', label: 'Sign in' },
+                { value: 'register', label: 'Create account' },
+              ]}
+              value={mode}
+              onChange={(next) => {
+                setMode(next);
+                setError(null);
+              }}
+            />
+          )}
+
+          <form
+            className={cn(
+              'flex flex-col gap-4',
+              !registrationAvailable && !githubEnabled && 'mt-6',
+            )}
+            onSubmit={submit}
+          >
+            <FormField
+              id="login-username"
+              label={registering ? 'Username' : 'Username or e-mail'}
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+            {registering && (
+              <FormField
+                id="login-email"
+                label="E-mail"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              {mode !== 'signin' && (
-                <>
-                  <label htmlFor="login-email" className="sr-only">
-                    E-mail
-                  </label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    placeholder="E-mail"
-                    autoComplete="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </>
-              )}
-              <label htmlFor="login-password" className="sr-only">
-                Password
-              </label>
-              <Input
-                id="login-password"
-                type="password"
-                placeholder="Password"
-                autoComplete={mode !== 'signin' ? 'new-password' : 'current-password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={mode !== 'signin' ? 12 : undefined}
-              />
+            )}
+            <FormField
+              id="login-password"
+              label="Password"
+              type="password"
+              autoComplete={registering ? 'new-password' : 'current-password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={registering ? 12 : undefined}
+              hint={registering ? 'Use at least 12 characters.' : undefined}
+            />
 
-              {mode !== 'signin' && (
-                <p className="text-xs text-muted-foreground">Use at least 12 characters.</p>
-              )}
+            {error && (
+              <Notice tone="danger" role="alert">
+                {error}
+              </Notice>
+            )}
+            <Button type="submit" disabled={busy} className="w-full">
+              {busy ? 'Please wait…' : registering ? 'Create account' : 'Sign in'}
+            </Button>
+          </form>
 
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit" disabled={busy} className="mt-1 w-full">
-                {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign in'}
-              </Button>
-            </form>
-
-            {mode === 'signin' && (
+          {!registering && (
+            <div className="mt-3 text-center">
               <Link
                 to="/forgot-password"
-                className="text-link mt-2 inline-flex min-h-11 items-center justify-center text-xs font-medium sm:min-h-0"
+                className="text-link inline-flex min-h-11 items-center justify-center text-sm font-medium sm:min-h-0"
               >
                 Forgot your password?
               </Link>
-            )}
-          </>
-        )}
-
-        {!configLoading && passwordAuthEnabled && !registrationAvailable && !configError && (
-          <p className="mt-4 text-xs text-muted-foreground">
-            Accounts are created by the instance administrator. Ask your InitPad admin for a sign-in
-            link.
-          </p>
-        )}
-
-        {!configLoading &&
-          !passwordAuthEnabled &&
-          edition === 'saas' &&
-          githubEnabled &&
-          !configError && (
-            <p className="mt-4 text-xs text-muted-foreground">
-              Your GitHub account creates or opens your InitPad account. Repository access is
-              granted separately through the GitHub App.
-            </p>
+            </div>
           )}
+        </>
+      )}
 
-        {!configLoading && !passwordAuthEnabled && !githubEnabled && !configError && (
-          <p role="alert" className="mt-4 text-sm text-destructive">
-            GitHub sign-in is not configured for this SaaS installation.
+      {!configLoading && passwordAuthEnabled && !registrationAvailable && !configError && (
+        <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
+          Accounts are created by the instance administrator. Ask your InitPad admin for a sign-in
+          link.
+        </p>
+      )}
+
+      {!configLoading &&
+        !passwordAuthEnabled &&
+        edition === 'saas' &&
+        githubEnabled &&
+        !configError && (
+          <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
+            Your GitHub account creates or opens your InitPad account. Repository access is granted
+            separately through the GitHub App.
           </p>
         )}
-      </div>
-    </div>
+
+      {!configLoading && !passwordAuthEnabled && !githubEnabled && !configError && (
+        <Notice tone="danger" role="alert" className="mt-5 text-left">
+          GitHub sign-in is not configured for this SaaS installation.
+        </Notice>
+      )}
+    </AuthCard>
   );
 }
 

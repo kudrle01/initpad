@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
-import { InfoTip } from '@/components/molecules/InfoTip';
+import { InfoTip, type InfoTipItem } from '@/components/molecules/InfoTip';
+import { Notice } from '@/components/molecules/Notice';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import type { EnvName, RuntimeKind, Target, TemplateManifest } from '@/types';
@@ -57,6 +58,46 @@ export function suggestedEnvironmentTargets(
   };
 }
 
+export function environmentTargetHelp(hosted: boolean): InfoTipItem[] {
+  return hosted
+    ? [
+        {
+          title: 'Selection',
+          description:
+            'Choose a deployment server for each environment. One server may host several environments.',
+        },
+        {
+          title: 'Isolation',
+          description: 'InitPad keeps dev, test and prod workloads separate.',
+        },
+        {
+          title: 'Private servers',
+          description: 'Local or private Docker servers connect outbound through InitPad Agent.',
+        },
+      ]
+    : [
+        {
+          title: 'Defaults',
+          description: 'Self-hosted deployment targets are selected automatically when compatible.',
+        },
+        {
+          title: 'Changes',
+          description:
+            'Each environment can use a different target, now or from the project detail later.',
+        },
+      ];
+}
+
+function targetOptionNote(target: Target): string {
+  if (targetIsReady(target)) return '';
+  if (target.scope === 'user' && target.managementState === 'retired') return ' · retired';
+  if (target.scope === 'user' && target.managementState === 'disconnected')
+    return ' · reconnect first';
+  if (target.scope === 'user' && target.kind === 'docker')
+    return ` · ${target.agentVersion ? 'update or enable Agent' : 'enroll Agent'}`;
+  return ' · verify first';
+}
+
 interface Props {
   template: TemplateManifest | null;
   targets: Target[];
@@ -64,6 +105,8 @@ interface Props {
   hosted: boolean;
   onChange: (environment: EnvName, targetId: string) => void;
   environments?: readonly EnvName[];
+  /** The surrounding section already carries the visible heading and help. */
+  hideLabel?: boolean;
 }
 
 export function EnvironmentTargetFields({
@@ -73,6 +116,7 @@ export function EnvironmentTargetFields({
   hosted,
   onChange,
   environments = ENV_NAMES,
+  hideLabel = false,
 }: Props) {
   const options = template
     ? targets.filter(
@@ -83,50 +127,20 @@ export function EnvironmentTargetFields({
   const hasUnverified = options.some((target) => !targetIsReady(target));
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1">
-        <Label>Environments &amp; targets</Label>
-        <InfoTip
-          label="About environment targets"
-          items={
-            hosted
-              ? [
-                  {
-                    title: 'Selection',
-                    description:
-                      'Choose a deployment server for each environment. One server may host several environments.',
-                  },
-                  {
-                    title: 'Isolation',
-                    description: 'InitPad keeps dev, test and prod workloads separate.',
-                  },
-                  {
-                    title: 'Private servers',
-                    description:
-                      'Local or private Docker servers connect outbound through InitPad Agent.',
-                  },
-                ]
-              : [
-                  {
-                    title: 'Defaults',
-                    description:
-                      'Self-hosted deployment targets are selected automatically when compatible.',
-                  },
-                  {
-                    title: 'Changes',
-                    description:
-                      'Each environment can use a different target, now or from the project detail later.',
-                  },
-                ]
-          }
-        />
-      </div>
-      <div className="grid max-w-3xl gap-2 md:grid-cols-3">
+    <div className="flex min-w-0 flex-col gap-3">
+      {!hideLabel && (
+        <div className="-mb-1 flex items-center gap-1">
+          <Label>Environments &amp; targets</Label>
+          <InfoTip label="About environment targets" items={environmentTargetHelp(hosted)} />
+        </div>
+      )}
+      {/* auto-fit: one field per stage side by side, stacked in a narrow column. */}
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr))]">
         {environments.map((environment) => (
-          <div key={environment} className="rounded-lg border border-border bg-card p-3">
+          <div key={environment} className="flex min-w-0 flex-col gap-1.5">
             <Label
               htmlFor={`target-${environment}`}
-              className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground"
+              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
             >
               {environment}
             </Label>
@@ -140,15 +154,7 @@ export function EnvironmentTargetFields({
               {options.map((target) => (
                 <option key={target.id} value={target.id} disabled={!targetIsReady(target)}>
                   {target.name} · {target.kind}
-                  {!targetIsReady(target)
-                    ? target.scope === 'user' && target.managementState === 'retired'
-                      ? ' · retired'
-                      : target.scope === 'user' && target.managementState === 'disconnected'
-                        ? ' · reconnect first'
-                        : target.scope === 'user' && target.kind === 'docker'
-                          ? ` · ${target.agentVersion ? 'update or enable Agent' : 'enroll Agent'}`
-                          : ' · verify first'
-                    : ''}
+                  {targetOptionNote(target)}
                 </option>
               ))}
             </Select>
@@ -157,20 +163,14 @@ export function EnvironmentTargetFields({
       </div>
 
       {template && verifiedOptions.length === 0 && (
-        <p
-          role="alert"
-          className="flex max-w-3xl items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-muted-foreground"
-        >
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-          <span>
-            No connected and verified target can run{' '}
-            <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
-            <Link to="/infrastructure" className="text-link font-medium">
-              Add or reconnect a server
-            </Link>{' '}
-            before creating the project.
-          </span>
-        </p>
+        <Notice tone="warning" role="alert" icon={ShieldAlert}>
+          No connected and verified target can run{' '}
+          <b className="font-semibold text-foreground">{runtimeOf(template)}</b>.{' '}
+          <Link to="/infrastructure" className="text-link font-medium">
+            Add or reconnect a server
+          </Link>{' '}
+          before creating the project.
+        </Notice>
       )}
       {hasUnverified && verifiedOptions.length > 0 && (
         <p className="text-xs text-muted-foreground">

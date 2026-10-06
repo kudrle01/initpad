@@ -119,7 +119,12 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
     <Dialog open={env !== null} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Environment variables — {env}</DialogTitle>
+          <DialogTitle>
+            <KeyRound className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+            <span>
+              Environment variables — <span className="uppercase">{env}</span>
+            </span>
+          </DialogTitle>
           <DialogDescription>
             Runtime config and secrets injected into this environment on the next deploy. Redeploy
             to apply changes. Secret values are stored encrypted and never shown again.
@@ -128,77 +133,99 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
 
         {loading ? (
           <div className="flex justify-center py-6">
-            <Spinner className="h-5 w-5" />
+            <Spinner className="h-5 w-5 text-primary" />
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {vars.length === 0 && (
-              <p className="py-2 text-sm text-muted-foreground">No variables yet.</p>
+          <div className="flex min-w-0 flex-col gap-4">
+            {vars.length === 0 ? (
+              <p className="rounded-lg bg-muted px-3.5 py-3 text-sm text-muted-foreground">
+                No variables yet.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/70">
+                {vars.map((v) => (
+                  <li key={v.key} className="flex min-w-0 items-center gap-3 px-3.5 py-2.5">
+                    <span className="shrink-0 text-muted-foreground">
+                      {v.isSecret ? <Lock className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
+                    </span>
+                    {/* Key above value: neither has to fight the other for width. */}
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-all font-mono text-[13px] font-medium">
+                        {v.key}
+                      </span>
+                      <span
+                        className="block truncate font-mono text-xs text-muted-foreground"
+                        title={v.isSecret ? undefined : (v.value ?? undefined)}
+                      >
+                        {v.isSecret ? '••••••••' : v.value}
+                      </span>
+                    </span>
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Delete ${v.key}`}
+                        className="shrink-0 rounded-full hover:bg-destructive/10 hover:text-destructive"
+                        disabled={deletingKey === v.key}
+                        onClick={() => void remove(v.key)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
-            {vars.map((v) => (
-              <div key={v.key} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                <span className="text-muted-foreground">
-                  {v.isSecret ? <Lock className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
-                </span>
-                <span className="min-w-0 break-all font-mono text-sm font-medium">{v.key}</span>
-                <span className="ml-1 min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-                  {v.isSecret ? '••••••••' : v.value}
-                </span>
-                {canManage && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Delete ${v.key}`}
-                    className="ml-auto"
-                    disabled={deletingKey === v.key}
-                    onClick={() => void remove(v.key)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            ))}
 
             {canManage && (
-              <div className="mt-2 flex flex-col gap-2 rounded-md border border-dashed p-3">
-                <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted p-3.5">
+                <p className="text-sm font-medium">Add or update a variable</p>
+                <div className="grid gap-2 sm:grid-cols-2">
                   <Input
                     placeholder="KEY"
+                    aria-label="Variable key"
                     value={key}
+                    autoComplete="off"
+                    spellCheck={false}
                     onChange={(e) => setKey(e.target.value.toUpperCase())}
                     className="font-mono"
                   />
                   <Input
                     placeholder="value"
+                    aria-label="Variable value"
                     value={value}
+                    autoComplete="off"
+                    spellCheck={false}
                     onChange={(e) => setValue(e.target.value)}
                     type={isSecret ? 'password' : 'text'}
                     className="font-mono"
                   />
-                </div>
-                <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={isSecret}
-                      onChange={(e) => setIsSecret(e.target.checked)}
-                    />
-                    Secret (encrypted, hidden)
-                  </label>
-                  <Button
-                    size="sm"
-                    className="self-end sm:self-auto"
-                    disabled={!validKey || saving}
-                    onClick={() => void save()}
-                  >
-                    {saving ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Save
-                  </Button>
                 </div>
                 {key.trim() && !validKey && (
                   <p className="text-xs text-destructive">
                     Key must be UPPER_SNAKE_CASE (A–Z, 0–9, _).
                   </p>
                 )}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm sm:min-h-0">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary"
+                      checked={isSecret}
+                      onChange={(e) => setIsSecret(e.target.checked)}
+                    />
+                    Secret
+                    <span className="text-muted-foreground">(encrypted, hidden)</span>
+                  </label>
+                  <Button size="sm" disabled={!validKey || saving} onClick={() => void save()}>
+                    {saving ? (
+                      <Spinner className="h-3.5 w-3.5" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5" />
+                    )}{' '}
+                    Save
+                  </Button>
+                </div>
               </div>
             )}
           </div>
