@@ -213,6 +213,7 @@ function UserMenu({
           type="button"
           className="flex min-h-12 w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           title={display}
+          data-language-control
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
             {initials(display)}
@@ -277,6 +278,8 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
               type="button"
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               aria-label={t('Open navigation')}
+              // The drawer that holds the language menu closes on a switch.
+              data-language-control
             >
               <Menu className="h-5 w-5" />
             </button>

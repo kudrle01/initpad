@@ -38,8 +38,10 @@ export function LanguageToggle({ className }: { className?: string }) {
             type="button"
             lang={value}
             title={label}
-            aria-label={label}
+            // The name keeps the visible abbreviation so voice control can target it.
+            aria-label={`${label} (${short})`}
             aria-pressed={active}
+            data-language-control={active ? '' : undefined}
             onClick={() => setLocale(value)}
             className={cn(
               'h-9 min-w-10 rounded-full px-2.5 text-xs font-semibold transition-colors sm:h-7',

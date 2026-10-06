@@ -23,7 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useConfirmation } from '@/confirmation';
-import { t, msg, rich, formatDateTime, formatTime, type MessageKey } from '@/i18n';
+import { t, msg, rich, formatDateTime, formatNumber, formatTime, type MessageKey } from '@/i18n';
 
 interface Props {
   open: boolean;
@@ -52,7 +52,12 @@ const STATE_LABEL: Record<string, MessageKey> = {
 
 function formatMemory(bytes: number): string {
   const gibibytes = bytes / 1024 ** 3;
-  return `${gibibytes >= 10 ? gibibytes.toFixed(0) : gibibytes.toFixed(1)} GiB`;
+  const digits = gibibytes >= 10 ? 0 : 1;
+  const amount = formatNumber(gibibytes, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  return `${amount} GiB`;
 }
 
 function compareStableVersions(left: string, right: string): number | null {

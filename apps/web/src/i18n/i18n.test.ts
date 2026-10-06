@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
-import { getLocale, plural, relativeTime, rich, setLocale, t } from '@/i18n';
+import { getLocale, plural, relativeTime, resolveLocale, rich, setLocale, t } from '@/i18n';
 import { cs } from './cs';
 import { statusLabel } from './labels';
 import { PLURALS } from './plurals';
@@ -42,6 +42,24 @@ describe('Czech dictionary', () => {
         }
       }
     }
+  });
+});
+
+describe('language detection', () => {
+  it('prefers a stored choice over the browser languages', () => {
+    expect(resolveLocale('cs', ['en-US', 'en'])).toBe('cs');
+    expect(resolveLocale('en', ['cs-CZ', 'cs'])).toBe('en');
+  });
+
+  it('takes the first browser language InitPad speaks, in the listed order', () => {
+    expect(resolveLocale(null, ['cs-CZ', 'cs', 'en'])).toBe('cs');
+    expect(resolveLocale(null, ['en-US', 'en', 'cs'])).toBe('en');
+    expect(resolveLocale(null, ['de-DE', 'cs', 'en'])).toBe('cs');
+  });
+
+  it('falls back to English for an unknown stored value or unsupported languages', () => {
+    expect(resolveLocale('sk', ['de-DE', 'fr'])).toBe('en');
+    expect(resolveLocale(null, [])).toBe('en');
   });
 });
 

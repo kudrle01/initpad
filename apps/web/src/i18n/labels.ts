@@ -79,7 +79,7 @@ const OPERATION_CS: Record<string, string> = {
   workspace: 'workspace',
   member: 'člen',
   project: 'projekt',
-  target: 'server',
+  target: 'cíl',
   allocation: 'přidělení',
   agent: 'Agent',
   deployment: 'nasazení',

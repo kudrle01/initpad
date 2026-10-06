@@ -21,15 +21,27 @@ const STORAGE_KEY = 'initpad.locale';
 // BCP 47 tags used for dates, numbers and plural rules.
 const INTL_TAG: Record<Locale, string> = { en: 'en-GB', cs: 'cs-CZ' };
 
+/**
+ * A stored choice wins. Otherwise the first browser language InitPad speaks
+ * decides, so an English browser that lists Czech further down stays English.
+ */
+export function resolveLocale(stored: string | null, preferred: readonly string[]): Locale {
+  if (stored === 'en' || stored === 'cs') return stored;
+  for (const tag of preferred) {
+    const language = tag.toLowerCase().split('-')[0];
+    if (language === 'en' || language === 'cs') return language;
+  }
+  return 'en';
+}
+
 function detectLocale(): Locale {
+  let stored: string | null = null;
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'en' || stored === 'cs') return stored;
+    stored = localStorage.getItem(STORAGE_KEY);
   } catch {
     // Storage can be unavailable; fall through to the browser preference.
   }
-  const preferred = typeof navigator === 'undefined' ? [] : (navigator.languages ?? []);
-  return preferred.some((tag) => tag.toLowerCase().startsWith('cs')) ? 'cs' : 'en';
+  return resolveLocale(stored, typeof navigator === 'undefined' ? [] : (navigator.languages ?? []));
 }
 
 let locale: Locale = detectLocale();
