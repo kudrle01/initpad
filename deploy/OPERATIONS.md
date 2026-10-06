@@ -364,6 +364,30 @@ Stejný gate platí pro platformu. Tag `initpad-vX.Y.Z` vytvoří GitHub
 prerelease a acceptance VM jej uvidí pouze s
 `INITPAD_PLATFORM_UPDATE_CHANNEL=candidate`. Nejprve se ověří distribuce:
 
+Novou verzi připravte na čistém a publikovaném `main` jediným příkazem:
+
+```bash
+git pull --ff-only
+npm run release:platform:prepare -- X.Y.Z
+```
+
+Příkaz nejprve ověří všechna očekávaná pole, potom změní pouze platformní
+verze, ponechá verze ostatních komponent beze změny a spustí celý
+`check:release`. Po kontrole diffu
+commitněte a pushněte `main`. Jakmile je jeho workflow zelené, vytvořte
+ověřený lokální tag a explicitně jej publikujte:
+
+```bash
+npm run release:platform:tag -- X.Y.Z
+git push origin initpad-vX.Y.Z
+```
+
+Tagovací příkaz odmítne nečistý strom, jinou větev i commit, který není
+na `origin/main`. Push, živá acceptance a povýšení na stable zůstávají
+záměrně oddělené schvalovací brány.
+
+Potom anonymně ověřte candidate distribuci:
+
 ```bash
 npm run audit:public-release -- --tag initpad-vX.Y.Z --allow-prerelease
 ```
