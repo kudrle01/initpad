@@ -33,6 +33,27 @@ const capacity: WorkspaceCapacity = {
   },
 };
 
+function updatedCapacity(values: WorkspaceCapacityUpdate): WorkspaceCapacity {
+  const limits = {
+    projects: values.maxProjects,
+    members: values.maxMembers,
+    targets: values.maxTargets,
+    concurrentOperations: values.maxConcurrentOperations,
+    artifactBytes: String(BigInt(values.maxArtifactStorageGiB) * 1024n * 1024n * 1024n),
+  };
+  return {
+    ...capacity,
+    limits,
+    remaining: {
+      projects: limits.projects - capacity.usage.projects,
+      members: limits.members - capacity.usage.members,
+      targets: limits.targets - capacity.usage.targets,
+      concurrentOperations: limits.concurrentOperations - capacity.usage.concurrentOperations,
+      artifactBytes: String(BigInt(limits.artifactBytes) - BigInt(capacity.usage.artifactBytes)),
+    },
+  };
+}
+
 const mocks = vi.hoisted(() => ({
   api: {
     adminListWorkspaceCapacity: vi.fn(),
@@ -51,16 +72,7 @@ beforeEach(() => {
   mocks.api.adminListWorkspaceCapacity.mockResolvedValue([capacity]);
   mocks.api.adminUpdateWorkspaceCapacity.mockImplementation(
     (_workspaceId: string, values: WorkspaceCapacityUpdate) =>
-      Promise.resolve({
-        ...capacity,
-        limits: {
-          projects: values.maxProjects,
-          members: values.maxMembers,
-          targets: values.maxTargets,
-          concurrentOperations: values.maxConcurrentOperations,
-          artifactBytes: String(BigInt(values.maxArtifactStorageGiB) * 1024n * 1024n * 1024n),
-        },
-      }),
+      Promise.resolve(updatedCapacity(values)),
   );
 });
 
@@ -89,7 +101,9 @@ describe('WorkspaceCapacityCard', () => {
       ),
     );
     expect(mocks.confirmAction).not.toHaveBeenCalled();
-    expect(mocks.toast.success).toHaveBeenCalledWith('Updated limits for Team Alpha');
+    await waitFor(() =>
+      expect(mocks.toast.success).toHaveBeenCalledWith('Updated limits for Team Alpha'),
+    );
   });
 
   it('requires confirmation before lowering a limit below current usage', async () => {
