@@ -261,6 +261,22 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 ### P3 — následná produktová rozšíření
 
 - [ ] Dark mode a první lokalizace až po společném design/i18n boundary.
+  - [x] Implementovat světlý, tmavý a systémový režim nad společnými design
+    tokeny. Je součástí redesignu ve vydání 0.2.13; samostatný živý průchod
+    obou témat zatím není doložen.
+  - [x] Implementovat anglickou a českou lokalizaci nad vlastní i18n boundary:
+    přepínač jazyka, český slovník s typovou kontrolou klíčů, plurály a
+    formátování data, času a čísel. Změna je na `main` po vydání 0.2.13 a není
+    součástí žádného releasu. Automatizované testy hlídají shodu placeholderů
+    a značek, plurálové tvary, pořadí detekce jazyka prohlížeče a návrat
+    fokusu po přepnutí jazyka. Chybové zprávy a průběhové stavy pocházející
+    z API zůstávají anglicky.
+  - [x] Živě projít EN/CS a obě témata na hlavních obrazovkách včetně mobilního
+    viewportu 390 × 844 px. Autor průchod potvrdil 6. října 2026 nad stavem
+    před auditními opravami. Opravený návrat fokusu a pořadí detekce jazyka
+    byly týž den ověřeny v prohlížeči na přihlašovací stránce a postranním
+    panelu při šířce 1280 px i 390 px.
+  - [ ] Vydat lokalizaci v dalším platformním releasu.
 - [ ] Prisma major upgrade jako samostatný migrační a restore projekt.
 - [ ] SSE pouze pokud naměřená polling zátěž ospravedlní stateful vrstvu.
 - [ ] GitLab, Kubernetes/microVM, marketplace a enterprise HA zůstávají mimo
