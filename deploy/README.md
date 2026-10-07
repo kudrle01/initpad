@@ -115,6 +115,9 @@ edge, provedené migrace a skutečný S3 round-trip. Na disposable stagingu tak�
 koordinuje nativní zálohu a obnovu PostgreSQL a bucketu prostřednictvím
 spárovaných markerů, aniž by na hostu četl hodnoty secretů.
 
+Konkrétní nízkonákladovou sestavu stagingu podle ADR-132 včetně projekce
+secretů, edge tunelu a collectoru popisuje [SAAS_STAGING.md](./SAAS_STAGING.md).
+
 Výchozí web binding je `127.0.0.1:8080`; musí jej proxyovat externí HTTPS
 edge/WAF. Tento manifest je pouze staging kontrakt. Zbývající podmínky
 veřejného SaaS uvádí [release readiness](../docs/RELEASE_READINESS.md).

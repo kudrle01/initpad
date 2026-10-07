@@ -1,0 +1,53 @@
+# Environment-owned edge connector and telemetry collector of the ADR-132
+# staging. They run next to the SaaS profile, never inside it: saas-check.sh
+# requires that profile to contain only api and web. Start the SaaS profile
+# first, because it creates the control network joined below.
+
+name: initpad-staging-edge
+
+services:
+  cloudflared:
+    # cloudflared 2026.10.0. The image entrypoint already disables auto-update.
+    image: cloudflare/cloudflared@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    command: ['tunnel', 'run', '--token-file', '/run/secrets/tunnel_token']
+    # Reaches the SaaS web proxy on the host loopback and publishes no port, so
+    # the tunnel stays the only public path to the control plane.
+    network_mode: host
+    # The projected token is readable by root only; capabilities stay dropped.
+    user: '0:0'
+    secrets:
+      - tunnel_token
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 100
+    restart: unless-stopped
+
+  # The service name is the hostname in OTEL_EXPORTER_OTLP_ENDPOINT.
+  otel-collector:
+    # OpenTelemetry Collector Contrib 0.162.0
+    image: otel/opentelemetry-collector-contrib@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+    # Backend endpoint and authorization header, rendered by the secrets agent.
+    env_file:
+      - /secure/runtime/secrets/otel_collector.env
+    volumes:
+      - ../observability/otel-collector.example.yaml:/etc/otelcol-contrib/config.yaml:ro
+    networks: [control]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 200
+    restart: unless-stopped
+
+networks:
+  control:
+    external: true
+    name: initpad-saas_control
+
+secrets:
+  tunnel_token:
+    file: /secure/runtime/secrets/tunnel_token

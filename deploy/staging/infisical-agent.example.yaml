@@ -1,0 +1,81 @@
+# Infisical Agent projection for the ADR-132 staging. Render a private copy with
+# the real project id and keep it outside the source checkout:
+#
+#   sed 's/INFISICAL_PROJECT_ID/<project id>/g' infisical-agent.example.yaml \
+#     > /secure/runtime/infisical-agent.yaml
+#
+# Every template writes exactly one secret value. The destination names match
+# the *_FILE entries of ../.env.saas.example; the last two feed edge.compose.yml.
+
+infisical:
+  # Address of the Infisical instance that owns the project
+  # (EU cloud: https://eu.infisical.com).
+  address: https://app.infisical.com
+
+auth:
+  type: universal-auth
+  config:
+    client-id: /secure/runtime/infisical/client-id
+    client-secret: /secure/runtime/infisical/client-secret
+    remove_client_secret_on_read: false
+
+sinks:
+  - type: file
+    config:
+      path: /secure/runtime/infisical/access-token
+
+templates:
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "DATABASE_URL" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/database_url
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_JWT_SECRET" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/jwt_secret
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_ENCRYPTION_KEY" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/encryption_key
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_SCM_WEBHOOK_TOKEN" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/scm_webhook_token
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_OIDC_CLIENT_SECRET" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/oidc_client_secret
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_SMTP_PASSWORD" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/smtp_password
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_GITHUB_CLIENT_SECRET" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/github_client_secret
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_GITHUB_PRIVATE_KEY" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/github_private_key
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_GITHUB_WEBHOOK_SECRET" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/github_webhook_secret
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_ARTIFACT_S3_ACCESS_KEY_ID" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/s3_access_key_id
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/s3_secret_access_key
+    config:
+      polling-interval: 5m
+  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "CLOUDFLARE_TUNNEL_TOKEN" }}{{ .Value }}{{ end }}'
+    destination-path: /secure/runtime/secrets/tunnel_token
+    config:
+      polling-interval: 5m
+  - template-content: |
+      INITPAD_OBSERVABILITY_BACKEND_OTLP_ENDPOINT={{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "OTEL_BACKEND_OTLP_ENDPOINT" }}{{ .Value }}{{ end }}
+      INITPAD_OBSERVABILITY_BACKEND_AUTHORIZATION={{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "OTEL_BACKEND_AUTHORIZATION" }}{{ .Value }}{{ end }}
+    destination-path: /secure/runtime/secrets/otel_collector.env
+    config:
+      polling-interval: 5m

@@ -201,6 +201,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - [x] Zvolit konkrétní nízkonákladovou staging topologii a zapsat její
     vědomé odchylky od provozního minima (ADR-132). Nic z ní zatím není
     nasazeno.
+  - [x] Připravit pro tuto sestavu projekci secretů do souborů, edge tunel,
+    collector a runbook v `deploy/SAAS_STAGING.md`. Kontraktní test hlídá
+    shodu projektovaných souborů se SaaS profilem; živě ověřeno není.
   - [ ] Zapojit konkrétní externí PostgreSQL, S3 a secret manager ve stagingu
     a ověřit obnovu bez lokálních stavových služeb.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
