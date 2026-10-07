@@ -142,6 +142,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   URL odmítl bez změny stavu a poté se vrátil na původní endpoint.
 - [ ] Projít GitHub App E2E pro osobní i organizační instalaci: login,
   create/import, Actions artifact, Agent deploy, rename, suspend a uninstall.
+  - [x] Připravit ruční runbook registrace App a E2E průchodu v
+    `deploy/SAAS_ACCEPTANCE.md` a zpracovat webhook `installation_target`,
+    aby přejmenování účtu nebo organizace aktualizovalo uložený login podle
+    neměnného ID. Ověřeno pouze automatizovanými testy.
+  - [ ] Provést živý průchod na veřejném stagingu se skutečnou App.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895

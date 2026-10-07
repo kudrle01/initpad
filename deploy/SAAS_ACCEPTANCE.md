@@ -44,6 +44,88 @@ Příkaz vyžaduje zdravé dlouho běžící kontejnery API a webu, ověří sku
 veřejný endpoint `/api/health/ready` přes důvěryhodné HTTPS, přečte stav migrací
 Prisma a provede round-trip S3: zápis, čtení, kontrolu hashe a smazání.
 
+## GitHub App a ruční E2E instalace
+
+Tento gate je ruční. Vyžaduje skutečnou GitHub App, osobní účet a testovací
+organizaci, proto jej pomocný skript nespouští. Unit testy pokrývají tombstone
+po odinstalaci, odmítnutí tokenu pozastavené instalace a přejmenování účtu i
+repozitáře podle neměnného ID; živý průchod nenahrazují.
+
+### Registrace App pro staging
+
+Zaregistrujte samostatnou GitHub App pouze pro staging origin a nesdílejte ji s
+jiným prostředím:
+
+| Pole formuláře                                         | Hodnota                                          |
+| ------------------------------------------------------ | ------------------------------------------------ |
+| Homepage URL                                           | `https://<origin>`                               |
+| Callback URL                                           | `https://<origin>/api/auth/github/callback`      |
+| Expire user authorization tokens                       | zapnuto                                          |
+| Request user authorization (OAuth) during installation | vypnuto, jinak GitHub nepoužije Setup URL        |
+| Setup URL                                              | `https://<origin>/api/scm/github/setup/callback` |
+| Webhook                                                | aktivní, `https://<origin>/api/scm/github/webhook` |
+| Webhook secret                                         | náhodná hodnota uložená ve správci secretů       |
+| Where can this GitHub App be installed                 | Any account                                      |
+
+Repository permissions odpovídají tokenům, které si API vyžádá pro jednotlivé
+operace:
+
+| Oprávnění       | Úroveň         | Použití                                         |
+| --------------- | -------------- | ----------------------------------------------- |
+| Actions         | Read and write | běhy, artefakty a opakování neúspěšných jobů    |
+| Administration  | Read and write | založení a smazání repozitáře, spolupracovníci  |
+| Checks          | Read-only      | stav Check Runs                                 |
+| Commit statuses | Read-only      | klasické commit statusy                         |
+| Contents        | Read and write | scaffold, archiv revize a značky opakování      |
+| Metadata        | Read-only      | povinné pro každou App                          |
+| Packages        | Read and write | úklid balíčků odstraněného projektu             |
+| Secrets         | Read and write | Actions secrets projektu                        |
+| Workflows       | Read and write | zápis `.github/workflows`                       |
+
+Z account permissions nastavte pouze `Email addresses: Read-only`, aby
+přihlášení mohlo převzít ověřený e-mail. Organization permissions nejsou
+potřeba. Žádnou událost neodebírejte: `installation`, `installation_target` a
+`github_app_authorization` doručuje GitHub každé App automaticky.
+
+App ID, Client ID a slug patří do env souboru nasazení. Client secret, privátní
+klíč a webhook secret promítněte jako soubory podle položek `*_FILE`.
+
+### Průchod
+
+Proveďte kroky s osobní instalací i s instalací v testovací organizaci:
+
+1. **Login.** `Continue with GitHub` vytvoří nebo otevře účet. SaaS nenabízí
+   heslo ani registraci a účet má ověřený e-mail.
+2. **Instalace.** Owner nebo admin workspace spustí instalaci z nastavení účtu.
+   Osobní instalace se přijme jen pro účet shodný s propojenou identitou,
+   organizační projde potvrzením přes GitHub. Instalaci vidí pouze workspace,
+   který ji autorizoval, a member ji autorizovat nemůže.
+3. **Create.** Nový projekt v osobním účtu i v organizaci založí soukromý
+   repozitář s workflow a Actions secrets; první běh je zelený.
+4. **Import.** Existující repozitář s Dockerfile a InitPad workflow projde
+   preflightem a importem beze změny kódu.
+5. **Artefakt.** Běh Actions vytvoří artefakt a historie nasazení uvádí jeho
+   digest u odpovídajícího SHA commitu.
+6. **Nasazení Agentem.** Prostředí `dev` se nasadí na Agent target a má zdravou
+   URL. Povýšení použije stejný digest.
+7. **Rename.** Přejmenujte repozitář a poté testovací organizaci, nikoli účet,
+   který potřebujete zachovat. Existující projekt dál načítá commity a jde
+   znovu nasadit, nový projekt v přejmenované organizaci jde založit a UI
+   ukazuje nové názvy.
+8. **Suspend.** Pozastavte instalaci v GitHubu. UI ji označí za pozastavenou,
+   create, import a operace vyžadující token selžou fail-closed a běžící
+   workloady zůstanou. Po obnovení instalace operace znovu projdou.
+9. **Uninstall.** Odinstalujte App. Instalace zmizí z nabídky workspace, další
+   operace nad repozitářem selžou fail-closed a záznam projektu i audit
+   zůstanou zachované.
+10. **Audit.** U projektových a deployment operací ověřte v auditním logu
+    aktéra a výsledek. Změny instalace přicházejí podepsaným webhookem a
+    workspace audit je nezaznamenává; doložte je stavem v UI a seznamem
+    doručení webhooku v nastavení App.
+
+Do záznamu uveďte datum, verzi releasu, typ instalace a výsledek každého kroku.
+Nepřikládejte tokeny, názvy soukromých repozitářů ani identifikátory účtů.
+
 ## Omezená load kontrola veřejného edge
 
 Kontrola měří autentizované čtecí cesty přes skutečné HTTPS edge a prokazuje, že
