@@ -290,6 +290,20 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - [ ] Vydat lokalizaci v dalším platformním releasu.
 - [ ] Prisma major upgrade jako samostatný migrační a restore projekt.
 - [ ] SSE pouze pokud naměřená polling zátěž ospravedlní stateful vrstvu.
+- [ ] Snížit počet dotazů na GitHub API při čtení commitů a stavu pipeline, až
+  to naměřená zátěž nebo hodinový limit instalace ospravedlní (viz ADR-132).
+  Možnosti od nejmenšího zásahu:
+  - ukládat výsledek dokončeného běhu CI do vlastní databáze a pro starší
+    commity se GitHubu znovu neptat, protože dokončený běh se už nezmění;
+  - posílat podmíněné dotazy s `ETag`; odpověď `304` se podle dokumentace
+    GitHubu u autorizovaného dotazu nezapočítává do primárního limitu;
+  - nahradit dotazování webhooky o změně běhu a jobu, ukládat stav do
+    databáze a UI číst jen z ní. Podepsaný webhook endpoint existuje, zatím
+    ale zpracovává jen životní cyklus instalace. App by musela odebírat další
+    události a vznikl by nový zdroj stavu pipeline;
+  - cachovat installation token. Ušetří další dotazy, ale mění rozhodnutí z
+    ADR-043, podle kterého je token vázaný na jednu operaci a neukládá se;
+    vyžaduje proto vlastní ADR.
 - [ ] GitLab, Kubernetes/microVM, marketplace a enterprise HA zůstávají mimo
   aktuální dokončovací scope.
 
