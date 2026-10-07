@@ -100,6 +100,31 @@ describe('GitHubInstallationService webhook lifecycle', () => {
     expect(prisma.gitHubInstallation.findUnique).not.toHaveBeenCalled();
     expect(prisma.gitHubInstallation.upsert).not.toHaveBeenCalled();
   });
+
+  it('follows an account rename by immutable id without touching lifecycle state', async () => {
+    const prisma = {
+      gitHubInstallation: { updateMany: jest.fn(async () => ({ count: 1 })), upsert: jest.fn() },
+    };
+    const service = new GitHubInstallationService(prisma as never, {} as never);
+    await service.handleTargetEvent({
+      action: 'renamed',
+      account: { id: 987654, login: 'acme-renamed' },
+    });
+    expect(prisma.gitHubInstallation.updateMany).toHaveBeenCalledWith({
+      where: { accountId: '987654' },
+      data: { accountLogin: 'acme-renamed' },
+    });
+    expect(prisma.gitHubInstallation.upsert).not.toHaveBeenCalled();
+  });
+
+  it('ignores a target event that is not a rename or lacks the immutable account id', async () => {
+    const prisma = { gitHubInstallation: { updateMany: jest.fn() } };
+    const service = new GitHubInstallationService(prisma as never, {} as never);
+    await service.handleTargetEvent({ action: 'other', account: { id: 1, login: 'acme' } });
+    await service.handleTargetEvent({ action: 'renamed', account: { login: 'acme' } });
+    await service.handleTargetEvent({ action: 'renamed', account: { id: 1 } });
+    expect(prisma.gitHubInstallation.updateMany).not.toHaveBeenCalled();
+  });
 });
 
 describe('GitHubInstallationService setup authorization', () => {

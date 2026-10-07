@@ -11,7 +11,11 @@ import {
 import type { Request } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../config';
-import { GitHubInstallationService, InstallationEvent } from './github-installation.service';
+import {
+  GitHubInstallationService,
+  InstallationEvent,
+  InstallationTargetEvent,
+} from './github-installation.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
 import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
 
@@ -37,7 +41,7 @@ export class GitHubWebhookController {
     @Headers('x-hub-signature-256') signature: string,
     @Headers('x-github-event') event: string,
     @Req() req: RawBodyRequest<Request>,
-    @Body() body: InstallationEvent | GitHubAuthorizationRevokedEvent,
+    @Body() body: InstallationEvent | InstallationTargetEvent | GitHubAuthorizationRevokedEvent,
   ) {
     const secret = config.github.webhookSecret;
     const raw = req.rawBody;
@@ -49,6 +53,10 @@ export class GitHubWebhookController {
       // A logged-and-accepted failure would permanently lose installation
       // state and make repository access disagree with GitHub.
       await this.installations.handleEvent(body);
+    }
+    if (event === 'installation_target') {
+      // Same retry contract: a lost rename would leave a stale account login.
+      await this.installations.handleTargetEvent(body);
     }
     if (event === 'github_app_authorization') {
       const authorization = body as GitHubAuthorizationRevokedEvent;

@@ -28,6 +28,12 @@ export interface InstallationEvent {
   };
 }
 
+// Shape of the GitHub `installation_target` webhook fields consumed by InitPad.
+export interface InstallationTargetEvent {
+  action?: string;
+  account?: { id?: number | string; login?: string };
+}
+
 /**
  * Keeps GitHub App installations synchronized by their immutable GitHub
  * account id and owns the one-time setup handshake (ADR-044). A signed webhook
@@ -88,6 +94,23 @@ export class GitHubInstallationService {
     this.logger.log(
       `GitHub App installation ${event.action ?? 'synced'} for ${inst.account.login}`,
     );
+  }
+
+  /**
+   * A renamed user or organization keeps its immutable account id; only the
+   * login changes. GitHub stops resolving the old organization name in its
+   * API, so the stored login must follow the rename. Installation, suspension
+   * and uninstall state are not touched.
+   */
+  async handleTargetEvent(event: InstallationTargetEvent): Promise<void> {
+    if (event.action !== 'renamed') return;
+    const account = event.account;
+    if (account?.id == null || !account.login) return;
+    const { count } = await this.prisma.gitHubInstallation.updateMany({
+      where: { accountId: String(account.id) },
+      data: { accountLogin: account.login },
+    });
+    if (count > 0) this.logger.log(`GitHub App installation account renamed to ${account.login}`);
   }
 
   /** Creates a hashed, single-use state bound to the current user/workspace. */

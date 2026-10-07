@@ -78,6 +78,25 @@ describe('GitHubWebhookController', () => {
     ).rejects.toThrow('database unavailable');
   });
 
+  it('forwards an account rename and lets a persistence failure reach GitHub for retry', async () => {
+    config.github.webhookSecret = 'whsec';
+    const service = { handleEvent: jest.fn(), handleTargetEvent: jest.fn(async () => undefined) };
+    const controller = new GitHubWebhookController(service as never, {} as never);
+    const body = { action: 'renamed', account: { id: 987654, login: 'acme-renamed' } };
+    const raw = Buffer.from(JSON.stringify(body));
+
+    await expect(
+      controller.handle(sign(raw, 'whsec'), 'installation_target', reqWith(raw), body),
+    ).resolves.toEqual({ accepted: true });
+    expect(service.handleTargetEvent).toHaveBeenCalledWith(body);
+    expect(service.handleEvent).not.toHaveBeenCalled();
+
+    service.handleTargetEvent.mockRejectedValueOnce(new Error('database unavailable'));
+    await expect(
+      controller.handle(sign(raw, 'whsec'), 'installation_target', reqWith(raw), body),
+    ).rejects.toThrow('database unavailable');
+  });
+
   it('clears user credentials when GitHub App authorization is revoked', async () => {
     config.github.webhookSecret = 'whsec';
     const credentials = { revokeByProviderUserId: jest.fn(async () => undefined) };
