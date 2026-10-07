@@ -198,6 +198,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - [x] Připravit provider-neutral live acceptance pro veřejné HTTPS, aplikované
     migrace, S3 round-trip a konzistentní externí PostgreSQL + bucket restore;
     recovery markery povolit pouze explicitně na disposable stagingu.
+  - [x] Zvolit konkrétní nízkonákladovou staging topologii a zapsat její
+    vědomé odchylky od provozního minima (ADR-132). Nic z ní zatím není
+    nasazeno.
   - [ ] Zapojit konkrétní externí PostgreSQL, S3 a secret manager ve stagingu
     a ověřit obnovu bez lokálních stavových služeb.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační

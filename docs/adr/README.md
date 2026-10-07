@@ -142,3 +142,4 @@ stabilní.
 | [ADR-129](./ADR-129.md) | Accepted | Sdílený artifact fence a operation-backed lifecycle uzavírají mutační hranici |
 | [ADR-130](./ADR-130.md) | Accepted | API exportuje traces a metriky přes explicitní OTLP hranici |
 | [ADR-131](./ADR-131.md) | Accepted | Source-based SSH runtime je odstraněn, SFTP zůstává kompatibilní konektor |
+| [ADR-132](./ADR-132.md) | Accepted | Staging veřejného SaaS tvoří nízkonákladová sestava vyměnitelných externích služeb |
