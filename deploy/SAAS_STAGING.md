@@ -14,8 +14,9 @@ kontroly `./saas-acceptance.sh dependencies` a `./saas-acceptance.sh email`.
 [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md) zatím neproběhly.**
 
 Web z releasu 0.2.14 se v SaaS profilu sám nespustí, protože profil odebíral
-nginxu i oprávnění potřebná ke startu. Oprava je v `saas.compose.yml` po tomto
-releasu. Nasazení tagu `initpad-v0.2.14` proto vyžaduje ke každému volání
+nginxu i oprávnění potřebná ke startu. Oprava je v `saas.compose.yml` od
+releasu 0.2.16; staging na něj přešel 9. října 2026 a web se spustil bez
+úprav. Pouze nasazení tagu `initpad-v0.2.14` vyžaduje ke každému volání
 `docker compose` nad `saas.compose.yml` ještě dočasný soubor mimo checkout,
 připojený dalším přepínačem `-f`:
 

@@ -154,14 +154,15 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       návratu do okna a ta sdílela limit deseti pokusů za deset minut s ručním
       spuštěním instalace. Běžné přepínání oken tak tlačítko instalace
       zablokovalo. Obnova má nově vlastní limit a web ji zkouší jen při
-      načtení a během rozpracované instalace. Oprava je pokrytá testy a čeká
-      na další release.
+      načtení a během rozpracované instalace. Oprava je pokrytá testy a vyšla
+      v releasu 0.2.16; naživo zatím cíleně ověřena není.
     - Krok Create v testovací organizaci založil repozitář a kroky build,
       test i deploy v GitHub Actions prošly. Příjem artefaktu ale selhal,
       protože se image načítal do lokálního Docker daemonu, který SaaS control
       plane nemá. Bez opravy nejde ve veřejném SaaS nasadit žádný projekt.
-      Oprava podle ADR-133 je pokrytá testy a čeká na další release; kroky
-      Create až Nasazení Agentem se po něm musí zopakovat.
+      Oprava podle ADR-133 je pokrytá testy a vyšla v releasu 0.2.16, který
+      na stagingu běží od 9. října 2026. Živé ověření příjmu artefaktu a kroky
+      Create až Nasazení Agentem zbývá zopakovat.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
@@ -230,8 +231,15 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       chybí, proto bod zůstává otevřený.
     - První start odhalil, že web se v SaaS profilu releasu 0.2.14 nespustí:
       profil odebral nginxu všechna oprávnění včetně těch, která potřebuje ke
-      startu. Oprava s kontraktním testem je v repozitáři a čeká na další
-      release; staging do té doby používá dočasný override.
+      startu. Oprava s kontraktním testem vyšla v releasu 0.2.16. Staging na
+      něj přešel 9. října 2026, web se spustil bez dočasného override a
+      kontrola závislostí prošla znovu.
+    - Tag `initpad-v0.2.15` nemá vydání. Jeho release gate selhal na testu
+      editoru limitů workspace, který závisel na vytížení runneru; nic se
+      nepublikovalo a tag zůstal beze změny. Příčinou byl efekt přepisující
+      první úpravu pole a oprava je součástí releasu 0.2.16. Ten je zatím
+      kandidát: anonymní audit kandidáta potvrdil veřejnou dostupnost, podpisy
+      a obě architektury, povýšení na `stable` neproběhlo.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
   - [x] Uzamknout podporovanou SaaS proxy cestu na veřejný edge/WAF, loopback
