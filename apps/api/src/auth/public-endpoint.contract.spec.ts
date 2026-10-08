@@ -79,11 +79,18 @@ describe('public HTTP boundary contract', () => {
     [GitHubAuthController.prototype, 'authorize', RATE_LIMITS.githubAuthorize.name],
     [GitHubAuthController.prototype, 'callback', RATE_LIMITS.githubCallback.name],
     [GitHubSetupController.prototype, 'start', RATE_LIMITS.githubSetup.name],
-    [GitHubSetupController.prototype, 'recover', RATE_LIMITS.githubSetup.name],
+    [GitHubSetupController.prototype, 'recover', RATE_LIMITS.githubSetupRecover.name],
     [GitHubSetupController.prototype, 'callback', RATE_LIMITS.githubSetupCallback.name],
     [TargetsController.prototype, 'inspectHostKey', RATE_LIMITS.targetHostKeyInspect.name],
   ] as const)('rate-limits %s.%s as %s', (controller, method, policyName) => {
     expect(methodRateLimit(controller, method)?.name).toBe(policyName);
+  });
+
+  it('keeps automatic setup recovery out of the manual setup budget', () => {
+    expect(RATE_LIMITS.githubSetupRecover.name).not.toBe(RATE_LIMITS.githubSetup.name);
+    expect(RATE_LIMITS.githubSetupRecover.subjectLimit).toBeGreaterThan(
+      RATE_LIMITS.githubSetup.subjectLimit,
+    );
   });
 
   it('exposes only the signed setup callback, not GitHub installation mutations', () => {

@@ -100,6 +100,15 @@ export const RATE_LIMITS = {
     subjectLimit: 10,
     subject: { source: 'user', normalization: 'opaque' },
   },
+  // The settings page retries recovery whenever it regains focus. It must not
+  // spend the budget of the deliberate setup start above.
+  githubSetupRecover: {
+    name: 'scm.github.setup.recover',
+    windowMs: 10 * minute,
+    ipLimit: 120,
+    subjectLimit: 60,
+    subject: { source: 'user', normalization: 'opaque' },
+  },
   githubSetupCallback: {
     name: 'scm.github.setup.callback',
     windowMs: 5 * minute,

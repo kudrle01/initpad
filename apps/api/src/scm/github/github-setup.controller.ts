@@ -56,7 +56,7 @@ export class GitHubSetupController {
 
   @Post('recover')
   @UseGuards(JwtAuthGuard)
-  @RateLimited(RATE_LIMITS.githubSetup)
+  @RateLimited(RATE_LIMITS.githubSetupRecover)
   async recover(
     @CurrentUser() userId: string,
     @Headers('x-workspace-id') requestedWorkspaceId?: string,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CircleCheck, ExternalLink, Github } from 'lucide-react';
 import { api, type GitHubStatus } from '@/api';
 import { useAuth } from '@/auth';
@@ -11,6 +11,9 @@ import type { LinkedIdentity } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { t, rich, formatDate } from '@/i18n';
 import { termLabel } from '@/i18n/labels';
+
+// Mirrors the server-side lifetime of one installation setup.
+const SETUP_PENDING_MS = 10 * 60 * 1000;
 
 function openGithubWindow(url?: string): Window | null {
   const width = 760;
@@ -40,6 +43,7 @@ export function GitHubIntegrationSettings() {
   const [unlinkingProvider, setUnlinkingProvider] = useState<string | null>(null);
   const [identities, setIdentities] = useState<LinkedIdentity[]>([]);
   const [status, setStatus] = useState<GitHubStatus | null>(null);
+  const setupStartedAt = useRef<number | null>(null);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
   const activeWorkspaceId = activeWorkspace?.id;
   const githubIdentities = identities.filter((identity) => identity.provider === 'github');
@@ -90,13 +94,19 @@ export function GitHubIntegrationSettings() {
     }
     let disposed = false;
     let running = false;
-    const refresh = async () => {
+    // Recovery is a rate-limited mutation, so a plain return to the window only
+    // re-reads the status. It runs on load and while a setup started here can
+    // still be pending.
+    const setupPending = () =>
+      setupStartedAt.current !== null && Date.now() - setupStartedAt.current < SETUP_PENDING_MS;
+    const refresh = async (recover = setupPending()) => {
       if (running) return;
       running = true;
       try {
-        const recovery = canAdmin
-          ? await api.recoverGithubSetup().catch(() => ({ recovered: false, accountLogin: null }))
-          : { recovered: false, accountLogin: null };
+        const recovery =
+          canAdmin && recover
+            ? await api.recoverGithubSetup().catch(() => ({ recovered: false, accountLogin: null }))
+            : { recovered: false, accountLogin: null };
         const [nextIdentities, nextStatus] = await Promise.all([
           api.listIdentities(),
           api.githubStatus(),
@@ -106,6 +116,7 @@ export function GitHubIntegrationSettings() {
           setStatus(nextStatus);
           setSetupBusy(false);
           if (recovery.recovered) {
+            setupStartedAt.current = null;
             toast.success(
               recovery.accountLogin
                 ? t('GitHub App authorized for {account}', { account: recovery.accountLogin })
@@ -126,7 +137,7 @@ export function GitHubIntegrationSettings() {
       if (document.visibilityState === 'visible') void refresh();
     };
     const refreshWhenFocused = () => void refresh();
-    void refresh();
+    void refresh(true);
     window.addEventListener('focus', refreshWhenFocused);
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
@@ -153,6 +164,7 @@ export function GitHubIntegrationSettings() {
     setSetupBusy(true);
     try {
       const { installUrl } = await api.startGithubSetup();
+      setupStartedAt.current = Date.now();
       popup.location.replace(installUrl);
     } catch (error) {
       popup.close();
