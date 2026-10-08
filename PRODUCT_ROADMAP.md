@@ -147,6 +147,15 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     aby přejmenování účtu nebo organizace aktualizovalo uložený login podle
     neměnného ID. Ověřeno pouze automatizovanými testy.
   - [ ] Provést živý průchod na veřejném stagingu se skutečnou App.
+    - Dne 8. října 2026 autor na stagingu s releasem 0.2.14 potvrdil kroky
+      Login a Instalace pro osobní účet i testovací organizaci. Kroky Create
+      až Audit zbývají.
+    - Průchod odhalil, že stránka nastavení volala obnovu instalace při každém
+      návratu do okna a ta sdílela limit deseti pokusů za deset minut s ručním
+      spuštěním instalace. Běžné přepínání oken tak tlačítko instalace
+      zablokovalo. Obnova má nově vlastní limit a web ji zkouší jen při
+      načtení a během rozpracované instalace. Oprava je pokrytá testy a čeká
+      na další release.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
@@ -199,13 +208,23 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     migrace, S3 round-trip a konzistentní externí PostgreSQL + bucket restore;
     recovery markery povolit pouze explicitně na disposable stagingu.
   - [x] Zvolit konkrétní nízkonákladovou staging topologii a zapsat její
-    vědomé odchylky od provozního minima (ADR-132). Nic z ní zatím není
-    nasazeno.
+    vědomé odchylky od provozního minima (ADR-132).
   - [x] Připravit pro tuto sestavu projekci secretů do souborů, edge tunel,
     collector a runbook v `deploy/SAAS_STAGING.md`. Kontraktní test hlídá
-    shodu projektovaných souborů se SaaS profilem; živě ověřeno není.
+    shodu projektovaných souborů se SaaS profilem.
   - [ ] Zapojit konkrétní externí PostgreSQL, S3 a secret manager ve stagingu
     a ověřit obnovu bez lokálních stavových služeb.
+    - Dne 8. října 2026 běží release 0.2.14 na `https://staging.initpad.me`:
+      secrety se promítají ze správce secretů do souborů, API hlásí externí
+      databázi i úložiště artefaktů jako dostupné a veřejný origin odpovídá
+      pouze přes tunel. Týž den prošla `./saas-acceptance.sh dependencies`:
+      65 aplikovaných migrací, round-trip úložiště artefaktů a veřejná
+      připravenost. Obnova, e-mail a záznam o rotaci secretu zatím chybí,
+      proto bod zůstává otevřený.
+    - První start odhalil, že web se v SaaS profilu releasu 0.2.14 nespustí:
+      profil odebral nginxu všechna oprávnění včetně těch, která potřebuje ke
+      startu. Oprava s kontraktním testem je v repozitáři a čeká na další
+      release; staging do té doby používá dočasný override.
 - [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
   - [x] Uzamknout podporovanou SaaS proxy cestu na veřejný edge/WAF, loopback
@@ -271,14 +290,14 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 
 ### P3 — následná produktová rozšíření
 
-- [ ] Dark mode a první lokalizace až po společném design/i18n boundary.
+- [x] Dark mode a první lokalizace až po společném design/i18n boundary.
   - [x] Implementovat světlý, tmavý a systémový režim nad společnými design
     tokeny. Je součástí redesignu ve vydání 0.2.13; samostatný živý průchod
     obou témat zatím není doložen.
   - [x] Implementovat anglickou a českou lokalizaci nad vlastní i18n boundary:
     přepínač jazyka, český slovník s typovou kontrolou klíčů, plurály a
-    formátování data, času a čísel. Změna je na `main` po vydání 0.2.13 a není
-    součástí žádného releasu. Automatizované testy hlídají shodu placeholderů
+    formátování data, času a čísel. Je součástí vydání 0.2.14.
+    Automatizované testy hlídají shodu placeholderů
     a značek, plurálové tvary, pořadí detekce jazyka prohlížeče a návrat
     fokusu po přepnutí jazyka. Chybové zprávy a průběhové stavy pocházející
     z API zůstávají anglicky.
@@ -287,7 +306,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     před auditními opravami. Opravený návrat fokusu a pořadí detekce jazyka
     byly týž den ověřeny v prohlížeči na přihlašovací stránce a postranním
     panelu při šířce 1280 px i 390 px.
-  - [ ] Vydat lokalizaci v dalším platformním releasu.
+  - [x] Vydat lokalizaci v dalším platformním releasu. Vydání 0.2.14 ze
+    7. října 2026 obsahuje lokalizaci i auditní opravy. Anonymní audit téhož
+    dne potvrdil veřejnou dostupnost, podpisy a obě architektury a autor
+    potvrdil nasazení a ověření na self-hosted instalaci.
 - [ ] Prisma major upgrade jako samostatný migrační a restore projekt.
 - [ ] SSE pouze pokud naměřená polling zátěž ospravedlní stateful vrstvu.
 - [ ] Snížit počet dotazů na GitHub API při čtení commitů a stavu pipeline, až
@@ -304,6 +326,23 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - cachovat installation token. Ušetří další dotazy, ale mění rozhodnutí z
     ADR-043, podle kterého je token vázaný na jednu operaci a neukládá se;
     vyžaduje proto vlastní ADR.
+- [ ] Rozhodnout, zda má veřejný SaaS umět nasazovat na SFTP hosting dostupný
+  pouze ze školní VPN, typicky ESO. Dnes to nejde a žádné nastavení to
+  nezmění: SFTP spojení navazuje control plane a v SaaS smí mířit jen na
+  veřejné adresy (ADR-100). Self-hosted edice takový server obslouží, pokud
+  její hostitel VPN trasu má. Vlastních Docker serverů za VPN nebo NATem se
+  omezení netýká: Agent navazuje jen odchozí spojení, health ověřuje lokálně
+  a SaaS u Docker targetu privátní `publicUrl` přijímá. Živě to má potvrdit
+  domácí Agent target stagingu. Možnosti pro SFTP:
+  - ponechat ESO a jiné servery za VPN výhradně self-hosted edici a v SaaS
+    to uvést jako známé omezení;
+  - doplnit Agentovi úlohu, která SFTP nahrání provede zevnitř sítě. Agent
+    drží pouze odchozí spojení, takže model důvěry zůstává, ale vzniká nový
+    typ úlohy s předáním SFTP credentials a připnutým host key; vyžaduje
+    vlastní ADR;
+  - připojit control plane do školní VPN se nedoporučuje. Sdílená veřejná
+    služba by držela osobní školní přihlášení a získala přístup do interní
+    sítě.
 - [ ] GitLab, Kubernetes/microVM, marketplace a enterprise HA zůstávají mimo
   aktuální dokončovací scope.
 

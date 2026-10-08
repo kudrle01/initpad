@@ -3,9 +3,27 @@
 Tento postup sestavuje neveřejný staging z vrstev zvolených v
 [ADR-132](../docs/adr/ADR-132.md). Doplňuje obecný
 [kontrakt SaaS profilu](./README.md#kontrakt-veřejného-saas-stagingu) o
-konkrétní projekci secretů, edge tunel a collector. Soubory v adresáři
-[`staging/`](./staging/) prošly pouze statickou kontrolou a kontraktním testem;
-**postup zatím nebyl proveden naživo** a první nasazení jej může upřesnit.
+konkrétní projekci secretů, edge tunel a collector.
+
+Dne 8. října 2026 byly s releasem 0.2.14 naživo provedeny tyto části: projekce
+třinácti souborů se secrety, start API proti externí databázi a úložišti, start
+webu a připojení tunelu. Veřejný origin zvenku vrátil přihlašovací stránku a
+`/api/health/ready` potvrdil databázi i úložiště artefaktů. Prošla také
+kontrola závislostí `./saas-acceptance.sh dependencies`. **E-mail, obnova,
+úplný průchod GitHub App ani ostatní gate ze
+[SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md) zatím neproběhly.**
+
+Web z releasu 0.2.14 se v SaaS profilu sám nespustí, protože profil odebíral
+nginxu i oprávnění potřebná ke startu. Oprava je v `saas.compose.yml` po tomto
+releasu. Nasazení tagu `initpad-v0.2.14` proto vyžaduje ke každému volání
+`docker compose` nad `saas.compose.yml` ještě dočasný soubor mimo checkout,
+připojený dalším přepínačem `-f`:
+
+```yaml
+services:
+  web:
+    cap_add: [CHOWN, SETGID, SETUID, NET_BIND_SERVICE]
+```
 
 Postup nepokrývá default-deny egress ani sběr JSON logů kontejnerů. Oba body
 zůstávají samostatnými gate podle [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md) a
@@ -21,15 +39,27 @@ správce secretů, nikdy do env souboru, repozitáře ani chatu.
 | Doména        | vlastní doména s nameservery přesměrovanými na Cloudflare                  | veřejný origin `https://<origin>`                          |
 | Cloudflare    | zónu domény a vzdáleně spravovaný Tunnel s hostname `<origin>` na `http://127.0.0.1:8080` | secret: token tunelu                        |
 | Cloudflare R2 | privátní bucket a API token omezený na čtení a zápis objektů tohoto bucketu | endpoint, název bucketu; secret: access key ID a secret key |
-| DigitalOcean  | Droplet s Ubuntu LTS, 2 vCPU a 4 GB; firewall povolující příchozí pouze SSH z adresy provozovatele | přístup přes SSH klíč                    |
+| Hetzner Cloud | server s Ubuntu LTS, 2 vCPU a 4 GB; firewall povolující příchozí pouze SSH z adresy provozovatele | přístup přes SSH klíč                    |
 | Supabase      | projekt v regionu EU                                                       | secret: connection string session pooleru s `sslmode=require` |
 | Infisical     | projekt, prostředí `staging` a machine identity s Universal Auth a právem číst | ID projektu; secret: client ID a client secret          |
 | Brevo         | ověřenou odesílací doménu s DKIM a SMTP klíč                               | SMTP host, port 587, login; secret: SMTP klíč              |
 | Grafana Cloud | stack v regionu EU a token pro zápis přes OTLP                             | secret: OTLP endpoint a hlavička `Basic <base64(ID:token)>` |
 | GitHub        | testovací organizaci a GitHub App podle [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md#github-app-a-ruční-e2e-instalace) | App ID, Client ID, slug; secret: client secret, privátní klíč, webhook secret |
 
-Firewall Dropletu nesmí otevírat porty 80 ani 443. Jedinou veřejnou cestou je
+Firewall serveru nesmí otevírat porty 80 ani 443. Jedinou veřejnou cestou je
 tunel, který z hostu navazuje pouze odchozí spojení.
+
+Poskytovatelé VM často blokují odchozí SMTP porty. Hetzner Cloud blokuje porty
+25 a 465, port 587 používaný s povinným STARTTLS nikoli. Poskytovatel, který
+blokuje i port 587, vyžaduje alternativní port relay serveru, u Breva 2525;
+skutečné předání zprávy ověří `./saas-acceptance.sh email`. Odesílací doménu
+ověřujte na samostatné subdoméně, například `mail.<doména>`. Jméno, na kterém
+tunel vytvořil záznam pro `<origin>`, další DNS záznamy nést nemůže.
+
+Bucket R2 vytvořený v jurisdikci EU je dostupný pouze přes endpoint
+`https://<ID účtu>.eu.r2.cloudflarestorage.com`. Bezplatný limit úložiště je
+menší než výchozí kvóta artefaktů jednoho workspace, proto na stagingu zkraťte
+`INITPAD_ARTIFACT_RETENTION_DAYS` a snižte kvótu workspace.
 
 ## Secrety v Infisicalu
 
@@ -72,7 +102,10 @@ roota, proto jej Compose ani preflight pod jiným uživatelem nepřečtou.
 
 4. Do `/secure/runtime/infisical/client-id` a
    `/secure/runtime/infisical/client-secret` uložte údaje machine identity s
-   právy `0400`. Je to jediný secret, který se na host přenáší ručně.
+   právy `0400`. Je to jediný secret, který se na host přenáší ručně. Client ID
+   je údaj metody Universal Auth, nikoli ID samotné identity, a client secret
+   se zobrazí pouze jednou při vytvoření. Záměna končí v logu agenta chybou
+   `401 Invalid credentials`.
 5. Vytvořte konfiguraci agenta s ID projektu a spusťte projekci:
 
    ```bash
@@ -114,6 +147,8 @@ roota, proto jej Compose ani preflight pod jiným uživatelem nepřečtou.
    docker compose -f staging/edge.compose.yml up -d
    ```
 
+   Dokud se tunel nepřipojí, vrací veřejný origin chybu Cloudflare 1033.
+
 5. Pokračujte kontrolou závislostí a dalšími kroky ze
    [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md).
 
@@ -121,13 +156,15 @@ roota, proto jej Compose ani preflight pod jiným uživatelem nepřečtou.
 
 Změňte hodnotu v Infisicalu a počkejte na další dotaz agenta, nejvýše pět
 minut. Soubor na hostu se přepíše, běžící kontejner ale používá hodnotu načtenou
-při startu. Službu, které se secret týká, proto znovu vytvořte, například
-`docker compose --env-file /secure/runtime/initpad-saas.env -f saas.compose.yml up -d --force-recreate api`,
-a zopakujte kontrolu závislostí. Do záznamu uveďte název secretu, čas a
-výsledek, nikoli hodnotu.
+při startu. Službu, které se secret týká, proto restartujte, například
+`docker compose --env-file /secure/runtime/initpad-saas.env -f saas.compose.yml restart api`,
+a zopakujte kontrolu závislostí. Restart stačí, protože Docker při každém startu
+kontejneru připojí soubory znovu; nové vytvoření kontejneru je nutné až při
+změně konfigurace. Restart samotného agenta secretů službu neobnoví. Do záznamu
+uveďte název secretu, čas a výsledek, nikoli hodnotu.
 
 ## Zrušení stagingu
 
-Zastavte oba pomocné projekty i control plane, smažte Droplet, tunel, bucket,
+Zastavte oba pomocné projekty i control plane, smažte server, tunel, bucket,
 databázový projekt a machine identity a zneplatněte všechny vydané tokeny.
 Staging je disposable; jeho data nejsou zálohou.
