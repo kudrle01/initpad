@@ -50,6 +50,27 @@ test('requires immutable platform images and validates without printing secrets'
   assert.doesNotMatch(checker, /(^|\s)(source|\.)\s+["']?\$env_file/m);
 });
 
+test('hardens both services while leaving the web proxy able to start', () => {
+  const services = compose.slice(compose.indexOf('services:'), compose.indexOf('\nvolumes:'));
+  const api = services.slice(services.indexOf('\n  api:'), services.indexOf('\n  web:'));
+  const web = services.slice(services.indexOf('\n  web:'));
+
+  for (const [name, service] of [
+    ['api', api],
+    ['web', web],
+  ]) {
+    assert.match(service, /^ {4}read_only: true$/m, name);
+    assert.match(service, /^ {4}cap_drop: \[ALL\]$/m, name);
+    assert.match(service, /^ {4}security_opt: \[no-new-privileges:true\]$/m, name);
+    assert.doesNotMatch(service, /privileged|^ {4}user: ['"]?(0|root)\b/m, name);
+  }
+  // nginx starts as root and needs exactly these to chown its tmpfs cache,
+  // bind port 80 and drop its workers; the first 0.2.14 staging run crashed
+  // without them. The API needs none.
+  assert.match(web, /^ {4}cap_add: \[CHOWN, SETGID, SETUID, NET_BIND_SERVICE\]$/m);
+  assert.doesNotMatch(api, /cap_add/);
+});
+
 test('mounts deployment-owned secrets as files without placing values in the environment', () => {
   const secretNames = [
     'DATABASE_URL',
