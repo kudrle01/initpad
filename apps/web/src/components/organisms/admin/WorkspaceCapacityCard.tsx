@@ -104,7 +104,14 @@ function CapacityEditor({
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
 
-  useEffect(() => setValues(initialValues(capacity)), [capacity]);
+  // Reset the draft when the saved limits change. This happens during render
+  // because an effect also runs after mount, and React may flush it only after
+  // the first edit, which it would then overwrite.
+  const [syncedCapacity, setSyncedCapacity] = useState(capacity);
+  if (syncedCapacity !== capacity) {
+    setSyncedCapacity(capacity);
+    setValues(initialValues(capacity));
+  }
 
   const original = initialValues(capacity);
   const changed = (Object.keys(original) as Array<keyof WorkspaceCapacityUpdate>).some(

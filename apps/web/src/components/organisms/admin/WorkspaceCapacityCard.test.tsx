@@ -106,6 +106,26 @@ describe('WorkspaceCapacityCard', () => {
     );
   });
 
+  it('keeps the first edit when React flushes effects late', async () => {
+    // Every clock read jumps past React's 5 ms slice, so the scheduler yields
+    // after each task. A busy CI runner reaches the same ordering on its own.
+    let now = 0;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => (now += 10));
+    try {
+      const user = userEvent.setup();
+      render(<WorkspaceCapacityCard />);
+      await screen.findByText('Team Alpha');
+
+      const projects = screen.getByLabelText(/Projects.*4 used/);
+      await user.clear(projects);
+      await user.type(projects, '60');
+
+      expect(projects).toHaveValue(60);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('requires confirmation before lowering a limit below current usage', async () => {
     const user = userEvent.setup();
     render(<WorkspaceCapacityCard />);
