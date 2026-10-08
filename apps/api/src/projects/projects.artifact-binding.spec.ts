@@ -244,6 +244,113 @@ describe('ProjectsService immutable artifact binding', () => {
     );
   });
 
+  it('reuses a stored artifact for an Agent target without the local Docker daemon', async () => {
+    const sha = 'a'.repeat(40);
+    const prisma = {
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1',
+          status: 'failed',
+          activeOperationId: null,
+          provider: 'docker',
+          target: { name: 'Home server', scope: 'user' },
+        })),
+      },
+      project: { findUniqueOrThrow: jest.fn(async () => projectRow) },
+      deploymentOperation: {
+        findFirst: jest.fn(async () => ({ version: sha, buildArtifactId: 'artifact-1' })),
+      },
+      buildArtifact: { findFirst: jest.fn(async () => ({ id: 'artifact-1' })) },
+    };
+    // A public control plane has no daemon; the Agent downloads the archive.
+    const deployment = {
+      hasImage: jest.fn(async () => false),
+      loadImageArchive: jest.fn(async () => {
+        throw new Error('Docker daemon is not available — cannot ingest the tested image.');
+      }),
+    };
+    const service = make(prisma, deployment);
+    jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
+    const schedule = jest.spyOn(service as any, 'scheduleDeployment').mockResolvedValue(undefined);
+
+    await service.runAgain('project-1');
+
+    expect(prisma.buildArtifact.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'artifact-1',
+          projectId: 'project-1',
+          status: 'available',
+          storageKind: 'object-store',
+        }),
+      }),
+    );
+    expect(deployment.hasImage).not.toHaveBeenCalled();
+    expect(deployment.loadImageArchive).not.toHaveBeenCalled();
+    expect(schedule).toHaveBeenCalledWith(
+      'project-1',
+      'dev',
+      sha,
+      true,
+      'retry',
+      'artifact-1',
+      undefined,
+    );
+  });
+
+  it('recovers the GitHub artifact for an Agent target when its ingestion had failed', async () => {
+    const sha = 'a'.repeat(40);
+    const artifact = {
+      provider: 'github-actions',
+      providerArtifactId: '901',
+      providerRunId: '456',
+      name: 'initpad-image.tar',
+      digest: 'd'.repeat(64),
+      commitSha: sha,
+      sizeBytes: 123,
+      expiresAt: new Date('2026-07-21T00:00:00Z'),
+    };
+    const prisma = {
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1',
+          status: 'failed',
+          activeOperationId: null,
+          provider: 'docker',
+          target: { name: 'Home server', scope: 'user' },
+        })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      project: {
+        findUniqueOrThrow: jest.fn(async () => projectRow),
+        findUnique: jest.fn(async () => ({ ...projectRow, owner: null })),
+      },
+      deploymentOperation: {
+        findFirst: jest.fn(async () => ({ version: sha, buildArtifactId: 'artifact-1' })),
+      },
+      // The failed ingestion left no stored archive behind.
+      buildArtifact: { findFirst: jest.fn(async () => null) },
+    };
+    const scm = {
+      listCommits: jest.fn(async () => [{ sha }]),
+      findBuildArtifact: jest.fn(async () => artifact),
+      createRetryTag: jest.fn(),
+    };
+    const service = make(prisma, {}, { provider: jest.fn(() => scm) });
+    jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
+    jest.spyOn((service as any).operations, 'begin').mockResolvedValue('operation-1');
+    const schedule = jest.spyOn(service as any, 'scheduleDeployment').mockResolvedValue(undefined);
+    const queue = jest
+      .spyOn((service as any).artifactIngestion, 'queue')
+      .mockResolvedValue(undefined);
+
+    await service.runAgain('project-1');
+
+    expect(schedule).not.toHaveBeenCalled();
+    expect(queue).toHaveBeenCalledWith('project-1', expect.anything(), artifact, 'operation-1');
+    expect(scm.createRetryTag).not.toHaveBeenCalled();
+  });
+
   it('recovers an existing tested GitHub artifact instead of starting CI again', async () => {
     const sha = 'a'.repeat(40);
     const artifact = {

@@ -9,6 +9,18 @@ export function deploymentSlug(repository: ScmRepositoryRef): string {
     .replace(/^-+|-+$/g, '');
 }
 
+/**
+ * An environment on a user-owned Docker target is deployed by its Agent, which
+ * downloads the stored archive itself. Only the other environments need the
+ * image inside the control plane's own Docker daemon.
+ */
+export function isAgentBackedEnvironment(environment: {
+  provider: string;
+  target?: { scope: string } | null;
+}): boolean {
+  return environment.provider === 'docker' && environment.target?.scope === 'user';
+}
+
 /** Registry repository without a tag. */
 export function imageRepository(repository: ScmRepositoryRef): string {
   const registry = repository.provider === 'github' ? 'ghcr.io' : config.registry.host;

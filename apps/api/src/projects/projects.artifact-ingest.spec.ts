@@ -82,14 +82,23 @@ describe('ProjectArtifactIngestion → object storage', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  function basePrisma(updateMany: jest.Mock) {
+  // Dev on the built-in target deploys through the control plane's own daemon.
+  const BUILTIN_DEV = { provider: 'docker', target: { scope: 'builtin' } };
+
+  function basePrisma(
+    updateMany: jest.Mock,
+    dev: { provider: string; target: { scope: string } | null } | null = BUILTIN_DEV,
+  ) {
     return {
       $queryRaw: jest.fn(async () => [{ id: 'a1', generation: 1 }]),
       buildArtifact: {
         updateMany,
         findUnique: jest.fn(async () => ({ id: 'a1', project: { workspaceId: 'ws1' } })),
       },
-      environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
+      environment: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        findUnique: jest.fn(async () => dev),
+      },
       deploymentOperation: {
         updateMany: jest.fn(async () => ({ count: 1 })),
         update: jest.fn(async () => ({})),
@@ -242,6 +251,45 @@ describe('ProjectArtifactIngestion → object storage', () => {
         }),
       }),
     );
+  });
+
+  it.each([
+    ['dev is deployed by an Agent', { provider: 'docker', target: { scope: 'user' } }],
+    ['the project has no dev environment', null],
+  ])('publishes without the local Docker daemon when %s', async (_case, dev) => {
+    const updateMany = jest.fn(async () => ({ count: 1 }));
+    const prisma = basePrisma(updateMany, dev);
+    const scm = {
+      downloadBuildArtifact: jest.fn(async () => ({ filePath, cleanup: jest.fn() })),
+    };
+    // A public control plane has no daemon; touching it would fail ingestion.
+    const deployment = {
+      loadImageArchive: jest.fn(async () => {
+        throw new Error('Docker daemon is not available — cannot ingest the tested image.');
+      }),
+    };
+    const store = {
+      put: jest.fn(async () => undefined),
+      head: jest.fn(async () => ({ sizeBytes: 12 })),
+      delete: jest.fn(async () => undefined),
+    };
+    const { ingestion, deployVerifiedArtifact } = makeIngestion(prisma, scm, deployment, store);
+
+    await ingestion.ingest('project-1', repository, artifact, 'op-1');
+
+    expect(prisma.environment.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { projectId_name: { projectId: 'project-1', name: 'dev' } },
+      }),
+    );
+    expect(deployment.loadImageArchive).not.toHaveBeenCalled();
+    expect(store.delete).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'available', storageKind: 'object-store' }),
+      }),
+    );
+    expect(deployVerifiedArtifact).toHaveBeenCalledWith('project-1', SHA, 'op-1');
   });
 
   it('stores a prod-only artifact without creating or running a deployment', async () => {

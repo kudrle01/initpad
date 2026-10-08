@@ -55,7 +55,11 @@ import { ProjectDeploymentExecutor } from './project-deployment-executor';
 import { ProjectArtifactIngestion } from './project-artifact-ingestion';
 import { CiArtifactInput, ProjectCiOrchestrator } from './project-ci-orchestrator';
 import { AppConfigService } from './app-config.service';
-import { deployedImageRef, deploymentSlug } from './project-deployment-identity';
+import {
+  deployedImageRef,
+  deploymentSlug,
+  isAgentBackedEnvironment,
+} from './project-deployment-identity';
 import { ProjectRollback } from './project-rollback';
 import { ProjectWorkloadDiagnostics } from './project-workload-diagnostics';
 import { AuditEventsService } from '../audit/audit-events.service';
@@ -1543,16 +1547,20 @@ export class ProjectsService {
       const useRegistry = /^[0-9a-f]{40}$/i.test(reusableOperation.version);
       // For a GitHub registry image, reuse is possible only when the verified
       // artifact is present in the local daemon — or can be rehydrated from
-      // durable object storage (ADR-059 §6). Non-GitHub paths reuse directly.
+      // durable object storage (ADR-059 §6). An Agent downloads the stored
+      // archive itself, so its target needs no local copy. Non-GitHub paths
+      // reuse directly.
       const canReuseArtifact =
         repository.provider !== 'github' || !useRegistry
           ? true
           : reusableOperation.buildArtifactId != null &&
-            (await this.artifactLifecycle.ensureImageAvailable(
-              repository,
-              id,
-              reusableOperation.buildArtifactId,
-            ));
+            (isAgentBackedEnvironment(env)
+              ? await this.artifactLifecycle.isArtifactStored(id, reusableOperation.buildArtifactId)
+              : await this.artifactLifecycle.ensureImageAvailable(
+                  repository,
+                  id,
+                  reusableOperation.buildArtifactId,
+                ));
       if (canReuseArtifact) {
         await this.scheduleDeployment(
           id,

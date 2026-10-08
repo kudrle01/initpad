@@ -7,7 +7,12 @@ import { repositoryRef, ScmActor } from '../scm/scm-provider';
 import { TemplatesService } from '../templates/templates.service';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 import { ProjectAgentDelivery } from './project-agent-delivery';
-import { artifactImageRef, deploymentSlug, registryImageRef } from './project-deployment-identity';
+import {
+  artifactImageRef,
+  deploymentSlug,
+  isAgentBackedEnvironment,
+  registryImageRef,
+} from './project-deployment-identity';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectDeploymentPreparation } from './project-deployment-preparation';
 import { ProjectEnvironmentLifecycle } from './project-environment-lifecycle';
@@ -48,7 +53,7 @@ export class ProjectDeploymentExecutor {
       where: { id: operationId },
       include: { buildArtifact: true },
     });
-    const agentBacked = environment.provider === 'docker' && environment.target?.scope === 'user';
+    const agentBacked = isAgentBackedEnvironment(environment);
     let testedImageRef: string | undefined;
     if (useRegistry) {
       if (repository.provider === 'github') {

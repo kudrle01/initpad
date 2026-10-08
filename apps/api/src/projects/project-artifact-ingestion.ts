@@ -5,7 +5,7 @@ import { DeploymentService } from '../deployment/deployment.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScmBuildArtifact, ScmProvider, ScmRepositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
-import { artifactImageRef } from './project-deployment-identity';
+import { artifactImageRef, isAgentBackedEnvironment } from './project-deployment-identity';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import {
   ARTIFACT_EXECUTION_LEGACY_GRACE_MS,
@@ -241,7 +241,9 @@ export class ProjectArtifactIngestion {
       if (!head) throw new Error('Artifact upload could not be confirmed in object storage');
       await this.execution.assert(context);
 
-      await this.deployment.loadImageArchive(download.filePath, imageRef);
+      if (await this.devDeploysThroughLocalDaemon(projectId)) {
+        await this.deployment.loadImageArchive(download.filePath, imageRef);
+      }
       await this.execution.assert(context);
       const published = await this.prisma.buildArtifact.updateMany({
         where: this.execution.fence(context, projectId),
@@ -346,6 +348,21 @@ export class ProjectArtifactIngestion {
         this.logger.warn(`Could not clean up downloaded artifact: ${(error as Error).message}`);
       }
     }
+  }
+
+  /**
+   * The local daemon is only a cache for environments the control plane
+   * deploys itself. Ingestion warms it for the dev deployment that follows;
+   * an Agent downloads the stored archive, and every later deployment
+   * rehydrates on demand. A public control plane has no daemon at all
+   * (ADR-133).
+   */
+  private async devDeploysThroughLocalDaemon(projectId: string): Promise<boolean> {
+    const dev = await this.prisma.environment.findUnique({
+      where: { projectId_name: { projectId, name: 'dev' } },
+      select: { provider: true, target: { select: { scope: true } } },
+    });
+    return dev !== null && !isAgentBackedEnvironment(dev);
   }
 
   private async accept(projectId: string, artifact: ScmBuildArtifact): Promise<{ id: string }> {

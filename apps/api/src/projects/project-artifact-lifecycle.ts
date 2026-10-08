@@ -31,6 +31,24 @@ export class ProjectArtifactLifecycle {
   }
 
   /**
+   * True when the verified archive is durably stored. An Agent deployment
+   * needs nothing more, because the Agent downloads the archive itself.
+   */
+  async isArtifactStored(projectId: string, buildArtifactId: string): Promise<boolean> {
+    const artifact = await this.prisma.buildArtifact.findFirst({
+      where: {
+        id: buildArtifactId,
+        projectId,
+        status: 'available',
+        storageKind: 'object-store',
+        storageRef: { not: null },
+      },
+      select: { id: true },
+    });
+    return artifact !== null;
+  }
+
+  /**
    * Ensures the exact verified image is available in the local runtime. The
    * durable object store remains the source of truth when the daemon cache was
    * pruned or the control plane restarted.
