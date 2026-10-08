@@ -156,6 +156,12 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       zablokovalo. Obnova má nově vlastní limit a web ji zkouší jen při
       načtení a během rozpracované instalace. Oprava je pokrytá testy a čeká
       na další release.
+    - Krok Create v testovací organizaci založil repozitář a kroky build,
+      test i deploy v GitHub Actions prošly. Příjem artefaktu ale selhal,
+      protože se image načítal do lokálního Docker daemonu, který SaaS control
+      plane nemá. Bez opravy nejde ve veřejném SaaS nasadit žádný projekt.
+      Oprava podle ADR-133 je pokrytá testy a čeká na další release; kroky
+      Create až Nasazení Agentem se po něm musí zopakovat.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
@@ -219,8 +225,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       databázi i úložiště artefaktů jako dostupné a veřejný origin odpovídá
       pouze přes tunel. Týž den prošla `./saas-acceptance.sh dependencies`:
       65 aplikovaných migrací, round-trip úložiště artefaktů a veřejná
-      připravenost. Obnova, e-mail a záznam o rotaci secretu zatím chybí,
-      proto bod zůstává otevřený.
+      připravenost. Autor týž den potvrdil i průchod
+      `./saas-acceptance.sh email`. Obnova a záznam o rotaci secretu zatím
+      chybí, proto bod zůstává otevřený.
     - První start odhalil, že web se v SaaS profilu releasu 0.2.14 nespustí:
       profil odebral nginxu všechna oprávnění včetně těch, která potřebuje ke
       startu. Oprava s kontraktním testem je v repozitáři a čeká na další

@@ -8,9 +8,9 @@ konkrétní projekci secretů, edge tunel a collector.
 Dne 8. října 2026 byly s releasem 0.2.14 naživo provedeny tyto části: projekce
 třinácti souborů se secrety, start API proti externí databázi a úložišti, start
 webu a připojení tunelu. Veřejný origin zvenku vrátil přihlašovací stránku a
-`/api/health/ready` potvrdil databázi i úložiště artefaktů. Prošla také
-kontrola závislostí `./saas-acceptance.sh dependencies`. **E-mail, obnova,
-úplný průchod GitHub App ani ostatní gate ze
+`/api/health/ready` potvrdil databázi i úložiště artefaktů. Prošly také
+kontroly `./saas-acceptance.sh dependencies` a `./saas-acceptance.sh email`.
+**Obnova, úplný průchod GitHub App ani ostatní gate ze
 [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md) zatím neproběhly.**
 
 Web z releasu 0.2.14 se v SaaS profilu sám nespustí, protože profil odebíral
