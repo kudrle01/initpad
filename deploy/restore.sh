@@ -5,6 +5,7 @@
 #
 #   ./restore.sh <backup-dir>
 #   ./restore.sh ./backups/20260101T020000Z
+#   INITPAD_BACKUP_AGE_IDENTITY_FILE=key.txt ./restore.sh ./backups/20260101T020000Z.tar.age
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -21,9 +22,14 @@ say()  { printf '\033[1;32m›\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 [ -f ./restore-reconcile.sql ] || fail "deploy/restore-reconcile.sql is missing."
 restore_started=0
+decrypted_backup=""
 restore_failure() {
   local status=$?
   trap - EXIT
+  # The decrypted copy holds every secret of the backup; never leave it behind.
+  if [ -n "$decrypted_backup" ] && [ -d "$decrypted_backup" ]; then
+    rm -rf -- "$decrypted_backup"
+  fi
   if [ "$status" -ne 0 ] && [ "$restore_started" -eq 1 ]; then
     printf '\033[1;31m✗\033[0m Restore did not complete; do not use the stack as a verified restore.\n' >&2
     printf '  Fix the reported error and run the same restore command again.\n' >&2
@@ -34,11 +40,23 @@ trap restore_failure EXIT
 
 src=${1:-}
 [ -n "$src" ] || {
-  echo "Usage: ./restore.sh <backup-dir>"
+  echo "Usage: ./restore.sh <backup-dir | backup.tar.age>"
   echo "Available backups:"
-  ls -1d ./backups/*/ 2>/dev/null || echo "  (none in ./backups)"
+  ls -1d ./backups/*/ ./backups/*.tar.age 2>/dev/null || echo "  (none in ./backups)"
   exit 1
 }
+backup_label=$src
+if [ -f "$src" ] && [ "${src%.tar.age}" != "$src" ]; then
+  identity=${INITPAD_BACKUP_AGE_IDENTITY_FILE:-}
+  [ -n "$identity" ] || \
+    fail "Set INITPAD_BACKUP_AGE_IDENTITY_FILE to the age identity that can decrypt '$src'."
+  mkdir -p ./backups
+  decrypted_backup=$(mktemp -d ./backups/.restore-XXXXXX)
+  chmod 700 "$decrypted_backup"
+  say "Decrypting the backup"
+  ./backup-crypt.sh decrypt "$src" "$decrypted_backup" "$identity"
+  src=$decrypted_backup
+fi
 [ -d "$src" ] || fail "Backup directory '$src' not found."
 required_files=(
   postgres.dump initpad.env SHA256SUMS
@@ -90,7 +108,7 @@ docker run --rm -i postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45
   < "$src/postgres.dump" >/dev/null || fail "PostgreSQL dump is not readable."
 
 echo "⚠  This OVERWRITES the current database and data volumes from:"
-echo "     $src"
+echo "     $backup_label"
 read -r -p "Type 'restore' to continue: " confirm
 [ "$confirm" = "restore" ] || { echo "Aborted."; exit 1; }
 restore_started=1
@@ -252,6 +270,7 @@ runner_id=$("${COMPOSE[@]}" --profile runner ps -q act_runner)
   fail "act_runner is not running after restore."
 
 restore_started=0
+if [ -n "$decrypted_backup" ]; then rm -rf -- "$decrypted_backup"; fi
 trap - EXIT
 printf '\033[1;32m✔\033[0m Restore complete. Check: docker compose ps  and  docker compose logs -f api\n'
 printf '   If the CI runner address changed, re-run ./install.sh to reconcile it.\n'

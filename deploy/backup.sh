@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Consistent InitPad backup. PostgreSQL is dumped logically; file-backed
-# volumes are archived read-only. The output contains secrets — store it as
-# confidential data and encrypt it before copying off-host.
+# volumes are archived read-only. The output contains secrets. With
+# INITPAD_BACKUP_AGE_RECIPIENTS_FILE set, the finished checkpoint is encrypted
+# to those age public keys and only <stamp>.tar.age remains (ADR-151).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -81,6 +82,15 @@ if [ -z "$custom_dest" ]; then
   [ "$keep" -ge 1 ] && [ "$keep" -le 365 ] || \
     fail "INITPAD_BACKUP_KEEP must be between 1 and 365."
 fi
+recipients=${INITPAD_BACKUP_AGE_RECIPIENTS_FILE:-}
+if [ -n "$recipients" ]; then
+  # Check before quiescing services, so a missing tool or key never costs a
+  # maintenance window.
+  [ -s "$recipients" ] || fail "INITPAD_BACKUP_AGE_RECIPIENTS_FILE '$recipients' is missing or empty."
+  command -v age >/dev/null 2>&1 || \
+    fail "age is not installed. Install it (Debian/Ubuntu: apt install age) or unset INITPAD_BACKUP_AGE_RECIPIENTS_FILE."
+  [ ! -e "${destination}.tar.age" ] || fail "'${destination}.tar.age' already exists."
+fi
 mkdir -p "$(dirname "$destination")"
 working_destination="${destination}.partial-$$"
 [ ! -e "$working_destination" ] || fail "Temporary backup path already exists."
@@ -156,14 +166,36 @@ working_destination=""
 
 restart_previous_services
 
-# Rotation — keep the newest N backups in the default ./backups directory.
-# Skipped when a custom destination was passed as $1.
+# Encrypting takes as long as reading every archive again, so it runs after
+# the services are back. If it fails, the plaintext checkpoint stays for the
+# operator to handle instead of losing the backup.
+if [ -n "$recipients" ]; then
+  say "Encrypting the backup for the configured age recipients"
+  ./backup-crypt.sh encrypt "$destination" "${destination}.tar.age" "$recipients"
+  rm -rf -- "$destination"
+  destination="${destination}.tar.age"
+fi
+
+# Rotation — keep the newest N backups in the default ./backups directory,
+# plain directories and encrypted files alike. Skipped when a custom
+# destination was passed as $1.
 if [ -z "$custom_dest" ]; then
-  # shellcheck disable=SC2012
-  ls -1dt ./backups/*/ 2>/dev/null | tail -n +"$((keep + 1))" | xargs -r rm -rf
+  # A pattern without a match must not fail the finished backup (pipefail).
+  shopt -s nullglob
+  existing_backups=(./backups/*/ ./backups/*.tar.age)
+  shopt -u nullglob
+  if [ "${#existing_backups[@]}" -gt "$keep" ]; then
+    # shellcheck disable=SC2012
+    ls -1dt "${existing_backups[@]}" | tail -n +"$((keep + 1))" | xargs -r rm -rf
+  fi
 fi
 
 trap - EXIT
 
 printf 'Backup written to %s\n' "$destination"
-printf 'It contains credentials. Encrypt it and test restoration regularly.\n'
+if [ -n "$recipients" ]; then
+  printf 'Restore it with INITPAD_BACKUP_AGE_IDENTITY_FILE=<key> ./restore.sh %s\n' "$destination"
+else
+  printf 'It contains credentials unencrypted. Set INITPAD_BACKUP_AGE_RECIPIENTS_FILE\n'
+  printf 'to encrypt backups, copy them off-host and test restoration regularly.\n'
+fi

@@ -149,6 +149,8 @@ konfiguraci v paměti.
 - Použité a prošlé jednorázové tokeny, odeslané e-maily, dokončené Agent joby
   a audit starší než nastavená doba (výchozí 400 dní) se pravidelně mažou
   (ADR-150).
+- Self-hosted záloha se může šifrovat veřejným klíčem `age`; soukromý klíč na
+  serveru není, takže zálohu nerozšifruje ani útočník se serverem (ADR-151).
 - Závislosti a actions jsou uzamčeny. Release gate audituje produkční npm
   závislosti. CI při změně obrazů nebo šablon a jednou týdně skenuje obrazy
   platformy a lockfily šablon (npm, Composer, pip); opravitelný nález HIGH nebo

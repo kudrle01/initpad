@@ -161,3 +161,4 @@ stabilní.
 | [ADR-148](./ADR-148.md) | Accepted | Obnova účtu odvolá všechny Gitea tokeny a provoz umí ukončit Gitea sessions |
 | [ADR-149](./ADR-149.md) | Accepted | Sítě sdílené za jednou adresou mají vyšší limit na IP |
 | [ADR-150](./ADR-150.md) | Accepted | Historie bez dalšího využití se po stanovené době maže |
+| [ADR-151](./ADR-151.md) | Accepted | Záloha se šifruje veřejným klíčem, který server nedokáže otevřít |

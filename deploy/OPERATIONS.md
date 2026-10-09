@@ -61,11 +61,37 @@ Naplánuj přes cron (např. denně ve 2:00, ponech 7 posledních):
 0 2 * * *  cd /cesta/k/initpad/deploy && INITPAD_BACKUP_KEEP=7 ./backup.sh >> ./backups/backup.log 2>&1
 ```
 
-Záloha **obsahuje `.env` se secrety a všechna data** — ukládej ji jako důvěrnou,
-kopíruj **offsite** a ideálně **šifruj** (např. `age`/`gpg`). Rotace nechává
-posledních `INITPAD_BACKUP_KEEP` záloh (výchozí 7).
+Záloha **obsahuje `.env` se secrety a všechna data**. Šifruj ji veřejným
+klíčem `age` (ADR-151). Klíčový pár vytvoř mimo server a na server dej jen
+veřejnou část:
+
+```bash
+age-keygen -o initpad-backup.key            # na tvém počítači; soubor drž v trezoru
+age-keygen -y initpad-backup.key > recipients.txt
+scp recipients.txt server:/etc/initpad/backup-recipients.txt
+```
+
+Na serveru nainstaluj `age` (`apt install age`) a předej soubor záloze:
+
+```cron
+0 2 * * *  cd /cesta/k/initpad/deploy && INITPAD_BACKUP_AGE_RECIPIENTS_FILE=/etc/initpad/backup-recipients.txt INITPAD_BACKUP_KEEP=7 ./backup.sh >> ./backups/backup.log 2>&1
+```
+
+Záloha pak zůstane jen jako `./backups/<časové-razítko>.tar.age`. Server ji
+zapíše, ale bez soukromého klíče ji nepřečte; ani útočník na serveru proto
+zálohu nerozšifruje. Kopíruj ji **mimo server** (např. `rclone copy` nebo
+`rsync`). Rotace nechává posledních `INITPAD_BACKUP_KEEP` záloh (výchozí 7),
+šifrovaných i nešifrovaných. Když `age` chybí nebo soubor s klíči neexistuje,
+skript skončí ještě před zastavením služeb.
 
 ## Obnova
+
+Šifrovanou zálohu obnov s cestou k soukromému klíči; skript ji rozbalí do
+dočasného adresáře, který po skončení smaže:
+
+```bash
+INITPAD_BACKUP_AGE_IDENTITY_FILE=/cesta/k/initpad-backup.key ./restore.sh ./backups/20261009T020000Z.tar.age
+```
 
 Obnovení z konkrétní zálohy (DESTRUKTIVNÍ — přepíše aktuální data):
 
