@@ -10,7 +10,7 @@ RUN vendor/bin/phpunit
 
 FROM base AS production-deps
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-interaction --prefer-dist --no-progress --classmap-authoritative
+RUN composer install --no-dev --no-interaction --prefer-dist --no-progress --optimize-autoloader
 
 # FrankenPHP is a production web server; `php -S` is a development tool.
 FROM dunglas/frankenphp:1.13.0-php8.3-alpine@sha256:db71e31f5340b0bda97220bd3d67cc47bcd7352bf3430f07eda8c1531b526781 AS runtime
