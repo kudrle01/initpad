@@ -1,3 +1,4 @@
+import { config } from '../config';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { WorkspacesService } from './workspaces.service';
 
@@ -437,6 +438,7 @@ describe('WorkspacesService tenant isolation', () => {
       maxArtifactBytes: BigInt(21474836480),
     };
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown): Promise<unknown> => fn(prisma),
       workspace: {
         findUnique: jest.fn(async () => row),
         create: jest.fn(async () => row),
@@ -461,5 +463,68 @@ describe('WorkspacesService tenant isolation', () => {
       expect(response).not.toHaveProperty('maxArtifactBytes');
     }
     expect(renamed).toMatchObject({ name: 'Renamed', role: 'owner' });
+  });
+
+  describe('owned team workspace limit (ADR-154)', () => {
+    const saved = config.workspaces.maxOwnedTeamWorkspaces;
+    afterEach(() => {
+      config.workspaces.maxOwnedTeamWorkspaces = saved;
+    });
+
+    function serviceWith(role: string, owned: number) {
+      const prisma = {
+        $transaction: async (fn: (tx: unknown) => unknown): Promise<unknown> => fn(prisma),
+        $queryRaw: jest.fn(async () => [{ platformRole: role }]),
+        workspace: {
+          findUnique: jest.fn(async () => null),
+          create: jest.fn(async () => ({
+            id: 'w9',
+            name: 'Team',
+            slug: 'team',
+            type: 'team',
+            productionApprovalPolicy: 'separate-reviewer',
+            createdAt: new Date(),
+          })),
+        },
+        workspaceMember: { count: jest.fn(async () => owned) },
+      };
+      const service = new WorkspacesService(prisma as never, {} as never, {
+        record: jest.fn(async () => undefined),
+      });
+      return { service, prisma };
+    }
+
+    it('refuses another team workspace once the account owns the limit', async () => {
+      config.workspaces.maxOwnedTeamWorkspaces = 2;
+      const { service, prisma } = serviceWith('user', 2);
+      await expect(service.create('u1', { name: 'Team', slug: 'team' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.workspace.create).not.toHaveBeenCalled();
+      expect(prisma.workspaceMember.count).toHaveBeenCalledWith({
+        where: { userId: 'u1', role: 'owner', workspace: { type: 'team' } },
+      });
+    });
+
+    it('lets a platform administrator and an account under the limit create one', async () => {
+      config.workspaces.maxOwnedTeamWorkspaces = 2;
+      for (const [role, owned] of [
+        ['admin', 9],
+        ['user', 1],
+      ] as const) {
+        const { service, prisma } = serviceWith(role, owned);
+        await expect(service.create('u1', { name: 'Team', slug: 'team' })).resolves.toMatchObject({
+          id: 'w9',
+        });
+        expect(prisma.workspace.create).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('skips the check entirely when the limit is 0', async () => {
+      config.workspaces.maxOwnedTeamWorkspaces = 0;
+      const { service, prisma } = serviceWith('user', 50);
+      await service.create('u1', { name: 'Team', slug: 'team' });
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
   });
 });

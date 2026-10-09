@@ -69,6 +69,13 @@ export const config = {
     // instead of trusting an arbitrary X-Forwarded-For chain.
     trustProxyHops: Number(process.env.INITPAD_TRUST_PROXY_HOPS ?? 1),
   },
+  workspaces: {
+    // Team workspaces one account may own; 0 is unlimited. Each workspace has
+    // its own storage quota, so SaaS caps them by default (ADR-154).
+    maxOwnedTeamWorkspaces: Number(
+      process.env.INITPAD_MAX_OWNED_TEAM_WORKSPACES ?? (edition === 'saas' ? 5 : 0),
+    ),
+  },
   retention: {
     // Audit events older than this are deleted; 0 keeps them (ADR-150).
     auditDays: Number(process.env.INITPAD_AUDIT_RETENTION_DAYS ?? 400),
@@ -403,6 +410,14 @@ export function validateConfig(): void {
     throw new Error('INITPAD_TRUST_PROXY_HOPS must be an integer between 0 and 5');
   }
   parseSharedNetworks(config.rateLimit.sharedNetworks);
+  const { maxOwnedTeamWorkspaces } = config.workspaces;
+  if (
+    !Number.isInteger(maxOwnedTeamWorkspaces) ||
+    maxOwnedTeamWorkspaces < 0 ||
+    maxOwnedTeamWorkspaces > 1000
+  ) {
+    throw new Error('INITPAD_MAX_OWNED_TEAM_WORKSPACES must be an integer between 0 and 1000');
+  }
   const { auditDays } = config.retention;
   if (!Number.isInteger(auditDays) || auditDays < 0 || (auditDays > 0 && auditDays < 30)) {
     throw new Error('INITPAD_AUDIT_RETENTION_DAYS must be 0 (keep) or at least 30 days');

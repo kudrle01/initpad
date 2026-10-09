@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
   ConflictException,
@@ -8,6 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { config } from '../config';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.dto';
 import { AddWorkspaceMemberDto, AssignableRole, UpdateWorkspaceMemberDto } from './dto/member.dto';
 import { repositoryRef } from '../scm/scm-provider';
@@ -163,13 +165,33 @@ export class WorkspacesService {
   async create(userId: string, dto: CreateWorkspaceDto) {
     const duplicate = await this.prisma.workspace.findUnique({ where: { slug: dto.slug } });
     if (duplicate) throw new ConflictException(`Workspace slug '${dto.slug}' is already taken`);
-    const workspace = await this.prisma.workspace.create({
-      data: {
-        name: dto.name.trim(),
-        slug: dto.slug,
-        type: 'team',
-        members: { create: { userId, role: 'owner' } },
-      },
+    const limit = config.workspaces.maxOwnedTeamWorkspaces;
+    const workspace = await this.prisma.$transaction(async (tx) => {
+      if (limit > 0) {
+        // Locking the account row serializes its creations, so two parallel
+        // requests cannot both pass the count (ADR-154).
+        const [account] = await tx.$queryRaw<Array<{ platformRole: string }>>(
+          Prisma.sql`SELECT "platformRole" FROM "User" WHERE "id" = ${userId} FOR UPDATE`,
+        );
+        if (account?.platformRole !== 'admin') {
+          const owned = await tx.workspaceMember.count({
+            where: { userId, role: 'owner', workspace: { type: 'team' } },
+          });
+          if (owned >= limit) {
+            throw new ForbiddenException(
+              `You can own at most ${limit} team workspaces. Delete one you no longer need or ask the platform administrator.`,
+            );
+          }
+        }
+      }
+      return tx.workspace.create({
+        data: {
+          name: dto.name.trim(),
+          slug: dto.slug,
+          type: 'team',
+          members: { create: { userId, role: 'owner' } },
+        },
+      });
     });
     await this.auditEvents.record({
       workspaceId: workspace.id,

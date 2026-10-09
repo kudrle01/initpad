@@ -126,6 +126,8 @@ services:
       INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR: ${INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR:-20}
       # Audit events older than this are deleted; 0 keeps them (ADR-150).
       INITPAD_AUDIT_RETENTION_DAYS: ${INITPAD_AUDIT_RETENTION_DAYS:-400}
+      # Team workspaces one account may own; 0 is unlimited (ADR-154).
+      INITPAD_MAX_OWNED_TEAM_WORKSPACES: ${INITPAD_MAX_OWNED_TEAM_WORKSPACES:-0}
       INITPAD_JWT_SECRET: ${INITPAD_JWT_SECRET:?run install.sh to generate secrets}
       INITPAD_ENCRYPTION_KEY: ${INITPAD_ENCRYPTION_KEY:?run install.sh to generate secrets}
       # Set only while rotating INITPAD_ENCRYPTION_KEY (ADR-141, OPERATIONS.md).

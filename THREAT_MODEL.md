@@ -146,6 +146,8 @@ konfiguraci v paměti.
 - Supervisor přijme jen požadavek s HMAC podpisem nad metodou, cestou, časem,
   ID požadavku a tělem, starým nejvýš minutu. Produkční API bez trvalého
   úložiště artefaktů nenastartuje (ADR-146).
+- Jeden účet v SaaS vlastní nejvýš pět týmových workspaces, takže zakládáním
+  dalších neobejde kvóty úložiště a výpočtu (ADR-154).
 - Použité a prošlé jednorázové tokeny, odeslané e-maily, dokončené Agent joby
   a audit starší než nastavená doba (výchozí 400 dní) se pravidelně mažou
   (ADR-150).
