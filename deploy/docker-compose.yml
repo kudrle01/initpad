@@ -369,6 +369,11 @@ services:
       # registry still uses verified TLS and is not placed on this allow-list.
       - '--insecure-registry=host.docker.internal:${INITPAD_GITEA_HTTP_PORT:-3001}'
       - '--registry-mirror=http://172.31.250.10:5000'
+      # The containerd image store lets an ordinary `docker build` export its
+      # layer cache to the project's own registry (ADR-139). It reaches the
+      # internal image cache over HTTP only when the host is listed here.
+      - '--feature=containerd-snapshotter=true'
+      - '--insecure-registry=172.31.250.10:5000'
     volumes:
       - ./runner:/opt/initpad-runner:ro
       - runner-docker-data:/home/rootless/.local/share/docker

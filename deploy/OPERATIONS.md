@@ -450,11 +450,16 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
   kontejnery, volumes, image i build cache. `INITPAD_RUNNER_CAPACITY` proto
   musí být `1`; instalace s vyšší hodnotou ji musí v `deploy/.env` vrátit na
   `1` a znovu spustit `./install.sh`.
-- Každý job si znovu načte job image a Docker build začíná bez vrstev
-  předchozích jobů. Image z Docker Hubu dodává lokální cache
+- Každý job si znovu načte job image. Image z Docker Hubu dodává lokální cache
   `runner-image-cache` (volume `initpad_runner-image-cache`, obsah vyprší po 7
   dnech), takže se opakovaně nestahují z internetu. Do cache nikdo nemůže
   zapisovat. Počítej s ní v místě na disku (job image má asi 0,5 GB).
+- Šablonové CI testuje, staví a publikuje image v jediném jobu a vrstvy buildu
+  bere z cache v registry projektu (tagy `buildcache` a `buildcache-test`
+  vedle image, ADR-139). Projekty založené před ADR-139 mají čtyři joby, které
+  dál fungují, ale každý načítá job image a staví znovu. Zrychlí je nové
+  workflow: na obrazovce importu stáhni starter workflow pro šablonu projektu a
+  nahraď jím `.gitea/workflows/ci.yml` v repozitáři.
 - `INITPAD_RUNNER_MEMORY_LIMIT`, `INITPAD_RUNNER_CPU_LIMIT` a
   `INITPAD_RUNNER_PIDS_LIMIT` omezují CI daemon i všechny kontejnery jobu
   (výchozí hodnoty `1536m`, `1.0`, `512`). Vyšší CPU limit zkrátí i načtení job

@@ -1,14 +1,10 @@
 name: ci
 on: [push]
 
-# The pipeline is split into jobs so that each maps to one stage in the
-# platform (build → test → docker build → deploy). Gitea creates a commit
-# status per job; the platform reads these to render the pipeline view.
-#
-# Note: Node and npm ship inside the runner image
-# (catthehacker/ubuntu:act-latest), so actions/setup-node is intentionally
-# not used — it downloads from github.com and is the most common source of
-# failures on an unstable network.
+# One job tests, builds and publishes the image (ADR-139). Each CI job starts on
+# a fresh Docker daemon, so separate jobs would each rebuild from scratch.
+# The tests run in the image's build stage, so the image cannot exist without
+# them passing.
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,50 +24,34 @@ jobs:
           done
           echo "::warning::InitPad progress callback failed"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: node --version && npm --version
-      - run: npm ci
-
-  test:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: npm ci
-      - run: npm test
-
-  docker:
-    name: docker build
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      # Build once, deploy many: the image is built ONCE and pushed to the
-      # Gitea registry tagged with the commit hash. The platform then only
-      # pulls and runs it (dev/test/prod = the same image). The registry host
-      # comes from an Actions secret set by the platform at repo creation, so
-      # the workflow contains no hard-coded addresses.
-      - name: build & push image
+      - name: prepare image
         run: |
           IMAGE=$(echo "${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          # Build layers are cached next to the image, in this repository's registry.
+          echo "CACHE=${IMAGE%:*}:buildcache" >> "$GITHUB_ENV"
           echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \
             docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin
-          docker build -t "$IMAGE" .
-          docker push "$IMAGE"
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: docker
-    # Always notify InitPad so an upstream failure cannot leave dev stuck
-    # in "deploying" while no callback will ever arrive.
-    if: always()
-    steps:
-      # After a successful build, tell the platform to deploy this commit to
-      # dev. The platform URL and the token come from Actions secrets set by
-      # the platform at repo creation.
+      - name: test
+        run: |
+          docker build --target test --provenance=false \
+            --cache-from "type=registry,ref=$CACHE" \
+            .
+      - name: build image
+        run: |
+          docker build --provenance=false -t "$IMAGE" \
+            --cache-from "type=registry,ref=$CACHE" \
+            --cache-to "type=registry,ref=$CACHE,mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true" \
+            .
+      - name: publish image
+        run: docker push "$IMAGE"
+      # Always report the result, so a failure cannot leave dev stuck in
+      # "deploying" while no callback will ever arrive.
       - name: notify platform
+        if: always()
         run: |
           curl -fsS -X POST "${{ secrets.INITPAD_PLATFORM_URL }}/api/ci/deploy" \
             -H "Authorization: Bearer ${{ secrets.INITPAD_DEPLOY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}","ciStatus":"${{ needs.docker.result }}"}'
-          test "${{ needs.docker.result }}" = "success"
+            -d '{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}","ciStatus":"${{ job.status }}"}'
+          test "${{ job.status }}" = "success"

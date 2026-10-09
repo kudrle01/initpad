@@ -27,25 +27,36 @@ function ciStatus(state: string): StageStatus {
   return 'running';
 }
 
+// Workflows generated before ADR-139 split CI into four jobs. Their projects
+// keep the matching stages; current workflows have a single build job.
+const LEGACY_JOBS = new Set(['test', 'docker', 'docker build', 'deploy']);
+
+function stageDefinitions(
+  template: TemplateManifest,
+  jobs: Iterable<string>,
+): { label: string; tokens: string[] }[] {
+  if (![...jobs].some((job) => LEGACY_JOBS.has(job))) {
+    return [{ label: 'build', tokens: ['build'] }];
+  }
+  return template.artifact === 'static'
+    ? [
+        { label: 'build', tokens: ['build'] },
+        { label: 'test', tokens: ['test'] },
+        { label: 'deploy', tokens: ['deploy'] },
+      ]
+    : [
+        { label: 'build', tokens: ['build'] },
+        { label: 'test', tokens: ['test'] },
+        { label: 'docker build', tokens: ['docker', 'docker build'] },
+        { label: 'deploy', tokens: ['deploy'] },
+      ];
+}
+
 // Provider-neutral SCM statuses become the stable pipeline shown by the API.
 export function pipelineStages(
   template: TemplateManifest,
   statuses: ScmPipelineStatus[] | null,
 ): PipelineStage[] {
-  const definitions: { label: string; tokens: string[] }[] =
-    template.artifact === 'static'
-      ? [
-          { label: 'build', tokens: ['build'] },
-          { label: 'test', tokens: ['test'] },
-          { label: 'deploy', tokens: ['deploy'] },
-        ]
-      : [
-          { label: 'build', tokens: ['build'] },
-          { label: 'test', tokens: ['test'] },
-          { label: 'docker build', tokens: ['docker', 'docker build'] },
-          { label: 'deploy', tokens: ['deploy'] },
-        ];
-
   // Providers return newest statuses first; keep only the latest result and
   // log link for each normalized workflow job.
   const latest = new Map<string, { status: string; url: string | null }>();
@@ -55,6 +66,7 @@ export function pipelineStages(
       latest.set(job, { status: status.status, url: status.targetUrl });
     }
   }
+  const definitions = stageDefinitions(template, latest.keys());
 
   const stages = definitions.map<PipelineStage>((definition) => {
     const hit = definition.tokens.map((token) => latest.get(token)).find(Boolean);
@@ -87,8 +99,10 @@ export function withDeploymentState(
           stage.status === 'running' ? { ...stage, status: 'pending' } : stage,
         )
       : stages;
+  // A legacy workflow reports its own deploy job; publication follows the
+  // jobs before it. A current workflow reports from inside its build job.
   const deployIndex = visibleStages.findIndex((stage) => stage.name === 'deploy');
-  if (deployIndex < 0) return visibleStages;
+  const ciStages = deployIndex < 0 ? visibleStages : visibleStages.slice(0, deployIndex);
 
   let status: StageStatus | null = null;
   if (environment) {
@@ -119,10 +133,7 @@ export function withDeploymentState(
   }
   if (!status) return visibleStages;
 
-  if (
-    status === 'running' &&
-    !visibleStages.slice(0, deployIndex).every((stage) => stage.status === 'success')
-  ) {
+  if (status === 'running' && !ciStages.every((stage) => stage.status === 'success')) {
     status = 'pending';
   }
   return [...visibleStages, { name: 'publish', status, url: null, source: 'platform' }];

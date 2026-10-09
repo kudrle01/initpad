@@ -41,6 +41,10 @@ test('runs every CI job on a daemon erased since the previous job (ADR-138)', ()
   }
   assert.match(daemon, /- runner-reset:\/run\/initpad-ci-reset:ro/);
   assert.match(daemon, /'--registry-mirror=http:\/\/172\.31\.250\.10:5000'/);
+  // The containerd image store exports build cache to the project registry
+  // (ADR-139) and reaches the image cache over HTTP only when listed.
+  assert.match(daemon, /'--feature=containerd-snapshotter=true'/);
+  assert.match(daemon, /'--insecure-registry=172\.31\.250\.10:5000'/);
   assert.doesNotMatch(daemon, /docker\.sock/);
 
   assert.ok(
@@ -77,6 +81,8 @@ test('keeps the runner credential out of the daemon and takes one job at a time'
   assert.match(runnerConfig, /^ {2}capacity: 1$/m);
   assert.match(runnerConfig, /^cache:\n {2}enabled: false$/m);
   assert.match(runnerConfig, /^ {2}valid_volumes: \[\]$/m);
+  // Gitea 1.22 rejects the image index a provenance attestation would create.
+  assert.match(runnerConfig, /--env=BUILDX_NO_DEFAULT_ATTESTATIONS=1 /);
 });
 
 test('reads only the engine ID that leads the daemon info response', () => {

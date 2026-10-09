@@ -342,28 +342,10 @@ describe('GitHubScmProvider reads', () => {
     mkdirSync(workflowDir, { recursive: true });
     writeFileSync(
       join(workflowDir, 'ci.yml'),
-      [
-        'name: ci',
-        'on: [push]',
-        'jobs:',
-        '  docker:',
-        '    name: docker build',
-        '    steps:',
-        '      - run: |',
-        "          IMAGE=$(echo \"${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}\" | tr '[:upper:]' '[:lower:]')",
-        '          echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \\',
-        '            docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin',
-        '          docker build -t "$IMAGE" .',
-        '          docker push "$IMAGE"',
-        '',
-        '  deploy:',
-        '    needs: docker',
-        '    steps:',
-        '      - run: |',
-        '          curl -fsS -X POST "${{ secrets.INITPAD_PLATFORM_URL }}/api/ci/deploy" \\',
-        '            -d \'{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}\'',
-        '',
-      ].join('\n'),
+      readFileSync(
+        join(__dirname, '../../../../../templates/flask/files/.gitea/workflows/ci.yml'),
+        'utf8',
+      ),
     );
     const { provider } = make(jest.fn());
     try {
@@ -379,7 +361,9 @@ describe('GitHubScmProvider reads', () => {
         'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
       );
       expect(workflow).toContain('archive: false');
-      expect(workflow).toContain('"artifactId":"${{ needs.docker.outputs.artifact-id }}"');
+      expect(workflow).toContain(
+        '"artifactId":"${{ steps.initpad-artifact.outputs.artifact-id }}"',
+      );
       expect(workflow).not.toContain('INITPAD_REGISTRY_PASSWORD');
       expect(workflow).not.toContain('INITPAD_REGISTRY_USER');
       expect(workflow).not.toContain('docker push');

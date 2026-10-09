@@ -310,16 +310,20 @@ docker inspect initpad-runner-docker-1 \
 ```
 
 Výchozí hodnoty jsou `memory=1610612736`, `nano_cpus=1000000000`,
-`pids=512` a `read_only=true`. Potom rychle po sobě, bez čekání na první CI, založ ve dvou
-workspacech projekty `queue-one` a `queue-two`. Očekávaný výsledek:
+`pids=512` a `read_only=true`. Potom rychle po sobě, bez čekání na první CI,
+založ ve dvou workspacech projekty `queue-one` a `queue-two`. Očekávaný
+výsledek:
 
 - oba projekty i oba oddělené repozitáře vzniknou bez konfliktu;
 - runner zpracovává první workflow a jeho commit ukazuje `running`;
 - druhý commit ukazuje `awaiting CI` a karta dev vysvětluje, že čeká na
   dostupný runner — nesmí se nepravdivě tvářit jako rozběhnutý build;
-- po uvolnění runner slotu druhé automaticky přejde na `running` (Gitea může
-  joby obou workflow spravedlivě prokládat) a oba dev deploymenty nakonec
-  skončí samostatně jako `running`;
+- po dokončení prvního jobu druhé automaticky přejde na `running` a oba dev
+  deploymenty nakonec skončí samostatně jako `running`;
+- detail commitu ukazuje fáze `build` a `publish`; CI má jediný job, který
+  testuje, staví a publikuje image (ADR-139). Druhý push do stejného projektu
+  je rychlejší a log jobu ukazuje `importing cache manifest` a kroky
+  `CACHED`;
 - logy, odkazy, SHA, URL, kontejnery a deployment history se mezi projekty
   nikdy nezamění;
 - během buildu lze plynule otevřít Projects, detail projektu a Settings;

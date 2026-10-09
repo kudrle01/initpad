@@ -296,6 +296,11 @@ check_running() {
   "${COMPOSE[@]}" exec -T runner-docker docker info --format '{{.RegistryConfig.Mirrors}}' | \
     grep -q 'http://172.31.250.10:5000/' || \
     fail "The CI daemon does not use the local image cache; re-run ./install.sh."
+  # Build cache export to the project registry needs the containerd image
+  # store (ADR-139).
+  "${COMPOSE[@]}" exec -T runner-docker docker info --format '{{.DriverStatus}}' | \
+    grep -q 'io.containerd.snapshotter' || \
+    fail "The CI daemon does not use the containerd image store; re-run ./install.sh."
 
   running_version=$(docker inspect "$(container_id api)" \
     --format '{{range .Config.Env}}{{println .}}{{end}}' | \

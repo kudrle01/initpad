@@ -22,19 +22,23 @@ describe('GitHub artifact workflow adaptation', () => {
       expect(github).toContain('retention-days: 1');
       expect(github).toContain('artifactId');
       expect(github).toContain('artifactDigest');
+      expect(github).toContain('"artifactId":"${{ steps.initpad-artifact.outputs.artifact-id }}"');
       expect(github).toContain('if: always()');
-      expect(github).toContain('"ciStatus":"${{ needs.docker.result }}"');
+      expect(github).toContain('"ciStatus":"${{ job.status }}"');
       expect(github).toContain('/api/ci/start');
       expect(github).toContain('mark CI as started');
-      expect(github).not.toContain('docker push "$IMAGE"');
+      expect(github).not.toContain('docker push');
       expect(github).not.toContain('INITPAD_REGISTRY_PASSWORD');
+      // GitHub has no self-hosted registry to hold the layer cache.
+      expect(github).not.toMatch(/--cache-|CACHE=|buildcache/);
       expect(source).toContain('docker push "$IMAGE"');
+      expect(source).toContain('--cache-to "type=registry,ref=$CACHE');
     }
   });
 
   it('fails closed when a custom workflow has no recognizable build boundary', () => {
     expect(() => adaptWorkflowForGitHub('name: custom\non: [push]\n', 'custom.yml')).toThrow(
-      'docker job',
+      'image publication step',
     );
   });
 });

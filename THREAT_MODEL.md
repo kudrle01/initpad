@@ -69,7 +69,9 @@ konfiguraci v paměti.
   workspace hostu a nepovoluje žádné volumes definované workflow. Řídicí síť je
   oddělená od PostgreSQL i od nasazovacích sítí. Runner provádí jeden job
   najednou a každý běží na čerstvě vymazaném daemonu, takže job nepředá
-  kontejner, volume, image ani build cache jinému jobu (ADR-138). Credential
+  kontejner, volume, image ani build cache jinému jobu (ADR-138). Vrstvy
+  buildu ukládá cache v registry projektu, kam zapisuje jen CI s registry
+  tokenem vlastníka repozitáře (ADR-139). Credential
   runneru leží mimo kontejner daemonu, image z Docker Hubu dodává cache, do
   které job nemůže zapisovat, a sdílený cache server Actions je vypnutý.
 - Validace DTO pomocí allow-listu, omezené délky, kontroly politik workspace a
@@ -166,8 +168,8 @@ konfiguraci v paměti.
   může zneužít. Ochranou je HTTPS nebo samostatný host aplikací
   (`INITPAD_DEPLOY_PUBLIC_HOST`); InitPad stav hlásí v logu a v Administraci.
 - Container balíčky v Gitee patří účtu, nikoli repozitáři. Člen týmu, který
-  přečte registry secret repozitáře, proto může přepsat image jiného projektu
-  téhož vlastníka. Týmové repozitáře navíc leží v osobním prostoru autora, takže
+  přečte registry secret repozitáře, proto může přepsat image i cache vrstev
+  (ADR-139) jiného projektu téhož vlastníka. Týmové repozitáře navíc leží v osobním prostoru autora, takže
   odebraný člen je dál vlastní. Obojí odstraní až Gitea organizace pro každý
   workspace.
 - Synchronizace spolupracovníků v Gitee zahrnuje dva systémy, a proto používá

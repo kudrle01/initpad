@@ -26,7 +26,9 @@ container:
   # The runner's stored Gitea URL, registry and platform callback all use
   # host.docker.internal locally. Map it to the dedicated outer gateway;
   # Docker commands still talk only to the nested daemon via its bridge.
-  options: "--add-host=host.docker.internal:172.31.250.1 --env=DOCKER_HOST=tcp://172.17.0.1:2375 --security-opt=no-new-privileges"
+  # With the containerd image store (ADR-139) buildx would otherwise attach a
+  # provenance attestation, and Gitea 1.22 rejects the resulting image index.
+  options: "--add-host=host.docker.internal:172.31.250.1 --env=DOCKER_HOST=tcp://172.17.0.1:2375 --env=BUILDX_NO_DEFAULT_ATTESTATIONS=1 --security-opt=no-new-privileges"
   valid_volumes: []
   docker_host: "tcp://runner-docker:2375"
   force_pull: true

@@ -24,6 +24,30 @@ describe('template delivery contract', () => {
     for (const manifest of manifests) expect(manifest.buildCommand).toBeUndefined();
   });
 
+  it('tests, builds and publishes each push in one job with a registry layer cache', () => {
+    for (const manifest of manifests) {
+      const workflow = readFileSync(
+        resolve(templatesRoot, manifest.id, 'files/.gitea/workflows/ci.yml'),
+        'utf8',
+      );
+      // Every CI job starts on an erased daemon (ADR-138); more jobs would
+      // load the job image and rebuild again (ADR-139).
+      expect(workflow.match(/runs-on:/g)).toHaveLength(1);
+      expect(workflow).not.toMatch(/^\s+needs:/m);
+      expect(workflow).toMatch(/^\s+- name: test\n\s+run: \|\n\s+docker build --target \w+ /m);
+      expect(workflow).toContain(
+        '--cache-to "type=registry,ref=$CACHE,mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true"',
+      );
+      // A plain image manifest, as before, instead of an index with provenance.
+      expect(workflow.match(/docker build /g)?.length).toBe(
+        workflow.match(/docker build [^\n]*--provenance=false/g)?.length,
+      );
+      expect(workflow).toContain('echo "CACHE=${IMAGE%:*}:buildcache" >> "$GITHUB_ENV"');
+      expect(workflow).toMatch(/- name: notify platform\n\s+if: always\(\)/);
+      expect(workflow).toContain('"ciStatus":"${{ job.status }}"');
+    }
+  });
+
   it('offers an import-ready workflow for every template and SCM provider', () => {
     const templates = new TemplatesService();
     for (const manifest of manifests) {
