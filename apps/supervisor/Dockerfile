@@ -19,7 +19,7 @@ FROM docker:29.8.0-cli@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf1
 FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 LABEL org.opencontainers.image.title="InitPad Supervisor"
 LABEL org.opencontainers.image.description="Typed, signed and health-gated self-hosted updates"
-LABEL org.opencontainers.image.version="0.2.16"
+LABEL org.opencontainers.image.version="0.2.17"
 # Installed packages take the fixes Alpine published after the base image
 # (ADR-144). npm, npx, corepack and yarn are build tools with dependencies of
 # their own; the runtime never calls them, so the image does not ship them.
