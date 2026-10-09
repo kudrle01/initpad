@@ -1397,7 +1397,9 @@ export class AgentJobsService implements OnModuleInit {
     }
     const envVars: Record<string, string> = {};
     for (const variable of binding.deploymentOperation!.environment.configVars) {
-      envVars[variable.key] = variable.isSecret ? decryptSecret(variable.value) : variable.value;
+      envVars[variable.key] = variable.isSecret
+        ? decryptSecret(variable.value, `Secret ${variable.key}`)
+        : variable.value;
     }
     return {
       artifact: {

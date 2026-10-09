@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { decryptSecret, encryptSecret } from '../../common/secret';
+import { readableSecret, encryptSecret } from '../../common/secret';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   GitHubOAuthExchange,
@@ -64,7 +64,7 @@ export class GitHubUserCredentialService {
       });
       if (!identity?.accessTokenEncrypted) throw new GitHubReauthorizationRequiredError();
 
-      const accessToken = decryptSecret(identity.accessTokenEncrypted);
+      const accessToken = readableSecret(identity.accessTokenEncrypted);
       if (!accessToken) {
         await this.clearVersion(identity.id, identity.credentialVersion);
         throw new GitHubReauthorizationRequiredError();
@@ -102,7 +102,7 @@ export class GitHubUserCredentialService {
         continue;
       }
 
-      const refreshToken = decryptSecret(identity.refreshTokenEncrypted);
+      const refreshToken = readableSecret(identity.refreshTokenEncrypted);
       if (!refreshToken) {
         await this.clearVersion(identity.id, identity.credentialVersion);
         throw new GitHubReauthorizationRequiredError();

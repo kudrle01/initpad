@@ -131,10 +131,13 @@ export const config = {
       (process.env.INITPAD_COOKIE_SECURE !== 'false' &&
         (process.env.INITPAD_FRONTEND_URL || '').startsWith('https://')),
   },
-  // Key for encrypting sensitive DB values (tokens). Falls back to the JWT secret.
+  // Key for encrypting sensitive DB values (ADR-141). Previous keys only
+  // decrypt while a rotation re-encrypts stored values with the current key.
   security: {
-    encryptionKey:
-      process.env.INITPAD_ENCRYPTION_KEY || process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
+    encryptionKey: process.env.INITPAD_ENCRYPTION_KEY || 'dev-secret-zmen-me',
+    previousEncryptionKeys: (process.env.INITPAD_ENCRYPTION_KEY_PREVIOUS || '')
+      .split(/[\s,]+/)
+      .filter(Boolean),
   },
   mail: {
     host: (process.env.INITPAD_SMTP_HOST || '').trim(),
@@ -542,16 +545,33 @@ export function validateConfig(): void {
     throw new Error('Deployment resource limits are invalid');
   }
   if (process.env.NODE_ENV !== 'production') return;
+  if (config.security.encryptionKey === 'dev-secret-zmen-me') {
+    throw new Error(
+      'Refusing production startup without INITPAD_ENCRYPTION_KEY. An installation that ' +
+        'stored data before ADR-141 used INITPAD_JWT_SECRET as its key: set ' +
+        'INITPAD_ENCRYPTION_KEY to that value and generate a new INITPAD_JWT_SECRET ' +
+        '(everyone signs in again).',
+    );
+  }
+  if (config.security.encryptionKey === config.auth.jwtSecret) {
+    throw new Error(
+      'INITPAD_ENCRYPTION_KEY and INITPAD_JWT_SECRET must differ; generate a new INITPAD_JWT_SECRET',
+    );
+  }
   const insecure: string[] = [];
-  if (config.auth.jwtSecret === 'dev-secret-zmen-me') insecure.push('INITPAD_JWT_SECRET');
-  if (config.security.encryptionKey === 'dev-secret-zmen-me')
-    insecure.push('INITPAD_ENCRYPTION_KEY');
-  if (config.scm.webhookToken === 'scm-webhook-secret-change-me') {
-    insecure.push('INITPAD_SCM_WEBHOOK_TOKEN');
+  const placeholder = /zmen-me|change-?me|__GENERATE__/i;
+  const keyMaterial: [string, string[]][] = [
+    ['INITPAD_JWT_SECRET', [config.auth.jwtSecret]],
+    ['INITPAD_ENCRYPTION_KEY', [config.security.encryptionKey]],
+    ['INITPAD_ENCRYPTION_KEY_PREVIOUS', config.security.previousEncryptionKeys],
+  ];
+  // Signing and encryption keys must be long random values; the installers
+  // generate 48 hexadecimal characters.
+  for (const [name, values] of keyMaterial) {
+    if (values.some((value) => value.length < 32 || placeholder.test(value))) insecure.push(name);
   }
-  if (config.oidc.clientSecret === 'gitea-oidc-secret-change-me') {
-    insecure.push('INITPAD_OIDC_CLIENT_SECRET');
-  }
+  if (placeholder.test(config.scm.webhookToken)) insecure.push('INITPAD_SCM_WEBHOOK_TOKEN');
+  if (placeholder.test(config.oidc.clientSecret)) insecure.push('INITPAD_OIDC_CLIENT_SECRET');
   if (artifactStoreConfigured() && config.artifactStore.secretAccessKey === 'initpad-artifacts') {
     insecure.push('INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY');
   }

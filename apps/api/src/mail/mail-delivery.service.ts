@@ -204,7 +204,7 @@ export class MailDeliveryService implements OnModuleInit, OnModuleDestroy {
   }
 
   private readPayload(stored: string): AuthMailPayload {
-    const plaintext = decryptSecret(stored);
+    const plaintext = decryptSecret(stored, 'The queued e-mail');
     if (!plaintext) throw new Error('Outbox payload cannot be decrypted');
     const payload = JSON.parse(plaintext) as Partial<AuthMailPayload>;
     if (typeof payload.url !== 'string' || !/^https?:\/\//.test(payload.url)) {

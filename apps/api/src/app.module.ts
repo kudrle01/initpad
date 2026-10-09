@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { HealthController } from './health/health.controller';
 import { PrismaModule } from './prisma/prisma.module';
+import { SecretReencryptionService } from './common/secret-reencryption.service';
 import { AuthModule } from './auth/auth.module';
 import { TemplatesModule } from './templates/templates.module';
 import { ProjectsModule } from './projects/projects.module';
@@ -41,6 +42,6 @@ import { UpdatesModule } from './updates/updates.module';
     UpdatesModule,
   ],
   controllers: [HealthController],
-  providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],
+  providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }, SecretReencryptionService],
 })
 export class AppModule {}

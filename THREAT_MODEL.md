@@ -56,7 +56,10 @@ konfiguraci v paměti.
   `Sec-Fetch-Site`, takže formulář z aplikace na stejném hostu nebo subdoméně
   nic nezmění (ADR-137). Přesměrování OIDC používají přesnou validaci originu a
   cesty a autorizační kódy jsou jednorázové a expirují.
-- Citlivé hodnoty v databázi používají AES-256-GCM. Callback tokeny CI jsou pro
+- Citlivé hodnoty v databázi používají AES-256-GCM s vlastním klíčem, který se
+  v produkci musí lišit od JWT secretu a jde vyměnit; nešifrované a starší
+  hodnoty API po startu přešifruje a nečitelnou hodnotu ohlásí chybou, ne
+  prázdným credentialem (ADR-141). Callback tokeny CI jsou pro
   každý repozitář náhodné a InitPad ukládá pouze jejich hashe SHA-256.
 - Gitea tokeny mají rozsah podle spotřebitele a pevný název, takže nové vydání
   předchozí kopii zneplatní (ADR-134). CI repozitáře dostává jen token

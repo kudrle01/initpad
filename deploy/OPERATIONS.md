@@ -318,6 +318,21 @@ a nemění jeho obsah.
 ## Bezpečnost
 
 - `deploy/.env` obsahuje všechny secrety — omez práva (`chmod 600 .env`), necommituj.
+- `INITPAD_ENCRYPTION_KEY` šifruje credentials uložené v databázi (ADR-141).
+  Bez něj nebo se stejnou hodnotou jako `INITPAD_JWT_SECRET` API v produkci
+  nenastartuje. Výměna klíče:
+  1. v `deploy/.env` přesuň současnou hodnotu do
+     `INITPAD_ENCRYPTION_KEY_PREVIOUS` a do `INITPAD_ENCRYPTION_KEY` dej nový
+     klíč (`openssl rand -hex 24`), pak spusť `./install.sh`;
+  2. API po startu přešifruje všechny uložené hodnoty a zapíše do logu
+     `Every stored secret uses the current INITPAD_ENCRYPTION_KEY`;
+  3. potom `INITPAD_ENCRYPTION_KEY_PREVIOUS` smaž a znovu spusť `./install.sh`.
+
+  Hodnotu, kterou žádný klíč neotevře, API zaloguje jako `secret.unreadable`.
+  Takový credential (heslo serveru, secret proměnná aplikace) je potřeba zadat
+  znovu; Git token a propojení GitHubu se obnoví samy. V SaaS připoj
+  předchozí klíč po dobu výměny jako další Compose secret a předej ho API
+  přes `INITPAD_ENCRYPTION_KEY_PREVIOUS_FILE`.
 - Veřejně vystav jen porty **80/443**. Porty 8080 (web), 3001 (Gitea) a 8085
   (vestavěný statický hosting) zůstávají publikované, protože je používá síť
   CI a lokální kontroly. Docker publikované porty obchází a pravidla `ufw` na

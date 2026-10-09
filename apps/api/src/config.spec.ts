@@ -23,8 +23,9 @@ describe('validateConfig production secrets', () => {
 
   beforeEach(() => {
     process.env.NODE_ENV = 'production';
-    config.auth.jwtSecret = 'test-jwt-secret';
-    config.security.encryptionKey = 'test-encryption-key';
+    config.auth.jwtSecret = 'test-jwt-secret-0123456789abcdef0123';
+    config.security.encryptionKey = 'test-encryption-key-0123456789abcdef';
+    config.security.previousEncryptionKeys = [];
     config.scm.webhookToken = 'test-webhook-token';
     config.oidc.clientSecret = 'test-oidc-secret';
     Object.assign(config.artifactStore, {
@@ -40,6 +41,7 @@ describe('validateConfig production secrets', () => {
     else process.env.NODE_ENV = originalNodeEnv;
     config.auth.jwtSecret = originalSecrets.jwtSecret;
     config.security.encryptionKey = originalSecrets.encryptionKey;
+    config.security.previousEncryptionKeys = [];
     config.scm.webhookToken = originalSecrets.webhookToken;
     config.oidc.clientSecret = originalSecrets.oidcSecret;
     config.http.trustProxyHops = originalSecrets.trustProxyHops;
@@ -50,6 +52,31 @@ describe('validateConfig production secrets', () => {
     Object.assign(config.ci, originalCi);
     Object.assign(config.mail, originalMail);
     config.edition = originalEdition;
+  });
+
+  it('requires an explicit encryption key separate from the JWT secret (ADR-141)', () => {
+    config.security.encryptionKey = 'dev-secret-zmen-me';
+    expect(() => validateConfig()).toThrow('without INITPAD_ENCRYPTION_KEY');
+
+    config.security.encryptionKey = config.auth.jwtSecret;
+    expect(() => validateConfig()).toThrow('INITPAD_ENCRYPTION_KEY and INITPAD_JWT_SECRET');
+  });
+
+  it('rejects short or placeholder signing and encryption keys', () => {
+    config.auth.jwtSecret = 'short-jwt-secret';
+    expect(() => validateConfig()).toThrow('INITPAD_JWT_SECRET');
+
+    config.auth.jwtSecret = 'test-jwt-secret-0123456789abcdef0123';
+    config.security.encryptionKey = 'zmen-me-na-nahodny-retezec-0123456789';
+    expect(() => validateConfig()).toThrow('INITPAD_ENCRYPTION_KEY');
+
+    config.security.encryptionKey = 'test-encryption-key-0123456789abcdef';
+    config.security.previousEncryptionKeys = ['too-short'];
+    expect(() => validateConfig()).toThrow('INITPAD_ENCRYPTION_KEY_PREVIOUS');
+
+    config.security.previousEncryptionKeys = [];
+    config.scm.webhookToken = '__GENERATE__';
+    expect(() => validateConfig()).toThrow('INITPAD_SCM_WEBHOOK_TOKEN');
   });
 
   it('rejects the Compose fallback artifact-store password', () => {

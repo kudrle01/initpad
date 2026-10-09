@@ -806,7 +806,7 @@ export class TargetsService implements OnModuleInit {
         `Target '${target.name}' has no trusted SSH host-key fingerprint. Edit the server and add its SHA256 fingerprint before reconnecting.`,
       );
     }
-    const secret = target.secret ? decryptSecret(target.secret) : '';
+    const secret = decryptSecret(target.secret, `The credential of target '${target.name}'`);
     const isKey = target.auth === 'key';
     return {
       host: target.host,

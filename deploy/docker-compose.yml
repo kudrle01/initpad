@@ -123,6 +123,8 @@ services:
       INITPAD_TRUST_PROXY_HOPS: ${INITPAD_TRUST_PROXY_HOPS:-1}
       INITPAD_JWT_SECRET: ${INITPAD_JWT_SECRET:?run install.sh to generate secrets}
       INITPAD_ENCRYPTION_KEY: ${INITPAD_ENCRYPTION_KEY:?run install.sh to generate secrets}
+      # Set only while rotating INITPAD_ENCRYPTION_KEY (ADR-141, OPERATIONS.md).
+      INITPAD_ENCRYPTION_KEY_PREVIOUS: ${INITPAD_ENCRYPTION_KEY_PREVIOUS:-}
       # Optional SMTP delivery. When unset, self-hosted verification and
       # activation links remain available as one-time manual links in the UI.
       INITPAD_SMTP_HOST: ${INITPAD_SMTP_HOST:-}

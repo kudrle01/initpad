@@ -151,3 +151,4 @@ stabilní.
 | [ADR-138](./ADR-138.md) | Accepted | Každý CI job běží na čerstvě vymazaném Docker daemonu |
 | [ADR-139](./ADR-139.md) | Accepted | Šablonové CI testuje, staví a publikuje image v jednom jobu s cache vrstev v registry projektu |
 | [ADR-140](./ADR-140.md) | Accepted | Šablony předávají kontext CI jako data, nemají klíče v kódu a dodávají závislosti bez známých zranitelností |
+| [ADR-141](./ADR-141.md) | Accepted | Klíč pro šifrování dat je samostatný, jde vyměnit a nečitelná hodnota je chyba |

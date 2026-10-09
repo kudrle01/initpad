@@ -1818,7 +1818,7 @@ export class ProjectsService {
       };
     }
     const token = row.owner?.accessToken
-      ? decryptSecret(row.owner.accessToken)
+      ? decryptSecret(row.owner.accessToken, "The project owner's Gitea token")
       : config.gitea.token;
     return { username: row.owner?.username || row.scmOwner || config.gitea.user, token };
   }

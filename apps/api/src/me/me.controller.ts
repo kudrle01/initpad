@@ -4,7 +4,7 @@ import { ScmProvider, SCM_PROVIDER } from '../scm/scm-provider';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { config } from '../config';
-import { decryptSecret, encryptSecret } from '../common/secret';
+import { readableSecret, encryptSecret } from '../common/secret';
 
 // A Gitea personal access token (PAT) is 40 hex characters. Anything else
 // (e.g. an OAuth2 JWT stored after an SSO login) cannot be used for
@@ -35,11 +35,12 @@ export class MeController {
     if (user.giteaId == null) {
       return { username: user.username, token: null, giteaUrl: config.gitea.url };
     }
-    let token = user.accessToken ? decryptSecret(user.accessToken) : '';
+    let token = user.accessToken ? (readableSecret(user.accessToken) ?? '') : '';
 
-    // The stored token may be missing (revoked by a password reset) or not a
+    // The stored token may be missing (revoked by a password reset), not a
     // usable PAT (SSO accounts store an OAuth2 JWT, which git-over-HTTP
-    // rejects). In that case issue a fresh PAT and persist it for next time.
+    // rejects) or unreadable after a key change. In that case issue a fresh
+    // PAT and persist it for next time.
     if (!isPat(token)) {
       try {
         token = await this.scm.issueCloneToken(user.username);
