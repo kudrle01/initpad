@@ -40,6 +40,30 @@ const PERMISSIONS: Record<WorkspacePermission, ReadonlySet<WorkspaceRole>> = {
   admin: new Set(['owner', 'admin']),
 };
 
+// Explicit response shape: the row also holds capacity limits, and the BigInt
+// artifact quota cannot be serialized to JSON.
+function workspaceView(
+  workspace: {
+    id: string;
+    slug: string;
+    name: string;
+    type: string;
+    productionApprovalPolicy: string;
+    createdAt: Date;
+  },
+  role: WorkspaceRole,
+) {
+  return {
+    id: workspace.id,
+    slug: workspace.slug,
+    name: workspace.name,
+    type: workspace.type,
+    role,
+    productionApprovalPolicy: workspace.productionApprovalPolicy,
+    createdAt: workspace.createdAt.toISOString(),
+  };
+}
+
 @Injectable()
 export class WorkspacesService {
   private readonly logger = new Logger('WorkspacesService');
@@ -60,15 +84,7 @@ export class WorkspacesService {
       include: { workspace: true },
       orderBy: { createdAt: 'asc' },
     });
-    return memberships.map((m) => ({
-      id: m.workspace.id,
-      slug: m.workspace.slug,
-      name: m.workspace.name,
-      type: m.workspace.type,
-      role: m.role as WorkspaceRole,
-      productionApprovalPolicy: m.workspace.productionApprovalPolicy,
-      createdAt: m.workspace.createdAt.toISOString(),
-    }));
+    return memberships.map((m) => workspaceView(m.workspace, m.role as WorkspaceRole));
   }
 
   async resolve(
@@ -164,7 +180,7 @@ export class WorkspacesService {
       resourceName: workspace.name,
       details: { type: workspace.type },
     });
-    return { ...workspace, role: 'owner' as const, createdAt: workspace.createdAt.toISOString() };
+    return workspaceView(workspace, 'owner');
   }
 
   async update(userId: string, workspaceId: string, dto: UpdateWorkspaceDto) {
@@ -192,11 +208,7 @@ export class WorkspacesService {
         details: { previousName: previous.name, name: workspace.name },
       });
     }
-    return {
-      ...workspace,
-      role: membership.role as WorkspaceRole,
-      createdAt: workspace.createdAt.toISOString(),
-    };
+    return workspaceView(workspace, membership.role as WorkspaceRole);
   }
 
   async updateProductionApprovalPolicy(
@@ -219,11 +231,7 @@ export class WorkspacesService {
       const membership = await this.prisma.workspaceMember.findUniqueOrThrow({
         where: { workspaceId_userId: { workspaceId, userId } },
       });
-      return {
-        ...previous,
-        role: membership.role as WorkspaceRole,
-        createdAt: previous.createdAt.toISOString(),
-      };
+      return workspaceView(previous, membership.role as WorkspaceRole);
     }
     const workspace = await this.prisma.workspace.update({
       where: { id: workspaceId },
@@ -244,11 +252,7 @@ export class WorkspacesService {
         policy,
       },
     });
-    return {
-      ...workspace,
-      role: membership.role as WorkspaceRole,
-      createdAt: workspace.createdAt.toISOString(),
-    };
+    return workspaceView(workspace, membership.role as WorkspaceRole);
   }
 
   async remove(userId: string, workspaceId: string): Promise<void> {

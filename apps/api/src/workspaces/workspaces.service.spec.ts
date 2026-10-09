@@ -386,4 +386,41 @@ describe('WorkspacesService tenant isolation', () => {
       await expect(service.removeMember('owner', 'w1', 'u2')).resolves.toBeUndefined();
     });
   });
+
+  it('returns workspace changes that serialize to JSON despite the BigInt quota', async () => {
+    const row = {
+      id: 'w1',
+      slug: 'team',
+      name: 'Team',
+      type: 'team',
+      productionApprovalPolicy: 'separate-reviewer',
+      createdAt: new Date('2026-10-09T08:00:00.000Z'),
+      maxArtifactBytes: BigInt(21474836480),
+    };
+    const prisma = {
+      workspace: {
+        findUnique: jest.fn(async () => row),
+        create: jest.fn(async () => row),
+        update: jest.fn(async () => ({ ...row, name: 'Renamed' })),
+      },
+      workspaceMember: {
+        findUnique: jest.fn(async () => ({ workspaceId: 'w1', userId: 'u1', role: 'owner' })),
+        findUniqueOrThrow: jest.fn(async () => ({ role: 'owner' })),
+      },
+    };
+    const service = new WorkspacesService(prisma as never, {} as never, {
+      record: jest.fn(async () => undefined),
+    });
+    prisma.workspace.findUnique.mockResolvedValueOnce(null as never);
+
+    const created = await service.create('u1', { name: 'Team', slug: 'team' });
+    const renamed = await service.update('u1', 'w1', { name: 'Renamed' });
+    const policy = await service.updateProductionApprovalPolicy('u1', 'w1', 'self-review');
+
+    for (const response of [created, renamed, policy]) {
+      expect(() => JSON.stringify(response)).not.toThrow();
+      expect(response).not.toHaveProperty('maxArtifactBytes');
+    }
+    expect(renamed).toMatchObject({ name: 'Renamed', role: 'owner' });
+  });
 });
