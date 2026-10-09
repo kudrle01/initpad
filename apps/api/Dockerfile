@@ -1,7 +1,7 @@
 # Platform API. Build context = repository root (npm workspaces monorepo):
 #   docker build -f apps/api/Dockerfile .
 # ---------------------------------------------------------------- build ----
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS build
 # openssl: Prisma detects the SSL version at install time and downloads the
 # matching engine binaries — without it the detection silently falls back to
 # openssl 1.1 and the engines fail to load at runtime.
@@ -15,7 +15,7 @@ COPY apps/api apps/api
 RUN npm run build --workspace @initpad/api
 
 # ------------------------------------------------ production dependencies ----
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS production-dependencies
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS production-dependencies
 RUN apk add --no-cache openssl
 WORKDIR /repo
 COPY package.json package-lock.json ./
@@ -24,7 +24,7 @@ COPY apps/api/prisma apps/api/prisma
 RUN npm ci --omit=dev --workspace @initpad/api --include-workspace-root=false
 
 # -------------------------------------------------------------- runtime ----
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4
 # Installed packages take the fixes Alpine published after the base image
 # (ADR-144). npm, npx, corepack and yarn are build tools with dependencies of
 # their own; the runtime never calls them, so the image does not ship them.
