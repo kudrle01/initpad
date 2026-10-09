@@ -9,11 +9,9 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
-import { readStringCookie } from '../common/request-cookie';
+import { readSessionToken } from './session-cookie';
 import { ALLOW_PASSWORD_CHANGE } from './allow-password-change.decorator';
 import { PUBLIC_ENDPOINT, type PublicEndpointReason } from './public-endpoint.decorator';
-
-export const TOKEN_COOKIE = 'initpad_token';
 
 export interface JwtPayload {
   sub: string;
@@ -48,7 +46,7 @@ export class JwtAuthGuard implements CanActivate {
     // duplicate user lookup when the controller-level guard runs afterwards.
     if (req.userId) return true;
 
-    const token = readStringCookie(req, TOKEN_COOKIE);
+    const token = readSessionToken(req);
     if (!token) throw new UnauthorizedException('Not authenticated');
 
     let payload: JwtPayload;

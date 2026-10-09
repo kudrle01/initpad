@@ -335,6 +335,12 @@ a nemění jeho obsah.
   nástrojem své distribuce (například `iptables-persistent`). Port 8085
   neblokuj, pokud mají uživatelé otevírat aplikace na vestavěném statickém
   hostingu.
+- Při provozu přes HTTP posílá prohlížeč session InitPadu i vestavěným Docker
+  aplikacím na stejném hostu. Pokud budou nasazovat další lidé, provozuj
+  InitPad přes HTTPS (serverový profil, případně `tls internal`) nebo nastav
+  `INITPAD_DEPLOY_PUBLIC_HOST` na jiný název hostu. Administrace na tento stav
+  upozorní. Pod HTTPS se session cookie jmenuje `__Host-initpad_token` a po
+  aktualizaci na tuto verzi se uživatelé jednou znovu přihlásí.
 - Výchozí registrace je `admin-provisioned`. Režim `open` dovolí každému, kdo
   instanci vidí, založit účet a nasazovat kontejnery na vestavěný Docker host;
   zapínej ho jen v důvěryhodné síti. První účet (administrátor) vyžaduje

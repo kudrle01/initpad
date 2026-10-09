@@ -3,7 +3,8 @@ import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { config } from '../../config';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TOKEN_COOKIE, JwtPayload } from '../../auth/jwt-auth.guard';
+import { JwtPayload } from '../../auth/jwt-auth.guard';
+import { readSessionToken, setSessionCookie } from '../../auth/session-cookie';
 import { AuthService } from '../../auth/auth.service';
 import { ExternalIdentityService } from '../../identity/external-identity.service';
 import { GitHubInstallationService } from './github-installation.service';
@@ -14,7 +15,6 @@ import { readStringCookie } from '../../common/request-cookie';
 import { RateLimited } from '../../auth/rate-limited.decorator';
 import { RATE_LIMITS } from '../../auth/rate-limit.policy';
 
-const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 // "Sign in with GitHub" and account linking. Both are top-level browser
 // redirects, so the session cookie (SameSite=Lax) is available on the callback.
 @Controller('auth/github')
@@ -149,20 +149,14 @@ export class GitHubAuthController {
       return res.redirect(this.frontend('/login?error=github_exchange'));
     }
     const { token } = this.auth.createSession(user);
-    res.cookie(TOKEN_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: config.auth.secureCookie,
-      path: '/',
-      maxAge: SESSION_MAX_AGE,
-    });
+    setSessionCookie(res, token);
     return res.redirect(this.frontend('/'));
   }
 
   // Resolves the current session the same way JwtAuthGuard does, but without
   // throwing — the callback degrades to "please sign in" instead.
   private async sessionUserId(req: Request): Promise<string | null> {
-    const token = readStringCookie(req, TOKEN_COOKIE);
+    const token = readSessionToken(req);
     if (!token) return null;
     try {
       const payload = this.jwt.verify<JwtPayload>(token);

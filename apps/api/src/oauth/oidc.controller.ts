@@ -3,8 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
-import { TOKEN_COOKIE } from '../auth/jwt-auth.guard';
-import { readStringCookie } from '../common/request-cookie';
+import { readSessionToken } from '../auth/session-cookie';
 import { OidcService } from './oidc.service';
 import { PublicEndpoint } from '../auth/public-endpoint.decorator';
 
@@ -151,7 +150,7 @@ export class OidcController {
   }
 
   private async sessionUser(req: Request): Promise<{ id: string; tokenVersion: number } | null> {
-    const token = readStringCookie(req, TOKEN_COOKIE);
+    const token = readSessionToken(req);
     if (!token) return null;
     try {
       const payload = this.jwt.verify<{ sub: string; ver?: number }>(token);

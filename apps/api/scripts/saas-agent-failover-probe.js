@@ -242,7 +242,10 @@ async function before(prisma, marker) {
   const response = await fetch(`${origin}/api/projects/${projectId}/redeploy/${environmentName}`, {
     method: 'POST',
     headers: {
-      cookie: `initpad_token=${token}`,
+      // The API reads only the name for its profile (ADR-137).
+      cookie: `__Host-initpad_token=${token}; initpad_token=${token}`,
+      // Signed-in changes must be JSON (ADR-137).
+      'content-type': 'application/json',
       'x-workspace-id': environment.project.workspaceId,
       'cache-control': 'no-store',
     },

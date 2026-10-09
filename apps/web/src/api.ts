@@ -609,6 +609,7 @@ export const api = {
   // the UI can retry after cutover instead of retaining a request from the
   // unavailable instance for the general API timeout.
   adminPlatformUpdateStatus: () => http<PlatformUpdateStatus>('/admin/updates', undefined, 12_000),
+  adminSecurityStatus: () => http<{ builtInAppsShareSession: boolean }>('/admin/security'),
   adminInstallPlatformUpdate: (requestId: string) =>
     http<PlatformUpdateOperation>('/admin/updates', {
       method: 'POST',

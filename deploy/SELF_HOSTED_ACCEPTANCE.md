@@ -81,6 +81,8 @@ INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0
 
 Poslední hodnota je pro tento bridged-LAN test záměrná: zpřístupní náhodné
 porty vestavěných Docker deploymentů ostatním zařízením v důvěryhodné LAN.
+Instalace přes HTTP posílá session InitPadu i těmto aplikacím, proto je určená
+jen pro test s důvěryhodnými účastníky a Administrace na to upozorní.
 V produkci preferuj managed gateway se stabilními HTTPS adresami; přímé porty
 nevystavuj bez omezení zdrojové sítě hostitelským firewallem.
 

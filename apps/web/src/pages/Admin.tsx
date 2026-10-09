@@ -39,6 +39,7 @@ import type { AdminUser, PlatformUpdateStatus } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { createRequestId } from '@/lib/request-id';
 import { WorkspaceCapacityCard } from '@/components/organisms/admin/WorkspaceCapacityCard';
+import { SessionExposureNotice } from '@/components/organisms/admin/SessionExposureNotice';
 import { cn } from '@/lib/utils';
 import { t, rich } from '@/i18n';
 
@@ -57,6 +58,7 @@ export default function Admin() {
   const toast = useToast();
   const confirmAction = useConfirmation();
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [builtInAppsShareSession, setBuiltInAppsShareSession] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [username, setUsername] = useState('');
@@ -111,6 +113,21 @@ export default function Admin() {
   useEffect(() => {
     void loadUpdates();
   }, [loadUpdates]);
+
+  useEffect(() => {
+    if (!user || user.edition !== 'self-hosted' || user.platformRole !== 'admin') return;
+    let cancelled = false;
+    api
+      .adminSecurityStatus()
+      .then((status) => {
+        if (!cancelled) setBuiltInAppsShareSession(status.builtInAppsShareSession);
+      })
+      // The notice is advisory; the rest of the page does not depend on it.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     const status = updates?.operation?.status;
@@ -346,6 +363,7 @@ export default function Admin() {
       />
 
       <div className="flex flex-col gap-4 lg:gap-6">
+        {selfHosted && <SessionExposureNotice builtInAppsShareSession={builtInAppsShareSession} />}
         {selfHosted && (
           <PlatformUpdateCard
             status={updates}

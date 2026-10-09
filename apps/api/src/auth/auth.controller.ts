@@ -1,7 +1,8 @@
 import { Body, Controller, Get, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
-import { JwtAuthGuard, TOKEN_COOKIE } from './jwt-auth.guard';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { clearSessionCookie, setSessionCookie } from './session-cookie';
 import { CurrentUser } from './current-user.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -17,8 +18,6 @@ import { config } from '../config';
 import { PublicEndpoint } from './public-endpoint.decorator';
 import { RateLimited } from './rate-limited.decorator';
 import { RATE_LIMITS } from './rate-limit.policy';
-
-const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 @Controller('auth')
 export class AuthController {
@@ -63,13 +62,7 @@ export class AuthController {
   }
 
   private setSession(res: Response, token: string) {
-    res.cookie(TOKEN_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: config.auth.secureCookie,
-      path: '/',
-      maxAge: SESSION_MAX_AGE,
-    });
+    setSessionCookie(res, token);
   }
 
   @Get('me')
@@ -132,12 +125,7 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto, @Res({ passthrough: true }) res: Response) {
     await this.auth.resetPassword(dto.token, dto.newPassword);
     // The reset revokes existing sessions; clear any cookie on this device too.
-    res.clearCookie(TOKEN_COOKIE, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: config.auth.secureCookie,
-      path: '/',
-    });
+    clearSessionCookie(res);
   }
 
   // Activates an admin-provisioned account: the user sets their own password via
@@ -154,12 +142,7 @@ export class AuthController {
   @Post('logout')
   @PublicEndpoint('authentication')
   logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie(TOKEN_COOKIE, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: config.auth.secureCookie,
-      path: '/',
-    });
+    clearSessionCookie(res);
     return { ok: true };
   }
 }

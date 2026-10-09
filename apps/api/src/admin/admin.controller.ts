@@ -7,6 +7,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { PlatformUpdatesService } from '../updates/platform-updates.service';
 import { RequestPlatformUpdateDto } from '../updates/dto/request-platform-update.dto';
 import { UpdateWorkspaceCapacityDto } from './dto/update-workspace-capacity.dto';
+import { builtInAppsShareSessionCookie } from '../config';
 
 // Platform administration API. Account provisioning and self-update are used
 // by self-hosted installations; workspace capacity policy also protects SaaS.
@@ -27,6 +28,11 @@ export class AdminController {
   @Post('updates')
   installUpdate(@CurrentUser() userId: string, @Body() dto: RequestPlatformUpdateDto) {
     return this.platformUpdates.request(userId, dto.requestId);
+  }
+
+  @Get('security')
+  securityStatus() {
+    return { builtInAppsShareSession: builtInAppsShareSessionCookie() };
   }
 
   @Get('users')

@@ -276,6 +276,24 @@ export function artifactStoreConfigured(): boolean {
   return Boolean(s.bucket && s.accessKeyId && s.secretAccessKey);
 }
 
+/**
+ * Built-in direct-port applications are served from `config.publicHost`. When
+ * that is also the InitPad host and the session cookie is not Secure, browsers
+ * send the InitPad session to every application deployed there, and a member's
+ * application could replay it (ADR-137). HTTPS or a separate application host
+ * name avoids that.
+ */
+export function builtInAppsShareSessionCookie(): boolean {
+  if (config.edition !== 'self-hosted' || config.auth.secureCookie) return false;
+  try {
+    return (
+      new URL(config.auth.frontendUrl).hostname.toLowerCase() === config.publicHost.toLowerCase()
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function mailDeliveryConfigured(): boolean {
   return Boolean(config.mail.host && config.mail.from);
 }

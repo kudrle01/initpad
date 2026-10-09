@@ -1,4 +1,4 @@
-import { config, validateConfig } from './config';
+import { builtInAppsShareSessionCookie, config, validateConfig } from './config';
 
 describe('validateConfig production secrets', () => {
   const fakePrivateKey = [
@@ -237,5 +237,33 @@ describe('validateConfig production secrets', () => {
     // Unset in this test environment, so the module default applies (ADR-136).
     expect(process.env.INITPAD_REGISTRATION_MODE).toBeUndefined();
     expect(config.auth.registrationMode).toBe('admin-provisioned');
+  });
+
+  it('flags built-in applications that share the InitPad host over HTTP (ADR-137)', () => {
+    const original = {
+      edition: config.edition,
+      secureCookie: config.auth.secureCookie,
+      frontendUrl: config.auth.frontendUrl,
+      publicHost: config.publicHost,
+    };
+    try {
+      config.edition = 'self-hosted';
+      config.auth.secureCookie = false;
+      config.auth.frontendUrl = 'http://192.168.1.20:8080';
+      config.publicHost = '192.168.1.20';
+      expect(builtInAppsShareSessionCookie()).toBe(true);
+
+      config.publicHost = 'apps.school.test';
+      expect(builtInAppsShareSessionCookie()).toBe(false);
+
+      config.publicHost = '192.168.1.20';
+      config.auth.secureCookie = true;
+      expect(builtInAppsShareSessionCookie()).toBe(false);
+    } finally {
+      config.edition = original.edition;
+      config.auth.secureCookie = original.secureCookie;
+      config.auth.frontendUrl = original.frontendUrl;
+      config.publicHost = original.publicHost;
+    }
   });
 });

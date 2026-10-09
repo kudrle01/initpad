@@ -1065,6 +1065,9 @@ export const cs = {
   'Commits and CI runs across your projects will show up here.':
     'Zobrazí se tu commity a běhy CI ze všech vašich projektů.',
   // pages/Admin.tsx
+  'Deployed applications can read sessions': 'Nasazené aplikace mohou číst relace',
+  'Applications on the built-in Docker server use this InitPad host name over HTTP, so browsers send them the InitPad session of anyone who opens them. Serve InitPad over HTTPS (server profile) or set INITPAD_DEPLOY_PUBLIC_HOST to a different host name before other people deploy here.':
+    'Aplikace na vestavěném Docker serveru používají přes HTTP stejný název hostu jako InitPad, takže jim prohlížeč posílá relaci InitPadu každého, kdo je otevře. Než sem začnou nasazovat další lidé, provozujte InitPad přes HTTPS (serverový profil) nebo nastavte INITPAD_DEPLOY_PUBLIC_HOST na jiný název hostu.',
   'Create @{username} as platform administrator?':
     'Vytvořit @{username} jako administrátora platformy?',
   'Platform administrators manage every account in this self-hosted InitPad instance.':

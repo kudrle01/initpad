@@ -1,6 +1,7 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { JwtAuthGuard, TOKEN_COOKIE } from './jwt-auth.guard';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { sessionCookieName } from './session-cookie';
 import { PUBLIC_ENDPOINT, type PublicEndpointReason } from './public-endpoint.decorator';
 
 type UserRow = {
@@ -12,7 +13,7 @@ type UserRow = {
 
 function contextWith(cookieToken: string | undefined) {
   const req: { cookies: Record<string, string>; userId?: string } = {
-    cookies: cookieToken ? { [TOKEN_COOKIE]: cookieToken } : {},
+    cookies: cookieToken ? { [sessionCookieName()]: cookieToken } : {},
   };
   const ctx = {
     switchToHttp: () => ({ getRequest: () => req }),

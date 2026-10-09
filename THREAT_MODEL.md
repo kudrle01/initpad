@@ -50,9 +50,12 @@ konfiguraci v paměti.
 - Osobní workspace nemohou přijímat další členy. Změny členství a rolí v týmu se
   synchronizují do oprávnění spolupracovníků v privátních repozitářích Gitey s
   kompenzačním rollbackem, pokud selže kterákoli strana.
-- Sessions jsou HTTP-only, SameSite a pod HTTPS Secure. Přesměrování OIDC
-  používají přesnou validaci originu a cesty a autorizační kódy jsou jednorázové
-  a expirují.
+- Sessions jsou HTTP-only, SameSite a pod HTTPS Secure s prefixem `__Host-`,
+  takže je sousední subdoména nepodvrhne. Změny se session cookie API přijme
+  jen jako `application/json` a odmítne je z jiného site podle
+  `Sec-Fetch-Site`, takže formulář z aplikace na stejném hostu nebo subdoméně
+  nic nezmění (ADR-137). Přesměrování OIDC používají přesnou validaci originu a
+  cesty a autorizační kódy jsou jednorázové a expirují.
 - Citlivé hodnoty v databázi používají AES-256-GCM. Callback tokeny CI jsou pro
   každý repozitář náhodné a InitPad ukládá pouze jejich hashe SHA-256.
 - Gitea tokeny mají rozsah podle spotřebitele a pevný název, takže nové vydání
@@ -154,6 +157,10 @@ konfiguraci v paměti.
   capabilities nesnižují oprávnění, které předává připojený Docker socket.
   Enrollment přes HTTP je povolen pouze explicitním testovacím příznakem a
   nechrání před nepřátelskou LAN.
+- Při provozu přes HTTP sdílejí vestavěné Docker aplikace host InitPadu a
+  prohlížeč jim posílá session každého, kdo je otevře. Aplikace člena ji tak
+  může zneužít. Ochranou je HTTPS nebo samostatný host aplikací
+  (`INITPAD_DEPLOY_PUBLIC_HOST`); InitPad stav hlásí v logu a v Administraci.
 - Container balíčky v Gitee patří účtu, nikoli repozitáři. Člen týmu, který
   přečte registry secret repozitáře, proto může přepsat image jiného projektu
   téhož vlastníka. Týmové repozitáře navíc leží v osobním prostoru autora, takže
