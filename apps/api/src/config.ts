@@ -545,6 +545,14 @@ export function validateConfig(): void {
     throw new Error('Deployment resource limits are invalid');
   }
   if (process.env.NODE_ENV !== 'production') return;
+  // The in-memory store loses every artifact on restart and grows without a
+  // bound; it exists for development and tests only (ADR-146).
+  if (!artifactStoreConfigured()) {
+    throw new Error(
+      'Production requires a durable artifact store: set INITPAD_ARTIFACT_S3_BUCKET, ' +
+        'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID and INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY',
+    );
+  }
   if (config.security.encryptionKey === 'dev-secret-zmen-me') {
     throw new Error(
       'Refusing production startup without INITPAD_ENCRYPTION_KEY. An installation that ' +

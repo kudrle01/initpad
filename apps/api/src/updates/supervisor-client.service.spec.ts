@@ -37,10 +37,13 @@ describe('SupervisorClientService', () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const headers = init.headers as Record<string, string>;
     const digest = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
+    const signed = `${headers['x-initpad-timestamp']}\n${headers['x-initpad-request-id']}\n${digest}`;
+    expect(headers['x-initpad-signature-v2']).toBe(
+      createHmac('sha256', secret).update(`v2\nGET\n/v1/status\n${signed}`).digest('hex'),
+    );
+    // Kept for Supervisors released before ADR-146.
     expect(headers['x-initpad-signature']).toBe(
-      createHmac('sha256', secret)
-        .update(`${headers['x-initpad-timestamp']}\n${headers['x-initpad-request-id']}\n${digest}`)
-        .digest('hex'),
+      createHmac('sha256', secret).update(signed).digest('hex'),
     );
     expect(init.redirect).toBe('error');
   });

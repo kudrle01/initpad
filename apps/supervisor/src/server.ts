@@ -54,10 +54,14 @@ export function createSupervisorServer(
         return;
       }
       const body = await readBody(request);
+      // Only the v2 signature counts; the API also sends the older v1 header
+      // for Supervisors that predate ADR-146.
       authenticateRequest(secret, {
+        method: request.method ?? '',
+        path: url.pathname,
         timestamp: header(request, 'x-initpad-timestamp'),
         requestId: header(request, 'x-initpad-request-id'),
-        signature: header(request, 'x-initpad-signature'),
+        signature: header(request, 'x-initpad-signature-v2'),
         body,
       });
       if (request.method === 'GET' && url.pathname === '/v1/status') {

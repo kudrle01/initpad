@@ -79,6 +79,11 @@ describe('validateConfig production secrets', () => {
     expect(() => validateConfig()).toThrow('INITPAD_SCM_WEBHOOK_TOKEN');
   });
 
+  it('refuses the in-memory artifact store in production (ADR-146)', () => {
+    config.artifactStore.bucket = '';
+    expect(() => validateConfig()).toThrow('Production requires a durable artifact store');
+  });
+
   it('rejects the Compose fallback artifact-store password', () => {
     config.artifactStore.secretAccessKey = 'initpad-artifacts';
     expect(() => validateConfig()).toThrow('INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY');

@@ -41,13 +41,18 @@ function verifiedManifest(): PlatformReleaseManifest {
   };
 }
 
-function headers(requestId: string, body: Buffer): Record<string, string> {
+function headers(
+  method: string,
+  path: string,
+  requestId: string,
+  body: Buffer,
+): Record<string, string> {
   const timestamp = String(Date.now());
   return {
     'content-type': 'application/json',
     'x-initpad-timestamp': timestamp,
     'x-initpad-request-id': requestId,
-    'x-initpad-signature': signRequest(secret, timestamp, requestId, body),
+    'x-initpad-signature-v2': signRequest(secret, method, path, timestamp, requestId, body),
   };
 }
 
@@ -82,7 +87,9 @@ test('exposes only authenticated status/update endpoints and keeps requests idem
 
     const statusId = '3f04ebec-3299-4ce5-bd02-cf390ca413e9';
     const statusBody = Buffer.alloc(0);
-    const status = await fetch(`${base}/v1/status`, { headers: headers(statusId, statusBody) });
+    const status = await fetch(`${base}/v1/status`, {
+      headers: headers('GET', '/v1/status', statusId, statusBody),
+    });
     assert.equal(status.status, 200);
     assert.equal(((await status.json()) as { currentVersion: string }).currentVersion, '0.2.0');
 
@@ -92,16 +99,40 @@ test('exposes only authenticated status/update endpoints and keeps requests idem
     );
     const first = await fetch(`${base}/v1/update`, {
       method: 'POST',
-      headers: headers(updateId, updateBody),
+      headers: headers('POST', '/v1/update', updateId, updateBody),
       body: updateBody,
     });
     assert.equal(first.status, 202);
     const second = await fetch(`${base}/v1/update`, {
       method: 'POST',
-      headers: headers(updateId, updateBody),
+      headers: headers('POST', '/v1/update', updateId, updateBody),
       body: updateBody,
     });
     assert.equal(second.status, 200);
+    assert.equal(launches.length, 1);
+
+    // A status signature does not authorize an update, and the v1 header
+    // alone is no longer accepted.
+    const replayed = await fetch(`${base}/v1/update`, {
+      method: 'POST',
+      headers: headers('GET', '/v1/status', '6e1b3a3c-6f2e-4f33-9a52-0d6b8f1c2a10', updateBody),
+      body: updateBody,
+    });
+    assert.equal(replayed.status, 401);
+    const legacy = headers(
+      'POST',
+      '/v1/update',
+      '7c2d4b4d-7a3f-4a44-8b63-1e7c9a2d3b21',
+      updateBody,
+    );
+    legacy['x-initpad-signature'] = legacy['x-initpad-signature-v2'];
+    delete legacy['x-initpad-signature-v2'];
+    const legacyOnly = await fetch(`${base}/v1/update`, {
+      method: 'POST',
+      headers: legacy,
+      body: updateBody,
+    });
+    assert.equal(legacyOnly.status, 401);
     assert.equal(launches.length, 1);
     assert.equal((await loadState()).operation?.requestId, updateId);
   } finally {
