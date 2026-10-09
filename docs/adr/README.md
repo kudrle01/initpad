@@ -159,3 +159,4 @@ stabilní.
 | [ADR-146](./ADR-146.md) | Accepted | Podpis Supervisoru pokrývá metodu a cestu a produkce vyžaduje trvalé úložiště artefaktů |
 | [ADR-147](./ADR-147.md) | Accepted | Přihlášení je odvolatelná session a uživatel vidí, kde je přihlášený |
 | [ADR-148](./ADR-148.md) | Accepted | Obnova účtu odvolá všechny Gitea tokeny a provoz umí ukončit Gitea sessions |
+| [ADR-149](./ADR-149.md) | Accepted | Sítě sdílené za jednou adresou mají vyšší limit na IP |

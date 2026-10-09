@@ -79,6 +79,21 @@ describe('validateConfig production secrets', () => {
     expect(() => validateConfig()).toThrow('INITPAD_SCM_WEBHOOK_TOKEN');
   });
 
+  it('validates shared-network rate-limit ranges and their factor (ADR-149)', () => {
+    const saved = { ...config.rateLimit };
+    try {
+      config.rateLimit.sharedNetworks = ['198.51.100.0/24'];
+      expect(() => validateConfig()).not.toThrow();
+      config.rateLimit.sharedNetworks = ['198.51.100.0'];
+      expect(() => validateConfig()).toThrow('invalid CIDR range');
+      config.rateLimit.sharedNetworks = [];
+      config.rateLimit.sharedNetworkFactor = 0;
+      expect(() => validateConfig()).toThrow('INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR');
+    } finally {
+      Object.assign(config.rateLimit, saved);
+    }
+  });
+
   it('refuses the in-memory artifact store in production (ADR-146)', () => {
     config.artifactStore.bucket = '';
     expect(() => validateConfig()).toThrow('Production requires a durable artifact store');

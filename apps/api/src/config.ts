@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'path';
+import { parseSharedNetworks } from './auth/shared-networks';
 import { builtInPublicHost } from './common/public-url';
 
 const configuredPublicUrl =
@@ -67,6 +68,15 @@ export const config = {
     // a security input for rate limiting, so this must match the real topology
     // instead of trusting an arbitrary X-Forwarded-For chain.
     trustProxyHops: Number(process.env.INITPAD_TRUST_PROXY_HOPS ?? 1),
+  },
+  rateLimit: {
+    // CIDR ranges where many people share one public address, such as a
+    // school behind NAT. Their per-IP limits are multiplied (ADR-149).
+    sharedNetworks: (process.env.INITPAD_RATE_LIMIT_SHARED_NETWORKS ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    sharedNetworkFactor: Number(process.env.INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR || 20),
   },
   templatesDir: process.env.INITPAD_TEMPLATES_DIR || resolve(process.cwd(), '../../templates'),
   workspaceDir: process.env.INITPAD_WORKSPACE_DIR || resolve(process.cwd(), '../../.workspace'),
@@ -387,6 +397,13 @@ export function validateConfig(): void {
     config.http.trustProxyHops > 5
   ) {
     throw new Error('INITPAD_TRUST_PROXY_HOPS must be an integer between 0 and 5');
+  }
+  parseSharedNetworks(config.rateLimit.sharedNetworks);
+  const factor = config.rateLimit.sharedNetworkFactor;
+  if (!Number.isInteger(factor) || factor < 1 || factor > 100) {
+    throw new Error(
+      'INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR must be an integer between 1 and 100',
+    );
   }
   if (
     (rawSmtpSecure !== undefined && !['true', 'false'].includes(rawSmtpSecure)) ||

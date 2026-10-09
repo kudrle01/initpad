@@ -401,6 +401,18 @@ e-mail, login ani token; identita je součástí HMAC klíče. Rate limiter chr�
 jednotlivé účty a běžné automatizované pokusy, nenahrazuje firewall, connection
 limit ani DDoS ochranu na veřejném edge.
 
+Škola nebo firma za NAT posílá požadavky všech uživatelů z jedné veřejné
+adresy. Uveď ji v `.env`, jinak třída rychle vyčerpá limit přihlášení a
+registrace na IP (ADR-149):
+
+```dotenv
+INITPAD_RATE_LIMIT_SHARED_NETWORKS=198.51.100.0/24
+INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR=20
+```
+
+Pro tyto adresy se limit na IP násobí, limit na účet zůstává. Uváděj jen sítě,
+za kterými skutečně stojí tvoji uživatelé.
+
 Publikovaný Agent se zapíná vždy dvojicí z ověřeného
 `initpad-agent-release.json`: `INITPAD_AGENT_IMAGE` dostane
 `image.immutableReference` a `INITPAD_AGENT_RELEASE_VERSION` kořenové pole

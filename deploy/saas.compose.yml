@@ -21,6 +21,8 @@ services:
       # The API refuses a different value in SaaS so client-IP rate limits
       # cannot silently collapse onto the edge address or trust extra hops.
       INITPAD_TRUST_PROXY_HOPS: ${INITPAD_TRUST_PROXY_HOPS:?set to 2 for public edge plus web proxy}
+      INITPAD_RATE_LIMIT_SHARED_NETWORKS: ${INITPAD_RATE_LIMIT_SHARED_NETWORKS:-}
+      INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR: ${INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR:-20}
       INITPAD_COOKIE_SECURE: 'true'
       INITPAD_JWT_SECRET_FILE: /run/secrets/jwt_secret
       INITPAD_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
