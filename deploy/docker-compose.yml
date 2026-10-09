@@ -10,7 +10,7 @@ name: initpad
 
 services:
   postgres:
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     environment:
       POSTGRES_USER: initpad
       POSTGRES_PASSWORD: ${INITPAD_DB_PASSWORD:-initpad}
@@ -75,7 +75,7 @@ services:
     restart: 'no'
 
   gitea:
-    image: gitea/gitea:1.22@sha256:538658de667c5d098a274f2f63aa6ec891d88f670cdd5282cf27221ba747dda4
+    image: gitea/gitea:28.0@sha256:a9dc25679ebdd33356242d2e0667cc220043745e8339922879f187c20329a42e
     environment:
       # INSTALL_LOCK skips the web install wizard — the instance is configured
       # entirely from here and from install.sh (no manual clicking).
@@ -321,7 +321,7 @@ services:
   # download its job image and Dockerfile base images from Docker Hub again.
   # It rejects pushes and deletes, so a job cannot place content in it.
   runner-image-cache:
-    image: registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+    image: registry:3.1.2@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
     profiles: ['runner']
     # A directory mount, unlike a file mount, follows a configuration that a
     # platform update replaces.
@@ -364,7 +364,7 @@ services:
   # path is a tmpfs, so a restart also discards files a job wrote through the
   # Docker API.
   runner-docker:
-    image: docker:27.5.1-dind-rootless@sha256:e2ac8e8f66ae21a060b0a8e3005c70f6ed9441aabf409434463d1f6eecd38026
+    image: docker:29.8.1-dind-rootless@sha256:1f029db43a32fbb1465fe8ff4327d405154876946986170e97d7861232a8227a
     profiles: ['runner']
     privileged: true
     init: true
@@ -418,7 +418,7 @@ services:
   # runner credential outside the daemon container, takes one job at a time
   # and starts it only on a daemon erased since the previous job (ADR-138).
   act_runner:
-    image: gitea/act_runner:0.2.13@sha256:8477d5b61b655caad4449888bae39f1f34bebd27db56cb15a62dccb3dcf3a944
+    image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
     profiles: ['runner']
     entrypoint: ['/sbin/tini', '--', '/bin/bash', '/opt/initpad-runner/ci-runner.sh']
     environment:
@@ -452,7 +452,7 @@ services:
   # root:root. Prepare the shared webroot before SFTP starts so the unprivileged
   # deploy user can create versioned releases on both fresh and existing stacks.
   sftp-volume-init:
-    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
     command:
       - /bin/sh
       - -ec
@@ -478,7 +478,7 @@ services:
     restart: unless-stopped
 
   static-web:
-    image: nginx:alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
+    image: nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
     depends_on: [fake-sftp]
     ports:
       - '8085:80'
@@ -499,7 +499,7 @@ services:
   # --- reverse proxy with automatic HTTPS (server installs only) -----------
 
   caddy:
-    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
     profiles: ['server']
     ports:
       - '80:80'
