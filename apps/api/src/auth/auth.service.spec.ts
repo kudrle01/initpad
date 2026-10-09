@@ -5,6 +5,16 @@ import type { RecordAuditEvent } from '../audit/audit-events.service';
 import { AuthService } from './auth.service';
 import { hashPassword } from './password';
 
+// Session rows behind issued tokens (ADR-147); merged into a Prisma mock.
+function withSessions<T extends object>(prisma: T): T {
+  return Object.assign(prisma, {
+    userSession: {
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+      create: jest.fn(async () => ({ id: 'session-1' })),
+    },
+  });
+}
+
 describe('AuthService', () => {
   const originalMode = config.auth.registrationMode;
   const originalEdition = config.edition;
@@ -46,7 +56,7 @@ describe('AuthService', () => {
         deleteUser: jest.fn(),
       };
       const service = new AuthService(
-        prisma as never,
+        withSessions(prisma) as never,
         { sign: jest.fn(() => 'jwt') } as never,
         gitea as never,
       );
@@ -128,7 +138,7 @@ describe('AuthService', () => {
       deleteUser: jest.fn(),
     };
     const jwt = { sign: jest.fn(() => 'jwt') };
-    const service = new AuthService(prisma as never, jwt as never, gitea as never);
+    const service = new AuthService(withSessions(prisma) as never, jwt as never, gitea as never);
 
     const result = await Promise.allSettled([
       service.register({
@@ -158,7 +168,7 @@ describe('AuthService', () => {
   it('keeps self-service registration open in the open policy', async () => {
     config.auth.registrationMode = 'open';
     const prisma = { user: { count: jest.fn(async () => 5) } };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     expect(await service.registrationAvailable()).toBe(true);
     expect(prisma.user.count).not.toHaveBeenCalled();
   });
@@ -167,7 +177,7 @@ describe('AuthService', () => {
     config.edition = 'saas';
     config.auth.registrationMode = 'open';
     const prisma = { user: { count: jest.fn() } };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     expect(await service.registrationAvailable()).toBe(false);
     expect(prisma.user.count).not.toHaveBeenCalled();
   });
@@ -175,7 +185,7 @@ describe('AuthService', () => {
   it('never accepts password sign-in in the SaaS edition', async () => {
     config.edition = 'saas';
     const prisma = { user: { findFirst: jest.fn() } };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.login({ username: 'alice', password: 'long-password' })).rejects.toThrow(
       'disabled in the SaaS edition',
     );
@@ -191,7 +201,7 @@ describe('AuthService', () => {
       },
     };
     const gitea = { randomizeUserPassword: jest.fn(async () => undefined) };
-    const service = new AuthService(prisma as never, {} as never, gitea as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, gitea as never);
 
     await service.onModuleInit();
 
@@ -208,7 +218,7 @@ describe('AuthService', () => {
     config.auth.registrationMode = 'admin-provisioned';
     let count = 0;
     const prisma = { user: { count: jest.fn(async () => count) } };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     expect(await service.registrationAvailable()).toBe(true); // empty instance bootstraps
     count = 1;
     expect(await service.registrationAvailable()).toBe(false); // then closed to self-service
@@ -230,7 +240,11 @@ describe('AuthService', () => {
       mustChangePassword: false,
     };
     const prisma = { user: { findFirst: jest.fn(async () => user) } };
-    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
+    const service = new AuthService(
+      withSessions(prisma) as never,
+      { sign: () => 'jwt' } as never,
+      {} as never,
+    );
     await service.login({ username: ' ALICE@EXAMPLE.TEST ', password: 'long-password' });
     expect(prisma.user.findFirst).toHaveBeenCalledWith({
       where: {
@@ -270,7 +284,7 @@ describe('AuthService', () => {
     const findFirst = jest.fn(async () => user as typeof user | null);
     const audit = { record: jest.fn(async (_event: RecordAuditEvent) => undefined) };
     const service = new AuthService(
-      { user: { findFirst } } as never,
+      withSessions({ user: { findFirst } }) as never,
       { sign: () => 'jwt' } as never,
       {} as never,
       undefined,
@@ -328,7 +342,11 @@ describe('AuthService', () => {
       mustChangePassword: false,
     };
     const prisma = { user: { findFirst: jest.fn(async () => user) } };
-    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
+    const service = new AuthService(
+      withSessions(prisma) as never,
+      { sign: () => 'jwt' } as never,
+      {} as never,
+    );
     await expect(service.login({ username: 'bob', password: 'long-password' })).rejects.toThrow(
       'deactivated',
     );
@@ -360,7 +378,7 @@ describe('AuthService', () => {
       },
     };
     const service = new AuthService(
-      prisma as never,
+      withSessions(prisma) as never,
       { sign: (p: unknown) => JSON.stringify(p) } as never,
       {} as never,
     );
@@ -379,7 +397,11 @@ describe('AuthService', () => {
       tokenVersion: 0,
     };
     const prisma = { user: { findUnique: jest.fn(async () => stored), update: jest.fn() } };
-    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
+    const service = new AuthService(
+      withSessions(prisma) as never,
+      { sign: () => 'jwt' } as never,
+      {} as never,
+    );
     await expect(
       service.changePassword('u1', 'wrong-password', 'brand-new-password-9'),
     ).rejects.toThrow('incorrect');
@@ -399,7 +421,7 @@ describe('AuthService', () => {
         }),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await service.provisionExternalUser({
       provider: 'github',
       providerUserId: '555',
@@ -434,7 +456,7 @@ describe('AuthService', () => {
         }),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await service.provisionExternalUser({
       provider: 'github',
       providerUserId: '9',
@@ -458,7 +480,7 @@ describe('AuthService', () => {
         }),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await service.provisionExternalUser({
       provider: 'github',
       providerUserId: '10',
@@ -473,7 +495,7 @@ describe('AuthService', () => {
   it('does not issue self-verification links in the SaaS edition', async () => {
     config.edition = 'saas';
     const prisma = { user: { findUnique: jest.fn() } };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.requestEmailVerification('u1')).rejects.toThrow('provided by GitHub');
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
@@ -484,7 +506,7 @@ describe('AuthService', () => {
       user: { findFirst: jest.fn(async () => null) },
       authToken: { updateMany: jest.fn(), create: jest.fn() },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.requestPasswordReset('ghost@example.test')).resolves.toBeUndefined();
     expect(prisma.authToken.create).not.toHaveBeenCalled();
   });
@@ -521,7 +543,12 @@ describe('AuthService', () => {
       enqueueAuthMail: jest.fn(async () => undefined),
       scheduleDelivery: jest.fn(),
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never, mail as never);
+    const service = new AuthService(
+      withSessions(prisma) as never,
+      {} as never,
+      {} as never,
+      mail as never,
+    );
     await service.requestPasswordReset('dave');
     expect(prisma.authToken.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'u1', kind: 'password_reset', usedAt: null } }),
@@ -563,7 +590,7 @@ describe('AuthService', () => {
       $queryRaw: jest.fn(async () => [{ id: 'u1' }]),
       $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     const result = await service.createActivationLink('u1');
     expect(result.delivery).toBe('manual');
     const url = new URL(result.activationUrl!);
@@ -592,6 +619,7 @@ describe('AuthService', () => {
           return { count: 1 };
         }),
       },
+      project: { findMany: jest.fn(async () => []) },
       user: {
         findUnique: jest.fn(async () => ({ username: 'alice', giteaId: 7 })),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -600,11 +628,11 @@ describe('AuthService', () => {
         }),
       },
     };
-    const gitea = { revokeCloneToken: jest.fn(async () => undefined) };
-    const service = new AuthService(prisma as never, {} as never, gitea as never);
+    const gitea = { revokeAccountCredentials: jest.fn(async () => undefined) };
+    const service = new AuthService(withSessions(prisma) as never, {} as never, gitea as never);
     await service.resetPassword('plaintext-token', 'a-brand-new-password');
     // A Git token taken through the compromised session stops working.
-    expect(gitea.revokeCloneToken).toHaveBeenCalledWith('alice');
+    expect(gitea.revokeAccountCredentials).toHaveBeenCalledWith('alice', []);
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
       data: { accessToken: '' },
@@ -622,6 +650,43 @@ describe('AuthService', () => {
     expect(userUpdate?.tokenVersion).toEqual({ increment: 1 });
   });
 
+  it('revokes Gitea credentials of the account and reissues its repository tokens (ADR-148)', async () => {
+    const row = {
+      scmProvider: 'gitea',
+      scmRepositoryId: '101',
+      scmOwner: 'alice',
+      scmRepositoryName: 'app',
+      scmFullName: 'alice/app',
+      scmDefaultBranch: 'main',
+      scmInstallationId: null,
+      repoUrl: 'http://git.test/alice/app',
+    };
+    const prisma = {
+      project: { findMany: jest.fn(async () => [row]) },
+      user: {
+        findUnique: jest.fn(async () => ({ username: 'alice', giteaId: 7 })),
+        update: jest.fn(async () => ({})),
+      },
+    };
+    const gitea = { revokeAccountCredentials: jest.fn(async () => undefined) };
+    const service = new AuthService(withSessions(prisma) as never, {} as never, gitea as never);
+
+    await service.revokeGitCredential('u1');
+
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { scmProvider: 'gitea', scmOwner: 'alice', scmRepositoryId: { not: null } },
+      }),
+    );
+    expect(gitea.revokeAccountCredentials).toHaveBeenCalledWith('alice', [
+      expect.objectContaining({ provider: 'gitea', repositoryId: '101', fullName: 'alice/app' }),
+    ]);
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { accessToken: '' },
+    });
+  });
+
   it('keeps the reset link usable when Gitea cannot revoke the Git token', async () => {
     const prisma = {
       $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
@@ -635,17 +700,18 @@ describe('AuthService', () => {
         })),
         updateMany: jest.fn(),
       },
+      project: { findMany: jest.fn(async () => []) },
       user: {
         findUnique: jest.fn(async () => ({ username: 'alice', giteaId: 7 })),
         update: jest.fn(),
       },
     };
     const gitea = {
-      revokeCloneToken: jest.fn(async () => {
+      revokeAccountCredentials: jest.fn(async () => {
         throw new Error('Gitea unavailable');
       }),
     };
-    const service = new AuthService(prisma as never, {} as never, gitea as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, gitea as never);
     await expect(
       service.resetPassword('plaintext-token', 'a-brand-new-password'),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
@@ -671,10 +737,10 @@ describe('AuthService', () => {
         update: jest.fn(async () => ({})),
       },
     };
-    const gitea = { revokeCloneToken: jest.fn() };
-    const service = new AuthService(prisma as never, {} as never, gitea as never);
+    const gitea = { revokeAccountCredentials: jest.fn() };
+    const service = new AuthService(withSessions(prisma) as never, {} as never, gitea as never);
     await service.resetPassword('plaintext-token', 'a-brand-new-password');
-    expect(gitea.revokeCloneToken).not.toHaveBeenCalled();
+    expect(gitea.revokeAccountCredentials).not.toHaveBeenCalled();
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
   });
 
@@ -684,7 +750,7 @@ describe('AuthService', () => {
       authToken: { findUnique: jest.fn(async () => null), updateMany: jest.fn() },
       user: { update: jest.fn() },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.resetPassword('nope', 'a-brand-new-password')).rejects.toThrow(
       'invalid or has expired',
     );
@@ -713,7 +779,7 @@ describe('AuthService', () => {
         }),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await service.verifyEmail('tok');
     expect(userUpdate?.emailVerifiedAt).toBeInstanceOf(Date);
   });
@@ -749,7 +815,11 @@ describe('AuthService', () => {
         }),
       },
     };
-    const service = new AuthService(prisma as never, { sign: () => 'jwt' } as never, {} as never);
+    const service = new AuthService(
+      withSessions(prisma) as never,
+      { sign: () => 'jwt' } as never,
+      {} as never,
+    );
     const result = await service.activate('tok', 'a-brand-new-password');
     expect(userUpdate?.mustChangePassword).toBe(false);
     expect(userUpdate?.tokenVersion).toEqual({ increment: 1 });
@@ -770,7 +840,7 @@ describe('AuthService', () => {
       authToken: { findUnique: jest.fn(async () => record), updateMany: jest.fn() },
       user: { update: jest.fn() },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.verifyEmail('tok')).rejects.toThrow('invalid or has expired');
   });
 
@@ -790,7 +860,7 @@ describe('AuthService', () => {
       },
       user: { update: jest.fn() },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.activate('tok', 'a-brand-new-password')).rejects.toThrow(
       'invalid or has expired',
     );

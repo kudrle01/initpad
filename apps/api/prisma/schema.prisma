@@ -44,6 +44,7 @@ model User {
   targets                    Target[]
   memberships                WorkspaceMember[]
   authTokens                 AuthToken[]
+  sessions                   UserSession[]
   emailOutbox                EmailOutbox[]
   oidcGrants                 OidcGrant[]
   externalIdentities         ExternalIdentity[]
@@ -195,6 +196,24 @@ model GitHubWebhookDelivery {
   receivedAt DateTime @default(now())
 
   @@index([receivedAt])
+}
+
+// A signed-in browser session (ADR-147). The session JWT carries its id, so
+// signing out or ending the session from another device stops the cookie
+// before the JWT expires. `version` is the account's tokenVersion at sign-in;
+// a later bump (password change, reset, deactivation) ends it as well.
+model UserSession {
+  id        String    @id @default(uuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  version   Int
+  userAgent String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // Hashed, expiring and single-use OAuth state. The signed browser value keeps

@@ -56,6 +56,10 @@ konfiguraci v paměti.
   `Sec-Fetch-Site`, takže formulář z aplikace na stejném hostu nebo subdoméně
   nic nezmění (ADR-137). Přesměrování OIDC používají přesnou validaci originu a
   cesty a autorizační kódy jsou jednorázové a expirují.
+- Každé přihlášení je řádek session, který odhlášení ukončí na serveru;
+  zkopírovaná cookie pak přestane fungovat. Uživatel vidí svá přihlášení a
+  může ukončit cizí (ADR-147). Obnova účtu odvolá všechny Gitea tokeny účtu a
+  vydá nové registry tokeny jeho repozitářů (ADR-148).
 - Citlivé hodnoty v databázi používají AES-256-GCM s vlastním klíčem, který se
   v produkci musí lišit od JWT secretu a jde vyměnit; nešifrované a starší
   hodnoty API po startu přešifruje a nečitelnou hodnotu ohlásí chybou, ne

@@ -73,6 +73,7 @@ export const PLATFORM_ACTION_LABELS: Record<string, MessageKey> = {
   'auth.password_reset_requested': msg('Password reset requested'),
   'auth.password_reset': msg('Password reset completed'),
   'auth.email_verified': msg('E-mail verified'),
+  'auth.sessions_ended': msg('Other sessions signed out'),
   'user.created': msg('Account created'),
   'user.activation_link_issued': msg('Activation link issued'),
   'user.deactivated': msg('Account deactivated'),

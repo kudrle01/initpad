@@ -711,6 +711,17 @@ export const cs = {
   '{issue} The platform administrator must configure a public HTTPS <code>INITPAD_PUBLIC_URL</code>. Current value: <value>{url}</value>.':
     '{issue} Správce platformy musí nastavit veřejnou HTTPS adresu <code>INITPAD_PUBLIC_URL</code>. Současná hodnota: <value>{url}</value>.',
   'not set': 'nenastaveno',
+  // components/organisms/settings/SessionsSettings.tsx
+  'Unknown browser': 'Neznámý prohlížeč',
+  'Signed-in browsers': 'Přihlášené prohlížeče',
+  'Browsers where your account is signed in. Sign out any you do not recognise, then change your password.':
+    'Prohlížeče, ve kterých je váš účet přihlášený. Ty, které nepoznáváte, odhlaste a pak si změňte heslo.',
+  'Sign out all others': 'Odhlásit všechny ostatní',
+  'Loading sessions': 'Načítám přihlášení',
+  'This browser signed in before session tracking was added.':
+    'Tento prohlížeč se přihlásil dřív, než InitPad začal přihlášení evidovat.',
+  'This browser': 'Tento prohlížeč',
+  'Signed in {time}': 'Přihlášeno {time}',
   // components/organisms/settings/WorkspaceAdministrationSettings.tsx
   'Workspace renamed': 'Workspace přejmenován',
   'Delete workspace {workspaceName}?': 'Smazat workspace {workspaceName}?',
@@ -1048,8 +1059,8 @@ export const cs = {
   'CI verifies a build without deploying it; production always requires approval.':
     'CI build ověří, ale nenasadí; produkce vždy vyžaduje schválení.',
   // pages/AccountSettings.tsx
-  'Sign-in methods and Git access for your own account.':
-    'Způsoby přihlášení a přístup ke Gitu pro váš účet.',
+  'Sign-in methods, signed-in browsers and Git access for your own account.':
+    'Způsoby přihlášení, přihlášené prohlížeče a přístup ke Gitu pro váš účet.',
   // pages/Activate.tsx
   'Passwords do not match.': 'Hesla se neshodují.',
   'Activate your account': 'Aktivujte svůj účet',
@@ -1177,6 +1188,7 @@ export const cs = {
   'Account deactivated': 'Účet deaktivován',
   'Account reactivated': 'Účet znovu aktivován',
   'Password reset by an administrator': 'Heslo obnovil administrátor',
+  'Other sessions signed out': 'Ostatní relace odhlášeny',
   'Signed-out visitor': 'Nepřihlášený návštěvník',
   // components/organisms/admin/PlatformAuditCard.tsx
   'Security log': 'Bezpečnostní záznam',

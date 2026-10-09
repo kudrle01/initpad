@@ -105,6 +105,14 @@ export interface WorkspaceCapacityUpdate {
   maxArtifactStorageGiB: number;
 }
 
+// A signed-in browser of the current account (ADR-147).
+export interface UserSessionSummary {
+  id: string;
+  userAgent: string | null;
+  createdAt: string;
+  current: boolean;
+}
+
 export interface AuditEvent {
   id: string;
   actor: {

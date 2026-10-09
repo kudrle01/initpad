@@ -1,9 +1,9 @@
 import { Body, Controller, Get, Logger, Post, Query, Req, Res } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { readSessionToken } from '../auth/session-cookie';
+import { SessionsService } from '../auth/sessions.service';
 import { OidcService } from './oidc.service';
 import { PublicEndpoint } from '../auth/public-endpoint.decorator';
 
@@ -16,7 +16,7 @@ export class OidcController {
 
   constructor(
     private readonly oidc: OidcService,
-    private readonly jwt: JwtService,
+    private readonly sessions: SessionsService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -182,19 +182,8 @@ export class OidcController {
     const token = readSessionToken(req);
     if (!token) return null;
     try {
-      const payload = this.jwt.verify<{ sub: string; ver?: number }>(token);
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-        select: { id: true, active: true, mustChangePassword: true, tokenVersion: true },
-      });
-      if (
-        !user ||
-        !user.active ||
-        user.mustChangePassword ||
-        (payload.ver ?? 0) !== user.tokenVersion
-      ) {
-        return null;
-      }
+      const user = await this.sessions.authenticate(token);
+      if (user.mustChangePassword) return null;
       return { id: user.id, tokenVersion: user.tokenVersion };
     } catch {
       return null;

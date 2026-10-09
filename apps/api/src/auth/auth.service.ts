@@ -22,6 +22,8 @@ import { config } from '../config';
 import { accountIdentifierEquals, normalizeAccountIdentifier } from '../common/account-identifier';
 import { MailDeliveryService, type MailKind } from '../mail/mail-delivery.service';
 import { AuditEventsService, type RecordAuditEvent } from '../audit/audit-events.service';
+import { SessionsService, type SessionClient } from './sessions.service';
+import { repositoryRef } from '../scm/scm-provider';
 
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -61,7 +63,7 @@ export class AuthService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwt: JwtService,
+    jwt: JwtService,
     private readonly gitea: GiteaService,
     private readonly mail?: MailDeliveryService,
     // Nest always injects the audit sink or fails at startup; the default only
@@ -70,6 +72,11 @@ export class AuthService implements OnModuleInit {
     private readonly audit: Pick<AuditEventsService, 'record'> = {
       record: () => Promise.resolve(),
     },
+    @Inject(SessionsService)
+    private readonly sessions: Pick<SessionsService, 'issue' | 'revoke'> = new SessionsService(
+      prisma,
+      jwt,
+    ),
   ) {}
 
   /** Platform-level account event (ADR-142); `tx` keeps it with its change. */
@@ -98,6 +105,29 @@ export class AuthService implements OnModuleInit {
       actorUserId: user.id,
       details: { method },
     });
+  }
+
+  /**
+   * Ends sessions of the signed-in account from the session overview
+   * (ADR-147): one other session, or every session except the current one.
+   */
+  async endSessions(
+    userId: string,
+    filter: { id: string } | { exceptId: string | null },
+  ): Promise<{ ended: number }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true },
+    });
+    if (!user) throw new UnauthorizedException();
+    const ended = await this.sessions.revoke(userId, filter);
+    if (ended > 0) {
+      await this.accountEvent('auth.sessions_ended', user, {
+        actorUserId: userId,
+        details: { sessions: ended },
+      });
+    }
+    return { ended };
   }
 
   /**
@@ -183,7 +213,10 @@ export class AuthService implements OnModuleInit {
   }
 
   /** Managed registration: provisions a Gitea account + token, persists the user. */
-  async register(dto: RegisterDto): Promise<{ token: string; user: SessionUser }> {
+  async register(
+    dto: RegisterDto,
+    client: SessionClient = {},
+  ): Promise<{ token: string; user: SessionUser }> {
     let release!: () => void;
     const previous = this.registrationLock;
     this.registrationLock = new Promise<void>((resolve) => {
@@ -191,13 +224,16 @@ export class AuthService implements OnModuleInit {
     });
     await previous;
     try {
-      return await this.registerUnlocked(dto);
+      return await this.registerUnlocked(dto, client);
     } finally {
       release();
     }
   }
 
-  private async registerUnlocked(dto: RegisterDto): Promise<{ token: string; user: SessionUser }> {
+  private async registerUnlocked(
+    dto: RegisterDto,
+    client: SessionClient,
+  ): Promise<{ token: string; user: SessionUser }> {
     if (!(await this.registrationAvailable())) {
       throw new ForbiddenException(
         'Account registration is closed. Ask the platform administrator for access.',
@@ -218,7 +254,7 @@ export class AuthService implements OnModuleInit {
       actorUserId: user.id,
       details: { administrator: userCount === 0 },
     });
-    return { token: this.signToken(user), user: this.toSession(user) };
+    return { token: await this.sessions.issue(user, client), user: this.toSession(user) };
   }
 
   /**
@@ -378,7 +414,10 @@ export class AuthService implements OnModuleInit {
   }
 
   /** Sign-in with a platform-native account (password verified locally). */
-  async login(dto: LoginDto): Promise<{ token: string; user: SessionUser }> {
+  async login(
+    dto: LoginDto,
+    client: SessionClient = {},
+  ): Promise<{ token: string; user: SessionUser }> {
     if (config.edition === 'saas') {
       throw new ForbiddenException('Password sign-in is disabled in the SaaS edition');
     }
@@ -416,7 +455,7 @@ export class AuthService implements OnModuleInit {
       actorUserId: user.id,
       details: { method: 'password' },
     });
-    return { token: this.signToken(user), user: this.toSession(user) };
+    return { token: await this.sessions.issue(user, client), user: this.toSession(user) };
   }
 
   /**
@@ -428,6 +467,7 @@ export class AuthService implements OnModuleInit {
     userId: string,
     currentPassword: string,
     newPassword: string,
+    client: SessionClient = {},
   ): Promise<{ token: string; user: SessionUser }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (
@@ -449,7 +489,7 @@ export class AuthService implements OnModuleInit {
       await this.accountEvent('auth.password_changed', changed, { actorUserId: userId }, tx);
       return changed;
     });
-    return { token: this.signToken(updated), user: this.toSession(updated) };
+    return { token: await this.sessions.issue(updated, client), user: this.toSession(updated) };
   }
 
   /** Issues an e-mail verification link without exposing it when SMTP is configured. */
@@ -534,8 +574,9 @@ export class AuthService implements OnModuleInit {
   }
 
   /**
-   * Revokes the account's Gitea clone token and forgets it. The user receives
-   * a new one the next time Git access is requested (ADR-134).
+   * Revokes every Gitea token of the account and forgets its clone token; the
+   * user receives a new one the next time Git access is requested (ADR-134).
+   * Registry tokens of the account's repositories are reissued (ADR-148).
    */
   async revokeGitCredential(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
@@ -544,7 +585,20 @@ export class AuthService implements OnModuleInit {
     });
     if (!user || user.giteaId == null) return;
     try {
-      await this.gitea.revokeCloneToken(user.username);
+      const projects = await this.prisma.project.findMany({
+        where: { scmProvider: 'gitea', scmOwner: user.username, scmRepositoryId: { not: null } },
+        select: {
+          scmProvider: true,
+          scmRepositoryId: true,
+          scmOwner: true,
+          scmRepositoryName: true,
+          scmFullName: true,
+          scmDefaultBranch: true,
+          scmInstallationId: true,
+          repoUrl: true,
+        },
+      });
+      await this.gitea.revokeAccountCredentials(user.username, projects.map(repositoryRef));
     } catch (error) {
       this.logger.warn({
         event: 'auth.git_credential.revocation_failed',
@@ -578,6 +632,7 @@ export class AuthService implements OnModuleInit {
   async activate(
     token: string,
     newPassword: string,
+    client: SessionClient = {},
   ): Promise<{ token: string; user: SessionUser }> {
     const record = await this.consumeAuthToken(token, 'activation');
     const passwordHash = await hashPassword(newPassword);
@@ -594,7 +649,7 @@ export class AuthService implements OnModuleInit {
       await this.accountEvent('auth.account_activated', user, { actorUserId: user.id }, tx);
       return user;
     });
-    return this.createSession(updated);
+    return this.createSession(updated, client);
   }
 
   private frontendBase(): string {
@@ -699,22 +754,21 @@ export class AuthService implements OnModuleInit {
   }
 
   /** Issues a signed session for an already-provisioned user (e.g. GitHub OAuth). */
-  createSession(user: {
-    id: string;
-    username: string;
-    name: string | null;
-    email: string | null;
-    avatarUrl: string | null;
-    platformRole: string;
-    tokenVersion?: number;
-    mustChangePassword?: boolean;
-    emailVerifiedAt?: Date | null;
-  }): { token: string; user: SessionUser } {
-    return { token: this.signToken(user), user: this.toSession(user) };
-  }
-
-  private signToken(user: { id: string; tokenVersion?: number }): string {
-    return this.jwt.sign({ sub: user.id, ver: user.tokenVersion ?? 0 });
+  async createSession(
+    user: {
+      id: string;
+      username: string;
+      name: string | null;
+      email: string | null;
+      avatarUrl: string | null;
+      platformRole: string;
+      tokenVersion?: number;
+      mustChangePassword?: boolean;
+      emailVerifiedAt?: Date | null;
+    },
+    client: SessionClient = {},
+  ): Promise<{ token: string; user: SessionUser }> {
+    return { token: await this.sessions.issue(user, client), user: this.toSession(user) };
   }
 
   private toSession(user: {

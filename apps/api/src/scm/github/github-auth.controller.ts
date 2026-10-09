@@ -1,9 +1,7 @@
 import { Controller, Get, Query, Req, Res } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { config } from '../../config';
-import { PrismaService } from '../../prisma/prisma.service';
-import { JwtPayload } from '../../auth/jwt-auth.guard';
+import { SessionsService } from '../../auth/sessions.service';
 import { readSessionToken, setSessionCookie } from '../../auth/session-cookie';
 import { AuthService } from '../../auth/auth.service';
 import { ExternalIdentityService } from '../../identity/external-identity.service';
@@ -24,8 +22,7 @@ export class GitHubAuthController {
     private readonly oauth: GitHubOAuthService,
     private readonly identities: ExternalIdentityService,
     private readonly auth: AuthService,
-    private readonly jwt: JwtService,
-    private readonly prisma: PrismaService,
+    private readonly sessions: SessionsService,
     private readonly installations: GitHubInstallationService,
     private readonly credentials: GitHubUserCredentialService,
   ) {}
@@ -149,7 +146,9 @@ export class GitHubAuthController {
       return res.redirect(this.frontend('/login?error=github_exchange'));
     }
     await this.auth.recordSignIn(user, 'github');
-    const { token } = this.auth.createSession(user);
+    const { token } = await this.auth.createSession(user, {
+      userAgent: req.headers['user-agent'],
+    });
     setSessionCookie(res, token);
     return res.redirect(this.frontend('/'));
   }
@@ -160,13 +159,7 @@ export class GitHubAuthController {
     const token = readSessionToken(req);
     if (!token) return null;
     try {
-      const payload = this.jwt.verify<JwtPayload>(token);
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-        select: { id: true, active: true, tokenVersion: true },
-      });
-      if (!user || !user.active || (payload.ver ?? 0) !== user.tokenVersion) return null;
-      return user.id;
+      return (await this.sessions.authenticate(token)).id;
     } catch {
       return null;
     }

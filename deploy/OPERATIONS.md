@@ -319,6 +319,18 @@ a nemění jeho obsah.
 
 ## Bezpečnost
 
+- **Převzatý účet** (ADR-148). Gitea neumí ukončit webovou session jednoho
+  uživatele, proto postupuj takto:
+  1. v **Administraci** účet deaktivuj. InitPad i Gitea ho okamžitě zablokují a
+     všechny Gitea tokeny účtu přestanou platit;
+  2. restartuj Gitea (`docker compose restart gitea`). Ukončí všechny Gitea
+     sessions, ostatní uživatelé se přihlásí znovu přes InitPad. Git operace a
+     CI klonování se na chvíli přeruší;
+  3. vytvoř účtu aktivační odkaz nebo reset hesla a účet znovu aktivuj.
+
+  Uživatel sám ukončí cizí přihlášení v **Nastavení účtu → Přihlášené
+  prohlížeče** (ADR-147). Reset hesla odvolá všechny jeho Gitea tokeny,
+  otevřenou Gitea session ale ukončí až restart Gitey.
 - `deploy/.env` obsahuje všechny secrety — omez práva (`chmod 600 .env`), necommituj.
 - `INITPAD_ENCRYPTION_KEY` šifruje credentials uložené v databázi (ADR-141).
   Bez něj nebo se stejnou hodnotou jako `INITPAD_JWT_SECRET` API v produkci

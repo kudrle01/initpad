@@ -288,44 +288,70 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     );
   }
 
-  // Revokes the user's Git clone token. An account Gitea no longer knows has
-  // no token left to revoke.
-  async revokeCloneToken(username: string): Promise<void> {
-    try {
-      await this.withTokenAuthority(username, (authorization) =>
-        this.deleteToken(username, authorization, CLONE_TOKEN_NAME),
-      );
-    } catch (error) {
-      if (!isScmNotFound(error)) throw error;
-    }
-  }
-
   // Revokes every full-scope token issued before ADR-134. Callers must first
   // move each repository secret that may still hold one to a scoped token.
   async revokeLegacyCredentials(username: string): Promise<void> {
     await this.withTokenAuthority(username, async (authorization) => {
-      const tokens = await collectScmPages<{ id: number; name: string }>({
-        provider: 'Gitea',
-        operation: 'list access tokens',
-        pageSize: TOKEN_PAGE_SIZE,
-        load: async (page) => {
-          const res = await this.request(
-            `${config.gitea.internalUrl}/api/v1/users/${encodeURIComponent(username)}/tokens?page=${page}&limit=${TOKEN_PAGE_SIZE}`,
-            { headers: { Authorization: authorization } },
-          );
-          if (!res.ok) {
-            throw scmStatusError('Gitea', 'list access tokens', res, 'Could not list Gitea tokens');
-          }
-          const items = (await res.json()) as Array<{ id: number; name: string }>;
-          if (!Array.isArray(items)) throw new Error('Gitea returned an invalid token list');
-          return items;
-        },
-      });
-      for (const token of tokens) {
+      for (const token of await this.listTokens(username, authorization)) {
         if (token.name.startsWith(LEGACY_TOKEN_PREFIX)) {
           await this.deleteToken(username, authorization, String(token.id));
         }
       }
+    });
+  }
+
+  /**
+   * Account recovery (ADR-148): deletes every access token of the account,
+   * including ones its owner or an intruder created in Gitea itself, then
+   * issues fresh registry tokens for the account's repositories so their CI
+   * keeps publishing. A token taken while the account was compromised stops
+   * working, whatever its name.
+   */
+  async revokeAccountCredentials(
+    username: string,
+    repositories: ScmRepositoryRef[],
+  ): Promise<void> {
+    try {
+      await this.withTokenAuthority(username, async (authorization) => {
+        for (const token of await this.listTokens(username, authorization)) {
+          await this.deleteToken(username, authorization, String(token.id));
+        }
+      });
+    } catch (error) {
+      // An account Gitea no longer knows has no token left to revoke.
+      if (isScmNotFound(error)) return;
+      throw error;
+    }
+    for (const repository of repositories) {
+      try {
+        await this.rotateRegistryCredential(repository);
+      } catch (error) {
+        // A repository deleted in Gitea needs no registry token.
+        if (!isScmNotFound(error)) throw error;
+      }
+    }
+  }
+
+  private listTokens(
+    username: string,
+    authorization: string,
+  ): Promise<Array<{ id: number; name: string }>> {
+    return collectScmPages<{ id: number; name: string }>({
+      provider: 'Gitea',
+      operation: 'list access tokens',
+      pageSize: TOKEN_PAGE_SIZE,
+      load: async (page) => {
+        const res = await this.request(
+          `${config.gitea.internalUrl}/api/v1/users/${encodeURIComponent(username)}/tokens?page=${page}&limit=${TOKEN_PAGE_SIZE}`,
+          { headers: { Authorization: authorization } },
+        );
+        if (!res.ok) {
+          throw scmStatusError('Gitea', 'list access tokens', res, 'Could not list Gitea tokens');
+        }
+        const items = (await res.json()) as Array<{ id: number; name: string }>;
+        if (!Array.isArray(items)) throw new Error('Gitea returned an invalid token list');
+        return items;
+      },
     });
   }
 

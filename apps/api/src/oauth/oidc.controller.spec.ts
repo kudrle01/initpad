@@ -1,3 +1,4 @@
+import { SessionsService } from '../auth/sessions.service';
 import { OidcController } from './oidc.controller';
 
 function response() {
@@ -37,7 +38,11 @@ describe('OidcController account lifecycle enforcement', () => {
       },
     };
     const res = response();
-    const controller = new OidcController(oidc as never, jwt as never, prisma as never);
+    const controller = new OidcController(
+      oidc as never,
+      new SessionsService(prisma as never, jwt as never),
+      prisma as never,
+    );
 
     await controller.authorize(
       authorizeQuery,
@@ -73,7 +78,11 @@ describe('OidcController account lifecycle enforcement', () => {
       },
     };
     const res = response();
-    const controller = new OidcController(oidc as never, jwt as never, prisma as never);
+    const controller = new OidcController(
+      oidc as never,
+      new SessionsService(prisma as never, jwt as never),
+      prisma as never,
+    );
 
     await controller.authorize(
       authorizeQuery,
@@ -245,7 +254,11 @@ describe('OidcController account lifecycle enforcement', () => {
       },
     };
     const res = response();
-    const controller = new OidcController(oidc as never, jwt as never, prisma as never);
+    const controller = new OidcController(
+      oidc as never,
+      new SessionsService(prisma as never, jwt as never),
+      prisma as never,
+    );
 
     await controller.authorize(
       authorizeQuery,

@@ -420,9 +420,28 @@ describe('GiteaService scoped credentials (ADR-134)', () => {
     ]);
   });
 
-  it('treats an account unknown to Gitea as having no clone token', async () => {
+  it('treats an account unknown to Gitea as having no token', async () => {
     fakeGitea({ missingUsers: ['ghost'] });
-    await expect(new GiteaService().revokeCloneToken('ghost')).resolves.toBeUndefined();
+    await expect(new GiteaService().revokeAccountCredentials('ghost', [])).resolves.toBeUndefined();
+  });
+
+  it('revokes every token of a recovered account and reissues its registry tokens', async () => {
+    const gitea = fakeGitea();
+    gitea.seedToken('alice', 'initpad-git', ['write:repository']);
+    gitea.seedToken('alice', 'initpad-registry-101', ['write:package']);
+    gitea.seedToken('alice', 'created during the compromise', ['write:user']);
+    gitea.seedToken('alice', 'initpad-registry-999', ['write:package']);
+
+    await new GiteaService().revokeAccountCredentials('alice', [
+      { ...repository('app'), owner: 'alice', fullName: 'alice/app' },
+    ]);
+
+    // Only the reissued registry token remains, and CI received its new value.
+    const remaining = gitea.tokens.get('alice') ?? [];
+    expect(remaining.map((token) => token.name)).toEqual(['initpad-registry-101']);
+    expect(gitea.secrets.get('alice/app:INITPAD_REGISTRY_PASSWORD')).toBe(
+      `token-${remaining[0].id}`,
+    );
   });
 
   it('revokes the registry token together with the repository', async () => {

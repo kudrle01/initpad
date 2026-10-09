@@ -157,3 +157,5 @@ stabilní.
 | [ADR-144](./ADR-144.md) | Accepted | Platformní obrazy běží s nejmenšími oprávněními a CI je skenuje na zranitelnosti |
 | [ADR-145](./ADR-145.md) | Accepted | Vstupy zvenčí mají ověřený tvar a podepsaný webhook se nepoužije dvakrát |
 | [ADR-146](./ADR-146.md) | Accepted | Podpis Supervisoru pokrývá metodu a cestu a produkce vyžaduje trvalé úložiště artefaktů |
+| [ADR-147](./ADR-147.md) | Accepted | Přihlášení je odvolatelná session a uživatel vidí, kde je přihlášený |
+| [ADR-148](./ADR-148.md) | Accepted | Obnova účtu odvolá všechny Gitea tokeny a provoz umí ukončit Gitea sessions |

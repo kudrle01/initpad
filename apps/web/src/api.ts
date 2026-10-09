@@ -32,6 +32,7 @@ import type {
   PipelinePreset,
   WorkspaceCapacity,
   WorkspaceCapacityUpdate,
+  UserSessionSummary,
 } from '@/types';
 import { t } from '@/i18n';
 
@@ -601,6 +602,10 @@ export const api = {
       body: JSON.stringify({ token, newPassword }),
     }),
   logout: () => http<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
+  listSessions: () => http<UserSessionSummary[]>('/auth/sessions'),
+  endSession: (id: string) =>
+    http<{ ended: number }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  endOtherSessions: () => http<{ ended: number }>('/auth/sessions/end-others', { method: 'POST' }),
   getGitAccess: () =>
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).

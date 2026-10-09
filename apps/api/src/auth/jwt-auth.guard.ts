@@ -6,35 +6,30 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
-import { PrismaService } from '../prisma/prisma.service';
+import { SessionsService } from './sessions.service';
 import { readSessionToken } from './session-cookie';
 import { ALLOW_PASSWORD_CHANGE } from './allow-password-change.decorator';
 import { PUBLIC_ENDPOINT, type PublicEndpointReason } from './public-endpoint.decorator';
 
-export interface JwtPayload {
-  sub: string;
-  // Session generation. Bumped on password change/reset and deactivation to
-  // invalidate every previously issued token. Absent in pre-existing cookies,
-  // which are treated as generation 0 so a deploy does not log everyone out.
-  ver?: number;
-}
+export type { JwtPayload } from './sessions.service';
 
 // Verifies the session cookie and, unlike a stateless check, confirms the
-// account still exists, is active, and carries the current session generation.
+// session was not ended, the account still exists, is active, and carries the
+// current session generation (ADR-147).
 // It also enforces a pending forced password change: while `mustChangePassword`
 // is set, only endpoints marked @AllowDuringPasswordChange() are reachable.
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
-    private readonly jwt: JwtService,
-    private readonly prisma: PrismaService,
+    private readonly sessions: SessionsService,
     private readonly reflector: Reflector,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const req = ctx.switchToHttp().getRequest<Request & { userId?: string }>();
+    const req = ctx
+      .switchToHttp()
+      .getRequest<Request & { userId?: string; sessionId?: string | null }>();
     const publicReason = this.reflector.getAllAndOverride<PublicEndpointReason>(PUBLIC_ENDPOINT, [
       ctx.getHandler(),
       ctx.getClass(),
@@ -49,21 +44,7 @@ export class JwtAuthGuard implements CanActivate {
     const token = readSessionToken(req);
     if (!token) throw new UnauthorizedException('Not authenticated');
 
-    let payload: JwtPayload;
-    try {
-      payload = this.jwt.verify<JwtPayload>(token);
-    } catch {
-      throw new UnauthorizedException('Invalid token');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: { id: true, active: true, tokenVersion: true, mustChangePassword: true },
-    });
-    if (!user || !user.active) throw new UnauthorizedException('Session is no longer valid');
-    if ((payload.ver ?? 0) !== user.tokenVersion) {
-      throw new UnauthorizedException('Session has been revoked');
-    }
+    const user = await this.sessions.authenticate(token);
 
     if (user.mustChangePassword) {
       const allowed = this.reflector.getAllAndOverride<boolean>(ALLOW_PASSWORD_CHANGE, [
@@ -76,6 +57,7 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     req.userId = user.id;
+    req.sessionId = user.sessionId;
     return true;
   }
 }
