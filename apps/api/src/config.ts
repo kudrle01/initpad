@@ -603,8 +603,11 @@ export function validateConfig(): void {
   for (const [name, values] of keyMaterial) {
     if (values.some((value) => value.length < 32 || placeholder.test(value))) insecure.push(name);
   }
-  if (placeholder.test(config.scm.webhookToken)) insecure.push('INITPAD_SCM_WEBHOOK_TOKEN');
-  if (placeholder.test(config.oidc.clientSecret)) insecure.push('INITPAD_OIDC_CLIENT_SECRET');
+  // SaaS runs neither Gitea nor the endpoints these secrets protect (ADR-153).
+  if (config.edition === 'self-hosted') {
+    if (placeholder.test(config.scm.webhookToken)) insecure.push('INITPAD_SCM_WEBHOOK_TOKEN');
+    if (placeholder.test(config.oidc.clientSecret)) insecure.push('INITPAD_OIDC_CLIENT_SECRET');
+  }
   if (artifactStoreConfigured() && config.artifactStore.secretAccessKey === 'initpad-artifacts') {
     insecure.push('INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY');
   }

@@ -212,6 +212,14 @@ describe('validateConfig production secrets', () => {
     });
 
     expect(() => validateConfig()).not.toThrow();
+    // SaaS has no Gitea: the OIDC and Gitea webhook secrets are not needed
+    // (ADR-153), while a self-hosted instance must still set them.
+    config.scm.webhookToken = 'scm-webhook-secret-change-me';
+    config.oidc.clientSecret = 'gitea-oidc-secret-change-me';
+    expect(() => validateConfig()).not.toThrow();
+    config.edition = 'self-hosted';
+    config.http.trustProxyHops = 1;
+    expect(() => validateConfig()).toThrow('INITPAD_SCM_WEBHOOK_TOKEN, INITPAD_OIDC_CLIENT_SECRET');
   });
 
   it('rejects an HTTP or cross-origin GitHub callback in SaaS', () => {

@@ -34,8 +34,6 @@ services:
       INITPAD_SMTP_USERNAME: ${INITPAD_SMTP_USERNAME:?set the SMTP username}
       INITPAD_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
       INITPAD_SMTP_FROM: ${INITPAD_SMTP_FROM:?set the sender address}
-      INITPAD_SCM_WEBHOOK_TOKEN_FILE: /run/secrets/scm_webhook_token
-      INITPAD_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
       INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:?set the deployed release version}
       INITPAD_UPDATE_REPOSITORY: ${INITPAD_UPDATE_REPOSITORY:-kudrle01/initpad}
       INITPAD_AGENT_UPDATE_CHANNEL: stable
@@ -73,8 +71,6 @@ services:
       - jwt_secret
       - encryption_key
       - smtp_password
-      - scm_webhook_token
-      - oidc_client_secret
       - github_client_secret
       - github_private_key
       - github_webhook_secret
@@ -138,10 +134,6 @@ secrets:
     file: ${INITPAD_ENCRYPTION_KEY_FILE:?set the encryption key file}
   smtp_password:
     file: ${INITPAD_SMTP_PASSWORD_FILE:?set the SMTP password file}
-  scm_webhook_token:
-    file: ${INITPAD_SCM_WEBHOOK_TOKEN_FILE:?set the SCM webhook token file}
-  oidc_client_secret:
-    file: ${INITPAD_OIDC_CLIENT_SECRET_FILE:?set the OIDC client secret file}
   github_client_secret:
     file: ${INITPAD_GITHUB_CLIENT_SECRET_FILE:?set the GitHub client secret file}
   github_private_key:

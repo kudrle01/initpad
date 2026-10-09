@@ -75,8 +75,6 @@ test('mounts deployment-owned secrets as files without placing values in the env
     'DATABASE_URL',
     'INITPAD_JWT_SECRET',
     'INITPAD_ENCRYPTION_KEY',
-    'INITPAD_SCM_WEBHOOK_TOKEN',
-    'INITPAD_OIDC_CLIENT_SECRET',
     'INITPAD_GITHUB_CLIENT_SECRET',
     'INITPAD_GITHUB_PRIVATE_KEY',
     'INITPAD_GITHUB_WEBHOOK_SECRET',
@@ -92,6 +90,13 @@ test('mounts deployment-owned secrets as files without placing values in the env
     assert.match(example, new RegExp(`^${deploymentName}_FILE=/secure/runtime/secrets/`, 'm'));
     assert.doesNotMatch(example, new RegExp(`^${deploymentName}=`, 'm'));
   }
+  // SaaS runs no Gitea, so neither its OIDC client nor its webhook secret exists
+  // there (ADR-153).
+  assert.doesNotMatch(
+    compose,
+    /SCM_WEBHOOK_TOKEN|OIDC_CLIENT_SECRET|scm_webhook_token|oidc_client_secret/,
+  );
+  assert.doesNotMatch(example, /SCM_WEBHOOK_TOKEN|OIDC_CLIENT_SECRET/);
   assert.doesNotMatch(example, /EXTERNAL_SECRET|__GENERATE__/);
   assert.match(example, /INITPAD_WEB_BIND_ADDRESS=127\.0\.0\.1/);
 });
@@ -101,8 +106,6 @@ const secretFileVariables = [
   'INITPAD_JWT_SECRET_FILE',
   'INITPAD_ENCRYPTION_KEY_FILE',
   'INITPAD_SMTP_PASSWORD_FILE',
-  'INITPAD_SCM_WEBHOOK_TOKEN_FILE',
-  'INITPAD_OIDC_CLIENT_SECRET_FILE',
   'INITPAD_GITHUB_CLIENT_SECRET_FILE',
   'INITPAD_GITHUB_PRIVATE_KEY_FILE',
   'INITPAD_GITHUB_WEBHOOK_SECRET_FILE',

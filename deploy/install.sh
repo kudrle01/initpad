@@ -68,6 +68,12 @@ set_env() {
   chmod 600 .env
 }
 
+# This stack bundles Gitea, MinIO, a CI runner and the Docker socket; the SaaS
+# edition has its own profile without them (ADR-153).
+if [ "$(get_env INITPAD_EDITION)" = "saas" ]; then
+  fail "INITPAD_EDITION=saas is not installed by this script. Deploy the SaaS edition with saas.compose.yml (see SAAS_STAGING.md)."
+fi
+
 # Reconcile generated secrets from the current example into legacy installs.
 # Existing non-empty values are intentionally preserved. This makes adding a
 # new required secret safe for in-place upgrades instead of requiring an
@@ -367,7 +373,6 @@ fi
 # ---- 7. summary ---------------------------------------------------------------
 PUBLIC_URL=$(get_env INITPAD_PUBLIC_URL); PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
 GITEA_URL=$(get_env INITPAD_GITEA_PUBLIC_URL); GITEA_URL=${GITEA_URL:-http://gitea.localhost:3001}
-EDITION=$(get_env INITPAD_EDITION); EDITION=${EDITION:-self-hosted}
 GH_CID=$(get_env INITPAD_GITHUB_CLIENT_ID)
 GH_SEC=$(get_env INITPAD_GITHUB_CLIENT_SECRET)
 GH_CB=$(get_env INITPAD_GITHUB_CALLBACK_URL)
@@ -375,48 +380,32 @@ GITHUB_ON=no
 [ -n "$GH_CID" ] && [ -n "$GH_SEC" ] && [ -n "$GH_CB" ] && GITHUB_ON=yes
 
 echo ""
-if [ "$EDITION" = "saas" ]; then
-  echo "  ✔ InitPad is running (SaaS edition)."
-  echo ""
-  echo "    Platform   ${PUBLIC_URL}"
-  echo ""
-  if [ "$GITHUB_ON" = "yes" ]; then
-    echo "  Sign in with GitHub on the platform to create your account."
-  else
-    echo "  ⚠ SaaS edition, but GitHub is not configured — set INITPAD_GITHUB_* in"
-    echo "    deploy/.env, otherwise there is no sign-in method available."
-  fi
-  echo "  Note: this stack still bundles Gitea internally (${GITEA_URL},"
-  echo "        admin: ${BOT_USER}); the GitHub deploy path is not complete yet —"
-  echo "        see ../PRODUCT_ROADMAP.md (public SaaS still requires InitPad Agent)."
+echo "  ✔ InitPad is running."
+echo ""
+echo "    Platform   ${PUBLIC_URL}"
+echo "    Gitea      ${GITEA_URL}   (admin: ${BOT_USER} / password in deploy/.env)"
+echo ""
+# The first account becomes the administrator and needs the setup token.
+user_count=$($COMPOSE exec -T postgres psql -U initpad -d initpad -tAc \
+  'SELECT count(*) FROM "User"' 2>/dev/null | tr -d '[:space:]' || true)
+if [ "$user_count" = 0 ]; then
+  echo "  Create the administrator account in the web UI with this setup token:"
+  echo "    $(get_env INITPAD_BOOTSTRAP_TOKEN)"
 else
-  echo "  ✔ InitPad is running."
+  echo "  Sign in to the web UI and start your first project."
+fi
+[ "$GITHUB_ON" = "yes" ] && echo "  GitHub sign-in and account linking are enabled."
+if [ "$(get_env INITPAD_REGISTRATION_MODE)" = open ] && [ -n "${DOMAIN:-}" ]; then
   echo ""
-  echo "    Platform   ${PUBLIC_URL}"
-  echo "    Gitea      ${GITEA_URL}   (admin: ${BOT_USER} / password in deploy/.env)"
+  echo "  ⚠ Registration is open: anyone who reaches https://$DOMAIN can sign up"
+  echo "    and deploy containers to this host. Set INITPAD_REGISTRATION_MODE="
+  echo "    admin-provisioned in deploy/.env unless that is intended."
+fi
+if [ -n "${DOMAIN:-}" ]; then
   echo ""
-  # The first account becomes the administrator and needs the setup token.
-  user_count=$($COMPOSE exec -T postgres psql -U initpad -d initpad -tAc \
-    'SELECT count(*) FROM "User"' 2>/dev/null | tr -d '[:space:]' || true)
-  if [ "$user_count" = 0 ]; then
-    echo "  Create the administrator account in the web UI with this setup token:"
-    echo "    $(get_env INITPAD_BOOTSTRAP_TOKEN)"
-  else
-    echo "  Sign in to the web UI and start your first project."
-  fi
-  [ "$GITHUB_ON" = "yes" ] && echo "  GitHub sign-in and account linking are enabled."
-  if [ "$(get_env INITPAD_REGISTRATION_MODE)" = open ] && [ -n "${DOMAIN:-}" ]; then
-    echo ""
-    echo "  ⚠ Registration is open: anyone who reaches https://$DOMAIN can sign up"
-    echo "    and deploy containers to this host. Set INITPAD_REGISTRATION_MODE="
-    echo "    admin-provisioned in deploy/.env unless that is intended."
-  fi
-  if [ -n "${DOMAIN:-}" ]; then
-    echo ""
-    echo "  Ports 8080, 3001 and 8085 stay published for the CI network and local"
-    echo "  checks, and Docker bypasses ufw. Block them on the public interface;"
-    echo "  see deploy/OPERATIONS.md (Bezpečnost)."
-  fi
+  echo "  Ports 8080, 3001 and 8085 stay published for the CI network and local"
+  echo "  checks, and Docker bypasses ufw. Block them on the public interface;"
+  echo "  see deploy/OPERATIONS.md (Bezpečnost)."
 fi
 echo "  Re-run ./install.sh anytime — it only fixes what is missing."
 echo ""

@@ -23,12 +23,15 @@ import { UpdatesModule } from './updates/updates.module';
 
 import { ControlPlaneLeaseService } from './common/control-plane-lease.service';
 import { DataRetentionService } from './common/data-retention.service';
+import { config } from './config';
 
 @Module({
   imports: [
     PrismaModule,
     AuthModule,
-    OidcModule,
+    // The OIDC provider signs users into the bundled Gitea, which SaaS does
+    // not run (ADR-153).
+    ...(config.edition === 'self-hosted' ? [OidcModule] : []),
     TemplatesModule,
     GeneratorModule,
     DeploymentModule,

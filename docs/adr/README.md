@@ -163,3 +163,4 @@ stabilní.
 | [ADR-150](./ADR-150.md) | Accepted | Historie bez dalšího využití se po stanovené době maže |
 | [ADR-151](./ADR-151.md) | Accepted | Záloha se šifruje veřejným klíčem, který server nedokáže otevřít |
 | [ADR-152](./ADR-152.md) | Accepted | PHP šablony běží na FrankenPHP |
+| [ADR-153](./ADR-153.md) | Accepted | SaaS nespouští součásti self-hosted Gitey a install.sh SaaS neinstaluje |

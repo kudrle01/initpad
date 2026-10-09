@@ -37,14 +37,6 @@ templates:
     destination-path: /secure/runtime/secrets/encryption_key
     config:
       polling-interval: 5m
-  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_SCM_WEBHOOK_TOKEN" }}{{ .Value }}{{ end }}'
-    destination-path: /secure/runtime/secrets/scm_webhook_token
-    config:
-      polling-interval: 5m
-  - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_OIDC_CLIENT_SECRET" }}{{ .Value }}{{ end }}'
-    destination-path: /secure/runtime/secrets/oidc_client_secret
-    config:
-      polling-interval: 5m
   - template-content: '{{ with getSecretByName "INFISICAL_PROJECT_ID" "staging" "/" "INITPAD_SMTP_PASSWORD" }}{{ .Value }}{{ end }}'
     destination-path: /secure/runtime/secrets/smtp_password
     config:
