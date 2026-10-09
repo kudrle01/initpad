@@ -189,6 +189,35 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   prošly všechny ownerovi dostupné hlavní obrazovky živým průchodem ve
   viewportu 390 × 844 px bez horizontálního přetečení; každá zachovala jeden
   hlavní nadpis, popsané formulářové prvky a použitelný mobilní drawer.
+- [ ] Naživo ověřit výsledky následného bezpečnostního auditu z 9. října 2026
+  (ADR-134 až ADR-154). Všech 21 rozhodnutí je implementováno a pokryto
+  automatizovanými testy; CI nad `main` prošlo týž den a release gate prošel
+  nad připravenou verzí 0.2.17. Naživo ověřeno není nic z toho a žádná část
+  ještě nevyšla ve vydání.
+  - Přihlášení a účty: odvolatelné session, ochrana mutací proti podvrženým
+    požadavkům, instalační token prvního administrátora s uzavřenou výchozí
+    registrací, jednorázové odkazy s tokenem ve fragmentu URL a rozsah Gitea
+    tokenů podle spotřebitele (ADR-134, 136, 137, 143, 147, 148).
+  - Secrety, podpisy a vstupy: samostatný a vyměnitelný šifrovací klíč, podpis
+    Supervisoru vázaný na metodu a cestu, ověřený tvar vnějších vstupů a
+    odmítnutí opakovaného webhooku (ADR-141, 145, 146).
+  - Provoz a data: jeden proxy hop za vestavěným Caddy, vyšší limit pro sítě
+    za jednou adresou, platformní audit přihlášení a správy účtů, mazání
+    historie bez dalšího využití, šifrovaná záloha a strop na počet týmových
+    workspaces (ADR-135, 142, 149, 150, 151, 154).
+  - Obrazy, CI a šablony: platformní obrazy s nejmenšími oprávněními a sken
+    zranitelností v CI, čerstvě vymazaný Docker daemon pro každý CI job,
+    šablonové CI v jednom jobu, kontext CI předávaný jako data a PHP šablony
+    na FrankenPHP (ADR-138, 139, 140, 144, 152).
+  - SaaS: profil nespouští součásti vázané na Giteu a nevyžaduje jejich dva
+    secrety (ADR-153).
+  - Test šifrované zálohy se skutečným nástrojem `age` se přeskakuje všude,
+    kde `age` není nainstalovaný. Přeskočil se při lokálním release gate a CI
+    workflow jej neinstaluje, takže ADR-151 zatím nemá doložený průchod
+    zašifrování a obnovy.
+  - Zbývá: vydat kandidáta, projít podepsanou aktualizaci z 0.2.16 na
+    self-hosted instalaci, nasadit staging novým tagem i digesty zároveň a na
+    něm dokončit průchod GitHub App.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
