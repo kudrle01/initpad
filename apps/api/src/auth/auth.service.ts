@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { createHash, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { GiteaService } from '../scm/gitea.service';
 import { RegisterDto } from './dto/register.dto';
@@ -108,6 +109,39 @@ export class AuthService implements OnModuleInit {
     return config.auth.registrationMode;
   }
 
+  /**
+   * The first account becomes the instance administrator. Creating it needs
+   * the bootstrap token printed by install.sh, so a freshly exposed server
+   * cannot be claimed by whoever registers first (ADR-136). Local development
+   * without a configured token keeps the plain first-user flow.
+   */
+  async bootstrapRequired(): Promise<boolean> {
+    if (config.edition === 'saas' || !this.bootstrapTokenEnforced()) return false;
+    return (await this.prisma.user.count()) === 0;
+  }
+
+  private bootstrapTokenEnforced(): boolean {
+    return Boolean(config.auth.bootstrapToken) || process.env.NODE_ENV === 'production';
+  }
+
+  private assertBootstrapToken(candidate: string | undefined): void {
+    const expected = config.auth.bootstrapToken;
+    if (!expected) {
+      throw new ForbiddenException(
+        'The first administrator needs a setup token. Set INITPAD_BOOTSTRAP_TOKEN (install.sh generates it) and restart InitPad.',
+      );
+    }
+    const expectedDigest = createHash('sha256').update(expected).digest();
+    const candidateDigest = createHash('sha256')
+      .update(candidate?.trim() ?? '')
+      .digest();
+    if (!timingSafeEqual(expectedDigest, candidateDigest)) {
+      throw new ForbiddenException(
+        'The setup token is not valid. Use the token printed at the end of install.sh.',
+      );
+    }
+  }
+
   emailDeliveryEnabled(): boolean {
     return this.mail?.isEnabled() ?? false;
   }
@@ -134,6 +168,9 @@ export class AuthService implements OnModuleInit {
       );
     }
     const userCount = await this.prisma.user.count();
+    if (userCount === 0 && this.bootstrapTokenEnforced()) {
+      this.assertBootstrapToken(dto.bootstrapToken);
+    }
     const user = await this.provisionManagedUser({
       username: dto.username,
       email: dto.email,

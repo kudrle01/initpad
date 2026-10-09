@@ -218,4 +218,24 @@ describe('validateConfig production secrets', () => {
 
     expect(() => validateConfig()).toThrow('INITPAD_TRUST_PROXY_HOPS=2');
   });
+
+  it('rejects a guessable first-administrator setup token', () => {
+    const original = config.auth.bootstrapToken;
+    try {
+      config.auth.bootstrapToken = 'short-token';
+      expect(() => validateConfig()).toThrow(
+        'INITPAD_BOOTSTRAP_TOKEN must contain at least 32 characters',
+      );
+      config.auth.bootstrapToken = 'b'.repeat(48);
+      expect(() => validateConfig()).not.toThrow();
+    } finally {
+      config.auth.bootstrapToken = original;
+    }
+  });
+
+  it('defaults self-hosted registration to administrator-provisioned accounts', () => {
+    // Unset in this test environment, so the module default applies (ADR-136).
+    expect(process.env.INITPAD_REGISTRATION_MODE).toBeUndefined();
+    expect(config.auth.registrationMode).toBe('admin-provisioned');
+  });
 });

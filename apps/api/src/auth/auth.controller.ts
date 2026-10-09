@@ -31,6 +31,8 @@ export class AuthController {
     return {
       registrationAvailable: await this.auth.registrationAvailable(),
       registrationMode: this.auth.registrationMode(),
+      // The first account must present the installer's setup token.
+      bootstrapRequired: await this.auth.bootstrapRequired(),
       edition: config.edition,
       passwordAuthEnabled: config.edition === 'self-hosted',
       emailDeliveryEnabled: this.auth.emailDeliveryEnabled(),

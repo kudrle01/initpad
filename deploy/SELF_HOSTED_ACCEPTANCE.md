@@ -147,8 +147,9 @@ Ve Windows otevři:
 - platformu: `http://<VM_IP>:8080`;
 - Giteu: `http://<VM_IP>:3001`.
 
-Výsledek je **PASS**, když je API healthy, web se otevře, lze založit první účet
-a `act_runner` i `runner-docker` běží. Po založení prvního účtu ulož checkpoint
+Výsledek je **PASS**, když je API healthy, web se otevře, první účet lze založit
+jen s instalačním tokenem z výstupu `install.sh` a `act_runner` i `runner-docker`
+běží. Po založení prvního účtu ulož checkpoint
 a potom restartuj celý host:
 
 ```bash

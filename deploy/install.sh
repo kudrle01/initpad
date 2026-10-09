@@ -395,8 +395,22 @@ else
   echo "    Platform   ${PUBLIC_URL}"
   echo "    Gitea      ${GITEA_URL}   (admin: ${BOT_USER} / password in deploy/.env)"
   echo ""
-  echo "  Create an account in the web UI and start your first project."
+  # The first account becomes the administrator and needs the setup token.
+  user_count=$($COMPOSE exec -T postgres psql -U initpad -d initpad -tAc \
+    'SELECT count(*) FROM "User"' 2>/dev/null | tr -d '[:space:]' || true)
+  if [ "$user_count" = 0 ]; then
+    echo "  Create the administrator account in the web UI with this setup token:"
+    echo "    $(get_env INITPAD_BOOTSTRAP_TOKEN)"
+  else
+    echo "  Sign in to the web UI and start your first project."
+  fi
   [ "$GITHUB_ON" = "yes" ] && echo "  GitHub sign-in and account linking are enabled."
+  if [ "$(get_env INITPAD_REGISTRATION_MODE)" = open ] && [ -n "${DOMAIN:-}" ]; then
+    echo ""
+    echo "  ⚠ Registration is open: anyone who reaches https://$DOMAIN can sign up"
+    echo "    and deploy containers to this host. Set INITPAD_REGISTRATION_MODE="
+    echo "    admin-provisioned in deploy/.env unless that is intended."
+  fi
   if [ -n "${DOMAIN:-}" ]; then
     echo ""
     echo "  Ports 8080, 3001 and 8085 stay published for the CI network and local"

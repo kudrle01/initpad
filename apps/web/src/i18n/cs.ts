@@ -1449,6 +1449,9 @@ export const cs = {
     'Stroje a hosting, na které se nasazuje, a co na každém z nich smí tento workspace používat.',
   'Loading servers': 'Načítání serverů',
   // pages/Login.tsx
+  'Setup token': 'Instalační token',
+  'The first account becomes the administrator. Enter the setup token printed at the end of install.sh.':
+    'První účet se stane administrátorem. Zadejte instalační token, který vypsal skript install.sh na konci instalace.',
   'Internal developer platform': 'Interní vývojářská platforma',
   'Loading sign-in options…': 'Načítání možností přihlášení…',
   'Authentication service is unavailable. Refresh and try again.':

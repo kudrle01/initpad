@@ -7,9 +7,97 @@ describe('AuthService', () => {
   const originalMode = config.auth.registrationMode;
   const originalEdition = config.edition;
 
+  const originalBootstrapToken = config.auth.bootstrapToken;
+  const originalNodeEnv = process.env.NODE_ENV;
+
   afterEach(() => {
     config.auth.registrationMode = originalMode;
     config.edition = originalEdition;
+    config.auth.bootstrapToken = originalBootstrapToken;
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  describe('first administrator bootstrap (ADR-136)', () => {
+    const setupToken = 's'.repeat(48);
+
+    function registration(existingUsers = 0) {
+      const users: Array<Record<string, unknown>> = [];
+      const prisma = {
+        user: {
+          count: jest.fn(async () => existingUsers + users.length),
+          findFirst: jest.fn(async () => null),
+          create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+            const user = { id: `u${users.length + 1}`, name: null, avatarUrl: null, ...data };
+            users.push(user);
+            return user;
+          }),
+        },
+      };
+      const gitea = {
+        createUser: jest.fn(async ({ username }: { username: string }) => ({
+          id: 1,
+          login: username,
+        })),
+        createCloneToken: jest.fn(async () => 'a'.repeat(40)),
+        randomizeUserPassword: jest.fn(async () => undefined),
+        deleteUser: jest.fn(),
+      };
+      const service = new AuthService(
+        prisma as never,
+        { sign: jest.fn(() => 'jwt') } as never,
+        gitea as never,
+      );
+      return { service, gitea, users };
+    }
+
+    const account = (bootstrapToken?: string) => ({
+      username: 'first-admin',
+      email: 'admin@example.test',
+      password: 'long-password-1',
+      ...(bootstrapToken === undefined ? {} : { bootstrapToken }),
+    });
+
+    it('creates the administrator only with the installer setup token', async () => {
+      config.auth.bootstrapToken = setupToken;
+      const { service, gitea, users } = registration();
+
+      await expect(service.register(account())).rejects.toThrow('setup token is not valid');
+      await expect(service.register(account('s'.repeat(47)))).rejects.toThrow(
+        'setup token is not valid',
+      );
+      expect(gitea.createUser).not.toHaveBeenCalled();
+
+      await service.register(account(setupToken));
+      expect(users[0]).toMatchObject({ platformRole: 'admin' });
+    });
+
+    it('refuses a production first administrator without a configured token', async () => {
+      config.auth.bootstrapToken = '';
+      process.env.NODE_ENV = 'production';
+      const { service, gitea } = registration();
+
+      await expect(service.register(account('anything'))).rejects.toThrow(
+        'INITPAD_BOOTSTRAP_TOKEN',
+      );
+      expect(gitea.createUser).not.toHaveBeenCalled();
+    });
+
+    it('does not ask later open-registration accounts for the token', async () => {
+      config.auth.bootstrapToken = setupToken;
+      config.auth.registrationMode = 'open';
+      const { service, users } = registration(1);
+
+      await service.register(account());
+      expect(users[0]).toMatchObject({ platformRole: 'user' });
+    });
+
+    it('reports the token requirement only while no account exists', async () => {
+      config.auth.bootstrapToken = setupToken;
+      await expect(registration().service.bootstrapRequired()).resolves.toBe(true);
+      await expect(registration(1).service.bootstrapRequired()).resolves.toBe(false);
+      config.edition = 'saas';
+      await expect(registration().service.bootstrapRequired()).resolves.toBe(false);
+    });
   });
 
   it('serializes bootstrap registration so only one account is created', async () => {

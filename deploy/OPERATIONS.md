@@ -335,7 +335,11 @@ a nemění jeho obsah.
   nástrojem své distribuce (například `iptables-persistent`). Port 8085
   neblokuj, pokud mají uživatelé otevírat aplikace na vestavěném statickém
   hostingu.
-- Registraci drž na `admin-provisioned`, pokud nemá být veřejná.
+- Výchozí registrace je `admin-provisioned`. Režim `open` dovolí každému, kdo
+  instanci vidí, založit účet a nasazovat kontejnery na vestavěný Docker host;
+  zapínej ho jen v důvěryhodné síti. První účet (administrátor) vyžaduje
+  `INITPAD_BOOTSTRAP_TOKEN`, který instalátor vygeneruje a vypíše, dokud
+  instance nemá žádný účet.
 - Zálohy šifruj a ukládej offsite.
 - `INITPAD_TRUST_PROXY_HOPS=1` platí pro lokální instalaci i pro serverovou
   instalaci s vestavěným Caddy. Caddy posílá `/api/*` přímo na API a hlavičku

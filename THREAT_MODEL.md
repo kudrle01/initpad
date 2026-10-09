@@ -35,7 +35,9 @@ konfiguraci v paměti.
 ## Hlavní opatření
 
 - Samoregistrace v Gitee je vypnutá. Zakládání účtů vlastní InitPad a správce
-  instance si volí otevřenou registraci, nebo účty zakládané administrátorem.
+  instance si volí otevřenou registraci, nebo účty zakládané administrátorem,
+  které jsou výchozí. První účet (administrátor) vyžaduje instalační token, takže
+  čerstvou instanci nezabere ten, kdo se zaregistruje první (ADR-136).
   Autentizace, GitHub OAuth a setup i enrollment Agenta mají explicitní limity
   specifické pro danou operaci. Atomické čítače PostgreSQL sdílí každá replika
   API a kombinují důvěryhodnou IP klienta s HMAC subjektu účtu nebo tokenu.

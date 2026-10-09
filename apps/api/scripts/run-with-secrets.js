@@ -15,6 +15,7 @@ const fileBackedSecrets = [
   'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID',
   'INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY',
   'INITPAD_SMTP_PASSWORD',
+  'INITPAD_BOOTSTRAP_TOKEN',
 ];
 
 function fail(message) {

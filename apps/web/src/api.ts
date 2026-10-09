@@ -543,6 +543,7 @@ export const api = {
     http<{
       registrationAvailable: boolean;
       registrationMode: string;
+      bootstrapRequired: boolean;
       githubEnabled: boolean;
       edition: 'self-hosted' | 'saas';
       passwordAuthEnabled: boolean;
@@ -557,10 +558,10 @@ export const api = {
     http<{ recovered: boolean; accountLogin: string | null }>('/scm/github/setup/recover', {
       method: 'POST',
     }),
-  register: (username: string, email: string, password: string) =>
+  register: (username: string, email: string, password: string, bootstrapToken?: string) =>
     http<User>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, email, password }),
+      body: JSON.stringify({ username, email, password, bootstrapToken }),
     }),
   signin: (username: string, password: string) =>
     http<User>('/auth/signin', {

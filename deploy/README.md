@@ -12,7 +12,9 @@ cd initpad/deploy
 ./install.sh
 ```
 
-Otevřete <http://localhost:8080>, vytvořte první účet a následně projekt.
+Otevřete <http://localhost:8080>, vytvořte první účet s instalačním tokenem,
+který skript vypíše na konci instalace, a následně projekt. První účet se stane
+administrátorem; další účty ve výchozím režimu `admin-provisioned` zakládá on.
 Skript je idempotentní: lze jej kdykoliv spustit znovu a doplní pouze chybějící
 části.
 
