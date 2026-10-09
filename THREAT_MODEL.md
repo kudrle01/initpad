@@ -151,6 +151,9 @@ konfiguraci v paměti.
   (ADR-150).
 - Self-hosted záloha se může šifrovat veřejným klíčem `age`; soukromý klíč na
   serveru není, takže zálohu nerozšifruje ani útočník se serverem (ADR-151).
+- PHP šablony v produkčním obrazu běží na FrankenPHP jako `www-data` bez
+  capabilities, s vypnutým admin API Caddy a bez hlavičky `X-Powered-By`;
+  servírují jen adresář `public/` (u Nette `www/`) (ADR-152).
 - Závislosti a actions jsou uzamčeny. Release gate audituje produkční npm
   závislosti. CI při změně obrazů nebo šablon a jednou týdně skenuje obrazy
   platformy a lockfily šablon (npm, Composer, pip); opravitelný nález HIGH nebo
@@ -216,10 +219,9 @@ konfiguraci v paměti.
 - Synchronizace spolupracovníků v Gitee zahrnuje dva systémy, a proto používá
   kompenzaci místo distribuované transakce. Před hostovaným produkčním použitím
   je nutná rekonciliace a auditní log.
-- PHP šablony v produkčním obrazu používají vestavěný server `php -S`, který
-  je určený pro vývoj a obsluhuje jeden požadavek najednou.
-- Zálohy obsahují credentials. Musí být šifrované, uložené mimo host a testované
-  pravidelnými cvičeními obnovy.
+- Zálohy obsahují credentials. Šifrování veřejným klíčem (ADR-151) musí
+  provozovatel zapnout; zálohy musí ležet mimo host a obnova se musí
+  pravidelně zkoušet.
 - Výstup JSON je pouze lokálním kontraktem stdout a stderr. Hostovaný provoz
   stále vyžaduje centrální collector s řízením přístupu, retenci, alerting,
   metriky a export OpenTelemetry. Korelační ID není autentizačním credentialem

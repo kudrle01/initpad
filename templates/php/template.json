@@ -1,6 +1,6 @@
 {
   "id": "php",
-  "name": "PHP (built-in server)",
+  "name": "PHP",
   "language": "PHP",
   "artifact": "runtime",
   "runtime": "php",
@@ -9,5 +9,5 @@
   ],
   "port": 8080,
   "healthPath": "/health",
-  "description": "PHP app served by the built-in web server with a small front controller. Runs on Docker across dev/test/prod."
+  "description": "PHP app served by FrankenPHP with a small front controller. Runs on Docker across dev/test/prod."
 }

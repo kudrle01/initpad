@@ -162,3 +162,4 @@ stabilní.
 | [ADR-149](./ADR-149.md) | Accepted | Sítě sdílené za jednou adresou mají vyšší limit na IP |
 | [ADR-150](./ADR-150.md) | Accepted | Historie bez dalšího využití se po stanovené době maže |
 | [ADR-151](./ADR-151.md) | Accepted | Záloha se šifruje veřejným klíčem, který server nedokáže otevřít |
+| [ADR-152](./ADR-152.md) | Accepted | PHP šablony běží na FrankenPHP |
