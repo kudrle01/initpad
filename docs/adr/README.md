@@ -155,3 +155,4 @@ stabilní.
 | [ADR-142](./ADR-142.md) | Accepted | Přihlášení, správa účtů a smazání workspace se zapisují do platformního auditu |
 | [ADR-143](./ADR-143.md) | Accepted | Jednorázové odkazy nesou token ve fragmentu URL |
 | [ADR-144](./ADR-144.md) | Accepted | Platformní obrazy běží s nejmenšími oprávněními a CI je skenuje na zranitelnosti |
+| [ADR-145](./ADR-145.md) | Accepted | Vstupy zvenčí mají ověřený tvar a podepsaný webhook se nepoužije dvakrát |

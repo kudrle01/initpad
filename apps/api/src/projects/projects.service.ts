@@ -1744,6 +1744,34 @@ export class ProjectsService {
   }
 
   /**
+   * A repository-deleted webhook is a hint, not proof (ADR-145). The project is
+   * removed only after the SCM itself reports the repository as absent, so a
+   * replayed or forged delivery cannot delete a project whose repository still
+   * exists. During an outage the reconciliation sweep removes it later.
+   */
+  async removeIfRepositoryGone(
+    fullName: string,
+    provider: ScmKind,
+    repositoryId?: string,
+  ): Promise<void> {
+    if (fullName.split('/').length !== 2) return;
+    const row = await this.prisma.project.findFirst({
+      where: projectOfRepository(fullName, provider, repositoryId),
+      include: { owner: true },
+    });
+    if (!row) return;
+    const repository = repositoryRef(row);
+    const scm = this.workspaceScm.provider(repository.provider);
+    if (!(await scm.repoMissing(repository, this.actorForRepo(row)))) {
+      this.logger.warn(
+        `Ignoring the deletion of ${provider}:${repositoryId ?? fullName}: the repository still exists or cannot be checked`,
+      );
+      return;
+    }
+    await this.removeByRepo(fullName, provider, repositoryId);
+  }
+
+  /**
    * Reacts to a repository deleted directly in Gitea (system webhook):
    * tears down all deployments of the matching project and removes its
    * record, so no orphaned containers or rows remain. No-op when nothing
@@ -1756,19 +1784,7 @@ export class ProjectsService {
   ): Promise<void> {
     if (fullName.split('/').length !== 2) return;
     const row = await this.prisma.project.findFirst({
-      where: {
-        scmProvider: provider,
-        ...(repositoryId
-          ? {
-              OR: [
-                { scmRepositoryId: repositoryId },
-                // Legacy rows have no immutable id yet; retain the coordinate
-                // fallback only for those rows, never for a conflicting id.
-                { scmRepositoryId: null, scmFullName: fullName },
-              ],
-            }
-          : { scmFullName: fullName }),
-      },
+      where: projectOfRepository(fullName, provider, repositoryId),
       include: {
         environments: { include: { target: true, allocation: true, buildArtifact: true } },
         owner: true,
@@ -1991,4 +2007,24 @@ export class ProjectsService {
     });
     return this.get(id);
   }
+}
+
+function projectOfRepository(
+  fullName: string,
+  provider: ScmKind,
+  repositoryId?: string,
+): Prisma.ProjectWhereInput {
+  return {
+    scmProvider: provider,
+    ...(repositoryId
+      ? {
+          OR: [
+            { scmRepositoryId: repositoryId },
+            // Legacy rows have no immutable id yet; retain the coordinate
+            // fallback only for those rows, never for a conflicting id.
+            { scmRepositoryId: null, scmFullName: fullName },
+          ],
+        }
+      : { scmFullName: fullName }),
+  };
 }

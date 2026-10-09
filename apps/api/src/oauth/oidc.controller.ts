@@ -33,8 +33,24 @@ export class OidcController {
   // Authorization endpoint: verifies the platform session (cookie) and
   // issues an authorization code.
   @Get('oauth/authorize')
-  async authorize(@Query() q: Record<string, string>, @Req() req: Request, @Res() res: Response) {
+  async authorize(
+    @Query() query: Record<string, unknown>,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     try {
+      const q = singleValues(query, [
+        'response_type',
+        'client_id',
+        'redirect_uri',
+        'scope',
+        'state',
+        'nonce',
+      ]);
+      if (!q) {
+        res.status(400).json({ error: 'invalid_request' });
+        return;
+      }
       const { response_type, client_id, redirect_uri, state, nonce } = q;
 
       if (!this.oidc.isKnownClient(client_id) || !this.oidc.isAllowedRedirect(redirect_uri)) {
@@ -50,7 +66,8 @@ export class OidcController {
       if (!session) {
         // Not signed in on the platform → redirect to login, then back here
         // (browser-facing URL).
-        const self = `${config.oidc.publicUrl}/oauth/authorize?${new URLSearchParams(q).toString()}`;
+        const params = new URLSearchParams(Object.entries(q).filter(([, value]) => value));
+        const self = `${config.oidc.publicUrl}/oauth/authorize?${params.toString()}`;
         res.redirect(`${config.auth.frontendUrl}/login?next=${encodeURIComponent(self)}`);
         return;
       }
@@ -60,22 +77,34 @@ export class OidcController {
         tokenVersion: session.tokenVersion,
         clientId: client_id,
         redirectUri: redirect_uri,
-        nonce,
+        nonce: nonce || undefined,
       });
       const url = new URL(redirect_uri);
       url.searchParams.set('code', code);
       if (state) url.searchParams.set('state', state);
       res.redirect(url.toString());
     } catch (e) {
+      // The client and the browser learn only the OAuth error code.
       this.logger.error(`authorize failed: ${(e as Error).message}`, (e as Error).stack);
-      res.status(500).json({ error: 'server_error', message: (e as Error).message });
+      res.status(500).json({ error: 'server_error' });
     }
   }
 
   // Token endpoint: exchanges the authorization code for an access_token
   // and a signed id_token.
   @Post('oauth/token')
-  async token(@Body() body: Record<string, string>, @Req() req: Request, @Res() res: Response) {
+  async token(@Body() raw: Record<string, unknown>, @Req() req: Request, @Res() res: Response) {
+    const body = singleValues(raw ?? {}, [
+      'grant_type',
+      'code',
+      'redirect_uri',
+      'client_id',
+      'client_secret',
+    ]);
+    if (!body) {
+      res.status(400).json({ error: 'invalid_request' });
+      return;
+    }
     const creds = this.clientCreds(body, req);
     if (!this.oidc.validateClient(creds.id, creds.secret)) {
       res.status(401).json({ error: 'invalid_client' });
@@ -172,13 +201,27 @@ export class OidcController {
     }
   }
 
-  private clientCreds(body: Record<string, string>, req: Request): { id: string; secret: string } {
+  private clientCreds(
+    body: { client_id: string; client_secret: string },
+    req: Request,
+  ): { id: string; secret: string } {
     const header = req.headers.authorization ?? '';
     if (header.startsWith('Basic ')) {
-      const [id, secret] = Buffer.from(header.slice(6), 'base64').toString().split(':');
-      return { id: id ?? '', secret: secret ?? '' };
+      // RFC 6749 2.3.1: both parts are form-encoded before Base64, and only
+      // the first colon separates them.
+      const decoded = Buffer.from(header.slice(6), 'base64').toString();
+      const colon = decoded.indexOf(':');
+      if (colon < 0) return { id: '', secret: '' };
+      try {
+        return {
+          id: decodeURIComponent(decoded.slice(0, colon).replace(/\+/g, ' ')),
+          secret: decodeURIComponent(decoded.slice(colon + 1).replace(/\+/g, ' ')),
+        };
+      } catch {
+        return { id: '', secret: '' };
+      }
     }
-    return { id: body.client_id ?? '', secret: body.client_secret ?? '' };
+    return { id: body.client_id, secret: body.client_secret };
   }
 
   private redirectError(res: Response, redirectUri: string, state: string, error: string) {
@@ -187,4 +230,22 @@ export class OidcController {
     if (state) url.searchParams.set('state', state);
     res.redirect(url.toString());
   }
+}
+
+/**
+ * The named OAuth parameters as plain strings, empty when absent. Repeated or
+ * nested parameters (`?code=a&code=b`, `code[x]=1`) are a malformed request,
+ * not a value.
+ */
+function singleValues<K extends string>(
+  input: Record<string, unknown>,
+  names: readonly K[],
+): Record<K, string> | null {
+  const values = {} as Record<K, string>;
+  for (const name of names) {
+    const value = input[name] ?? '';
+    if (typeof value !== 'string') return null;
+    values[name] = value;
+  }
+  return values;
 }

@@ -75,7 +75,13 @@ konfiguraci v paměti.
   nesmaže; změny se zapisují ve stejné transakci jako jejich událost. Zadaný
   identifikátor neúspěšného přihlášení se neukládá (ADR-142).
 - Webhooky Gitey používají podpis HMAC se zachovanou kompatibilitou s bearer
-  tokenem a nikdy nevkládají secrety do URL.
+  tokenem a nikdy nevkládají secrety do URL. Webhook o smazání repozitáře
+  smaže projekt až poté, co Gitea repozitář hlásí jako neexistující. GitHub
+  webhook, který mění stav instalace nebo autorizace, se podle
+  `X-GitHub-Delivery` zpracuje jen jednou (ADR-145).
+- CI callbacky, webhooky a OAuth endpointy odmítnou pole jiného typu než
+  řetězec; OAuth chyba neprozradí text výjimky. Web vytvoří odkaz z adresy
+  zvenčí, třeba z cíle CI statusu, jen pro `http` a `https` (ADR-145).
 - Runner Actions používá vyhrazený rootless DinD daemon. Nepřipojuje socket ani
   workspace hostu a nepovoluje žádné volumes definované workflow. Řídicí síť je
   oddělená od PostgreSQL i od nasazovacích sítí. Runner provádí jeden job

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Headers,
@@ -14,11 +15,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../config';
 import { ProjectsService } from './projects.service';
 import { PublicEndpoint } from '../auth/public-endpoint.decorator';
-
-interface RepositoryEventDto {
-  action?: string;
-  repository?: { id?: number | string; full_name?: string };
-}
+import { stringFields } from '../common/external-payload';
 
 /**
  * Receiver of Gitea system webhooks. The platform registers the hook itself
@@ -41,7 +38,7 @@ export class ScmWebhookController {
     @Headers('x-gitea-signature') signature: string,
     @Headers('x-gitea-event') event: string,
     @Req() req: RawBodyRequest<Request>,
-    @Body() body: RepositoryEventDto,
+    @Body() payload: unknown,
   ) {
     // Gitea signs the exact request body with the configured webhook secret.
     // Bearer auth remains as a compatibility path, but secrets never enter
@@ -56,15 +53,20 @@ export class ScmWebhookController {
     if (!signatureValid && !bearerValid) {
       throw new UnauthorizedException('Invalid webhook token');
     }
-    this.logger.log(`SCM webhook received: ${event ?? '?'} / ${body.action ?? '-'}`);
-    if (event === 'repository' && body.action === 'deleted' && body.repository?.full_name) {
-      // Run in the background — webhook deliveries should return quickly.
+    const { action } = stringFields(payload, { action: 64 });
+    this.logger.log(`SCM webhook received: ${event ?? '?'} / ${action ?? '-'}`);
+    if (event === 'repository' && action === 'deleted') {
+      const repository = (payload as { repository?: unknown }).repository;
+      const { full_name: fullName } = stringFields(repository, { full_name: 256 });
+      const id = (repository as { id?: unknown } | undefined)?.id;
+      if (!fullName) return { accepted: true };
+      if (id != null && typeof id !== 'number' && typeof id !== 'string') {
+        throw new BadRequestException('repository.id must be a number or a string');
+      }
+      // Run in the background — webhook deliveries should return quickly. The
+      // project goes only once Gitea confirms the repository is gone.
       void this.projects
-        .removeByRepo(
-          body.repository.full_name,
-          'gitea',
-          body.repository.id == null ? undefined : String(body.repository.id),
-        )
+        .removeIfRepositoryGone(fullName, 'gitea', id == null ? undefined : String(id))
         .catch((e) =>
           this.logger.error(`Cleanup after repository deletion failed: ${(e as Error).message}`),
         );

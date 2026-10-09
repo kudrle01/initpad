@@ -5,7 +5,7 @@ import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { Notice } from '@/components/molecules/Notice';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, externalHref } from '@/lib/utils';
 import { t, formatDateTime } from '@/i18n';
 import { statusLabel } from '@/i18n/labels';
 
@@ -80,9 +80,9 @@ export function PlatformUpdateCard({
                 <span className="font-mono text-xl font-semibold tracking-tight">
                   {status?.latestVersion ?? '—'}
                 </span>
-                {status?.releaseUrl && (
+                {externalHref(status?.releaseUrl) && (
                   <a
-                    href={status.releaseUrl}
+                    href={externalHref(status?.releaseUrl)}
                     target="_blank"
                     rel="noreferrer"
                     className="text-link inline-flex items-center gap-1 text-xs font-medium"

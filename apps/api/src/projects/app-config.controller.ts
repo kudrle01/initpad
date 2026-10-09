@@ -4,6 +4,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AppConfigService } from './app-config.service';
 import { UpsertConfigVarDto } from './dto/upsert-config-var.dto';
+import { EnvNamePipe } from './env-name.pipe';
+import type { EnvName } from '../domain/types';
 
 // Per-environment application config & secrets (ADR-061). Project-write manages;
 // any member reads (secret values are always masked).
@@ -13,14 +15,18 @@ export class AppConfigController {
   constructor(private readonly config: AppConfigService) {}
 
   @Get()
-  list(@Param('id') id: string, @Param('env') env: string, @CurrentUser() userId: string) {
+  list(
+    @Param('id') id: string,
+    @Param('env', EnvNamePipe) env: EnvName,
+    @CurrentUser() userId: string,
+  ) {
     return this.config.list(userId, id, env);
   }
 
   @Put(':key')
   upsert(
     @Param('id') id: string,
-    @Param('env') env: string,
+    @Param('env', EnvNamePipe) env: EnvName,
     @Param('key') key: string,
     @Body() dto: UpsertConfigVarDto,
     @CurrentUser() userId: string,
@@ -32,7 +38,7 @@ export class AppConfigController {
   @HttpCode(204)
   remove(
     @Param('id') id: string,
-    @Param('env') env: string,
+    @Param('env', EnvNamePipe) env: EnvName,
     @Param('key') key: string,
     @CurrentUser() userId: string,
   ) {

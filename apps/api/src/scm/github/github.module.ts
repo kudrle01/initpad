@@ -7,6 +7,7 @@ import { IdentityModule } from '../../identity/identity.module';
 import { WorkspacesModule } from '../../workspaces/workspaces.module';
 import { GitHubSetupController } from './github-setup.controller';
 import { GitHubCoreModule } from './github-core.module';
+import { GitHubWebhookDeliveryService } from './github-webhook-delivery.service';
 
 // GitHub App integration for the hosted edition. Inert without credentials.
 // AuthModule provides AuthService + JwtService; IdentityModule provides
@@ -20,6 +21,7 @@ import { GitHubCoreModule } from './github-core.module';
     GitHubStatusController,
     GitHubSetupController,
   ],
+  providers: [GitHubWebhookDeliveryService],
   exports: [GitHubCoreModule],
 })
 export class GitHubModule {}

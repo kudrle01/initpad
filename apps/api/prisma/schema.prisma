@@ -186,6 +186,17 @@ model EmailOutbox {
   @@index([userId, createdAt])
 }
 
+// GitHub webhook deliveries that changed state (ADR-145). GitHub signs the body
+// without a timestamp, so a captured delivery stays valid; its
+// X-GitHub-Delivery id lets a replay be acknowledged without being applied.
+model GitHubWebhookDelivery {
+  deliveryId String   @id
+  event      String
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
 // Hashed, expiring and single-use OAuth state. The signed browser value keeps
 // the flow payload while this row supplies durable replay protection shared by
 // every API replica. No nonce, setup token or provider credential is stored.
