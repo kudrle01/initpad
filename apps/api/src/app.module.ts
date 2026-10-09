@@ -21,6 +21,9 @@ import { AuditEventsModule } from './audit/audit-events.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { UpdatesModule } from './updates/updates.module';
 
+import { ControlPlaneLeaseService } from './common/control-plane-lease.service';
+import { DataRetentionService } from './common/data-retention.service';
+
 @Module({
   imports: [
     PrismaModule,
@@ -42,6 +45,11 @@ import { UpdatesModule } from './updates/updates.module';
     UpdatesModule,
   ],
   controllers: [HealthController],
-  providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }, SecretReencryptionService],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    SecretReencryptionService,
+    ControlPlaneLeaseService,
+    DataRetentionService,
+  ],
 })
 export class AppModule {}

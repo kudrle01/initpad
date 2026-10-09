@@ -69,6 +69,10 @@ export const config = {
     // instead of trusting an arbitrary X-Forwarded-For chain.
     trustProxyHops: Number(process.env.INITPAD_TRUST_PROXY_HOPS ?? 1),
   },
+  retention: {
+    // Audit events older than this are deleted; 0 keeps them (ADR-150).
+    auditDays: Number(process.env.INITPAD_AUDIT_RETENTION_DAYS ?? 400),
+  },
   rateLimit: {
     // CIDR ranges where many people share one public address, such as a
     // school behind NAT. Their per-IP limits are multiplied (ADR-149).
@@ -399,6 +403,10 @@ export function validateConfig(): void {
     throw new Error('INITPAD_TRUST_PROXY_HOPS must be an integer between 0 and 5');
   }
   parseSharedNetworks(config.rateLimit.sharedNetworks);
+  const { auditDays } = config.retention;
+  if (!Number.isInteger(auditDays) || auditDays < 0 || (auditDays > 0 && auditDays < 30)) {
+    throw new Error('INITPAD_AUDIT_RETENTION_DAYS must be 0 (keep) or at least 30 days');
+  }
   const factor = config.rateLimit.sharedNetworkFactor;
   if (!Number.isInteger(factor) || factor < 1 || factor > 100) {
     throw new Error(

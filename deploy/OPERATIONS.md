@@ -130,6 +130,14 @@ nad dočasnými tabulkami:
 ./test-restore-reconcile.sh
 ```
 
+## Retence dat
+
+API jednou za hodinu maže použité a prošlé jednorázové tokeny (po 7 dnech),
+odeslané e-maily z fronty (po 30 dnech), dokončené Agent joby (po 90 dnech) a
+události auditu starší než `INITPAD_AUDIT_RETENTION_DAYS` (výchozí 400 dní,
+`0` audit ponechá). Historie nasazení zůstává, dokud existuje projekt
+(ADR-150).
+
 ## Úklid disku
 
 Bezpečné uvolnění místa (jen dangling images + build cache; datové volumes ani

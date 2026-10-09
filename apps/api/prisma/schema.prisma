@@ -375,6 +375,7 @@ model AuditEvent {
 
   @@unique([operationType, operationId, action])
   @@index([workspaceId, createdAt, id])
+  @@index([createdAt])
   @@index([workspaceId, action, createdAt])
   @@index([workspaceId, resourceType, resourceId, createdAt])
   @@index([operationType, operationId])
@@ -906,6 +907,7 @@ model AgentJob {
 
   @@unique([deploymentOperationId, operationStep])
   @@index([targetId, status, createdAt])
+  @@index([finishedAt])
   @@index([correlationId])
   @@index([status, leaseExpiresAt])
   @@index([allocationId])
