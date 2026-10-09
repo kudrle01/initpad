@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'apps/*/Dockerfile'
+      - 'apps/web/nginx*.conf'
       - 'apps/*/package.json'
       - 'templates/**'
       - 'deploy/*.yml'
@@ -12,12 +13,14 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'scripts/test-template-images.sh'
+      - '.trivyignore.yaml'
       - '.github/dependabot.yml'
       - '.github/workflows/container-images.yml'
   pull_request:
     branches: [main]
     paths:
       - 'apps/*/Dockerfile'
+      - 'apps/web/nginx*.conf'
       - 'apps/*/package.json'
       - 'templates/**'
       - 'deploy/*.yml'
@@ -25,8 +28,12 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'scripts/test-template-images.sh'
+      - '.trivyignore.yaml'
       - '.github/dependabot.yml'
       - '.github/workflows/container-images.yml'
+  # New advisories appear without a change in this repository.
+  schedule:
+    - cron: '17 4 * * 1'
   workflow_dispatch:
 
 concurrency:
@@ -54,6 +61,29 @@ jobs:
           docker build --pull -f apps/web/Dockerfile -t initpad-web:acceptance .
           docker build --pull -f apps/agent/Dockerfile -t initpad-agent:acceptance .
           docker build --pull -f apps/supervisor/Dockerfile -t initpad-supervisor:acceptance .
+
+      # ADR-144: a fixed HIGH or CRITICAL vulnerability in a platform image
+      # or in a template lockfile fails the build. Accepted findings, each with
+      # an expiry, are in .trivyignore.yaml.
+      - name: Scan platform images and template dependencies
+        shell: bash
+        env:
+          TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+        run: |
+          set -euo pipefail
+          trivy() {
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock:ro \
+              -v initpad-trivy-cache:/root/.cache \
+              -v "$PWD:/src:ro" \
+              "$TRIVY_IMAGE" "$@" \
+              --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile /src/.trivyignore.yaml --exit-code 1 --no-progress
+          }
+          for image in api web agent supervisor; do
+            trivy image "initpad-${image}:acceptance"
+          done
+          trivy fs --include-dev-deps /src/templates
 
       - name: Probe Agent runtime dependencies
         shell: bash

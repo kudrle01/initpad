@@ -107,16 +107,13 @@ services:
       timeout: 3s
       retries: 30
       start_period: 5s
+    # nginx runs as the nginx user and writes only /tmp, so it needs no
+    # capability (ADR-144). Web images up to 0.2.16 start nginx as root and do
+    # not start here: deploy the image of the same release as this file.
     read_only: true
     tmpfs:
-      - /var/cache/nginx:size=32m
-      - /var/run:size=1m
-      - /tmp:size=8m
+      - /tmp:size=40m
     cap_drop: [ALL]
-    # The stock nginx image starts as root: it takes ownership of its tmpfs
-    # cache, binds port 80 and only then drops the workers to the nginx user.
-    # Without these four capabilities the container exits before serving.
-    cap_add: [CHOWN, SETGID, SETUID, NET_BIND_SERVICE]
     security_opt: [no-new-privileges:true]
     mem_limit: 128m
     cpus: 0.5

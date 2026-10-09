@@ -127,8 +127,17 @@ konfiguraci v paměti.
 - Aplikační kontejnery dostávají limity paměti, CPU, PID a logů, odebrané
   capabilities a `no-new-privileges`. Webové a API kontejnery platformy jsou,
   kde je to možné, pouze pro čtení.
-- Závislosti a actions jsou uzamčeny, audity npm a Composeru jsou součástí
-  kontrol releasu. Verzované databázové migrace nahrazují schema push.
+- Web platformy spouští nginx jako neprivilegovaného uživatele bez jediné
+  capability a jeho access log neobsahuje query string ani `Referer`. Runtime
+  obrazy API, Agenta a Supervisoru neobsahují npm, yarn ani zkompilované testy
+  a všechny obrazy při buildu instalují opravy Alpine balíčků (ADR-144). API
+  běží jako root bez capabilities, protože v self-hosted profilu drží Docker
+  socket a v SaaS čte secrety určené jen rootu.
+- Závislosti a actions jsou uzamčeny. Release gate audituje produkční npm
+  závislosti. CI při změně obrazů nebo šablon a jednou týdně skenuje obrazy
+  platformy a lockfily šablon (npm, Composer, pip); opravitelný nález HIGH nebo
+  CRITICAL build zastaví a přijaté výjimky expirují (ADR-144). Verzované
+  databázové migrace nahrazují schema push.
 
 ## Zbytková rizika
 

@@ -255,11 +255,12 @@ services:
       timeout: 3s
       retries: 30
       start_period: 5s
+    # nginx runs as the nginx user and writes only /tmp (ADR-144).
     read_only: true
     tmpfs:
-      - /var/cache/nginx:size=32m
-      - /var/run:size=1m
-      - /tmp:size=8m
+      - /tmp:size=40m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     mem_limit: 128m
     cpus: 0.5
     pids_limit: 100

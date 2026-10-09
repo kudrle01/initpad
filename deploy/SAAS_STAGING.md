@@ -25,6 +25,9 @@ services:
     cap_add: [CHOWN, SETGID, SETUID, NET_BIND_SERVICE]
 ```
 
+Od ADR-144 web spouští nginx bez roota a profil mu žádnou capability nevrací.
+Obraz webu a `saas.compose.yml` proto musí pocházet ze stejného releasu.
+
 Postup nepokrývá default-deny egress ani sběr JSON logů kontejnerů. Oba body
 zůstávají samostatnými gate podle [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md) a
 [pravidel observability](../docs/OBSERVABILITY.md).

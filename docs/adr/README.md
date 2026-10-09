@@ -154,3 +154,4 @@ stabilní.
 | [ADR-141](./ADR-141.md) | Accepted | Klíč pro šifrování dat je samostatný, jde vyměnit a nečitelná hodnota je chyba |
 | [ADR-142](./ADR-142.md) | Accepted | Přihlášení, správa účtů a smazání workspace se zapisují do platformního auditu |
 | [ADR-143](./ADR-143.md) | Accepted | Jednorázové odkazy nesou token ve fragmentu URL |
+| [ADR-144](./ADR-144.md) | Accepted | Platformní obrazy běží s nejmenšími oprávněními a CI je skenuje na zranitelnosti |

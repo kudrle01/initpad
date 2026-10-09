@@ -1,0 +1,22 @@
+# Accepted findings of the container and template vulnerability scan (ADR-144).
+# Every entry names the affected files, says why the finding cannot be reached
+# and expires: after `expired_at` Trivy reports the finding again and the scan
+# fails. Remove an entry as soon as the fixed release is pinned.
+vulnerabilities:
+  # Go 1.26.8 in the Docker CLI and Compose plugin of the Supervisor image.
+  # Both CVEs are denial of service against Go servers (HTTP Range handling and
+  # the TLS ECH ClientHelloOuter). The Supervisor runs both binaries as clients
+  # of the local Docker socket, without TLS. The Docker CLI build with Go 1.26.9
+  # was published on 9 October 2026; pin it once it is two weeks old.
+  - id: CVE-2026-78667
+    paths:
+      - usr/local/bin/docker
+      - usr/local/libexec/docker/cli-plugins/docker-compose
+    statement: Server-side net/http Range DoS; the Supervisor only runs the Docker CLI as a client.
+    expired_at: 2026-11-09
+  - id: CVE-2026-97031
+    paths:
+      - usr/local/bin/docker
+      - usr/local/libexec/docker/cli-plugins/docker-compose
+    statement: Server-side crypto/tls ECH DoS; the Supervisor talks to the Docker socket without TLS.
+    expired_at: 2026-11-09

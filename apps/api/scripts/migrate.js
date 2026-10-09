@@ -17,8 +17,11 @@ const currentMigrations = [
   '20260712163000_deployment_operations',
 ];
 
+// The Prisma CLI runs on this Node binary: the runtime image has no npm or npx.
+const prismaCli = require.resolve('prisma/build/index.js');
+
 function prisma(args, capture = false) {
-  return spawnSync('npx', ['prisma', ...args], {
+  return spawnSync(process.execPath, [prismaCli, ...args], {
     encoding: 'utf8',
     stdio: capture ? 'pipe' : 'inherit',
   });

@@ -64,10 +64,9 @@ test('hardens both services while leaving the web proxy able to start', () => {
     assert.match(service, /^ {4}security_opt: \[no-new-privileges:true\]$/m, name);
     assert.doesNotMatch(service, /privileged|^ {4}user: ['"]?(0|root)\b/m, name);
   }
-  // nginx starts as root and needs exactly these to chown its tmpfs cache,
-  // bind port 80 and drop its workers; the first 0.2.14 staging run crashed
-  // without them. The API needs none.
-  assert.match(web, /^ {4}cap_add: \[CHOWN, SETGID, SETUID, NET_BIND_SERVICE\]$/m);
+  // The web image runs nginx unprivileged (ADR-144); neither service gets a
+  // capability back.
+  assert.doesNotMatch(web, /cap_add/);
   assert.doesNotMatch(api, /cap_add/);
 });
 
