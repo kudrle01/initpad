@@ -87,14 +87,14 @@ describe('ProjectsService failed CI handoff', () => {
         status: 'failed',
         deploymentRequired: true,
         activeOperationId: null,
-        statusReason: expect.stringContaining('docker job: failure'),
+        statusReason: expect.stringContaining('CI result: failure'),
       }),
     });
     expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
       where: { id: 'operation-1', executionOwner: null, finishedAt: null },
       data: expect.objectContaining({
         status: 'failed',
-        message: expect.stringContaining('docker job: failure'),
+        message: expect.stringContaining('CI result: failure'),
       }),
     });
   });

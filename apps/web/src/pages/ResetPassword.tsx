@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/api';
 import { AuthCard } from '@/components/molecules/AuthCard';
 import { FormField } from '@/components/molecules/FormField';
+import { MissingLinkToken } from '@/components/molecules/MissingLinkToken';
 import { Notice } from '@/components/molecules/Notice';
 import { Button } from '@/components/ui/button';
+import { useLinkToken } from '@/lib/link-token';
 import { t } from '@/i18n';
 
-// Public page reached from a reset link (/reset-password/:token). A successful
+// Public page reached from a reset link (/reset-password#token). A successful
 // reset revokes every existing session, so the user signs in fresh afterwards.
 export default function ResetPassword() {
-  const { token = '' } = useParams();
+  const token = useLinkToken();
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -35,6 +37,8 @@ export default function ResetPassword() {
       setBusy(false);
     }
   }
+
+  if (!token) return <MissingLinkToken title={t('Set a new password')} />;
 
   return (
     <AuthCard

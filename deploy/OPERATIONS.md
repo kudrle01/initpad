@@ -61,11 +61,37 @@ Naplánuj přes cron (např. denně ve 2:00, ponech 7 posledních):
 0 2 * * *  cd /cesta/k/initpad/deploy && INITPAD_BACKUP_KEEP=7 ./backup.sh >> ./backups/backup.log 2>&1
 ```
 
-Záloha **obsahuje `.env` se secrety a všechna data** — ukládej ji jako důvěrnou,
-kopíruj **offsite** a ideálně **šifruj** (např. `age`/`gpg`). Rotace nechává
-posledních `INITPAD_BACKUP_KEEP` záloh (výchozí 7).
+Záloha **obsahuje `.env` se secrety a všechna data**. Šifruj ji veřejným
+klíčem `age` (ADR-151). Klíčový pár vytvoř mimo server a na server dej jen
+veřejnou část:
+
+```bash
+age-keygen -o initpad-backup.key            # na tvém počítači; soubor drž v trezoru
+age-keygen -y initpad-backup.key > recipients.txt
+scp recipients.txt server:/etc/initpad/backup-recipients.txt
+```
+
+Na serveru nainstaluj `age` (`apt install age`) a předej soubor záloze:
+
+```cron
+0 2 * * *  cd /cesta/k/initpad/deploy && INITPAD_BACKUP_AGE_RECIPIENTS_FILE=/etc/initpad/backup-recipients.txt INITPAD_BACKUP_KEEP=7 ./backup.sh >> ./backups/backup.log 2>&1
+```
+
+Záloha pak zůstane jen jako `./backups/<časové-razítko>.tar.age`. Server ji
+zapíše, ale bez soukromého klíče ji nepřečte; ani útočník na serveru proto
+zálohu nerozšifruje. Kopíruj ji **mimo server** (např. `rclone copy` nebo
+`rsync`). Rotace nechává posledních `INITPAD_BACKUP_KEEP` záloh (výchozí 7),
+šifrovaných i nešifrovaných. Když `age` chybí nebo soubor s klíči neexistuje,
+skript skončí ještě před zastavením služeb.
 
 ## Obnova
+
+Šifrovanou zálohu obnov s cestou k soukromému klíči; skript ji rozbalí do
+dočasného adresáře, který po skončení smaže:
+
+```bash
+INITPAD_BACKUP_AGE_IDENTITY_FILE=/cesta/k/initpad-backup.key ./restore.sh ./backups/20261009T020000Z.tar.age
+```
 
 Obnovení z konkrétní zálohy (DESTRUKTIVNÍ — přepíše aktuální data):
 
@@ -130,6 +156,14 @@ nad dočasnými tabulkami:
 ./test-restore-reconcile.sh
 ```
 
+## Retence dat
+
+API jednou za hodinu maže použité a prošlé jednorázové tokeny (po 7 dnech),
+odeslané e-maily z fronty (po 30 dnech), dokončené Agent joby (po 90 dnech) a
+události auditu starší než `INITPAD_AUDIT_RETENTION_DAYS` (výchozí 400 dní,
+`0` audit ponechá). Historie nasazení zůstává, dokud existuje projekt
+(ADR-150).
+
 ## Úklid disku
 
 Bezpečné uvolnění místa (jen dangling images + build cache; datové volumes ani
@@ -164,8 +198,10 @@ samostatným release rozhodnutím.
 ## E-mailové doručování
 
 Self-hosted instalace funguje i bez SMTP: aktivaci a ověření zobrazí jako
-jednorázový odkaz oprávněnému uživateli. Pro reset zapomenutého hesla a
-veřejný provoz nastav v `.env` relay s TLS:
+jednorázový odkaz oprávněnému uživateli. Token je za znakem `#`, a proto se
+odkaz musí předat celý; bez této části stránka požádá o otevření celého odkazu
+znovu (ADR-143). Pro reset zapomenutého hesla a veřejný provoz nastav v `.env`
+relay s TLS:
 
 ```dotenv
 INITPAD_SMTP_HOST=smtp.example.org
@@ -317,14 +353,73 @@ a nemění jeho obsah.
 
 ## Bezpečnost
 
+- **Převzatý účet** (ADR-148). Gitea neumí ukončit webovou session jednoho
+  uživatele, proto postupuj takto:
+  1. v **Administraci** účet deaktivuj. InitPad i Gitea ho okamžitě zablokují a
+     všechny Gitea tokeny účtu přestanou platit;
+  2. restartuj Gitea (`docker compose restart gitea`). Ukončí všechny Gitea
+     sessions, ostatní uživatelé se přihlásí znovu přes InitPad. Git operace a
+     CI klonování se na chvíli přeruší;
+  3. vytvoř účtu aktivační odkaz nebo reset hesla a účet znovu aktivuj.
+
+  Uživatel sám ukončí cizí přihlášení v **Nastavení účtu → Přihlášené
+  prohlížeče** (ADR-147). Reset hesla odvolá všechny jeho Gitea tokeny,
+  otevřenou Gitea session ale ukončí až restart Gitey.
 - `deploy/.env` obsahuje všechny secrety — omez práva (`chmod 600 .env`), necommituj.
-- Veřejně vystav jen porty **80/443** (zbytek za proxy); zbytek drž ve firewallu.
-- Registraci drž na `admin-provisioned`, pokud nemá být veřejná.
+- `INITPAD_ENCRYPTION_KEY` šifruje credentials uložené v databázi (ADR-141).
+  Bez něj nebo se stejnou hodnotou jako `INITPAD_JWT_SECRET` API v produkci
+  nenastartuje. Výměna klíče:
+  1. v `deploy/.env` přesuň současnou hodnotu do
+     `INITPAD_ENCRYPTION_KEY_PREVIOUS` a do `INITPAD_ENCRYPTION_KEY` dej nový
+     klíč (`openssl rand -hex 24`), pak spusť `./install.sh`;
+  2. API po startu přešifruje všechny uložené hodnoty a zapíše do logu
+     `Every stored secret uses the current INITPAD_ENCRYPTION_KEY`;
+  3. potom `INITPAD_ENCRYPTION_KEY_PREVIOUS` smaž a znovu spusť `./install.sh`.
+
+  Hodnotu, kterou žádný klíč neotevře, API zaloguje jako `secret.unreadable`.
+  Takový credential (heslo serveru, secret proměnná aplikace) je potřeba zadat
+  znovu; Git token a propojení GitHubu se obnoví samy. V SaaS připoj
+  předchozí klíč po dobu výměny jako další Compose secret a předej ho API
+  přes `INITPAD_ENCRYPTION_KEY_PREVIOUS_FILE`.
+- Veřejně vystav jen porty **80/443**. Porty 8080 (web), 3001 (Gitea) a 8085
+  (vestavěný statický hosting) zůstávají publikované, protože je používá síť
+  CI a lokální kontroly. Docker publikované porty obchází a pravidla `ufw` na
+  ně nepůsobí. Na veřejném rozhraní je proto zablokuj v řetězci `DOCKER-USER`,
+  například pro rozhraní `eth0`:
+
+  ```bash
+  for port in 8080 3001 8085; do
+    sudo iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack \
+      --ctorigdstport "$port" --ctdir ORIGINAL -j DROP
+  done
+  ```
+
+  Provoz z hostu i ze sítě CI tím zůstane zachovaný. Pravidla si ulož
+  nástrojem své distribuce (například `iptables-persistent`). Port 8085
+  neblokuj, pokud mají uživatelé otevírat aplikace na vestavěném statickém
+  hostingu.
+- Při provozu přes HTTP posílá prohlížeč session InitPadu i vestavěným Docker
+  aplikacím na stejném hostu. Pokud budou nasazovat další lidé, provozuj
+  InitPad přes HTTPS (serverový profil, případně `tls internal`) nebo nastav
+  `INITPAD_DEPLOY_PUBLIC_HOST` na jiný název hostu. Administrace na tento stav
+  upozorní. Pod HTTPS se session cookie jmenuje `__Host-initpad_token` a po
+  aktualizaci na tuto verzi se uživatelé jednou znovu přihlásí.
+- Administrace → Bezpečnostní záznam ukazuje přihlášení, neúspěšné pokusy,
+  změny a obnovy hesel, akce administrátorů a smazání workspace (ADR-142).
+  Řada neúspěšných pokusů o jeden účet znamená hádání hesla; účet pak
+  deaktivuj nebo mu obnov heslo.
+- Výchozí registrace je `admin-provisioned`. Režim `open` dovolí každému, kdo
+  instanci vidí, založit účet a nasazovat kontejnery na vestavěný Docker host;
+  zapínej ho jen v důvěryhodné síti. První účet (administrátor) vyžaduje
+  `INITPAD_BOOTSTRAP_TOKEN`, který instalátor vygeneruje a vypíše, dokud
+  instance nemá žádný účet.
 - Zálohy šifruj a ukládej offsite.
-- `INITPAD_TRUST_PROXY_HOPS=1` odpovídá vestavěnému web proxy. Přímý
-  přístup klientů k API vyžaduje `0`; další edge proxy zvyšuje hodnotu pouze
-  tehdy, když je síťová cesta pevná a API nelze obejít napřímo. Klientská IP je
-  součástí rate-limit rozhodnutí.
+- `INITPAD_TRUST_PROXY_HOPS=1` platí pro lokální instalaci i pro serverovou
+  instalaci s vestavěným Caddy. Caddy posílá `/api/*` přímo na API a hlavičku
+  `X-Forwarded-For` od klienta nahrazuje, takže API vidí po každé cestě právě
+  jeden proxy hop. Přímý přístup klientů k API vyžaduje `0`. Další edge proxy
+  zvyšuje hodnotu pouze tehdy, když je síťová cesta pevná a API nelze obejít
+  napřímo. Klientská IP je součástí rate-limit rozhodnutí.
 - InitPad Agent má přes Docker socket oprávnění srovnatelné se správcem
   cílového serveru. Enrollment proto smí spouštět jen správce workspace a
   produkční control plane musí používat HTTPS. `--allow-insecure-http` je
@@ -339,6 +434,18 @@ PostgreSQL buckety společné pro všechny API repliky. Tabulka neobsahuje IP,
 e-mail, login ani token; identita je součástí HMAC klíče. Rate limiter chrání
 jednotlivé účty a běžné automatizované pokusy, nenahrazuje firewall, connection
 limit ani DDoS ochranu na veřejném edge.
+
+Škola nebo firma za NAT posílá požadavky všech uživatelů z jedné veřejné
+adresy. Uveď ji v `.env`, jinak třída rychle vyčerpá limit přihlášení a
+registrace na IP (ADR-149):
+
+```dotenv
+INITPAD_RATE_LIMIT_SHARED_NETWORKS=198.51.100.0/24
+INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR=20
+```
+
+Pro tyto adresy se limit na IP násobí, limit na účet zůstává. Uváděj jen sítě,
+za kterými skutečně stojí tvoji uživatelé.
 
 Publikovaný Agent se zapíná vždy dvojicí z ověřeného
 `initpad-agent-release.json`: `INITPAD_AGENT_IMAGE` dostane
@@ -416,16 +523,28 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
   aplikace spotřebuje méně; CI build je záměrně nejnáročnější část.
 - Orientačně: každý projekt = 3 prostředí; N týmů × 3 běžící kontejnery + CI
   buildy. Hlídej RAM, CPU a **volné místo** (buildy a image rostou).
-- `INITPAD_RUNNER_CAPACITY=1` znamená jeden současný CI job a ostatní
-  commity pravdivě zobrazí jako `awaiting CI`. Na hostu s dostatkem RAM a CPU
-  nastav `2` a znovu spusť `./install.sh`; instalátor vygeneruje runner config a
-  runner bezpečně znovu vytvoří. Nezvyšuj hodnotu jen kvůli kratší frontě —
-  každý slot může současně provádět náročný Docker build.
+- Runner provádí jeden CI job najednou a ostatní commity pravdivě zobrazí jako
+  `awaiting CI`. Každý job běží na čerstvě vymazaném Docker daemonu
+  (ADR-138): `runner-docker` se po jobu restartuje a při startu smaže
+  kontejnery, volumes, image i build cache. `INITPAD_RUNNER_CAPACITY` proto
+  musí být `1`; instalace s vyšší hodnotou ji musí v `deploy/.env` vrátit na
+  `1` a znovu spustit `./install.sh`.
+- Každý job si znovu načte job image. Image z Docker Hubu dodává lokální cache
+  `runner-image-cache` (volume `initpad_runner-image-cache`, obsah vyprší po 7
+  dnech), takže se opakovaně nestahují z internetu. Do cache nikdo nemůže
+  zapisovat. Počítej s ní v místě na disku (job image má asi 0,5 GB).
+- Šablonové CI testuje, staví a publikuje image v jediném jobu a vrstvy buildu
+  bere z cache v registry projektu (tagy `buildcache` a `buildcache-test`
+  vedle image, ADR-139). Projekty založené před ADR-139 mají čtyři joby, které
+  dál fungují, ale každý načítá job image a staví znovu. Zrychlí je nové
+  workflow: na obrazovce importu stáhni starter workflow pro šablonu projektu a
+  nahraď jím `.gitea/workflows/ci.yml` v repozitáři.
 - `INITPAD_RUNNER_MEMORY_LIMIT`, `INITPAD_RUNNER_CPU_LIMIT` a
-  `INITPAD_RUNNER_PIDS_LIMIT` omezují **součet** všech vnořených CI kontejnerů
-  (výchozí hodnoty `1536m`, `1.0`, `512`). Na silnějším hostu je lze zvýšit,
-  ale ponech dostatečnou rezervu pro databázi, Gitea, API a běžící aplikace.
-  Změnu uplatní opětovné `./install.sh`; nevyžaduje nový projekt.
+  `INITPAD_RUNNER_PIDS_LIMIT` omezují CI daemon i všechny kontejnery jobu
+  (výchozí hodnoty `1536m`, `1.0`, `512`). Vyšší CPU limit zkrátí i načtení job
+  image na začátku každého jobu. Na silnějším hostu je lze zvýšit, ale ponech
+  dostatečnou rezervu pro databázi, Gitea, API a běžící aplikace. Změnu uplatní
+  opětovné `./install.sh`; nevyžaduje nový projekt.
 - Kvóty na tým nastav přes **Allocations** (max prostředí, ADR-060).
 - Když jeden host nestačí, přesuň nasazovací cíle na další stroje přes **Agenta**
   po dokončení jeho job/delivery protokolu (roadmapa), případně managed DB/S3.
@@ -434,7 +553,11 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
 
 - **Něco není `healthy`:** `docker compose logs <služba>`.
 - **Plný disk:** `docker system df` → `./cleanup.sh`; zkontroluj `./backups`.
-- **CI se nestaví/nenasazuje:** běží profil runneru? `docker compose ps act_runner runner-docker`.
+- **CI se nestaví/nenasazuje:** běží profil runneru? `docker compose ps act_runner runner-docker runner-image-cache`.
+  Log `runner-docker` po každém jobu ukáže `reset requested; restarting with an
+  erased daemon`. Hláška `previous CI daemon state could not be erased` znamená,
+  že daemon odmítl start s daty předchozího jobu; zkontroluj místo na disku a
+  `docker compose logs runner-docker`.
 - **Druhý projekt čeká:** při kapacitě 1 je to backpressure, ne konflikt.
   První commit má `running`, druhý `awaiting CI`; jakmile aktivní job uvolní
   slot, runner si sám převezme další. Pokud oba zůstanou čekat, zkontroluj

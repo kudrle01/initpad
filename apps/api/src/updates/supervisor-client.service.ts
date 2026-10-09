@@ -110,16 +110,21 @@ export class SupervisorClientService {
     const body = value === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(value));
     const timestamp = String(Date.now());
     const bodyHash = createHash('sha256').update(body).digest('hex');
-    const signature = createHmac('sha256', config.updates.supervisorSharedSecret)
-      .update(`${timestamp}\n${requestId}\n${bodyHash}`)
-      .digest('hex');
+    const sign = (canonical: string) =>
+      createHmac('sha256', config.updates.supervisorSharedSecret).update(canonical).digest('hex');
+    // v2 binds the method and path (ADR-146). v1 keeps a Supervisor that
+    // predates it working while a platform update replaces the API first;
+    // drop it once no supported release verifies v1.
+    const legacySignature = sign(`${timestamp}\n${requestId}\n${bodyHash}`);
+    const signature = sign(`v2\n${method}\n${path}\n${timestamp}\n${requestId}\n${bodyHash}`);
     const response = await fetch(`${config.updates.supervisorUrl.replace(/\/$/, '')}${path}`, {
       method,
       headers: {
         'content-type': 'application/json',
         'x-initpad-timestamp': timestamp,
         'x-initpad-request-id': requestId,
-        'x-initpad-signature': signature,
+        'x-initpad-signature': legacySignature,
+        'x-initpad-signature-v2': signature,
       },
       body: method === 'POST' ? body : undefined,
       redirect: 'error',

@@ -12,4 +12,6 @@ FROM base AS runtime
 RUN useradd --system --uid 10001 app && chown -R app:app /app
 USER app
 EXPOSE 8000
-CMD ["gunicorn", "config.wsgi:application", "-b", "0.0.0.0:8000"]
+# --preload imports the settings once, so all workers share one generated
+# SECRET_KEY when no persistent key is configured.
+CMD ["gunicorn", "--preload", "config.wsgi:application", "-b", "0.0.0.0:8000"]

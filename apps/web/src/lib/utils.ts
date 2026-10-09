@@ -13,12 +13,21 @@ export function scmLink(
   targetUrl: string | null,
   provider: 'gitea' | 'github',
 ): string | undefined {
-  if (!targetUrl) return undefined;
-  if (provider !== 'gitea') return targetUrl;
+  const href = externalHref(targetUrl);
+  if (!href || provider !== 'gitea') return href;
+  const u = new URL(href);
+  return `${u.origin}/user/login?redirect_to=${encodeURIComponent(u.pathname + u.search)}`;
+}
+
+// A link target that came from outside the browser, such as a CI status URL any
+// repository writer can set. Only absolute http(s) addresses become links, so a
+// `javascript:` or `data:` URL never reaches an href.
+export function externalHref(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
   try {
-    const u = new URL(targetUrl);
-    return `${u.origin}/user/login?redirect_to=${encodeURIComponent(u.pathname + u.search)}`;
+    const { protocol } = new URL(value);
+    return protocol === 'https:' || protocol === 'http:' ? value : undefined;
   } catch {
-    return targetUrl;
+    return undefined;
   }
 }

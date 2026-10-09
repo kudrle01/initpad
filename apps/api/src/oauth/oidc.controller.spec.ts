@@ -1,3 +1,4 @@
+import { SessionsService } from '../auth/sessions.service';
 import { OidcController } from './oidc.controller';
 
 function response() {
@@ -37,7 +38,11 @@ describe('OidcController account lifecycle enforcement', () => {
       },
     };
     const res = response();
-    const controller = new OidcController(oidc as never, jwt as never, prisma as never);
+    const controller = new OidcController(
+      oidc as never,
+      new SessionsService(prisma as never, jwt as never),
+      prisma as never,
+    );
 
     await controller.authorize(
       authorizeQuery,
@@ -73,7 +78,11 @@ describe('OidcController account lifecycle enforcement', () => {
       },
     };
     const res = response();
-    const controller = new OidcController(oidc as never, jwt as never, prisma as never);
+    const controller = new OidcController(
+      oidc as never,
+      new SessionsService(prisma as never, jwt as never),
+      prisma as never,
+    );
 
     await controller.authorize(
       authorizeQuery,
@@ -198,5 +207,80 @@ describe('OidcController account lifecycle enforcement', () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ error: 'invalid_token' });
+  });
+
+  it('treats repeated or nested OAuth parameters as a malformed request', async () => {
+    const oidc = { isKnownClient: jest.fn(), issueCode: jest.fn(), validateClient: jest.fn() };
+    const controller = new OidcController(oidc as never, {} as never, {} as never);
+
+    const authorizeRes = response();
+    await controller.authorize(
+      { ...authorizeQuery, client_id: ['gitea', 'other'] },
+      { cookies: {} } as never,
+      authorizeRes as never,
+    );
+    const tokenRes = response();
+    await controller.token(
+      { grant_type: 'authorization_code', code: { $ne: '' } },
+      { headers: {} } as never,
+      tokenRes as never,
+    );
+
+    for (const res of [authorizeRes, tokenRes]) {
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: 'invalid_request' });
+    }
+    expect(oidc.isKnownClient).not.toHaveBeenCalled();
+    expect(oidc.validateClient).not.toHaveBeenCalled();
+  });
+
+  it('answers an unexpected authorize failure without the exception text', async () => {
+    const oidc = {
+      isKnownClient: jest.fn(() => true),
+      isAllowedRedirect: jest.fn(() => true),
+      issueCode: jest.fn(async () => {
+        throw new Error('connect ECONNREFUSED postgres:5432');
+      }),
+    };
+    const jwt = { verify: jest.fn(() => ({ sub: 'u1', ver: 1 })) };
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'u1',
+          active: true,
+          mustChangePassword: false,
+          tokenVersion: 1,
+        })),
+      },
+    };
+    const res = response();
+    const controller = new OidcController(
+      oidc as never,
+      new SessionsService(prisma as never, jwt as never),
+      prisma as never,
+    );
+
+    await controller.authorize(
+      authorizeQuery,
+      { cookies: { initpad_token: 'session' } } as never,
+      res as never,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'server_error' });
+  });
+
+  it('reads form-encoded Basic client credentials split at the first colon', async () => {
+    const oidc = { validateClient: jest.fn(() => false) };
+    const controller = new OidcController(oidc as never, {} as never, {} as never);
+    const header = `Basic ${Buffer.from('gitea:se%3Acret:tail').toString('base64')}`;
+
+    await controller.token(
+      { grant_type: 'authorization_code', code: 'code-1' },
+      { headers: { authorization: header } } as never,
+      response() as never,
+    );
+
+    expect(oidc.validateClient).toHaveBeenCalledWith('gitea', 'se:cret:tail');
   });
 });

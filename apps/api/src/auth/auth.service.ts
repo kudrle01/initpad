@@ -2,12 +2,15 @@ import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   OnModuleInit,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { createHash, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { GiteaService } from '../scm/gitea.service';
 import { RegisterDto } from './dto/register.dto';
@@ -18,6 +21,9 @@ import { generateToken, hashToken } from '../common/token';
 import { config } from '../config';
 import { accountIdentifierEquals, normalizeAccountIdentifier } from '../common/account-identifier';
 import { MailDeliveryService, type MailKind } from '../mail/mail-delivery.service';
+import { AuditEventsService, type RecordAuditEvent } from '../audit/audit-events.service';
+import { SessionsService, type SessionClient } from './sessions.service';
+import { repositoryRef } from '../scm/scm-provider';
 
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -57,10 +63,72 @@ export class AuthService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwt: JwtService,
+    jwt: JwtService,
     private readonly gitea: GiteaService,
     private readonly mail?: MailDeliveryService,
+    // Nest always injects the audit sink or fails at startup; the default only
+    // serves unit tests that construct the service directly.
+    @Inject(AuditEventsService)
+    private readonly audit: Pick<AuditEventsService, 'record'> = {
+      record: () => Promise.resolve(),
+    },
+    @Inject(SessionsService)
+    private readonly sessions: Pick<SessionsService, 'issue' | 'revoke'> = new SessionsService(
+      prisma,
+      jwt,
+    ),
   ) {}
+
+  /** Platform-level account event (ADR-142); `tx` keeps it with its change. */
+  private accountEvent(
+    action: string,
+    account: { id: string; username: string } | null,
+    event: Pick<RecordAuditEvent, 'actorUserId' | 'anonymous' | 'outcome' | 'details'> = {},
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    return this.audit.record(
+      {
+        workspaceId: null,
+        action,
+        resourceType: 'user',
+        resourceId: account?.id ?? null,
+        resourceName: account?.username ?? null,
+        ...event,
+      },
+      tx,
+    );
+  }
+
+  /** Records a sign-in completed outside password authentication. */
+  recordSignIn(user: { id: string; username: string }, method: 'github'): Promise<void> {
+    return this.accountEvent('auth.signed_in', user, {
+      actorUserId: user.id,
+      details: { method },
+    });
+  }
+
+  /**
+   * Ends sessions of the signed-in account from the session overview
+   * (ADR-147): one other session, or every session except the current one.
+   */
+  async endSessions(
+    userId: string,
+    filter: { id: string } | { exceptId: string | null },
+  ): Promise<{ ended: number }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true },
+    });
+    if (!user) throw new UnauthorizedException();
+    const ended = await this.sessions.revoke(userId, filter);
+    if (ended > 0) {
+      await this.accountEvent('auth.sessions_ended', user, {
+        actorUserId: userId,
+        details: { sessions: ended },
+      });
+    }
+    return { ended };
+  }
 
   /**
    * Managed Gitea accounts are authenticated through InitPad OIDC. Rotate any
@@ -107,12 +175,48 @@ export class AuthService implements OnModuleInit {
     return config.auth.registrationMode;
   }
 
+  /**
+   * The first account becomes the instance administrator. Creating it needs
+   * the bootstrap token printed by install.sh, so a freshly exposed server
+   * cannot be claimed by whoever registers first (ADR-136). Local development
+   * without a configured token keeps the plain first-user flow.
+   */
+  async bootstrapRequired(): Promise<boolean> {
+    if (config.edition === 'saas' || !this.bootstrapTokenEnforced()) return false;
+    return (await this.prisma.user.count()) === 0;
+  }
+
+  private bootstrapTokenEnforced(): boolean {
+    return Boolean(config.auth.bootstrapToken) || process.env.NODE_ENV === 'production';
+  }
+
+  private assertBootstrapToken(candidate: string | undefined): void {
+    const expected = config.auth.bootstrapToken;
+    if (!expected) {
+      throw new ForbiddenException(
+        'The first administrator needs a setup token. Set INITPAD_BOOTSTRAP_TOKEN (install.sh generates it) and restart InitPad.',
+      );
+    }
+    const expectedDigest = createHash('sha256').update(expected).digest();
+    const candidateDigest = createHash('sha256')
+      .update(candidate?.trim() ?? '')
+      .digest();
+    if (!timingSafeEqual(expectedDigest, candidateDigest)) {
+      throw new ForbiddenException(
+        'The setup token is not valid. Use the token printed at the end of install.sh.',
+      );
+    }
+  }
+
   emailDeliveryEnabled(): boolean {
     return this.mail?.isEnabled() ?? false;
   }
 
   /** Managed registration: provisions a Gitea account + token, persists the user. */
-  async register(dto: RegisterDto): Promise<{ token: string; user: SessionUser }> {
+  async register(
+    dto: RegisterDto,
+    client: SessionClient = {},
+  ): Promise<{ token: string; user: SessionUser }> {
     let release!: () => void;
     const previous = this.registrationLock;
     this.registrationLock = new Promise<void>((resolve) => {
@@ -120,19 +224,25 @@ export class AuthService implements OnModuleInit {
     });
     await previous;
     try {
-      return await this.registerUnlocked(dto);
+      return await this.registerUnlocked(dto, client);
     } finally {
       release();
     }
   }
 
-  private async registerUnlocked(dto: RegisterDto): Promise<{ token: string; user: SessionUser }> {
+  private async registerUnlocked(
+    dto: RegisterDto,
+    client: SessionClient,
+  ): Promise<{ token: string; user: SessionUser }> {
     if (!(await this.registrationAvailable())) {
       throw new ForbiddenException(
         'Account registration is closed. Ask the platform administrator for access.',
       );
     }
     const userCount = await this.prisma.user.count();
+    if (userCount === 0 && this.bootstrapTokenEnforced()) {
+      this.assertBootstrapToken(dto.bootstrapToken);
+    }
     const user = await this.provisionManagedUser({
       username: dto.username,
       email: dto.email,
@@ -140,7 +250,11 @@ export class AuthService implements OnModuleInit {
       // The very first account bootstraps the instance administrator.
       platformRole: userCount === 0 ? 'admin' : 'user',
     });
-    return { token: this.signToken(user), user: this.toSession(user) };
+    await this.accountEvent('auth.registered', user, {
+      actorUserId: user.id,
+      details: { administrator: userCount === 0 },
+    });
+    return { token: await this.sessions.issue(user, client), user: this.toSession(user) };
   }
 
   /**
@@ -179,7 +293,7 @@ export class AuthService implements OnModuleInit {
         password: input.password,
       });
       provisionedUsername = giteaUser.login;
-      const accessToken = await this.gitea.createUserToken(username, input.password);
+      const accessToken = await this.gitea.createCloneToken(username, input.password);
       await this.gitea.randomizeUserPassword(username);
       return await this.prisma.user.create({
         data: {
@@ -191,6 +305,7 @@ export class AuthService implements OnModuleInit {
           mustChangePassword: input.mustChangePassword ?? false,
           passwordHash: await hashPassword(input.password),
           accessToken: encryptSecret(accessToken),
+          giteaCredentialsScopedAt: new Date(),
           memberships: {
             create: {
               role: 'owner',
@@ -299,7 +414,10 @@ export class AuthService implements OnModuleInit {
   }
 
   /** Sign-in with a platform-native account (password verified locally). */
-  async login(dto: LoginDto): Promise<{ token: string; user: SessionUser }> {
+  async login(
+    dto: LoginDto,
+    client: SessionClient = {},
+  ): Promise<{ token: string; user: SessionUser }> {
     if (config.edition === 'saas') {
       throw new ForbiddenException('Password sign-in is disabled in the SaaS edition');
     }
@@ -317,12 +435,27 @@ export class AuthService implements OnModuleInit {
       user?.passwordHash || DUMMY_PASSWORD_HASH,
     );
     if (!user || !user.passwordHash || !passwordMatches) {
+      // The typed identifier is not stored: it may be a mistyped password.
+      await this.accountEvent('auth.sign_in_failed', user, {
+        anonymous: true,
+        outcome: 'failed',
+        details: { reason: user ? 'invalid_password' : 'unknown_account' },
+      });
       throw new UnauthorizedException('Invalid username or password');
     }
     if (user.active === false) {
+      await this.accountEvent('auth.sign_in_failed', user, {
+        anonymous: true,
+        outcome: 'failed',
+        details: { reason: 'deactivated' },
+      });
       throw new UnauthorizedException('This account has been deactivated');
     }
-    return { token: this.signToken(user), user: this.toSession(user) };
+    await this.accountEvent('auth.signed_in', user, {
+      actorUserId: user.id,
+      details: { method: 'password' },
+    });
+    return { token: await this.sessions.issue(user, client), user: this.toSession(user) };
   }
 
   /**
@@ -334,6 +467,7 @@ export class AuthService implements OnModuleInit {
     userId: string,
     currentPassword: string,
     newPassword: string,
+    client: SessionClient = {},
   ): Promise<{ token: string; user: SessionUser }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (
@@ -346,15 +480,16 @@ export class AuthService implements OnModuleInit {
     if (await verifyPassword(newPassword, user.passwordHash)) {
       throw new BadRequestException('New password must differ from the current one');
     }
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        passwordHash: await hashPassword(newPassword),
-        mustChangePassword: false,
-        tokenVersion: { increment: 1 },
-      },
+    const passwordHash = await hashPassword(newPassword);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash, mustChangePassword: false, tokenVersion: { increment: 1 } },
+      });
+      await this.accountEvent('auth.password_changed', changed, { actorUserId: userId }, tx);
+      return changed;
     });
-    return { token: this.signToken(updated), user: this.toSession(updated) };
+    return { token: await this.sessions.issue(updated, client), user: this.toSession(updated) };
   }
 
   /** Issues an e-mail verification link without exposing it when SMTP is configured. */
@@ -387,9 +522,12 @@ export class AuthService implements OnModuleInit {
 
   async verifyEmail(token: string): Promise<void> {
     const record = await this.consumeAuthToken(token, 'email_verify');
-    await this.prisma.user.update({
-      where: { id: record.userId },
-      data: { emailVerifiedAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: record.userId },
+        data: { emailVerifiedAt: new Date() },
+      });
+      await this.accountEvent('auth.email_verified', user, { actorUserId: user.id }, tx);
     });
   }
 
@@ -409,20 +547,69 @@ export class AuthService implements OnModuleInit {
     });
     if (!user || !user.passwordHash || !user.email || !this.mail?.isEnabled()) return;
     await this.issueAuthLink(user, 'password_reset', PASSWORD_RESET_TTL_MS, 'reset-password');
+    await this.accountEvent('auth.password_reset_requested', user, { anonymous: true });
     this.logger.log({ event: 'auth.password_reset.queued', userId: user.id });
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
-    const record = await this.consumeAuthToken(token, 'password_reset');
-    await this.prisma.user.update({
-      where: { id: record.userId },
-      data: {
-        passwordHash: await hashPassword(newPassword),
-        mustChangePassword: false,
-        // A reset invalidates every existing session.
-        tokenVersion: { increment: 1 },
-      },
+    const record = await this.findUsableAuthToken(token, 'password_reset');
+    // A reset is how an account is recovered after a compromise. The Git
+    // token obtainable through an old session must stop working first; the
+    // link stays unused if Gitea cannot confirm the revocation.
+    await this.revokeGitCredential(record.userId);
+    await this.claimAuthToken(record);
+    const passwordHash = await hashPassword(newPassword);
+    await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: record.userId },
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+          // A reset invalidates every existing session.
+          tokenVersion: { increment: 1 },
+        },
+      });
+      await this.accountEvent('auth.password_reset', user, { actorUserId: user.id }, tx);
     });
+  }
+
+  /**
+   * Revokes every Gitea token of the account and forgets its clone token; the
+   * user receives a new one the next time Git access is requested (ADR-134).
+   * Registry tokens of the account's repositories are reissued (ADR-148).
+   */
+  async revokeGitCredential(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true, giteaId: true },
+    });
+    if (!user || user.giteaId == null) return;
+    try {
+      const projects = await this.prisma.project.findMany({
+        where: { scmProvider: 'gitea', scmOwner: user.username, scmRepositoryId: { not: null } },
+        select: {
+          scmProvider: true,
+          scmRepositoryId: true,
+          scmOwner: true,
+          scmRepositoryName: true,
+          scmFullName: true,
+          scmDefaultBranch: true,
+          scmInstallationId: true,
+          repoUrl: true,
+        },
+      });
+      await this.gitea.revokeAccountCredentials(user.username, projects.map(repositoryRef));
+    } catch (error) {
+      this.logger.warn({
+        event: 'auth.git_credential.revocation_failed',
+        userId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      throw new ServiceUnavailableException(
+        'The Git service is temporarily unavailable. Try again in a few minutes.',
+      );
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { accessToken: '' } });
   }
 
   /**
@@ -445,22 +632,34 @@ export class AuthService implements OnModuleInit {
   async activate(
     token: string,
     newPassword: string,
+    client: SessionClient = {},
   ): Promise<{ token: string; user: SessionUser }> {
     const record = await this.consumeAuthToken(token, 'activation');
-    const updated = await this.prisma.user.update({
-      where: { id: record.userId },
-      data: {
-        passwordHash: await hashPassword(newPassword),
-        mustChangePassword: false,
-        // A fresh generation; any earlier temporary credential is invalidated.
-        tokenVersion: { increment: 1 },
-      },
+    const passwordHash = await hashPassword(newPassword);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: record.userId },
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+          // A fresh generation; any earlier temporary credential is invalidated.
+          tokenVersion: { increment: 1 },
+        },
+      });
+      await this.accountEvent('auth.account_activated', user, { actorUserId: user.id }, tx);
+      return user;
     });
-    return this.createSession(updated);
+    return this.createSession(updated, client);
   }
 
   private frontendBase(): string {
     return config.auth.frontendUrl.replace(/\/+$/, '');
+  }
+
+  // The token travels in the fragment, which browsers never send to a server,
+  // so it stays out of proxy and edge access logs (ADR-143).
+  private authLinkUrl(route: string, token: string): string {
+    return `${this.frontendBase()}/${route}#${token}`;
   }
 
   private async issueAuthLink(
@@ -482,7 +681,7 @@ export class AuthService implements OnModuleInit {
           kind,
           recipient: user.email!,
           displayName: user.name || user.username,
-          url: `${this.frontendBase()}/${route}/${token}`,
+          url: this.authLinkUrl(route, token),
         });
       }
       return token;
@@ -491,7 +690,7 @@ export class AuthService implements OnModuleInit {
       this.mail!.scheduleDelivery();
       return { delivery: 'email' };
     }
-    return { delivery: 'manual', url: `${this.frontendBase()}/${route}/${token}` };
+    return { delivery: 'manual', url: this.authLinkUrl(route, token) };
   }
 
   private async issueAuthToken(
@@ -513,6 +712,15 @@ export class AuthService implements OnModuleInit {
   }
 
   private async consumeAuthToken(token: string, kind: string): Promise<{ userId: string }> {
+    const record = await this.findUsableAuthToken(token, kind);
+    await this.claimAuthToken(record);
+    return { userId: record.userId };
+  }
+
+  private async findUsableAuthToken(
+    token: string,
+    kind: string,
+  ): Promise<{ id: string; kind: string; userId: string }> {
     if (!token) throw new BadRequestException('This link is invalid or has expired');
     const record = await this.prisma.authToken.findUnique({
       where: { tokenHash: hashToken(token) },
@@ -525,12 +733,16 @@ export class AuthService implements OnModuleInit {
     ) {
       throw new BadRequestException('This link is invalid or has expired');
     }
-    // Claim the token atomically. Two concurrent requests may both read the
-    // row above, but exactly one is allowed to transition it from unused.
+    return record;
+  }
+
+  // Claim the token atomically. Two concurrent requests may both read the
+  // row, but exactly one is allowed to transition it from unused.
+  private async claimAuthToken(record: { id: string; kind: string }): Promise<void> {
     const claimed = await this.prisma.authToken.updateMany({
       where: {
         id: record.id,
-        kind,
+        kind: record.kind,
         usedAt: null,
         expiresAt: { gte: new Date() },
       },
@@ -539,26 +751,24 @@ export class AuthService implements OnModuleInit {
     if (claimed.count !== 1) {
       throw new BadRequestException('This link is invalid or has expired');
     }
-    return { userId: record.userId };
   }
 
   /** Issues a signed session for an already-provisioned user (e.g. GitHub OAuth). */
-  createSession(user: {
-    id: string;
-    username: string;
-    name: string | null;
-    email: string | null;
-    avatarUrl: string | null;
-    platformRole: string;
-    tokenVersion?: number;
-    mustChangePassword?: boolean;
-    emailVerifiedAt?: Date | null;
-  }): { token: string; user: SessionUser } {
-    return { token: this.signToken(user), user: this.toSession(user) };
-  }
-
-  private signToken(user: { id: string; tokenVersion?: number }): string {
-    return this.jwt.sign({ sub: user.id, ver: user.tokenVersion ?? 0 });
+  async createSession(
+    user: {
+      id: string;
+      username: string;
+      name: string | null;
+      email: string | null;
+      avatarUrl: string | null;
+      platformRole: string;
+      tokenVersion?: number;
+      mustChangePassword?: boolean;
+      emailVerifiedAt?: Date | null;
+    },
+    client: SessionClient = {},
+  ): Promise<{ token: string; user: SessionUser }> {
+    return { token: await this.sessions.issue(user, client), user: this.toSession(user) };
   }
 
   private toSession(user: {

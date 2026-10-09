@@ -171,7 +171,8 @@ async function main() {
         try {
           const response = await fetch(`${origin}${path}`, {
             headers: {
-              cookie: `initpad_token=${token}`,
+              // The API reads only the name for its profile (ADR-137).
+              cookie: `__Host-initpad_token=${token}; initpad_token=${token}`,
               'x-workspace-id': ids.workspace,
               'cache-control': 'no-store',
             },

@@ -22,6 +22,7 @@ import {
   collectScmPages,
   findInScmPages,
   SCM_DOWNLOAD_TIMEOUT_MS,
+  isScmNotFound,
   scmFetch,
   scmStatusError,
 } from './scm-http';
@@ -34,6 +35,25 @@ const PLATFORM_SECRETS = [
   'INITPAD_REGISTRY_USER',
   'INITPAD_REGISTRY_PASSWORD',
 ];
+
+// InitPad-managed Gitea tokens use fixed names, so a reissue replaces the
+// previous credential instead of accumulating valid ones; Gitea rejects a
+// duplicate name per account. Each token carries only what its consumer needs
+// (ADR-134): the user's Git client clones and pushes code, while untrusted CI
+// jobs, which can read every repository secret, may only publish packages.
+const CLONE_TOKEN_NAME = 'initpad-git';
+const CLONE_TOKEN_SCOPES = ['write:repository'];
+const REGISTRY_TOKEN_SCOPES = ['write:package'];
+// Before ADR-134 every issuance created another full-scope token.
+const LEGACY_TOKEN_PREFIX = 'initpad-platform-';
+const TOKEN_PAGE_SIZE = 50;
+
+export function registryTokenName(repository: ScmRepositoryRef): string {
+  if (!repository.repositoryId) {
+    throw new Error(`Repository identity of '${repository.fullName}' is not known yet`);
+  }
+  return `initpad-registry-${repository.repositoryId}`;
+}
 
 export type { RepoArchive } from './scm-provider';
 // Backwards-compatible alias: the Gitea actor is just an ScmActor.
@@ -49,6 +69,7 @@ export type GiteaActor = ScmActor;
 @Injectable()
 export class GiteaService implements OnModuleInit, ScmProvider {
   private readonly logger = new Logger('GiteaService');
+  private readonly accountOperations = new Map<string, Promise<void>>();
 
   private request(
     input: string | URL | Request,
@@ -209,33 +230,11 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     }).catch(() => undefined);
   }
 
-  // Creates the user's personal access token (Basic auth with their
-  // password). The platform stores it and can act on the user's behalf.
-  async createUserToken(username: string, password: string): Promise<string> {
-    const url = config.gitea.internalUrl;
+  // Creates the user's Git clone token during registration, while the
+  // account's own password is still known. It can clone and push code only.
+  async createCloneToken(username: string, password: string): Promise<string> {
     const basic = Buffer.from(`${username}:${password}`).toString('base64');
-    const res = await this.request(`${url}/api/v1/users/${username}/tokens`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Basic ${basic}` },
-      body: JSON.stringify({
-        name: `initpad-platform-${Date.now()}`,
-        scopes: [
-          'write:repository',
-          'read:repository',
-          'write:package',
-          'read:package',
-          'write:user',
-          'read:user',
-          'write:organization',
-          'read:organization',
-        ],
-      }),
-    });
-    if (!res.ok) {
-      throw scmStatusError('Gitea', 'create user token', res, 'Gitea token creation failed');
-    }
-    const data = (await res.json()) as { sha1: string };
-    return data.sha1;
+    return this.replaceToken(username, `Basic ${basic}`, CLONE_TOKEN_NAME, CLONE_TOKEN_SCOPES);
   }
 
   /**
@@ -245,10 +244,29 @@ export class GiteaService implements OnModuleInit, ScmProvider {
    * after a password reset or forced account lifecycle change.
    */
   async randomizeUserPassword(username: string): Promise<void> {
+    await this.serializeAccount(username, () => this.replaceLocalPassword(username));
+  }
+
+  private replaceLocalPassword(username: string): Promise<void> {
+    return this.setLocalPassword(
+      username,
+      `Ip1!${randomBytes(32).toString('base64url')}`,
+      'randomize local password',
+      'Could not randomize the local Gitea password',
+    );
+  }
+
+  private async setLocalPassword(
+    username: string,
+    password: string,
+    operation: string,
+    failureMessage: string,
+  ): Promise<void> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     if (!url || !adminToken) throw new Error('Gitea admin is not configured');
-    const password = `Ip1!${randomBytes(32).toString('base64url')}`;
+    // Gitea's EditUserOption requires login_name + source_id (422 otherwise).
+    // source_id 0 = local account; login_name of a local account = username.
     const res = await this.request(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
@@ -259,54 +277,166 @@ export class GiteaService implements OnModuleInit, ScmProvider {
         must_change_password: false,
       }),
     });
-    if (!res.ok) {
-      throw scmStatusError(
-        'Gitea',
-        'randomize local password',
-        res,
-        'Could not randomize the local Gitea password',
-      );
+    if (!res.ok) throw scmStatusError('Gitea', operation, res, failureMessage);
+  }
+
+  // Replaces the user's Git clone token. Any previously issued clone token
+  // stops working, which is also how a compromised one is revoked.
+  async issueCloneToken(username: string): Promise<string> {
+    return this.withTokenAuthority(username, (authorization) =>
+      this.replaceToken(username, authorization, CLONE_TOKEN_NAME, CLONE_TOKEN_SCOPES),
+    );
+  }
+
+  // Revokes every full-scope token issued before ADR-134. Callers must first
+  // move each repository secret that may still hold one to a scoped token.
+  async revokeLegacyCredentials(username: string): Promise<void> {
+    await this.withTokenAuthority(username, async (authorization) => {
+      for (const token of await this.listTokens(username, authorization)) {
+        if (token.name.startsWith(LEGACY_TOKEN_PREFIX)) {
+          await this.deleteToken(username, authorization, String(token.id));
+        }
+      }
+    });
+  }
+
+  /**
+   * Account recovery (ADR-148): deletes every access token of the account,
+   * including ones its owner or an intruder created in Gitea itself, then
+   * issues fresh registry tokens for the account's repositories so their CI
+   * keeps publishing. A token taken while the account was compromised stops
+   * working, whatever its name.
+   */
+  async revokeAccountCredentials(
+    username: string,
+    repositories: ScmRepositoryRef[],
+  ): Promise<void> {
+    try {
+      await this.withTokenAuthority(username, async (authorization) => {
+        for (const token of await this.listTokens(username, authorization)) {
+          await this.deleteToken(username, authorization, String(token.id));
+        }
+      });
+    } catch (error) {
+      // An account Gitea no longer knows has no token left to revoke.
+      if (isScmNotFound(error)) return;
+      throw error;
+    }
+    for (const repository of repositories) {
+      try {
+        await this.rotateRegistryCredential(repository);
+      } catch (error) {
+        // A repository deleted in Gitea needs no registry token.
+        if (!isScmNotFound(error)) throw error;
+      }
     }
   }
 
-  // Issues a personal access token (PAT) for git-over-HTTP cloning. Gitea
-  // only creates tokens through Basic auth (username + password) — not via
-  // the admin token or Sudo. SSO users don't know their Gitea password, so
-  // the platform (as Gitea admin) sets a temporary random password and uses
-  // it to create the token. In this model users sign in to Gitea through the
-  // platform (SSO/OIDC), so the Gitea password is otherwise unused and
-  // resetting it breaks nothing.
-  async issueCloneToken(username: string): Promise<string> {
-    const url = config.gitea.internalUrl;
-    const { adminToken } = config.gitea;
-    if (!url || !adminToken) {
-      throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
-    }
-    // Strong password (upper/lower/digit/special) to satisfy complexity checks.
-    const tempPassword = `Ip1!${randomBytes(20).toString('hex')}`;
-    // Gitea's EditUserOption requires login_name + source_id (422 otherwise).
-    // source_id 0 = local account; login_name of a local account = username.
-    const edit = await this.request(`${url}/api/v1/admin/users/${encodeURIComponent(username)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `token ${adminToken}` },
-      body: JSON.stringify({
-        login_name: username,
-        source_id: 0,
-        password: tempPassword,
-        must_change_password: false,
-      }),
+  private listTokens(
+    username: string,
+    authorization: string,
+  ): Promise<Array<{ id: number; name: string }>> {
+    return collectScmPages<{ id: number; name: string }>({
+      provider: 'Gitea',
+      operation: 'list access tokens',
+      pageSize: TOKEN_PAGE_SIZE,
+      load: async (page) => {
+        const res = await this.request(
+          `${config.gitea.internalUrl}/api/v1/users/${encodeURIComponent(username)}/tokens?page=${page}&limit=${TOKEN_PAGE_SIZE}`,
+          { headers: { Authorization: authorization } },
+        );
+        if (!res.ok) {
+          throw scmStatusError('Gitea', 'list access tokens', res, 'Could not list Gitea tokens');
+        }
+        const items = (await res.json()) as Array<{ id: number; name: string }>;
+        if (!Array.isArray(items)) throw new Error('Gitea returned an invalid token list');
+        return items;
+      },
     });
-    if (!edit.ok) {
-      throw scmStatusError(
-        'Gitea',
-        'prepare clone token',
-        edit,
-        'Could not provision a git token while setting the temporary password',
+  }
+
+  /**
+   * Gitea manages access tokens only with Basic authentication of the owning
+   * account; neither the admin token nor Sudo is accepted. Managed accounts
+   * sign in through InitPad OIDC, so the platform sets an unrecoverable
+   * temporary password, performs the token operation and randomizes the
+   * password again.
+   */
+  private withTokenAuthority<T>(
+    username: string,
+    run: (authorization: string) => Promise<T>,
+  ): Promise<T> {
+    return this.serializeAccount(username, async () => {
+      // Strong password (upper/lower/digit/special) to satisfy complexity checks.
+      const temporaryPassword = `Ip1!${randomBytes(20).toString('hex')}`;
+      await this.setLocalPassword(
+        username,
+        temporaryPassword,
+        'prepare token management',
+        'Could not prepare Gitea token management for the account',
       );
+      try {
+        const basic = Buffer.from(`${username}:${temporaryPassword}`).toString('base64');
+        return await run(`Basic ${basic}`);
+      } finally {
+        // The temporary value is known only to this process; failing to
+        // replace it must not hide the outcome of the token operation itself.
+        await this.replaceLocalPassword(username).catch((error) =>
+          this.logger.warn(
+            `Could not randomize the temporary Gitea password for ${username}: ${(error as Error).message}`,
+          ),
+        );
+      }
+    });
+  }
+
+  // Password changes of one account are serialized so concurrent token
+  // operations cannot overwrite each other's temporary password.
+  private serializeAccount<T>(username: string, run: () => Promise<T>): Promise<T> {
+    const previous = this.accountOperations.get(username) ?? Promise.resolve();
+    const current = previous.then(run);
+    const settled = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.accountOperations.set(username, settled);
+    void settled.then(() => {
+      if (this.accountOperations.get(username) === settled) this.accountOperations.delete(username);
+    });
+    return current;
+  }
+
+  private async replaceToken(
+    username: string,
+    authorization: string,
+    name: string,
+    scopes: string[],
+  ): Promise<string> {
+    await this.deleteToken(username, authorization, name);
+    const res = await this.request(
+      `${config.gitea.internalUrl}/api/v1/users/${encodeURIComponent(username)}/tokens`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authorization },
+        body: JSON.stringify({ name, scopes }),
+      },
+    );
+    if (!res.ok) {
+      throw scmStatusError('Gitea', 'create access token', res, 'Gitea token creation failed');
     }
-    const token = await this.createUserToken(username, tempPassword);
-    await this.randomizeUserPassword(username);
-    return token;
+    const data = (await res.json()) as { sha1?: string };
+    if (!data.sha1) throw new Error('Gitea returned no access token');
+    return data.sha1;
+  }
+
+  private async deleteToken(username: string, authorization: string, name: string): Promise<void> {
+    const res = await this.request(
+      `${config.gitea.internalUrl}/api/v1/users/${encodeURIComponent(username)}/tokens/${encodeURIComponent(name)}`,
+      { method: 'DELETE', headers: { Authorization: authorization } },
+    );
+    if (!res.ok && res.status !== 404) {
+      throw scmStatusError('Gitea', 'revoke access token', res, 'Could not revoke a Gitea token');
+    }
   }
 
   // Deletes all versions of the project's container package (images in the
@@ -359,11 +489,17 @@ export class GiteaService implements OnModuleInit, ScmProvider {
         'Could not delete the Gitea repository',
       );
     }
+    // The secret disappeared with the repository; its token must not outlive it.
+    await this.revokeRegistryCredential(repository).catch((error) =>
+      this.logger.warn(
+        `Could not revoke the registry token of ${repository.fullName}: ${(error as Error).message}`,
+      ),
+    );
   }
 
   // Preserves source code while severing the repository's trust relationship
-  // with a deleted InitPad project. In particular, the owner package token
-  // must not remain available to future Actions runs after the project-scoped
+  // with a deleted InitPad project. In particular, the registry token must not
+  // remain available to future Actions runs after the project-scoped
   // deploy-token hash and authorization record are gone.
   async detachRepo(repository: ScmRepositoryRef, _actor: GiteaActor): Promise<void> {
     this.assertProvider(repository);
@@ -408,6 +544,39 @@ export class GiteaService implements OnModuleInit, ScmProvider {
           `Could not remove Actions secret '${secret}'`,
         );
       }
+    }
+    await this.revokeRegistryCredential(repository);
+  }
+
+  /**
+   * Replaces the package-only token that the repository's CI uses to publish
+   * its image. Call it when the repository is set up and whenever someone who
+   * could read its Actions secrets loses write access.
+   */
+  async rotateRegistryCredential(repository: ScmRepositoryRef): Promise<void> {
+    this.assertProvider(repository);
+    const name = registryTokenName(repository);
+    const token = await this.withTokenAuthority(repository.owner, (authorization) =>
+      this.replaceToken(repository.owner, authorization, name, REGISTRY_TOKEN_SCOPES),
+    );
+    await this.setRepoSecret(
+      repository.owner,
+      repository.name,
+      'INITPAD_REGISTRY_USER',
+      repository.owner,
+    );
+    await this.setRepoSecret(repository.owner, repository.name, 'INITPAD_REGISTRY_PASSWORD', token);
+  }
+
+  private async revokeRegistryCredential(repository: ScmRepositoryRef): Promise<void> {
+    if (!repository.repositoryId) return;
+    const name = registryTokenName(repository);
+    try {
+      await this.withTokenAuthority(repository.owner, (authorization) =>
+        this.deleteToken(repository.owner, authorization, name),
+      );
+    } catch (error) {
+      if (!isScmNotFound(error)) throw error;
     }
   }
 
@@ -841,22 +1010,15 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       body: JSON.stringify({ has_actions: true }),
     }).catch(() => undefined);
 
-    await this.configureRepoSecrets(repository, actor.token, ciDeployToken);
+    await this.configureRepoSecrets(repository, ciDeployToken);
     return repository;
   }
 
-  // Each repository receives its own deploy token and its owner's package
-  // credentials. The Gitea administrator token never enters an untrusted CI
-  // job. Existing projects are migrated through this same method on startup.
-  async configureRepoSecrets(
-    repository: ScmRepositoryRef,
-    ownerToken: string,
-    ciDeployToken: string,
-  ): Promise<void> {
+  // Each repository receives its own deploy token and a package-only registry
+  // token. Neither the Gitea administrator token nor the owner's Git token
+  // ever enters an untrusted CI job (ADR-134).
+  async configureRepoSecrets(repository: ScmRepositoryRef, ciDeployToken: string): Promise<void> {
     this.assertProvider(repository);
-    if (!ownerToken) {
-      throw new Error(`No repository/package token available for '${repository.owner}'`);
-    }
     await this.setRepoSecret(
       repository.owner,
       repository.name,
@@ -864,18 +1026,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       ciDeployToken,
     );
     await this.configureRepoRuntimeSecrets(repository);
-    await this.setRepoSecret(
-      repository.owner,
-      repository.name,
-      'INITPAD_REGISTRY_USER',
-      repository.owner,
-    );
-    await this.setRepoSecret(
-      repository.owner,
-      repository.name,
-      'INITPAD_REGISTRY_PASSWORD',
-      ownerToken,
-    );
+    await this.rotateRegistryCredential(repository);
   }
 
   // Reconciled on every API start because these addresses are configuration,

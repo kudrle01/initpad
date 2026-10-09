@@ -1,25 +1,36 @@
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/supervisor/package.json apps/supervisor/
 RUN npm ci --workspace @initpad/supervisor --include-workspace-root=false
 COPY apps/supervisor apps/supervisor
-RUN npm run build --workspace @initpad/supervisor
+# Tests compile next to the code they cover; the image ships only the runtime.
+RUN npm run build --workspace @initpad/supervisor \
+    && find apps/supervisor/dist -name '*.test.js*' -delete
 
-FROM docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c AS docker-cli
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS production-dependencies
+WORKDIR /repo
+COPY package.json package-lock.json ./
+COPY apps/supervisor/package.json apps/supervisor/
+RUN npm ci --omit=dev --workspace @initpad/supervisor --include-workspace-root=false
 
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+FROM docker:29.8.0-cli@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66 AS docker-cli
+
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 LABEL org.opencontainers.image.title="InitPad Supervisor"
 LABEL org.opencontainers.image.description="Typed, signed and health-gated self-hosted updates"
 LABEL org.opencontainers.image.version="0.2.16"
-WORKDIR /app
+# Installed packages take the fixes Alpine published after the base image
+# (ADR-144). npm, npx, corepack and yarn are build tools with dependencies of
+# their own; the runtime never calls them, so the image does not ship them.
+RUN apk upgrade --no-cache \
+    && rm -rf /usr/local/lib/node_modules /opt/yarn-* \
+        /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+        /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
-COPY package.json package-lock.json ./
-COPY apps/supervisor/package.json apps/supervisor/
-RUN npm ci --omit=dev --workspace @initpad/supervisor --include-workspace-root=false \
-    && npm cache clean --force
-COPY --from=build /repo/apps/supervisor/dist apps/supervisor/dist
+COPY --from=production-dependencies /repo /app
+COPY --from=build /repo/apps/supervisor/dist /app/apps/supervisor/dist
 WORKDIR /app/apps/supervisor
 USER root
 EXPOSE 7070

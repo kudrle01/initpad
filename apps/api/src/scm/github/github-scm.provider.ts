@@ -799,7 +799,7 @@ export class GitHubScmProvider implements ScmProvider {
 
     try {
       // Secrets must exist before the first push triggers GitHub Actions.
-      await this.configureRepoSecrets(repository, '', ciDeployToken);
+      await this.configureRepoSecrets(repository, ciDeployToken);
       const pushToken = (
         await this.installations.tokenForBinding(installation.id, {
           permissions: WRITE_SCAFFOLD,
@@ -818,11 +818,7 @@ export class GitHubScmProvider implements ScmProvider {
     }
   }
 
-  async configureRepoSecrets(
-    repository: ScmRepositoryRef,
-    _ownerToken: string,
-    ciDeployToken: string,
-  ): Promise<void> {
+  async configureRepoSecrets(repository: ScmRepositoryRef, ciDeployToken: string): Promise<void> {
     this.assertProvider(repository);
     const platformUrl = this.publicCiUrl();
     await this.setRepoSecrets(repository, {

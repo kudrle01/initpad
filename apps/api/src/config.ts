@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'path';
+import { parseSharedNetworks } from './auth/shared-networks';
 import { builtInPublicHost } from './common/public-url';
 
 const configuredPublicUrl =
@@ -35,9 +36,10 @@ const rawSmtpRequireTls = process.env.INITPAD_SMTP_REQUIRE_TLS;
 
 // Registration policy for the self-hosted edition (ADR-040). Two modes: `open`
 // is normal self-service registration (public deployment); `admin-provisioned`
-// means only the instance admin creates accounts (private deployment). A
-// brand-new instance always allows the very first account to bootstrap its
-// administrator, regardless of the policy. Historical `invite-only`/`first-user`
+// means only the instance admin creates accounts (private deployment) and is
+// the default (ADR-136). A brand-new instance always allows the very first
+// account to bootstrap its administrator, regardless of the policy, but only
+// with the installer's bootstrap token. Historical `invite-only`/`first-user`
 // /`closed` values keep working as aliases for `admin-provisioned`.
 export const REGISTRATION_MODES = ['open', 'admin-provisioned'] as const;
 export type RegistrationMode = (typeof REGISTRATION_MODES)[number];
@@ -46,10 +48,10 @@ const LEGACY_REGISTRATION_ALIASES: Record<string, RegistrationMode> = {
   'first-user': 'admin-provisioned',
   closed: 'admin-provisioned',
 };
-const rawRegistrationMode = process.env.INITPAD_REGISTRATION_MODE || 'open';
+const rawRegistrationMode = process.env.INITPAD_REGISTRATION_MODE || 'admin-provisioned';
 function normalizeRegistrationMode(raw: string): RegistrationMode {
   if ((REGISTRATION_MODES as readonly string[]).includes(raw)) return raw as RegistrationMode;
-  return LEGACY_REGISTRATION_ALIASES[raw] ?? 'open';
+  return LEGACY_REGISTRATION_ALIASES[raw] ?? 'admin-provisioned';
 }
 
 // Host the API itself uses to reach ports published on the Docker host
@@ -66,6 +68,26 @@ export const config = {
     // a security input for rate limiting, so this must match the real topology
     // instead of trusting an arbitrary X-Forwarded-For chain.
     trustProxyHops: Number(process.env.INITPAD_TRUST_PROXY_HOPS ?? 1),
+  },
+  workspaces: {
+    // Team workspaces one account may own; 0 is unlimited. Each workspace has
+    // its own storage quota, so SaaS caps them by default (ADR-154).
+    maxOwnedTeamWorkspaces: Number(
+      process.env.INITPAD_MAX_OWNED_TEAM_WORKSPACES ?? (edition === 'saas' ? 5 : 0),
+    ),
+  },
+  retention: {
+    // Audit events older than this are deleted; 0 keeps them (ADR-150).
+    auditDays: Number(process.env.INITPAD_AUDIT_RETENTION_DAYS ?? 400),
+  },
+  rateLimit: {
+    // CIDR ranges where many people share one public address, such as a
+    // school behind NAT. Their per-IP limits are multiplied (ADR-149).
+    sharedNetworks: (process.env.INITPAD_RATE_LIMIT_SHARED_NETWORKS ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    sharedNetworkFactor: Number(process.env.INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR || 20),
   },
   templatesDir: process.env.INITPAD_TEMPLATES_DIR || resolve(process.cwd(), '../../templates'),
   workspaceDir: process.env.INITPAD_WORKSPACE_DIR || resolve(process.cwd(), '../../.workspace'),
@@ -121,15 +143,22 @@ export const config = {
     frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
     registrationMode: normalizeRegistrationMode(rawRegistrationMode),
+    // One-time proof required to create the first (administrator) account, so
+    // a freshly installed public server cannot be claimed by whoever registers
+    // first (ADR-136). install.sh generates it and prints it at the end.
+    bootstrapToken: (process.env.INITPAD_BOOTSTRAP_TOKEN || '').trim(),
     secureCookie:
       process.env.INITPAD_COOKIE_SECURE === 'true' ||
       (process.env.INITPAD_COOKIE_SECURE !== 'false' &&
         (process.env.INITPAD_FRONTEND_URL || '').startsWith('https://')),
   },
-  // Key for encrypting sensitive DB values (tokens). Falls back to the JWT secret.
+  // Key for encrypting sensitive DB values (ADR-141). Previous keys only
+  // decrypt while a rotation re-encrypts stored values with the current key.
   security: {
-    encryptionKey:
-      process.env.INITPAD_ENCRYPTION_KEY || process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
+    encryptionKey: process.env.INITPAD_ENCRYPTION_KEY || 'dev-secret-zmen-me',
+    previousEncryptionKeys: (process.env.INITPAD_ENCRYPTION_KEY_PREVIOUS || '')
+      .split(/[\s,]+/)
+      .filter(Boolean),
   },
   mail: {
     host: (process.env.INITPAD_SMTP_HOST || '').trim(),
@@ -271,6 +300,24 @@ export function artifactStoreConfigured(): boolean {
   return Boolean(s.bucket && s.accessKeyId && s.secretAccessKey);
 }
 
+/**
+ * Built-in direct-port applications are served from `config.publicHost`. When
+ * that is also the InitPad host and the session cookie is not Secure, browsers
+ * send the InitPad session to every application deployed there, and a member's
+ * application could replay it (ADR-137). HTTPS or a separate application host
+ * name avoids that.
+ */
+export function builtInAppsShareSessionCookie(): boolean {
+  if (config.edition !== 'self-hosted' || config.auth.secureCookie) return false;
+  try {
+    return (
+      new URL(config.auth.frontendUrl).hostname.toLowerCase() === config.publicHost.toLowerCase()
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function mailDeliveryConfigured(): boolean {
   return Boolean(config.mail.host && config.mail.from);
 }
@@ -362,6 +409,25 @@ export function validateConfig(): void {
   ) {
     throw new Error('INITPAD_TRUST_PROXY_HOPS must be an integer between 0 and 5');
   }
+  parseSharedNetworks(config.rateLimit.sharedNetworks);
+  const { maxOwnedTeamWorkspaces } = config.workspaces;
+  if (
+    !Number.isInteger(maxOwnedTeamWorkspaces) ||
+    maxOwnedTeamWorkspaces < 0 ||
+    maxOwnedTeamWorkspaces > 1000
+  ) {
+    throw new Error('INITPAD_MAX_OWNED_TEAM_WORKSPACES must be an integer between 0 and 1000');
+  }
+  const { auditDays } = config.retention;
+  if (!Number.isInteger(auditDays) || auditDays < 0 || (auditDays > 0 && auditDays < 30)) {
+    throw new Error('INITPAD_AUDIT_RETENTION_DAYS must be 0 (keep) or at least 30 days');
+  }
+  const factor = config.rateLimit.sharedNetworkFactor;
+  if (!Number.isInteger(factor) || factor < 1 || factor > 100) {
+    throw new Error(
+      'INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR must be an integer between 1 and 100',
+    );
+  }
   if (
     (rawSmtpSecure !== undefined && !['true', 'false'].includes(rawSmtpSecure)) ||
     (rawSmtpRequireTls !== undefined && !['true', 'false'].includes(rawSmtpRequireTls))
@@ -392,6 +458,9 @@ export function validateConfig(): void {
       !/^(?:[^<>\r\n]+\s+)?<?[^\s<>@]+@[^\s<>@]+>?$/.test(config.mail.from))
   ) {
     throw new Error('INITPAD_SMTP_FROM must contain one valid e-mail sender address');
+  }
+  if (config.auth.bootstrapToken && config.auth.bootstrapToken.length < 32) {
+    throw new Error('INITPAD_BOOTSTRAP_TOKEN must contain at least 32 characters');
   }
   const acceptedModes = [...REGISTRATION_MODES, ...Object.keys(LEGACY_REGISTRATION_ALIASES)];
   if (!acceptedModes.includes(rawRegistrationMode)) {
@@ -516,15 +585,43 @@ export function validateConfig(): void {
     throw new Error('Deployment resource limits are invalid');
   }
   if (process.env.NODE_ENV !== 'production') return;
-  const insecure: string[] = [];
-  if (config.auth.jwtSecret === 'dev-secret-zmen-me') insecure.push('INITPAD_JWT_SECRET');
-  if (config.security.encryptionKey === 'dev-secret-zmen-me')
-    insecure.push('INITPAD_ENCRYPTION_KEY');
-  if (config.scm.webhookToken === 'scm-webhook-secret-change-me') {
-    insecure.push('INITPAD_SCM_WEBHOOK_TOKEN');
+  // The in-memory store loses every artifact on restart and grows without a
+  // bound; it exists for development and tests only (ADR-146).
+  if (!artifactStoreConfigured()) {
+    throw new Error(
+      'Production requires a durable artifact store: set INITPAD_ARTIFACT_S3_BUCKET, ' +
+        'INITPAD_ARTIFACT_S3_ACCESS_KEY_ID and INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY',
+    );
   }
-  if (config.oidc.clientSecret === 'gitea-oidc-secret-change-me') {
-    insecure.push('INITPAD_OIDC_CLIENT_SECRET');
+  if (config.security.encryptionKey === 'dev-secret-zmen-me') {
+    throw new Error(
+      'Refusing production startup without INITPAD_ENCRYPTION_KEY. An installation that ' +
+        'stored data before ADR-141 used INITPAD_JWT_SECRET as its key: set ' +
+        'INITPAD_ENCRYPTION_KEY to that value and generate a new INITPAD_JWT_SECRET ' +
+        '(everyone signs in again).',
+    );
+  }
+  if (config.security.encryptionKey === config.auth.jwtSecret) {
+    throw new Error(
+      'INITPAD_ENCRYPTION_KEY and INITPAD_JWT_SECRET must differ; generate a new INITPAD_JWT_SECRET',
+    );
+  }
+  const insecure: string[] = [];
+  const placeholder = /zmen-me|change-?me|__GENERATE__/i;
+  const keyMaterial: [string, string[]][] = [
+    ['INITPAD_JWT_SECRET', [config.auth.jwtSecret]],
+    ['INITPAD_ENCRYPTION_KEY', [config.security.encryptionKey]],
+    ['INITPAD_ENCRYPTION_KEY_PREVIOUS', config.security.previousEncryptionKeys],
+  ];
+  // Signing and encryption keys must be long random values; the installers
+  // generate 48 hexadecimal characters.
+  for (const [name, values] of keyMaterial) {
+    if (values.some((value) => value.length < 32 || placeholder.test(value))) insecure.push(name);
+  }
+  // SaaS runs neither Gitea nor the endpoints these secrets protect (ADR-153).
+  if (config.edition === 'self-hosted') {
+    if (placeholder.test(config.scm.webhookToken)) insecure.push('INITPAD_SCM_WEBHOOK_TOKEN');
+    if (placeholder.test(config.oidc.clientSecret)) insecure.push('INITPAD_OIDC_CLIENT_SECRET');
   }
   if (artifactStoreConfigured() && config.artifactStore.secretAccessKey === 'initpad-artifacts') {
     insecure.push('INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY');

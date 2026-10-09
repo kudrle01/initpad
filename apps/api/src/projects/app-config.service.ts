@@ -107,7 +107,7 @@ export class AppConfigService {
     const rows = await this.prisma.appConfigVar.findMany({ where: { environmentId } });
     const map: Record<string, string> = {};
     for (const row of rows) {
-      map[row.key] = row.isSecret ? decryptSecret(row.value) : row.value;
+      map[row.key] = row.isSecret ? decryptSecret(row.value, `Secret ${row.key}`) : row.value;
     }
     return map;
   }

@@ -144,3 +144,24 @@ stabilní.
 | [ADR-131](./ADR-131.md) | Accepted | Source-based SSH runtime je odstraněn, SFTP zůstává kompatibilní konektor |
 | [ADR-132](./ADR-132.md) | Accepted | Staging veřejného SaaS tvoří nízkonákladová sestava vyměnitelných externích služeb |
 | [ADR-133](./ADR-133.md) | Accepted | Příjem artefaktu plní lokální Docker daemon jen pro vlastní nasazení control plane |
+| [ADR-134](./ADR-134.md) | Accepted | Gitea tokeny mají rozsah podle spotřebitele a CI dostává jen token pro registry |
+| [ADR-135](./ADR-135.md) | Accepted | Serverový profil posílá API z Caddy přímo, aby měla každá cesta jeden proxy hop |
+| [ADR-136](./ADR-136.md) | Accepted | První administrátor vyžaduje instalační token a registrace je ve výchozím stavu uzavřená |
+| [ADR-137](./ADR-137.md) | Accepted | Mutace se session cookie vyžadují JSON a session cookie pod HTTPS nese prefix `__Host-` |
+| [ADR-138](./ADR-138.md) | Accepted | Každý CI job běží na čerstvě vymazaném Docker daemonu |
+| [ADR-139](./ADR-139.md) | Accepted | Šablonové CI testuje, staví a publikuje image v jednom jobu s cache vrstev v registry projektu |
+| [ADR-140](./ADR-140.md) | Accepted | Šablony předávají kontext CI jako data, nemají klíče v kódu a dodávají závislosti bez známých zranitelností |
+| [ADR-141](./ADR-141.md) | Accepted | Klíč pro šifrování dat je samostatný, jde vyměnit a nečitelná hodnota je chyba |
+| [ADR-142](./ADR-142.md) | Accepted | Přihlášení, správa účtů a smazání workspace se zapisují do platformního auditu |
+| [ADR-143](./ADR-143.md) | Accepted | Jednorázové odkazy nesou token ve fragmentu URL |
+| [ADR-144](./ADR-144.md) | Accepted | Platformní obrazy běží s nejmenšími oprávněními a CI je skenuje na zranitelnosti |
+| [ADR-145](./ADR-145.md) | Accepted | Vstupy zvenčí mají ověřený tvar a podepsaný webhook se nepoužije dvakrát |
+| [ADR-146](./ADR-146.md) | Accepted | Podpis Supervisoru pokrývá metodu a cestu a produkce vyžaduje trvalé úložiště artefaktů |
+| [ADR-147](./ADR-147.md) | Accepted | Přihlášení je odvolatelná session a uživatel vidí, kde je přihlášený |
+| [ADR-148](./ADR-148.md) | Accepted | Obnova účtu odvolá všechny Gitea tokeny a provoz umí ukončit Gitea sessions |
+| [ADR-149](./ADR-149.md) | Accepted | Sítě sdílené za jednou adresou mají vyšší limit na IP |
+| [ADR-150](./ADR-150.md) | Accepted | Historie bez dalšího využití se po stanovené době maže |
+| [ADR-151](./ADR-151.md) | Accepted | Záloha se šifruje veřejným klíčem, který server nedokáže otevřít |
+| [ADR-152](./ADR-152.md) | Accepted | PHP šablony běží na FrankenPHP |
+| [ADR-153](./ADR-153.md) | Accepted | SaaS nespouští součásti self-hosted Gitey a install.sh SaaS neinstaluje |
+| [ADR-154](./ADR-154.md) | Accepted | Počet vlastněných týmových workspaces je omezený |

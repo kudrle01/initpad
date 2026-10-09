@@ -1,8 +1,9 @@
 # {{projectName}}
 
-PHP app scaffolded by InitPad, served by the built-in web server.
+PHP app scaffolded by InitPad, served by FrankenPHP.
 
-- Local: `php -S 0.0.0.0:8080 router.php`
+- Local: `php -S 0.0.0.0:8080 -t public public/index.php`
+- Production image: FrankenPHP on port 8080, serving `public/`
 - Routes: `GET /` and `GET /health`
 
 Runs on Docker across all environments.

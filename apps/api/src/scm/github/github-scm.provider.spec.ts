@@ -342,28 +342,10 @@ describe('GitHubScmProvider reads', () => {
     mkdirSync(workflowDir, { recursive: true });
     writeFileSync(
       join(workflowDir, 'ci.yml'),
-      [
-        'name: ci',
-        'on: [push]',
-        'jobs:',
-        '  docker:',
-        '    name: docker build',
-        '    steps:',
-        '      - run: |',
-        "          IMAGE=$(echo \"${{ secrets.INITPAD_REGISTRY }}/${{ github.repository }}:${{ github.sha }}\" | tr '[:upper:]' '[:lower:]')",
-        '          echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \\',
-        '            docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin',
-        '          docker build -t "$IMAGE" .',
-        '          docker push "$IMAGE"',
-        '',
-        '  deploy:',
-        '    needs: docker',
-        '    steps:',
-        '      - run: |',
-        '          curl -fsS -X POST "${{ secrets.INITPAD_PLATFORM_URL }}/api/ci/deploy" \\',
-        '            -d \'{"repo":"${{ github.repository }}","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}\'',
-        '',
-      ].join('\n'),
+      readFileSync(
+        join(__dirname, '../../../../../templates/flask/files/.gitea/workflows/ci.yml'),
+        'utf8',
+      ),
     );
     const { provider } = make(jest.fn());
     try {
@@ -374,12 +356,12 @@ describe('GitHubScmProvider reads', () => {
       const workflow = readFileSync(githubWorkflow, 'utf8');
       expect(workflow).toContain('permissions:\n  contents: read');
       expect(workflow).toContain('docker save "$IMAGE" -o initpad-image.tar');
-      expect(workflow).toContain('${{ github.sha }}-${{ github.run_id }}');
+      expect(workflow).toContain(':$CI_SHA-$GITHUB_RUN_ID"');
       expect(workflow).toContain(
         'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
       );
       expect(workflow).toContain('archive: false');
-      expect(workflow).toContain('"artifactId":"${{ needs.docker.outputs.artifact-id }}"');
+      expect(workflow).toContain('ARTIFACT_ID: ${{ steps.initpad-artifact.outputs.artifact-id }}');
       expect(workflow).not.toContain('INITPAD_REGISTRY_PASSWORD');
       expect(workflow).not.toContain('INITPAD_REGISTRY_USER');
       expect(workflow).not.toContain('docker push');
@@ -818,7 +800,7 @@ describe('GitHubScmProvider writes', () => {
     config.ci.publicUrl = 'https://initpad.example/';
     const { provider, installations } = make(fetchMock);
 
-    await provider.configureRepoSecrets(repository(), 'unused-installation-token', 'deploy-secret');
+    await provider.configureRepoSecrets(repository(), 'deploy-secret');
 
     expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
       permissions: { metadata: 'read', secrets: 'write' },

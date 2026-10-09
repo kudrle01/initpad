@@ -21,7 +21,7 @@ describe('StructuredLogger', () => {
       password: 'do-not-log',
       nested: { authorization: 'Bearer abc' },
       message:
-        'Authorization: Bearer bearer-value token=plain initpad_enroll_abc123 github_pat_abcdef https://app.test/reset-password/reset-value https://alice:password@example.test',
+        'Authorization: Bearer bearer-value token=plain initpad_enroll_abc123 github_pat_abcdef https://app.test/reset-password/reset-value https://app.test/activate#activation-value https://alice:password@example.test',
     });
     const serialized = JSON.stringify(record);
 
@@ -31,6 +31,7 @@ describe('StructuredLogger', () => {
     expect(serialized).not.toContain('initpad_enroll_abc123');
     expect(serialized).not.toContain('github_pat_abcdef');
     expect(serialized).not.toContain('reset-value');
+    expect(serialized).not.toContain('activation-value');
     expect(serialized).not.toContain('alice:password');
     expect(serialized).toContain('[REDACTED]');
   });

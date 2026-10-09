@@ -26,6 +26,9 @@ services:
     cap_add: [CHOWN, SETGID, SETUID, NET_BIND_SERVICE]
 ```
 
+Od ADR-144 web spouští nginx bez roota a profil mu žádnou capability nevrací.
+Obraz webu a `saas.compose.yml` proto musí pocházet ze stejného releasu.
+
 Postup nepokrývá default-deny egress ani sběr JSON logů kontejnerů. Oba body
 zůstávají samostatnými gate podle [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md) a
 [pravidel observability](../docs/OBSERVABILITY.md).
@@ -72,8 +75,6 @@ jednoho souboru v `/secure/runtime/secrets/`.
 | `DATABASE_URL`                          | `database_url`         | Supabase                           |
 | `INITPAD_JWT_SECRET`                    | `jwt_secret`           | vygenerovat                        |
 | `INITPAD_ENCRYPTION_KEY`                | `encryption_key`       | vygenerovat, po nasazení neměnit   |
-| `INITPAD_SCM_WEBHOOK_TOKEN`             | `scm_webhook_token`    | vygenerovat                        |
-| `INITPAD_OIDC_CLIENT_SECRET`            | `oidc_client_secret`   | vygenerovat                        |
 | `INITPAD_SMTP_PASSWORD`                 | `smtp_password`        | Brevo                              |
 | `INITPAD_GITHUB_CLIENT_SECRET`          | `github_client_secret` | GitHub App                         |
 | `INITPAD_GITHUB_PRIVATE_KEY`            | `github_private_key`   | GitHub App, celý PEM               |

@@ -15,6 +15,43 @@ updates:
     commit-message:
       prefix: chore(deps)
 
+  # Generated projects inherit the template dependencies. JavaScript templates
+  # keep a templated package.json, so their lockfiles reach GitHub's
+  # dependency graph and security alerts, but not version updates.
+  - package-ecosystem: pip
+    directories:
+      - /templates/django/files
+      - /templates/fastapi/files
+      - /templates/flask/files
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:15"
+      timezone: Europe/Prague
+    groups:
+      template-python:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(templates)
+
+  - package-ecosystem: composer
+    directories:
+      - /templates/laravel/files
+      - /templates/nette/files
+      - /templates/symfony/files
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:20"
+      timezone: Europe/Prague
+    groups:
+      template-php:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(templates)
+
   - package-ecosystem: docker
     directories:
       - /apps/*

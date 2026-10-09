@@ -9,7 +9,9 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
+import { config } from '../config';
 import { RateLimitService, type RateLimitDecision } from './rate-limit.service';
+import { inSharedNetwork, parseSharedNetworks } from './shared-networks';
 import {
   RATE_LIMIT_POLICY,
   type RateLimitPolicy,
@@ -21,6 +23,7 @@ type AuthenticatedRequest = Request & { userId?: string };
 @Injectable()
 export class RateLimitGuard implements CanActivate {
   private readonly logger = new Logger(RateLimitGuard.name);
+  private readonly sharedNetworks = parseSharedNetworks(config.rateLimit.sharedNetworks);
 
   constructor(
     private readonly limiter: RateLimitService,
@@ -39,11 +42,15 @@ export class RateLimitGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const response = context.switchToHttp().getResponse<Response>();
     try {
+      const ip = request.ip || request.socket.remoteAddress || 'unknown';
+      const ipLimit = inSharedNetwork(this.sharedNetworks, ip)
+        ? policy.ipLimit * config.rateLimit.sharedNetworkFactor
+        : policy.ipLimit;
       const ipDecision = await this.limiter.consume(
         policy.name,
         'ip',
-        request.ip || request.socket.remoteAddress || 'unknown',
-        policy.ipLimit,
+        ip,
+        ipLimit,
         policy.windowMs,
       );
       this.enforce(ipDecision, response);

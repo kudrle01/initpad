@@ -95,6 +95,37 @@ describe('ProjectsService SCM identity', () => {
     );
   });
 
+  it('deletes after a repository webhook only when Gitea confirms the repository is gone', async () => {
+    const row = {
+      id: 'p1',
+      scmProvider: 'gitea',
+      scmRepositoryId: '101',
+      scmOwner: 'acme',
+      scmRepositoryName: 'api',
+      scmFullName: 'acme/api',
+      scmDefaultBranch: 'main',
+      scmInstallationId: null,
+      repoUrl: 'https://git.test/acme/api',
+      owner: { username: 'acme', accessToken: '' },
+    };
+    const prisma = { project: { findFirst: jest.fn(async () => row) } };
+    const scm = { repoMissing: jest.fn(async () => false) };
+    const service = serviceWith(prisma, scm);
+    const removeByRepo = jest.spyOn(service, 'removeByRepo').mockResolvedValue(undefined);
+
+    // A replayed or forged delivery while the repository still exists.
+    await service.removeIfRepositoryGone('acme/api', 'gitea', '101');
+    expect(scm.repoMissing).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'acme/api', repositoryId: '101' }),
+      expect.anything(),
+    );
+    expect(removeByRepo).not.toHaveBeenCalled();
+
+    scm.repoMissing.mockResolvedValueOnce(true);
+    await service.removeIfRepositoryGone('acme/api', 'gitea', '101');
+    expect(removeByRepo).toHaveBeenCalledWith('acme/api', 'gitea', '101');
+  });
+
   it('reconciles healthy repository secrets even when another repository is gone', async () => {
     const project = (id: string, name: string) => ({
       scmProvider: 'gitea',

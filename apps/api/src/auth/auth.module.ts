@@ -8,6 +8,8 @@ import { ScmModule } from '../scm/scm.module';
 import { RateLimitGuard } from './rate-limit.guard';
 import { RateLimitService } from './rate-limit.service';
 import { MailModule } from '../mail/mail.module';
+import { AuditEventsService } from '../audit/audit-events.service';
+import { SessionsService } from './sessions.service';
 
 @Module({
   imports: [
@@ -18,10 +20,26 @@ import { MailModule } from '../mail/mail.module';
       signOptions: { expiresIn: '7d' },
     }),
   ],
-  providers: [AuthService, JwtAuthGuard, RateLimitService, RateLimitGuard],
+  // AuditEventsModule imports this module for its guard, so the stateless audit
+  // service is provided here directly instead of importing that module back.
+  providers: [
+    AuthService,
+    SessionsService,
+    JwtAuthGuard,
+    RateLimitService,
+    RateLimitGuard,
+    AuditEventsService,
+  ],
   controllers: [AuthController],
   // Consumers using @RateLimited() resolve the guard in their own module
   // context, so its service dependency must cross the same module boundary.
-  exports: [AuthService, JwtAuthGuard, RateLimitService, RateLimitGuard, JwtModule],
+  exports: [
+    AuthService,
+    SessionsService,
+    JwtAuthGuard,
+    RateLimitService,
+    RateLimitGuard,
+    JwtModule,
+  ],
 })
 export class AuthModule {}

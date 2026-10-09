@@ -1,0 +1,27 @@
+# Read-only pull-through cache for Docker Hub images used by CI jobs (ADR-138).
+# Every CI job starts on an erased Docker daemon, so the job image and Dockerfile
+# base images are pulled again for each job. This cache keeps those pulls on
+# the local network and below Docker Hub rate limits. A pull-through cache
+# rejects pushes, so a job can never place its own content into it.
+version: 0.1
+log:
+  level: info
+  fields:
+    service: runner-image-cache
+storage:
+  delete:
+    enabled: false
+  cache:
+    blobdescriptor: inmemory
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: :5000
+proxy:
+  remoteurl: https://registry-1.docker.io
+  ttl: 168h
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3

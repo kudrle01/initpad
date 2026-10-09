@@ -36,3 +36,27 @@ test('reconciles the persisted Gitea OIDC source after a public URL change', () 
     'Gitea must reload only after the persisted OIDC source is updated',
   );
 });
+
+test('routes the server profile API through exactly one trusted proxy hop', () => {
+  const caddyfile = readFileSync(resolve(root, 'deploy/Caddyfile'), 'utf8');
+  const compose = readFileSync(resolve(root, 'deploy/docker-compose.yml'), 'utf8');
+  const platform = caddyfile.slice(
+    caddyfile.indexOf('{$INITPAD_DOMAIN} {'),
+    caddyfile.indexOf('{$INITPAD_GIT_DOMAIN} {'),
+  );
+
+  // Caddy -> web proxy -> API would be two hops while direct and CI traffic
+  // reach the API through the web proxy alone. Sending the API straight from
+  // Caddy keeps one hop on every path, matching the default below.
+  assert.match(platform, /handle \/api\/\* \{\s*reverse_proxy api:3000\s*\}/);
+  assert.ok(
+    platform.indexOf('handle /api/*') < platform.indexOf('reverse_proxy web:80'),
+    'API requests must be matched before the web fallback',
+  );
+  assert.match(compose, /INITPAD_TRUST_PROXY_HOPS: \$\{INITPAD_TRUST_PROXY_HOPS:-1\}/);
+  assert.doesNotMatch(caddyfile, /trusted_proxies/);
+  for (const site of ['{$INITPAD_DOMAIN} {', '{$INITPAD_GIT_DOMAIN} {']) {
+    const block = caddyfile.slice(caddyfile.indexOf(site));
+    assert.match(block, /header Strict-Transport-Security "max-age=31536000"/);
+  }
+});

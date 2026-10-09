@@ -6,10 +6,10 @@ import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import { AppModule } from './app.module';
-import { config } from './config';
-import { validateConfig } from './config';
+import { builtInAppsShareSessionCookie, config, validateConfig } from './config';
 import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
 import { requestContextMiddleware } from './common/request-context';
+import { csrfProtection } from './common/csrf-protection';
 import { StructuredLogger } from './common/structured-logger';
 
 async function bootstrap() {
@@ -39,6 +39,8 @@ async function bootstrap() {
   );
   app.enableCors({ origin: config.auth.frontendUrl, credentials: true });
   app.use(cookieParser());
+  // Needs parsed cookies: only requests carrying the session are checked.
+  app.use(csrfProtection);
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({
@@ -52,6 +54,15 @@ async function bootstrap() {
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   await app.listen(port);
   logger.log({ event: 'platform.started', port }, 'Bootstrap');
+  if (builtInAppsShareSessionCookie()) {
+    logger.warn(
+      {
+        event: 'security.session_shared_with_built_in_apps',
+        remedy: 'Serve InitPad over HTTPS or set INITPAD_DEPLOY_PUBLIC_HOST to another host name',
+      },
+      'Bootstrap',
+    );
+  }
 }
 
 void bootstrap();

@@ -150,13 +150,16 @@ export interface ScmProvider {
     // produced the deployed bytes. Omitted for providers without run identity.
     preferredRunId?: string | null,
   ): Promise<ScmCommitStatus[] | null>;
-  configureRepoSecrets(
-    repository: ScmRepositoryRef,
-    ownerToken: string,
-    ciDeployToken: string,
-  ): Promise<void>;
+  configureRepoSecrets(repository: ScmRepositoryRef, ciDeployToken: string): Promise<void>;
   // Remove only the secret names owned by InitPad, without disabling CI.
   removeRepoSecrets(repository: ScmRepositoryRef): Promise<void>;
+  // Providers whose CI publishes with a registry credential stored as a
+  // repository secret replace it when someone who could read it loses write
+  // access to the repository.
+  rotateRegistryCredential?(repository: ScmRepositoryRef): Promise<void>;
+  // Revokes account credentials issued before scoped tokens existed. Callers
+  // move every repository secret off them first (ADR-134).
+  revokeLegacyCredentials?(username: string): Promise<void>;
   configureRepoRuntimeSecrets(repository: ScmRepositoryRef): Promise<void>;
   downloadArchive(
     repository: ScmRepositoryRef,

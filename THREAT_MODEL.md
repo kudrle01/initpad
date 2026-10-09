@@ -35,7 +35,9 @@ konfiguraci v paměti.
 ## Hlavní opatření
 
 - Samoregistrace v Gitee je vypnutá. Zakládání účtů vlastní InitPad a správce
-  instance si volí otevřenou registraci, nebo účty zakládané administrátorem.
+  instance si volí otevřenou registraci, nebo účty zakládané administrátorem,
+  které jsou výchozí. První účet (administrátor) vyžaduje instalační token, takže
+  čerstvou instanci nezabere ten, kdo se zaregistruje první (ADR-136).
   Autentizace, GitHub OAuth a setup i enrollment Agenta mají explicitní limity
   specifické pro danou operaci. Atomické čítače PostgreSQL sdílí každá replika
   API a kombinují důvěryhodnou IP klienta s HMAC subjektu účtu nebo tokenu.
@@ -48,17 +50,51 @@ konfiguraci v paměti.
 - Osobní workspace nemohou přijímat další členy. Změny členství a rolí v týmu se
   synchronizují do oprávnění spolupracovníků v privátních repozitářích Gitey s
   kompenzačním rollbackem, pokud selže kterákoli strana.
-- Sessions jsou HTTP-only, SameSite a pod HTTPS Secure. Přesměrování OIDC
-  používají přesnou validaci originu a cesty a autorizační kódy jsou jednorázové
-  a expirují.
-- Citlivé hodnoty v databázi používají AES-256-GCM. Callback tokeny CI jsou pro
+- Sessions jsou HTTP-only, SameSite a pod HTTPS Secure s prefixem `__Host-`,
+  takže je sousední subdoména nepodvrhne. Změny se session cookie API přijme
+  jen jako `application/json` a odmítne je z jiného site podle
+  `Sec-Fetch-Site`, takže formulář z aplikace na stejném hostu nebo subdoméně
+  nic nezmění (ADR-137). Přesměrování OIDC používají přesnou validaci originu a
+  cesty a autorizační kódy jsou jednorázové a expirují.
+- Každé přihlášení je řádek session, který odhlášení ukončí na serveru;
+  zkopírovaná cookie pak přestane fungovat. Uživatel vidí svá přihlášení a
+  může ukončit cizí (ADR-147). Obnova účtu odvolá všechny Gitea tokeny účtu a
+  vydá nové registry tokeny jeho repozitářů (ADR-148).
+- Citlivé hodnoty v databázi používají AES-256-GCM s vlastním klíčem, který se
+  v produkci musí lišit od JWT secretu a jde vyměnit; nešifrované a starší
+  hodnoty API po startu přešifruje a nečitelnou hodnotu ohlásí chybou, ne
+  prázdným credentialem (ADR-141). Callback tokeny CI jsou pro
   každý repozitář náhodné a InitPad ukládá pouze jejich hashe SHA-256.
+- Gitea tokeny mají rozsah podle spotřebitele a pevný název, takže nové vydání
+  předchozí kopii zneplatní (ADR-134). CI repozitáře dostává jen token
+  `write:package` pro registry; Git token uživatele (`write:repository`) do
+  secretů nikdy nevstupuje. Registry tokeny workspace se vymění, když člen
+  ztratí právo zápisu, a reset hesla i deaktivace zruší Git token účtu.
+- Šablony předávají kontext a secrety do skriptů CI jen přes `env:`, takže
+  název větve nespustí kód. Nemají v kódu žádný podpisový klíč a při vydání
+  dodávají zamčené závislosti bez známých zranitelností; Dependabot hlídá pip a
+  composer závislosti šablon (ADR-140).
+- Přihlášení, neúspěšné pokusy, změny hesel, akce platform admina a smazání
+  workspace se zapisují do platformního auditu, který vlastník workspace
+  nesmaže; změny se zapisují ve stejné transakci jako jejich událost. Zadaný
+  identifikátor neúspěšného přihlášení se neukládá (ADR-142).
 - Webhooky Gitey používají podpis HMAC se zachovanou kompatibilitou s bearer
-  tokenem a nikdy nevkládají secrety do URL.
+  tokenem a nikdy nevkládají secrety do URL. Webhook o smazání repozitáře
+  smaže projekt až poté, co Gitea repozitář hlásí jako neexistující. GitHub
+  webhook, který mění stav instalace nebo autorizace, se podle
+  `X-GitHub-Delivery` zpracuje jen jednou (ADR-145).
+- CI callbacky, webhooky a OAuth endpointy odmítnou pole jiného typu než
+  řetězec; OAuth chyba neprozradí text výjimky. Web vytvoří odkaz z adresy
+  zvenčí, třeba z cíle CI statusu, jen pro `http` a `https` (ADR-145).
 - Runner Actions používá vyhrazený rootless DinD daemon. Nepřipojuje socket ani
-  workspace hostu a nepovoluje žádné volumes definované workflow. Souběžnost je
-  explicitně omezená, ve výchozím stavu na jeden job, a jeho řídicí síť je
-  oddělená od PostgreSQL i od nasazovacích sítí.
+  workspace hostu a nepovoluje žádné volumes definované workflow. Řídicí síť je
+  oddělená od PostgreSQL i od nasazovacích sítí. Runner provádí jeden job
+  najednou a každý běží na čerstvě vymazaném daemonu, takže job nepředá
+  kontejner, volume, image ani build cache jinému jobu (ADR-138). Vrstvy
+  buildu ukládá cache v registry projektu, kam zapisuje jen CI s registry
+  tokenem vlastníka repozitáře (ADR-139). Credential
+  runneru leží mimo kontejner daemonu, image z Docker Hubu dodává cache, do
+  které job nemůže zapisovat, a sdílený cache server Actions je vypnutý.
 - Validace DTO pomocí allow-listu, omezené délky, kontroly politik workspace a
   validace endpointu a cesty targetu snižují riziko injection, IDOR a vyčerpání
   zdrojů.
@@ -94,12 +130,37 @@ konfiguraci v paměti.
   Deploymenty a joby Agenta sdílejí stabilní korelační ID a Agent ho přijímá
   pouze jako diagnostická metadata. Centralizovaný logger odstraňuje citlivé
   klíče, známé formáty tokenů a credentials v URL, zatímco HTTP access log
-  neukládá query stringy ani těla požadavků.
+  neukládá query stringy ani těla požadavků. Aktivační, resetovací a ověřovací
+  odkazy nesou jednorázový token ve fragmentu URL, který prohlížeč serveru
+  neposílá, takže se nedostane do access logů webu, Caddy ani edge vrstvy a
+  stránka ho po přečtení odstraní z adresy (ADR-143).
 - Aplikační kontejnery dostávají limity paměti, CPU, PID a logů, odebrané
   capabilities a `no-new-privileges`. Webové a API kontejnery platformy jsou,
   kde je to možné, pouze pro čtení.
-- Závislosti a actions jsou uzamčeny, audity npm a Composeru jsou součástí
-  kontrol releasu. Verzované databázové migrace nahrazují schema push.
+- Web platformy spouští nginx jako neprivilegovaného uživatele bez jediné
+  capability a jeho access log neobsahuje query string ani `Referer`. Runtime
+  obrazy API, Agenta a Supervisoru neobsahují npm, yarn ani zkompilované testy
+  a všechny obrazy při buildu instalují opravy Alpine balíčků (ADR-144). API
+  běží jako root bez capabilities, protože v self-hosted profilu drží Docker
+  socket a v SaaS čte secrety určené jen rootu.
+- Supervisor přijme jen požadavek s HMAC podpisem nad metodou, cestou, časem,
+  ID požadavku a tělem, starým nejvýš minutu. Produkční API bez trvalého
+  úložiště artefaktů nenastartuje (ADR-146).
+- Jeden účet v SaaS vlastní nejvýš pět týmových workspaces, takže zakládáním
+  dalších neobejde kvóty úložiště a výpočtu (ADR-154).
+- Použité a prošlé jednorázové tokeny, odeslané e-maily, dokončené Agent joby
+  a audit starší než nastavená doba (výchozí 400 dní) se pravidelně mažou
+  (ADR-150).
+- Self-hosted záloha se může šifrovat veřejným klíčem `age`; soukromý klíč na
+  serveru není, takže zálohu nerozšifruje ani útočník se serverem (ADR-151).
+- PHP šablony v produkčním obrazu běží na FrankenPHP jako `www-data` bez
+  capabilities, s vypnutým admin API Caddy a bez hlavičky `X-Powered-By`;
+  servírují jen adresář `public/` (u Nette `www/`) (ADR-152).
+- Závislosti a actions jsou uzamčeny. Release gate audituje produkční npm
+  závislosti. CI při změně obrazů nebo šablon a jednou týdně skenuje obrazy
+  platformy a lockfily šablon (npm, Composer, pip); opravitelný nález HIGH nebo
+  CRITICAL build zastaví a přijaté výjimky expirují (ADR-144). Verzované
+  databázové migrace nahrazují schema push.
 
 ## Zbytková rizika
 
@@ -128,7 +189,8 @@ konfiguraci v paměti.
   pouze připnulo.
 - Rootless DinD stále vyžaduje privilegovaný vnější kontejner. Chrání host před
   běžným ovládáním Dockeru z workflow, ale není rovnocenný vyhrazené VM pro
-  runner.
+  runner. Únik z rootless user namespace by se dostal do kontejneru daemonu,
+  který se po jobu restartuje a maže; credential runneru tam není.
 - Workspace RBAC izoluje aplikační data, ale všechna nasazení stále sdílejí
   přihlašovací údaje poskytovatele a hranici důvěry Dockeru self-hosted control
   plane. Tento profil nezpřístupňujte jako nepřátelský veřejný SaaS.
@@ -147,11 +209,21 @@ konfiguraci v paměti.
   capabilities nesnižují oprávnění, které předává připojený Docker socket.
   Enrollment přes HTTP je povolen pouze explicitním testovacím příznakem a
   nechrání před nepřátelskou LAN.
+- Při provozu přes HTTP sdílejí vestavěné Docker aplikace host InitPadu a
+  prohlížeč jim posílá session každého, kdo je otevře. Aplikace člena ji tak
+  může zneužít. Ochranou je HTTPS nebo samostatný host aplikací
+  (`INITPAD_DEPLOY_PUBLIC_HOST`); InitPad stav hlásí v logu a v Administraci.
+- Container balíčky v Gitee patří účtu, nikoli repozitáři. Člen týmu, který
+  přečte registry secret repozitáře, proto může přepsat image i cache vrstev
+  (ADR-139) jiného projektu téhož vlastníka. Týmové repozitáře navíc leží v osobním prostoru autora, takže
+  odebraný člen je dál vlastní. Obojí odstraní až Gitea organizace pro každý
+  workspace.
 - Synchronizace spolupracovníků v Gitee zahrnuje dva systémy, a proto používá
   kompenzaci místo distribuované transakce. Před hostovaným produkčním použitím
   je nutná rekonciliace a auditní log.
-- Zálohy obsahují credentials. Musí být šifrované, uložené mimo host a testované
-  pravidelnými cvičeními obnovy.
+- Zálohy obsahují credentials. Šifrování veřejným klíčem (ADR-151) musí
+  provozovatel zapnout; zálohy musí ležet mimo host a obnova se musí
+  pravidelně zkoušet.
 - Výstup JSON je pouze lokálním kontraktem stdout a stderr. Hostovaný provoz
   stále vyžaduje centrální collector s řízením přístupu, retenci, alerting,
   metriky a export OpenTelemetry. Korelační ID není autentizačním credentialem

@@ -6,6 +6,14 @@ type Forms = Partial<Record<Intl.LDMLPluralRule, string>>;
  * `other` for 0 and 5+ (and `many` for fractions, which falls back to `other`).
  */
 export const PLURALS = {
+  '{count} sessions signed out': {
+    en: { one: '{count} session signed out', other: '{count} sessions signed out' },
+    cs: {
+      one: 'Odhlášena {count} relace',
+      few: 'Odhlášeny {count} relace',
+      other: 'Odhlášeno {count} relací',
+    },
+  },
   '{count} projects': {
     en: { one: '{count} project', other: '{count} projects' },
     cs: { one: '{count} projekt', few: '{count} projekty', other: '{count} projektů' },

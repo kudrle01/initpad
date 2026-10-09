@@ -1,4 +1,4 @@
-import { config, validateConfig } from './config';
+import { builtInAppsShareSessionCookie, config, validateConfig } from './config';
 
 describe('validateConfig production secrets', () => {
   const fakePrivateKey = [
@@ -23,8 +23,9 @@ describe('validateConfig production secrets', () => {
 
   beforeEach(() => {
     process.env.NODE_ENV = 'production';
-    config.auth.jwtSecret = 'test-jwt-secret';
-    config.security.encryptionKey = 'test-encryption-key';
+    config.auth.jwtSecret = 'test-jwt-secret-0123456789abcdef0123';
+    config.security.encryptionKey = 'test-encryption-key-0123456789abcdef';
+    config.security.previousEncryptionKeys = [];
     config.scm.webhookToken = 'test-webhook-token';
     config.oidc.clientSecret = 'test-oidc-secret';
     Object.assign(config.artifactStore, {
@@ -40,6 +41,7 @@ describe('validateConfig production secrets', () => {
     else process.env.NODE_ENV = originalNodeEnv;
     config.auth.jwtSecret = originalSecrets.jwtSecret;
     config.security.encryptionKey = originalSecrets.encryptionKey;
+    config.security.previousEncryptionKeys = [];
     config.scm.webhookToken = originalSecrets.webhookToken;
     config.oidc.clientSecret = originalSecrets.oidcSecret;
     config.http.trustProxyHops = originalSecrets.trustProxyHops;
@@ -50,6 +52,51 @@ describe('validateConfig production secrets', () => {
     Object.assign(config.ci, originalCi);
     Object.assign(config.mail, originalMail);
     config.edition = originalEdition;
+  });
+
+  it('requires an explicit encryption key separate from the JWT secret (ADR-141)', () => {
+    config.security.encryptionKey = 'dev-secret-zmen-me';
+    expect(() => validateConfig()).toThrow('without INITPAD_ENCRYPTION_KEY');
+
+    config.security.encryptionKey = config.auth.jwtSecret;
+    expect(() => validateConfig()).toThrow('INITPAD_ENCRYPTION_KEY and INITPAD_JWT_SECRET');
+  });
+
+  it('rejects short or placeholder signing and encryption keys', () => {
+    config.auth.jwtSecret = 'short-jwt-secret';
+    expect(() => validateConfig()).toThrow('INITPAD_JWT_SECRET');
+
+    config.auth.jwtSecret = 'test-jwt-secret-0123456789abcdef0123';
+    config.security.encryptionKey = 'zmen-me-na-nahodny-retezec-0123456789';
+    expect(() => validateConfig()).toThrow('INITPAD_ENCRYPTION_KEY');
+
+    config.security.encryptionKey = 'test-encryption-key-0123456789abcdef';
+    config.security.previousEncryptionKeys = ['too-short'];
+    expect(() => validateConfig()).toThrow('INITPAD_ENCRYPTION_KEY_PREVIOUS');
+
+    config.security.previousEncryptionKeys = [];
+    config.scm.webhookToken = '__GENERATE__';
+    expect(() => validateConfig()).toThrow('INITPAD_SCM_WEBHOOK_TOKEN');
+  });
+
+  it('validates shared-network rate-limit ranges and their factor (ADR-149)', () => {
+    const saved = { ...config.rateLimit };
+    try {
+      config.rateLimit.sharedNetworks = ['198.51.100.0/24'];
+      expect(() => validateConfig()).not.toThrow();
+      config.rateLimit.sharedNetworks = ['198.51.100.0'];
+      expect(() => validateConfig()).toThrow('invalid CIDR range');
+      config.rateLimit.sharedNetworks = [];
+      config.rateLimit.sharedNetworkFactor = 0;
+      expect(() => validateConfig()).toThrow('INITPAD_RATE_LIMIT_SHARED_NETWORK_FACTOR');
+    } finally {
+      Object.assign(config.rateLimit, saved);
+    }
+  });
+
+  it('refuses the in-memory artifact store in production (ADR-146)', () => {
+    config.artifactStore.bucket = '';
+    expect(() => validateConfig()).toThrow('Production requires a durable artifact store');
   });
 
   it('rejects the Compose fallback artifact-store password', () => {
@@ -165,6 +212,14 @@ describe('validateConfig production secrets', () => {
     });
 
     expect(() => validateConfig()).not.toThrow();
+    // SaaS has no Gitea: the OIDC and Gitea webhook secrets are not needed
+    // (ADR-153), while a self-hosted instance must still set them.
+    config.scm.webhookToken = 'scm-webhook-secret-change-me';
+    config.oidc.clientSecret = 'gitea-oidc-secret-change-me';
+    expect(() => validateConfig()).not.toThrow();
+    config.edition = 'self-hosted';
+    config.http.trustProxyHops = 1;
+    expect(() => validateConfig()).toThrow('INITPAD_SCM_WEBHOOK_TOKEN, INITPAD_OIDC_CLIENT_SECRET');
   });
 
   it('rejects an HTTP or cross-origin GitHub callback in SaaS', () => {
@@ -217,5 +272,53 @@ describe('validateConfig production secrets', () => {
     });
 
     expect(() => validateConfig()).toThrow('INITPAD_TRUST_PROXY_HOPS=2');
+  });
+
+  it('rejects a guessable first-administrator setup token', () => {
+    const original = config.auth.bootstrapToken;
+    try {
+      config.auth.bootstrapToken = 'short-token';
+      expect(() => validateConfig()).toThrow(
+        'INITPAD_BOOTSTRAP_TOKEN must contain at least 32 characters',
+      );
+      config.auth.bootstrapToken = 'b'.repeat(48);
+      expect(() => validateConfig()).not.toThrow();
+    } finally {
+      config.auth.bootstrapToken = original;
+    }
+  });
+
+  it('defaults self-hosted registration to administrator-provisioned accounts', () => {
+    // Unset in this test environment, so the module default applies (ADR-136).
+    expect(process.env.INITPAD_REGISTRATION_MODE).toBeUndefined();
+    expect(config.auth.registrationMode).toBe('admin-provisioned');
+  });
+
+  it('flags built-in applications that share the InitPad host over HTTP (ADR-137)', () => {
+    const original = {
+      edition: config.edition,
+      secureCookie: config.auth.secureCookie,
+      frontendUrl: config.auth.frontendUrl,
+      publicHost: config.publicHost,
+    };
+    try {
+      config.edition = 'self-hosted';
+      config.auth.secureCookie = false;
+      config.auth.frontendUrl = 'http://192.168.1.20:8080';
+      config.publicHost = '192.168.1.20';
+      expect(builtInAppsShareSessionCookie()).toBe(true);
+
+      config.publicHost = 'apps.school.test';
+      expect(builtInAppsShareSessionCookie()).toBe(false);
+
+      config.publicHost = '192.168.1.20';
+      config.auth.secureCookie = true;
+      expect(builtInAppsShareSessionCookie()).toBe(false);
+    } finally {
+      config.edition = original.edition;
+      config.auth.secureCookie = original.secureCookie;
+      config.auth.frontendUrl = original.frontendUrl;
+      config.publicHost = original.publicHost;
+    }
   });
 });

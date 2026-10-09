@@ -61,6 +61,9 @@ services:
       - "--host=tcp://0.0.0.0:2375"
       - "--tls=false"
       - "--insecure-registry=host.docker.internal:3001"
+      # Template workflows export their build cache to the project registry,
+      # which needs the containerd image store (ADR-139).
+      - "--feature=containerd-snapshotter=true"
     volumes:
       - runner-docker-data:/home/rootless/.local/share/docker
     healthcheck:

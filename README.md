@@ -74,6 +74,11 @@ Po dokončení otevřete:
 - InitPad: <http://localhost:8080>
 - Gitea: <http://gitea.localhost:3001>
 
+Na konci instalace skript vypíše instalační token. S ním v InitPadu vytvořte
+první účet, který se stane administrátorem instance. Bez tokenu první účet
+vytvořit nelze, takže čerstvě spuštěný server nezabere ten, kdo se zaregistruje
+první. Další účty ve výchozím režimu `admin-provisioned` zakládá administrátor.
+
 Instalátor vygeneruje lokální secrety, spustí databázi a služby, aplikuje
 migrace, nastaví SSO a zaregistruje izolovaný CI runner. Je idempotentní, takže
 slouží i pro aktualizaci existující instalace. Současně zvolí auditovaný
@@ -86,7 +91,7 @@ důvěryhodné single-node instalace. Veřejná produkce musí použít samostat
 udržované S3-compatible úložiště; konkrétní provozní hranice popisuje
 [deploy/OPERATIONS.md](deploy/OPERATIONS.md#object-storage-produkční-hranice).
 
-První ověření je jednoduché: vytvořte účet, založte projekt, otevřete jeho CI
+První ověření je jednoduché: vytvořte administrátorský účet, založte projekt, otevřete jeho CI
 pipeline a počkejte na dev URL. Podrobné nasazení na server, DNS a HTTPS popisuje
 [deploy/README.md](deploy/README.md).
 

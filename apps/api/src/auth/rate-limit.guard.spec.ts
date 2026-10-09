@@ -1,4 +1,5 @@
 import { ExecutionContext, ServiceUnavailableException } from '@nestjs/common';
+import { config } from '../config';
 import { RateLimitGuard } from './rate-limit.guard';
 import { RATE_LIMITS, type RateLimitPolicy } from './rate-limit.policy';
 
@@ -91,5 +92,34 @@ describe('RateLimitGuard', () => {
     await expect(
       guard.canActivate(context({ ip: '203.0.113.8', socket: {}, body: {}, query: {} })),
     ).rejects.toThrow('requires an explicit rate-limit policy');
+  });
+
+  it('multiplies only the per-IP limit for a shared network (ADR-149)', async () => {
+    const saved = { ...config.rateLimit };
+    config.rateLimit.sharedNetworks = ['198.51.100.0/24'];
+    config.rateLimit.sharedNetworkFactor = 20;
+    try {
+      const schoolGuard = new RateLimitGuard(limiter as never, reflector as never);
+      const request = (ip: string) =>
+        context({ ip, socket: {}, body: { username: 'alice' }, query: {} });
+
+      await schoolGuard.canActivate(request('::ffff:198.51.100.7'));
+      expect(consume).toHaveBeenNthCalledWith(
+        1,
+        'auth.signin',
+        'ip',
+        '::ffff:198.51.100.7',
+        600,
+        300_000,
+      );
+      // The account itself stays as protected as anywhere else.
+      expect(consume).toHaveBeenNthCalledWith(2, 'auth.signin', 'subject', 'alice', 10, 300_000);
+
+      consume.mockClear();
+      await schoolGuard.canActivate(request('203.0.113.8'));
+      expect(consume).toHaveBeenNthCalledWith(1, 'auth.signin', 'ip', '203.0.113.8', 30, 300_000);
+    } finally {
+      Object.assign(config.rateLimit, saved);
+    }
   });
 });

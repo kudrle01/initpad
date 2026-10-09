@@ -19,7 +19,12 @@ model User {
   name                       String?
   email                      String?                       @unique
   avatarUrl                  String?
+  // Encrypted Gitea clone token of a managed account (ADR-134). It can clone
+  // and push code only; CI jobs receive a separate package-only token.
   accessToken                String
+  // Set once the account's repositories and clone token use scoped Gitea
+  // tokens and every legacy full-scope token is revoked (ADR-134).
+  giteaCredentialsScopedAt   DateTime?
   // Password hash (scrypt) for managed registration; null = OAuth-only (SSO) account.
   passwordHash               String?
   // Platform-wide authority is deliberately small. Workspace roles carry
@@ -39,6 +44,7 @@ model User {
   targets                    Target[]
   memberships                WorkspaceMember[]
   authTokens                 AuthToken[]
+  sessions                   UserSession[]
   emailOutbox                EmailOutbox[]
   oidcGrants                 OidcGrant[]
   externalIdentities         ExternalIdentity[]
@@ -181,6 +187,35 @@ model EmailOutbox {
   @@index([userId, createdAt])
 }
 
+// GitHub webhook deliveries that changed state (ADR-145). GitHub signs the body
+// without a timestamp, so a captured delivery stays valid; its
+// X-GitHub-Delivery id lets a replay be acknowledged without being applied.
+model GitHubWebhookDelivery {
+  deliveryId String   @id
+  event      String
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
+// A signed-in browser session (ADR-147). The session JWT carries its id, so
+// signing out or ending the session from another device stops the cookie
+// before the JWT expires. `version` is the account's tokenVersion at sign-in;
+// a later bump (password change, reset, deactivation) ends it as well.
+model UserSession {
+  id        String    @id @default(uuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  version   Int
+  userAgent String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 // Hashed, expiring and single-use OAuth state. The signed browser value keeps
 // the flow payload while this row supplies durable replay protection shared by
 // every API replica. No nonce, setup token or provider credential is stored.
@@ -319,9 +354,11 @@ model WorkspaceMember {
 // non-secret; application logs, credentials and configuration values belong in
 // their dedicated bounded stores, never in this timeline.
 model AuditEvent {
-  id               String    @id @default(uuid())
-  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  workspaceId      String
+  id               String     @id @default(uuid())
+  // Null for platform events: sign-in, account administration and deleted
+  // workspaces (ADR-142). A workspace's own timeline is deleted with it (ADR-077).
+  workspace        Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId      String?
   actor            User?     @relation("AuditEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
   actorUserId      String?
   actorUsername    String
@@ -338,6 +375,7 @@ model AuditEvent {
 
   @@unique([operationType, operationId, action])
   @@index([workspaceId, createdAt, id])
+  @@index([createdAt])
   @@index([workspaceId, action, createdAt])
   @@index([workspaceId, resourceType, resourceId, createdAt])
   @@index([operationType, operationId])
@@ -869,6 +907,7 @@ model AgentJob {
 
   @@unique([deploymentOperationId, operationStep])
   @@index([targetId, status, createdAt])
+  @@index([finishedAt])
   @@index([correlationId])
   @@index([status, leaseExpiresAt])
   @@index([allocationId])

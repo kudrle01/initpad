@@ -3,6 +3,7 @@ import { config } from '../config';
 import { mapWithConcurrency } from '../common/concurrency';
 import { publicHttpsUrlIssue } from '../common/public-url';
 import { encryptSecret } from '../common/secret';
+import { isScmNotFound } from '../scm/scm-http';
 import { generateToken, hashToken } from '../common/token';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -21,6 +22,9 @@ import { ProjectDeploymentOperations } from './project-deployment-operations';
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
 const PROJECT_SCM_RECONCILE_INTERVAL_MS = 15_000;
 const SCM_READ_CONCURRENCY = 4;
+// Each account costs several Gitea requests per repository; bounded batches
+// keep one maintenance pass short on large existing installations.
+const CREDENTIAL_BATCH_SIZE = 25;
 
 type ReconciliationRow = ProjectScmFields & {
   id: string;
@@ -148,48 +152,95 @@ export class ProjectReconciliation {
     }
   }
 
-  // Projects created before repository-specific CI credentials used a single
-  // platform-wide token. Rotate them per repository, grouped by owner.
-  async migrateLegacyCiTokens(): Promise<void> {
+  /**
+   * Moves self-hosted accounts to scoped Gitea credentials (ADR-134). For each
+   * account still holding legacy full-scope tokens, every owned repository
+   * first receives a package-only registry token (and, for projects older than
+   * repository-specific CI credentials, its own deploy token). Only then is
+   * the clone token replaced and every legacy token revoked, so no CI job is
+   * left with a revoked credential. An account is marked only after all steps
+   * succeed; a failure is retried in the next maintenance cycle. One call
+   * handles a bounded batch of accounts.
+   */
+  async reconcileGiteaCredentials(): Promise<void> {
+    if (config.edition !== 'self-hosted') return;
+    let owners: Array<{ id: string; username: string }>;
     try {
-      const legacy = await this.prisma.project.findMany({
-        where: { ciDeployTokenHash: null, scmProvider: 'gitea' },
-        include: { owner: true },
+      owners = await this.prisma.user.findMany({
+        where: { giteaId: { not: null }, giteaCredentialsScopedAt: null },
+        select: { id: true, username: true },
+        orderBy: { createdAt: 'asc' },
+        take: CREDENTIAL_BATCH_SIZE,
       });
-      const byOwner = new Map<string, typeof legacy>();
-      for (const project of legacy) {
-        if (!project.owner) continue;
-        const list = byOwner.get(project.owner.id) ?? [];
-        list.push(project);
-        byOwner.set(project.owner.id, list);
-      }
-      for (const projects of byOwner.values()) {
-        const owner = projects[0].owner!;
-        try {
-          const scm = this.workspaceScm.provider('gitea');
-          const ownerToken = await scm.issueCloneToken(owner.username);
-          await this.prisma.user.update({
-            where: { id: owner.id },
-            data: { accessToken: encryptSecret(ownerToken) },
-          });
-          for (const project of projects) {
-            const token = generateToken();
-            await scm.configureRepoSecrets(repositoryRef(project), ownerToken, token);
-            await this.prisma.project.update({
-              where: { id: project.id },
-              data: { ciDeployTokenHash: hashToken(token) },
-            });
-          }
-        } catch (error) {
-          this.logger.error(
-            `CI credential migration for ${owner.username} failed: ${(error as Error).message}`,
-          );
-        }
-      }
     } catch (error) {
-      // During the first migration-aware startup the column may not exist yet.
-      this.logger.warn(`CI credential migration skipped: ${(error as Error).message}`);
+      this.logger.warn(`Gitea credential reconciliation skipped: ${(error as Error).message}`);
+      return;
     }
+    if (!owners.length) return;
+    const scm = this.workspaceScm.provider('gitea');
+    if (!scm.rotateRegistryCredential || !scm.revokeLegacyCredentials) return;
+    for (const owner of owners) {
+      try {
+        await this.scopeOwnerCredentials(scm, owner);
+        this.logger.log(`Gitea credentials scoped for ${owner.username}`);
+      } catch (error) {
+        this.logger.warn(
+          `Gitea credential reconciliation for ${owner.username} failed: ${(error as Error).message}`,
+        );
+      }
+    }
+  }
+
+  private async scopeOwnerCredentials(
+    scm: ScmProvider,
+    owner: { id: string; username: string },
+  ): Promise<void> {
+    const projects = await this.prisma.project.findMany({
+      where: { ownerId: owner.id, scmProvider: 'gitea' },
+      select: {
+        id: true,
+        ciDeployTokenHash: true,
+        scmProvider: true,
+        scmRepositoryId: true,
+        scmOwner: true,
+        scmRepositoryName: true,
+        scmFullName: true,
+        scmDefaultBranch: true,
+        scmInstallationId: true,
+        repoUrl: true,
+      },
+    });
+    for (const project of projects) {
+      const repository = repositoryRef(project);
+      try {
+        if (project.ciDeployTokenHash) {
+          await scm.rotateRegistryCredential!(repository);
+        } else {
+          const token = generateToken();
+          await scm.configureRepoSecrets(repository, token);
+          await this.prisma.project.update({
+            where: { id: project.id },
+            data: { ciDeployTokenHash: hashToken(token) },
+          });
+        }
+      } catch (error) {
+        // A repository deleted outside InitPad holds no secret to migrate;
+        // repository reconciliation removes the project separately.
+        if (!isScmNotFound(error)) throw error;
+      }
+    }
+    let accessToken = '';
+    try {
+      accessToken = encryptSecret(await scm.issueCloneToken(owner.username));
+      await scm.revokeLegacyCredentials!(owner.username);
+    } catch (error) {
+      // An account Gitea no longer knows has no token left to replace.
+      if (!isScmNotFound(error)) throw error;
+    }
+    await this.prisma.user.update({
+      where: { id: owner.id },
+      data: { accessToken, giteaCredentialsScopedAt: new Date() },
+    });
   }
 
   scheduleMissingRepoReconciliation(workspaceId: string): void {

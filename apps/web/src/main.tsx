@@ -8,6 +8,7 @@ import { ToastProvider } from '@/toast';
 import { ConfirmationProvider } from '@/confirmation';
 import App from '@/App';
 import RouteError from '@/pages/RouteError';
+import LegacyLinkRedirect from '@/pages/LegacyLinkRedirect';
 import { RouteLoading } from '@/components/molecules/RouteLoading';
 import '@/index.css';
 
@@ -47,9 +48,13 @@ const router = createBrowserRouter([
     children: [
       { path: '/login', element: page(Login) },
       { path: '/forgot-password', element: page(ForgotPassword) },
-      { path: '/reset-password/:token', element: page(ResetPassword) },
-      { path: '/verify-email/:token', element: page(VerifyEmail) },
-      { path: '/activate/:token', element: page(Activate) },
+      { path: '/reset-password', element: page(ResetPassword) },
+      { path: '/verify-email', element: page(VerifyEmail) },
+      { path: '/activate', element: page(Activate) },
+      // Links issued before ADR-143 carried the token in the path.
+      { path: '/reset-password/:token', element: <LegacyLinkRedirect to="/reset-password" /> },
+      { path: '/verify-email/:token', element: <LegacyLinkRedirect to="/verify-email" /> },
+      { path: '/activate/:token', element: <LegacyLinkRedirect to="/activate" /> },
     ],
   },
   {

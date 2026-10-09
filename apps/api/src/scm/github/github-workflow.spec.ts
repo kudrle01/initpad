@@ -17,24 +17,31 @@ describe('GitHub artifact workflow adaptation', () => {
       const github = adaptWorkflowForGitHub(source, `${template}/ci.yml`);
       expect(github).toContain(`uses: ${UPLOAD_ARTIFACT_ACTION} # v7.0.1`);
       expect(github).toContain('docker save "$IMAGE" -o initpad-image.tar');
-      expect(github).toContain('${{ github.sha }}-${{ github.run_id }}');
+      expect(github).toContain(':$CI_SHA-$GITHUB_RUN_ID"');
       expect(github).toContain('archive: false');
       expect(github).toContain('retention-days: 1');
-      expect(github).toContain('artifactId');
-      expect(github).toContain('artifactDigest');
+      expect(github).toContain('ARTIFACT_ID: ${{ steps.initpad-artifact.outputs.artifact-id }}');
+      expect(github).toContain(
+        'ARTIFACT_DIGEST: ${{ steps.initpad-artifact.outputs.artifact-digest }}',
+      );
+      expect(github).toContain('--arg artifactId "$ARTIFACT_ID"');
+      expect(github).toContain('--arg artifactDigest "$ARTIFACT_DIGEST"');
       expect(github).toContain('if: always()');
-      expect(github).toContain('"ciStatus":"${{ needs.docker.result }}"');
+      expect(github).toContain('CI_RESULT: ${{ job.status }}');
       expect(github).toContain('/api/ci/start');
       expect(github).toContain('mark CI as started');
-      expect(github).not.toContain('docker push "$IMAGE"');
+      expect(github).not.toContain('docker push');
       expect(github).not.toContain('INITPAD_REGISTRY_PASSWORD');
+      // GitHub has no self-hosted registry to hold the layer cache.
+      expect(github).not.toMatch(/--cache-|CACHE=|buildcache/);
       expect(source).toContain('docker push "$IMAGE"');
+      expect(source).toContain('--cache-to "type=registry,ref=$CACHE');
     }
   });
 
   it('fails closed when a custom workflow has no recognizable build boundary', () => {
     expect(() => adaptWorkflowForGitHub('name: custom\non: [push]\n', 'custom.yml')).toThrow(
-      'docker job',
+      'image publication step',
     );
   });
 });

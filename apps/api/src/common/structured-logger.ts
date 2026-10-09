@@ -11,7 +11,7 @@ const SECRET_TEXT = [
   /\b(?:github_pat_|gh[opsu]_|glpat-)[A-Za-z0-9_-]+\b/g,
   /(\bauthorization\s*[:=]\s*)(?:Bearer\s+)?[^\s,;]+/gi,
   /(\b(?:access.?key|api.?key|password|secret|token)\s*[:=]\s*)[^\s,;]+/gi,
-  /(\/(?:activate|reset-password|verify-email)\/)[A-Za-z0-9_-]+/gi,
+  /(\/(?:activate|reset-password|verify-email)[/#])[A-Za-z0-9_-]+/gi,
   /(https?:\/\/[^\s:/]+:)[^\s@/]+@/gi,
 ];
 const RESERVED_FIELDS = new Set([

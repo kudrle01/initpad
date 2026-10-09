@@ -1,3 +1,4 @@
+import { SessionsService } from '../../auth/sessions.service';
 import { config } from '../../config';
 import { GitHubAuthController } from './github-auth.controller';
 
@@ -44,7 +45,6 @@ describe('GitHubAuthController setup verification', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
       installations as never,
       credentials as never,
     );
@@ -80,7 +80,6 @@ describe('GitHubAuthController setup verification', () => {
     };
     const controller = new GitHubAuthController(
       oauth as never,
-      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -133,12 +132,14 @@ describe('GitHubAuthController setup verification', () => {
       oauth as never,
       identities as never,
       {} as never,
-      { verify: jest.fn(() => ({ sub: 'user-1', ver: 0 })) } as never,
-      {
-        user: {
-          findUnique: jest.fn(async () => ({ id: 'user-1', active: true, tokenVersion: 0 })),
-        },
-      } as never,
+      new SessionsService(
+        {
+          user: {
+            findUnique: jest.fn(async () => ({ id: 'user-1', active: true, tokenVersion: 0 })),
+          },
+        } as never,
+        { verify: jest.fn(() => ({ sub: 'user-1', ver: 0 })) } as never,
+      ),
       {} as never,
       credentials as never,
     );

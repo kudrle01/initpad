@@ -180,6 +180,14 @@ describe('ProjectsService.importExisting guards', () => {
       };
     };
     expect(input.data.pipelinePreset).toBe(pipelinePreset);
+    // CI receives its own scoped credential; the importer's Git token stays out
+    // of repository secrets (ADR-134).
+    expect(scm.configureRepoSecrets).toHaveBeenCalledWith(
+      expect.objectContaining({ repositoryId: '101' }),
+      expect.any(String),
+    );
+    expect(scm.issueCloneToken).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
     expect(input.data.environments.create.map((environment) => environment.name)).toEqual(names);
     expect(
       input.data.environments.create.every((environment) => environment.status === 'empty'),

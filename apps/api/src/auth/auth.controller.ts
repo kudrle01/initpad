@@ -1,8 +1,23 @@
-import { Body, Controller, Get, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
-import { Response } from 'express';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { JwtAuthGuard, TOKEN_COOKIE } from './jwt-auth.guard';
-import { CurrentUser } from './current-user.decorator';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { clearSessionCookie, readSessionToken, setSessionCookie } from './session-cookie';
+import { CurrentSession, CurrentUser } from './current-user.decorator';
+import { SessionsService, type SessionClient } from './sessions.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -18,11 +33,12 @@ import { PublicEndpoint } from './public-endpoint.decorator';
 import { RateLimited } from './rate-limited.decorator';
 import { RATE_LIMITS } from './rate-limit.policy';
 
-const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly sessions: SessionsService,
+  ) {}
 
   // Managed registration — provisions the Gitea account and signs the user in.
   @Get('config')
@@ -31,6 +47,8 @@ export class AuthController {
     return {
       registrationAvailable: await this.auth.registrationAvailable(),
       registrationMode: this.auth.registrationMode(),
+      // The first account must present the installer's setup token.
+      bootstrapRequired: await this.auth.bootstrapRequired(),
       edition: config.edition,
       passwordAuthEnabled: config.edition === 'self-hosted',
       emailDeliveryEnabled: this.auth.emailDeliveryEnabled(),
@@ -44,8 +62,12 @@ export class AuthController {
   @Post('register')
   @PublicEndpoint('authentication')
   @RateLimited(RATE_LIMITS.register)
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-    const { token, user } = await this.auth.register(dto);
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { token, user } = await this.auth.register(dto, client(req));
     this.setSession(res, token);
     return user;
   }
@@ -54,20 +76,18 @@ export class AuthController {
   @Post('signin')
   @PublicEndpoint('authentication')
   @RateLimited(RATE_LIMITS.signIn)
-  async signin(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const { token, user } = await this.auth.login(dto);
+  async signin(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { token, user } = await this.auth.login(dto, client(req));
     this.setSession(res, token);
     return user;
   }
 
   private setSession(res: Response, token: string) {
-    res.cookie(TOKEN_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: config.auth.secureCookie,
-      path: '/',
-      maxAge: SESSION_MAX_AGE,
-    });
+    setSessionCookie(res, token);
   }
 
   @Get('me')
@@ -87,12 +107,14 @@ export class AuthController {
   async changePassword(
     @CurrentUser() userId: string,
     @Body() dto: ChangePasswordDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const { token, user } = await this.auth.changePassword(
       userId,
       dto.currentPassword,
       dto.newPassword,
+      client(req),
     );
     this.setSession(res, token);
     return user;
@@ -130,12 +152,7 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto, @Res({ passthrough: true }) res: Response) {
     await this.auth.resetPassword(dto.token, dto.newPassword);
     // The reset revokes existing sessions; clear any cookie on this device too.
-    res.clearCookie(TOKEN_COOKIE, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: config.auth.secureCookie,
-      path: '/',
-    });
+    clearSessionCookie(res);
   }
 
   // Activates an admin-provisioned account: the user sets their own password via
@@ -143,21 +160,52 @@ export class AuthController {
   @Post('activate')
   @PublicEndpoint('authentication')
   @RateLimited(RATE_LIMITS.activate)
-  async activate(@Body() dto: ActivateAccountDto, @Res({ passthrough: true }) res: Response) {
-    const { token, user } = await this.auth.activate(dto.token, dto.newPassword);
+  async activate(
+    @Body() dto: ActivateAccountDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { token, user } = await this.auth.activate(dto.token, dto.newPassword, client(req));
     this.setSession(res, token);
     return user;
   }
 
+  // Ends this session on the server too (ADR-147), so a copied cookie stops
+  // working before its JWT expires.
   @Post('logout')
   @PublicEndpoint('authentication')
-  logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie(TOKEN_COOKIE, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: config.auth.secureCookie,
-      path: '/',
-    });
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const token = readSessionToken(req);
+    if (token) await this.sessions.revokeToken(token);
+    clearSessionCookie(res);
     return { ok: true };
   }
+
+  // Signed-in browsers of the account, newest first.
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  listSessions(@CurrentUser() userId: string, @CurrentSession() sessionId: string | null) {
+    return this.sessions.list(userId, sessionId);
+  }
+
+  @Post('sessions/end-others')
+  @UseGuards(JwtAuthGuard)
+  endOtherSessions(@CurrentUser() userId: string, @CurrentSession() sessionId: string | null) {
+    return this.auth.endSessions(userId, { exceptId: sessionId });
+  }
+
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  endSession(
+    @CurrentUser() userId: string,
+    @CurrentSession() sessionId: string | null,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    if (id === sessionId) throw new BadRequestException('Sign out to end the current session');
+    return this.auth.endSessions(userId, { id });
+  }
+}
+
+function client(req: Request): SessionClient {
+  return { userAgent: req.headers['user-agent'] };
 }

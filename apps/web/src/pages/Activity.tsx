@@ -13,6 +13,7 @@ import { useAuth } from '@/auth';
 import { useLoadable } from '@/hooks/useLoadable';
 import type { ActivityEvent } from '@/types';
 import { t, relativeTime } from '@/i18n';
+import { externalHref } from '@/lib/utils';
 
 export default function Activity() {
   const { activeWorkspace } = useAuth();
@@ -83,10 +84,10 @@ export default function Activity() {
                         >
                           {inner}
                         </Link>
-                      ) : s.url ? (
+                      ) : externalHref(s.url) ? (
                         <a
                           key={s.name}
-                          href={s.url}
+                          href={externalHref(s.url)}
                           target="_blank"
                           rel="noreferrer"
                           className="text-link flex items-center gap-1.5 whitespace-nowrap"

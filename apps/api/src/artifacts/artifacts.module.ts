@@ -9,9 +9,9 @@ import { S3ArtifactStore } from './s3-artifact-store';
  * Provides the configured {@link ArtifactStore} (ADR-059).
  *
  * When an S3/MinIO bucket is configured, a real {@link S3ArtifactStore} is used.
- * Otherwise (self-hosted, no bucket) the process falls back to an in-memory store
- * and the local Docker daemon remains the effective cache. The SaaS edition never
- * reaches the fallback: validateConfig refuses to start without a real store.
+ * Otherwise the process falls back to an in-memory store for development and
+ * tests. Production never reaches the fallback: validateConfig refuses to start
+ * without a real store (ADR-146).
  */
 @Module({
   providers: [

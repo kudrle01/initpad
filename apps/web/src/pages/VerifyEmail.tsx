@@ -1,21 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api } from '@/api';
 import { AuthCard } from '@/components/molecules/AuthCard';
+import { MissingLinkToken } from '@/components/molecules/MissingLinkToken';
 import { Button } from '@/components/ui/button';
+import { useLinkToken } from '@/lib/link-token';
 import { t } from '@/i18n';
 
 type State = 'verifying' | 'ok' | 'error';
 
-// Public page reached from a verification link (/verify-email/:token).
+// Public page reached from a verification link (/verify-email#token).
 export default function VerifyEmail() {
-  const { token = '' } = useParams();
+  const token = useLinkToken();
   const [state, setState] = useState<State>('verifying');
   const [error, setError] = useState<string | null>(null);
   const ran = useRef(false);
 
   useEffect(() => {
-    if (ran.current) return; // one-shot token: never fire twice (StrictMode)
+    if (!token || ran.current) return; // one-shot token: never fire twice (StrictMode)
     ran.current = true;
     api
       .verifyEmail(token)
@@ -25,6 +27,8 @@ export default function VerifyEmail() {
         setState('error');
       });
   }, [token]);
+
+  if (!token) return <MissingLinkToken title={t('Verification failed')} />;
 
   return (
     <AuthCard

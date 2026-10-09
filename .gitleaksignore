@@ -4,3 +4,11 @@ fcc994768b1c71fd09be82709c598e84cb996952:apps/web/src/components/organisms/Targe
 dd2f7bf7df9cc0bbba741bffe84caad7ac01a0e8:apps/web/src/components/organisms/TargetDialog.tsx:private-key:269
 # Reviewed test-only PEM marker without key material.
 211eb11b9536de6e940a227e381197ac43c0b2a1:apps/api/src/config.spec.ts:private-key:129
+# Reviewed test-only key material (ADR-141): fixed, obviously fake 32+ character
+# JWT and encryption keys that exercise the production key-length check.
+2790682b3dc3ec93c391f805dfe9ff76c2fdf36c:apps/api/src/common/secret-reencryption.service.spec.ts:generic-api-key:87
+2790682b3dc3ec93c391f805dfe9ff76c2fdf36c:apps/api/src/config.spec.ts:generic-api-key:26
+2790682b3dc3ec93c391f805dfe9ff76c2fdf36c:apps/api/src/config.spec.ts:generic-api-key:27
+2790682b3dc3ec93c391f805dfe9ff76c2fdf36c:apps/api/src/config.spec.ts:generic-api-key:69
+2790682b3dc3ec93c391f805dfe9ff76c2fdf36c:apps/api/src/config.spec.ts:generic-api-key:70
+2790682b3dc3ec93c391f805dfe9ff76c2fdf36c:apps/api/src/config.spec.ts:generic-api-key:73

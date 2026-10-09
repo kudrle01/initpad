@@ -123,6 +123,7 @@ const executableOperations = [
   'deploy/platform-update-acceptance.sh',
   'deploy/environment-expiry-acceptance.sh',
   'deploy/backup.sh',
+  'deploy/backup-crypt.sh',
   'deploy/restore.sh',
   'deploy/recovery-drill.sh',
   'deploy/cleanup.sh',
@@ -275,6 +276,7 @@ for (const path of [
   'deploy/platform-update-acceptance.sh',
   'deploy/environment-expiry-acceptance.sh',
   'deploy/backup.sh',
+  'deploy/backup-crypt.sh',
   'deploy/restore.sh',
   'deploy/recovery-drill.sh',
 ]) {

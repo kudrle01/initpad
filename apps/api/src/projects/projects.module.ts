@@ -11,6 +11,7 @@ import { AppConfigService } from './app-config.service';
 import { AppConfigController } from './app-config.controller';
 import { CiController } from './ci.controller';
 import { ScmWebhookController } from './scm-webhook.controller';
+import { config } from '../config';
 import { TemplatesModule } from '../templates/templates.module';
 import { GeneratorModule } from '../generator/generator.module';
 import { DeploymentModule } from '../deployment/deployment.module';
@@ -49,7 +50,8 @@ import { ControlPlaneLeaseService } from '../common/control-plane-lease.service'
     ActivityController,
     AppConfigController,
     CiController,
-    ScmWebhookController,
+    // Gitea system webhooks only exist where InitPad runs Gitea (ADR-153).
+    ...(config.edition === 'self-hosted' ? [ScmWebhookController] : []),
   ],
   exports: [AppConfigService],
 })

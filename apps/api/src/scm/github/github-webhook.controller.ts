@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Headers,
@@ -17,7 +18,15 @@ import {
   InstallationTargetEvent,
 } from './github-installation.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
+import { GitHubWebhookDeliveryService } from './github-webhook-delivery.service';
 import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
+
+// The only events that change state; everything else is acknowledged unread.
+const STATEFUL_EVENTS = new Set([
+  'installation',
+  'installation_target',
+  'github_app_authorization',
+]);
 
 interface GitHubAuthorizationRevokedEvent {
   action: 'revoked';
@@ -33,6 +42,7 @@ export class GitHubWebhookController {
   constructor(
     private readonly installations: GitHubInstallationService,
     private readonly credentials: GitHubUserCredentialService,
+    private readonly deliveries: GitHubWebhookDeliveryService,
   ) {}
 
   @Post('webhook')
@@ -40,6 +50,7 @@ export class GitHubWebhookController {
   async handle(
     @Headers('x-hub-signature-256') signature: string,
     @Headers('x-github-event') event: string,
+    @Headers('x-github-delivery') delivery: string,
     @Req() req: RawBodyRequest<Request>,
     @Body() body: InstallationEvent | InstallationTargetEvent | GitHubAuthorizationRevokedEvent,
   ) {
@@ -48,6 +59,12 @@ export class GitHubWebhookController {
     if (!secret || !raw || !this.verify(signature, raw, secret)) {
       throw new UnauthorizedException('Invalid webhook signature');
     }
+    if (!STATEFUL_EVENTS.has(event)) return { accepted: true };
+    if (typeof delivery !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(delivery)) {
+      throw new BadRequestException('Missing X-GitHub-Delivery');
+    }
+    // A replay of an applied delivery is acknowledged without changing state.
+    if (await this.deliveries.applied(delivery)) return { accepted: true };
     if (event === 'installation') {
       // Let persistence failures return 5xx so GitHub retries the delivery.
       // A logged-and-accepted failure would permanently lose installation
@@ -66,6 +83,7 @@ export class GitHubWebhookController {
         await this.credentials.revokeByProviderUserId(String(authorization.sender.id));
       }
     }
+    await this.deliveries.record(delivery, event);
     return { accepted: true };
   }
 

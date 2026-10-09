@@ -58,6 +58,89 @@ describe('AuditEventsService', () => {
     });
   });
 
+  it('records platform events outside any workspace inside the change transaction', async () => {
+    const prisma = {
+      user: { findUnique: jest.fn() },
+      auditEvent: { create: jest.fn(), createMany: jest.fn() },
+    };
+    const tx = {
+      user: { findUnique: jest.fn(async () => ({ username: 'root', name: 'Root' })) },
+      auditEvent: { createMany: jest.fn(async () => ({ count: 1 })) },
+    };
+    const service = new AuditEventsService(prisma as never);
+
+    await service.record(
+      {
+        workspaceId: null,
+        actorUserId: 'admin-1',
+        action: 'user.deactivated',
+        resourceType: 'user',
+        resourceId: 'user-2',
+        resourceName: 'bob',
+      },
+      tx as never,
+    );
+
+    // Every read and the write go through the transaction (ADR-142).
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.auditEvent.create).not.toHaveBeenCalled();
+    expect(tx.auditEvent.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          workspaceId: null,
+          actorUsername: 'root',
+          action: 'user.deactivated',
+        }),
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it('names a signed-out actor instead of attributing it to the system', async () => {
+    const prisma = {
+      user: { findUnique: jest.fn() },
+      auditEvent: { create: jest.fn(async () => ({})) },
+    };
+    const service = new AuditEventsService(prisma as never);
+
+    await service.record({
+      workspaceId: null,
+      anonymous: true,
+      action: 'auth.sign_in_failed',
+      outcome: 'failed',
+      resourceType: 'user',
+      details: { reason: 'unknown_account' },
+    });
+
+    expect(prisma.auditEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorUserId: null,
+        actorUsername: 'anonymous',
+        actorDisplayName: 'Signed-out visitor',
+        outcome: 'failed',
+      }),
+    });
+  });
+
+  it('lists only events outside a workspace to platform administrators', async () => {
+    const prisma = {
+      auditEvent: {
+        findFirst: jest.fn(async () => ({ id: 'cursor-1' })),
+        findMany: jest.fn(async () => [
+          { ...row('e1', 5), workspaceId: null, action: 'workspace.deleted' },
+        ]),
+      },
+    };
+    const service = new AuditEventsService(prisma as never);
+
+    const page = await service.listPlatform({ limit: 30, action: 'auth.signed_in' });
+
+    expect(prisma.auditEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { workspaceId: null, action: 'auth.signed_in' } }),
+    );
+    expect(page.items[0]).toEqual(expect.objectContaining({ action: 'workspace.deleted' }));
+  });
+
   it('does not label a named user without a profile display name as the system', async () => {
     const prisma = {
       user: { findUnique: jest.fn(async () => ({ username: 'alice', name: null })) },

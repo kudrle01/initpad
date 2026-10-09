@@ -64,10 +64,9 @@ test('hardens both services while leaving the web proxy able to start', () => {
     assert.match(service, /^ {4}security_opt: \[no-new-privileges:true\]$/m, name);
     assert.doesNotMatch(service, /privileged|^ {4}user: ['"]?(0|root)\b/m, name);
   }
-  // nginx starts as root and needs exactly these to chown its tmpfs cache,
-  // bind port 80 and drop its workers; the first 0.2.14 staging run crashed
-  // without them. The API needs none.
-  assert.match(web, /^ {4}cap_add: \[CHOWN, SETGID, SETUID, NET_BIND_SERVICE\]$/m);
+  // The web image runs nginx unprivileged (ADR-144); neither service gets a
+  // capability back.
+  assert.doesNotMatch(web, /cap_add/);
   assert.doesNotMatch(api, /cap_add/);
 });
 
@@ -76,8 +75,6 @@ test('mounts deployment-owned secrets as files without placing values in the env
     'DATABASE_URL',
     'INITPAD_JWT_SECRET',
     'INITPAD_ENCRYPTION_KEY',
-    'INITPAD_SCM_WEBHOOK_TOKEN',
-    'INITPAD_OIDC_CLIENT_SECRET',
     'INITPAD_GITHUB_CLIENT_SECRET',
     'INITPAD_GITHUB_PRIVATE_KEY',
     'INITPAD_GITHUB_WEBHOOK_SECRET',
@@ -93,6 +90,13 @@ test('mounts deployment-owned secrets as files without placing values in the env
     assert.match(example, new RegExp(`^${deploymentName}_FILE=/secure/runtime/secrets/`, 'm'));
     assert.doesNotMatch(example, new RegExp(`^${deploymentName}=`, 'm'));
   }
+  // SaaS runs no Gitea, so neither its OIDC client nor its webhook secret exists
+  // there (ADR-153).
+  assert.doesNotMatch(
+    compose,
+    /SCM_WEBHOOK_TOKEN|OIDC_CLIENT_SECRET|scm_webhook_token|oidc_client_secret/,
+  );
+  assert.doesNotMatch(example, /SCM_WEBHOOK_TOKEN|OIDC_CLIENT_SECRET/);
   assert.doesNotMatch(example, /EXTERNAL_SECRET|__GENERATE__/);
   assert.match(example, /INITPAD_WEB_BIND_ADDRESS=127\.0\.0\.1/);
 });
@@ -102,8 +106,6 @@ const secretFileVariables = [
   'INITPAD_JWT_SECRET_FILE',
   'INITPAD_ENCRYPTION_KEY_FILE',
   'INITPAD_SMTP_PASSWORD_FILE',
-  'INITPAD_SCM_WEBHOOK_TOKEN_FILE',
-  'INITPAD_OIDC_CLIENT_SECRET_FILE',
   'INITPAD_GITHUB_CLIENT_SECRET_FILE',
   'INITPAD_GITHUB_PRIVATE_KEY_FILE',
   'INITPAD_GITHUB_WEBHOOK_SECRET_FILE',

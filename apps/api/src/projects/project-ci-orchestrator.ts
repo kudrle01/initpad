@@ -234,7 +234,7 @@ export class ProjectCiOrchestrator {
     ciStatus: string,
   ): Promise<void> {
     const reason =
-      `CI did not produce a deployable image (docker job: ${ciStatus}). ` +
+      `CI did not produce a deployable image (CI result: ${ciStatus}). ` +
       'Open the SCM run logs, fix the failed job and run again.';
     const scm = this.workspaceScm.provider(repository.provider);
 

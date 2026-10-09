@@ -1,14 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ArrowRight,
-  ChevronDown,
-  Cloud,
-  Container,
-  ExternalLink,
-  Layers,
-  Server,
-} from 'lucide-react';
+import { ArrowRight, ChevronDown, Cloud, Container, Layers, Server } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '@/api';
 import { PageHeader } from '@/components/molecules/PageHeader';
@@ -21,11 +13,12 @@ import { SegmentedControl } from '@/components/molecules/SegmentedControl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { cn, externalHref } from '@/lib/utils';
 import { useAuth } from '@/auth';
 import { useLoadable } from '@/hooks/useLoadable';
 import type { EnvName, Environment, ProviderKind, Project } from '@/types';
 import { t } from '@/i18n';
+import { AppUrlLink } from '@/components/molecules/AppUrlLink';
 
 const KIND_ICON: Record<ProviderKind, LucideIcon> = {
   docker: Container,
@@ -68,17 +61,8 @@ function EnvironmentRow({ environment }: { environment: Environment }) {
         <span className="shrink-0 font-mono">
           {environment.version ? `v${environment.version.slice(0, 7)}` : '—'}
         </span>
-        {environment.url ? (
-          <a
-            href={environment.url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-link flex min-w-0 items-center gap-1.5 md:text-sm"
-            title={environment.url}
-          >
-            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{environment.url.replace(/^https?:\/\//, '')}</span>
-          </a>
+        {externalHref(environment.url) ? (
+          <AppUrlLink url={environment.url} className="md:text-sm" />
         ) : (
           <span className="hidden md:inline">—</span>
         )}

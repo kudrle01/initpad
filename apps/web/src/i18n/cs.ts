@@ -20,6 +20,9 @@ export const cs = {
   // components/molecules/LoadErrorState.tsx
   'Could not load this content': 'Obsah se nepodařilo načíst',
   'Try again': 'Zkusit znovu',
+  // components/molecules/MissingLinkToken.tsx
+  'The link is missing its code. Open the whole link again from the message you received.':
+    'V odkazu chybí kód. Otevřete znovu celý odkaz ze zprávy, kterou jste dostali.',
   // components/molecules/PageHeader.tsx
   'About {title}': 'O sekci {title}',
   // components/molecules/RouteLoading.tsx
@@ -708,6 +711,17 @@ export const cs = {
   '{issue} The platform administrator must configure a public HTTPS <code>INITPAD_PUBLIC_URL</code>. Current value: <value>{url}</value>.':
     '{issue} Správce platformy musí nastavit veřejnou HTTPS adresu <code>INITPAD_PUBLIC_URL</code>. Současná hodnota: <value>{url}</value>.',
   'not set': 'nenastaveno',
+  // components/organisms/settings/SessionsSettings.tsx
+  'Unknown browser': 'Neznámý prohlížeč',
+  'Signed-in browsers': 'Přihlášené prohlížeče',
+  'Browsers where your account is signed in. Sign out any you do not recognise, then change your password.':
+    'Prohlížeče, ve kterých je váš účet přihlášený. Ty, které nepoznáváte, odhlaste a pak si změňte heslo.',
+  'Sign out all others': 'Odhlásit všechny ostatní',
+  'Loading sessions': 'Načítám přihlášení',
+  'This browser signed in before session tracking was added.':
+    'Tento prohlížeč se přihlásil dřív, než InitPad začal přihlášení evidovat.',
+  'This browser': 'Tento prohlížeč',
+  'Signed in {time}': 'Přihlášeno {time}',
   // components/organisms/settings/WorkspaceAdministrationSettings.tsx
   'Workspace renamed': 'Workspace přejmenován',
   'Delete workspace {workspaceName}?': 'Smazat workspace {workspaceName}?',
@@ -1045,8 +1059,8 @@ export const cs = {
   'CI verifies a build without deploying it; production always requires approval.':
     'CI build ověří, ale nenasadí; produkce vždy vyžaduje schválení.',
   // pages/AccountSettings.tsx
-  'Sign-in methods and Git access for your own account.':
-    'Způsoby přihlášení a přístup ke Gitu pro váš účet.',
+  'Sign-in methods, signed-in browsers and Git access for your own account.':
+    'Způsoby přihlášení, přihlášené prohlížeče a přístup ke Gitu pro váš účet.',
   // pages/Activate.tsx
   'Passwords do not match.': 'Hesla se neshodují.',
   'Activate your account': 'Aktivujte svůj účet',
@@ -1065,6 +1079,9 @@ export const cs = {
   'Commits and CI runs across your projects will show up here.':
     'Zobrazí se tu commity a běhy CI ze všech vašich projektů.',
   // pages/Admin.tsx
+  'Deployed applications can read sessions': 'Nasazené aplikace mohou číst relace',
+  'Applications on the built-in Docker server use this InitPad host name over HTTP, so browsers send them the InitPad session of anyone who opens them. Serve InitPad over HTTPS (server profile) or set INITPAD_DEPLOY_PUBLIC_HOST to a different host name before other people deploy here.':
+    'Aplikace na vestavěném Docker serveru používají přes HTTP stejný název hostu jako InitPad, takže jim prohlížeč posílá relaci InitPadu každého, kdo je otevře. Než sem začnou nasazovat další lidé, provozujte InitPad přes HTTPS (serverový profil) nebo nastavte INITPAD_DEPLOY_PUBLIC_HOST na jiný název hostu.',
   'Create @{username} as platform administrator?':
     'Vytvořit @{username} jako administrátora platformy?',
   'Platform administrators manage every account in this self-hosted InitPad instance.':
@@ -1157,6 +1174,28 @@ export const cs = {
   Deactivated: 'Deaktivován',
   'Must change password': 'Musí změnit heslo',
   'E-mail unverified': 'E-mail neověřen',
+  // components/organisms/AuditEventRow.tsx
+  'Workspace limits changed': 'Limity workspace změněny',
+  'Signed in': 'Přihlášení',
+  'Sign-in failed': 'Neúspěšné přihlášení',
+  'Account registered': 'Účet zaregistrován',
+  'Account activated': 'Účet aktivován',
+  'Password changed': 'Heslo změněno',
+  'Password reset requested': 'Žádost o obnovu hesla',
+  'Password reset completed': 'Heslo obnoveno',
+  'Account created': 'Účet založen',
+  'Activation link issued': 'Aktivační odkaz vydán',
+  'Account deactivated': 'Účet deaktivován',
+  'Account reactivated': 'Účet znovu aktivován',
+  'Password reset by an administrator': 'Heslo obnovil administrátor',
+  'Other sessions signed out': 'Ostatní relace odhlášeny',
+  'Signed-out visitor': 'Nepřihlášený návštěvník',
+  // components/organisms/admin/PlatformAuditCard.tsx
+  'Security log': 'Bezpečnostní záznam',
+  'Sign-ins, account administration and deleted workspaces, newest first.':
+    'Přihlášení, správa účtů a smazané workspaces, od nejnovějších.',
+  'Loading security log': 'Načítám bezpečnostní záznam',
+  'No security events yet.': 'Zatím žádné bezpečnostní události.',
   // pages/AuditLog.tsx
   'Workspace created': 'Workspace vytvořen',
   'Workspace updated': 'Workspace upraven',
@@ -1449,6 +1488,9 @@ export const cs = {
     'Stroje a hosting, na které se nasazuje, a co na každém z nich smí tento workspace používat.',
   'Loading servers': 'Načítání serverů',
   // pages/Login.tsx
+  'Setup token': 'Instalační token',
+  'The first account becomes the administrator. Enter the setup token printed at the end of install.sh.':
+    'První účet se stane administrátorem. Zadejte instalační token, který vypsal skript install.sh na konci instalace.',
   'Internal developer platform': 'Interní vývojářská platforma',
   'Loading sign-in options…': 'Načítání možností přihlášení…',
   'Authentication service is unavailable. Refresh and try again.':

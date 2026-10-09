@@ -32,6 +32,7 @@ import type {
   PipelinePreset,
   WorkspaceCapacity,
   WorkspaceCapacityUpdate,
+  UserSessionSummary,
 } from '@/types';
 import { t } from '@/i18n';
 
@@ -162,6 +163,16 @@ export interface AuditEventFilters {
   outcome?: 'accepted' | 'succeeded' | 'failed' | 'cancelled';
   cursor?: string;
   limit?: number;
+}
+
+function auditQuery(filters: AuditEventFilters): string {
+  const query = new URLSearchParams();
+  if (filters.action) query.set('action', filters.action);
+  if (filters.resourceType) query.set('resourceType', filters.resourceType);
+  if (filters.outcome) query.set('outcome', filters.outcome);
+  if (filters.cursor) query.set('cursor', filters.cursor);
+  query.set('limit', String(filters.limit ?? 30));
+  return query.toString();
 }
 
 export interface GitHubStatus {
@@ -348,15 +359,11 @@ export const api = {
   downloadTemplateWorkflow: (templateId: string, provider: 'gitea' | 'github') =>
     download(`/templates/${encodeURIComponent(templateId)}/workflows/${provider}`),
   getActivity: () => http<ActivityEvent[]>('/activity'),
-  getAuditEvents: (filters: AuditEventFilters = {}) => {
-    const query = new URLSearchParams();
-    if (filters.action) query.set('action', filters.action);
-    if (filters.resourceType) query.set('resourceType', filters.resourceType);
-    if (filters.outcome) query.set('outcome', filters.outcome);
-    if (filters.cursor) query.set('cursor', filters.cursor);
-    query.set('limit', String(filters.limit ?? 30));
-    return http<AuditEventPage>(`/audit-events?${query.toString()}`);
-  },
+  getAuditEvents: (filters: AuditEventFilters = {}) =>
+    http<AuditEventPage>(`/audit-events?${auditQuery(filters)}`),
+  // Sign-in, account administration and events of deleted workspaces.
+  adminListAuditEvents: (filters: AuditEventFilters = {}) =>
+    http<AuditEventPage>(`/admin/audit-events?${auditQuery(filters)}`),
   createProject: (
     name: string,
     templateId: string,
@@ -543,6 +550,7 @@ export const api = {
     http<{
       registrationAvailable: boolean;
       registrationMode: string;
+      bootstrapRequired: boolean;
       githubEnabled: boolean;
       edition: 'self-hosted' | 'saas';
       passwordAuthEnabled: boolean;
@@ -557,10 +565,10 @@ export const api = {
     http<{ recovered: boolean; accountLogin: string | null }>('/scm/github/setup/recover', {
       method: 'POST',
     }),
-  register: (username: string, email: string, password: string) =>
+  register: (username: string, email: string, password: string, bootstrapToken?: string) =>
     http<User>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, email, password }),
+      body: JSON.stringify({ username, email, password, bootstrapToken }),
     }),
   signin: (username: string, password: string) =>
     http<User>('/auth/signin', {
@@ -594,6 +602,10 @@ export const api = {
       body: JSON.stringify({ token, newPassword }),
     }),
   logout: () => http<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
+  listSessions: () => http<UserSessionSummary[]>('/auth/sessions'),
+  endSession: (id: string) =>
+    http<{ ended: number }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  endOtherSessions: () => http<{ ended: number }>('/auth/sessions/end-others', { method: 'POST' }),
   getGitAccess: () =>
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).
@@ -608,6 +620,7 @@ export const api = {
   // the UI can retry after cutover instead of retaining a request from the
   // unavailable instance for the general API timeout.
   adminPlatformUpdateStatus: () => http<PlatformUpdateStatus>('/admin/updates', undefined, 12_000),
+  adminSecurityStatus: () => http<{ builtInAppsShareSession: boolean }>('/admin/security'),
   adminInstallPlatformUpdate: (requestId: string) =>
     http<PlatformUpdateOperation>('/admin/updates', {
       method: 'POST',

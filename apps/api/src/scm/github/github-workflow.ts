@@ -3,6 +3,27 @@
 export const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 
+const REGISTRY_CREDENTIALS =
+  '          INITPAD_REGISTRY_USER: ${{ secrets.INITPAD_REGISTRY_USER }}\n' +
+  '          INITPAD_REGISTRY_PASSWORD: ${{ secrets.INITPAD_REGISTRY_PASSWORD }}\n';
+const REGISTRY_LOGIN =
+  '          echo "$INITPAD_REGISTRY_PASSWORD" | \\\n' +
+  '            docker login "$INITPAD_REGISTRY" -u "$INITPAD_REGISTRY_USER" --password-stdin\n';
+const BUILD_CACHE_NAME =
+  "          # Build layers are cached next to the image, in this repository's registry.\n" +
+  '          echo "CACHE=${IMAGE%:*}:buildcache" >> "$GITHUB_ENV"\n';
+// The layer cache lives in the self-hosted registry (ADR-139); GitHub hands
+// the image over as an artifact and has no such registry.
+const BUILD_CACHE_FLAG = /^ {12}--cache-(?:from|to) "type=registry,[^"\n]*" \\\n/gm;
+const PUBLISH_STEP = '      - name: publish image\n        run: docker push "$IMAGE"\n';
+const RESULT_ENV = '          CI_RESULT: ${{ job.status }}\n';
+const RESULT_FIELDS = `--arg ciStatus "$CI_RESULT" '$ARGS.named'`;
+
+function replaceOnce(workflow: string, search: string, replacement: string, what: string): string {
+  if (!workflow.includes(search)) throw new Error(what);
+  return workflow.replace(search, replacement);
+}
+
 /**
  * Converts the shared Gitea workflow into the hosted-edition GitHub workflow.
  * Gitea keeps publishing to the bundled registry. GitHub instead hands the
@@ -15,74 +36,58 @@ export function adaptWorkflowForGitHub(source: string, filename: string): string
     workflow = workflow.replace(/^on: \[push\]$/m, 'on: [push]\n\npermissions:\n  contents: read');
   }
 
-  const dockerHeader = '  docker:\n    name: docker build\n';
-  if (!workflow.includes(dockerHeader)) {
-    throw new Error(`Could not locate the docker job in '${filename}'`);
-  }
-  workflow = workflow.replace(
-    dockerHeader,
+  const missing = (part: string) => `Could not locate the ${part} in '${filename}'`;
+  workflow = replaceOnce(
+    workflow,
+    PUBLISH_STEP,
     [
-      dockerHeader.trimEnd(),
-      '    outputs:',
-      '      artifact-id: ${{ steps.initpad-artifact.outputs.artifact-id }}',
-      '      artifact-digest: ${{ steps.initpad-artifact.outputs.artifact-digest }}',
+      '      - name: save image',
+      '        run: docker save "$IMAGE" -o initpad-image.tar',
+      '      - name: upload immutable image artifact',
+      '        id: initpad-artifact',
+      `        uses: ${UPLOAD_ARTIFACT_ACTION} # v7.0.1`,
+      '        with:',
+      '          path: initpad-image.tar',
+      '          archive: false',
+      '          retention-days: 1',
+      '          if-no-files-found: error',
       '',
     ].join('\n'),
+    missing('image publication step'),
   );
-
-  const registryLogin =
-    '          echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \\\n' +
-    '            docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin\n';
-  if (!workflow.includes(registryLogin) || !workflow.includes('          docker push "$IMAGE"')) {
-    throw new Error(`Could not locate the registry publication step in '${filename}'`);
-  }
-  workflow = workflow
-    .replace(registryLogin, '')
-    .replace(':${{ github.sha }}" | tr', ':${{ github.sha }}-${{ github.run_id }}" | tr')
-    .replace(
-      '          docker push "$IMAGE"',
-      [
-        '          docker save "$IMAGE" -o initpad-image.tar',
-        '      - name: upload immutable image artifact',
-        '        id: initpad-artifact',
-        `        uses: ${UPLOAD_ARTIFACT_ACTION} # v7.0.1`,
-        '        with:',
-        '          path: initpad-image.tar',
-        '          archive: false',
-        '          retention-days: 1',
-        '          if-no-files-found: error',
-      ].join('\n'),
-    );
-
-  // Accept the immediately previous scaffold shape as well. GitHub project
-  // creation can adapt a checked-out template from an older InitPad version,
-  // but always emits the current terminal-result callback.
-  if (!workflow.includes('    if: always()')) {
-    workflow = workflow.replace(
-      /(^\x20{2}deploy:\n(?:\x20{4}[^\n]*\n)*?^\x20{4}needs: docker\n)/m,
-      '$1    if: always()\n',
-    );
-  }
-  const currentCallback = `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}","ciStatus":"\${{ needs.docker.result }}"}'`;
-  const legacyCallback = `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}"}'`;
-  const callback = workflow.includes(currentCallback) ? currentCallback : legacyCallback;
-  if (!workflow.includes(callback)) {
-    throw new Error(`Could not locate the InitPad callback in '${filename}'`);
-  }
-  workflow = workflow.replace(
-    callback,
-    `            -d '{"repo":"\${{ github.repository }}","sha":"\${{ github.sha }}","ref":"\${{ github.ref_name }}","ciStatus":"\${{ needs.docker.result }}","artifactId":"\${{ needs.docker.outputs.artifact-id }}","artifactDigest":"\${{ needs.docker.outputs.artifact-digest }}"}'`,
+  workflow = replaceOnce(workflow, REGISTRY_CREDENTIALS, '', missing('registry credentials'));
+  workflow = replaceOnce(workflow, REGISTRY_LOGIN, '', missing('registry login'));
+  workflow = replaceOnce(workflow, BUILD_CACHE_NAME, '', missing('build cache name'));
+  workflow = workflow.replace(BUILD_CACHE_FLAG, '');
+  workflow = replaceOnce(
+    workflow,
+    ':$CI_SHA" | tr',
+    ':$CI_SHA-$GITHUB_RUN_ID" | tr',
+    missing('image tag'),
+  );
+  workflow = replaceOnce(
+    workflow,
+    RESULT_ENV,
+    RESULT_ENV +
+      '          ARTIFACT_ID: ${{ steps.initpad-artifact.outputs.artifact-id }}\n' +
+      '          ARTIFACT_DIGEST: ${{ steps.initpad-artifact.outputs.artifact-digest }}\n',
+    missing('InitPad callback result'),
+  );
+  workflow = replaceOnce(
+    workflow,
+    RESULT_FIELDS,
+    `--arg ciStatus "$CI_RESULT" --arg artifactId "$ARTIFACT_ID" \\\n` +
+      `            --arg artifactDigest "$ARTIFACT_DIGEST" '$ARGS.named'`,
+    missing('InitPad callback'),
   );
 
   if (
     workflow.includes('INITPAD_REGISTRY_PASSWORD') ||
     workflow.includes('INITPAD_REGISTRY_USER') ||
-    workflow.includes('docker push "$IMAGE"')
+    workflow.includes('docker push') ||
+    workflow.includes('--cache-')
   ) {
-    throw new Error(`Could not remove registry credentials from '${filename}'`);
-  }
-  if (!workflow.includes('${{ github.sha }}-${{ github.run_id }}')) {
-    throw new Error(`Could not bind the image tag to a unique workflow run in '${filename}'`);
+    throw new Error(`Could not remove the self-hosted registry from '${filename}'`);
   }
   return workflow;
 }

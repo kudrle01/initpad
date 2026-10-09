@@ -6,7 +6,6 @@ import {
   Cloud,
   Clock3,
   Container,
-  ExternalLink,
   History,
   MoreVertical,
   Play,
@@ -37,6 +36,7 @@ import { deploymentProgress } from '@/lib/deployment-progress';
 import type { Commit, EnvName, Project, ProviderKind } from '@/types';
 import { t, rich, formatDateTime } from '@/i18n';
 import { statusLabel } from '@/i18n/labels';
+import { AppUrlLink } from '@/components/molecules/AppUrlLink';
 
 // One stage of the pipeline. The promote control between two stages is the
 // only primary action here; everything else lives in the stage menu.
@@ -421,18 +421,7 @@ export function EnvironmentPipeline({
                       </span>
                     )}
                   </div>
-                  {env.url && (
-                    <a
-                      href={env.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={env.url}
-                      className="text-link flex min-w-0 items-center gap-1.5"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{env.url.replace(/^https?:\/\//, '')}</span>
-                    </a>
-                  )}
+                  <AppUrlLink url={env.url} />
                 </div>
 
                 {targetUnavailable && (

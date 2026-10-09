@@ -19,6 +19,7 @@ import { DeleteProjectDto } from './dto/delete-project.dto';
 import { RollbackProjectDto } from './dto/rollback-project.dto';
 import { RequestWorkloadDiagnosticDto } from './dto/request-workload-diagnostic.dto';
 import { EnvName } from '../domain/types';
+import { EnvNamePipe } from './env-name.pipe';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuditEventsService, type AuditDetailValue } from '../audit/audit-events.service';
@@ -145,7 +146,7 @@ export class ProjectsController {
   @Post(':id/promote/:env')
   async promote(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
@@ -165,7 +166,7 @@ export class ProjectsController {
   @Post(':id/redeploy/:env')
   async redeploy(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
@@ -175,7 +176,7 @@ export class ProjectsController {
   @Get(':id/rollback/:env')
   async rollbackPreview(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'maintain');
@@ -185,7 +186,7 @@ export class ProjectsController {
   @Post(':id/rollback/:env')
   async rollback(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @Body() dto: RollbackProjectDto,
     @CurrentUser() userId: string,
   ) {
@@ -199,7 +200,7 @@ export class ProjectsController {
   @Get(':id/diagnostics/:env')
   async workloadDiagnostic(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
@@ -209,7 +210,7 @@ export class ProjectsController {
   @Post(':id/diagnostics/:env')
   async requestWorkloadDiagnostic(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @Body() dto: RequestWorkloadDiagnosticDto,
     @CurrentUser() userId: string,
   ) {
@@ -242,7 +243,7 @@ export class ProjectsController {
   @Post(':id/stop/:env')
   async stopEnv(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
@@ -252,7 +253,7 @@ export class ProjectsController {
   @Post(':id/start/:env')
   async startEnv(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
@@ -262,7 +263,7 @@ export class ProjectsController {
   @Post(':id/teardown/:env')
   async removeEnv(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @CurrentUser() userId: string,
   ) {
     await this.projects.assertAccess(id, userId, 'write');
@@ -274,7 +275,7 @@ export class ProjectsController {
   @Put(':id/target/:env')
   async setTarget(
     @Param('id') id: string,
-    @Param('env') env: EnvName,
+    @Param('env', EnvNamePipe) env: EnvName,
     @Body() dto: SetTargetDto,
     @CurrentUser() userId: string,
   ) {

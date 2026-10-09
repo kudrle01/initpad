@@ -9,10 +9,4 @@ if [ -z "${APP_KEY:-}" ]; then
   export APP_KEY
 fi
 
-exec php \
-  -d variables_order=EGPCS \
-  -d display_errors=0 \
-  -d log_errors=1 \
-  -S 0.0.0.0:8080 \
-  -t public \
-  public/index.php
+exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile

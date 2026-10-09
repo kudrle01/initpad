@@ -1,12 +1,15 @@
+import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { config } from '../config';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './dto/create-workspace.dto';
 import { AddWorkspaceMemberDto, AssignableRole, UpdateWorkspaceMemberDto } from './dto/member.dto';
 import { repositoryRef } from '../scm/scm-provider';
@@ -39,8 +42,34 @@ const PERMISSIONS: Record<WorkspacePermission, ReadonlySet<WorkspaceRole>> = {
   admin: new Set(['owner', 'admin']),
 };
 
+// Explicit response shape: the row also holds capacity limits, and the BigInt
+// artifact quota cannot be serialized to JSON.
+function workspaceView(
+  workspace: {
+    id: string;
+    slug: string;
+    name: string;
+    type: string;
+    productionApprovalPolicy: string;
+    createdAt: Date;
+  },
+  role: WorkspaceRole,
+) {
+  return {
+    id: workspace.id,
+    slug: workspace.slug,
+    name: workspace.name,
+    type: workspace.type,
+    role,
+    productionApprovalPolicy: workspace.productionApprovalPolicy,
+    createdAt: workspace.createdAt.toISOString(),
+  };
+}
+
 @Injectable()
 export class WorkspacesService {
+  private readonly logger = new Logger('WorkspacesService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspaceScm: WorkspaceScmService,
@@ -57,15 +86,7 @@ export class WorkspacesService {
       include: { workspace: true },
       orderBy: { createdAt: 'asc' },
     });
-    return memberships.map((m) => ({
-      id: m.workspace.id,
-      slug: m.workspace.slug,
-      name: m.workspace.name,
-      type: m.workspace.type,
-      role: m.role as WorkspaceRole,
-      productionApprovalPolicy: m.workspace.productionApprovalPolicy,
-      createdAt: m.workspace.createdAt.toISOString(),
-    }));
+    return memberships.map((m) => workspaceView(m.workspace, m.role as WorkspaceRole));
   }
 
   async resolve(
@@ -144,13 +165,33 @@ export class WorkspacesService {
   async create(userId: string, dto: CreateWorkspaceDto) {
     const duplicate = await this.prisma.workspace.findUnique({ where: { slug: dto.slug } });
     if (duplicate) throw new ConflictException(`Workspace slug '${dto.slug}' is already taken`);
-    const workspace = await this.prisma.workspace.create({
-      data: {
-        name: dto.name.trim(),
-        slug: dto.slug,
-        type: 'team',
-        members: { create: { userId, role: 'owner' } },
-      },
+    const limit = config.workspaces.maxOwnedTeamWorkspaces;
+    const workspace = await this.prisma.$transaction(async (tx) => {
+      if (limit > 0) {
+        // Locking the account row serializes its creations, so two parallel
+        // requests cannot both pass the count (ADR-154).
+        const [account] = await tx.$queryRaw<Array<{ platformRole: string }>>(
+          Prisma.sql`SELECT "platformRole" FROM "User" WHERE "id" = ${userId} FOR UPDATE`,
+        );
+        if (account?.platformRole !== 'admin') {
+          const owned = await tx.workspaceMember.count({
+            where: { userId, role: 'owner', workspace: { type: 'team' } },
+          });
+          if (owned >= limit) {
+            throw new ForbiddenException(
+              `You can own at most ${limit} team workspaces. Delete one you no longer need or ask the platform administrator.`,
+            );
+          }
+        }
+      }
+      return tx.workspace.create({
+        data: {
+          name: dto.name.trim(),
+          slug: dto.slug,
+          type: 'team',
+          members: { create: { userId, role: 'owner' } },
+        },
+      });
     });
     await this.auditEvents.record({
       workspaceId: workspace.id,
@@ -161,7 +202,7 @@ export class WorkspacesService {
       resourceName: workspace.name,
       details: { type: workspace.type },
     });
-    return { ...workspace, role: 'owner' as const, createdAt: workspace.createdAt.toISOString() };
+    return workspaceView(workspace, 'owner');
   }
 
   async update(userId: string, workspaceId: string, dto: UpdateWorkspaceDto) {
@@ -189,11 +230,7 @@ export class WorkspacesService {
         details: { previousName: previous.name, name: workspace.name },
       });
     }
-    return {
-      ...workspace,
-      role: membership.role as WorkspaceRole,
-      createdAt: workspace.createdAt.toISOString(),
-    };
+    return workspaceView(workspace, membership.role as WorkspaceRole);
   }
 
   async updateProductionApprovalPolicy(
@@ -216,11 +253,7 @@ export class WorkspacesService {
       const membership = await this.prisma.workspaceMember.findUniqueOrThrow({
         where: { workspaceId_userId: { workspaceId, userId } },
       });
-      return {
-        ...previous,
-        role: membership.role as WorkspaceRole,
-        createdAt: previous.createdAt.toISOString(),
-      };
+      return workspaceView(previous, membership.role as WorkspaceRole);
     }
     const workspace = await this.prisma.workspace.update({
       where: { id: workspaceId },
@@ -241,11 +274,7 @@ export class WorkspacesService {
         policy,
       },
     });
-    return {
-      ...workspace,
-      role: membership.role as WorkspaceRole,
-      createdAt: workspace.createdAt.toISOString(),
-    };
+    return workspaceView(workspace, membership.role as WorkspaceRole);
   }
 
   async remove(userId: string, workspaceId: string): Promise<void> {
@@ -263,7 +292,24 @@ export class WorkspacesService {
         'Delete or move all projects and targets before deleting this workspace',
       );
     }
-    await this.prisma.workspace.delete({ where: { id: workspaceId } });
+    await this.prisma.$transaction(async (tx) => {
+      const auditEventsRemoved = await tx.auditEvent.count({ where: { workspaceId } });
+      await tx.workspace.delete({ where: { id: workspaceId } });
+      // The workspace timeline is deleted with it (ADR-077); who deleted it
+      // and how much history went stays as a platform event (ADR-142).
+      await this.auditEvents.record(
+        {
+          workspaceId: null,
+          actorUserId: userId,
+          action: 'workspace.deleted',
+          resourceType: 'workspace',
+          resourceId: workspaceId,
+          resourceName: workspace.name,
+          details: { auditEventsRemoved },
+        },
+        tx,
+      );
+    });
   }
 
   async members(userId: string, workspaceId: string) {
@@ -382,6 +428,9 @@ export class WorkspacesService {
       resourceName: member.user.username,
       details: { previousRole: member.role, role: dto.role },
     });
+    if (member.role !== 'viewer' && dto.role === 'viewer') {
+      await this.rotateRegistryCredentials(workspaceId);
+    }
     return this.members(userId, workspaceId);
   }
 
@@ -407,6 +456,33 @@ export class WorkspacesService {
       resourceName: member.user.username,
       details: { previousRole: member.role },
     });
+    if (member.role !== 'viewer') await this.rotateRegistryCredentials(workspaceId);
+  }
+
+  // A member with write access could push a workflow that reads the
+  // repositories' registry secret. Once that access ends, replace the
+  // credential so a copy taken earlier stops working (ADR-134). The
+  // membership change itself is already committed and stays in effect.
+  private async rotateRegistryCredentials(workspaceId: string): Promise<void> {
+    const projects = await this.prisma.project.findMany({
+      where: { workspaceId },
+      select: REPOSITORY_SELECT,
+    });
+    for (const project of projects) {
+      const repository = repositoryRef(project);
+      const provider = this.workspaceScm.provider(repository.provider);
+      if (!provider.rotateRegistryCredential) continue;
+      try {
+        await provider.rotateRegistryCredential(repository);
+      } catch (error) {
+        this.logger.warn({
+          event: 'workspace.registry_credential.rotation_failed',
+          workspaceId,
+          repository: repository.fullName,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        });
+      }
+    }
   }
 
   private async memberOrThrow(workspaceId: string, userId: string) {

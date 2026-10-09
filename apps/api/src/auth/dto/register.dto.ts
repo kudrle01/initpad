@@ -1,4 +1,4 @@
-import { IsEmail, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class RegisterDto {
   // Mirrors Gitea username rules: letters/digits/._-, must start alphanumeric.
@@ -13,4 +13,10 @@ export class RegisterDto {
   @MinLength(12, { message: 'Password must be at least 12 characters' })
   @MaxLength(128, { message: 'Password must be at most 128 characters' })
   password!: string;
+
+  // Required only for the first account, which becomes the administrator.
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  bootstrapToken?: string;
 }

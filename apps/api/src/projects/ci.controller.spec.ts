@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { CiController } from './ci.controller';
 
 describe('CiController callbacks', () => {
@@ -51,5 +51,18 @@ describe('CiController callbacks', () => {
     await expect(controller.start('', { repo: 'acme/api' })).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
+  });
+
+  it('keeps unknown fields from edited workflows but rejects non-string known fields', async () => {
+    const projects = { ciStarted: jest.fn(async () => undefined) };
+    const controller = new CiController(projects as never);
+
+    await expect(
+      controller.start('Bearer repo-secret', { repo: 'acme/api', sha: 'abc', runner: 'x' }),
+    ).resolves.toEqual({ accepted: true });
+    await expect(
+      controller.start('Bearer repo-secret', { repo: { not: 'acme/api' } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(projects.ciStarted).toHaveBeenCalledTimes(1);
   });
 });

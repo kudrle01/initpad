@@ -51,8 +51,12 @@ async function request(label, token, path, expectedStatus, options = {}) {
   const response = await fetch(`${apiBase}${path}`, {
     method: options.method || 'GET',
     headers: {
-      cookie: `initpad_token=${token}`,
-      ...(options.body ? { 'content-type': 'application/json' } : {}),
+      // The API reads only the name for its profile (ADR-137).
+      cookie: `__Host-initpad_token=${token}; initpad_token=${token}`,
+      // Signed-in changes must be JSON, with or without a body (ADR-137).
+      ...(options.body || (options.method && options.method !== 'GET')
+        ? { 'content-type': 'application/json' }
+        : {}),
       ...(options.workspaceId ? { 'x-workspace-id': options.workspaceId } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,

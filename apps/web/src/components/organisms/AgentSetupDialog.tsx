@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { useConfirmation } from '@/confirmation';
 import { t, msg, rich, formatDateTime, formatNumber, formatTime, type MessageKey } from '@/i18n';
+import { externalHref } from '@/lib/utils';
 
 interface Props {
   open: boolean;
@@ -367,10 +368,10 @@ export function AgentSetupDialog({
                       {t('Install update')}
                     </Button>
                   )}
-                  {updateStatus.releaseUrl && (
+                  {externalHref(updateStatus.releaseUrl) && (
                     <a
                       className="text-link inline-flex items-center gap-1 font-medium"
-                      href={updateStatus.releaseUrl}
+                      href={externalHref(updateStatus.releaseUrl)}
                       target="_blank"
                       rel="noreferrer"
                     >

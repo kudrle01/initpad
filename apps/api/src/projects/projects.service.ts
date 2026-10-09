@@ -37,7 +37,7 @@ import {
 } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { config } from '../config';
-import { decryptSecret, encryptSecret } from '../common/secret';
+import { decryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
@@ -223,10 +223,14 @@ export class ProjectsService {
   /** Internal recovery boundary invoked by ProjectsLifecycleService at startup. */
   async reconcilePersistedState(): Promise<void> {
     await this.reconciliation.reconcileRepositoryIdentities();
-    await this.reconciliation.migrateLegacyCiTokens();
     await this.reconciliation.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedExecutions();
     await this.environmentTargets.reconcileAllocations();
+  }
+
+  /** Moves the next batch of accounts to scoped Gitea credentials (ADR-134). */
+  reconcileGiteaCredentials(): Promise<void> {
+    return this.reconciliation.reconcileGiteaCredentials();
   }
 
   /** Lightweight leader sweep for process leases that can expire after startup. */
@@ -864,7 +868,6 @@ export class ProjectsService {
     });
     try {
       const template = this.templates.get(dto.templateId);
-      const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
 
       await this.provisioning.step(op, 'repository');
       const { repo, actor } = await this.workspaceScm.repository(
@@ -1002,14 +1005,6 @@ export class ProjectsService {
       await this.provisioning.step(op, 'ci');
       const compensations: Array<{ key: string; run: () => Promise<void> }> = [];
       try {
-        let ownerToken = '';
-        if (repo.provider === 'gitea') {
-          ownerToken = await scm.issueCloneToken(owner.username);
-          await this.prisma.user.update({
-            where: { id: owner.id },
-            data: { accessToken: encryptSecret(ownerToken) },
-          });
-        }
         const secretsEffect = 'secrets:initpad';
         await this.provisioning.planEffect(op, secretsEffect, 'secrets', {
           repository: repo.fullName,
@@ -1022,7 +1017,7 @@ export class ProjectsService {
           run: () => scm.removeRepoSecrets(repo),
         });
         try {
-          await scm.configureRepoSecrets(repo, ownerToken, ciDeployToken);
+          await scm.configureRepoSecrets(repo, ciDeployToken);
           await this.provisioning.completeEffect(op, secretsEffect);
         } catch (e) {
           await this.provisioning
@@ -1749,6 +1744,34 @@ export class ProjectsService {
   }
 
   /**
+   * A repository-deleted webhook is a hint, not proof (ADR-145). The project is
+   * removed only after the SCM itself reports the repository as absent, so a
+   * replayed or forged delivery cannot delete a project whose repository still
+   * exists. During an outage the reconciliation sweep removes it later.
+   */
+  async removeIfRepositoryGone(
+    fullName: string,
+    provider: ScmKind,
+    repositoryId?: string,
+  ): Promise<void> {
+    if (fullName.split('/').length !== 2) return;
+    const row = await this.prisma.project.findFirst({
+      where: projectOfRepository(fullName, provider, repositoryId),
+      include: { owner: true },
+    });
+    if (!row) return;
+    const repository = repositoryRef(row);
+    const scm = this.workspaceScm.provider(repository.provider);
+    if (!(await scm.repoMissing(repository, this.actorForRepo(row)))) {
+      this.logger.warn(
+        `Ignoring the deletion of ${provider}:${repositoryId ?? fullName}: the repository still exists or cannot be checked`,
+      );
+      return;
+    }
+    await this.removeByRepo(fullName, provider, repositoryId);
+  }
+
+  /**
    * Reacts to a repository deleted directly in Gitea (system webhook):
    * tears down all deployments of the matching project and removes its
    * record, so no orphaned containers or rows remain. No-op when nothing
@@ -1761,19 +1784,7 @@ export class ProjectsService {
   ): Promise<void> {
     if (fullName.split('/').length !== 2) return;
     const row = await this.prisma.project.findFirst({
-      where: {
-        scmProvider: provider,
-        ...(repositoryId
-          ? {
-              OR: [
-                { scmRepositoryId: repositoryId },
-                // Legacy rows have no immutable id yet; retain the coordinate
-                // fallback only for those rows, never for a conflicting id.
-                { scmRepositoryId: null, scmFullName: fullName },
-              ],
-            }
-          : { scmFullName: fullName }),
-      },
+      where: projectOfRepository(fullName, provider, repositoryId),
       include: {
         environments: { include: { target: true, allocation: true, buildArtifact: true } },
         owner: true,
@@ -1823,7 +1834,7 @@ export class ProjectsService {
       };
     }
     const token = row.owner?.accessToken
-      ? decryptSecret(row.owner.accessToken)
+      ? decryptSecret(row.owner.accessToken, "The project owner's Gitea token")
       : config.gitea.token;
     return { username: row.owner?.username || row.scmOwner || config.gitea.user, token };
   }
@@ -1996,4 +2007,24 @@ export class ProjectsService {
     });
     return this.get(id);
   }
+}
+
+function projectOfRepository(
+  fullName: string,
+  provider: ScmKind,
+  repositoryId?: string,
+): Prisma.ProjectWhereInput {
+  return {
+    scmProvider: provider,
+    ...(repositoryId
+      ? {
+          OR: [
+            { scmRepositoryId: repositoryId },
+            // Legacy rows have no immutable id yet; retain the coordinate
+            // fallback only for those rows, never for a conflicting id.
+            { scmRepositoryId: null, scmFullName: fullName },
+          ],
+        }
+      : { scmFullName: fullName }),
+  };
 }

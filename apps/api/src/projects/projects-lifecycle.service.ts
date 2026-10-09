@@ -13,6 +13,7 @@ export class ProjectsLifecycleService implements OnModuleInit, OnModuleDestroy {
   private maintenanceTimer?: NodeJS.Timeout;
   private maintenance?: Promise<void>;
   private leaderGeneration?: number;
+  private credentialReconciliation?: Promise<void>;
 
   constructor(
     private readonly projects: ProjectsService,
@@ -74,5 +75,25 @@ export class ProjectsLifecycleService implements OnModuleInit, OnModuleDestroy {
       .catch((error) =>
         this.logger.warn(`Environment expiry sweep skipped: ${(error as Error).message}`),
       );
+    this.startCredentialReconciliation();
+  }
+
+  // Moving an existing installation to scoped Gitea credentials costs several
+  // Gitea requests per account and repository (ADR-134). It runs beside the
+  // maintenance cycle so it can never delay API readiness, an update's health
+  // gate or the expiry sweep, and a new pass starts only after the last ends.
+  private startCredentialReconciliation(): void {
+    if (this.credentialReconciliation) return;
+    const reconciliation = this.projects
+      .reconcileGiteaCredentials()
+      .catch((error) =>
+        this.logger.warn(`Gitea credential reconciliation skipped: ${(error as Error).message}`),
+      )
+      .finally(() => {
+        if (this.credentialReconciliation === reconciliation) {
+          this.credentialReconciliation = undefined;
+        }
+      });
+    this.credentialReconciliation = reconciliation;
   }
 }

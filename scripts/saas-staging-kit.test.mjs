@@ -20,7 +20,7 @@ test('projects exactly the secret files required by the SaaS profile', () => {
   const required = [...example.matchAll(/^INITPAD_[A-Z0-9_]+_FILE=(\S+)$/gm)].map(
     (match) => match[1],
   );
-  assert.equal(required.length, 11);
+  assert.equal(required.length, 9);
   assert.ok(required.every((path) => path.startsWith(SECRETS_DIRECTORY)));
 
   const expected = [...required, ...EDGE_FILES.map((name) => `${SECRETS_DIRECTORY}${name}`)];
@@ -29,7 +29,7 @@ test('projects exactly the secret files required by the SaaS profile', () => {
 
 test('renders one named secret per file from a replaceable project id', () => {
   const templates = [...agent.matchAll(/getSecretByName "([^"]+)" "([^"]+)" "([^"]+)" "([^"]+)"/g)];
-  assert.equal(templates.length, 14);
+  assert.equal(templates.length, 12);
   for (const [, project, environment, path] of templates) {
     assert.equal(project, 'INFISICAL_PROJECT_ID');
     assert.equal(environment, 'staging');

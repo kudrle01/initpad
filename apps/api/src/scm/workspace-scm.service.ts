@@ -136,7 +136,10 @@ export class WorkspaceScmService {
   ): Promise<ScmActor> {
     if (kind === 'gitea') {
       const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-      return { username: user.username, token: decryptSecret(user.accessToken) };
+      return {
+        username: user.username,
+        token: decryptSecret(user.accessToken, `The Gitea token of ${user.username}`),
+      };
     }
     const identity = await this.prisma.externalIdentity.findUnique({
       where: { provider_userId: { provider: 'github', userId } },

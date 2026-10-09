@@ -7,6 +7,7 @@ describe('ProjectsLifecycleService', () => {
   it('recovers persisted state and owns the periodic expiry sweep', async () => {
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
       runEnvironmentExpiry: jest.fn(async () => 0),
@@ -34,6 +35,7 @@ describe('ProjectsLifecycleService', () => {
   it('keeps startup available when best-effort sweeps fail', async () => {
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => {
         throw new Error('artifact store unavailable');
@@ -60,6 +62,7 @@ describe('ProjectsLifecycleService', () => {
   it('keeps expiry maintenance running when periodic execution recovery fails', async () => {
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => {
         throw new Error('database temporarily unavailable');
       }),
@@ -83,6 +86,7 @@ describe('ProjectsLifecycleService', () => {
     let finishSweep: (() => void) | undefined;
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
       runEnvironmentExpiry: jest
@@ -123,6 +127,7 @@ describe('ProjectsLifecycleService', () => {
   it('keeps follower replicas passive and runs recovery after lease takeover', async () => {
     const projects = {
       reconcilePersistedState: jest.fn(async () => undefined),
+      reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
       runEnvironmentExpiry: jest.fn(async () => 0),
@@ -152,6 +157,7 @@ describe('ProjectsLifecycleService', () => {
             finishRecovery = resolve;
           }),
       ),
+      reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
       runEnvironmentExpiry: jest.fn(async () => 0),
@@ -172,6 +178,40 @@ describe('ProjectsLifecycleService', () => {
     finishRecovery?.();
     await initializing;
     expect(projects.runArtifactRetention).toHaveBeenCalledTimes(1);
+    lifecycle.onModuleDestroy();
+  });
+
+  it('reconciles Gitea credentials beside maintenance without delaying startup', async () => {
+    let finish!: () => void;
+    const projects = {
+      reconcilePersistedState: jest.fn(async () => undefined),
+      reconcileGiteaCredentials: jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+      recoverInterruptedExecutions: jest.fn(async () => undefined),
+      runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
+      runEnvironmentExpiry: jest.fn(async () => 0),
+    };
+    const lifecycle = new ProjectsLifecycleService(
+      projects as never,
+      { acquire: jest.fn(async () => ({ generation: 1 })) } as never,
+    );
+
+    // Startup completes while the credential pass is still running.
+    await expect(lifecycle.onModuleInit()).resolves.toBeUndefined();
+    expect(projects.reconcileGiteaCredentials).toHaveBeenCalledTimes(1);
+
+    // A slow pass is never started twice.
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(projects.runEnvironmentExpiry).toHaveBeenCalledTimes(2);
+    expect(projects.reconcileGiteaCredentials).toHaveBeenCalledTimes(1);
+
+    finish();
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(projects.reconcileGiteaCredentials).toHaveBeenCalledTimes(2);
     lifecycle.onModuleDestroy();
   });
 });

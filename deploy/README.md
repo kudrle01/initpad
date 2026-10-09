@@ -12,7 +12,9 @@ cd initpad/deploy
 ./install.sh
 ```
 
-Otevřete <http://localhost:8080>, vytvořte první účet a následně projekt.
+Otevřete <http://localhost:8080>, vytvořte první účet s instalačním tokenem,
+který skript vypíše na konci instalace, a následně projekt. První účet se stane
+administrátorem; další účty ve výchozím režimu `admin-provisioned` zakládá on.
 Skript je idempotentní: lze jej kdykoliv spustit znovu a doplní pouze chybějící
 části.
 
@@ -67,10 +69,14 @@ verzované databázové migrace a sestavení kontejnerů.
    pravidlem.
 
 3. Spusťte `./install.sh`. Nastavení `INITPAD_DOMAIN` aktivuje profil `server`;
-   Caddy ukončuje HTTPS pro obě domény pomocí automatických certifikátů.
+   Caddy ukončuje HTTPS pro obě domény pomocí automatických certifikátů,
+   posílá hlavičku HSTS a požadavky na `/api/*` předává přímo API.
+   `INITPAD_TRUST_PROXY_HOPS` proto zůstává `1`.
 4. Ve firewallu otevřete porty 80 a 443 pro platformu, Git a managed gateway.
    Nakonfigurovaný rozsah přímých portů otevírejte pouze při použití výše
-   uvedeného LAN režimu a jen pro důvěryhodné zdrojové sítě.
+   uvedeného LAN režimu a jen pro důvěryhodné zdrojové sítě. Porty 8080, 3001
+   a 8085 Docker publikuje mimo `ufw`; na veřejném rozhraní je zablokujte
+   podle [provozního runbooku](./OPERATIONS.md#bezpečnost).
 
 Pro reprodukovatelné self-hosted ověření na Windows a VirtualBoxu postupujte
 podle [SELF_HOSTED_ACCEPTANCE.md](./SELF_HOSTED_ACCEPTANCE.md). Dokument pokrývá

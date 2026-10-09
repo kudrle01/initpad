@@ -21,6 +21,8 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [bootstrapToken, setBootstrapToken] = useState('');
+  const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
@@ -36,6 +38,9 @@ export default function Login() {
       .authConfig()
       .then((x) => {
         setRegistrationAvailable(x.registrationAvailable);
+        setBootstrapRequired(x.bootstrapRequired);
+        // A new instance has no account to sign in to yet.
+        if (x.bootstrapRequired) setMode('register');
         setGithubEnabled(x.githubEnabled);
         setPasswordAuthEnabled(x.passwordAuthEnabled);
         setEdition(x.edition);
@@ -59,7 +64,12 @@ export default function Login() {
     try {
       const u =
         mode !== 'signin'
-          ? await api.register(username.trim(), email.trim(), password)
+          ? await api.register(
+              username.trim(),
+              email.trim(),
+              password,
+              bootstrapRequired ? bootstrapToken.trim() : undefined,
+            )
           : await api.signin(username.trim(), password);
       signIn(u);
     } catch (err) {
@@ -164,6 +174,21 @@ export default function Login() {
               minLength={registering ? 12 : undefined}
               hint={registering ? t('Use at least 12 characters.') : undefined}
             />
+            {registering && bootstrapRequired && (
+              <FormField
+                id="login-bootstrap-token"
+                label={t('Setup token')}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={bootstrapToken}
+                onChange={(e) => setBootstrapToken(e.target.value)}
+                required
+                hint={t(
+                  'The first account becomes the administrator. Enter the setup token printed at the end of install.sh.',
+                )}
+              />
+            )}
 
             {error && (
               <Notice tone="danger" role="alert">
