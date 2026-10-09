@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Logger, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Inject, Logger, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScmProvider, SCM_PROVIDER } from '../scm/scm-provider';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -15,6 +15,7 @@ const isPat = (t: string) => /^[0-9a-f]{40}$/i.test(t);
  * Account endpoints for the signed-in user. "git-access" issues a personal
  * Gitea token (PAT) for git-over-HTTP, so the developer can configure
  * credentials once and clone private repositories without password prompts.
+ * The token can clone and push code only (ADR-134).
  */
 @Controller('me')
 @UseGuards(JwtAuthGuard)
@@ -27,17 +28,18 @@ export class MeController {
   ) {}
 
   @Get('git-access')
+  @Header('Cache-Control', 'private, no-store')
   async gitAccess(@CurrentUser() userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     // GitHub-only (SaaS) accounts have no embedded-Gitea credential.
-    if (!user.accessToken) {
+    if (user.giteaId == null) {
       return { username: user.username, token: null, giteaUrl: config.gitea.url };
     }
-    let token = decryptSecret(user.accessToken);
+    let token = user.accessToken ? decryptSecret(user.accessToken) : '';
 
-    // The stored token may not be a usable PAT (SSO accounts store an OAuth2
-    // JWT, which git-over-HTTP rejects). In that case issue a fresh PAT and
-    // persist it for next time.
+    // The stored token may be missing (revoked by a password reset) or not a
+    // usable PAT (SSO accounts store an OAuth2 JWT, which git-over-HTTP
+    // rejects). In that case issue a fresh PAT and persist it for next time.
     if (!isPat(token)) {
       try {
         token = await this.scm.issueCloneToken(user.username);

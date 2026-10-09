@@ -144,3 +144,4 @@ stabilní.
 | [ADR-131](./ADR-131.md) | Accepted | Source-based SSH runtime je odstraněn, SFTP zůstává kompatibilní konektor |
 | [ADR-132](./ADR-132.md) | Accepted | Staging veřejného SaaS tvoří nízkonákladová sestava vyměnitelných externích služeb |
 | [ADR-133](./ADR-133.md) | Accepted | Příjem artefaktu plní lokální Docker daemon jen pro vlastní nasazení control plane |
+| [ADR-134](./ADR-134.md) | Accepted | Gitea tokeny mají rozsah podle spotřebitele a CI dostává jen token pro registry |

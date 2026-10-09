@@ -114,12 +114,40 @@ describe('AdminService', () => {
         }),
       },
     };
-    const gitea = { setUserActive: jest.fn(async () => undefined) };
-    const service = new AdminService(prisma as never, {} as never, gitea as never);
+    const order: string[] = [];
+    const gitea = {
+      setUserActive: jest.fn(async () => {
+        order.push('deactivate');
+      }),
+    };
+    const auth = {
+      revokeGitCredential: jest.fn(async () => {
+        order.push('revoke');
+      }),
+    };
+    const service = new AdminService(prisma as never, auth as never, gitea as never);
     const result = await service.setActive('admin1', 'u2', false);
     expect(gitea.setUserActive).toHaveBeenCalledWith('bob', false);
+    // Gitea refuses token management for an inactive account, and the token
+    // would otherwise work again after reactivation.
+    expect(auth.revokeGitCredential).toHaveBeenCalledWith('u2');
+    expect(order).toEqual(['revoke', 'deactivate']);
     expect(updateArgs).toMatchObject({ active: false, tokenVersion: { increment: 1 } });
     expect(result.active).toBe(false);
+  });
+
+  it('reactivates without touching Git credentials', async () => {
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => row({ id: 'u2', username: 'bob', active: false })),
+        update: jest.fn(async () => row({ id: 'u2', username: 'bob', active: true })),
+      },
+    };
+    const gitea = { setUserActive: jest.fn(async () => undefined) };
+    const auth = { revokeGitCredential: jest.fn(async () => undefined) };
+    const service = new AdminService(prisma as never, auth as never, gitea as never);
+    await service.setActive('admin1', 'u2', true);
+    expect(auth.revokeGitCredential).not.toHaveBeenCalled();
   });
 
   it('resets a password to a fresh one-time secret and revokes sessions', async () => {
@@ -133,13 +161,32 @@ describe('AdminService', () => {
         }),
       },
     };
-    const service = new AdminService(prisma as never, {} as never, {} as never);
+    const auth = { revokeGitCredential: jest.fn(async () => undefined) };
+    const service = new AdminService(prisma as never, auth as never, {} as never);
     const { temporaryPassword } = await service.resetPassword('u2');
+    expect(auth.revokeGitCredential).toHaveBeenCalledWith('u2');
     expect(updateArgs?.mustChangePassword).toBe(true);
     expect(updateArgs?.tokenVersion).toEqual({ increment: 1 });
     // The stored hash must verify against the returned one-time secret.
     await expect(
       verifyPassword(temporaryPassword, updateArgs?.passwordHash as string),
     ).resolves.toBe(true);
+  });
+
+  it('keeps the password when the Git token cannot be revoked', async () => {
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => row({ id: 'u2' })),
+        update: jest.fn(),
+      },
+    };
+    const auth = {
+      revokeGitCredential: jest.fn(async () => {
+        throw new Error('Gitea unavailable');
+      }),
+    };
+    const service = new AdminService(prisma as never, auth as never, {} as never);
+    await expect(service.resetPassword('u2')).rejects.toThrow('Gitea unavailable');
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

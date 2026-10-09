@@ -172,6 +172,9 @@ export class AdminService {
         throw new BadRequestException('At least one active administrator must remain');
       }
     }
+    // A deactivated account's Git token would start working again on
+    // reactivation, so revoke it while Gitea still accepts the account.
+    if (!active) await this.auth.revokeGitCredential(targetId);
     // Flip Gitea first: if it is unreachable, the platform state stays unchanged
     // rather than drifting out of sync with the SCM.
     await this.gitea.setUserActive(target.username, active);
@@ -187,6 +190,9 @@ export class AdminService {
   async resetPassword(targetId: string): Promise<{ temporaryPassword: string }> {
     const target = await this.prisma.user.findUnique({ where: { id: targetId } });
     if (!target) throw new NotFoundException('User not found');
+    // An administrator resets an account to recover it; a Git token taken
+    // through an earlier session must not survive the recovery.
+    await this.auth.revokeGitCredential(targetId);
     const temporaryPassword = generateTemporaryPassword();
     await this.prisma.user.update({
       where: { id: targetId },

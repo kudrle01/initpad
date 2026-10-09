@@ -37,7 +37,7 @@ import {
 } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { config } from '../config';
-import { decryptSecret, encryptSecret } from '../common/secret';
+import { decryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import { WorkspacePermission, WorkspacesService } from '../workspaces/workspaces.service';
 import { ProvisioningService } from './provisioning.service';
@@ -223,10 +223,14 @@ export class ProjectsService {
   /** Internal recovery boundary invoked by ProjectsLifecycleService at startup. */
   async reconcilePersistedState(): Promise<void> {
     await this.reconciliation.reconcileRepositoryIdentities();
-    await this.reconciliation.migrateLegacyCiTokens();
     await this.reconciliation.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedExecutions();
     await this.environmentTargets.reconcileAllocations();
+  }
+
+  /** Moves the next batch of accounts to scoped Gitea credentials (ADR-134). */
+  reconcileGiteaCredentials(): Promise<void> {
+    return this.reconciliation.reconcileGiteaCredentials();
   }
 
   /** Lightweight leader sweep for process leases that can expire after startup. */
@@ -864,7 +868,6 @@ export class ProjectsService {
     });
     try {
       const template = this.templates.get(dto.templateId);
-      const owner = await this.prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
 
       await this.provisioning.step(op, 'repository');
       const { repo, actor } = await this.workspaceScm.repository(
@@ -1002,14 +1005,6 @@ export class ProjectsService {
       await this.provisioning.step(op, 'ci');
       const compensations: Array<{ key: string; run: () => Promise<void> }> = [];
       try {
-        let ownerToken = '';
-        if (repo.provider === 'gitea') {
-          ownerToken = await scm.issueCloneToken(owner.username);
-          await this.prisma.user.update({
-            where: { id: owner.id },
-            data: { accessToken: encryptSecret(ownerToken) },
-          });
-        }
         const secretsEffect = 'secrets:initpad';
         await this.provisioning.planEffect(op, secretsEffect, 'secrets', {
           repository: repo.fullName,
@@ -1022,7 +1017,7 @@ export class ProjectsService {
           run: () => scm.removeRepoSecrets(repo),
         });
         try {
-          await scm.configureRepoSecrets(repo, ownerToken, ciDeployToken);
+          await scm.configureRepoSecrets(repo, ciDeployToken);
           await this.provisioning.completeEffect(op, secretsEffect);
         } catch (e) {
           await this.provisioning

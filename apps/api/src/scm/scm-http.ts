@@ -66,6 +66,11 @@ export async function scmFetch(
   }
 }
 
+/** True when the provider reported that the addressed resource does not exist. */
+export function isScmNotFound(error: unknown): boolean {
+  return error instanceof ScmHttpStatusError && error.kind === 'not-found';
+}
+
 /** Creates a structured, body-free HTTP error while preserving safe wording. */
 export function scmStatusError(
   provider: ScmHttpProvider,

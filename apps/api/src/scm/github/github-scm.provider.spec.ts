@@ -818,7 +818,7 @@ describe('GitHubScmProvider writes', () => {
     config.ci.publicUrl = 'https://initpad.example/';
     const { provider, installations } = make(fetchMock);
 
-    await provider.configureRepoSecrets(repository(), 'unused-installation-token', 'deploy-secret');
+    await provider.configureRepoSecrets(repository(), 'deploy-secret');
 
     expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
       permissions: { metadata: 'read', secrets: 'write' },

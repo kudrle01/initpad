@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { config } from '../config';
 import { AuthService } from './auth.service';
 import { hashPassword } from './password';
@@ -31,7 +31,7 @@ describe('AuthService', () => {
         id: 1,
         login: username,
       })),
-      createUserToken: jest.fn(async () => 'a'.repeat(40)),
+      createCloneToken: jest.fn(async () => 'a'.repeat(40)),
       randomizeUserPassword: jest.fn(async () => undefined),
       deleteUser: jest.fn(),
     };
@@ -58,6 +58,9 @@ describe('AuthService', () => {
     expect(gitea.createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: 'first-user' }),
     );
+    // New accounts start with the scoped clone token only (ADR-134).
+    expect(gitea.createCloneToken).toHaveBeenCalledWith('first-user', 'long-password-1');
+    expect(users[0]).toMatchObject({ giteaCredentialsScopedAt: expect.any(Date) });
   });
 
   it('keeps self-service registration open in the open policy', async () => {
@@ -398,14 +401,22 @@ describe('AuthService', () => {
         }),
       },
       user: {
+        findUnique: jest.fn(async () => ({ username: 'alice', giteaId: 7 })),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
-          userUpdate = data;
+          if (data.passwordHash) userUpdate = data;
           return {};
         }),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const gitea = { revokeCloneToken: jest.fn(async () => undefined) };
+    const service = new AuthService(prisma as never, {} as never, gitea as never);
     await service.resetPassword('plaintext-token', 'a-brand-new-password');
+    // A Git token taken through the compromised session stops working.
+    expect(gitea.revokeCloneToken).toHaveBeenCalledWith('alice');
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { accessToken: '' },
+    });
     expect(usedUpdate).toMatchObject({
       where: {
         id: 't1',
@@ -417,6 +428,60 @@ describe('AuthService', () => {
     });
     expect(userUpdate?.mustChangePassword).toBe(false);
     expect(userUpdate?.tokenVersion).toEqual({ increment: 1 });
+  });
+
+  it('keeps the reset link usable when Gitea cannot revoke the Git token', async () => {
+    const prisma = {
+      authToken: {
+        findUnique: jest.fn(async () => ({
+          id: 't1',
+          userId: 'u1',
+          kind: 'password_reset',
+          usedAt: null,
+          expiresAt: new Date(Date.now() + 60_000),
+        })),
+        updateMany: jest.fn(),
+      },
+      user: {
+        findUnique: jest.fn(async () => ({ username: 'alice', giteaId: 7 })),
+        update: jest.fn(),
+      },
+    };
+    const gitea = {
+      revokeCloneToken: jest.fn(async () => {
+        throw new Error('Gitea unavailable');
+      }),
+    };
+    const service = new AuthService(prisma as never, {} as never, gitea as never);
+    await expect(
+      service.resetPassword('plaintext-token', 'a-brand-new-password'),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(prisma.authToken.updateMany).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('resets a GitHub-only account without contacting Gitea', async () => {
+    const prisma = {
+      authToken: {
+        findUnique: jest.fn(async () => ({
+          id: 't1',
+          userId: 'u1',
+          kind: 'password_reset',
+          usedAt: null,
+          expiresAt: new Date(Date.now() + 60_000),
+        })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      user: {
+        findUnique: jest.fn(async () => ({ username: 'alice', giteaId: null })),
+        update: jest.fn(async () => ({})),
+      },
+    };
+    const gitea = { revokeCloneToken: jest.fn() };
+    const service = new AuthService(prisma as never, {} as never, gitea as never);
+    await service.resetPassword('plaintext-token', 'a-brand-new-password');
+    expect(gitea.revokeCloneToken).not.toHaveBeenCalled();
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an expired or unknown reset token', async () => {

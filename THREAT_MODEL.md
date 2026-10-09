@@ -53,6 +53,11 @@ konfiguraci v paměti.
   a expirují.
 - Citlivé hodnoty v databázi používají AES-256-GCM. Callback tokeny CI jsou pro
   každý repozitář náhodné a InitPad ukládá pouze jejich hashe SHA-256.
+- Gitea tokeny mají rozsah podle spotřebitele a pevný název, takže nové vydání
+  předchozí kopii zneplatní (ADR-134). CI repozitáře dostává jen token
+  `write:package` pro registry; Git token uživatele (`write:repository`) do
+  secretů nikdy nevstupuje. Registry tokeny workspace se vymění, když člen
+  ztratí právo zápisu, a reset hesla i deaktivace zruší Git token účtu.
 - Webhooky Gitey používají podpis HMAC se zachovanou kompatibilitou s bearer
   tokenem a nikdy nevkládají secrety do URL.
 - Runner Actions používá vyhrazený rootless DinD daemon. Nepřipojuje socket ani
@@ -147,6 +152,11 @@ konfiguraci v paměti.
   capabilities nesnižují oprávnění, které předává připojený Docker socket.
   Enrollment přes HTTP je povolen pouze explicitním testovacím příznakem a
   nechrání před nepřátelskou LAN.
+- Container balíčky v Gitee patří účtu, nikoli repozitáři. Člen týmu, který
+  přečte registry secret repozitáře, proto může přepsat image jiného projektu
+  téhož vlastníka. Týmové repozitáře navíc leží v osobním prostoru autora, takže
+  odebraný člen je dál vlastní. Obojí odstraní až Gitea organizace pro každý
+  workspace.
 - Synchronizace spolupracovníků v Gitee zahrnuje dva systémy, a proto používá
   kompenzaci místo distribuované transakce. Před hostovaným produkčním použitím
   je nutná rekonciliace a auditní log.

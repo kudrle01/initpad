@@ -310,4 +310,80 @@ describe('WorkspacesService tenant isolation', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.workspace.update).not.toHaveBeenCalled();
   });
+
+  describe('registry credential rotation (ADR-134)', () => {
+    function membershipHarness(memberRole: string) {
+      const roles: Record<string, string> = { owner: 'owner', u2: memberRole };
+      const prisma = {
+        workspaceMember: {
+          findUnique: jest.fn(
+            async ({ where }: { where: { workspaceId_userId: { userId: string } } }) => {
+              const userId = where.workspaceId_userId.userId;
+              return roles[userId]
+                ? { workspaceId: 'w1', userId, role: roles[userId], user: { username: userId } }
+                : null;
+            },
+          ),
+          update: jest.fn(async () => ({})),
+          delete: jest.fn(async () => ({})),
+          findMany: jest.fn(async () => []),
+        },
+        project: {
+          findMany: jest.fn(async () => [
+            {
+              scmProvider: 'gitea',
+              scmRepositoryId: '101',
+              scmOwner: 'owner',
+              scmRepositoryName: 'api',
+              scmFullName: 'owner/api',
+              scmDefaultBranch: 'main',
+              scmInstallationId: null,
+              repoUrl: null,
+            },
+          ]),
+        },
+      };
+      const provider = {
+        setCollaborator: jest.fn(async () => undefined),
+        removeCollaborator: jest.fn(async () => undefined),
+        rotateRegistryCredential: jest.fn(async () => undefined),
+      };
+      const workspaceScm = {
+        provider: jest.fn(() => provider),
+        collaboratorUsername: jest.fn(async (userId: string) => userId),
+      };
+      const service = new WorkspacesService(prisma as never, workspaceScm as never, {
+        record: jest.fn(async () => undefined),
+      });
+      jest.spyOn(service, 'members').mockResolvedValue([] as never);
+      return { service, provider };
+    }
+
+    it('replaces the registry token after removing a member who could push', async () => {
+      const { service, provider } = membershipHarness('member');
+      await service.removeMember('owner', 'w1', 'u2');
+      expect(provider.removeCollaborator).toHaveBeenCalled();
+      expect(provider.rotateRegistryCredential).toHaveBeenCalledWith(
+        expect.objectContaining({ fullName: 'owner/api' }),
+      );
+    });
+
+    it('replaces the registry token when a member is downgraded to viewer', async () => {
+      const { service, provider } = membershipHarness('maintainer');
+      await service.updateMember('owner', 'w1', 'u2', { role: 'viewer' });
+      expect(provider.rotateRegistryCredential).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the registry token when write access is unchanged', async () => {
+      const { service, provider } = membershipHarness('member');
+      await service.updateMember('owner', 'w1', 'u2', { role: 'maintainer' });
+      expect(provider.rotateRegistryCredential).not.toHaveBeenCalled();
+    });
+
+    it('keeps the membership change when rotation fails', async () => {
+      const { service, provider } = membershipHarness('member');
+      provider.rotateRegistryCredential.mockRejectedValueOnce(new Error('Gitea unavailable'));
+      await expect(service.removeMember('owner', 'w1', 'u2')).resolves.toBeUndefined();
+    });
+  });
 });

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -41,6 +42,8 @@ const PERMISSIONS: Record<WorkspacePermission, ReadonlySet<WorkspaceRole>> = {
 
 @Injectable()
 export class WorkspacesService {
+  private readonly logger = new Logger('WorkspacesService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspaceScm: WorkspaceScmService,
@@ -382,6 +385,9 @@ export class WorkspacesService {
       resourceName: member.user.username,
       details: { previousRole: member.role, role: dto.role },
     });
+    if (member.role !== 'viewer' && dto.role === 'viewer') {
+      await this.rotateRegistryCredentials(workspaceId);
+    }
     return this.members(userId, workspaceId);
   }
 
@@ -407,6 +413,33 @@ export class WorkspacesService {
       resourceName: member.user.username,
       details: { previousRole: member.role },
     });
+    if (member.role !== 'viewer') await this.rotateRegistryCredentials(workspaceId);
+  }
+
+  // A member with write access could push a workflow that reads the
+  // repositories' registry secret. Once that access ends, replace the
+  // credential so a copy taken earlier stops working (ADR-134). The
+  // membership change itself is already committed and stays in effect.
+  private async rotateRegistryCredentials(workspaceId: string): Promise<void> {
+    const projects = await this.prisma.project.findMany({
+      where: { workspaceId },
+      select: REPOSITORY_SELECT,
+    });
+    for (const project of projects) {
+      const repository = repositoryRef(project);
+      const provider = this.workspaceScm.provider(repository.provider);
+      if (!provider.rotateRegistryCredential) continue;
+      try {
+        await provider.rotateRegistryCredential(repository);
+      } catch (error) {
+        this.logger.warn({
+          event: 'workspace.registry_credential.rotation_failed',
+          workspaceId,
+          repository: repository.fullName,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        });
+      }
+    }
   }
 
   private async memberOrThrow(workspaceId: string, userId: string) {

@@ -19,7 +19,12 @@ model User {
   name                       String?
   email                      String?                       @unique
   avatarUrl                  String?
+  // Encrypted Gitea clone token of a managed account (ADR-134). It can clone
+  // and push code only; CI jobs receive a separate package-only token.
   accessToken                String
+  // Set once the account's repositories and clone token use scoped Gitea
+  // tokens and every legacy full-scope token is revoked (ADR-134).
+  giteaCredentialsScopedAt   DateTime?
   // Password hash (scrypt) for managed registration; null = OAuth-only (SSO) account.
   passwordHash               String?
   // Platform-wide authority is deliberately small. Workspace roles carry

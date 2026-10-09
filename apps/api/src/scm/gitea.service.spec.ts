@@ -5,11 +5,98 @@ jest.mock('../config', () => ({
       url: 'http://localhost:3000',
       adminToken: 'admin-token',
     },
+    registry: { ciHost: 'host.docker.internal:3001' },
+    ci: { platformUrl: 'http://platform.internal' },
   },
 }));
 
 import { GiteaService } from './gitea.service';
 import { ScmHttpStatusError } from './scm-http';
+
+// Minimal stateful stand-in for the Gitea endpoints behind token management
+// and repository secrets. Behaviour mirrors Gitea 1.22: token names are unique
+// per account and token endpoints accept only Basic authentication.
+function fakeGitea(options: { missingUsers?: string[]; failTokenCreate?: boolean } = {}) {
+  const calls: string[] = [];
+  const bodies = new Map<string, unknown>();
+  const authorizations = new Map<string, string>();
+  const passwords = new Map<string, string>();
+  const tokens = new Map<string, Array<{ id: number; name: string; scopes: string[] }>>();
+  const secrets = new Map<string, string>();
+  let nextId = 1;
+  const json = (value: unknown, status = 200) =>
+    new Response(JSON.stringify(value), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (input, init) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    const key = `${method} ${url.pathname}`;
+    calls.push(key);
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    if (body !== undefined) bodies.set(key, body);
+    const authorization = new Headers(init?.headers).get('Authorization') ?? '';
+    authorizations.set(key, authorization);
+
+    let match = url.pathname.match(/^\/api\/v1\/admin\/users\/([^/]+)$/);
+    if (match && method === 'PATCH') {
+      if (options.missingUsers?.includes(match[1])) return json({ message: 'missing' }, 404);
+      passwords.set(match[1], (body as { password: string }).password);
+      return json({});
+    }
+    match = url.pathname.match(/^\/api\/v1\/users\/([^/]+)\/tokens(?:\/([^/]+))?$/);
+    if (match) {
+      const [, user, tokenKey] = match;
+      const expected = `Basic ${Buffer.from(`${user}:${passwords.get(user)}`).toString('base64')}`;
+      if (authorization !== expected) return json({ message: 'unauthorized' }, 401);
+      const owned = tokens.get(user) ?? [];
+      tokens.set(user, owned);
+      if (method === 'GET') return json(owned);
+      if (method === 'DELETE') {
+        const index = owned.findIndex(
+          (token) => token.name === decodeURIComponent(tokenKey) || String(token.id) === tokenKey,
+        );
+        if (index < 0) return json({ message: 'not found' }, 404);
+        owned.splice(index, 1);
+        return new Response(null, { status: 204 });
+      }
+      const { name, scopes } = body as { name: string; scopes: string[] };
+      if (options.failTokenCreate) return json({ message: 'boom' }, 500);
+      if (owned.some((token) => token.name === name)) return json({ message: 'exists' }, 400);
+      const id = nextId++;
+      owned.push({ id, name, scopes });
+      return json({ id, name, sha1: `token-${id}`, scopes }, 201);
+    }
+    match = url.pathname.match(/^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/actions\/secrets\/([^/]+)$/);
+    if (match) {
+      const secret = `${match[1]}/${match[2]}:${match[3]}`;
+      if (method === 'PUT') {
+        secrets.set(secret, (body as { data: string }).data);
+        return new Response(null, { status: 201 });
+      }
+      secrets.delete(secret);
+      return new Response(null, { status: 204 });
+    }
+    if (/^\/api\/v1\/repos\/[^/]+\/[^/]+$/.test(url.pathname)) {
+      return method === 'DELETE' ? new Response(null, { status: 204 }) : json({});
+    }
+    return json({ message: `unexpected ${key}` }, 500);
+  });
+  return {
+    calls,
+    fetchMock,
+    tokens,
+    secrets,
+    seedToken(user: string, name: string, scopes: string[]) {
+      const owned = tokens.get(user) ?? [];
+      owned.push({ id: nextId++, name, scopes });
+      tokens.set(user, owned);
+    },
+    lastBody: (key: string) => bodies.get(key),
+    authorization: (key: string) => authorizations.get(key),
+  };
+}
 
 const repository = (name = 'nette') => ({
   provider: 'gitea' as const,
@@ -76,29 +163,19 @@ describe('GiteaService repository detach', () => {
     jest.restoreAllMocks();
   });
 
-  it('removes platform secrets and disables Actions while preserving the repository', async () => {
-    const fetchMock = jest.spyOn(global, 'fetch');
-    for (let i = 0; i < 5; i++)
-      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
-    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));
-
+  it('removes platform secrets, revokes the registry token and disables Actions', async () => {
+    const gitea = fakeGitea();
     await new GiteaService().detachRepo(repository(), {
       username: 'kudrla',
       token: 'owner-token',
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(6);
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://gitea:3000/api/v1/repos/kudrla/nette/actions/secrets/INITPAD_REGISTRY_PASSWORD',
-      expect.objectContaining({ method: 'DELETE' }),
+    expect(gitea.calls).toContainEqual(
+      'DELETE /api/v1/repos/kudrla/nette/actions/secrets/INITPAD_REGISTRY_PASSWORD',
     );
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      'http://gitea:3000/api/v1/repos/kudrla/nette',
-      expect.objectContaining({
-        method: 'PATCH',
-        body: JSON.stringify({ has_actions: false }),
-      }),
-    );
+    expect(gitea.calls).toContainEqual('DELETE /api/v1/users/kudrla/tokens/initpad-registry-101');
+    expect(gitea.calls.at(-1)).toBe('PATCH /api/v1/repos/kudrla/nette');
+    expect(gitea.lastBody('PATCH /api/v1/repos/kudrla/nette')).toEqual({ has_actions: false });
   });
 
   it('does not detach partially when Gitea refuses secret removal', async () => {
@@ -258,5 +335,102 @@ describe('GiteaService managed account hardening', () => {
     expect(error).toBeInstanceOf(ScmHttpStatusError);
     expect((error as Error).message).toContain('HTTP 403');
     expect((error as Error).message).not.toContain('upstream-secret');
+  });
+});
+
+describe('GiteaService scoped credentials (ADR-134)', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('gives CI a package-only registry token instead of a user credential', async () => {
+    const gitea = fakeGitea();
+    await new GiteaService().configureRepoSecrets(repository(), 'deploy-secret');
+
+    expect(gitea.tokens.get('kudrla')).toEqual([
+      { id: 1, name: 'initpad-registry-101', scopes: ['write:package'] },
+    ]);
+    expect(gitea.secrets.get('kudrla/nette:INITPAD_DEPLOY_TOKEN')).toBe('deploy-secret');
+    expect(gitea.secrets.get('kudrla/nette:INITPAD_REGISTRY_USER')).toBe('kudrla');
+    expect(gitea.secrets.get('kudrla/nette:INITPAD_REGISTRY_PASSWORD')).toBe('token-1');
+    // The temporary password used for token management is replaced afterwards.
+    expect(gitea.calls.filter((call) => call === 'PATCH /api/v1/admin/users/kudrla')).toHaveLength(
+      2,
+    );
+  });
+
+  it('replaces the registry token on rotation so an earlier copy stops working', async () => {
+    const gitea = fakeGitea();
+    const service = new GiteaService();
+    await service.configureRepoSecrets(repository(), 'deploy-secret');
+    await service.rotateRegistryCredential(repository());
+
+    expect(gitea.tokens.get('kudrla')).toEqual([
+      { id: 2, name: 'initpad-registry-101', scopes: ['write:package'] },
+    ]);
+    expect(gitea.secrets.get('kudrla/nette:INITPAD_REGISTRY_PASSWORD')).toBe('token-2');
+  });
+
+  it('issues a clone token that can only clone and push code', async () => {
+    const gitea = fakeGitea();
+    gitea.seedToken('alice', 'initpad-git', ['write:repository']);
+    const token = await new GiteaService().issueCloneToken('alice');
+
+    expect(token).toBe('token-2');
+    expect(gitea.tokens.get('alice')).toEqual([
+      { id: 2, name: 'initpad-git', scopes: ['write:repository'] },
+    ]);
+  });
+
+  it('serializes token operations of one account', async () => {
+    const gitea = fakeGitea();
+    const service = new GiteaService();
+    await Promise.all([service.issueCloneToken('alice'), service.issueCloneToken('alice')]);
+
+    // A second temporary password must not overwrite the first mid-operation.
+    expect(gitea.calls).toEqual([
+      'PATCH /api/v1/admin/users/alice',
+      'DELETE /api/v1/users/alice/tokens/initpad-git',
+      'POST /api/v1/users/alice/tokens',
+      'PATCH /api/v1/admin/users/alice',
+      'PATCH /api/v1/admin/users/alice',
+      'DELETE /api/v1/users/alice/tokens/initpad-git',
+      'POST /api/v1/users/alice/tokens',
+      'PATCH /api/v1/admin/users/alice',
+    ]);
+    expect(gitea.tokens.get('alice')).toHaveLength(1);
+  });
+
+  it('randomizes the temporary password even when token creation fails', async () => {
+    const gitea = fakeGitea({ failTokenCreate: true });
+    await expect(new GiteaService().issueCloneToken('alice')).rejects.toThrow('HTTP 500');
+    expect(gitea.calls.at(-1)).toBe('PATCH /api/v1/admin/users/alice');
+  });
+
+  it('revokes only the legacy full-scope tokens', async () => {
+    const gitea = fakeGitea();
+    gitea.seedToken('alice', 'initpad-platform-1700000000000', ['write:user']);
+    gitea.seedToken('alice', 'initpad-platform-1700000000001', ['write:user']);
+    gitea.seedToken('alice', 'initpad-git', ['write:repository']);
+    gitea.seedToken('alice', 'personal laptop', ['read:repository']);
+
+    await new GiteaService().revokeLegacyCredentials('alice');
+
+    expect(gitea.tokens.get('alice')?.map((token) => token.name)).toEqual([
+      'initpad-git',
+      'personal laptop',
+    ]);
+  });
+
+  it('treats an account unknown to Gitea as having no clone token', async () => {
+    fakeGitea({ missingUsers: ['ghost'] });
+    await expect(new GiteaService().revokeCloneToken('ghost')).resolves.toBeUndefined();
+  });
+
+  it('revokes the registry token together with the repository', async () => {
+    const gitea = fakeGitea();
+    gitea.seedToken('kudrla', 'initpad-registry-101', ['write:package']);
+    await new GiteaService().deleteRepo(repository(), { username: 'kudrla', token: '' });
+
+    expect(gitea.calls[0]).toBe('DELETE /api/v1/repos/kudrla/nette');
+    expect(gitea.tokens.get('kudrla')).toEqual([]);
   });
 });

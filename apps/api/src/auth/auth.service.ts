@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   OnModuleInit,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -179,7 +180,7 @@ export class AuthService implements OnModuleInit {
         password: input.password,
       });
       provisionedUsername = giteaUser.login;
-      const accessToken = await this.gitea.createUserToken(username, input.password);
+      const accessToken = await this.gitea.createCloneToken(username, input.password);
       await this.gitea.randomizeUserPassword(username);
       return await this.prisma.user.create({
         data: {
@@ -191,6 +192,7 @@ export class AuthService implements OnModuleInit {
           mustChangePassword: input.mustChangePassword ?? false,
           passwordHash: await hashPassword(input.password),
           accessToken: encryptSecret(accessToken),
+          giteaCredentialsScopedAt: new Date(),
           memberships: {
             create: {
               role: 'owner',
@@ -413,7 +415,12 @@ export class AuthService implements OnModuleInit {
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
-    const record = await this.consumeAuthToken(token, 'password_reset');
+    const record = await this.findUsableAuthToken(token, 'password_reset');
+    // A reset is how an account is recovered after a compromise. The Git
+    // token obtainable through an old session must stop working first; the
+    // link stays unused if Gitea cannot confirm the revocation.
+    await this.revokeGitCredential(record.userId);
+    await this.claimAuthToken(record);
     await this.prisma.user.update({
       where: { id: record.userId },
       data: {
@@ -423,6 +430,31 @@ export class AuthService implements OnModuleInit {
         tokenVersion: { increment: 1 },
       },
     });
+  }
+
+  /**
+   * Revokes the account's Gitea clone token and forgets it. The user receives
+   * a new one the next time Git access is requested (ADR-134).
+   */
+  async revokeGitCredential(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true, giteaId: true },
+    });
+    if (!user || user.giteaId == null) return;
+    try {
+      await this.gitea.revokeCloneToken(user.username);
+    } catch (error) {
+      this.logger.warn({
+        event: 'auth.git_credential.revocation_failed',
+        userId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      throw new ServiceUnavailableException(
+        'The Git service is temporarily unavailable. Try again in a few minutes.',
+      );
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { accessToken: '' } });
   }
 
   /**
@@ -513,6 +545,15 @@ export class AuthService implements OnModuleInit {
   }
 
   private async consumeAuthToken(token: string, kind: string): Promise<{ userId: string }> {
+    const record = await this.findUsableAuthToken(token, kind);
+    await this.claimAuthToken(record);
+    return { userId: record.userId };
+  }
+
+  private async findUsableAuthToken(
+    token: string,
+    kind: string,
+  ): Promise<{ id: string; kind: string; userId: string }> {
     if (!token) throw new BadRequestException('This link is invalid or has expired');
     const record = await this.prisma.authToken.findUnique({
       where: { tokenHash: hashToken(token) },
@@ -525,12 +566,16 @@ export class AuthService implements OnModuleInit {
     ) {
       throw new BadRequestException('This link is invalid or has expired');
     }
-    // Claim the token atomically. Two concurrent requests may both read the
-    // row above, but exactly one is allowed to transition it from unused.
+    return record;
+  }
+
+  // Claim the token atomically. Two concurrent requests may both read the
+  // row, but exactly one is allowed to transition it from unused.
+  private async claimAuthToken(record: { id: string; kind: string }): Promise<void> {
     const claimed = await this.prisma.authToken.updateMany({
       where: {
         id: record.id,
-        kind,
+        kind: record.kind,
         usedAt: null,
         expiresAt: { gte: new Date() },
       },
@@ -539,7 +584,6 @@ export class AuthService implements OnModuleInit {
     if (claimed.count !== 1) {
       throw new BadRequestException('This link is invalid or has expired');
     }
-    return { userId: record.userId };
   }
 
   /** Issues a signed session for an already-provisioned user (e.g. GitHub OAuth). */
