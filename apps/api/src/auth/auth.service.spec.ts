@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { config } from '../config';
 import type { RecordAuditEvent } from '../audit/audit-events.service';
@@ -534,9 +535,42 @@ describe('AuthService', () => {
         userId: 'u1',
         kind: 'password_reset',
         recipient: 'dave@example.test',
+        // ADR-143: the token is in the fragment, never in the requested path.
+        url: expect.stringMatching(/\/reset-password#[A-Za-z0-9_-]{43}$/),
       }),
     );
     expect(mail.scheduleDelivery).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a manual activation link with the token in the fragment', async () => {
+    let created: Record<string, unknown> | undefined;
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'u1',
+          username: 'erin',
+          name: null,
+          email: null,
+        })),
+      },
+      authToken: {
+        updateMany: jest.fn(async () => ({ count: 0 })),
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          created = data;
+          return {};
+        }),
+      },
+      $queryRaw: jest.fn(async () => [{ id: 'u1' }]),
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const result = await service.createActivationLink('u1');
+    expect(result.delivery).toBe('manual');
+    const url = new URL(result.activationUrl!);
+    expect(url.pathname).toMatch(/\/activate$/);
+    const token = url.hash.slice(1);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(created?.tokenHash).toBe(createHash('sha256').update(token).digest('hex'));
   });
 
   it('resets the password, forces re-login and consumes the token', async () => {

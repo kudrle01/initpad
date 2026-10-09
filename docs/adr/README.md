@@ -153,3 +153,4 @@ stabilní.
 | [ADR-140](./ADR-140.md) | Accepted | Šablony předávají kontext CI jako data, nemají klíče v kódu a dodávají závislosti bez známých zranitelností |
 | [ADR-141](./ADR-141.md) | Accepted | Klíč pro šifrování dat je samostatný, jde vyměnit a nečitelná hodnota je chyba |
 | [ADR-142](./ADR-142.md) | Accepted | Přihlášení, správa účtů a smazání workspace se zapisují do platformního auditu |
+| [ADR-143](./ADR-143.md) | Accepted | Jednorázové odkazy nesou token ve fragmentu URL |

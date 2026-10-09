@@ -601,6 +601,12 @@ export class AuthService implements OnModuleInit {
     return config.auth.frontendUrl.replace(/\/+$/, '');
   }
 
+  // The token travels in the fragment, which browsers never send to a server,
+  // so it stays out of proxy and edge access logs (ADR-143).
+  private authLinkUrl(route: string, token: string): string {
+    return `${this.frontendBase()}/${route}#${token}`;
+  }
+
   private async issueAuthLink(
     user: { id: string; email: string | null; name: string | null; username: string },
     kind: MailKind,
@@ -620,7 +626,7 @@ export class AuthService implements OnModuleInit {
           kind,
           recipient: user.email!,
           displayName: user.name || user.username,
-          url: `${this.frontendBase()}/${route}/${token}`,
+          url: this.authLinkUrl(route, token),
         });
       }
       return token;
@@ -629,7 +635,7 @@ export class AuthService implements OnModuleInit {
       this.mail!.scheduleDelivery();
       return { delivery: 'email' };
     }
-    return { delivery: 'manual', url: `${this.frontendBase()}/${route}/${token}` };
+    return { delivery: 'manual', url: this.authLinkUrl(route, token) };
   }
 
   private async issueAuthToken(

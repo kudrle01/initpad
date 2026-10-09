@@ -41,7 +41,7 @@ describe('MailDeliveryService', () => {
       kind: 'email_verify',
       recipient: 'alice@example.test',
       displayName: 'Alice',
-      url: 'https://initpad.example/verify-email/private-token',
+      url: 'https://initpad.example/verify-email#private-token',
     });
 
     expect(created).toMatchObject({
@@ -66,7 +66,7 @@ describe('MailDeliveryService', () => {
       payloadEncrypted: encryptSecret(
         JSON.stringify({
           displayName: 'Alice <Admin>',
-          url: 'https://initpad.example/reset-password/private-token?a=1&b=2',
+          url: 'https://initpad.example/reset-password?a=1&b=2#private-token',
         }),
       ),
       status: 'pending',
@@ -121,7 +121,7 @@ describe('MailDeliveryService', () => {
       kind: 'activation',
       recipient: 'alice@example.test',
       payloadEncrypted: encryptSecret(
-        JSON.stringify({ displayName: 'Alice', url: 'https://initpad.example/activate/secret' }),
+        JSON.stringify({ displayName: 'Alice', url: 'https://initpad.example/activate#secret' }),
       ),
       status: 'pending',
       attempts: 0,
@@ -153,7 +153,7 @@ describe('MailDeliveryService', () => {
 
     expect(row.status).toBe('pending');
     expect(row.lastError).toBe('temporary SMTP outage');
-    expect(row.lastError).not.toContain('/activate/secret');
+    expect(row.lastError).not.toContain('/activate#secret');
     expect(row.availableAt.getTime()).toBeGreaterThan(Date.now());
   });
 
@@ -168,7 +168,7 @@ describe('MailDeliveryService', () => {
       kind: 'activation',
       recipient: 'alice@example.test',
       payloadEncrypted: encryptSecret(
-        JSON.stringify({ displayName: 'Alice', url: 'https://initpad.example/activate/secret' }),
+        JSON.stringify({ displayName: 'Alice', url: 'https://initpad.example/activate#secret' }),
       ),
       status: 'pending',
       attempts: 0,

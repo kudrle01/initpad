@@ -120,7 +120,10 @@ konfiguraci v paměti.
   Deploymenty a joby Agenta sdílejí stabilní korelační ID a Agent ho přijímá
   pouze jako diagnostická metadata. Centralizovaný logger odstraňuje citlivé
   klíče, známé formáty tokenů a credentials v URL, zatímco HTTP access log
-  neukládá query stringy ani těla požadavků.
+  neukládá query stringy ani těla požadavků. Aktivační, resetovací a ověřovací
+  odkazy nesou jednorázový token ve fragmentu URL, který prohlížeč serveru
+  neposílá, takže se nedostane do access logů webu, Caddy ani edge vrstvy a
+  stránka ho po přečtení odstraní z adresy (ADR-143).
 - Aplikační kontejnery dostávají limity paměti, CPU, PID a logů, odebrané
   capabilities a `no-new-privileges`. Webové a API kontejnery platformy jsou,
   kde je to možné, pouze pro čtení.

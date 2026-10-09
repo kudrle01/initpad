@@ -1,17 +1,19 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { AuthCard } from '@/components/molecules/AuthCard';
 import { FormField } from '@/components/molecules/FormField';
+import { MissingLinkToken } from '@/components/molecules/MissingLinkToken';
 import { Notice } from '@/components/molecules/Notice';
 import { Button } from '@/components/ui/button';
+import { useLinkToken } from '@/lib/link-token';
 import { t } from '@/i18n';
 
-// Public page reached from an admin activation link (/activate/:token). The
+// Public page reached from an admin activation link (/activate#token). The
 // user sets their own password and is signed in immediately.
 export default function Activate() {
-  const { token = '' } = useParams();
+  const token = useLinkToken();
   const navigate = useNavigate();
   const { signIn } = useAuth();
   const [password, setPassword] = useState('');
@@ -36,6 +38,8 @@ export default function Activate() {
       setBusy(false);
     }
   }
+
+  if (!token) return <MissingLinkToken title={t('Activate your account')} />;
 
   return (
     <AuthCard

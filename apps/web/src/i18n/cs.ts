@@ -20,6 +20,9 @@ export const cs = {
   // components/molecules/LoadErrorState.tsx
   'Could not load this content': 'Obsah se nepodařilo načíst',
   'Try again': 'Zkusit znovu',
+  // components/molecules/MissingLinkToken.tsx
+  'The link is missing its code. Open the whole link again from the message you received.':
+    'V odkazu chybí kód. Otevřete znovu celý odkaz ze zprávy, kterou jste dostali.',
   // components/molecules/PageHeader.tsx
   'About {title}': 'O sekci {title}',
   // components/molecules/RouteLoading.tsx

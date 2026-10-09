@@ -164,8 +164,10 @@ samostatným release rozhodnutím.
 ## E-mailové doručování
 
 Self-hosted instalace funguje i bez SMTP: aktivaci a ověření zobrazí jako
-jednorázový odkaz oprávněnému uživateli. Pro reset zapomenutého hesla a
-veřejný provoz nastav v `.env` relay s TLS:
+jednorázový odkaz oprávněnému uživateli. Token je za znakem `#`, a proto se
+odkaz musí předat celý; bez této části stránka požádá o otevření celého odkazu
+znovu (ADR-143). Pro reset zapomenutého hesla a veřejný provoz nastav v `.env`
+relay s TLS:
 
 ```dotenv
 INITPAD_SMTP_HOST=smtp.example.org
