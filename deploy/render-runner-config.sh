@@ -12,13 +12,12 @@ get_env() {
   awk -F= -v k="$1" '$1==k {sub(/^[^=]*=/, ""); print; exit}' .env
 }
 
+# Every CI job runs on its own freshly erased Docker daemon (ADR-138), so the
+# bundled runner executes exactly one job at a time.
 capacity=$(get_env INITPAD_RUNNER_CAPACITY)
 capacity=${capacity:-1}
-case "$capacity" in
-  ''|*[!0-9]*) fail "INITPAD_RUNNER_CAPACITY must be an integer from 1 to 8." ;;
-esac
-[ "$capacity" -ge 1 ] && [ "$capacity" -le 8 ] || \
-  fail "INITPAD_RUNNER_CAPACITY must be between 1 and 8."
+[ "$capacity" = 1 ] || \
+  fail "INITPAD_RUNNER_CAPACITY must be 1: each CI job runs on its own freshly erased Docker daemon (ADR-138). Set INITPAD_RUNNER_CAPACITY=1 in deploy/.env and re-run ./install.sh."
 
 memory_limit=$(get_env INITPAD_RUNNER_MEMORY_LIMIT)
 memory_limit=${memory_limit:-1536m}

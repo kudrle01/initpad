@@ -262,7 +262,7 @@ check_running() {
   "${COMPOSE[@]}" config --quiet
 
   local service domain web_port response mapping channel running_version users
-  for service in postgres minio gitea api web supervisor runner-docker act_runner fake-sftp static-web; do
+  for service in postgres minio gitea api web supervisor runner-image-cache runner-docker act_runner fake-sftp static-web; do
     assert_service "$service"
   done
   domain=$(get_env INITPAD_DOMAIN)
@@ -289,6 +289,13 @@ check_running() {
   "${COMPOSE[@]}" exec -T runner-docker \
     wget -qO- http://host.docker.internal:3001/api/healthz >/dev/null || \
     fail "The isolated CI daemon cannot reach Gitea."
+  # Every CI job runs on a freshly erased daemon (ADR-138); a writable root
+  # filesystem would let a job leave files for the next one.
+  [ "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$(container_id runner-docker)")" = true ] || \
+    fail "The CI daemon container is writable; re-run ./install.sh."
+  "${COMPOSE[@]}" exec -T runner-docker docker info --format '{{.RegistryConfig.Mirrors}}' | \
+    grep -q 'http://172.31.250.10:5000/' || \
+    fail "The CI daemon does not use the local image cache; re-run ./install.sh."
 
   running_version=$(docker inspect "$(container_id api)" \
     --format '{{range .Config.Env}}{{println .}}{{end}}' | \

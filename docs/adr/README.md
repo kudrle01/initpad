@@ -148,3 +148,4 @@ stabilní.
 | [ADR-135](./ADR-135.md) | Accepted | Serverový profil posílá API z Caddy přímo, aby měla každá cesta jeden proxy hop |
 | [ADR-136](./ADR-136.md) | Accepted | První administrátor vyžaduje instalační token a registrace je ve výchozím stavu uzavřená |
 | [ADR-137](./ADR-137.md) | Accepted | Mutace se session cookie vyžadují JSON a session cookie pod HTTPS nese prefix `__Host-` |
+| [ADR-138](./ADR-138.md) | Accepted | Každý CI job běží na čerstvě vymazaném Docker daemonu |

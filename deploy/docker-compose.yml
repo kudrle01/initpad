@@ -306,15 +306,59 @@ services:
     pids_limit: 128
     restart: unless-stopped
 
+  # Read-only pull-through cache for the Docker Hub images CI jobs pull. Every
+  # job starts on an erased daemon (ADR-138), so without it each job would
+  # download its job image and Dockerfile base images from Docker Hub again.
+  # It rejects pushes and deletes, so a job cannot place content in it.
+  runner-image-cache:
+    image: registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+    profiles: ['runner']
+    # A directory mount, unlike a file mount, follows a configuration that a
+    # platform update replaces.
+    command: ['/opt/initpad-runner/image-cache.yml']
+    environment:
+      # No trace collector exists; otherwise the registry logs a failed export.
+      OTEL_TRACES_EXPORTER: none
+    volumes:
+      - ./runner:/opt/initpad-runner:ro
+      - runner-image-cache:/var/lib/registry
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:5000/v2/']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      ci-control:
+        # The rootless daemon has no access to Docker's embedded DNS, so it
+        # reaches the cache by a fixed address, like the host gateway below.
+        ipv4_address: 172.31.250.10
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=16m
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+
   # Dedicated rootless Docker daemon for untrusted CI jobs. It is privileged
   # only inside this container so rootless Docker can create namespaces; the
   # physical host socket and filesystem are never mounted into a workflow.
   # The outer cgroup is also the aggregate resource envelope for every nested
   # build container, so CI cannot starve the platform control plane.
+  # Each CI job gets a freshly erased daemon (ADR-138): the entry point erases
+  # the daemon state on every start and act_runner restarts this container
+  # after each job. The root filesystem is read-only and every other writable
+  # path is a tmpfs, so a restart also discards files a job wrote through the
+  # Docker API.
   runner-docker:
     image: docker:27.5.1-dind-rootless@sha256:e2ac8e8f66ae21a060b0a8e3005c70f6ed9441aabf409434463d1f6eecd38026
     profiles: ['runner']
     privileged: true
+    init: true
+    entrypoint: ['/bin/sh', '/opt/initpad-runner/ci-daemon.sh']
     environment:
       DOCKER_TLS_CERTDIR: ''
       DOCKER_HOST: tcp://127.0.0.1:2375
@@ -324,8 +368,16 @@ services:
       # Only the same-host, non-public alias is HTTP. A configured public CI
       # registry still uses verified TLS and is not placed on this allow-list.
       - '--insecure-registry=host.docker.internal:${INITPAD_GITEA_HTTP_PORT:-3001}'
+      - '--registry-mirror=http://172.31.250.10:5000'
     volumes:
+      - ./runner:/opt/initpad-runner:ro
       - runner-docker-data:/home/rootless/.local/share/docker
+      - runner-reset:/run/initpad-ci-reset:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /run/user/1000:size=64m,uid=1000,gid=1000,mode=0700
+      - /home/rootless:size=64m,uid=1000,gid=1000,mode=0755
     healthcheck:
       test: ['CMD', 'docker', 'info']
       interval: 3s
@@ -339,16 +391,21 @@ services:
       # Gitea's auth challenge may use its canonical gitea.localhost realm.
       - 'host.docker.internal:172.31.250.1'
       - 'gitea.localhost:172.31.250.1'
+    depends_on:
+      runner-image-cache: { condition: service_started }
     networks: [ci-control]
     mem_limit: ${INITPAD_RUNNER_MEMORY_LIMIT:-1536m}
     cpus: ${INITPAD_RUNNER_CPU_LIMIT:-1.0}
     pids_limit: ${INITPAD_RUNNER_PIDS_LIMIT:-512}
     restart: unless-stopped
 
-  # Gitea Actions runner — registered automatically by install.sh.
+  # Gitea Actions runner — registered automatically by install.sh. It keeps the
+  # runner credential outside the daemon container, takes one job at a time
+  # and starts it only on a daemon erased since the previous job (ADR-138).
   act_runner:
-    image: gitea/act_runner:0.2.11@sha256:c57233403eff970945cfb8b13f0e622d2124f4dbc623af3e2c74f061d05e8f60
+    image: gitea/act_runner:0.2.13@sha256:8477d5b61b655caad4449888bae39f1f34bebd27db56cb15a62dccb3dcf3a944
     profiles: ['runner']
+    entrypoint: ['/sbin/tini', '--', '/bin/bash', '/opt/initpad-runner/ci-runner.sh']
     environment:
       # Persisted by act_runner and passed to checkout jobs. Keep it separate
       # from the browser URL: glibc treats *.localhost as IPv6 loopback.
@@ -359,7 +416,9 @@ services:
       CONFIG_FILE: /config.yaml
     volumes:
       - ./.runtime/act-runner-config.yaml:/config.yaml:ro
+      - ./runner:/opt/initpad-runner:ro
       - runner-data:/data
+      - runner-reset:/run/initpad-ci-reset
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     depends_on:
@@ -449,6 +508,8 @@ volumes:
   gitea-data: {}
   runner-data: {}
   runner-docker-data: {}
+  runner-image-cache: {}
+  runner-reset: {}
   sftp-www: {}
   api-data: {}
   supervisor-data: {}

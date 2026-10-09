@@ -150,8 +150,8 @@ Ve Windows otevři:
 - Giteu: `http://<VM_IP>:3001`.
 
 Výsledek je **PASS**, když je API healthy, web se otevře, první účet lze založit
-jen s instalačním tokenem z výstupu `install.sh` a `act_runner` i `runner-docker`
-běží. Po založení prvního účtu ulož checkpoint
+jen s instalačním tokenem z výstupu `install.sh` a `act_runner`,
+`runner-docker` i `runner-image-cache` běží. Po založení prvního účtu ulož checkpoint
 a potom restartuj celý host:
 
 ```bash
@@ -293,7 +293,7 @@ Oba příkazy musí skončit kódem 0; secret neukládej do screenshotu ani logu
 
 ## 8. Ověř frontu a izolaci dvou souběžných projektů
 
-V `deploy/.env` ponech nejprve:
+V `deploy/.env` ponech:
 
 ```dotenv
 INITPAD_RUNNER_CAPACITY=1
@@ -306,11 +306,11 @@ Spusť `./install.sh` a ověř skutečný limit celého vnořeného CI prostoru:
 
 ```bash
 docker inspect initpad-runner-docker-1 \
-  --format 'memory={{.HostConfig.Memory}} nano_cpus={{.HostConfig.NanoCpus}} pids={{.HostConfig.PidsLimit}}'
+  --format 'memory={{.HostConfig.Memory}} nano_cpus={{.HostConfig.NanoCpus}} pids={{.HostConfig.PidsLimit}} read_only={{.HostConfig.ReadonlyRootfs}}'
 ```
 
-Výchozí hodnoty jsou `memory=1610612736`, `nano_cpus=1000000000` a
-`pids=512`. Potom rychle po sobě, bez čekání na první CI, založ ve dvou
+Výchozí hodnoty jsou `memory=1610612736`, `nano_cpus=1000000000`,
+`pids=512` a `read_only=true`. Potom rychle po sobě, bez čekání na první CI, založ ve dvou
 workspacech projekty `queue-one` a `queue-two`. Očekávaný výsledek:
 
 - oba projekty i oba oddělené repozitáře vzniknou bez konfliktu;
@@ -326,9 +326,40 @@ workspacech projekty `queue-one` a `queue-two`. Očekávaný výsledek:
   skrytá karta se po návratu sama aktualizuje, aniž by na pozadí nepřetržitě
   pollovala celou historii commitů.
 
-Volitelně na stroji s dostatkem prostředků nastav kapacitu `2`, spusť znovu
-`./install.sh` a test zopakuj s novými názvy. Oba první joby mohou běžet
-současně. Na malé VM je správná a bezpečná hodnota `1`.
+Nakonec ověř, že CI job nepředá stav dalšímu jobu (ADR-138). V Gitee založ
+testovací repozitář a přidej do něj `.gitea/workflows/isolation.yml`:
+
+```yaml
+name: isolation
+on: [push]
+jobs:
+  first:
+    runs-on: ubuntu-latest
+    steps:
+      - name: leave state in the daemon
+        run: |
+          echo "daemon=$(docker info --format '{{.ID}}')"
+          docker volume create initpad-leftover-check
+          docker pull -q alpine:3.22
+          docker create --name initpad-leftover-check -v initpad-leftover-check:/data alpine:3.22 true
+  second:
+    needs: first
+    runs-on: ubuntu-latest
+    steps:
+      - name: see nothing from the first job
+        run: |
+          echo "daemon=$(docker info --format '{{.ID}}')"
+          if [ -n "$(docker ps -aq --filter name=initpad-leftover-check)" ]; then echo "container left over"; exit 1; fi
+          if docker volume inspect initpad-leftover-check >/dev/null 2>&1; then echo "volume left over"; exit 1; fi
+          if docker image inspect alpine:3.22 >/dev/null 2>&1; then echo "image left over"; exit 1; fi
+          echo "no state from the first job"
+```
+
+Oba joby musí skončit úspěšně, druhý vypíše `no state from the first job` a
+jinou hodnotu `daemon=` než první. `docker compose --profile runner logs
+runner-docker` po každém jobu ukáže `reset requested; restarting with an erased
+daemon`. Testovací repozitář potom smaž. Hodnota `INITPAD_RUNNER_CAPACITY`
+jiná než `1` musí `./install.sh` zastavit s odkazem na ADR-138.
 
 ## 9. Ověř zálohu a obnovu
 

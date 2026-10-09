@@ -92,7 +92,9 @@ chmod 700 "$working_destination"
 runner_docker_id=$("${COMPOSE[@]}" ps -q runner-docker 2>/dev/null || true)
 if [ -n "$runner_docker_id" ] && \
    [ "$(docker inspect --format '{{.State.Running}}' "$runner_docker_id" 2>/dev/null || true)" = true ]; then
-  active_ci_containers=$("${COMPOSE[@]}" exec -T runner-docker docker ps -q)
+  # The daemon restarts with erased state after every job (ADR-138).
+  active_ci_containers=$("${COMPOSE[@]}" exec -T runner-docker docker ps -q) || \
+    fail "The CI daemon is restarting between jobs. Retry the backup in a few seconds."
   [ -z "$active_ci_containers" ] || \
     fail "A CI job is currently running. Wait for it to finish, then retry the backup."
 fi

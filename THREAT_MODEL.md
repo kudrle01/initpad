@@ -66,9 +66,12 @@ konfiguraci v paměti.
 - Webhooky Gitey používají podpis HMAC se zachovanou kompatibilitou s bearer
   tokenem a nikdy nevkládají secrety do URL.
 - Runner Actions používá vyhrazený rootless DinD daemon. Nepřipojuje socket ani
-  workspace hostu a nepovoluje žádné volumes definované workflow. Souběžnost je
-  explicitně omezená, ve výchozím stavu na jeden job, a jeho řídicí síť je
-  oddělená od PostgreSQL i od nasazovacích sítí.
+  workspace hostu a nepovoluje žádné volumes definované workflow. Řídicí síť je
+  oddělená od PostgreSQL i od nasazovacích sítí. Runner provádí jeden job
+  najednou a každý běží na čerstvě vymazaném daemonu, takže job nepředá
+  kontejner, volume, image ani build cache jinému jobu (ADR-138). Credential
+  runneru leží mimo kontejner daemonu, image z Docker Hubu dodává cache, do
+  které job nemůže zapisovat, a sdílený cache server Actions je vypnutý.
 - Validace DTO pomocí allow-listu, omezené délky, kontroly politik workspace a
   validace endpointu a cesty targetu snižují riziko injection, IDOR a vyčerpání
   zdrojů.
@@ -138,7 +141,8 @@ konfiguraci v paměti.
   pouze připnulo.
 - Rootless DinD stále vyžaduje privilegovaný vnější kontejner. Chrání host před
   běžným ovládáním Dockeru z workflow, ale není rovnocenný vyhrazené VM pro
-  runner.
+  runner. Únik z rootless user namespace by se dostal do kontejneru daemonu,
+  který se po jobu restartuje a maže; credential runneru tam není.
 - Workspace RBAC izoluje aplikační data, ale všechna nasazení stále sdílejí
   přihlašovací údaje poskytovatele a hranici důvěry Dockeru self-hosted control
   plane. Tento profil nezpřístupňujte jako nepřátelský veřejný SaaS.

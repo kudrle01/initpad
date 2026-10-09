@@ -444,16 +444,23 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
   aplikace spotřebuje méně; CI build je záměrně nejnáročnější část.
 - Orientačně: každý projekt = 3 prostředí; N týmů × 3 běžící kontejnery + CI
   buildy. Hlídej RAM, CPU a **volné místo** (buildy a image rostou).
-- `INITPAD_RUNNER_CAPACITY=1` znamená jeden současný CI job a ostatní
-  commity pravdivě zobrazí jako `awaiting CI`. Na hostu s dostatkem RAM a CPU
-  nastav `2` a znovu spusť `./install.sh`; instalátor vygeneruje runner config a
-  runner bezpečně znovu vytvoří. Nezvyšuj hodnotu jen kvůli kratší frontě —
-  každý slot může současně provádět náročný Docker build.
+- Runner provádí jeden CI job najednou a ostatní commity pravdivě zobrazí jako
+  `awaiting CI`. Každý job běží na čerstvě vymazaném Docker daemonu
+  (ADR-138): `runner-docker` se po jobu restartuje a při startu smaže
+  kontejnery, volumes, image i build cache. `INITPAD_RUNNER_CAPACITY` proto
+  musí být `1`; instalace s vyšší hodnotou ji musí v `deploy/.env` vrátit na
+  `1` a znovu spustit `./install.sh`.
+- Každý job si znovu načte job image a Docker build začíná bez vrstev
+  předchozích jobů. Image z Docker Hubu dodává lokální cache
+  `runner-image-cache` (volume `initpad_runner-image-cache`, obsah vyprší po 7
+  dnech), takže se opakovaně nestahují z internetu. Do cache nikdo nemůže
+  zapisovat. Počítej s ní v místě na disku (job image má asi 0,5 GB).
 - `INITPAD_RUNNER_MEMORY_LIMIT`, `INITPAD_RUNNER_CPU_LIMIT` a
-  `INITPAD_RUNNER_PIDS_LIMIT` omezují **součet** všech vnořených CI kontejnerů
-  (výchozí hodnoty `1536m`, `1.0`, `512`). Na silnějším hostu je lze zvýšit,
-  ale ponech dostatečnou rezervu pro databázi, Gitea, API a běžící aplikace.
-  Změnu uplatní opětovné `./install.sh`; nevyžaduje nový projekt.
+  `INITPAD_RUNNER_PIDS_LIMIT` omezují CI daemon i všechny kontejnery jobu
+  (výchozí hodnoty `1536m`, `1.0`, `512`). Vyšší CPU limit zkrátí i načtení job
+  image na začátku každého jobu. Na silnějším hostu je lze zvýšit, ale ponech
+  dostatečnou rezervu pro databázi, Gitea, API a běžící aplikace. Změnu uplatní
+  opětovné `./install.sh`; nevyžaduje nový projekt.
 - Kvóty na tým nastav přes **Allocations** (max prostředí, ADR-060).
 - Když jeden host nestačí, přesuň nasazovací cíle na další stroje přes **Agenta**
   po dokončení jeho job/delivery protokolu (roadmapa), případně managed DB/S3.
@@ -462,7 +469,11 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
 
 - **Něco není `healthy`:** `docker compose logs <služba>`.
 - **Plný disk:** `docker system df` → `./cleanup.sh`; zkontroluj `./backups`.
-- **CI se nestaví/nenasazuje:** běží profil runneru? `docker compose ps act_runner runner-docker`.
+- **CI se nestaví/nenasazuje:** běží profil runneru? `docker compose ps act_runner runner-docker runner-image-cache`.
+  Log `runner-docker` po každém jobu ukáže `reset requested; restarting with an
+  erased daemon`. Hláška `previous CI daemon state could not be erased` znamená,
+  že daemon odmítl start s daty předchozího jobu; zkontroluj místo na disku a
+  `docker compose logs runner-docker`.
 - **Druhý projekt čeká:** při kapacitě 1 je to backpressure, ne konflikt.
   První commit má `running`, druhý `awaiting CI`; jakmile aktivní job uvolní
   slot, runner si sám převezme další. Pokud oba zůstanou čekat, zkontroluj
