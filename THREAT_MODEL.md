@@ -63,6 +63,10 @@ konfiguraci v paměti.
   `write:package` pro registry; Git token uživatele (`write:repository`) do
   secretů nikdy nevstupuje. Registry tokeny workspace se vymění, když člen
   ztratí právo zápisu, a reset hesla i deaktivace zruší Git token účtu.
+- Šablony předávají kontext a secrety do skriptů CI jen přes `env:`, takže
+  název větve nespustí kód. Nemají v kódu žádný podpisový klíč a při vydání
+  dodávají zamčené závislosti bez známých zranitelností; Dependabot hlídá pip a
+  composer závislosti šablon (ADR-140).
 - Webhooky Gitey používají podpis HMAC se zachovanou kompatibilitou s bearer
   tokenem a nikdy nevkládají secrety do URL.
 - Runner Actions používá vyhrazený rootless DinD daemon. Nepřipojuje socket ani
@@ -175,6 +179,8 @@ konfiguraci v paměti.
 - Synchronizace spolupracovníků v Gitee zahrnuje dva systémy, a proto používá
   kompenzaci místo distribuované transakce. Před hostovaným produkčním použitím
   je nutná rekonciliace a auditní log.
+- PHP šablony v produkčním obrazu používají vestavěný server `php -S`, který
+  je určený pro vývoj a obsluhuje jeden požadavek najednou.
 - Zálohy obsahují credentials. Musí být šifrované, uložené mimo host a testované
   pravidelnými cvičeními obnovy.
 - Výstup JSON je pouze lokálním kontraktem stdout a stderr. Hostovaný provoz

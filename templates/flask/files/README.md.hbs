@@ -4,3 +4,8 @@ Flask (Python) app scaffolded by InitPad, served by gunicorn.
 
 - Local: `pip install -r requirements.txt` then `flask run`
 - Routes: `GET /` and `GET /health`
+
+Direct dependencies live in `requirements.in`; `requirements.txt` pins them
+together with every transitive package, so each build installs the same
+versions. After changing `requirements.in`, regenerate the lock with
+`pip install pip-tools` and `pip-compile requirements.in`.

@@ -3,9 +3,12 @@
 export const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 
+const REGISTRY_CREDENTIALS =
+  '          INITPAD_REGISTRY_USER: ${{ secrets.INITPAD_REGISTRY_USER }}\n' +
+  '          INITPAD_REGISTRY_PASSWORD: ${{ secrets.INITPAD_REGISTRY_PASSWORD }}\n';
 const REGISTRY_LOGIN =
-  '          echo "${{ secrets.INITPAD_REGISTRY_PASSWORD }}" | \\\n' +
-  '            docker login "${{ secrets.INITPAD_REGISTRY }}" -u "${{ secrets.INITPAD_REGISTRY_USER }}" --password-stdin\n';
+  '          echo "$INITPAD_REGISTRY_PASSWORD" | \\\n' +
+  '            docker login "$INITPAD_REGISTRY" -u "$INITPAD_REGISTRY_USER" --password-stdin\n';
 const BUILD_CACHE_NAME =
   "          # Build layers are cached next to the image, in this repository's registry.\n" +
   '          echo "CACHE=${IMAGE%:*}:buildcache" >> "$GITHUB_ENV"\n';
@@ -13,7 +16,8 @@ const BUILD_CACHE_NAME =
 // the image over as an artifact and has no such registry.
 const BUILD_CACHE_FLAG = /^ {12}--cache-(?:from|to) "type=registry,[^"\n]*" \\\n/gm;
 const PUBLISH_STEP = '      - name: publish image\n        run: docker push "$IMAGE"\n';
-const RESULT = '"ciStatus":"${{ job.status }}"}\'';
+const RESULT_ENV = '          CI_RESULT: ${{ job.status }}\n';
+const RESULT_FIELDS = `--arg ciStatus "$CI_RESULT" '$ARGS.named'`;
 
 function replaceOnce(workflow: string, search: string, replacement: string, what: string): string {
   if (!workflow.includes(search)) throw new Error(what);
@@ -51,21 +55,29 @@ export function adaptWorkflowForGitHub(source: string, filename: string): string
     ].join('\n'),
     missing('image publication step'),
   );
+  workflow = replaceOnce(workflow, REGISTRY_CREDENTIALS, '', missing('registry credentials'));
   workflow = replaceOnce(workflow, REGISTRY_LOGIN, '', missing('registry login'));
   workflow = replaceOnce(workflow, BUILD_CACHE_NAME, '', missing('build cache name'));
   workflow = workflow.replace(BUILD_CACHE_FLAG, '');
   workflow = replaceOnce(
     workflow,
-    ':${{ github.sha }}" | tr',
-    ':${{ github.sha }}-${{ github.run_id }}" | tr',
+    ':$CI_SHA" | tr',
+    ':$CI_SHA-$GITHUB_RUN_ID" | tr',
     missing('image tag'),
   );
   workflow = replaceOnce(
     workflow,
-    RESULT,
-    '"ciStatus":"${{ job.status }}",' +
-      '"artifactId":"${{ steps.initpad-artifact.outputs.artifact-id }}",' +
-      '"artifactDigest":"${{ steps.initpad-artifact.outputs.artifact-digest }}"}\'',
+    RESULT_ENV,
+    RESULT_ENV +
+      '          ARTIFACT_ID: ${{ steps.initpad-artifact.outputs.artifact-id }}\n' +
+      '          ARTIFACT_DIGEST: ${{ steps.initpad-artifact.outputs.artifact-digest }}\n',
+    missing('InitPad callback result'),
+  );
+  workflow = replaceOnce(
+    workflow,
+    RESULT_FIELDS,
+    `--arg ciStatus "$CI_RESULT" --arg artifactId "$ARTIFACT_ID" \\\n` +
+      `            --arg artifactDigest "$ARTIFACT_DIGEST" '$ARGS.named'`,
     missing('InitPad callback'),
   );
 

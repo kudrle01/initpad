@@ -17,14 +17,17 @@ describe('GitHub artifact workflow adaptation', () => {
       const github = adaptWorkflowForGitHub(source, `${template}/ci.yml`);
       expect(github).toContain(`uses: ${UPLOAD_ARTIFACT_ACTION} # v7.0.1`);
       expect(github).toContain('docker save "$IMAGE" -o initpad-image.tar');
-      expect(github).toContain('${{ github.sha }}-${{ github.run_id }}');
+      expect(github).toContain(':$CI_SHA-$GITHUB_RUN_ID"');
       expect(github).toContain('archive: false');
       expect(github).toContain('retention-days: 1');
-      expect(github).toContain('artifactId');
-      expect(github).toContain('artifactDigest');
-      expect(github).toContain('"artifactId":"${{ steps.initpad-artifact.outputs.artifact-id }}"');
+      expect(github).toContain('ARTIFACT_ID: ${{ steps.initpad-artifact.outputs.artifact-id }}');
+      expect(github).toContain(
+        'ARTIFACT_DIGEST: ${{ steps.initpad-artifact.outputs.artifact-digest }}',
+      );
+      expect(github).toContain('--arg artifactId "$ARTIFACT_ID"');
+      expect(github).toContain('--arg artifactDigest "$ARTIFACT_DIGEST"');
       expect(github).toContain('if: always()');
-      expect(github).toContain('"ciStatus":"${{ job.status }}"');
+      expect(github).toContain('CI_RESULT: ${{ job.status }}');
       expect(github).toContain('/api/ci/start');
       expect(github).toContain('mark CI as started');
       expect(github).not.toContain('docker push');

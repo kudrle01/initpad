@@ -4,3 +4,14 @@ Django (Python) project scaffolded by InitPad, served by gunicorn.
 
 - Local: `pip install -r requirements.txt` then `python manage.py runserver`
 - Routes: `GET /` and `GET /health`
+
+Direct dependencies live in `requirements.in`; `requirements.txt` pins them
+together with every transitive package, so each build installs the same
+versions. After changing `requirements.in`, regenerate the lock with
+`pip install pip-tools` and `pip-compile requirements.in`.
+
+Every start without `DJANGO_SECRET_KEY` uses a new random key, so no key is
+baked into the image. Set a persistent `DJANGO_SECRET_KEY` through InitPad's
+environment secrets before storing sessions or other signed data. Generate one
+with `python -c "import secrets; print(secrets.token_urlsafe(50))"`. To accept
+only known host names, set `DJANGO_ALLOWED_HOSTS` (comma-separated).

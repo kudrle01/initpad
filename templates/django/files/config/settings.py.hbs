@@ -1,9 +1,21 @@
+import os
+import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = "dev-{{projectName}}-change-me"
+# Without DJANGO_SECRET_KEY every start uses a new random key, so no key is
+# baked into the image or the repository. Set a persistent one through
+# InitPad's environment secrets before storing sessions or other signed data.
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or secrets.token_urlsafe(50)
 DEBUG = False
-ALLOWED_HOSTS = ["*"]
+# Comma-separated host names, for example "app.example.org". The default
+# accepts any host because InitPad publishes on ports and gateway hosts that
+# the image cannot know in advance.
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+    if host.strip()
+]
 
 INSTALLED_APPS = []
 MIDDLEWARE = []

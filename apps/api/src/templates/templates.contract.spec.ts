@@ -44,7 +44,13 @@ describe('template delivery contract', () => {
       );
       expect(workflow).toContain('echo "CACHE=${IMAGE%:*}:buildcache" >> "$GITHUB_ENV"');
       expect(workflow).toMatch(/- name: notify platform\n\s+if: always\(\)/);
-      expect(workflow).toContain('"ciStatus":"${{ job.status }}"');
+      expect(workflow).toContain('CI_RESULT: ${{ job.status }}');
+      // Context and secrets reach scripts only through env, so a branch name
+      // such as `$(curl …)` or one with quotes stays data.
+      for (const line of workflow.split('\n').filter((text) => text.includes('${{'))) {
+        expect(line).toMatch(/^\s+[A-Z_]+: \$\{\{ [A-Za-z_.-]+ \}\}$/);
+      }
+      expect(workflow).toContain('CI_REF: ${{ github.ref_name }}');
     }
   });
 
