@@ -353,7 +353,15 @@ else
 fi
 if [ -n "${DOMAIN:-}" ]; then
   say "Starting Caddy reverse proxy for https://$DOMAIN"
-  $COMPOSE --profile server up -d caddy
+  # A Caddyfile replaced by git keeps its old inode inside a running container,
+  # so recreate Caddy only when the mounted configuration is out of date.
+  if [ -n "$($COMPOSE --profile server ps -q caddy 2>/dev/null)" ] &&
+    ! $COMPOSE --profile server exec -T caddy cat /etc/caddy/Caddyfile 2>/dev/null | \
+      cmp -s - Caddyfile; then
+    $COMPOSE --profile server up -d --force-recreate caddy
+  else
+    $COMPOSE --profile server up -d caddy
+  fi
 fi
 
 # ---- 7. summary ---------------------------------------------------------------
@@ -389,6 +397,12 @@ else
   echo ""
   echo "  Create an account in the web UI and start your first project."
   [ "$GITHUB_ON" = "yes" ] && echo "  GitHub sign-in and account linking are enabled."
+  if [ -n "${DOMAIN:-}" ]; then
+    echo ""
+    echo "  Ports 8080, 3001 and 8085 stay published for the CI network and local"
+    echo "  checks, and Docker bypasses ufw. Block them on the public interface;"
+    echo "  see deploy/OPERATIONS.md (Bezpečnost)."
+  fi
 fi
 echo "  Re-run ./install.sh anytime — it only fixes what is missing."
 echo ""

@@ -4,13 +4,25 @@
 # INITPAD_TLS_DIRECTIVE="tls internal" in deploy/.env — Caddy then issues
 # certificates from its own local CA (clients must trust that root, see
 # OPERATIONS.md). Empty value = public automatic HTTPS.
+#
+# API requests go straight to the API, so every path into it has exactly one
+# trusted proxy hop: Caddy here, or the bundled web proxy for direct and CI
+# traffic. INITPAD_TRUST_PROXY_HOPS therefore stays 1 and per-IP rate limits
+# see the real client. Caddy replaces any client-supplied X-Forwarded-For.
 
 {$INITPAD_DOMAIN} {
 	{$INITPAD_TLS_DIRECTIVE}
-	reverse_proxy web:80
+	header Strict-Transport-Security "max-age=31536000"
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+	handle {
+		reverse_proxy web:80
+	}
 }
 
 {$INITPAD_GIT_DOMAIN} {
 	{$INITPAD_TLS_DIRECTIVE}
+	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy gitea:3000
 }

@@ -318,13 +318,31 @@ a nemění jeho obsah.
 ## Bezpečnost
 
 - `deploy/.env` obsahuje všechny secrety — omez práva (`chmod 600 .env`), necommituj.
-- Veřejně vystav jen porty **80/443** (zbytek za proxy); zbytek drž ve firewallu.
+- Veřejně vystav jen porty **80/443**. Porty 8080 (web), 3001 (Gitea) a 8085
+  (vestavěný statický hosting) zůstávají publikované, protože je používá síť
+  CI a lokální kontroly. Docker publikované porty obchází a pravidla `ufw` na
+  ně nepůsobí. Na veřejném rozhraní je proto zablokuj v řetězci `DOCKER-USER`,
+  například pro rozhraní `eth0`:
+
+  ```bash
+  for port in 8080 3001 8085; do
+    sudo iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack \
+      --ctorigdstport "$port" --ctdir ORIGINAL -j DROP
+  done
+  ```
+
+  Provoz z hostu i ze sítě CI tím zůstane zachovaný. Pravidla si ulož
+  nástrojem své distribuce (například `iptables-persistent`). Port 8085
+  neblokuj, pokud mají uživatelé otevírat aplikace na vestavěném statickém
+  hostingu.
 - Registraci drž na `admin-provisioned`, pokud nemá být veřejná.
 - Zálohy šifruj a ukládej offsite.
-- `INITPAD_TRUST_PROXY_HOPS=1` odpovídá vestavěnému web proxy. Přímý
-  přístup klientů k API vyžaduje `0`; další edge proxy zvyšuje hodnotu pouze
-  tehdy, když je síťová cesta pevná a API nelze obejít napřímo. Klientská IP je
-  součástí rate-limit rozhodnutí.
+- `INITPAD_TRUST_PROXY_HOPS=1` platí pro lokální instalaci i pro serverovou
+  instalaci s vestavěným Caddy. Caddy posílá `/api/*` přímo na API a hlavičku
+  `X-Forwarded-For` od klienta nahrazuje, takže API vidí po každé cestě právě
+  jeden proxy hop. Přímý přístup klientů k API vyžaduje `0`. Další edge proxy
+  zvyšuje hodnotu pouze tehdy, když je síťová cesta pevná a API nelze obejít
+  napřímo. Klientská IP je součástí rate-limit rozhodnutí.
 - InitPad Agent má přes Docker socket oprávnění srovnatelné se správcem
   cílového serveru. Enrollment proto smí spouštět jen správce workspace a
   produkční control plane musí používat HTTPS. `--allow-insecure-http` je
