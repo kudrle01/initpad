@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { GiteaService } from '../scm/gitea.service';
@@ -121,7 +122,32 @@ export class AdminService {
     return rows.map(toAdminUser);
   }
 
-  async createUser(dto: CreateUserDto): Promise<{
+  /** Platform-level account administration event (ADR-142). */
+  private accountEvent(
+    action: string,
+    actingUserId: string,
+    account: { id: string; username: string },
+    details?: Record<string, string | boolean>,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    return this.auditEvents.record(
+      {
+        workspaceId: null,
+        actorUserId: actingUserId,
+        action,
+        resourceType: 'user',
+        resourceId: account.id,
+        resourceName: account.username,
+        ...(details ? { details } : {}),
+      },
+      tx,
+    );
+  }
+
+  async createUser(
+    actingUserId: string,
+    dto: CreateUserDto,
+  ): Promise<{
     user: AdminUser;
     temporaryPassword: string;
     activationUrl?: string;
@@ -136,9 +162,15 @@ export class AdminService {
       platformRole: dto.platformRole ?? 'user',
       mustChangePassword: true,
     });
+    await this.accountEvent('user.created', actingUserId, user, {
+      platformRole: user.platformRole,
+    });
     // Two ways to onboard: read out the temporary password, or send the
     // activation link where the user sets their own password.
     const activation = await this.auth.createActivationLink(user.id);
+    await this.accountEvent('user.activation_link_issued', actingUserId, user, {
+      delivery: activation.delivery,
+    });
     return {
       user: toAdminUser(user),
       temporaryPassword,
@@ -148,11 +180,16 @@ export class AdminService {
   }
 
   async createActivationLink(
+    actingUserId: string,
     targetId: string,
   ): Promise<{ activationUrl?: string; delivery: 'email' | 'manual' }> {
     const target = await this.prisma.user.findUnique({ where: { id: targetId } });
     if (!target) throw new NotFoundException('User not found');
-    return this.auth.createActivationLink(targetId);
+    const activation = await this.auth.createActivationLink(targetId);
+    await this.accountEvent('user.activation_link_issued', actingUserId, target, {
+      delivery: activation.delivery,
+    });
+    return activation;
   }
 
   async setActive(actingUserId: string, targetId: string, active: boolean): Promise<AdminUser> {
@@ -178,30 +215,47 @@ export class AdminService {
     // Flip Gitea first: if it is unreachable, the platform state stays unchanged
     // rather than drifting out of sync with the SCM.
     await this.gitea.setUserActive(target.username, active);
-    const updated = await this.prisma.user.update({
-      where: { id: targetId },
-      // Deactivation also revokes live sessions by advancing the generation.
-      data: active ? { active: true } : { active: false, tokenVersion: { increment: 1 } },
-      select: USER_SELECT,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: targetId },
+        // Deactivation also revokes live sessions by advancing the generation.
+        data: active ? { active: true } : { active: false, tokenVersion: { increment: 1 } },
+        select: USER_SELECT,
+      });
+      await this.accountEvent(
+        active ? 'user.activated' : 'user.deactivated',
+        actingUserId,
+        user,
+        undefined,
+        tx,
+      );
+      return user;
     });
     return toAdminUser(updated);
   }
 
-  async resetPassword(targetId: string): Promise<{ temporaryPassword: string }> {
+  async resetPassword(
+    actingUserId: string,
+    targetId: string,
+  ): Promise<{ temporaryPassword: string }> {
     const target = await this.prisma.user.findUnique({ where: { id: targetId } });
     if (!target) throw new NotFoundException('User not found');
     // An administrator resets an account to recover it; a Git token taken
     // through an earlier session must not survive the recovery.
     await this.auth.revokeGitCredential(targetId);
     const temporaryPassword = generateTemporaryPassword();
-    await this.prisma.user.update({
-      where: { id: targetId },
-      data: {
-        passwordHash: await hashPassword(temporaryPassword),
-        mustChangePassword: true,
-        // Invalidate every existing session for the reset account.
-        tokenVersion: { increment: 1 },
-      },
+    const passwordHash = await hashPassword(temporaryPassword);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: targetId },
+        data: {
+          passwordHash,
+          mustChangePassword: true,
+          // Invalidate every existing session for the reset account.
+          tokenVersion: { increment: 1 },
+        },
+      });
+      await this.accountEvent('user.password_reset', actingUserId, target, undefined, tx);
     });
     return { temporaryPassword };
   }

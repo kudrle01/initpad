@@ -356,6 +356,10 @@ a nemění jeho obsah.
   `INITPAD_DEPLOY_PUBLIC_HOST` na jiný název hostu. Administrace na tento stav
   upozorní. Pod HTTPS se session cookie jmenuje `__Host-initpad_token` a po
   aktualizaci na tuto verzi se uživatelé jednou znovu přihlásí.
+- Administrace → Bezpečnostní záznam ukazuje přihlášení, neúspěšné pokusy,
+  změny a obnovy hesel, akce administrátorů a smazání workspace (ADR-142).
+  Řada neúspěšných pokusů o jeden účet znamená hádání hesla; účet pak
+  deaktivuj nebo mu obnov heslo.
 - Výchozí registrace je `admin-provisioned`. Režim `open` dovolí každému, kdo
   instanci vidí, založit účet a nasazovat kontejnery na vestavěný Docker host;
   zapínej ho jen v důvěryhodné síti. První účet (administrátor) vyžaduje

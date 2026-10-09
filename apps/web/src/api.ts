@@ -164,6 +164,16 @@ export interface AuditEventFilters {
   limit?: number;
 }
 
+function auditQuery(filters: AuditEventFilters): string {
+  const query = new URLSearchParams();
+  if (filters.action) query.set('action', filters.action);
+  if (filters.resourceType) query.set('resourceType', filters.resourceType);
+  if (filters.outcome) query.set('outcome', filters.outcome);
+  if (filters.cursor) query.set('cursor', filters.cursor);
+  query.set('limit', String(filters.limit ?? 30));
+  return query.toString();
+}
+
 export interface GitHubStatus {
   enabled: boolean;
   appConfigured: boolean;
@@ -348,15 +358,11 @@ export const api = {
   downloadTemplateWorkflow: (templateId: string, provider: 'gitea' | 'github') =>
     download(`/templates/${encodeURIComponent(templateId)}/workflows/${provider}`),
   getActivity: () => http<ActivityEvent[]>('/activity'),
-  getAuditEvents: (filters: AuditEventFilters = {}) => {
-    const query = new URLSearchParams();
-    if (filters.action) query.set('action', filters.action);
-    if (filters.resourceType) query.set('resourceType', filters.resourceType);
-    if (filters.outcome) query.set('outcome', filters.outcome);
-    if (filters.cursor) query.set('cursor', filters.cursor);
-    query.set('limit', String(filters.limit ?? 30));
-    return http<AuditEventPage>(`/audit-events?${query.toString()}`);
-  },
+  getAuditEvents: (filters: AuditEventFilters = {}) =>
+    http<AuditEventPage>(`/audit-events?${auditQuery(filters)}`),
+  // Sign-in, account administration and events of deleted workspaces.
+  adminListAuditEvents: (filters: AuditEventFilters = {}) =>
+    http<AuditEventPage>(`/admin/audit-events?${auditQuery(filters)}`),
   createProject: (
     name: string,
     templateId: string,

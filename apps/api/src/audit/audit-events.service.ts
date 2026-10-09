@@ -13,8 +13,11 @@ export interface AuditOperationRef {
 }
 
 export interface RecordAuditEvent {
-  workspaceId: string;
+  // Null for platform events: sign-in and account administration (ADR-142).
+  workspaceId: string | null;
   actorUserId?: string | null;
+  // The request was not signed in, for example a failed sign-in.
+  anonymous?: boolean;
   action: string;
   outcome?: AuditOutcome;
   resourceType: string;
@@ -90,7 +93,12 @@ function safeDetails(
 export class AuditEventsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async record(input: RecordAuditEvent): Promise<void> {
+  /**
+   * Records one event. Pass the transaction of the change it describes, so a
+   * change is never committed without its audit event and the request does
+   * not fail after the change was committed.
+   */
+  async record(input: RecordAuditEvent, tx?: Prisma.TransactionClient): Promise<void> {
     if (!IDENTIFIER.test(input.action) || input.action.length > 80) {
       throw new Error(`Invalid audit action '${input.action}'`);
     }
@@ -104,8 +112,9 @@ export class AuditEventsService {
       throw new Error(`Invalid audit operation id '${input.operation.id}'`);
     }
 
+    const db = tx ?? this.prisma;
     const actor = input.actorUserId
-      ? await this.prisma.user.findUnique({
+      ? await db.user.findUnique({
           where: { id: input.actorUserId },
           select: { username: true, name: true },
         })
@@ -114,20 +123,27 @@ export class AuditEventsService {
       throw new Error(`Audit actor '${input.actorUserId}' does not exist`);
     }
 
-    await this.createOnce({
-      workspaceId: input.workspaceId,
-      actorUserId: input.actorUserId ?? null,
-      actorUsername: actor?.username ?? 'initpad',
-      actorDisplayName: actor ? actor.name : 'InitPad system',
-      action: input.action,
-      outcome: input.outcome ?? 'succeeded',
-      resourceType: input.resourceType,
-      resourceId: input.resourceId ?? null,
-      resourceName: input.resourceName ?? null,
-      operationType: input.operation?.type ?? null,
-      operationId: input.operation?.id ?? null,
-      details: safeDetails(input.details),
-    });
+    await this.createOnce(
+      {
+        workspaceId: input.workspaceId,
+        actorUserId: input.actorUserId ?? null,
+        actorUsername: actor?.username ?? (input.anonymous ? 'anonymous' : 'initpad'),
+        actorDisplayName: actor
+          ? actor.name
+          : input.anonymous
+            ? 'Signed-out visitor'
+            : 'InitPad system',
+        action: input.action,
+        outcome: input.outcome ?? 'succeeded',
+        resourceType: input.resourceType,
+        resourceId: input.resourceId ?? null,
+        resourceName: input.resourceName ?? null,
+        operationType: input.operation?.type ?? null,
+        operationId: input.operation?.id ?? null,
+        details: safeDetails(input.details),
+      },
+      db,
+    );
   }
 
   async recordOperationResult(type: AuditOperationType, operationId: string): Promise<void> {
@@ -230,16 +246,28 @@ export class AuditEventsService {
 
   async list(userId: string, requestedWorkspaceId: string | undefined, query: ListAuditEventsDto) {
     const workspaceId = await this.visibleWorkspace(userId, requestedWorkspaceId);
+    return this.page({ workspaceId }, query);
+  }
+
+  /**
+   * Platform administrators see events outside any workspace: sign-in, account
+   * administration and workspace deletion (ADR-142).
+   */
+  listPlatform(query: ListAuditEventsDto) {
+    return this.page({ workspaceId: null }, query);
+  }
+
+  private async page(scope: { workspaceId: string | null }, query: ListAuditEventsDto) {
     if (query.cursor) {
       const cursor = await this.prisma.auditEvent.findFirst({
-        where: { id: query.cursor, workspaceId },
+        where: { id: query.cursor, ...scope },
         select: { id: true },
       });
       if (!cursor) throw new BadRequestException('Invalid audit cursor');
     }
 
     const where: Prisma.AuditEventWhereInput = {
-      workspaceId,
+      ...scope,
       ...(query.action ? { action: query.action } : {}),
       ...(query.resourceType ? { resourceType: query.resourceType } : {}),
       ...(query.outcome ? { outcome: query.outcome } : {}),
@@ -409,7 +437,16 @@ export class AuditEventsService {
     });
   }
 
-  private async createOnce(data: Prisma.AuditEventUncheckedCreateInput): Promise<void> {
+  private async createOnce(
+    data: Prisma.AuditEventUncheckedCreateInput,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    if (db !== this.prisma) {
+      // Inside a transaction a unique violation would abort it, so let the
+      // database skip a duplicate operation event instead.
+      await db.auditEvent.createMany({ data: [data], skipDuplicates: true });
+      return;
+    }
     try {
       await this.prisma.auditEvent.create({ data });
     } catch (error) {

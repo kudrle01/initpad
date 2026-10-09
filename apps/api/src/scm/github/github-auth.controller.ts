@@ -148,6 +148,7 @@ export class GitHubAuthController {
     } catch {
       return res.redirect(this.frontend('/login?error=github_exchange'));
     }
+    await this.auth.recordSignIn(user, 'github');
     const { token } = this.auth.createSession(user);
     setSessionCookie(res, token);
     return res.redirect(this.frontend('/'));

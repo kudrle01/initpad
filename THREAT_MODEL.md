@@ -70,6 +70,10 @@ konfiguraci v paměti.
   název větve nespustí kód. Nemají v kódu žádný podpisový klíč a při vydání
   dodávají zamčené závislosti bez známých zranitelností; Dependabot hlídá pip a
   composer závislosti šablon (ADR-140).
+- Přihlášení, neúspěšné pokusy, změny hesel, akce platform admina a smazání
+  workspace se zapisují do platformního auditu, který vlastník workspace
+  nesmaže; změny se zapisují ve stejné transakci jako jejich událost. Zadaný
+  identifikátor neúspěšného přihlášení se neukládá (ADR-142).
 - Webhooky Gitey používají podpis HMAC se zachovanou kompatibilitou s bearer
   tokenem a nikdy nevkládají secrety do URL.
 - Runner Actions používá vyhrazený rootless DinD daemon. Nepřipojuje socket ani

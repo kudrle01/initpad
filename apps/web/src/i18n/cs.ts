@@ -1160,6 +1160,27 @@ export const cs = {
   Deactivated: 'Deaktivován',
   'Must change password': 'Musí změnit heslo',
   'E-mail unverified': 'E-mail neověřen',
+  // components/organisms/AuditEventRow.tsx
+  'Workspace limits changed': 'Limity workspace změněny',
+  'Signed in': 'Přihlášení',
+  'Sign-in failed': 'Neúspěšné přihlášení',
+  'Account registered': 'Účet zaregistrován',
+  'Account activated': 'Účet aktivován',
+  'Password changed': 'Heslo změněno',
+  'Password reset requested': 'Žádost o obnovu hesla',
+  'Password reset completed': 'Heslo obnoveno',
+  'Account created': 'Účet založen',
+  'Activation link issued': 'Aktivační odkaz vydán',
+  'Account deactivated': 'Účet deaktivován',
+  'Account reactivated': 'Účet znovu aktivován',
+  'Password reset by an administrator': 'Heslo obnovil administrátor',
+  'Signed-out visitor': 'Nepřihlášený návštěvník',
+  // components/organisms/admin/PlatformAuditCard.tsx
+  'Security log': 'Bezpečnostní záznam',
+  'Sign-ins, account administration and deleted workspaces, newest first.':
+    'Přihlášení, správa účtů a smazané workspaces, od nejnovějších.',
+  'Loading security log': 'Načítám bezpečnostní záznam',
+  'No security events yet.': 'Zatím žádné bezpečnostní události.',
   // pages/AuditLog.tsx
   'Workspace created': 'Workspace vytvořen',
   'Workspace updated': 'Workspace upraven',

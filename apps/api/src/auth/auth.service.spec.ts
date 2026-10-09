@@ -1,5 +1,6 @@
 import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { config } from '../config';
+import type { RecordAuditEvent } from '../audit/audit-events.service';
 import { AuthService } from './auth.service';
 import { hashPassword } from './password';
 
@@ -23,6 +24,7 @@ describe('AuthService', () => {
     function registration(existingUsers = 0) {
       const users: Array<Record<string, unknown>> = [];
       const prisma = {
+        $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
         user: {
           count: jest.fn(async () => existingUsers + users.length),
           findFirst: jest.fn(async () => null),
@@ -104,6 +106,7 @@ describe('AuthService', () => {
     config.auth.registrationMode = 'admin-provisioned';
     const users: Array<Record<string, unknown>> = [];
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       user: {
         count: jest.fn(async () => users.length),
         findFirst: jest.fn(async () => null),
@@ -181,6 +184,7 @@ describe('AuthService', () => {
   it('hardens every legacy managed Gitea account when self-hosted starts', async () => {
     config.edition = 'self-hosted';
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       user: {
         findMany: jest.fn(async () => [{ username: 'alice' }, { username: 'bob' }]),
       },
@@ -247,6 +251,66 @@ describe('AuthService', () => {
     });
   });
 
+  it('audits sign-in without storing the identifier a visitor typed (ADR-142)', async () => {
+    config.edition = 'self-hosted';
+    const user = {
+      id: 'u1',
+      username: 'alice',
+      email: 'alice@example.test',
+      name: null,
+      avatarUrl: null,
+      passwordHash: await hashPassword('long-password'),
+      accessToken: '',
+      platformRole: 'user',
+      active: true,
+      tokenVersion: 0,
+      mustChangePassword: false,
+    };
+    const findFirst = jest.fn(async () => user as typeof user | null);
+    const audit = { record: jest.fn(async (_event: RecordAuditEvent) => undefined) };
+    const service = new AuthService(
+      { user: { findFirst } } as never,
+      { sign: () => 'jwt' } as never,
+      {} as never,
+      undefined,
+      audit,
+    );
+
+    await service.login({ username: 'alice', password: 'long-password' });
+    await expect(
+      service.login({ username: 'alice', password: 'wrong-password' }),
+    ).rejects.toThrow();
+    findFirst.mockResolvedValueOnce(null);
+    await expect(
+      service.login({ username: 'my-secret-password', password: 'x' }),
+    ).rejects.toThrow();
+
+    expect(audit.record.mock.calls.map(([event]) => event)).toEqual([
+      expect.objectContaining({
+        workspaceId: null,
+        actorUserId: 'u1',
+        action: 'auth.signed_in',
+        resourceName: 'alice',
+        details: { method: 'password' },
+      }),
+      expect.objectContaining({
+        anonymous: true,
+        action: 'auth.sign_in_failed',
+        outcome: 'failed',
+        resourceId: 'u1',
+        details: { reason: 'invalid_password' },
+      }),
+      expect.objectContaining({
+        anonymous: true,
+        action: 'auth.sign_in_failed',
+        resourceId: null,
+        resourceName: null,
+        details: { reason: 'unknown_account' },
+      }),
+    ]);
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain('my-secret-password');
+  });
+
   it('refuses sign-in for a deactivated account', async () => {
     config.edition = 'self-hosted';
     const user = {
@@ -285,6 +349,7 @@ describe('AuthService', () => {
     };
     let updateArgs: Record<string, unknown> | undefined;
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       user: {
         findUnique: jest.fn(async () => stored),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -323,6 +388,7 @@ describe('AuthService', () => {
   it('creates a GitHub-only account with a linked identity and no Gitea id', async () => {
     let createData: Record<string, unknown> | undefined;
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       user: {
         findFirst: jest.fn(async () => null), // username free, e-mail free
         count: jest.fn(async () => 3),
@@ -356,6 +422,7 @@ describe('AuthService', () => {
   it('never attaches a taken e-mail to a new external account', async () => {
     let createData: Record<string, unknown> | undefined;
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       user: {
         // username free (1st call) then e-mail already taken (2nd call).
         findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'other' }),
@@ -381,6 +448,7 @@ describe('AuthService', () => {
   it('does not store an unverified external profile e-mail', async () => {
     let createData: Record<string, unknown> | undefined;
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       user: {
         findFirst: jest.fn(async () => null),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -411,6 +479,7 @@ describe('AuthService', () => {
 
   it('does not reveal whether an account exists on reset request', async () => {
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       user: { findFirst: jest.fn(async () => null) },
       authToken: { updateMany: jest.fn(), create: jest.fn() },
     };
@@ -481,6 +550,7 @@ describe('AuthService', () => {
     let usedUpdate: unknown;
     let userUpdate: Record<string, unknown> | undefined;
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       authToken: {
         findUnique: jest.fn(async () => record),
         updateMany: jest.fn(async (args: unknown) => {
@@ -520,6 +590,7 @@ describe('AuthService', () => {
 
   it('keeps the reset link usable when Gitea cannot revoke the Git token', async () => {
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       authToken: {
         findUnique: jest.fn(async () => ({
           id: 't1',
@@ -550,6 +621,7 @@ describe('AuthService', () => {
 
   it('resets a GitHub-only account without contacting Gitea', async () => {
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       authToken: {
         findUnique: jest.fn(async () => ({
           id: 't1',
@@ -574,6 +646,7 @@ describe('AuthService', () => {
 
   it('rejects an expired or unknown reset token', async () => {
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       authToken: { findUnique: jest.fn(async () => null), updateMany: jest.fn() },
       user: { update: jest.fn() },
     };
@@ -594,6 +667,7 @@ describe('AuthService', () => {
     };
     let userUpdate: Record<string, unknown> | undefined;
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       authToken: {
         findUnique: jest.fn(async () => record),
         updateMany: jest.fn(async () => ({ count: 1 })),
@@ -620,6 +694,7 @@ describe('AuthService', () => {
     };
     let userUpdate: Record<string, unknown> | undefined;
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       authToken: {
         findUnique: jest.fn(async () => record),
         updateMany: jest.fn(async () => ({ count: 1 })),
@@ -657,6 +732,7 @@ describe('AuthService', () => {
       expiresAt: new Date(Date.now() + 60_000),
     };
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       authToken: { findUnique: jest.fn(async () => record), updateMany: jest.fn() },
       user: { update: jest.fn() },
     };
@@ -673,6 +749,7 @@ describe('AuthService', () => {
       expiresAt: new Date(Date.now() + 60_000),
     };
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
       authToken: {
         findUnique: jest.fn(async () => record),
         updateMany: jest.fn(async () => ({ count: 0 })),

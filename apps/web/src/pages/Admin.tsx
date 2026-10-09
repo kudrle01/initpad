@@ -39,6 +39,7 @@ import type { AdminUser, PlatformUpdateStatus } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { createRequestId } from '@/lib/request-id';
 import { WorkspaceCapacityCard } from '@/components/organisms/admin/WorkspaceCapacityCard';
+import { PlatformAuditCard } from '@/components/organisms/admin/PlatformAuditCard';
 import { SessionExposureNotice } from '@/components/organisms/admin/SessionExposureNotice';
 import { cn } from '@/lib/utils';
 import { t, rich } from '@/i18n';
@@ -589,6 +590,8 @@ export default function Admin() {
         )}
 
         {user?.platformRole === 'admin' && <WorkspaceCapacityCard />}
+
+        {user?.platformRole === 'admin' && <PlatformAuditCard />}
       </div>
     </div>
   );

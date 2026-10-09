@@ -270,7 +270,24 @@ export class WorkspacesService {
         'Delete or move all projects and targets before deleting this workspace',
       );
     }
-    await this.prisma.workspace.delete({ where: { id: workspaceId } });
+    await this.prisma.$transaction(async (tx) => {
+      const auditEventsRemoved = await tx.auditEvent.count({ where: { workspaceId } });
+      await tx.workspace.delete({ where: { id: workspaceId } });
+      // The workspace timeline is deleted with it (ADR-077); who deleted it
+      // and how much history went stays as a platform event (ADR-142).
+      await this.auditEvents.record(
+        {
+          workspaceId: null,
+          actorUserId: userId,
+          action: 'workspace.deleted',
+          resourceType: 'workspace',
+          resourceId: workspaceId,
+          resourceName: workspace.name,
+          details: { auditEventsRemoved },
+        },
+        tx,
+      );
+    });
   }
 
   async members(userId: string, workspaceId: string) {

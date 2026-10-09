@@ -27,6 +27,45 @@ describe('WorkspacesService tenant isolation', () => {
     ]);
   });
 
+  it('keeps who deleted a team workspace after its timeline is gone (ADR-142)', async () => {
+    const tx = {
+      auditEvent: { count: jest.fn(async () => 42) },
+      workspace: { delete: jest.fn(async () => ({})) },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
+      workspaceMember: {
+        findUnique: jest.fn(async () => ({ workspaceId: 'w1', userId: 'u1', role: 'owner' })),
+      },
+      workspace: {
+        findUnique: jest.fn(async () => ({
+          id: 'w1',
+          name: 'Team Alpha',
+          type: 'team',
+          _count: { projects: 0, targets: 0 },
+        })),
+      },
+    };
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = new WorkspacesService(prisma as never, {} as never, audit);
+
+    await service.remove('u1', 'w1');
+
+    expect(tx.workspace.delete).toHaveBeenCalledWith({ where: { id: 'w1' } });
+    expect(audit.record).toHaveBeenCalledWith(
+      {
+        workspaceId: null,
+        actorUserId: 'u1',
+        action: 'workspace.deleted',
+        resourceType: 'workspace',
+        resourceId: 'w1',
+        resourceName: 'Team Alpha',
+        details: { auditEventsRemoved: 42 },
+      },
+      tx,
+    );
+  });
+
   it('resolves only a workspace the user belongs to', async () => {
     const prisma = {
       workspaceMember: {
