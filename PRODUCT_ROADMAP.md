@@ -161,8 +161,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       protože se image načítal do lokálního Docker daemonu, který SaaS control
       plane nemá. Bez opravy nejde ve veřejném SaaS nasadit žádný projekt.
       Oprava podle ADR-133 je pokrytá testy a vyšla v releasu 0.2.16, který
-      na stagingu běží od 9. října 2026. Živé ověření příjmu artefaktu a kroky
-      Create až Nasazení Agentem zbývá zopakovat.
+      na stagingu běží od 9. října 2026. Autor týž den potvrdil, že opakované
+      nasazení projektu z testovací organizace na vlastní VM s Agentem prošlo;
+      příjem artefaktu bez Docker daemonu je tím ověřen naživo. Zbývají kroky
+      Import, povýšení stejným digestem, Rename, Suspend, Uninstall a Audit.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
@@ -192,8 +194,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 - [ ] Naživo ověřit výsledky následného bezpečnostního auditu z 9. října 2026
   (ADR-134 až ADR-154). Všech 21 rozhodnutí je implementováno a pokryto
   automatizovanými testy; CI nad `main` prošlo týž den a release gate prošel
-  nad připravenou verzí 0.2.17. Naživo ověřeno není nic z toho a žádná část
-  ještě nevyšla ve vydání.
+  nad připravenou verzí 0.2.17. Vydání 0.2.17 z 10. října 2026 je obsahuje a
+  je `stable`; anonymní audit potvrdil veřejnou dostupnost, podpisy a obě
+  architektury. Naživo ověřeno není nic z toho.
   - Přihlášení a účty: odvolatelné session, ochrana mutací proti podvrženým
     požadavkům, instalační token prvního administrátora s uzavřenou výchozí
     registrací, jednorázové odkazy s tokenem ve fragmentu URL a rozsah Gitea
@@ -215,9 +218,13 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     kde `age` není nainstalovaný. Přeskočil se při lokálním release gate a CI
     workflow jej neinstaluje, takže ADR-151 zatím nemá doložený průchod
     zašifrování a obnovy.
-  - Zbývá: vydat kandidáta, projít podepsanou aktualizaci z 0.2.16 na
-    self-hosted instalaci, nasadit staging novým tagem i digesty zároveň a na
-    něm dokončit průchod GitHub App.
+  - Sken obrazů před vydáním zachytil v Docker CLI Supervisoru další CVE ze
+    stejné opravy Go, které databáze ohodnotila až během dne. Dostalo třetí
+    výjimku do 9. listopadu 2026; dokud se nepřipne build CLI s Go 1.26.9,
+    může sken selhat znovu.
+  - Zbývá: projít podepsanou aktualizaci z 0.2.16 na self-hosted instalaci,
+    nasadit staging novým tagem i digesty zároveň a na něm dokončit průchod
+    GitHub App.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
@@ -387,6 +394,15 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - připojit control plane do školní VPN se nedoporučuje. Sdílená veřejná
     služba by držela osobní školní přihlášení a získala přístup do interní
     sítě.
+- [ ] Zbavit CI a release workflow závislosti na limitu anonymních stažení z
+  Docker Hubu. Dne 9. října 2026 na něm spadl build obrazů ve workflow
+  „Verify container images" chybou 429 a pomohlo až opakované spuštění.
+  Stejně může selhat i release workflow, protože také stahuje základní
+  obrazy. Možnosti:
+  - nasměrovat stahování v CI na zrcadlo Docker Hubu. Základní obrazy jsou
+    připnuté digestem, takže se jejich obsah ověří stejně, a není potřeba
+    žádný účet;
+  - přihlásit CI k Docker Hubu tokenem uloženým v secrets repozitáře.
 - [ ] GitLab, Kubernetes/microVM, marketplace a enterprise HA zůstávají mimo
   aktuální dokončovací scope.
 
