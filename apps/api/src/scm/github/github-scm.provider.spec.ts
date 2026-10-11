@@ -63,32 +63,36 @@ afterEach(() => {
 });
 
 describe('GitHubScmProvider reads', () => {
+  const listing = {
+    ok: true,
+    json: async () => ({
+      repositories: [
+        {
+          id: 101,
+          name: 'api',
+          full_name: 'acme/api',
+          private: true,
+          default_branch: 'main',
+          updated_at: 't',
+          size: 42,
+        },
+        {
+          id: 102,
+          name: 'fresh',
+          full_name: 'acme/fresh',
+          private: false,
+          default_branch: 'main',
+          updated_at: 't',
+          size: 0,
+        },
+      ],
+    }),
+  };
+
   it('lists installation repositories with a scoped token', async () => {
-    const fetchMock = jest.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        repositories: [
-          {
-            id: 101,
-            name: 'api',
-            full_name: 'acme/api',
-            private: true,
-            default_branch: 'main',
-            updated_at: 't',
-            size: 42,
-          },
-          {
-            id: 102,
-            name: 'fresh',
-            full_name: 'acme/fresh',
-            private: false,
-            default_branch: 'main',
-            updated_at: 't',
-            size: 0,
-          },
-        ],
-      }),
-    }));
+    const fetchMock = jest.fn(async (url: string) =>
+      url.includes('/commits') ? { ok: false, status: 409 } : listing,
+    );
     const { provider, installations } = make(fetchMock);
     const repos = await provider.listRepositories(actor);
     expect(installations.tokenForOwner).toHaveBeenCalledWith('acme', {
@@ -101,10 +105,38 @@ describe('GitHubScmProvider reads', () => {
       installationId: 'installation-row-1',
       empty: false,
     });
-    expect(repos[1].empty).toBe(true); // size 0
+    // Size 0 and GitHub confirms there is no commit.
+    expect(repos[1].empty).toBe(true);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain('/installation/repositories');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer ghs_x');
+    const probes = fetchMock.mock.calls.filter(([probe]) => probe.includes('/commits'));
+    expect(probes).toHaveLength(1);
+    expect(probes[0][0]).toContain('/repos/acme/fresh/commits?per_page=1');
+  });
+
+  it('keeps a pushed repository importable while GitHub still reports size 0', async () => {
+    const fetchMock = jest.fn(async (url: string) =>
+      url.includes('/commits') ? { ok: true, status: 200, json: async () => [{}] } : listing,
+    );
+    const { provider } = make(fetchMock);
+
+    const repos = await provider.listRepositories(actor);
+
+    expect(repos[1]).toMatchObject({ fullName: 'acme/fresh', empty: false });
+  });
+
+  it('does not fail or hide a repository when the emptiness check is unavailable', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      if (url.includes('/commits')) throw new Error('network');
+      return listing;
+    });
+    const { provider } = make(fetchMock);
+
+    const repos = await provider.listRepositories(actor);
+
+    expect(repos).toHaveLength(2);
+    expect(repos[1].empty).toBe(false);
   });
 
   it('paginates all installation repositories', async () => {

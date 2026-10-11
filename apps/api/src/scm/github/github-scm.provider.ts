@@ -47,6 +47,9 @@ import { adaptWorkflowForGitHub } from './github-workflow';
 import { GitHubInstallationService } from './github-installation.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
 
+// Upper bound of extra requests one repository listing may spend on telling
+// empty repositories from fresh ones.
+const EMPTY_PROBE_LIMIT = 20;
 const READ_CONTENTS = { metadata: 'read', contents: 'read' };
 const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
 const READ_CHECKS = { metadata: 'read', contents: 'read', checks: 'read' };
@@ -174,6 +177,14 @@ export class GitHubScmProvider implements ScmProvider {
         return data.repositories;
       },
     });
+    // GitHub recomputes `size` only periodically, so a repository that was just
+    // created and pushed still reports 0. Size 0 therefore only nominates a
+    // repository; it is empty when GitHub says so about its commits.
+    const unsized = repositories.filter((r) => r.size === 0).slice(0, EMPTY_PROBE_LIMIT);
+    const probed = await Promise.all(
+      unsized.map(async (r) => ((await this.hasNoCommits(r.full_name, token)) ? String(r.id) : '')),
+    );
+    const empty = new Set(probed.filter(Boolean));
     return repositories.map((r) => ({
       provider: 'github',
       repositoryId: String(r.id),
@@ -185,8 +196,24 @@ export class GitHubScmProvider implements ScmProvider {
       private: Boolean(r.private),
       defaultBranch: r.default_branch || 'main',
       updatedAt: r.updated_at || '',
-      empty: (r.size ?? 0) === 0,
+      empty: empty.has(String(r.id)),
     }));
+  }
+
+  // GitHub answers 409 for the commits of a repository without any. Every
+  // other outcome leaves the repository selectable: the import preflight reads
+  // its files and reports what is missing.
+  private async hasNoCommits(fullName: string, token: string): Promise<boolean> {
+    try {
+      const res = await this.gh(
+        `/repos/${fullName.split('/').map(encodeURIComponent).join('/')}/commits?per_page=1`,
+        token,
+        { operation: 'check repository content' },
+      );
+      return res.status === 409;
+    } catch {
+      return false;
+    }
   }
 
   async readFile(
