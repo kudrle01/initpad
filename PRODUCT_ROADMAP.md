@@ -163,8 +163,16 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       Oprava podle ADR-133 je pokrytá testy a vyšla v releasu 0.2.16, který
       na stagingu běží od 9. října 2026. Autor týž den potvrdil, že opakované
       nasazení projektu z testovací organizace na vlastní VM s Agentem prošlo;
-      příjem artefaktu bez Docker daemonu je tím ověřen naživo. Zbývají kroky
-      Import, povýšení stejným digestem, Rename, Suspend, Uninstall a Audit.
+      příjem artefaktu bez Docker daemonu je tím ověřen naživo.
+    - Dne 10. října 2026 na releasu 0.2.17 prošel krok Create v osobním účtu
+      a smazání projektu se zachovaným repozitářem po odstranění nasazení
+      přes Agenta. Krok Import se zastavil: čerstvě vytvořený repozitář se v
+      nabídce zobrazil jako prázdný a nešel vybrat. Prázdnost se odvozovala z
+      velikosti repozitáře, kterou GitHub přepočítává jen občas. Oprava ji
+      ověřuje dotazem na commity a je pokrytá testy; čeká na další release.
+      Jakmile GitHub velikost přepočítal, import téhož repozitáře prošel
+      preflightem beze změny kódu; autor to potvrdil 11. října 2026. Zbývají
+      povýšení stejným digestem, Rename, Suspend, Uninstall a Audit.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
@@ -196,7 +204,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   automatizovanými testy; CI nad `main` prošlo týž den a release gate prošel
   nad připravenou verzí 0.2.17. Vydání 0.2.17 z 10. října 2026 je obsahuje a
   je `stable`; anonymní audit potvrdil veřejnou dostupnost, podpisy a obě
-  architektury. Naživo ověřeno není nic z toho.
+  architektury. Staging na něm běží od 10. října 2026: oba kontejnery jsou
+  zdravé, kontrola závislostí prošla, web běží bez jakékoli capability a
+  endpoint vázaný na Giteu vrací 404. Ostatní rozhodnutí naživo cíleně
+  ověřena nejsou.
   - Přihlášení a účty: odvolatelné session, ochrana mutací proti podvrženým
     požadavkům, instalační token prvního administrátora s uzavřenou výchozí
     registrací, jednorázové odkazy s tokenem ve fragmentu URL a rozsah Gitea
@@ -222,9 +233,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     stejné opravy Go, které databáze ohodnotila až během dne. Dostalo třetí
     výjimku do 9. listopadu 2026; dokud se nepřipne build CLI s Go 1.26.9,
     může sken selhat znovu.
-  - Zbývá: projít podepsanou aktualizaci z 0.2.16 na self-hosted instalaci,
-    nasadit staging novým tagem i digesty zároveň a na něm dokončit průchod
-    GitHub App.
+  - Zbývá: projít podepsanou aktualizaci z 0.2.16 na self-hosted instalaci a
+    na stagingu dokončit průchod GitHub App.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
