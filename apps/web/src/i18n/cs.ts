@@ -845,6 +845,10 @@ export const cs = {
   'Sign out': 'Odhlásit se',
   'Open navigation': 'Otevřít navigaci',
   Navigation: 'Navigace',
+  Help: 'Nápověda',
+  // components/molecules/HelpLink.tsx
+  'Learn more': 'Více v nápovědě',
+  '(opens in a new tab)': '(otevře se na nové kartě)',
   // components/organisms/TargetDialog.tsx
   'Enter a valid server host and port first': 'Nejdřív zadejte platný host a port serveru',
   'The server address changed during host-key inspection. Try again.':
@@ -1507,6 +1511,7 @@ export const cs = {
     'Váš účet GitHub vytvoří nebo otevře váš účet InitPad. Přístup k repozitářům se uděluje zvlášť přes GitHub App.',
   'GitHub sign-in is not configured for this SaaS installation.':
     'Přihlášení přes GitHub není pro tuto SaaS instalaci nastavené.',
+  'New to InitPad? Read the guide': 'Jste v InitPadu poprvé? Přečtěte si nápovědu',
   'No InitPad account is linked to that GitHub account. Sign in another way, then link GitHub in Settings.':
     'K tomuto účtu GitHub není připojen žádný účet InitPad. Přihlaste se jinak a pak GitHub propojte v Nastavení.',
   'This account has been deactivated. Contact your administrator.':

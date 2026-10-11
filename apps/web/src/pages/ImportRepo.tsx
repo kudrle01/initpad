@@ -193,6 +193,7 @@ export default function ImportRepo() {
     <div>
       <PageHeader
         title={t('Import existing repository')}
+        helpTopic="import"
         description={t(
           'Connect a repository you already have. InitPad validates it — your code is never rewritten.',
         )}

@@ -26,6 +26,8 @@ services:
       INITPAD_AUDIT_RETENTION_DAYS: ${INITPAD_AUDIT_RETENTION_DAYS:-400}
       # Team workspaces one account may own; 0 is unlimited (ADR-154).
       INITPAD_MAX_OWNED_TEAM_WORKSPACES: ${INITPAD_MAX_OWNED_TEAM_WORKSPACES:-5}
+      # User guide linked from the web app; empty hides help links (ADR-156).
+      INITPAD_DOCS_URL: ${INITPAD_DOCS_URL:-}
       INITPAD_COOKIE_SECURE: 'true'
       INITPAD_JWT_SECRET_FILE: /run/secrets/jwt_secret
       INITPAD_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key

@@ -109,6 +109,7 @@ export default function Environments() {
     <div>
       <PageHeader
         title={t('Deployments')}
+        helpTopic="deployments"
         description={t('Where every project is running right now, grouped by project.')}
       />
 

@@ -11,6 +11,7 @@ export default function WorkspaceSettings() {
     <div>
       <PageHeader
         title={t('Workspace settings')}
+        helpTopic="team"
         description={
           activeWorkspace
             ? t('Members, policy and limits of {name}.', { name: activeWorkspace.name })

@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronRight, KeyRound, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { EmptyState } from '@/components/molecules/EmptyState';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { DetailSection } from '@/components/molecules/DetailSection';
@@ -399,7 +400,12 @@ export default function ProjectDetail() {
 
           <DetailSection
             title={t('Configuration')}
-            description={t('Variables and secrets injected at deploy. Redeploy to apply changes.')}
+            description={
+              <>
+                {t('Variables and secrets injected at deploy. Redeploy to apply changes.')}{' '}
+                <HelpLink topic="variables" />
+              </>
+            }
             flush
           >
             <ul className="divide-y divide-border/70">

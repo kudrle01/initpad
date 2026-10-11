@@ -6,6 +6,8 @@ export interface User {
   avatarUrl: string | null;
   platformRole: 'admin' | 'user';
   edition: 'self-hosted' | 'saas';
+  // Base URL of the user guide; null when the instance links none.
+  docsUrl: string | null;
   // Set while the account must choose a new password before doing anything else
   // (admin-provisioned temporary credentials, post-reset).
   mustChangePassword: boolean;

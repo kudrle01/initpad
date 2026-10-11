@@ -3,6 +3,7 @@ import { CircleCheck, ExternalLink, Github } from 'lucide-react';
 import { api, type GitHubStatus } from '@/api';
 import { useAuth } from '@/auth';
 import { Notice } from '@/components/molecules/Notice';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -203,7 +204,12 @@ export function GitHubIntegrationSettings() {
     <SettingsSection
       icon={Github}
       title={t('GitHub account')}
-      description={t('Sign in with GitHub and let InitPad create or import selected repositories.')}
+      description={
+        <>
+          {t('Sign in with GitHub and let InitPad create or import selected repositories.')}{' '}
+          <HelpLink topic="github" />
+        </>
+      }
       help={[
         {
           title: t('Account'),
