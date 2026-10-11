@@ -180,8 +180,12 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       projekt podle celého názvu a očekávaný tag obrazu i klíč workloadu se
       odvozují z vlastníka a názvu, takže push po přejmenování nenasadí a
       prosté přepsání názvu by na Agentovi založilo druhý workload. Tato část
-      zatím není ověřena naživo. Plnou podporu přejmenování popisuje ADR-155;
-      implementace ještě nezačala.
+      zatím není ověřena naživo. Plnou podporu přejmenování popisuje ADR-155.
+      Je implementována a pokrytá automatizovanými testy: projekt má uložený
+      klíč workloadu, artefakt uložený odkaz na obraz a souřadnice se obnovují
+      podle neměnného ID včetně CI callbacku s novým názvem a přejmenování
+      účtu. Release gate prošel 11. října 2026. Změna ještě nevyšla ve vydání
+      a naživo ověřena není; obsahuje migraci databáze se dvěma sloupci.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
