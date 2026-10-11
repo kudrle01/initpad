@@ -18,6 +18,7 @@ import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { TemplatesService } from '../templates/templates.service';
 import { pipelineStages } from './project-pipeline';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
+import { ProjectRepositoryIdentity } from './project-repository-identity';
 
 const REPOSITORY_RECONCILE_INTERVAL_MS = 60_000;
 const PROJECT_SCM_RECONCILE_INTERVAL_MS = 15_000;
@@ -54,6 +55,7 @@ export class ProjectReconciliation {
     private readonly operations: ProjectDeploymentOperations,
     private readonly resolveActor: ResolveActor,
     private readonly removeByRepo: RemoveByRepo,
+    private readonly identity: ProjectRepositoryIdentity,
   ) {}
 
   // The SQL migration can safely backfill provider + owner/name without
@@ -88,17 +90,7 @@ export class ProjectReconciliation {
         );
         if (!match) continue;
         try {
-          await this.prisma.project.update({
-            where: { id: project.id },
-            data: {
-              scmRepositoryId: match.repositoryId,
-              scmOwner: match.owner,
-              scmRepositoryName: match.name,
-              scmFullName: match.fullName,
-              scmDefaultBranch: match.defaultBranch,
-              repoUrl: match.repoUrl,
-            },
-          });
+          await this.identity.apply(project.id, match);
         } catch (error) {
           this.logger.warn(
             `SCM identity reconciliation failed for project ${project.id}: ${(error as Error).message}`,
@@ -274,8 +266,9 @@ export class ProjectReconciliation {
     await mapWithConcurrency(rows, SCM_READ_CONCURRENCY, async (row) => {
       try {
         const repository = repositoryRef(row);
-        const actor = this.resolveActor(row);
-        if (await this.workspaceScm.provider(repository.provider).repoMissing(repository, actor)) {
+        // The same request that proves the repository still exists also
+        // returns its current name, so a rename is followed here (ADR-155).
+        if ((await this.identity.refresh(row)) === 'missing') {
           this.logger.log(
             `Repository ${repository.fullName} no longer exists in ${repository.provider} — cleaning up`,
           );
@@ -340,7 +333,8 @@ export class ProjectReconciliation {
   async reconcileProjectScmState(row: ReconciliationRow): Promise<void> {
     const repository = repositoryRef(row);
     const actor = this.resolveActor(row);
-    if (await this.workspaceScm.provider(repository.provider).repoMissing(repository, actor)) {
+    const refreshed = await this.identity.refresh(row);
+    if (refreshed === 'missing') {
       this.logger.log(
         `Repository ${repository.fullName} no longer exists in ${repository.provider} — cleaning up`,
       );
@@ -351,6 +345,9 @@ export class ProjectReconciliation {
       ).catch((error) => this.logger.error(`Cleanup failed: ${(error as Error).message}`));
       return;
     }
+    // The row in hand carries the previous name; the next pass continues with
+    // the stored one.
+    if (refreshed === 'updated') return;
     await this.reconcileWaitingCiFailure(row, repository, actor).catch((error) =>
       this.logger.warn(
         `CI state reconciliation skipped for ${repository.fullName}: ${(error as Error).message}`,

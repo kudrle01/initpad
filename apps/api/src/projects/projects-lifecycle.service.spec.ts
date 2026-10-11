@@ -10,6 +10,7 @@ describe('ProjectsLifecycleService', () => {
       reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
+      followRenamedInstallationAccounts: jest.fn(async () => 0),
       runEnvironmentExpiry: jest.fn(async () => 0),
     };
     const leases = { acquire: jest.fn(async () => ({ generation: 1 })) };
@@ -40,6 +41,7 @@ describe('ProjectsLifecycleService', () => {
       runArtifactRetention: jest.fn(async () => {
         throw new Error('artifact store unavailable');
       }),
+      followRenamedInstallationAccounts: jest.fn(async () => 0),
       runEnvironmentExpiry: jest.fn(async () => {
         throw new Error('deployment target unavailable');
       }),
@@ -67,6 +69,7 @@ describe('ProjectsLifecycleService', () => {
         throw new Error('database temporarily unavailable');
       }),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
+      followRenamedInstallationAccounts: jest.fn(async () => 0),
       runEnvironmentExpiry: jest.fn(async () => 0),
     };
     const lifecycle = new ProjectsLifecycleService(
@@ -89,6 +92,7 @@ describe('ProjectsLifecycleService', () => {
       reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
+      followRenamedInstallationAccounts: jest.fn(async () => 0),
       runEnvironmentExpiry: jest
         .fn()
         .mockResolvedValueOnce(0)
@@ -130,6 +134,7 @@ describe('ProjectsLifecycleService', () => {
       reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
+      followRenamedInstallationAccounts: jest.fn(async () => 0),
       runEnvironmentExpiry: jest.fn(async () => 0),
     };
     const leases = {
@@ -160,6 +165,7 @@ describe('ProjectsLifecycleService', () => {
       reconcileGiteaCredentials: jest.fn(async () => undefined),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
+      followRenamedInstallationAccounts: jest.fn(async () => 0),
       runEnvironmentExpiry: jest.fn(async () => 0),
     };
     const leases = { acquire: jest.fn(async () => ({ generation: 1 })) };
@@ -193,6 +199,7 @@ describe('ProjectsLifecycleService', () => {
       ),
       recoverInterruptedExecutions: jest.fn(async () => undefined),
       runArtifactRetention: jest.fn(async () => ({ removed: 0, kept: 0 })),
+      followRenamedInstallationAccounts: jest.fn(async () => 0),
       runEnvironmentExpiry: jest.fn(async () => 0),
     };
     const lifecycle = new ProjectsLifecycleService(

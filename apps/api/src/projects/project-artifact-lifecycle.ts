@@ -10,7 +10,7 @@ import { DeploymentService } from '../deployment/deployment.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScmRepositoryRef } from '../scm/scm-provider';
 import { DEPLOYMENT_PUBLICATION_KINDS } from './deployment-publications';
-import { artifactImageRef } from './project-deployment-identity';
+import { storedArtifactImageRef } from './project-deployment-identity';
 import { ProjectRegistryArtifactCapture } from './project-registry-artifact-capture';
 
 /**
@@ -67,10 +67,7 @@ export class ProjectArtifactLifecycle {
       },
     });
     if (!artifact?.storageRef) return false;
-    const imageRef = artifactImageRef(repository, {
-      commitSha: artifact.commitSha,
-      providerRunId: artifact.providerRunId,
-    });
+    const imageRef = storedArtifactImageRef(repository, artifact);
     if (await this.deployment.hasImage(imageRef)) return true;
     return this.rehydrateImage(artifact.storageRef, imageRef, artifact.digest);
   }

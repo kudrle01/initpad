@@ -326,4 +326,45 @@ describe('ProjectDeploymentExecutor', () => {
     expect((ctx.preparation as any).prepare).not.toHaveBeenCalled();
     expect((ctx.deployment as any).deploy).not.toHaveBeenCalled();
   });
+
+  it('deploys a renamed repository to the same workload with the image of its build', async () => {
+    // The build and the running workload carry the name before the rename.
+    const stored = `127.0.0.1:3001/acme/api:${VERSION}`;
+    const artifact = {
+      id: 'artifact-1',
+      projectId: 'project-1',
+      commitSha: VERSION,
+      providerRunId: 'run-1',
+      status: 'available',
+      storageKind: 'object-store',
+      storageRef: 'artifact/key',
+      imageRef: stored,
+    };
+    const environment = {
+      ...ENVIRONMENT,
+      targetId: 'target-1',
+      target: { id: 'target-1', scope: 'user' },
+      allocation: { id: 'allocation-1', targetId: 'target-1', namespace: 'workspace-1' },
+    };
+    const ctx = make({
+      project: {
+        ...PROJECT,
+        scmRepositoryName: 'api-2',
+        scmFullName: 'acme/api-2',
+        repoUrl: 'https://git.test/acme/api-2',
+        deploymentKey: 'acme-api',
+      },
+      environment,
+      operation: { id: 'operation-1', buildArtifactId: 'artifact-1', buildArtifact: artifact },
+    });
+    (ctx.targets as any).ensureAllocation = jest.fn(async () => environment.allocation);
+    (ctx.targets as any).assertAcceptsDeploy = jest.fn(async () => undefined);
+
+    await ctx.executor.execute('project-1', 'dev', VERSION, true, 'operation-1');
+
+    expect((ctx.agentDelivery as any).queueDeployment).toHaveBeenCalledWith(
+      'operation-1',
+      expect.objectContaining({ projectSlug: 'acme-api', imageRef: stored }),
+    );
+  });
 });

@@ -17,6 +17,7 @@ import {
   ScmRepo,
   ScmRepositoryIdentity,
   ScmRepositoryRef,
+  ScmRepositoryResolution,
 } from './scm-provider';
 import {
   collectScmPages,
@@ -805,6 +806,55 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       return res.status === 404;
     } catch {
       return false;
+    }
+  }
+
+  async resolveRepository(
+    repository: ScmRepositoryRef,
+    actor: GiteaActor,
+  ): Promise<ScmRepositoryResolution> {
+    this.assertProvider(repository);
+    const url = config.gitea.internalUrl;
+    const token = config.gitea.adminToken || actor.token;
+    if (!url || !token) return { state: 'unknown' };
+    try {
+      const res = await this.request(
+        repository.repositoryId
+          ? `${url}/api/v1/repositories/${encodeURIComponent(repository.repositoryId)}`
+          : `${url}/api/v1/repos/${repository.owner}/${repository.name}`,
+        {
+          headers: { Authorization: `token ${token}` },
+          signal: AbortSignal.timeout(2500),
+        },
+      );
+      if (res.status === 404) return { state: 'missing' };
+      if (!res.ok) return { state: 'unknown' };
+      const data = (await res.json()) as {
+        id?: number | string;
+        name?: string;
+        full_name?: string;
+        default_branch?: string;
+      };
+      const owner = data.full_name?.split('/')[0];
+      if (data.id == null || !data.name || !data.full_name || !owner) return { state: 'unknown' };
+      if (repository.repositoryId && String(data.id) !== repository.repositoryId) {
+        return { state: 'unknown' };
+      }
+      return {
+        state: 'found',
+        repository: {
+          provider: 'gitea',
+          repositoryId: String(data.id),
+          owner,
+          name: data.name,
+          fullName: data.full_name,
+          defaultBranch: data.default_branch || repository.defaultBranch,
+          repoUrl: `${config.gitea.url.replace(/\/$/, '')}/${data.full_name}`,
+          installationId: null,
+        },
+      };
+    } catch {
+      return { state: 'unknown' };
     }
   }
 

@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ScmActor, repositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
-import { deployedImageRef, deploymentSlug, imageRepository } from './project-deployment-identity';
+import { deployedImageRef, imageRepository, workloadKey } from './project-deployment-identity';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
 
@@ -61,7 +61,7 @@ export class ProjectDeletion {
     await this.cancelUnfinishedOperations(row.id);
     await this.cancelDiagnosticJobs(row.id);
 
-    const slug = deploymentSlug(repository);
+    const slug = workloadKey(row);
     for (const environment of row.environments) {
       const teardownWarning = await this.teardownEnvironment(slug, repository, environment);
       if (!teardownWarning) continue;

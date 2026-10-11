@@ -1,5 +1,6 @@
 import { ProjectsService } from './projects.service';
 import { ProjectReconciliation } from './project-reconciliation';
+import { ProjectRepositoryIdentity } from './project-repository-identity';
 
 function serviceWith(prisma: unknown, scm: unknown) {
   return new ProjectsService(
@@ -23,28 +24,44 @@ function reconciliationWith(prisma: unknown, scm: unknown) {
     { complete: jest.fn() } as never,
     () => ({ username: 'owner', token: '' }),
     jest.fn(async () => undefined),
+    new ProjectRepositoryIdentity(
+      prisma as never,
+      { provider: jest.fn(() => scm) } as never,
+      () => ({ username: 'owner', token: '' }),
+    ),
   );
 }
 
 describe('ProjectsService SCM identity', () => {
   it('refreshes renamed repository coordinates by immutable provider id', async () => {
+    const row = {
+      id: 'project-1',
+      name: 'old-name',
+      workspaceId: 'ws1',
+      scmProvider: 'gitea',
+      scmRepositoryId: '101',
+      scmOwner: 'old-owner',
+      scmRepositoryName: 'old-name',
+      scmFullName: 'old-owner/old-name',
+      scmDefaultBranch: 'main',
+      scmInstallationId: null,
+      repoUrl: 'https://git.test/old-owner/old-name',
+      deploymentKey: 'old-owner-old-name',
+      owner: null,
+    };
     const prisma = {
       project: {
-        findMany: jest.fn(async () => [
-          {
-            id: 'project-1',
-            scmProvider: 'gitea',
-            scmRepositoryId: '101',
-            scmOwner: 'old-owner',
-            scmRepositoryName: 'old-name',
-            scmFullName: 'old-owner/old-name',
-            repoUrl: 'https://git.test/old-owner/old-name',
-            owner: null,
-          },
-        ]),
+        findMany: jest.fn(async () => [row]),
+        findUnique: jest.fn(async () => row),
+        findFirst: jest.fn(async () => null),
         update: jest.fn(async () => ({})),
       },
+      buildArtifact: { findMany: jest.fn(async () => []), update: jest.fn() },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(async (run: (tx: typeof prisma) => unknown) =>
+      run(prisma),
+    );
     const scm = {
       listRepositories: jest.fn(async () => [
         {
@@ -69,14 +86,31 @@ describe('ProjectsService SCM identity', () => {
     expect(prisma.project.update).toHaveBeenCalledWith({
       where: { id: 'project-1' },
       data: {
+        name: 'new-name',
         scmRepositoryId: '101',
         scmOwner: 'new-owner',
         scmRepositoryName: 'new-name',
         scmFullName: 'new-owner/new-name',
         scmDefaultBranch: 'trunk',
         repoUrl: 'https://git.test/new-owner/new-name',
+        // The workload keeps the key of the name it was deployed under.
+        deploymentKey: 'old-owner-old-name',
       },
     });
+  });
+
+  it('does not hand a new repository the workload key a renamed one still holds', async () => {
+    const service = serviceWith({}, {});
+    const allocate = (taken: boolean, repositoryId: string | null) =>
+      (service as any).allocateDeploymentKey(
+        { project: { findFirst: jest.fn(async () => (taken ? { id: 'other' } : null)) } },
+        { owner: 'Acme', name: 'api', repositoryId },
+      );
+
+    await expect(allocate(false, '4242')).resolves.toBe('acme-api');
+    // 'acme/api' was renamed and keeps 'acme-api'; a new 'acme/api' must differ.
+    await expect(allocate(true, '987654321')).resolves.toBe('acme-api-r87654321');
+    await expect(allocate(true, null)).resolves.toMatch(/^acme-api-r[a-z0-9]{1,8}$/);
   });
 
   it('matches repository-deletion webhooks by immutable id with a legacy-only fallback', async () => {

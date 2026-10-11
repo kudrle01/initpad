@@ -142,6 +142,7 @@ export class ProjectRegistryArtifactCapture {
                 status: 'available',
                 storageKind: 'object-store',
                 storageRef: objectKey,
+                imageRef,
                 error: null,
                 ingestionOwner: null,
                 ingestionLeaseExpiresAt: null,

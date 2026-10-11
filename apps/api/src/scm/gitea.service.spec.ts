@@ -201,6 +201,53 @@ describe('GiteaService repository detach', () => {
 describe('GiteaService import helpers', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('resolves a renamed repository by its immutable ID', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: 101,
+          name: 'api-2',
+          full_name: 'kudrla/api-2',
+          default_branch: 'main',
+        }),
+        { status: 200 },
+      ),
+    );
+    const stored = {
+      provider: 'gitea' as const,
+      repositoryId: '101',
+      owner: 'kudrla',
+      name: 'api',
+      fullName: 'kudrla/api',
+      defaultBranch: 'main',
+      repoUrl: 'http://localhost:3000/kudrla/api',
+      installationId: null,
+    };
+
+    await expect(
+      new GiteaService().resolveRepository(stored, { username: 'kudrla', token: 't' }),
+    ).resolves.toEqual({
+      state: 'found',
+      repository: {
+        ...stored,
+        name: 'api-2',
+        fullName: 'kudrla/api-2',
+        repoUrl: 'http://localhost:3000/kudrla/api-2',
+      },
+    });
+    expect(String(fetchMock.mock.calls[0][0])).toBe('http://gitea:3000/api/v1/repositories/101');
+
+    jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response('{}', { status: 404 }));
+    await expect(
+      new GiteaService().resolveRepository(stored, { username: 'kudrla', token: 't' }),
+    ).resolves.toEqual({ state: 'missing' });
+
+    jest.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('offline'));
+    await expect(
+      new GiteaService().resolveRepository(stored, { username: 'kudrla', token: 't' }),
+    ).resolves.toEqual({ state: 'unknown' });
+  });
+
   it('lists the user repositories', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValueOnce(
       new Response(

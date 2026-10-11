@@ -6,7 +6,7 @@ import { repositoryRef } from '../scm/scm-provider';
 import { TemplatesService } from '../templates/templates.service';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectAgentDelivery, type AgentProjectAction } from './project-agent-delivery';
-import { deployedImageRef, deploymentSlug } from './project-deployment-identity';
+import { deployedImageRef, workloadKey } from './project-deployment-identity';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
 
 /** Start, stop and removal state machine for one project environment. */
@@ -346,7 +346,7 @@ export class ProjectEnvironmentLifecycle {
       project,
       template,
       environment,
-      slug: deploymentSlug(repositoryRef(project)),
+      slug: workloadKey(project),
     };
   }
 

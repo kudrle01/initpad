@@ -8,10 +8,10 @@ import { TemplatesService } from '../templates/templates.service';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 import { ProjectAgentDelivery } from './project-agent-delivery';
 import {
-  artifactImageRef,
-  deploymentSlug,
   isAgentBackedEnvironment,
   registryImageRef,
+  storedArtifactImageRef,
+  workloadKey,
 } from './project-deployment-identity';
 import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectDeploymentPreparation } from './project-deployment-preparation';
@@ -68,7 +68,7 @@ export class ProjectDeploymentExecutor {
         ) {
           throw new Error('GitHub deployment has no verified build artifact for this version');
         }
-        testedImageRef = artifactImageRef(repository, artifact);
+        testedImageRef = storedArtifactImageRef(repository, artifact);
         if (
           !agentBacked &&
           !(await this.artifacts.ensureImageAvailable(repository, projectId, artifact.id))
@@ -76,7 +76,9 @@ export class ProjectDeploymentExecutor {
           throw new Error('Verified build artifact could not be rehydrated from object storage');
         }
       } else {
-        testedImageRef = registryImageRef(repository, version);
+        // A version captured before a rename keeps the reference of its build.
+        testedImageRef =
+          operation?.buildArtifact?.imageRef ?? registryImageRef(repository, version);
         // Gitea publishes an immutable OCI tag rather than a downloadable CI
         // artifact. Capture its exact bytes once for every target so direct
         // Docker and Agent deployments share the same durable build identity.
@@ -90,6 +92,7 @@ export class ProjectDeploymentExecutor {
             version,
           );
           operation = { ...operation!, buildArtifactId: artifact.id, buildArtifact: artifact };
+          testedImageRef = artifact.imageRef ?? testedImageRef;
         }
       }
     }
@@ -124,7 +127,7 @@ export class ProjectDeploymentExecutor {
         throw new Error('Agent deployment requires a CI-tested build artifact');
       }
       await this.agentDelivery.queueDeployment(operationId, {
-        projectSlug: deploymentSlug(repository),
+        projectSlug: workloadKey(project),
         imageRef: testedImageRef,
         containerPort: template.port ?? 8080,
         healthPath: template.healthPath ?? '/health',
@@ -150,7 +153,7 @@ export class ProjectDeploymentExecutor {
 
     try {
       const result = await this.deployment.deploy(environment.provider as ProviderKind, {
-        projectName: deploymentSlug(repository),
+        projectName: workloadKey(project),
         version,
         env: envName,
         repoPath: prepared.repoPath,
@@ -169,7 +172,7 @@ export class ProjectDeploymentExecutor {
       });
       if (await this.operations.cancelled(operationId)) {
         const teardown = await this.deployment.teardown(environment.provider as ProviderKind, {
-          projectName: deploymentSlug(repository),
+          projectName: workloadKey(project),
           env: envName,
           imageRef: testedImageRef,
           connection: this.targets.connection(environment),

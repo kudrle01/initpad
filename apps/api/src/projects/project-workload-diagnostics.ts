@@ -12,9 +12,8 @@ import {
   WorkloadHealth,
 } from '../domain/types';
 import { PrismaService } from '../prisma/prisma.service';
-import { repositoryRef } from '../scm/scm-provider';
 import { TemplatesService } from '../templates/templates.service';
-import { deploymentSlug } from './project-deployment-identity';
+import { workloadKey } from './project-deployment-identity';
 import { newCorrelationId } from '../common/request-context';
 
 const ACTIVE_DIAGNOSTICS = ['queued', 'running'];
@@ -145,7 +144,7 @@ export class ProjectWorkloadDiagnostics {
             payload: {
               allocationId: allocation.id,
               namespace: allocation.namespace,
-              projectSlug: deploymentSlug(repositoryRef(environment.project)),
+              projectSlug: workloadKey(environment.project),
               environment: environment.name,
               revision: environment.version,
               containerPort: template.port ?? 8080,

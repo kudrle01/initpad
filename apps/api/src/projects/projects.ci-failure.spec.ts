@@ -143,6 +143,7 @@ describe('ProjectsService failed CI handoff', () => {
       { complete: jest.fn() } as never,
       () => ({ username: 'acme', token: '' }),
       jest.fn(async () => undefined),
+      { refresh: jest.fn(async () => 'current') } as never,
     );
 
     await expect(reconciliation.reconcileProjectScmState(project)).resolves.toBeUndefined();

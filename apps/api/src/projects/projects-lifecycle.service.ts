@@ -75,6 +75,11 @@ export class ProjectsLifecycleService implements OnModuleInit, OnModuleDestroy {
       .catch((error) =>
         this.logger.warn(`Environment expiry sweep skipped: ${(error as Error).message}`),
       );
+    await this.projects
+      .followRenamedInstallationAccounts()
+      .catch((error) =>
+        this.logger.warn(`Account rename sweep skipped: ${(error as Error).message}`),
+      );
     this.startCredentialReconciliation();
   }
 

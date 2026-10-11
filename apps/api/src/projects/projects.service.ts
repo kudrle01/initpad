@@ -59,6 +59,7 @@ import {
   deployedImageRef,
   deploymentSlug,
   isAgentBackedEnvironment,
+  workloadKey,
 } from './project-deployment-identity';
 import { ProjectRollback } from './project-rollback';
 import { ProjectWorkloadDiagnostics } from './project-workload-diagnostics';
@@ -70,6 +71,7 @@ import {
 } from './project-production-approvals';
 import { ProjectDeletion } from './project-deletion';
 import { ProjectReconciliation } from './project-reconciliation';
+import { ProjectRepositoryIdentity } from './project-repository-identity';
 import { DEFAULT_PIPELINE_PRESET, pipelineStages, previousPipelineStage } from './pipeline-preset';
 import {
   serializableCapacityTransaction,
@@ -99,6 +101,7 @@ export class ProjectsService {
   private readonly productionApprovals: ProjectProductionApprovals;
   private readonly projectDeletion: ProjectDeletion;
   private readonly reconciliation: ProjectReconciliation;
+  private readonly repositoryIdentity: ProjectRepositoryIdentity;
   private readonly capacity: WorkspaceCapacityService;
 
   constructor(
@@ -119,6 +122,12 @@ export class ProjectsService {
     this.artifactLifecycle = new ProjectArtifactLifecycle(prisma, artifactStore, deployment);
     this.environmentTargets = new ProjectEnvironmentTargets(prisma, targets);
     this.operations = new ProjectDeploymentOperations(prisma, auditEvents);
+    this.repositoryIdentity = new ProjectRepositoryIdentity(
+      prisma,
+      workspaceScm,
+      (row) => this.actorForRepo(row),
+      auditEvents,
+    );
     this.reconciliation = new ProjectReconciliation(
       prisma,
       templates,
@@ -126,6 +135,7 @@ export class ProjectsService {
       this.operations,
       (row) => this.actorForRepo(row),
       (fullName, provider, repositoryId) => this.removeByRepo(fullName, provider, repositoryId),
+      this.repositoryIdentity,
     );
     this.projectDeletion = new ProjectDeletion(
       prisma,
@@ -185,6 +195,7 @@ export class ProjectsService {
       async (project, repository, version) => {
         await this.artifactLifecycle.captureRegistryArtifact(repository, project, null, version);
       },
+      (repo, token) => this.repositoryIdentity.findRenamedByCiToken(repo, token),
     );
     this.rollbackFlow = new ProjectRollback(
       prisma,
@@ -226,6 +237,11 @@ export class ProjectsService {
     await this.reconciliation.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedExecutions();
     await this.environmentTargets.reconcileAllocations();
+  }
+
+  /** Lets projects follow a renamed GitHub user or organization (ADR-155). */
+  followRenamedInstallationAccounts(): Promise<number> {
+    return this.repositoryIdentity.followRenamedInstallationAccounts();
   }
 
   /** Moves the next batch of accounts to scoped Gitea credentials (ADR-134). */
@@ -766,6 +782,7 @@ export class ProjectsService {
               scmFullName: repo.fullName,
               scmDefaultBranch: repo.defaultBranch,
               scmInstallationId: repo.installationId,
+              deploymentKey: await this.allocateDeploymentKey(tx, repo),
               lastCommit: 'init: scaffold from template',
               pipelinePreset,
               ciDeployTokenHash: hashToken(ciDeployToken),
@@ -961,6 +978,7 @@ export class ProjectsService {
               scmFullName: repo.fullName,
               scmDefaultBranch: repo.defaultBranch,
               scmInstallationId: repo.installationId,
+              deploymentKey: await this.allocateDeploymentKey(tx, repo),
               lastCommit: 'import: existing repository',
               pipelinePreset,
               ciDeployTokenHash: hashToken(ciDeployToken),
@@ -1505,6 +1523,29 @@ export class ProjectsService {
     return this.workloadDiagnostics.request(id, envName, userId, requestId);
   }
 
+  // The workload key is fixed here and never follows a rename (ADR-155). A
+  // renamed repository keeps its key, so a new repository that takes over the
+  // freed name must not receive the same one.
+  private async allocateDeploymentKey(
+    tx: Pick<Prisma.TransactionClient, 'project'>,
+    repository: { owner: string; name: string; repositoryId?: string | null },
+  ): Promise<string> {
+    const key = deploymentSlug(repository);
+    const taken = await tx.project.findFirst({
+      where: { deploymentKey: key },
+      select: { id: true },
+    });
+    if (!taken) return key;
+    const id = (repository.repositoryId ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const suffix =
+      id.slice(-8) ||
+      generateToken()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '')
+        .slice(0, 8);
+    return `${key}-r${suffix}`;
+  }
+
   // Deploys dev after a cancelled/failed attempt or an explicit removal. If
   // CI already produced an immutable artifact, reuse only that deployment.
   // Otherwise queue CI for the latest main commit through a temporary tag and
@@ -1962,7 +2003,7 @@ export class ProjectsService {
         );
       }
       const repository = repositoryRef(project);
-      const slug = deploymentSlug(repository);
+      const slug = workloadKey(project);
       // Do not bind the new target until teardown succeeds; otherwise a failed
       // cleanup would leave an unreachable orphan on the old infrastructure.
       const teardown = await this.deployment.teardown(env.provider as ProviderKind, {

@@ -32,7 +32,7 @@ describe('ProjectsService list performance', () => {
           .mockResolvedValueOnce([]),
       },
     };
-    const scm = { repoMissing: jest.fn(() => repositoryCheck.promise) };
+    const scm = { resolveRepository: jest.fn(() => repositoryCheck.promise) };
     const service = new ProjectsService(
       prisma as never,
       {} as never,
@@ -47,12 +47,12 @@ describe('ProjectsService list performance', () => {
 
     await expect(service.list('u1', 'ws1')).resolves.toEqual([]);
     await Promise.resolve();
-    expect(scm.repoMissing).toHaveBeenCalledTimes(1);
+    expect(scm.resolveRepository).toHaveBeenCalledTimes(1);
 
     // A second list read remains fast and does not start a duplicate sweep.
     await expect(service.list('u1', 'ws1')).resolves.toEqual([]);
     expect(prisma.project.findMany).toHaveBeenCalledTimes(3);
-    expect(scm.repoMissing).toHaveBeenCalledTimes(1);
+    expect(scm.resolveRepository).toHaveBeenCalledTimes(1);
 
     repositoryCheck.resolve(false);
     await repositoryCheck.promise;

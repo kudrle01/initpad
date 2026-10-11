@@ -31,6 +31,11 @@ type VerifyRegistryArtifact = (
   version: string,
 ) => Promise<void>;
 
+type FindRenamedProject = (
+  repo: string,
+  token: string,
+) => Promise<Awaited<ReturnType<PrismaService['project']['findFirst']>>>;
+
 /**
  * Repository-authenticated CI callback state machine. It validates the source
  * event, handles retry-tag ownership and decides whether an immutable artifact
@@ -48,7 +53,23 @@ export class ProjectCiOrchestrator {
     private readonly deployInBackground: DeployInBackground,
     private readonly scheduleDeployment: ScheduleDeployment,
     private readonly verifyRegistryArtifact: VerifyRegistryArtifact,
+    private readonly findRenamedProject: FindRenamedProject = () => Promise.resolve(null),
   ) {}
+
+  // The callback names its repository and proves itself with the project's
+  // token. A name no project carries may be a rename: the token then finds
+  // the project and the provider has to confirm the new name (ADR-155).
+  private async callbackProject(repo: string, token: string) {
+    const candidates = await this.prisma.project.findMany({
+      where: { scmFullName: repo },
+    });
+    const project = candidates.find((candidate) =>
+      tokenMatches(token, candidate.ciDeployTokenHash),
+    );
+    if (project) return { project, known: true };
+    if (candidates.length > 0) return { project: null, known: true };
+    return { project: await this.findRenamedProject(repo, token), known: false };
+  }
 
   async started(repo: string, sha: string, ref: string, token: string): Promise<void> {
     this.assertRepositoryCoordinates(repo);
@@ -56,14 +77,9 @@ export class ProjectCiOrchestrator {
       throw new BadRequestException('CI start requires a full 40-character commit SHA');
     }
 
-    const candidates = await this.prisma.project.findMany({
-      where: { scmFullName: repo },
-    });
-    const project = candidates.find((candidate) =>
-      tokenMatches(token, candidate.ciDeployTokenHash),
-    );
+    const { project, known } = await this.callbackProject(repo, token);
     if (!project) {
-      if (candidates.length > 0) {
+      if (known) {
         throw new UnauthorizedException('Invalid CI token for this repository');
       }
       throw new NotFoundException('CI project is not ready yet');
@@ -93,14 +109,9 @@ export class ProjectCiOrchestrator {
     this.assertRepositoryCoordinates(repo);
     const retryTag = ref.replace(/^refs\/tags\//, '');
     const isRetry = /^initpad-retry-[a-z0-9-]+$/.test(retryTag);
-    const candidates = await this.prisma.project.findMany({
-      where: { scmFullName: repo },
-    });
-    const project = candidates.find((candidate) =>
-      tokenMatches(token, candidate.ciDeployTokenHash),
-    );
+    const { project, known } = await this.callbackProject(repo, token);
     if (!project) {
-      if (candidates.length > 0) {
+      if (known) {
         throw new UnauthorizedException('Invalid CI token for this repository');
       }
       this.logger.warn(`CI deploy: project '${repo}' not found`);

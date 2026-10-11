@@ -49,6 +49,7 @@ function harness(projects: ReturnType<typeof project>[], scm: Record<string, jes
     {} as never,
     () => ({ username: 'alice', token: '' }),
     jest.fn(),
+    {} as never,
   );
   return { reconciliation, provider, prisma, calls };
 }

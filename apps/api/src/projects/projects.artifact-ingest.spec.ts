@@ -248,6 +248,8 @@ describe('ProjectArtifactIngestion → object storage', () => {
           status: 'available',
           storageKind: 'object-store',
           storageRef: expectedKey,
+          // The reference of the verified archive survives a later rename.
+          imageRef: EXPECTED_REF,
         }),
       }),
     );

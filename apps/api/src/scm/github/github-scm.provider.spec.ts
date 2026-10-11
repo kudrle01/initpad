@@ -198,6 +198,79 @@ describe('GitHubScmProvider reads', () => {
     expect(await p3.repoMissing(repository('x'), actor)).toBe(false);
   });
 
+  it('resolves a renamed repository by its immutable ID', async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 101,
+        name: 'api-2',
+        full_name: 'acme-labs/api-2',
+        html_url: 'https://github.com/acme-labs/api-2',
+        default_branch: 'trunk',
+        owner: { login: 'acme-labs' },
+      }),
+    }));
+    const { provider } = make(fetchMock);
+
+    await expect(provider.resolveRepository(repository('api'), actor)).resolves.toEqual({
+      state: 'found',
+      repository: {
+        provider: 'github',
+        repositoryId: '101',
+        owner: 'acme-labs',
+        name: 'api-2',
+        fullName: 'acme-labs/api-2',
+        defaultBranch: 'trunk',
+        repoUrl: 'https://github.com/acme-labs/api-2',
+        installationId: 'installation-row-1',
+      },
+    });
+    // The stored name is never used once the ID is known.
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(url).toMatch(/\/repositories\/101$/);
+  });
+
+  it('reports a repository as missing only on an explicit 404', async () => {
+    const { provider } = make(jest.fn(async () => ({ status: 404, ok: false })));
+    await expect(provider.resolveRepository(repository(), actor)).resolves.toEqual({
+      state: 'missing',
+    });
+
+    const { provider: failing } = make(jest.fn(async () => ({ status: 500, ok: false })));
+    await expect(failing.resolveRepository(repository(), actor)).resolves.toEqual({
+      state: 'unknown',
+    });
+
+    const { provider: offline } = make(
+      jest.fn(async () => {
+        throw new Error('network');
+      }),
+    );
+    await expect(offline.resolveRepository(repository(), actor)).resolves.toEqual({
+      state: 'unknown',
+    });
+  });
+
+  it('does not accept an answer about a different repository', async () => {
+    const { provider } = make(
+      jest.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 999,
+          name: 'api',
+          full_name: 'acme/api',
+          owner: { login: 'acme' },
+        }),
+      })),
+    );
+
+    await expect(provider.resolveRepository(repository(), actor)).resolves.toEqual({
+      state: 'unknown',
+    });
+  });
+
   it('maps commits and combined statuses', async () => {
     const commits = make(
       jest.fn(async () => ({

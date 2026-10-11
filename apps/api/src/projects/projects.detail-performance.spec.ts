@@ -28,7 +28,7 @@ describe('ProjectsService detail performance', () => {
       project: { findUnique: jest.fn(async () => project) },
       environment: { findUnique: jest.fn(async () => null) },
     };
-    const scm = { repoMissing: jest.fn(() => repositoryCheck.promise) };
+    const scm = { resolveRepository: jest.fn(() => repositoryCheck.promise) };
     const service = new ProjectsService(
       prisma as never,
       {} as never,
@@ -42,10 +42,10 @@ describe('ProjectsService detail performance', () => {
     );
 
     await expect(service.reconcileProject(project.id)).resolves.toBeUndefined();
-    expect(scm.repoMissing).toHaveBeenCalledTimes(1);
+    expect(scm.resolveRepository).toHaveBeenCalledTimes(1);
 
     await expect(service.reconcileProject(project.id)).resolves.toBeUndefined();
-    expect(scm.repoMissing).toHaveBeenCalledTimes(1);
+    expect(scm.resolveRepository).toHaveBeenCalledTimes(1);
 
     repositoryCheck.resolve(false);
     await repositoryCheck.promise;

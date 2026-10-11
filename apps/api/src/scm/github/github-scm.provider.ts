@@ -35,6 +35,7 @@ import {
   ScmRepo,
   ScmRepositoryIdentity,
   ScmRepositoryRef,
+  ScmRepositoryResolution,
 } from '../scm-provider';
 import {
   collectScmPages,
@@ -259,6 +260,54 @@ export class GitHubScmProvider implements ScmProvider {
     } catch {
       // An outage or missing installation must never be read as "deleted".
       return false;
+    }
+  }
+
+  async resolveRepository(
+    repository: ScmRepositoryRef,
+    _actor: ScmActor,
+  ): Promise<ScmRepositoryResolution> {
+    this.assertProvider(repository);
+    try {
+      const token = await this.token(repository);
+      const res = await this.gh(
+        repository.repositoryId
+          ? `/repositories/${encodeURIComponent(repository.repositoryId)}`
+          : `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`,
+        token,
+        { operation: 'resolve repository' },
+      );
+      if (res.status === 404) return { state: 'missing' };
+      if (!res.ok) return { state: 'unknown' };
+      const data = (await res.json()) as {
+        id?: number | string;
+        name?: string;
+        full_name?: string;
+        html_url?: string;
+        default_branch?: string;
+        owner?: { login?: string };
+      };
+      const owner = data.owner?.login || data.full_name?.split('/')[0];
+      if (data.id == null || !data.name || !data.full_name || !owner) return { state: 'unknown' };
+      if (repository.repositoryId && String(data.id) !== repository.repositoryId) {
+        return { state: 'unknown' };
+      }
+      return {
+        state: 'found',
+        repository: {
+          provider: 'github',
+          repositoryId: String(data.id),
+          owner,
+          name: data.name,
+          fullName: data.full_name,
+          defaultBranch: data.default_branch || repository.defaultBranch,
+          repoUrl: data.html_url || `https://github.com/${data.full_name}`,
+          installationId: repository.installationId ?? null,
+        },
+      };
+    } catch {
+      // An outage or missing installation must never be read as "deleted".
+      return { state: 'unknown' };
     }
   }
 

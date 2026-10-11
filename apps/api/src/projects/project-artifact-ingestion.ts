@@ -251,6 +251,8 @@ export class ProjectArtifactIngestion {
           status: 'available',
           storageKind: 'object-store',
           storageRef: objectKey,
+          // The verified archive carries exactly this tag (ADR-155).
+          imageRef,
           error: null,
           ingestionOwner: null,
           ingestionLeaseExpiresAt: null,

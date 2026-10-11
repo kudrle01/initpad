@@ -549,6 +549,11 @@ model Project {
   // SHA-256 hash of the repository-specific CI webhook token. The plaintext
   // exists only as a Gitea Actions secret and is never persisted by InitPad.
   ciDeployTokenHash  String?
+  // Workload identity on every target (ADR-155): container names, SFTP paths
+  // and Agent workloads. Derived from the repository coordinates once and
+  // never changed by a rename. Null only on a row written by an older image,
+  // which still derives the same value until it is stored.
+  deploymentKey      String?
   createdAt          DateTime                      @default(now())
   owner              User?                         @relation(fields: [ownerId], references: [id])
   ownerId            String?
@@ -564,6 +569,8 @@ model Project {
   @@unique([scmProvider, scmRepositoryId])
   @@index([scmProvider, scmFullName])
   @@index([scmInstallationId])
+  @@index([deploymentKey])
+  @@index([ciDeployTokenHash])
 }
 
 // Immutable CI outputs accepted at the repository/commit trust boundary.
@@ -585,6 +592,10 @@ model BuildArtifact {
   status             String                        @default("accepted") // accepted | ingesting | available | failed
   storageKind        String?
   storageRef         String?
+  // Image reference of the verified archive (ADR-155). Its tag carries the
+  // repository name of the build, so a later rename must not recompute it.
+  // Null on older rows, which derive it from the project's coordinates.
+  imageRef           String?
   error              String?
   // API-process execution lease for provider download, archive verification
   // and durable object-store publication. Every takeover increments the

@@ -44,6 +44,14 @@ export interface ScmRepositoryIdentity {
   installationId: string | null;
 }
 
+// What the provider says about the repository behind an immutable ID. Only an
+// explicit answer counts as missing; an outage or an unexpected reply is
+// unknown and must never trigger cleanup (ADR-155).
+export type ScmRepositoryResolution =
+  | { state: 'found'; repository: ScmRepositoryIdentity }
+  | { state: 'missing' }
+  | { state: 'unknown' };
+
 // Explicit destination for repository creation. Gitea derives the owner from
 // its managed actor and ignores this value; hosted providers use it to bind
 // creation to a workspace-authorized installation and the initiating user.
@@ -122,6 +130,13 @@ export interface ScmProvider {
   // Sever a repository's trust with a deleted project without deleting its code.
   detachRepo(repository: ScmRepositoryRef, actor: ScmActor): Promise<void>;
   repoMissing(repository: ScmRepositoryRef, actor: ScmActor): Promise<boolean>;
+  // Current coordinates of the repository, looked up by its immutable ID when
+  // one is known. After a rename the stored name may belong to another
+  // repository, so the ID wins.
+  resolveRepository(
+    repository: ScmRepositoryRef,
+    actor: ScmActor,
+  ): Promise<ScmRepositoryResolution>;
   setCollaborator(repository: ScmRepositoryRef, username: string, role: string): Promise<void>;
   removeCollaborator(repository: ScmRepositoryRef, username: string): Promise<void>;
   // Direct (not inherited/team) access, in provider-native notation. Import
