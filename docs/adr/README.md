@@ -166,3 +166,4 @@ stabilní.
 | [ADR-153](./ADR-153.md) | Accepted | SaaS nespouští součásti self-hosted Gitey a install.sh SaaS neinstaluje |
 | [ADR-154](./ADR-154.md) | Accepted | Počet vlastněných týmových workspaces je omezený |
 | [ADR-155](./ADR-155.md) | Accepted | Přejmenování repozitáře nebo účtu nemění identitu projektu ani jeho nasazení |
+| [ADR-156](./ADR-156.md) | Accepted | Aplikace odkazuje na samostatnou uživatelskou nápovědu |
