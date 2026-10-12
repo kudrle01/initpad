@@ -76,6 +76,11 @@ export const config = {
       process.env.INITPAD_MAX_OWNED_TEAM_WORKSPACES ?? (edition === 'saas' ? 5 : 0),
     ),
   },
+  docs: {
+    // Base URL of the user guide. The web app links to <url>/<locale>/#<topic>
+    // and hides every help link while it is empty.
+    url: (process.env.INITPAD_DOCS_URL || '').trim().replace(/\/+$/, ''),
+  },
   retention: {
     // Audit events older than this are deleted; 0 keeps them (ADR-150).
     auditDays: Number(process.env.INITPAD_AUDIT_RETENTION_DAYS ?? 400),
@@ -417,6 +422,26 @@ export function validateConfig(): void {
     maxOwnedTeamWorkspaces > 1000
   ) {
     throw new Error('INITPAD_MAX_OWNED_TEAM_WORKSPACES must be an integer between 0 and 1000');
+  }
+  if (config.docs.url) {
+    let docsUrl: URL;
+    try {
+      docsUrl = new URL(config.docs.url);
+    } catch {
+      throw new Error('INITPAD_DOCS_URL must be a valid URL');
+    }
+    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(docsUrl.hostname);
+    if (
+      !(docsUrl.protocol === 'https:' || (docsUrl.protocol === 'http:' && loopback)) ||
+      docsUrl.username ||
+      docsUrl.password ||
+      docsUrl.search ||
+      docsUrl.hash
+    ) {
+      throw new Error(
+        'INITPAD_DOCS_URL must be an HTTPS URL without credentials, query or fragment',
+      );
+    }
   }
   const { auditDays } = config.retention;
   if (!Number.isInteger(auditDays) || auditDays < 0 || (auditDays > 0 && auditDays < 30)) {

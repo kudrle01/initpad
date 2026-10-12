@@ -94,6 +94,33 @@ describe('validateConfig production secrets', () => {
     }
   });
 
+  it('accepts an HTTPS user guide address and rejects unsafe ones (ADR-156)', () => {
+    const saved = { ...config.docs };
+    try {
+      for (const url of [
+        'https://docs.example.org',
+        'https://example.org/help',
+        'http://localhost:4178',
+      ]) {
+        config.docs.url = url;
+        expect(() => validateConfig()).not.toThrow();
+      }
+      for (const url of [
+        'docs.example.org',
+        'http://docs.example.org',
+        'javascript:alert(1)',
+        'https://user:secret@docs.example.org',
+        'https://docs.example.org?lang=cs',
+        'https://docs.example.org#top',
+      ]) {
+        config.docs.url = url;
+        expect(() => validateConfig()).toThrow('INITPAD_DOCS_URL');
+      }
+    } finally {
+      Object.assign(config.docs, saved);
+    }
+  });
+
   it('refuses the in-memory artifact store in production (ADR-146)', () => {
     config.artifactStore.bucket = '';
     expect(() => validateConfig()).toThrow('Production requires a durable artifact store');

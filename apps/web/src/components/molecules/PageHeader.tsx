@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react';
+import { useAuth } from '@/auth';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { InfoTip, type InfoTipItem } from '@/components/molecules/InfoTip';
 import { t } from '@/i18n';
+import type { HelpTopic } from '@/lib/help';
 
 export function PageHeader({
   title,
@@ -8,13 +11,18 @@ export function PageHeader({
   actions,
   help,
   helpLabel,
+  helpTopic,
 }: {
   title: string;
   description?: ReactNode;
   actions?: ReactNode;
   help?: InfoTipItem[];
   helpLabel?: string;
+  /** Chapter of the user guide that explains this page. */
+  helpTopic?: HelpTopic;
 }) {
+  const { user } = useAuth();
+  const helpShown = Boolean(helpTopic && user?.docsUrl);
   return (
     <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
@@ -26,8 +34,12 @@ export function PageHeader({
             <InfoTip label={helpLabel ?? t('About {title}', { title: title })} items={help} />
           )}
         </div>
-        {description && (
-          <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">{description}</p>
+        {(description || helpShown) && (
+          <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
+            {description}
+            {description && helpShown && ' '}
+            {helpShown && <HelpLink topic={helpTopic} />}
+          </p>
         )}
       </div>
       {actions && (

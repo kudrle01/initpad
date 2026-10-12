@@ -319,6 +319,7 @@ export default function Infrastructure() {
     <div>
       <PageHeader
         title={t('Servers')}
+        helpTopic="servers"
         description={t(
           'Machines and hosting that receive deployments, and what this workspace may use on each.',
         )}

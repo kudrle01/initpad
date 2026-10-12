@@ -4,6 +4,7 @@ import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { AuthCard } from '@/components/molecules/AuthCard';
 import { FormField } from '@/components/molecules/FormField';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { Notice } from '@/components/molecules/Notice';
 import { SegmentedControl } from '@/components/molecules/SegmentedControl';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ export default function Login() {
   const [githubEnabled, setGithubEnabled] = useState(false);
   const [passwordAuthEnabled, setPasswordAuthEnabled] = useState(false);
   const [edition, setEdition] = useState<'self-hosted' | 'saas'>('self-hosted');
+  const [docsUrl, setDocsUrl] = useState<string | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [configError, setConfigError] = useState(false);
   const oauthError = oauthErrorMessage(params.get('error'));
@@ -44,6 +46,7 @@ export default function Login() {
         setGithubEnabled(x.githubEnabled);
         setPasswordAuthEnabled(x.passwordAuthEnabled);
         setEdition(x.edition);
+        setDocsUrl(x.docsUrl);
       })
       .catch(() => setConfigError(true))
       .finally(() => setConfigLoading(false));
@@ -237,6 +240,14 @@ export default function Login() {
         <Notice tone="danger" role="alert" className="mt-5 text-left">
           {t('GitHub sign-in is not configured for this SaaS installation.')}
         </Notice>
+      )}
+
+      {docsUrl && (
+        <p className="mt-5 text-center text-xs">
+          <HelpLink base={docsUrl} topic="getting-started">
+            {t('New to InitPad? Read the guide')}
+          </HelpLink>
+        </p>
       )}
     </AuthCard>
   );

@@ -50,6 +50,8 @@ export class AuthController {
       // The first account must present the installer's setup token.
       bootstrapRequired: await this.auth.bootstrapRequired(),
       edition: config.edition,
+      // The sign-in screen links the user guide before anyone has a session.
+      docsUrl: config.docs.url || null,
       passwordAuthEnabled: config.edition === 'self-hosted',
       emailDeliveryEnabled: this.auth.emailDeliveryEnabled(),
       // Whether "Sign in with GitHub" / account linking is available.

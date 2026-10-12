@@ -25,13 +25,14 @@ vi.mock('@/auth', () => ({
   useAuth: () => ({ user: null, loading: false, signIn: mocks.signIn }),
 }));
 
-function authConfig(bootstrapRequired: boolean) {
+function authConfig(bootstrapRequired: boolean, docsUrl: string | null = null) {
   return {
     registrationAvailable: true,
     registrationMode: 'admin-provisioned',
     bootstrapRequired,
     githubEnabled: false,
     edition: 'self-hosted' as const,
+    docsUrl,
     passwordAuthEnabled: true,
     emailDeliveryEnabled: false,
   };
@@ -87,5 +88,33 @@ describe('Login first administrator setup (ADR-136)', () => {
 
     await waitFor(() => expect(submitButton('Sign in')).toBeInTheDocument());
     expect(screen.queryByLabelText('Setup token')).not.toBeInTheDocument();
+  });
+});
+
+describe('Login user guide link (ADR-156)', () => {
+  it('links the getting-started chapter when the instance publishes a guide', async () => {
+    mocks.api.authConfig.mockResolvedValue(authConfig(false, 'https://docs.example.test'));
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>,
+    );
+
+    const link = await screen.findByRole('link', { name: /Read the guide/ });
+    expect(link).toHaveAttribute('href', 'https://docs.example.test/en/#getting-started');
+    expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  it('shows no guide link when the instance has none', async () => {
+    mocks.api.authConfig.mockResolvedValue(authConfig(false));
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>,
+    );
+
+    // The password field appears only once the auth config has loaded.
+    await screen.findByLabelText('Password');
+    expect(screen.queryByRole('link', { name: /Read the guide/ })).not.toBeInTheDocument();
   });
 });

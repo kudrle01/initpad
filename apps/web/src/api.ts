@@ -553,6 +553,7 @@ export const api = {
       bootstrapRequired: boolean;
       githubEnabled: boolean;
       edition: 'self-hosted' | 'saas';
+      docsUrl: string | null;
       passwordAuthEnabled: boolean;
       emailDeliveryEnabled: boolean;
     }>('/auth/config'),

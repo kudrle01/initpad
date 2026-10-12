@@ -5,6 +5,8 @@ import {
   Building2,
   Check,
   ChevronsUpDown,
+  CircleHelp,
+  ExternalLink,
   FolderClosed,
   Layers,
   LayoutDashboard,
@@ -34,8 +36,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { t, msg, type MessageKey } from '@/i18n';
+import { getLocale, t, msg, type MessageKey } from '@/i18n';
 import { roleLabel, termLabel } from '@/i18n/labels';
+import { helpUrl } from '@/lib/help';
 
 function initials(name: string) {
   return name
@@ -190,6 +193,20 @@ function Navigation({ user, onNavigate }: { user: User; onNavigate?: () => void 
       ))}
       {user.platformRole === 'admin' && (
         <Item to="/admin" label={msg('Platform')} icon={ShieldCheck} onNavigate={onNavigate} />
+      )}
+      {user.docsUrl && (
+        <a
+          href={helpUrl(user.docsUrl, getLocale())}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(itemClass({ isActive: false }), 'mt-auto')}
+          onClick={onNavigate}
+        >
+          <CircleHelp className="h-[18px] w-[18px] shrink-0" />
+          <span className="truncate">{t('Help')}</span>
+          <ExternalLink className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
+          <span className="sr-only">{t('(opens in a new tab)')}</span>
+        </a>
       )}
     </nav>
   );

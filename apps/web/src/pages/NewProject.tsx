@@ -190,6 +190,7 @@ export default function NewProject() {
     <div>
       <PageHeader
         title={t('New project')}
+        helpTopic="new-project"
         description={t(
           'Pick a template — InitPad creates the repository, the CI/CD pipeline and the environments.',
         )}
