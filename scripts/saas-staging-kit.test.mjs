@@ -84,3 +84,39 @@ test('passes the tunnel token as a file and joins the SaaS control network', () 
   assert.match(edgeCompose, /\.\.\/observability\/otel-collector\.example\.yaml:/);
   assert.match(edgeCompose, /- \/secure\/runtime\/secrets\/otel_collector\.env/);
 });
+
+test('keeps the Grafana dashboard on the metrics and labels the API emits', () => {
+  const dashboard = JSON.parse(readFileSync('deploy/staging/grafana-dashboard.json', 'utf8'));
+  const source = readFileSync('apps/api/src/common/request-context.ts', 'utf8');
+  const prometheusName = (name) => name.replaceAll('.', '_');
+  // OTLP dots become underscores; the backend may append a type or unit suffix.
+  const metrics = [...source.matchAll(/meter\.create(?:Counter|Histogram)\('([^']+)'/g)].map(
+    (match) => prometheusName(match[1]),
+  );
+  assert.deepEqual(metrics, ['initpad_http_requests', 'initpad_http_request_duration']);
+  const labels = [...source.matchAll(/^ {4}'([a-z_.]+)':/gm)].map((match) =>
+    prometheusName(match[1]),
+  );
+  assert.equal(labels.length, 3);
+
+  assert.equal(dashboard.panels.length, 8);
+  assert.equal(new Set(dashboard.panels.map((panel) => panel.id)).size, 8);
+  const [datasource] = dashboard.templating.list;
+  assert.equal(datasource.type, 'datasource');
+  assert.equal(datasource.query, 'prometheus');
+  for (const panel of dashboard.panels) {
+    // No panel is pinned to one Grafana stack.
+    assert.equal(panel.datasource.uid, '${datasource}', panel.title);
+    for (const target of panel.targets) {
+      assert.equal(target.datasource.uid, '${datasource}', panel.title);
+      const used = target.expr.match(/initpad_[a-z_]+|http_[a-z_]+/g) ?? [];
+      assert.ok(used.length > 0, panel.title);
+      for (const name of used) {
+        assert.ok(
+          metrics.some((metric) => name === metric) || labels.includes(name),
+          `${panel.title}: ${name} is not emitted by the API`,
+        );
+      }
+    }
+  }
+});

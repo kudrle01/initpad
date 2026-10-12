@@ -154,6 +154,17 @@ roota, proto jej Compose ani preflight pod jiným uživatelem nepřečtou.
 5. Pokračujte kontrolou závislostí a dalšími kroky ze
    [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md).
 
+## Dashboard v Grafaně
+
+Soubor [`staging/grafana-dashboard.json`](./staging/grafana-dashboard.json)
+obsahuje dashboard nad dvěma vlastními metrikami API: počet požadavků a dobu
+jejich zpracování. V Grafaně jej naimportujte přes **Dashboards → New →
+Import** a jako zdroj dat ponechte Prometheus zdroj stacku. Dashboard
+nezobrazuje logy ani traces a jeho prahy odpovídají výchozím alertům z
+[pravidel observability](../docs/OBSERVABILITY.md#základ-alertů). API odesílá
+metriky jednou za minutu, proto se první hodnoty objeví se zpožděním a jen
+tehdy, když na API přicházejí požadavky.
+
 ## Rotace secretu
 
 Změňte hodnotu v Infisicalu a počkejte na další dotaz agenta, nejvýše pět
