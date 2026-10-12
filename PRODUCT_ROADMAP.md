@@ -184,8 +184,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       Je implementována a pokrytá automatizovanými testy: projekt má uložený
       klíč workloadu, artefakt uložený odkaz na obraz a souřadnice se obnovují
       podle neměnného ID včetně CI callbacku s novým názvem a přejmenování
-      účtu. Release gate prošel 11. října 2026. Změna ještě nevyšla ve vydání
-      a naživo ověřena není; obsahuje migraci databáze se dvěma sloupci.
+      účtu. Release gate prošel 11. října 2026. Změna vyšla ve vydání 0.2.18
+      z 12. října 2026, které je zatím kandidát; anonymní audit kandidáta
+      prošel. Staging na něm běží od téhož dne: migrace se aplikovala, oba
+      kontejnery jsou zdravé a kontrola závislostí prošla. Samotné
+      přejmenování naživo ověřeno není.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
