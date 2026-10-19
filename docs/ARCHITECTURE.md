@@ -12,7 +12,7 @@ hranice v [`RELEASE_READINESS.md`](./RELEASE_READINESS.md).
 | Zdrojový kód a CI | vestavěná Gitea + Actions | GitHub + GitHub App |
 | Přihlášení | heslo, InitPad SSO do Gitey | GitHub OAuth |
 | Docker target | InitPad Agent; vestavěný Docker jen v této edici | InitPad Agent |
-| Sdílený PHP/static hosting | SFTP compatibility target | pouze veřejně dosažitelný SFTP target |
+| Sdílený PHP/static hosting | SFTP compatibility target | pouze veřejně dosažitelný SFTP target; server jen za školní VPN obslouží jen self-hosted edice (ADR-157) |
 | Artifact storage | vestavěný store pro důvěryhodný single-node provoz nebo externí S3 | externí S3-compatible služba |
 | Stav | funkční a živě ověřený profil | implementované SCM základy; produkční profil ještě není vydaný |
 

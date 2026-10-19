@@ -167,3 +167,4 @@ stabilní.
 | [ADR-154](./ADR-154.md) | Accepted | Počet vlastněných týmových workspaces je omezený |
 | [ADR-155](./ADR-155.md) | Accepted | Přejmenování repozitáře nebo účtu nemění identitu projektu ani jeho nasazení |
 | [ADR-156](./ADR-156.md) | Accepted | Aplikace odkazuje na samostatnou uživatelskou nápovědu |
+| [ADR-157](./ADR-157.md) | Accepted | Veřejný SaaS nenasazuje na SFTP hosting dostupný jen přes školní VPN |

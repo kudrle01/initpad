@@ -270,6 +270,14 @@ kde nelze instalovat Agenta. Oprávnění souborů a vlastnictví runtime cache
 určuje cizí server. InitPad používá release adresáře, karanténu a pravdivý
 cleanup debt, ale administrátorský zásah hostingu může být stále nutný.
 
+### SFTP hosting dostupný jen přes školní VPN
+
+Veřejný SaaS nenasadí na SFTP server, který je dostupný pouze ze školní VPN,
+typicky ESO (ADR-157). SFTP spojení navazuje control plane a smí mířit jen na
+veřejné adresy (ADR-100). Takové servery obslouží self-hosted edice, jejíž
+hostitel VPN trasu má. Docker targetů za VPN nebo NATem se omezení netýká,
+protože Agent navazuje jen odchozí spojení.
+
 ### Veřejný hostname není DNS provisioning
 
 Managed gateway rezervuje a obsluhuje stabilní hostname, nevlastní ale
