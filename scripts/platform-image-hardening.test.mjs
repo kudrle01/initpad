@@ -62,7 +62,10 @@ test('Node runtime images ship neither package managers nor compiled tests (ADR-
 test('CI fails on fixed HIGH or CRITICAL findings with expiring exceptions only (ADR-144)', () => {
   const workflow = read('.github/workflows/container-images.yml');
   assert.match(workflow, /schedule:\n {4}- cron: '[^']+'/);
-  assert.match(workflow, /TRIVY_IMAGE: aquasec\/trivy:[0-9.]+@sha256:[0-9a-f]{64}/);
+  assert.match(
+    workflow,
+    /TRIVY_IMAGE: (?:mirror\.gcr\.io\/)?aquasec\/trivy:[0-9.]+@sha256:[0-9a-f]{64}/,
+  );
   assert.match(workflow, /--severity HIGH,CRITICAL --ignore-unfixed/);
   assert.match(workflow, /--ignorefile \/src\/\.trivyignore\.yaml --exit-code 1/);
   for (const image of ['api', 'web', 'agent', 'supervisor']) {
