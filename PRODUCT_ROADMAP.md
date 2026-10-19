@@ -169,7 +169,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       přes Agenta. Krok Import se zastavil: čerstvě vytvořený repozitář se v
       nabídce zobrazil jako prázdný a nešel vybrat. Prázdnost se odvozovala z
       velikosti repozitáře, kterou GitHub přepočítává jen občas. Oprava ji
-      ověřuje dotazem na commity a je pokrytá testy; čeká na další release.
+      ověřuje dotazem na commity a je pokrytá testy (commit 869ef27); vyšla v
+      releasu 0.2.18.
       Jakmile GitHub velikost přepočítal, import téhož repozitáře prošel
       preflightem beze změny kódu; autor to potvrdil 11. října 2026. Zbývají
       povýšení stejným digestem, Rename, Suspend, Uninstall a Audit.
@@ -264,6 +265,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   indexem je `docs/adr/README.md`.
 
 ### P2 — produkční public SaaS
+
+Jde o budoucí práci mimo rozsah diplomové práce.
 
 - [ ] Vytvořit SaaS deployment profil bez Gitey a bundled object storu;
   použít externí udržované S3-compatible úložiště a secret manager.
@@ -367,6 +370,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
 
 ### P3 — následná produktová rozšíření
 
+Jde o budoucí práci mimo rozsah diplomové práce.
+
 - [x] Dark mode a první lokalizace až po společném design/i18n boundary.
   - [x] Implementovat světlý, tmavý a systémový režim nad společnými design
     tokeny. Je součástí redesignu ve vydání 0.2.13; samostatný živý průchod
@@ -403,32 +408,27 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - cachovat installation token. Ušetří další dotazy, ale mění rozhodnutí z
     ADR-043, podle kterého je token vázaný na jednu operaci a neukládá se;
     vyžaduje proto vlastní ADR.
-- [ ] Rozhodnout, zda má veřejný SaaS umět nasazovat na SFTP hosting dostupný
-  pouze ze školní VPN, typicky ESO. Dnes to nejde a žádné nastavení to
-  nezmění: SFTP spojení navazuje control plane a v SaaS smí mířit jen na
-  veřejné adresy (ADR-100). Self-hosted edice takový server obslouží, pokud
-  její hostitel VPN trasu má. Vlastních Docker serverů za VPN nebo NATem se
-  omezení netýká: Agent navazuje jen odchozí spojení, health ověřuje lokálně
-  a SaaS u Docker targetu privátní `publicUrl` přijímá. Živě to má potvrdit
-  domácí Agent target stagingu. Možnosti pro SFTP:
-  - ponechat ESO a jiné servery za VPN výhradně self-hosted edici a v SaaS
-    to uvést jako známé omezení;
-  - doplnit Agentovi úlohu, která SFTP nahrání provede zevnitř sítě. Agent
-    drží pouze odchozí spojení, takže model důvěry zůstává, ale vzniká nový
-    typ úlohy s předáním SFTP credentials a připnutým host key; vyžaduje
-    vlastní ADR;
-  - připojit control plane do školní VPN se nedoporučuje. Sdílená veřejná
-    služba by držela osobní školní přihlášení a získala přístup do interní
-    sítě.
-- [ ] Zbavit CI a release workflow závislosti na limitu anonymních stažení z
+- [x] Rozhodnout, zda má veřejný SaaS umět nasazovat na SFTP hosting dostupný
+  pouze ze školní VPN, typicky ESO. Rozhodnuto v ADR-157: nemá. SFTP spojení
+  navazuje control plane a v SaaS smí mířit jen na veřejné adresy (ADR-100).
+  Takové servery obsluhuje výhradně self-hosted edice, jejíž hostitel VPN
+  trasu má; omezení je uvedeno v `docs/RELEASE_READINESS.md`. Připojit control
+  plane do školní VPN je odmítnuto, protože by sdílená veřejná služba držela
+  osobní školní přihlášení a získala přístup do interní sítě. Vlastních Docker
+  serverů za VPN nebo NATem se omezení netýká: Agent navazuje jen odchozí
+  spojení, health ověřuje lokálně a SaaS u Docker targetu privátní `publicUrl`
+  přijímá. Živě to má potvrdit domácí Agent target stagingu.
+  - Možné budoucí rozšíření: Agentova úloha, která SFTP nahrání provede
+    zevnitř sítě. Model důvěry zůstává, ale vzniká nový typ úlohy s předáním
+    SFTP credentials a připnutým host key; vyžaduje vlastní ADR.
+- [x] Zbavit CI a release workflow závislosti na limitu anonymních stažení z
   Docker Hubu. Dne 9. října 2026 na něm spadl build obrazů ve workflow
   „Verify container images" chybou 429 a pomohlo až opakované spuštění.
-  Stejně může selhat i release workflow, protože také stahuje základní
-  obrazy. Možnosti:
-  - nasměrovat stahování v CI na zrcadlo Docker Hubu. Základní obrazy jsou
-    připnuté digestem, takže se jejich obsah ověří stejně, a není potřeba
-    žádný účet;
-  - přihlásit CI k Docker Hubu tokenem uloženým v secrets repozitáře.
+  Základní obrazy platformy se nově stahují z `mirror.gcr.io`, který slouží
+  stejné digesty, takže připnutí digestem platí dál a není potřeba žádný účet.
+  Workflow „Verify container images" navíc nastavuje zrcadlo démonu Dockeru
+  pro obrazy šablon a pro Trivy; démon se při nedostupnosti vrátí k Docker
+  Hubu. Změna zatím není ověřena během běhu CI na GitHubu.
 - [ ] GitLab, Kubernetes/microVM, marketplace a enterprise HA zůstávají mimo
   aktuální dokončovací scope.
 
@@ -575,7 +575,9 @@ ve stagingu.
    jen po úplné kompenzaci. Lease recovery, workspace přehled, CAS cleanup a
    omezený idempotentní retry jsou dokončeny. Ověřený GitHub Actions artifact
   handoff, durable S3-compatible object storage, rehydratace a retention jsou
-  také hotové; zbývá agent transport a reálný deploy profil pro veřejný SaaS.
+  také hotové. Agent transport je podle ADR-133 ověřen naživo: 9. října 2026
+  prošlo nasazení z object store na VM s Agentem bez Docker daemonu v control
+  plane. Zbývá reálný deploy profil pro veřejný SaaS.
 5. Potom dokončit migrace v cílových prostředích, živý GitHub App E2E a browser
    acceptance: login, instalace pro vybrané repo, create/import, CI, odebrání
    instalace, rename ownera a dvě repa se stejným názvem.
@@ -964,7 +966,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
   připojení a lifecycle akce jsou v rozbalovacím detailu. Uživatelský termín je
   `Workspace access`, zatímco `allocation` zůstává přesným interním názvem.
 
-1. TODO **7a — append-only audit události.** Zavést jednotný workspace-scoped
+1. ✅ **7a — append-only audit události.** Zavést jednotný workspace-scoped
    záznam aktéra, akce, resource identity, výsledku a času bez ukládání secretů.
    Napojit nejdřív bezpečnostně důležité změny: členství/role, projekt
    create/import/delete, target a allocation, environment target, promotion,
