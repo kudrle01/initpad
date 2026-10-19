@@ -55,6 +55,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # Docker Hub limits anonymous pulls and a 429 failed this build once. The
+      # pinned digests are the same on the mirror; the daemon falls back to
+      # Docker Hub for anything the mirror does not have.
+      - name: Pull Docker Hub images through a mirror
+        run: |
+          sudo mkdir -p /etc/docker
+          echo '{"registry-mirrors":["https://mirror.gcr.io"]}' | sudo tee /etc/docker/daemon.json >/dev/null
+          sudo systemctl restart docker
+
       - name: Build platform runtime images
         run: |
           docker build --pull -f apps/api/Dockerfile -t initpad-api:acceptance .
@@ -68,7 +77,7 @@ jobs:
       - name: Scan platform images and template dependencies
         shell: bash
         env:
-          TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+          TRIVY_IMAGE: mirror.gcr.io/aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
         run: |
           set -euo pipefail
           trivy() {
