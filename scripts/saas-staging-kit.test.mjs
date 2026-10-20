@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import test from 'node:test';
 
 const example = readFileSync('deploy/.env.saas.example', 'utf8');
@@ -7,6 +7,11 @@ const agent = readFileSync('deploy/staging/infisical-agent.example.yaml', 'utf8'
 const secretsCompose = readFileSync('deploy/staging/secrets.compose.yml', 'utf8');
 const edgeCompose = readFileSync('deploy/staging/edge.compose.yml', 'utf8');
 const runbook = readFileSync('deploy/SAAS_STAGING.md', 'utf8');
+const collector = readFileSync('deploy/staging/otel-collector.yaml', 'utf8');
+const alertRules = readFileSync('deploy/staging/alert-rules.yaml', 'utf8');
+const alertTests = readFileSync('deploy/staging/alert-rules.test.yaml', 'utf8');
+const observability = readFileSync('docs/OBSERVABILITY.md', 'utf8');
+const egress = readFileSync('deploy/staging/egress-firewall.sh', 'utf8');
 
 const SECRETS_DIRECTORY = '/secure/runtime/secrets/';
 // Files consumed only by the edge services, not by the SaaS profile itself.
@@ -81,7 +86,7 @@ test('passes the tunnel token as a file and joins the SaaS control network', () 
   assert.match(example, /^OTEL_EXPORTER_OTLP_ENDPOINT=http:\/\/otel-collector:4318$/m);
   assert.match(edgeCompose, /^ {2}otel-collector:$/m);
   assert.match(edgeCompose, /external: true\n\s+name: initpad-saas_control/);
-  assert.match(edgeCompose, /\.\.\/observability\/otel-collector\.example\.yaml:/);
+  assert.match(edgeCompose, /- \.\/otel-collector\.yaml:\/etc\/otelcol-contrib\/config\.yaml:ro/);
   assert.match(edgeCompose, /- \/secure\/runtime\/secrets\/otel_collector\.env/);
 });
 
@@ -119,4 +124,82 @@ test('keeps the Grafana dashboard on the metrics and labels the API emits', () =
       }
     }
   }
+});
+
+test('collects only the SaaS project logs read-only and without the Docker socket', () => {
+  assert.match(edgeCompose, /- \/var\/lib\/docker\/containers:\/var\/lib\/docker\/containers:ro/);
+  assert.match(edgeCompose, /INITPAD_PUBLIC_URL: \$\{INITPAD_PUBLIC_URL:\?/);
+  assert.match(collector, /attributes\.attrs\["com\.docker\.compose\.project"\] != "initpad-saas"/);
+  // The daemon labels in the runbook are what the collector filters on.
+  assert.match(runbook, /"labels": "com\.docker\.compose\.project,com\.docker\.compose\.service"/);
+  assert.match(
+    runbook,
+    /--env-file \/secure\/runtime\/initpad-saas\.env -f staging\/edge\.compose\.yml up -d/,
+  );
+});
+
+test('alerts exactly as documented, on signals the API and collector emit', () => {
+  const documented = [...observability.matchAll(/^\| `(InitPad[A-Za-z]+)`/gm)].map((m) => m[1]);
+  const defined = [...alertRules.matchAll(/^ {6}- alert: (\S+)$/gm)].map((m) => m[1]);
+  assert.equal(documented.length, 6);
+  assert.deepEqual([...new Set(defined)].sort(), [...documented].sort());
+  for (const name of documented) {
+    assert.match(alertTests, new RegExp(`alertname: ${name}$`, 'm'), `${name} has no rule test`);
+    assert.match(runbook, new RegExp(`^\\| \`${name}\` \\|`, 'm'), `${name} has no runbook row`);
+  }
+  assert.equal(
+    alertRules.match(/runbook: deploy\/SAAS_STAGING\.md#incident-runbook/g)?.length,
+    defined.length,
+  );
+  assert.match(runbook, /^## Incident runbook$/m);
+
+  // Every counted event is one the API logs, and every alerted event is counted.
+  const sources = [
+    'apps/api/src/mail/mail-delivery.service.ts',
+    'apps/api/src/projects/projects-lifecycle.service.ts',
+  ]
+    .map((path) => readFileSync(path, 'utf8'))
+    .join('\n');
+  const counted = [...collector.matchAll(/attributes\["event"\] == "([^"]+)"/g)].map((m) => m[1]);
+  const alerted = [...alertRules.matchAll(/event="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(alerted)].sort(), [...counted].sort());
+  for (const event of counted)
+    assert.ok(sources.includes(`'${event}'`), `${event} is never logged`);
+
+  const metrics = new Set(
+    [...alertRules.matchAll(/(initpad_[a-z_]+|httpcheck_[a-z_]+)/g)].map((m) => m[1]),
+  );
+  assert.deepEqual([...metrics].sort(), [
+    'httpcheck_status',
+    'initpad_http_request_duration',
+    'initpad_http_requests',
+    'initpad_http_status_class',
+    'initpad_log_events',
+  ]);
+  assert.match(collector, /initpad\.log\.events:/);
+  assert.match(
+    collector,
+    /http_check\/readiness:[\s\S]*\$\{env:INITPAD_PUBLIC_URL\}\/api\/health\/ready/,
+  );
+});
+
+test('keeps the staging egress default-deny and refuses internal ranges', () => {
+  assert.ok(statSync('deploy/staging/egress-firewall.sh').mode & 0o111);
+  assert.ok(statSync('deploy/staging/edge-check.sh').mode & 0o111);
+  assert.match(egress, /^set -euo pipefail$/m);
+  for (const range of [
+    '10.0.0.0/8',
+    '169.254.0.0/16',
+    '172.16.0.0/12',
+    '192.168.0.0/16',
+    'fc00::/7',
+  ]) {
+    assert.ok(egress.includes(range), `${range} is not refused`);
+  }
+  // Each chain ends in an explicit drop, so an unknown port never passes.
+  assert.equal(egress.match(/"\$tool" -A "\$chain" -j DROP/g)?.length, 1);
+  assert.match(egress, /finish_chain "\$tool" "\$CONTAINERS"/);
+  assert.match(egress, /finish_chain "\$tool" "\$HOST"/);
+  const containerPorts = egress.match(/CONTAINER_TCP_PORTS:-([0-9,]+)/)[1].split(',');
+  assert.deepEqual(containerPorts, ['443', '587', '5432', '6543']);
 });

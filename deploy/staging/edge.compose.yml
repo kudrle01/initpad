@@ -32,8 +32,15 @@ services:
     # Backend endpoint and authorization header, rendered by the secrets agent.
     env_file:
       - /secure/runtime/secrets/otel_collector.env
+    environment:
+      # The probed public origin, from the env file passed with --env-file.
+      INITPAD_PUBLIC_URL: ${INITPAD_PUBLIC_URL:?pass the SaaS env file with --env-file}
+    # Container log files are readable by root only; capabilities stay dropped.
+    user: '0:0'
     volumes:
-      - ../observability/otel-collector.example.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - collector-storage:/var/lib/otelcol/storage
     networks: [control]
     read_only: true
     cap_drop: [ALL]
@@ -42,6 +49,9 @@ services:
     cpus: 0.5
     pids_limit: 200
     restart: unless-stopped
+
+volumes:
+  collector-storage: {}
 
 networks:
   control:

@@ -1,0 +1,16 @@
+# Reapplies the staging egress rules after boot and after every Docker restart.
+# Stopping the unit keeps the rules; only egress-firewall.sh remove lifts them.
+# Install with the path of the release checkout (deploy/SAAS_STAGING.md).
+[Unit]
+Description=InitPad staging default-deny egress
+After=docker.service network-online.target
+Wants=network-online.target
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=INITPAD_CHECKOUT/deploy/staging/egress-firewall.sh apply
+
+[Install]
+WantedBy=multi-user.target docker.service

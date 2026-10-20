@@ -1,0 +1,124 @@
+# Collector of the ADR-132 staging. It extends the neutral example in
+# ../observability with the three signals the alert rules in alert-rules.yaml
+# need: the JSON logs of the SaaS containers, a readiness probe of the public
+# origin and a count of the structured events that page the operator.
+
+extensions:
+  # Remembers log offsets so a collector restart neither skips nor repeats lines.
+  file_storage:
+    directory: /var/lib/otelcol/storage
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Docker writes one JSON file per container. The daemon adds the Compose
+  # labels to every line (deploy/SAAS_STAGING.md, "Sběr logů"), so lines of
+  # other projects on the host are dropped before they leave the collector.
+  file_log/containers:
+    include: [/var/lib/docker/containers/*/*-json.log]
+    start_at: end
+    storage: file_storage
+    include_file_path: false
+    operators:
+      - type: json_parser
+        id: docker
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: '2006-01-02T15:04:05.999999999Z07:00'
+      - type: filter
+        expr: 'attributes.attrs == nil or attributes.attrs["com.docker.compose.project"] != "initpad-saas"'
+      - type: move
+        from: attributes.attrs["com.docker.compose.service"]
+        to: resource["initpad.compose.service"]
+      # Same service name as the API's traces and metrics, so the backend
+      # files all three signals of one service together.
+      - type: add
+        field: resource["service.name"]
+        value: EXPR("initpad-" + resource["initpad.compose.service"])
+      - type: move
+        from: attributes.log
+        to: body
+      - type: remove
+        field: attributes.attrs
+      - type: remove
+        field: attributes.time
+      # API lines are the redacted JSON records of structured-logger.ts. Their
+      # fields become attributes, the record keeps its own level.
+      - type: json_parser
+        id: record
+        if: 'body matches "^\\s*\\{"'
+        parse_from: body
+        parse_to: attributes
+        severity:
+          parse_from: attributes.level
+
+  # Readiness of the public origin through the edge, the same path users take.
+  http_check/readiness:
+    collection_interval: 30s
+    targets:
+      - endpoint: ${env:INITPAD_PUBLIC_URL}/api/health/ready
+        method: GET
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+  # The count connector emits delta sums; the Prometheus backend stores
+  # cumulative ones.
+  delta_to_cumulative: {}
+
+connectors:
+  count/events:
+    logs:
+      initpad.log.events:
+        description: Structured API events that the staging alert rules count.
+        conditions:
+          - 'attributes["event"] == "mail.outbox.failed"'
+          - 'attributes["event"] == "control_plane.leader.acquired"'
+        attributes:
+          - key: event
+
+exporters:
+  otlp_http/backend:
+    endpoint: ${env:INITPAD_OBSERVABILITY_BACKEND_OTLP_ENDPOINT}
+    headers:
+      Authorization: ${env:INITPAD_OBSERVABILITY_BACKEND_AUTHORIZATION}
+    sending_queue:
+      enabled: true
+      queue_size: 2048
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 5m
+
+service:
+  extensions: [file_storage]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/backend]
+    metrics:
+      receivers: [otlp, http_check/readiness]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/backend]
+    metrics/events:
+      receivers: [count/events]
+      processors: [memory_limiter, delta_to_cumulative, batch]
+      exporters: [otlp_http/backend]
+    logs:
+      receivers: [file_log/containers]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/backend, count/events]
+  telemetry:
+    logs:
+      level: info

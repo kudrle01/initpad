@@ -29,9 +29,9 @@ services:
 Od ADR-144 web spouští nginx bez roota a profil mu žádnou capability nevrací.
 Obraz webu a `saas.compose.yml` proto musí pocházet ze stejného releasu.
 
-Postup nepokrývá default-deny egress ani sběr JSON logů kontejnerů. Oba body
-zůstávají samostatnými gate podle [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md) a
-[pravidel observability](../docs/OBSERVABILITY.md).
+Od [ADR-158](../docs/adr/ADR-158.md) kit obsahuje také default-deny egress,
+sběr JSON logů kontejnerů, pravidla alertů a kontrolu edge. Tyto části jsou
+ověřené pouze lokálně a testy; na stagingu zatím neproběhly.
 
 ## Účty a hodnoty
 
@@ -95,6 +95,22 @@ Všechny příkazy spouštějte jako root. Adresář se secrety je čitelný pou
 roota, proto jej Compose ani preflight pod jiným uživatelem nepřečtou.
 
 1. Nainstalujte Docker Engine s pluginem Compose podle oficiální dokumentace.
+   Před prvním spuštěním kontejnerů doplňte do `/etc/docker/daemon.json`
+   labely pro sběr logů a jejich rotaci a restartujte Docker:
+
+   ```json
+   {
+     "log-driver": "json-file",
+     "log-opts": {
+       "labels": "com.docker.compose.project,com.docker.compose.service",
+       "max-size": "20m",
+       "max-file": "5"
+     }
+   }
+   ```
+
+   Nastavení platí jen pro nově vytvořené kontejnery. Kontejner vytvořený
+   dříve je nutné vytvořit znovu, jinak jeho logy collector zahodí.
 2. Naklonujte repozitář na tag nasazovaného releasu a přejděte do `deploy/`.
 3. Vytvořte runtime adresáře mimo checkout:
 
@@ -146,10 +162,11 @@ roota, proto jej Compose ani preflight pod jiným uživatelem nepřečtou.
    předchozí krok:
 
    ```bash
-   docker compose -f staging/edge.compose.yml up -d
+   docker compose --env-file /secure/runtime/initpad-saas.env -f staging/edge.compose.yml up -d
    ```
 
-   Dokud se tunel nepřipojí, vrací veřejný origin chybu Cloudflare 1033.
+   Env soubor dodá collectoru veřejný origin pro kontrolu readiness. Dokud se
+   tunel nepřipojí, vrací veřejný origin chybu Cloudflare 1033.
 
 5. Pokračujte kontrolou závislostí a dalšími kroky ze
    [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md).
@@ -164,6 +181,111 @@ nezobrazuje logy ani traces a jeho prahy odpovídají výchozím alertům z
 [pravidel observability](../docs/OBSERVABILITY.md#základ-alertů). API odesílá
 metriky jednou za minutu, proto se první hodnoty objeví se zpožděním a jen
 tehdy, když na API přicházejí požadavky.
+
+## Sběr logů
+
+Collector z [`staging/otel-collector.yaml`](./staging/otel-collector.yaml) čte
+soubory logů kontejnerů pouze pro čtení a ponechá jen řádky projektu
+`initpad-saas`. Záznamy API rozloží na atributy včetně `requestId`, `traceId`
+a `event`, řádky webu ponechá jako text. Logy odchází přes OTLP do Loki
+stacku. Ověření po startu, bez výpisu obsahu:
+
+```bash
+docker compose --env-file /secure/runtime/initpad-saas.env -f staging/edge.compose.yml logs otel-collector | grep -ci error
+```
+
+Každý řádek dostane `service.name` podle služby, u API tedy `initpad-api`
+stejně jako jeho traces a metriky. V Grafaně v **Explore** nad Loki zdrojem
+musí dotaz `{service_name="initpad-api"}` vracet záznamy s polem `event`.
+
+## Alerty
+
+Pravidla v [`staging/alert-rules.yaml`](./staging/alert-rules.yaml) odpovídají
+[základu alertů](../docs/OBSERVABILITY.md#základ-alertů). Lokálně je
+otestujte a do Grafana Cloud nahrajte nástrojem `mimirtool`:
+
+```bash
+cd staging
+docker run --rm --entrypoint promtool -v "$PWD:/w" -w /w prom/prometheus:v3.5.0 test rules alert-rules.test.yaml
+mimirtool rules load alert-rules.yaml \
+  --address=<Prometheus URL stacku> --id=<ID uživatele Prometheus> --key=<token s rules:write>
+```
+
+Token s právem `rules:write` vytvořte jen pro tento krok a poté jej
+zneplatněte. V **Alerting → Contact points** nastavte e-mail provozovatele a
+ve výchozí notifikační politice jej zvolte jako příjemce. Alert
+`InitPadTelemetryGap` se zdrojem `scope: instance` se ozve i po plánovaném
+restartu repliky; před jeho uzavřením ověřte, že nové ID instance posílá data.
+
+Grafana Cloud Free drží metriky, logy i traces kratší dobu, než uvádí
+výchozí minimum, a retenci neumožňuje změnit. Do záznamu acceptance uveďte
+skutečnou retenci stacku a ověřte, že nejstarší testovací data po ní zmizela.
+
+## Egress firewall
+
+[`staging/egress-firewall.sh`](./staging/egress-firewall.sh) vynucuje
+default-deny egress podle ADR-158. Spusťte jej až po startu Dockeru:
+
+```bash
+./staging/egress-firewall.sh apply
+./staging/egress-firewall.sh verify /secure/runtime/initpad-saas.env
+./saas-acceptance.sh dependencies /secure/runtime/initpad-saas.env
+```
+
+`verify` vypíše jen dosažitelnost testovacích cílů z hostu a z kontejneru v
+síti control plane. Následná kontrola závislostí musí projít beze změny;
+selže-li, ověřte port databáze a SMTP relay a upravte proměnné
+`INITPAD_EGRESS_*` popsané v nápovědě skriptu. Pravidla obnoví po startu i
+restartu Dockeru systemd unit:
+
+```bash
+sed "s#INITPAD_CHECKOUT#$(git rev-parse --show-toplevel)#" staging/initpad-egress.service \
+  > /etc/systemd/system/initpad-egress.service
+systemctl daemon-reload && systemctl enable --now initpad-egress.service
+```
+
+Odmítnutá spojení jsou v logu jádra s prefixem `initpad-egress-drop`
+(`journalctl -k | grep initpad-egress-drop`). `remove` pravidla odstraní.
+
+## Edge a WAF
+
+Cloudflare Free poskytuje DDoS ochranu L3 až L7 automaticky a bez nastavení.
+V zóně domény nastavte:
+
+1. **Security → WAF → Managed rules:** zapnutý *Cloudflare Free Managed
+   Ruleset*.
+2. **Security → WAF → Rate limiting rules:** jedno pravidlo pro cestu
+   začínající `/api/`, počítání podle IP, 100 požadavků za 10 sekund, akce
+   *Block* na 10 sekund. Bezplatný plán dovoluje jediné pravidlo s pevnou
+   periodou; podmínky před nastavením ověřte, v roce 2026 se několikrát měnily.
+3. **SSL/TLS:** režim *Full* a *Always Use HTTPS*.
+
+Z vlastního počítače, nikoli z hostu, pak spusťte:
+
+```bash
+./staging/edge-check.sh https://<origin> <veřejná IP serveru>
+```
+
+Kontrola ověří odpověď přes edge, zavřené porty originu, odmítnutí těla nad
+1 MiB a blokaci dávky pravidlem na edge. Dávka dočasně zablokuje vaši adresu
+na deset sekund.
+
+## Incident runbook
+
+Postup se řídí [obecným postupem při incidentu](../docs/OBSERVABILITY.md#postup-při-incidentu).
+Na tomto stagingu platí:
+
+| Alert | První kontrola na hostu |
+| ----- | ----------------------- |
+| `InitPadApiUnavailable` | `docker compose --env-file /secure/runtime/initpad-saas.env -f saas.compose.yml ps`, stav tunelu v Cloudflare a `./saas-acceptance.sh dependencies` |
+| `InitPadHighErrorRate` | logy API s `level` `error` v Grafaně, seskupené podle `event` |
+| `InitPadHighLatency` | traces nejpomalejších požadavků; databáze Supabase a R2 mají vlastní stavové stránky |
+| `InitPadTelemetryGap` | stav kontejneru `otel-collector`, jeho log a platnost tokenu v `otel_collector.env` |
+| `InitPadMailOutboxFailed` | stav Breva a `./saas-acceptance.sh email`; obsah zpráv nevypisujte |
+| `InitPadLeaderChurn` | restarty replik (`docker events --since 30m`) a dostupnost databáze |
+
+Každý incident zapište s časem, verzí releasu, příčinou a nápravou do
+`docs/RELEASE_READINESS.md` nebo roadmapy, bez secretů a těl požadavků.
 
 ## Rotace secretu
 

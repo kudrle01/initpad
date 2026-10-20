@@ -14,7 +14,7 @@ processors:
     timeout: 5s
 
 exporters:
-  otlphttp/backend:
+  otlp_http/backend:
     endpoint: ${env:INITPAD_OBSERVABILITY_BACKEND_OTLP_ENDPOINT}
     headers:
       Authorization: ${env:INITPAD_OBSERVABILITY_BACKEND_AUTHORIZATION}
@@ -32,11 +32,11 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlphttp/backend]
+      exporters: [otlp_http/backend]
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlphttp/backend]
+      exporters: [otlp_http/backend]
   telemetry:
     logs:
       level: info

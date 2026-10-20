@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Black-box evidence for the edge of the ADR-132 staging, run from the
+# operator's machine, never from the staging host. It proves that the public
+# origin answers only through the edge, that the origin server accepts no
+# direct web traffic, that oversized bodies stop before the API and that the
+# edge rate-limiting rule blocks a burst before it reaches the API.
+set -euo pipefail
+
+ORIGIN=${1:-}
+SERVER_IP=${2:-}
+BURST=${INITPAD_EDGE_BURST:-300}
+# Path matched by the edge rate-limiting rule (deploy/SAAS_STAGING.md).
+RATE_PATH=${INITPAD_EDGE_RATE_PATH:-/api/health/live}
+
+pass() { printf '\033[1;32m✔\033[0m %s\n' "$*"; }
+say()  { printf '\033[1;36m›\033[0m %s\n' "$*"; }
+fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+
+[[ $ORIGIN =~ ^https://[A-Za-z0-9.-]+$ && -n $SERVER_IP ]] || {
+  echo 'Usage: ./edge-check.sh https://<public origin> <public IP of the staging server>' >&2
+  exit 2
+}
+command -v curl >/dev/null || fail 'curl is required.'
+
+say "Public origin $ORIGIN"
+headers=$(curl -sS -D - -o /dev/null --max-time 10 "$ORIGIN/api/health/ready")
+grep -qi '^cf-ray:' <<<"$headers" || fail 'The origin did not answer through the Cloudflare edge.'
+grep -qi '^x-initpad-instance:' <<<"$headers" || fail 'The edge did not reach the API.'
+pass 'Readiness answers through the edge and reaches the API'
+
+say "Direct access to $SERVER_IP"
+for port in 80 443 8080 3000 4318; do
+  if timeout 5 bash -c "exec 3<>/dev/tcp/$SERVER_IP/$port" 2>/dev/null; then
+    fail "Port $port of the origin server accepts connections; the edge can be bypassed."
+  fi
+  pass "Port $port of the origin server refuses connections"
+done
+
+say 'Request body limit'
+# The bundled web proxy keeps the nginx default of 1 MiB for every API route.
+status=$(head -c 2097152 /dev/zero | curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+  -X POST -H 'Content-Type: application/json' --data-binary @- "$ORIGIN/api/auth/login")
+[[ $status == 413 ]] || fail "A 2 MiB body returned $status, expected 413."
+pass 'A 2 MiB body is refused with 413 before the API'
+
+say "Edge rate limit: $BURST requests to $RATE_PATH"
+# The API's own limiter answers with X-InitPad-Instance; only a 429 without it
+# comes from the edge rule.
+edge_blocked=0
+for _ in $(seq "$BURST"); do
+  response=$(curl -sS -D - -o /dev/null --max-time 10 "$ORIGIN$RATE_PATH" || true)
+  if grep -q '^HTTP/[0-9.]* 429' <<<"$response" && ! grep -qi '^x-initpad-instance:' <<<"$response"; then
+    edge_blocked=$((edge_blocked + 1))
+  fi
+done
+((edge_blocked > 0)) || fail "No request was blocked by the edge; check the rate-limiting rule."
+pass "The edge blocked $edge_blocked of $BURST requests without reaching the API"
+
+pass 'Edge checks passed; record the output, it contains no credentials'

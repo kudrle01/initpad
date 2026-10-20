@@ -74,7 +74,10 @@ Názvy alertů jsou stabilní, i když se jazyk dotazů backendu liší:
 | `InitPadLeaderChurn`      | více než 3 převzetí role leadera za 15 minut                         | zkontrolujte připojení k databázi a restarty replik               |
 
 Prahy upravujte podle měření ze stagingu a počáteční politiku v produkci tiše
-neoslabujte.
+neoslabujte. Pro staging podle ADR-132 jsou alerty zapsané v
+[`deploy/staging/alert-rules.yaml`](../deploy/staging/alert-rules.yaml) a
+`InitPadMailOutboxFailed` a `InitPadLeaderChurn` počítá collector z událostí
+`mail.outbox.failed` a `control_plane.leader.acquired` v logu API (ADR-158).
 
 ## Postup při incidentu
 

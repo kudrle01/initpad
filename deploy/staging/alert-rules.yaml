@@ -1,0 +1,92 @@
+# Alert rules of the ADR-132 staging in the Prometheus rule format, loaded into
+# the Grafana Cloud metrics backend with mimirtool (deploy/SAAS_STAGING.md).
+# Names and thresholds follow docs/OBSERVABILITY.md. The backend appends a type
+# or unit suffix to OTLP metric names, hence the __name__ patterns.
+
+groups:
+  - name: initpad-staging
+    rules:
+      # http_check/readiness in otel-collector.yaml probes the public origin.
+      # A stopped collector sends no probe at all and raises only the gap alert.
+      - alert: InitPadApiUnavailable
+        expr: max(httpcheck_status{http_status_class="2xx"}) < 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Readiness of the public origin fails.
+          runbook: deploy/SAAS_STAGING.md#incident-runbook
+
+      - alert: InitPadHighErrorRate
+        expr: |
+          sum(increase({__name__=~"initpad_http_requests(_total)?"}[5m])) >= 20
+          and
+          sum(rate({__name__=~"initpad_http_requests(_total)?",initpad_http_status_class="5xx"}[5m]))
+            / sum(rate({__name__=~"initpad_http_requests(_total)?"}[5m])) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 2 % of API responses are 5xx.
+          runbook: deploy/SAAS_STAGING.md#incident-runbook
+
+      - alert: InitPadHighLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate({__name__=~"initpad_http_request_duration(_milliseconds)?_bucket"}[5m]))) > 2000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: The API p95 latency is above 2 seconds.
+          runbook: deploy/SAAS_STAGING.md#incident-runbook
+
+      # No API replica exports anything, for example a stopped collector.
+      - alert: InitPadTelemetryGap
+        expr: absent_over_time({__name__=~"initpad_http_requests(_total)?"}[5m])
+        labels:
+          severity: warning
+          scope: all
+        annotations:
+          summary: No API telemetry arrived for 5 minutes.
+          runbook: deploy/SAAS_STAGING.md#incident-runbook
+
+      # One replica went silent while others still export. A replaced replica
+      # has a new instance id, so the alert also follows every restart for up
+      # to 30 minutes; confirm the new id before ignoring it.
+      - alert: InitPadTelemetryGap
+        expr: |
+          max by (instance) (max_over_time({__name__=~"initpad_http_requests(_total)?"}[30m]))
+          unless
+          max by (instance) (max_over_time({__name__=~"initpad_http_requests(_total)?"}[5m]))
+        labels:
+          severity: warning
+          scope: instance
+        annotations:
+          summary: API instance {{ $labels.instance }} stopped exporting telemetry.
+          runbook: deploy/SAAS_STAGING.md#incident-runbook
+
+      # The count connector exports a point only when matching log lines arrive,
+      # so any point in the window is a terminal failure.
+      - alert: InitPadMailOutboxFailed
+        expr: |
+          sum(count_over_time({__name__=~"initpad_log_events(_total)?",event="mail.outbox.failed"}[10m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: An e-mail exhausted its delivery attempts.
+          runbook: deploy/SAAS_STAGING.md#incident-runbook
+
+      # Each point raises the cumulative count by at least one event, so the
+      # spread of the window plus one bounds the takeovers from below.
+      - alert: InitPadLeaderChurn
+        expr: |
+          sum(
+            max_over_time({__name__=~"initpad_log_events(_total)?",event="control_plane.leader.acquired"}[15m])
+            - min_over_time({__name__=~"initpad_log_events(_total)?",event="control_plane.leader.acquired"}[15m])
+            + 1
+          ) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: The control-plane leader changed more than 3 times in 15 minutes.
+          runbook: deploy/SAAS_STAGING.md#incident-runbook
