@@ -47,6 +47,14 @@ export class ProjectsLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (!claim || this.maintenance) return;
 
     const becameLeader = this.leaderGeneration !== claim.generation;
+    // The InitPadLeaderChurn alert counts these events (docs/OBSERVABILITY.md).
+    if (becameLeader) {
+      this.logger.log({
+        event: 'control_plane.leader.acquired',
+        lease: PROJECTS_LEASE_NAME,
+        generation: claim.generation,
+      });
+    }
     const maintenance = this.runMaintenance(becameLeader, claim.generation);
     this.maintenance = maintenance;
     await maintenance.finally(() => {

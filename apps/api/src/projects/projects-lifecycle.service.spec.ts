@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ProjectsLifecycleService } from './projects-lifecycle.service';
 
 describe('ProjectsLifecycleService', () => {
@@ -141,15 +142,23 @@ describe('ProjectsLifecycleService', () => {
       acquire: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ generation: 2 }),
     };
     const lifecycle = new ProjectsLifecycleService(projects as never, leases as never);
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
 
     await lifecycle.onModuleInit();
     expect(projects.reconcilePersistedState).not.toHaveBeenCalled();
     expect(projects.runEnvironmentExpiry).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
 
     await jest.advanceTimersByTimeAsync(60_000);
     expect(projects.reconcilePersistedState).toHaveBeenCalledTimes(1);
     expect(projects.runArtifactRetention).toHaveBeenCalledTimes(1);
     expect(projects.runEnvironmentExpiry).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith({
+      event: 'control_plane.leader.acquired',
+      lease: 'projects-lifecycle',
+      generation: 2,
+    });
+    log.mockRestore();
     lifecycle.onModuleDestroy();
   });
 
