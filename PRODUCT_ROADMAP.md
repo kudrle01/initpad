@@ -243,9 +243,10 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   - SaaS: profil nespouští součásti vázané na Giteu a nevyžaduje jejich dva
     secrety (ADR-153).
   - Test šifrované zálohy se skutečným nástrojem `age` se přeskakuje všude,
-    kde `age` není nainstalovaný. Přeskočil se při lokálním release gate a CI
-    workflow jej neinstaluje, takže ADR-151 zatím nemá doložený průchod
-    zašifrování a obnovy.
+    kde `age` není nainstalovaný. Od commitu c568a06 jej CI instaluje a běh
+    `Verify repository` nad `main` z 19. října 2026 test zašifrování a obnovy
+    (ADR-151) provedl bez přeskočení. Jde o automatizovaný důkaz, živá obnova
+    šifrované zálohy zůstává součástí průchodu podepsanou aktualizací.
   - Sken obrazů před vydáním zachytil v Docker CLI Supervisoru další CVE ze
     stejné opravy Go, které databáze ohodnotila až během dne. Dostalo třetí
     výjimku do 9. listopadu 2026; dokud se nepřipne build CLI s Go 1.26.9,
@@ -311,6 +312,11 @@ Jde o budoucí práci mimo rozsah diplomové práce.
     web proxy a API. Preflight i API fail-closed vyžadují přesně dva důvěryhodné
     hopy, aby per-IP limiter neviděl edge a současně nedůvěřoval klientskému
     vstupu navíc; edge musí forwarding hlavičky nahradit.
+  - [x] Připravit pro sestavu ADR-132 default-deny egress podle portů se
+    zákazem privátních a metadata rozsahů, systemd obnovu pravidel a kontrolu
+    edge z počítače provozovatele (ADR-158). Skript prošel `apply`, opakovaným
+    `apply`, sondami a `remove` v izolovaném síťovém namespace; kontraktní
+    test hlídá výchozí porty a zakázané rozsahy. Na stagingu neběžel.
   - [ ] Na konkrétním staging provideru vynutit default-deny egress allow-list,
     zákaz obejití originu, connection/body limity a volumetrickou ochranu a
     uložit provozní důkaz bez provider credentials.
@@ -362,6 +368,13 @@ Jde o budoucí práci mimo rozsah diplomové práce.
   - [x] Doplnit opt-in OTLP/HTTP traces a metrics do API, nízkokardinalitní
     request metriky, trace-log korelaci, unikátní instance identity a povinný
     collector endpoint v SaaS runtime kontraktu (ADR-130).
+  - [x] Připravit staging collector se sběrem JSON logů kontejnerů bez Docker
+    socketu, readiness probe veřejného originu a počítáním událostí
+    `mail.outbox.failed` a nové `control_plane.leader.acquired`, šest pravidel
+    alertů s testy pro `promtool` a incident runbook v
+    `deploy/SAAS_STAGING.md` (ADR-158). Konfiguraci validoval připnutý obraz
+    collectoru a lokální funkční test s druhým collectorem jako backendem;
+    pravidla prošla `promtool check rules` i `test rules`. Na stagingu neběžel.
   - [ ] Napojit konkrétní staging collector/backend, runtime JSON log
     collector, retenční mazání, přístupové role a alert rules; pak provést
     dvoureplikovou telemetry-gap a incident acceptance z `docs/OBSERVABILITY.md`.
