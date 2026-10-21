@@ -45,12 +45,18 @@ import {
   scmStatusError,
 } from '../scm-http';
 import { adaptWorkflowForGitHub } from './github-workflow';
+import { ReadCache } from './github-read-cache';
 import { GitHubInstallationService } from './github-installation.service';
 import { GitHubUserCredentialService } from './github-user-credential.service';
 
 // Upper bound of extra requests one repository listing may spend on telling
 // empty repositories from fresh ones.
 const EMPTY_PROBE_LIMIT = 20;
+// Read caches (ADR-159). They only save API calls; see ReadCache.
+const ETAG_CACHE_ENTRIES = 1000;
+const ETAG_CACHE_TTL_MS = 60 * 60_000;
+const TERMINAL_CACHE_ENTRIES = 2000;
+const TERMINAL_CACHE_TTL_MS = 15 * 60_000;
 const READ_CONTENTS = { metadata: 'read', contents: 'read' };
 const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
 const READ_CHECKS = { metadata: 'read', contents: 'read', checks: 'read' };
@@ -78,6 +84,17 @@ const exec = promisify(execFile);
 @Injectable()
 export class GitHubScmProvider implements ScmProvider {
   private readonly logger = new Logger('GitHubScmProvider');
+  // Last body and ETag per read URL, for conditional requests. A 304 is not
+  // counted against the installation rate limit.
+  private readonly etagCache = new ReadCache<{ etag: string; body: unknown }>(
+    ETAG_CACHE_ENTRIES,
+    ETAG_CACHE_TTL_MS,
+  );
+  // Job statuses of runs whose jobs have all completed; they no longer change.
+  private readonly terminalStatuses = new ReadCache<ScmCommitStatus[]>(
+    TERMINAL_CACHE_ENTRIES,
+    TERMINAL_CACHE_TTL_MS,
+  );
 
   constructor(
     private readonly installations: GitHubInstallationService,
@@ -105,7 +122,13 @@ export class GitHubScmProvider implements ScmProvider {
   private async gh(
     path: string,
     token: string,
-    init?: { method?: string; body?: unknown; operation?: string; timeoutMs?: number },
+    init?: {
+      method?: string;
+      body?: unknown;
+      operation?: string;
+      timeoutMs?: number;
+      headers?: Record<string, string>;
+    },
   ): Promise<Response> {
     return scmFetch(
       'GitHub',
@@ -117,12 +140,29 @@ export class GitHubScmProvider implements ScmProvider {
           Authorization: `Bearer ${token}`,
           Accept: 'application/vnd.github+json',
           'X-GitHub-Api-Version': '2022-11-28',
+          ...init?.headers,
           ...(init?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
         ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       },
       init?.timeoutMs,
     );
+  }
+
+  // GET returning parsed JSON through a conditional request. The cached body is
+  // reused only when GitHub confirms it with 304 for this very token, so access
+  // checks are unchanged. Returns null for any other non-2xx answer.
+  private async ghJson<T>(path: string, token: string): Promise<T | null> {
+    const cached = this.etagCache.get(path);
+    const res = await this.gh(path, token, {
+      ...(cached ? { headers: { 'If-None-Match': cached.etag } } : {}),
+    });
+    if (res.status === 304 && cached) return cached.body as T;
+    if (!res.ok) return null;
+    const body = (await res.json()) as T;
+    const etag = res.headers?.get('etag');
+    if (etag) this.etagCache.set(path, { etag, body });
+    return body;
   }
 
   // Maps a workspace role to a GitHub collaborator permission.
@@ -319,15 +359,16 @@ export class GitHubScmProvider implements ScmProvider {
     this.assertProvider(repository);
     try {
       const token = await this.token(repository);
-      const res = await this.gh(
+      const data = await this.ghJson<
+        Array<{
+          sha: string;
+          commit: { message: string; author?: { name?: string; date?: string } };
+        }>
+      >(
         `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/commits?per_page=${limit}`,
         token,
       );
-      if (!res.ok) return null;
-      const data = (await res.json()) as Array<{
-        sha: string;
-        commit: { message: string; author?: { name?: string; date?: string } };
-      }>;
+      if (!data) return null;
       return data.map((c) => ({
         sha: c.sha,
         message: c.commit.message,
@@ -347,6 +388,10 @@ export class GitHubScmProvider implements ScmProvider {
   ): Promise<ScmCommitStatus[] | null> {
     this.assertProvider(repository);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    // Completed runs never change, so their jobs are served without GitHub.
+    const terminalKey = `${repo}|${sha}|${preferredRunId ?? ''}`;
+    const terminal = this.terminalStatuses.get(terminalKey);
+    if (terminal) return terminal.map((status) => ({ ...status }));
     try {
       // Actions is the authoritative source for an Actions workflow. Unlike
       // Check Runs it is already required for artifact verification, and its
@@ -357,33 +402,28 @@ export class GitHubScmProvider implements ScmProvider {
         throw new Error('GitHub Actions run ID is invalid');
       }
       if (!runId) {
-        const runsResponse = await this.gh(
+        const runs = await this.ghJson<{ workflow_runs?: Array<{ id: number }> }>(
           `/repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${encodeURIComponent(sha)}&event=push&per_page=1`,
           actionsToken,
         );
-        if (runsResponse.ok) {
-          const runs = (await runsResponse.json()) as {
-            workflow_runs?: Array<{ id: number }>;
-          };
-          runId = runs.workflow_runs?.[0]?.id?.toString() ?? null;
-        }
+        if (runs) runId = runs.workflow_runs?.[0]?.id?.toString() ?? null;
       }
       if (runId) {
-        const jobsResponse = await this.gh(
-          `/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
-          actionsToken,
-        );
-        if (jobsResponse.ok) {
-          const data = (await jobsResponse.json()) as {
-            jobs?: Array<{
-              name?: string;
-              status?: string;
-              conclusion?: string | null;
-              html_url?: string | null;
-            }>;
-          };
-          const jobs = data.jobs ?? [];
-          if (jobs.length > 0) return jobs.map((job) => this.actionJobStatus(job));
+        const data = await this.ghJson<{
+          jobs?: Array<{
+            name?: string;
+            status?: string;
+            conclusion?: string | null;
+            html_url?: string | null;
+          }>;
+        }>(`/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`, actionsToken);
+        const jobs = data?.jobs ?? [];
+        if (jobs.length > 0) {
+          const statuses = jobs.map((job) => this.actionJobStatus(job));
+          if (jobs.every((job) => job.status === 'completed')) {
+            this.terminalStatuses.set(terminalKey, statuses);
+          }
+          return statuses;
         }
       }
     } catch {
@@ -701,7 +741,11 @@ export class GitHubScmProvider implements ScmProvider {
       token,
       { method: 'POST' },
     );
-    if (response.status === 201) return;
+    if (response.status === 201) {
+      // The run starts a new attempt, so its completed jobs are stale.
+      this.terminalStatuses.deleteByPrefix(`${repo}|`);
+      return;
+    }
     if (response.status === 403) {
       throw new Error(
         'GitHub App cannot re-run jobs. Set repository permission Actions to Read and write, then approve the installation update.',

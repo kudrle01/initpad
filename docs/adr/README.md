@@ -169,3 +169,4 @@ stabilní.
 | [ADR-156](./ADR-156.md) | Accepted | Aplikace odkazuje na samostatnou uživatelskou nápovědu |
 | [ADR-157](./ADR-157.md) | Accepted | Veřejný SaaS nenasazuje na SFTP hosting dostupný jen přes školní VPN |
 | [ADR-158](./ADR-158.md) | Accepted | Staging vynucuje egress podle portů a alertuje z vlastního collectoru |
+| [ADR-159](./ADR-159.md) | Accepted | Čtení commitů a stavu pipeline z GitHubu šetří limit instalace |

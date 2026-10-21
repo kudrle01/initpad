@@ -366,6 +366,79 @@ describe('GitHubScmProvider reads', () => {
     expect(fetchMock.mock.calls[0]?.[0]).not.toContain('/workflows/ci.yml/runs?');
   });
 
+  it('does not ask GitHub again for jobs of a completed run', async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ etag: '"j1"' }),
+      json: async () => ({
+        jobs: [{ name: 'build', status: 'completed', conclusion: 'success', html_url: 'u' }],
+      }),
+    }));
+    const { provider } = make(fetchMock);
+    const first = await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+    const second = await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+    expect(second).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches a completed run after a failed-job re-run', async () => {
+    const fetchMock = jest.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? { ok: true, status: 201 }
+        : {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              jobs: [{ name: 'build', status: 'completed', conclusion: 'failure' }],
+            }),
+          },
+    );
+    const { provider } = make(fetchMock);
+    await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+    await provider.rerunFailedJobs(repository(), '77');
+    await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'GET')).toHaveLength(2);
+  });
+
+  it('revalidates running jobs with If-None-Match and reuses the body on 304', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ etag: '"j1"' }),
+        json: async () => ({ jobs: [{ name: 'build', status: 'in_progress' }] }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 304 });
+    const { provider } = make(fetchMock);
+    const first = await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+    const second = await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+    expect(second).toEqual(first);
+    expect(first).toEqual([{ context: 'build', status: 'pending', targetUrl: null }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const init = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(init.headers).toMatchObject({ 'If-None-Match': '"j1"' });
+  });
+
+  it('revalidates the commit list with If-None-Match', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ etag: '"c1"' }),
+        json: async () => [{ sha: 'abc', commit: { message: 'm', author: { name: 'D' } } }],
+      })
+      .mockResolvedValueOnce({ ok: false, status: 304 });
+    const { provider } = make(fetchMock);
+    const first = await provider.listCommits(repository(), actor);
+    expect(await provider.listCommits(repository(), actor)).toEqual(first);
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({
+      'If-None-Match': '"c1"',
+    });
+  });
+
   it('falls back to GitHub Check Runs when no Actions run is available', async () => {
     const checks = make(
       jest.fn(async (url: string) => {
