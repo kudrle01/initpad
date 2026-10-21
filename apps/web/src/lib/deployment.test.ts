@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { setLocale } from '@/i18n';
 import { cleanupNotice } from './deployment';
+
+// The default locale follows the system language, so pin the English source.
+beforeEach(() => setLocale('en'));
 
 describe('cleanupNotice', () => {
   it('turns cleanup debt into an actionable, reusable-name notice', () => {
