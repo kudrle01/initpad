@@ -53,8 +53,13 @@ receivers:
         if: 'body matches "^\\s*\\{"'
         parse_from: body
         parse_to: attributes
-        severity:
-          parse_from: attributes.level
+      # The acceptance probes run as one-off containers of the api service and
+      # print a JSON result without a level, so only records that carry one
+      # get their severity from it.
+      - type: severity_parser
+        id: record_level
+        if: 'attributes.level != nil'
+        parse_from: attributes.level
 
   # Readiness of the public origin through the edge, the same path users take.
   http_check/readiness:
