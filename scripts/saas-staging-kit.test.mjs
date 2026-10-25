@@ -131,7 +131,10 @@ test('collects only the SaaS project logs read-only and without the Docker socke
   assert.match(edgeCompose, /INITPAD_PUBLIC_URL: \$\{INITPAD_PUBLIC_URL:\?/);
   assert.match(collector, /attributes\.attrs\["com\.docker\.compose\.project"\] != "initpad-saas"/);
   // Probe results are JSON without a level and must not fail the record parser.
-  assert.match(collector, /- type: severity_parser\n\s+id: record_level\n\s+if: 'attributes\.level != nil'/);
+  assert.match(
+    collector,
+    /- type: severity_parser\n\s+id: record_level\n\s+if: 'attributes\.level != nil'/,
+  );
   assert.doesNotMatch(collector, /^\s+severity:$/m);
   // The daemon labels in the runbook are what the collector filters on.
   assert.match(runbook, /"labels": "com\.docker\.compose\.project,com\.docker\.compose\.service"/);
