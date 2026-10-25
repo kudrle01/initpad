@@ -39,6 +39,10 @@ profil od post-release mechanismů, které mají automatizované testy, ale tepr
   Nové advisory z 2. října oddělilo Tailwind tooling od runtime grafu;
   transitivní `http-cache-semantics` bylo následně aktualizováno na opravenou
   verzi 4.3.0 a produkční dependency audit už nemá žádnou výjimku.
+  Advisory z 25. října pro `body-parser`, `multer`, `nodemailer`,
+  `ip-address` a v šablonách také `fast-uri` a kritické RCE v Next.js opravily
+  kompatibilní verze v rámci stávajících major řad, opět bez výjimky. Oprava
+  je na `main` a není součástí image 0.2.19, které obsahují i šablony.
 
 ### Implementováno na `main` po releasu 0.2.10
 

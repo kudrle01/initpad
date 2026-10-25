@@ -200,7 +200,9 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   řetězec dočasně dostal veřejnou fail-closed výjimku podle ADR-127. Dne
   4. října byla transitivní závislost `http-cache-semantics` aktualizována na
   opravenou verzi 4.3.0 a výjimka odstraněna; produkční audit je znovu bez
-  známého nálezu. Aktualizované stream typy
+  známého nálezu. Dne 25. října 2026 nová advisory znovu zastavila produkční
+  audit i Trivy sken šablon; opravené verze v rámci stávajících major řad je
+  odstranily bez auditní výjimky. Aktualizované stream typy
   odhalily a opravily explicitní adaptér `tar-fs` → Dockerode a
   fail-closed validaci dat Docker manifestu. Nest 12, Prisma 7, React 19,
   Tailwind 4, Jest 30, Node types 26 a TypeScript 7 jsou samostatné major
@@ -337,6 +339,16 @@ Jde o budoucí práci mimo rozsah diplomové práce.
 - [x] Aktualizovat transitivní `http-cache-semantics` na opravenou verzi 4.3.0
   v rámci stávajícího Sigstore rozsahu a odstranit dočasnou auditní výjimku
   `GHSA-ch52-4w7c-c8xp`; produkční audit je znovu bez známých nálezů.
+- [x] Opravit advisory zveřejněná 25. října 2026 bez auditní výjimky a bez
+  npm navrženého downgrade `@nestjs/platform-express` na řadu 10. Platforma
+  používá `body-parser` 2.4.0, `multer` 2.5.0 přes upravený override (Nest 11
+  stále pinuje 2.4.0), `nodemailer` 10.2.1 a `ip-address` 10.7.5. Lockfily
+  šablon dostaly stejné `body-parser` a `multer`, `fast-uri` 3.1.9 a Next.js
+  16.4.3 s opravou kritického RCE advisory; spodní hranice `next` v šabloně je
+  `^16.4.3`. Produkční audit i Trivy sken všech šablon jsou bez nálezu a CI
+  sestavilo a ověřilo image šablon. Oprava je na `main`, ne ve vydání 0.2.19;
+  šablony jsou součástí API image, takže projekty vygenerované z 0.2.19 mají
+  v lockfilu ještě původní verze.
 - [ ] Doplnit persistentní OAuth/OIDC stav, kompletní tenant/capacity kvóty,
   produkční e-mail delivery a load test.
   - [x] Přesunout GitHub OAuth state a interní OIDC authorization
