@@ -306,7 +306,7 @@ Jde o budoucí práci mimo rozsah diplomové práce.
       první úpravu pole a oprava je součástí releasu 0.2.16. Ten je zatím
       kandidát: anonymní audit kandidáta potvrdil veřejnou dostupnost, podpisy
       a obě architektury, povýšení na `stable` neproběhlo.
-- [ ] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
+- [x] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
   - [x] Uzamknout podporovanou SaaS proxy cestu na veřejný edge/WAF, loopback
     web proxy a API. Preflight i API fail-closed vyžadují přesně dva důvěryhodné
@@ -316,10 +316,24 @@ Jde o budoucí práci mimo rozsah diplomové práce.
     zákazem privátních a metadata rozsahů, systemd obnovu pravidel a kontrolu
     edge z počítače provozovatele (ADR-158). Skript prošel `apply`, opakovaným
     `apply`, sondami a `remove` v izolovaném síťovém namespace; kontraktní
-    test hlídá výchozí porty a zakázané rozsahy. Na stagingu neběžel.
-  - [ ] Na konkrétním staging provideru vynutit default-deny egress allow-list,
+    test hlídá výchozí porty a zakázané rozsahy.
+  - [x] Na konkrétním staging provideru vynutit default-deny egress allow-list,
     zákaz obejití originu, connection/body limity a volumetrickou ochranu a
-    uložit provozní důkaz bez provider credentials.
+    uložit provozní důkaz bez provider credentials. Dne 25. října 2026 na
+    stagingu s releasem 0.2.19 prošel `egress-firewall.sh verify` z hostu i z
+    kontejneru v síti control plane: port 443 je otevřený, port 22, cizí DNS,
+    metadata endpoint a privátní rozsah jsou odmítnuté. Kontrola závislostí
+    s pravidly prošla a pravidla obnovila systemd unit i po restartu Dockeru.
+    V Cloudflare běží Free Managed Ruleset, pravidlo rate limitingu pro `/api/`
+    (100 požadavků za 10 s, Block 10 s), režim SSL *Full*, Always Use HTTPS,
+    minimální TLS 1.2 a HSTS bez subdomén a preloadu. Týž den z počítače
+    provozovatele prošel `edge-check.sh`: readiness odpovídá přes edge, porty
+    80, 443, 8080, 3000 a 4318 originu jsou zvenku zavřené, tělo 2 MiB končí
+    413 a edge zablokoval 200 z 300 paralelních požadavků bez dosažení API.
+    První spuštění na macOS odhalilo, že kontrola portů závisela na `timeout`,
+    který macOS nemá, a chybějící příkaz by vyhodnotila jako zavřený port.
+    Sekvenční dávka navíc limit pravidla nedosáhla. Obojí je opravené.
+    Filtr podle portů nadále nebrání exfiltraci přes HTTPS (ADR-158).
 - [x] Aktualizovat transitivní `http-cache-semantics` na opravenou verzi 4.3.0
   v rámci stávajícího Sigstore rozsahu a odstranit dočasnou auditní výjimku
   `GHSA-ch52-4w7c-c8xp`; produkční audit je znovu bez známých nálezů.

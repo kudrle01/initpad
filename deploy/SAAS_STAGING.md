@@ -30,8 +30,9 @@ Od ADR-144 web spouští nginx bez roota a profil mu žádnou capability nevrac�
 Obraz webu a `saas.compose.yml` proto musí pocházet ze stejného releasu.
 
 Od [ADR-158](../docs/adr/ADR-158.md) kit obsahuje také default-deny egress,
-sběr JSON logů kontejnerů, pravidla alertů a kontrolu edge. Tyto části jsou
-ověřené pouze lokálně a testy; na stagingu zatím neproběhly.
+sběr JSON logů kontejnerů, pravidla alertů a kontrolu edge. Egress firewall a
+kontrola edge prošly na stagingu s releasem 0.2.19 dne 25. října 2026. Sběr logů
+na stagingu běží; alerty a telemetry-gap acceptance zatím neproběhly.
 
 ## Účty a hodnoty
 
@@ -258,7 +259,13 @@ V zóně domény nastavte:
    začínající `/api/`, počítání podle IP, 100 požadavků za 10 sekund, akce
    *Block* na 10 sekund. Bezplatný plán dovoluje jediné pravidlo s pevnou
    periodou; podmínky před nastavením ověřte, v roce 2026 se několikrát měnily.
-3. **SSL/TLS:** režim *Full* a *Always Use HTTPS*.
+3. **SSL/TLS → Overview:** režim *Full* zvolený ručně, ne *Automatic*, aby se
+   při dalším skenu nezměnil. Provoz přes tunel režim nepoužívá; nastavení
+   chrání pouze případné záznamy mimo tunel.
+4. **SSL/TLS → Edge Certificates:** *Always Use HTTPS*, *Minimum TLS Version*
+   TLS 1.2 a HSTS bez *includeSubDomains* a *Preload*. Disposable stagingu
+   stačí *Max Age* jeden měsíc; hlavičku `nosniff` posílá web sám, proto
+   volbu *No-Sniff* nechte vypnutou. SaaS profil hlavičku HSTS jinak neposílá.
 
 Z vlastního počítače, nikoli z hostu, pak spusťte:
 
