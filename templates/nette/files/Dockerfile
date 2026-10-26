@@ -15,7 +15,7 @@ COPY app ./app
 RUN composer dump-autoload --no-dev --classmap-authoritative --no-interaction
 
 # FrankenPHP is a production web server; `php -S` is a development tool.
-FROM dunglas/frankenphp:1.13.0-php8.3-alpine@sha256:db71e31f5340b0bda97220bd3d67cc47bcd7352bf3430f07eda8c1531b526781 AS runtime
+FROM dunglas/frankenphp:1.13.2-php8.3-alpine@sha256:1f02125b316bae85753b2ab7127a79ecc305f03215c8fe6ab33678e65177095d AS runtime
 ENV SERVER_NAME=:8080 \
     SERVER_ROOT=/app/www \
     CADDY_GLOBAL_OPTIONS="admin off"
