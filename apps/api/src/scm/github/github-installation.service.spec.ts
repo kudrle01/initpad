@@ -352,6 +352,128 @@ describe('GitHubInstallationService setup authorization', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('keeps a requested setup state claimable while the org owner decides', async () => {
+    const prisma = {
+      gitHubInstallationSetup: { updateMany: jest.fn(async () => ({ count: 1 })) },
+    };
+    const service = new GitHubInstallationService(prisma as never, {} as never);
+    await service.markRequested('opaque-state');
+    const args = (
+      prisma.gitHubInstallationSetup.updateMany.mock.calls[0] as unknown as [
+        { where: { tokenHash: string; usedAt: null }; data: { expiresAt: Date } },
+      ]
+    )[0];
+    expect(args.where).toMatchObject({ usedAt: null, requestedAt: null });
+    expect(args.where.tokenHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(args.data.expiresAt.getTime()).toBeGreaterThan(Date.now() + 24 * 60 * 60 * 1000);
+  });
+
+  it('records who requested an installation an org owner approved', async () => {
+    const prisma = {
+      gitHubInstallation: {
+        findUnique: jest.fn(async () => null),
+        upsert: jest.fn(async () => ({})),
+      },
+    };
+    const service = new GitHubInstallationService(prisma as never, {} as never);
+    await service.handleEvent(event({ requester: { id: 145552632, login: 'kudrle01' } }));
+    expect(prisma.gitHubInstallation.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ requesterAccountId: '145552632' }),
+      }),
+    );
+  });
+
+  function requestedOrgHarness(over: { requesterMatches?: boolean; userAccess?: boolean } = {}) {
+    const requestedAt = new Date(Date.now() - 60 * 60 * 1000);
+    const tx = {
+      gitHubInstallationSetup: { updateMany: jest.fn(async () => ({ count: 1 })) },
+      gitHubInstallation: {
+        findUnique: jest.fn(async () => ({ accountId: '987654' })),
+        upsert: jest.fn(async () => ({ id: 'installation-row-1' })),
+      },
+      gitHubInstallationAccess: { upsert: jest.fn(async () => ({})) },
+    };
+    const prisma = {
+      gitHubInstallationSetup: {
+        findFirst: jest.fn(async () => ({
+          id: 'request-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          requestedAt,
+          createdAt: requestedAt,
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
+        })),
+      },
+      gitHubInstallation: {
+        findFirst: jest.fn(async (args: { where: { requesterAccountId: string } }) =>
+          over.requesterMatches === false || args.where.requesterAccountId !== '145552632'
+            ? null
+            : {
+                id: 'installation-row-1',
+                installationId: '42',
+                accountId: '987654',
+                accountType: 'Organization',
+                createdAt: new Date(),
+              },
+        ),
+      },
+      externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '145552632' })) },
+      workspaceMember: { findUnique: jest.fn(async () => ({ role: 'owner' })) },
+      $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const verified = {
+      installationId: '42',
+      accountId: '987654',
+      accountLogin: 'acme',
+      accountType: 'Organization',
+      repositorySelection: 'selected',
+      suspendedAt: null,
+    };
+    const app = {
+      getInstallation: jest.fn(async () => verified),
+      getUserAccessibleInstallation: jest.fn(async () => {
+        if (over.userAccess === false) throw new Error('no access');
+        return verified;
+      }),
+    };
+    const service = new GitHubInstallationService(prisma as never, app as never);
+    return { service, prisma, app, tx };
+  }
+
+  it('binds an approved org installation to the workspace that requested it', async () => {
+    const { service, app, tx } = requestedOrgHarness();
+    await expect(
+      service.recoverRequestedOrganizationSetup('user-1', 'workspace-1', async () => 'user-token'),
+    ).resolves.toMatchObject({ installationId: '42', accountLogin: 'acme' });
+    expect(app.getUserAccessibleInstallation).toHaveBeenCalledWith('user-token', '42', '145552632');
+    expect(tx.gitHubInstallationSetup.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: 'request-1' }) }),
+    );
+    expect(tx.gitHubInstallationAccess.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ workspaceId: 'workspace-1', authorizedById: 'user-1' }),
+      }),
+    );
+  });
+
+  it('never claims an org installation someone else requested', async () => {
+    const { service, prisma } = requestedOrgHarness({ requesterMatches: false });
+    await expect(
+      service.recoverRequestedOrganizationSetup('user-1', 'workspace-1', async () => 'user-token'),
+    ).resolves.toBeNull();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('leaves the request pending when the requester cannot access the installation', async () => {
+    const { service, prisma } = requestedOrgHarness({ userAccess: false });
+    await expect(
+      service.recoverRequestedOrganizationSetup('user-1', 'workspace-1', async () => 'user-token'),
+    ).resolves.toBeNull();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('refuses expired, replayed, or downgraded-admin callbacks', async () => {
     const expired = {
       gitHubInstallationSetup: {

@@ -68,6 +68,9 @@ model GitHubInstallation {
   accountLogin        String
   accountType         String // User | Organization
   repositorySelection String                     @default("selected") // all | selected
+  // Immutable GitHub id of the member whose installation request an org owner
+  // approved; lets that requester's pending setup claim the installation.
+  requesterAccountId  String?
   suspendedAt         DateTime?
   deletedAt           DateTime?
   createdAt           DateTime                   @default(now())
@@ -109,6 +112,9 @@ model GitHubInstallationSetup {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId String
   expiresAt   DateTime
+  // Set when GitHub turned the install into a request for an org owner; the
+  // state then stays claimable until the approved installation arrives.
+  requestedAt DateTime?
   usedAt      DateTime?
   createdAt   DateTime  @default(now())
 

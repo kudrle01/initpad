@@ -186,6 +186,8 @@ export interface GitHubStatus {
   ciCallbackIssue: string | null;
   canInstall: boolean;
   installation: { present: boolean; suspended: boolean };
+  // An org owner has yet to approve an installation requested from here.
+  installationRequestPending: boolean;
   installations: Array<{
     id: string;
     accountId: string | null;

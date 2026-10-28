@@ -15,6 +15,8 @@ import {
 } from './github-app.service';
 
 const SETUP_TTL_MS = 10 * 60 * 1000;
+// An org owner approves a member's request whenever they get to it.
+const REQUEST_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const WORKSPACE_ADMINS = new Set(['owner', 'admin']);
 
 // Shape of the GitHub `installation` webhook fields consumed by InitPad.
@@ -26,6 +28,8 @@ export interface InstallationEvent {
     repository_selection?: string;
     suspended_at?: string | null;
   };
+  // Present on `created` when an org owner approved a member's request.
+  requester?: { id?: number | string } | null;
 }
 
 // Shape of the GitHub `installation_target` webhook fields consumed by InitPad.
@@ -85,6 +89,9 @@ export class GitHubInstallationService {
       repositorySelection: inst.repository_selection ?? 'selected',
       suspendedAt,
       deletedAt: null,
+      ...(event.action === 'created' && {
+        requesterAccountId: event.requester?.id != null ? String(event.requester.id) : null,
+      }),
     };
     await this.prisma.gitHubInstallation.upsert({
       where: { installationId },
@@ -136,6 +143,37 @@ export class GitHubInstallationService {
       },
     });
     return state;
+  }
+
+  /**
+   * GitHub turned the install into a request for an organization owner. The
+   * state is kept, unconsumed, for as long as the owner may take to approve it.
+   */
+  async markRequested(state: string): Promise<void> {
+    if (!state) return;
+    const now = new Date();
+    await this.prisma.gitHubInstallationSetup.updateMany({
+      where: {
+        tokenHash: this.hashState(state),
+        usedAt: null,
+        requestedAt: null,
+        expiresAt: { gt: now },
+      },
+      data: { requestedAt: now, expiresAt: new Date(now.getTime() + REQUEST_TTL_MS) },
+    });
+  }
+
+  async hasPendingRequest(userId: string, workspaceId: string): Promise<boolean> {
+    const pending = await this.prisma.gitHubInstallationSetup.count({
+      where: {
+        userId,
+        workspaceId,
+        requestedAt: { not: null },
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+    return pending > 0;
   }
 
   /**
@@ -236,7 +274,7 @@ export class GitHubInstallationService {
     const now = new Date();
     const [setup, identity, membership] = await Promise.all([
       this.prisma.gitHubInstallationSetup.findFirst({
-        where: { userId, workspaceId, usedAt: null, expiresAt: { gt: now } },
+        where: { userId, workspaceId, requestedAt: null, usedAt: null, expiresAt: { gt: now } },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.externalIdentity.findUnique({
@@ -260,6 +298,88 @@ export class GitHubInstallationService {
         installation.suspendedAt === null,
     );
     if (!verified) return null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.gitHubInstallationSetup.updateMany({
+        where: { id: setup.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (claimed.count !== 1) return null;
+      await this.bindVerifiedInstallation(tx, verified, userId, workspaceId);
+      return verified;
+    });
+  }
+
+  /**
+   * Claims an organization installation an owner approved at this user's
+   * request. GitHub never returns the requester through the Setup URL, so the
+   * proof is a pending setup state from this workspace (the original request,
+   * or a new setup started after the approval), the signed webhook's immutable
+   * requester id, and the same user-bound installation access check as an
+   * organization callback.
+   */
+  async recoverRequestedOrganizationSetup(
+    userId: string,
+    workspaceId: string,
+    userAccessToken: () => Promise<string>,
+  ): Promise<VerifiedGitHubInstallation | null> {
+    const now = new Date();
+    const [setup, identity, membership] = await Promise.all([
+      this.prisma.gitHubInstallationSetup.findFirst({
+        where: { userId, workspaceId, usedAt: null, expiresAt: { gt: now } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.externalIdentity.findUnique({
+        where: { provider_userId: { provider: 'github', userId } },
+        select: { providerUserId: true },
+      }),
+      this.prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId, userId } },
+        select: { role: true },
+      }),
+    ]);
+    if (!setup || !identity) return null;
+    if (!membership || !WORKSPACE_ADMINS.has(membership.role)) {
+      throw new ForbiddenException('Workspace admin access is required to finish GitHub setup');
+    }
+
+    const approved = await this.prisma.gitHubInstallation.findFirst({
+      where: {
+        requesterAccountId: identity.providerUserId,
+        accountType: 'Organization',
+        deletedAt: null,
+        suspendedAt: null,
+        accesses: { none: { workspaceId } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!approved) return null;
+
+    let verified: VerifiedGitHubInstallation;
+    try {
+      verified = await this.app.getInstallation(approved.installationId);
+      const accessible = await this.app.getUserAccessibleInstallation(
+        await userAccessToken(),
+        verified.installationId,
+        identity.providerUserId,
+      );
+      if (
+        verified.accountType !== 'Organization' ||
+        verified.suspendedAt !== null ||
+        verified.accountId !== approved.accountId ||
+        accessible.installationId !== verified.installationId ||
+        accessible.accountId !== verified.accountId
+      ) {
+        return null;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Requested GitHub installation ${approved.installationId} is not claimable yet: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.gitHubInstallationSetup.updateMany({

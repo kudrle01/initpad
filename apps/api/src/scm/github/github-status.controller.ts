@@ -50,6 +50,10 @@ export class GitHubStatusController {
     const present = rows.length > 0;
     const suspended = present && rows.every((row) => row.suspended);
     const credentialReady = linked ? await this.credentials.isReadyForUser(userId) : false;
+    const installationRequestPending = await this.installations.hasPendingRequest(
+      userId,
+      workspace.id,
+    );
     const ciCallbackIssue =
       config.edition === 'saas' ? publicHttpsUrlIssue(config.ci.publicUrl) : null;
     return {
@@ -63,6 +67,7 @@ export class GitHubStatusController {
       ciCallbackIssue,
       canInstall: Boolean(linked) && appConfigured && ['owner', 'admin'].includes(workspace.role),
       installation: { present, suspended },
+      installationRequestPending,
       installations: rows,
     };
   }
