@@ -1,4 +1,4 @@
-FROM php:8.3-cli-alpine@sha256:afdf8b1fee58486ccc0dab5f30f634b86873d56dac985f71ba217945647c05ad AS base
+FROM php:8.5-cli-alpine@sha256:e899a75c775804e5466dbd9c96b31f8b6c6ae2ddb053a8466223a0c32992ff8e AS base
 COPY --from=composer:2@sha256:d8f6343d3fae98107426bc49163ccad46ef85aabd4a27d80a74401fab4aba332 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 
@@ -15,7 +15,7 @@ COPY app ./app
 RUN composer dump-autoload --no-dev --classmap-authoritative --no-interaction
 
 # FrankenPHP is a production web server; `php -S` is a development tool.
-FROM dunglas/frankenphp:1.13.0-php8.3-alpine@sha256:db71e31f5340b0bda97220bd3d67cc47bcd7352bf3430f07eda8c1531b526781 AS runtime
+FROM dunglas/frankenphp:1.13.2-php8.3-alpine@sha256:1f02125b316bae85753b2ab7127a79ecc305f03215c8fe6ab33678e65177095d AS runtime
 ENV SERVER_NAME=:8080 \
     SERVER_ROOT=/app/www \
     CADDY_GLOBAL_OPTIONS="admin off"

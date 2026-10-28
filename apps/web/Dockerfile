@@ -1,7 +1,7 @@
 # Platform web UI. Build context = repository root (npm workspaces monorepo):
 #   docker build -f apps/web/Dockerfile .
 # ---------------------------------------------------------------- build ----
-FROM mirror.gcr.io/library/node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS build
+FROM mirror.gcr.io/library/node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/
@@ -10,7 +10,7 @@ COPY apps/web apps/web
 RUN npm run build --workspace @initpad/web
 
 # -------------------------------------------------------------- runtime ----
-FROM mirror.gcr.io/library/nginx:alpine@sha256:892bb2152464f0c5d8972593a5f5afaf8054552580b699d95f8ff4af08c2d33d
+FROM mirror.gcr.io/library/nginx:alpine@sha256:a3554c0d0b48177b1413c26e01f695334428020d9df01243fbae3e11cfd17417
 # Installed packages take the fixes Alpine published after the base image.
 RUN apk upgrade --no-cache
 COPY apps/web/nginx-main.conf /etc/nginx/nginx.conf
