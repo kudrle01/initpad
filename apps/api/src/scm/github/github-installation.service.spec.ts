@@ -289,6 +289,7 @@ describe('GitHubInstallationService setup authorization', () => {
       },
       externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '145552632' })) },
       workspaceMember: { findUnique: jest.fn(async () => ({ role: 'owner' })) },
+      gitHubInstallationAccess: { count: jest.fn(async () => 0) },
       $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     };
     const app = {
@@ -317,6 +318,40 @@ describe('GitHubInstallationService setup authorization', () => {
         }),
       }),
     );
+  });
+
+  it('leaves the setup state for an org request when the personal App is already bound', async () => {
+    const prisma = {
+      gitHubInstallationSetup: {
+        findFirst: jest.fn(async () => ({
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
+        })),
+      },
+      externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '145552632' })) },
+      workspaceMember: { findUnique: jest.fn(async () => ({ role: 'owner' })) },
+      gitHubInstallationAccess: { count: jest.fn(async () => 1) },
+      $transaction: jest.fn(),
+    };
+    const app = {
+      listInstallations: jest.fn(async () => [
+        {
+          installationId: '147774798',
+          accountId: '145552632',
+          accountLogin: 'kudrle01',
+          accountType: 'User',
+          repositorySelection: 'all',
+          suspendedAt: null,
+        },
+      ]),
+    };
+    const service = new GitHubInstallationService(prisma as never, app as never);
+
+    await expect(service.recoverPersonalSetup('user-1', 'workspace-1')).resolves.toBeNull();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('never recovers an organization installation from personal identity alone', async () => {

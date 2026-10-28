@@ -298,6 +298,12 @@ export class GitHubInstallationService {
         installation.suspendedAt === null,
     );
     if (!verified) return null;
+    // An installation this workspace already has must not consume the state:
+    // the same setup may be meant for an approved organization request.
+    const alreadyBound = await this.prisma.gitHubInstallationAccess.count({
+      where: { workspaceId, githubInstallation: { installationId: verified.installationId } },
+    });
+    if (alreadyBound > 0) return null;
 
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.gitHubInstallationSetup.updateMany({
