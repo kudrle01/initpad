@@ -3,37 +3,11 @@
 # and expires: after `expired_at` Trivy reports the finding again and the scan
 # fails. Remove an entry as soon as the fixed release is pinned.
 vulnerabilities:
-  # Go 1.26.8 in the Docker CLI and Compose plugin of the Supervisor image.
-  # The CVEs are denial of service: two against Go servers (HTTP Range handling
-  # and the TLS ECH ClientHelloOuter) and one against HTTP/2 peers (a flood of
-  # SETTINGS frames). The Supervisor runs both binaries as clients of the local
-  # Docker socket, over HTTP/1.1 and without TLS. The Docker CLI build with
-  # Go 1.26.9 was published on 9 October 2026; pin it once it is two weeks old.
-  - id: CVE-2026-78667
-    paths:
-      - usr/local/bin/docker
-      - usr/local/libexec/docker/cli-plugins/docker-compose
-    statement: Server-side net/http Range DoS; the Supervisor only runs the Docker CLI as a client.
-    expired_at: 2026-11-09
-  - id: CVE-2026-97031
-    paths:
-      - usr/local/bin/docker
-      - usr/local/libexec/docker/cli-plugins/docker-compose
-    statement: Server-side crypto/tls ECH DoS; the Supervisor talks to the Docker socket without TLS.
-    expired_at: 2026-11-09
-  # Scored HIGH on 9 October 2026, after the two entries above. Compose carries
-  # the same code a second time in golang.org/x/net 0.58.0.
+  # Compose 5.6.1 in the Supervisor image still vendors golang.org/x/net 0.58.0;
+  # the Docker CLI itself is fixed by Go 1.26.10. Remove once a Docker CLI image
+  # ships Compose with x/net 0.60.0.
   - id: CVE-2026-78669
     paths:
-      - usr/local/bin/docker
       - usr/local/libexec/docker/cli-plugins/docker-compose
-    statement: HTTP/2 SETTINGS flood DoS; both binaries speak only HTTP/1.1 to the local Docker socket.
-    expired_at: 2026-11-09
-  # Fixed only in Go 1.26.10, which ships with Docker 29.9.2 and Compose 5.6.1.
-  # That image is still amd64-only, so pin it once the arm64 build is published.
-  - id: CVE-2026-111943
-    paths:
-      - usr/local/bin/docker
-      - usr/local/libexec/docker/cli-plugins/docker-compose
-    statement: crypto/x509 certificate handling; both binaries reach the local Docker socket without TLS and registry certificates are verified by the host daemon.
+    statement: HTTP/2 SETTINGS flood DoS; Compose speaks only HTTP/1.1 to the local Docker socket.
     expired_at: 2026-11-09

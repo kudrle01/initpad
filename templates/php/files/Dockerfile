@@ -1,4 +1,4 @@
-FROM dunglas/frankenphp:1.13.0-php8.3-alpine@sha256:db71e31f5340b0bda97220bd3d67cc47bcd7352bf3430f07eda8c1531b526781 AS base
+FROM dunglas/frankenphp:1.13.4-php8.3-alpine@sha256:df92e348a4239f51ca5519af0fb578c1eea0ccd427eaf2704d7b44cf9f680d4c AS base
 WORKDIR /app
 COPY . .
 
