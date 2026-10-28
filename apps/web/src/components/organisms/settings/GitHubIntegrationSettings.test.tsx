@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitHubIntegrationSettings } from './GitHubIntegrationSettings';
 
 const mocks = vi.hoisted(() => ({
+  requestPending: false,
   toast: { success: vi.fn(), error: vi.fn() },
   api: {
     authConfig: vi.fn(() => Promise.resolve({ githubEnabled: true })),
@@ -31,6 +32,7 @@ const mocks = vi.hoisted(() => ({
         ciCallbackIssue: null,
         canInstall: true,
         installation: { present: false, suspended: false },
+        installationRequestPending: mocks.requestPending,
         installations: [],
       }),
     ),
@@ -63,6 +65,7 @@ afterEach(() => {
 describe('GitHubIntegrationSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.requestPending = false;
   });
 
   it('attempts setup recovery on load but not on every return to the window', async () => {
@@ -75,6 +78,17 @@ describe('GitHubIntegrationSettings', () => {
     await returnToWindow(4);
 
     expect(mocks.api.recoverGithubSetup).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps retrying recovery on return while an org owner has yet to approve', async () => {
+    mocks.requestPending = true;
+    render(<GitHubIntegrationSettings />);
+    expect(
+      await screen.findByText(/Waiting for a GitHub organization owner to approve the App/),
+    ).toBeInTheDocument();
+
+    await returnToWindow(2);
+    await waitFor(() => expect(mocks.api.recoverGithubSetup).toHaveBeenCalledTimes(2));
   });
 
   it('retries recovery on return while a setup started here is pending', async () => {

@@ -45,6 +45,7 @@ export function GitHubIntegrationSettings() {
   const [identities, setIdentities] = useState<LinkedIdentity[]>([]);
   const [status, setStatus] = useState<GitHubStatus | null>(null);
   const setupStartedAt = useRef<number | null>(null);
+  const requestPending = useRef(false);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
   const activeWorkspaceId = activeWorkspace?.id;
   const githubIdentities = identities.filter((identity) => identity.provider === 'github');
@@ -96,10 +97,11 @@ export function GitHubIntegrationSettings() {
     let disposed = false;
     let running = false;
     // Recovery is a rate-limited mutation, so a plain return to the window only
-    // re-reads the status. It runs on load and while a setup started here can
-    // still be pending.
+    // re-reads the status. It runs on load, while a setup started here can
+    // still be pending, and while an org owner has yet to approve a request.
     const setupPending = () =>
-      setupStartedAt.current !== null && Date.now() - setupStartedAt.current < SETUP_PENDING_MS;
+      requestPending.current ||
+      (setupStartedAt.current !== null && Date.now() - setupStartedAt.current < SETUP_PENDING_MS);
     const refresh = async (recover = setupPending()) => {
       if (running) return;
       running = true;
@@ -113,6 +115,7 @@ export function GitHubIntegrationSettings() {
           api.githubStatus(),
         ]);
         if (!disposed) {
+          requestPending.current = nextStatus.installationRequestPending;
           setIdentities(nextIdentities);
           setStatus(nextStatus);
           setSetupBusy(false);
@@ -315,6 +318,13 @@ export function GitHubIntegrationSettings() {
         </div>
       )}
 
+      {status?.installationRequestPending && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          {t(
+            'Waiting for a GitHub organization owner to approve the App. The organization connects here once they do.',
+          )}
+        </p>
+      )}
       {status && !status.appConfigured && (
         <p className="mt-3 text-xs text-muted-foreground">
           {t(

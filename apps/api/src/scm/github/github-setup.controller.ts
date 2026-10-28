@@ -16,6 +16,7 @@ import { WorkspacesService } from '../../workspaces/workspaces.service';
 import { GitHubAppService } from './github-app.service';
 import { GitHubInstallationService } from './github-installation.service';
 import { GITHUB_OAUTH_NONCE_COOKIE, GitHubOAuthService } from './github-oauth.service';
+import { GitHubUserCredentialService } from './github-user-credential.service';
 import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
 import { RateLimited } from '../../auth/rate-limited.decorator';
 import { RATE_LIMITS } from '../../auth/rate-limit.policy';
@@ -33,6 +34,7 @@ export class GitHubSetupController {
     private readonly app: GitHubAppService,
     private readonly workspaces: WorkspacesService,
     private readonly oauth: GitHubOAuthService,
+    private readonly credentials: GitHubUserCredentialService,
   ) {}
 
   @Post()
@@ -66,7 +68,11 @@ export class GitHubSetupController {
     }
     const workspace = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspace.id, 'admin');
-    const installation = await this.installations.recoverPersonalSetup(userId, workspace.id);
+    const installation =
+      (await this.installations.recoverPersonalSetup(userId, workspace.id)) ??
+      (await this.installations.recoverRequestedOrganizationSetup(userId, workspace.id, () =>
+        this.credentials.accessTokenForUser(userId),
+      ));
     return {
       recovered: installation !== null,
       accountLogin: installation?.accountLogin ?? null,
@@ -83,6 +89,8 @@ export class GitHubSetupController {
     @Res() res: Response,
   ) {
     if (setupAction === 'request') {
+      // Best effort: without a usable state the request simply stays unclaimed.
+      await this.installations.markRequested(state).catch(() => undefined);
       return res.redirect(this.frontend('/settings?github=installation_requested'));
     }
     try {

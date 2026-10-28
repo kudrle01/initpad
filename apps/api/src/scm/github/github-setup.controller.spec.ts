@@ -24,6 +24,7 @@ describe('GitHubSetupController', () => {
       app as never,
       workspaces as never,
       {} as never,
+      {} as never,
     );
 
     await expect(controller.start('user-1', 'workspace-1')).resolves.toEqual({
@@ -43,6 +44,7 @@ describe('GitHubSetupController', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const response = { redirect: jest.fn((url: string) => url) };
     await controller.callback('state', '42', 'install', response as never);
@@ -56,6 +58,7 @@ describe('GitHubSetupController', () => {
     config.github.appSlug = 'initpad-cloud';
     const installations = {
       recoverPersonalSetup: jest.fn(async () => ({ accountLogin: 'kudrle01' })),
+      recoverRequestedOrganizationSetup: jest.fn(),
     };
     const app = { isConfigured: jest.fn(() => true) };
     const workspaces = {
@@ -67,6 +70,7 @@ describe('GitHubSetupController', () => {
       app as never,
       workspaces as never,
       {} as never,
+      {} as never,
     );
 
     await expect(controller.recover('user-1', 'workspace-1')).resolves.toEqual({
@@ -75,18 +79,56 @@ describe('GitHubSetupController', () => {
     });
     expect(workspaces.require).toHaveBeenCalledWith('user-1', 'workspace-1', 'admin');
     expect(installations.recoverPersonalSetup).toHaveBeenCalledWith('user-1', 'workspace-1');
+    expect(installations.recoverRequestedOrganizationSetup).not.toHaveBeenCalled();
+  });
+
+  it('claims an approved organization request with the user-bound GitHub token', async () => {
+    config.github.appSlug = 'initpad-cloud';
+    const installations = {
+      recoverPersonalSetup: jest.fn(async () => null),
+      recoverRequestedOrganizationSetup: jest.fn(
+        async (_userId: string, _workspaceId: string, token: () => Promise<string>) => {
+          await expect(token()).resolves.toBe('user-token');
+          return { accountLogin: 'acme' };
+        },
+      ),
+    };
+    const app = { isConfigured: jest.fn(() => true) };
+    const workspaces = {
+      resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })),
+      require: jest.fn(async () => 'owner'),
+    };
+    const credentials = { accessTokenForUser: jest.fn(async () => 'user-token') };
+    const controller = new GitHubSetupController(
+      installations as never,
+      app as never,
+      workspaces as never,
+      {} as never,
+      credentials as never,
+    );
+
+    await expect(controller.recover('user-1', 'workspace-1')).resolves.toEqual({
+      recovered: true,
+      accountLogin: 'acme',
+    });
+    expect(credentials.accessTokenForUser).toHaveBeenCalledWith('user-1');
   });
 
   it('does not bind a pending organization-owner request', async () => {
-    const installations = { completeSetup: jest.fn() };
+    const installations = {
+      completeSetup: jest.fn(),
+      markRequested: jest.fn(async () => undefined),
+    };
     const controller = new GitHubSetupController(
       installations as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
     );
     const response = { redirect: jest.fn((url: string) => url) };
     await controller.callback('state', '', 'request', response as never);
+    expect(installations.markRequested).toHaveBeenCalledWith('state');
     expect(installations.completeSetup).not.toHaveBeenCalled();
     expect(response.redirect).toHaveBeenCalledWith(
       expect.stringContaining('github=installation_requested'),
@@ -109,6 +151,7 @@ describe('GitHubSetupController', () => {
       {} as never,
       {} as never,
       oauth as never,
+      {} as never,
     );
     const response = {
       cookie: jest.fn(),

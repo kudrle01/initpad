@@ -15,6 +15,7 @@ describe('GitHubStatusController', () => {
       listForUser: jest.fn(async () => [{ provider: 'github', username: 'alice' }]),
     };
     const installations = {
+      hasPendingRequest: jest.fn(async () => false),
       listForWorkspace: jest.fn(async () => [
         {
           githubInstallation: {
@@ -47,7 +48,10 @@ describe('GitHubStatusController', () => {
   it('does not let a regular workspace member start installation setup', async () => {
     const controller = new GitHubStatusController(
       { listForUser: jest.fn(async () => [{ provider: 'github', username: 'alice' }]) } as never,
-      { listForWorkspace: jest.fn(async () => []) } as never,
+      {
+        listForWorkspace: jest.fn(async () => []),
+        hasPendingRequest: jest.fn(async () => false),
+      } as never,
       { isConfigured: jest.fn(() => true) } as never,
       { resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'member' })) } as never,
       { isReadyForUser: jest.fn(async () => true) } as never,
@@ -62,7 +66,10 @@ describe('GitHubStatusController', () => {
     config.ci.publicUrl = 'http://localhost:8080';
     const controller = new GitHubStatusController(
       { listForUser: jest.fn(async () => []) } as never,
-      { listForWorkspace: jest.fn(async () => []) } as never,
+      {
+        listForWorkspace: jest.fn(async () => []),
+        hasPendingRequest: jest.fn(async () => false),
+      } as never,
       { isConfigured: jest.fn(() => true) } as never,
       { resolve: jest.fn(async () => ({ id: 'workspace-1', role: 'owner' })) } as never,
       { isReadyForUser: jest.fn(async () => false) } as never,

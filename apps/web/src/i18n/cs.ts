@@ -661,6 +661,8 @@ export const cs = {
   'GitHub App authorized': 'GitHub App autorizována',
   'GitHub organization owner has been asked to approve the App':
     'Vlastník organizace na GitHubu byl požádán o schválení aplikace',
+  'Waiting for a GitHub organization owner to approve the App. The organization connects here once they do.':
+    'Čeká se, až vlastník organizace na GitHubu schválí aplikaci. Po schválení se organizace propojí sem.',
   'Could not authorize GitHub installation': 'Instalaci na GitHubu se nepodařilo autorizovat',
   'Could not link GitHub account': 'Účet GitHub se nepodařilo propojit',
   'Allow pop-ups for InitPad to connect GitHub':
