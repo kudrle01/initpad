@@ -74,7 +74,7 @@ const adrIndexPath = 'docs/adr/README.md';
 const adrIndex = tracked.has(adrIndexPath) ? readFileSync(resolve(root, adrIndexPath), 'utf8') : '';
 const indexedAdrs = [
   ...adrIndex.matchAll(
-    /\| \[(ADR-(\d{3}))\]\(\.\/(ADR-\d{3}\.md)\) \| (Accepted|Superseded|Deprecated) \| ([^|]+) \|/g,
+    /\| \[(ADR-(\d{3}))\]\(\.\/(ADR-\d{3}\.md)\) \| (Accepted|Proposed|Superseded|Deprecated) \| ([^|]+) \|/g,
   ),
 ];
 const indexedAdrPaths = new Set();
@@ -95,9 +95,11 @@ for (const [position, match] of indexedAdrs.entries()) {
   if (!content.startsWith(`${heading}\n`)) {
     failures.push(`${path}: heading does not match the ADR index`);
   }
-  const status = content.match(/^\*\*Status:\*\* (Accepted|Superseded|Deprecated)\s*$/m)?.[1];
+  const status = content.match(
+    /^\*\*Status:\*\* (Accepted|Proposed|Superseded|Deprecated)\s*$/m,
+  )?.[1];
   if (!status) {
-    failures.push(`${path}: missing Accepted, Superseded or Deprecated status`);
+    failures.push(`${path}: missing Accepted, Proposed, Superseded or Deprecated status`);
   } else if (status !== indexedStatus) {
     failures.push(`${path}: status does not match the ADR index`);
   }
