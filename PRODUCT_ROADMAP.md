@@ -461,6 +461,27 @@ Jde o budoucí práci mimo rozsah diplomové práce.
   Workflow „Verify container images" navíc nastavuje zrcadlo démonu Dockeru
   pro obrazy šablon a pro Trivy; démon se při nedostupnosti vrátí k Docker
   Hubu. Změna zatím není ověřena během běhu CI na GitHubu.
+- [ ] Vlastní projekty a jejich workflow (ADR-160, epic #119), plán po
+  obhajobě. Dnešní import vyžaduje kořenový `Dockerfile`, startovní workflow
+  a jednu službu na projekt, takže monorepo s backendem a frontendem nepřijme.
+  Manifest `initpad.yaml` popíše služby, routy, úlohy a stavové služby;
+  vlastní workflow předá artifact ověřeným handoffem a prostředí bude
+  ukazovat na release, tedy sadu artifactů jednoho SHA, který se povyšuje
+  celý. Bezpečnost stojí na ověřeném původu artifactu u provideru, oprávněních
+  vynucených Agentem a schválení každého rozšíření oprávnění člověkem.
+  - [ ] Bezpečný handoff a kontrakt: schéma manifestu čtené z commitu
+    releasu, schvalování změn manifestu, identita povoleného workflow, OIDC
+    na GitHubu, sken zranitelností a tajných klíčů v image.
+  - [ ] Release a runtime více služeb: `Release`, Agent multi-container
+    s přepnutím po health všech služeb, path routing, workery, config vars
+    podle služby a runtime konfigurace statických frontendů.
+  - [ ] Release úlohy (migrace před cutoverem), plány a částečné buildy.
+  - [ ] Spravované Postgres a Redis s volumes, šifrovanými zálohami a
+    retencí.
+  - [ ] Více domén s ověřením vlastnictví, převodník `docker-compose.yml` a
+    podepsané externí image.
+  - [ ] Ověření na forku `applifting-vsecourse/team-1` a dalším projektu
+    mimo šablony.
 - [ ] GitLab, Kubernetes/microVM, marketplace a enterprise HA zůstávají mimo
   aktuální dokončovací scope.
 

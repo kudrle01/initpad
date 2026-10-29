@@ -6,7 +6,8 @@ důsledky. Novější ADR může starší rozhodnutí výslovně doplnit nebo na
 
 Stav `Accepted` označuje současné rozhodnutí, `Superseded` rozhodnutí nahrazené
 novějším ADR a `Deprecated` kompatibilní cestu, která se už nemá používat pro
-nové nasazení. Historické názvy zůstávají beze změny, aby byly odkazy a kontext
+nové nasazení. Stav `Proposed` označuje navržené rozhodnutí, které ještě
+není implementované. Historické názvy zůstávají beze změny, aby byly odkazy a kontext
 stabilní.
 
 | ADR | Stav | Rozhodnutí |
@@ -170,3 +171,4 @@ stabilní.
 | [ADR-157](./ADR-157.md) | Accepted | Veřejný SaaS nenasazuje na SFTP hosting dostupný jen přes školní VPN |
 | [ADR-158](./ADR-158.md) | Accepted | Staging vynucuje egress podle portů a alertuje z vlastního collectoru |
 | [ADR-159](./ADR-159.md) | Accepted | Čtení commitů a stavu pipeline z GitHubu šetří limit instalace |
+| [ADR-160](./ADR-160.md) | Proposed | Vlastní projekty a jejich workflow popisuje manifest a napojují se přes ověřený handoff |
