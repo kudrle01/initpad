@@ -251,8 +251,11 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     šifrované zálohy zůstává součástí průchodu podepsanou aktualizací.
   - Sken obrazů před vydáním zachytil v Docker CLI Supervisoru další CVE ze
     stejné opravy Go, které databáze ohodnotila až během dne. Dostalo třetí
-    výjimku do 9. listopadu 2026; dokud se nepřipne build CLI s Go 1.26.9,
-    může sken selhat znovu.
+    výjimku do 9. listopadu 2026. Vyřešeno 28. října 2026 (PR #116,
+    issue #98): Supervisor bere Docker CLI 29.9.2 s Compose 5.6.1 (Go 1.26.10),
+    tři výjimky Go stdlib zmizely a sken obrazů na `main` prošel u #116 i
+    release 0.2.21. Zbývá výjimka CVE-2026-78669 jen pro Compose, dokud
+    nepřibalí `golang.org/x/net` 0.60.0 (ADR-144).
   - Zbývá: projít podepsanou aktualizaci z 0.2.16 na self-hosted instalaci a
     na stagingu dokončit průchod GitHub App.
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
