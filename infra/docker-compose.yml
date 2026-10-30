@@ -6,7 +6,7 @@ name: initpad
 
 services:
   postgres:
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
     environment:
       POSTGRES_USER: initpad
       POSTGRES_PASSWORD: initpad
@@ -109,7 +109,7 @@ services:
   # here over SFTP; the content (per-project symlinks) is served by the nginx
   # service below. The volume is shared with nginx.
   sftp-volume-init:
-    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    image: alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
     command:
       - /bin/sh
       - -ec
@@ -134,7 +134,7 @@ services:
 
   # Serves the uploaded static content (releases published via symlinks).
   static-web:
-    image: nginx:alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
+    image: nginx:alpine@sha256:a3554c0d0b48177b1413c26e01f695334428020d9df01243fbae3e11cfd17417
     depends_on: [fake-sftp]
     ports:
       - "8085:80" # config.providers.sftp.publicUrl

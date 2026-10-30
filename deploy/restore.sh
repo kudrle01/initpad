@@ -104,7 +104,7 @@ fi
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
 [ -z "$(docker ps -q --filter label=com.initpad.platform-update)" ] || \
   fail "A signed platform update is currently running; wait before restoring a backup."
-docker run --rm -i postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 pg_restore --list \
+docker run --rm -i postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36 pg_restore --list \
   < "$src/postgres.dump" >/dev/null || fail "PostgreSQL dump is not readable."
 
 echo "⚠  This OVERWRITES the current database and data volumes from:"

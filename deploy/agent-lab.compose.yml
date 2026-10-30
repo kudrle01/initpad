@@ -68,7 +68,7 @@ services:
   # Target-side wildcard DNS. Agent containers receive the edge's private
   # address; this resolver is deliberately not published to the host.
   agent-lab-dns:
-    image: coredns/coredns:1.14.6@sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea
+    image: coredns/coredns:1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26
     profiles: ["agent-lab"]
     command: ["-conf", "/etc/coredns/Corefile"]
     environment:
@@ -92,7 +92,7 @@ services:
   # Docker publishes the TLS edge on 127.0.0.1; returning the private bridge
   # address here would make browser behavior runtime-dependent.
   agent-lab-host-dns:
-    image: coredns/coredns:1.14.6@sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea
+    image: coredns/coredns:1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26
     profiles: ["agent-lab"]
     command: ["-conf", "/etc/coredns/Corefile"]
     environment:
@@ -117,7 +117,7 @@ services:
   # into the Agent, while the edge itself never receives the Docker socket or
   # the private Caddy admin socket.
   agent-lab-edge:
-    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    image: caddy:2.11-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
     profiles: ["agent-lab"]
     environment:
       INITPAD_AGENT_LAB_GATEWAY_DOMAIN: ${INITPAD_AGENT_LAB_GATEWAY_DOMAIN:-apps.initpad.test}
