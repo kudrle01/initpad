@@ -1,6 +1,6 @@
 ARG BUILDKIT_SBOM_SCAN_STAGE=true
 
-FROM mirror.gcr.io/library/node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS build
+FROM mirror.gcr.io/library/node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/agent/package.json apps/agent/
@@ -10,13 +10,13 @@ COPY apps/agent apps/agent
 RUN npm run build --workspace @initpad/agent \
     && find apps/agent/dist -name '*.test.js*' -delete
 
-FROM mirror.gcr.io/library/node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS production-dependencies
+FROM mirror.gcr.io/library/node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS production-dependencies
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/agent/package.json apps/agent/
 RUN npm ci --omit=dev --workspace @initpad/agent --include-workspace-root=false
 
-FROM mirror.gcr.io/library/node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
+FROM mirror.gcr.io/library/node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94
 LABEL org.opencontainers.image.title="InitPad Agent"
 LABEL org.opencontainers.image.description="Outbound-only agent for an InitPad Docker target"
 LABEL org.opencontainers.image.version="0.14.3"
