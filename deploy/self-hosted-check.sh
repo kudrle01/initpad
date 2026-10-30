@@ -387,7 +387,7 @@ check_backup() {
     tar -tzf "$directory/$file" >/dev/null || fail "Backup archive '$file' is unreadable."
   done
   docker run --rm -i \
-    postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
+    postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36 \
     pg_restore --list < "$directory/postgres.dump" >/dev/null || \
     fail "Backup PostgreSQL dump is unreadable."
   save_restore_checkpoint_from_dump "$directory"

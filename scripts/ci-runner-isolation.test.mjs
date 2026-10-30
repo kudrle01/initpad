@@ -117,7 +117,7 @@ test('reads only the engine ID that leads the daemon info response', () => {
 
 test('serves CI images from a cache that jobs cannot write', () => {
   const cache = service('runner-image-cache');
-  assert.match(cache, /image: registry:3\.0\.0@sha256:[0-9a-f]{64}/);
+  assert.match(cache, /image: registry:3\.1\.2@sha256:[0-9a-f]{64}/);
   assert.match(cache, /ipv4_address: 172\.31\.250\.10/);
   assert.match(cache, /read_only: true/);
   assert.match(cache, /cap_drop: \[ALL\]/);

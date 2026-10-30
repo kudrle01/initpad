@@ -8,6 +8,11 @@ updates:
       day: monday
       time: "05:00"
       timezone: Europe/Prague
+    # A major version is a migration of its own (Prisma, NestJS, React,
+    # Tailwind), so it is planned by hand instead of arriving in the group.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns: ["*"]
@@ -54,15 +59,40 @@ updates:
 
   - package-ecosystem: docker
     directories:
-      - /apps/*
+      - /apps/agent
+      - /apps/api
+      - /apps/web
       - /templates/*/files
     schedule:
       interval: weekly
       day: monday
       time: "05:30"
       timezone: Europe/Prague
+    # The test and dependency stages follow the PHP of the FrankenPHP runtime
+    # (ADR-152), so the two move together.
+    ignore:
+      - dependency-name: "php"
+        versions: [">=8.4"]
     groups:
       dockerfile-images:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(images)
+
+  # The Supervisor applies platform updates, so its Node line moves on its own.
+  - package-ecosystem: docker
+    directory: /apps/supervisor
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:30"
+      timezone: Europe/Prague
+    ignore:
+      - dependency-name: "*node"
+        versions: [">=23"]
+    groups:
+      supervisor-images:
         patterns: ["*"]
     open-pull-requests-limit: 5
     commit-message:
@@ -77,6 +107,17 @@ updates:
       day: monday
       time: "06:00"
       timezone: Europe/Prague
+    # Gitea migrates its data one way, and the runner and Docker daemon carry
+    # the self-hosted CI, so these move after the acceptance run by hand.
+    ignore:
+      - dependency-name: "gitea/gitea"
+        versions: [">=1.23"]
+      - dependency-name: "gitea/act_runner"
+        versions: [">=0.3"]
+      - dependency-name: "docker"
+        versions: [">=28"]
+      - dependency-name: "node"
+        versions: [">=23"]
     groups:
       compose-images:
         patterns: ["*"]
