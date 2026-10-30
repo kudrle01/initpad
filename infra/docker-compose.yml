@@ -6,7 +6,7 @@ name: initpad
 
 services:
   postgres:
-    image: postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     environment:
       POSTGRES_USER: initpad
       POSTGRES_PASSWORD: initpad
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   act_runner:
-    image: gitea/act_runner:0.2.11@sha256:c57233403eff970945cfb8b13f0e622d2124f4dbc623af3e2c74f061d05e8f60
+    image: gitea/act_runner:0.2.13@sha256:8477d5b61b655caad4449888bae39f1f34bebd27db56cb15a62dccb3dcf3a944
     profiles: ["ci"]
     depends_on:
       gitea: { condition: service_started }
