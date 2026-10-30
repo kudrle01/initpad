@@ -13,7 +13,7 @@
     "sigstore": "^4.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.5.0",
+    "@types/node": "^22.20.5",
     "typescript": "^5.5.4"
   }
 }
