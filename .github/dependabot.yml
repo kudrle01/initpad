@@ -118,6 +118,12 @@ updates:
         versions: [">=28"]
       - dependency-name: "node"
         versions: [">=23"]
+      # A new major does not start on the data directory of the previous one.
+      - dependency-name: "postgres"
+        versions: [">=17"]
+      # ADR-099 pins the last published Quay images; the lookup needs a login.
+      - dependency-name: "minio/minio"
+      - dependency-name: "minio/mc"
     groups:
       compose-images:
         patterns: ["*"]
