@@ -1,7 +1,7 @@
 # Platform API. Build context = repository root (npm workspaces monorepo):
 #   docker build -f apps/api/Dockerfile .
 # ---------------------------------------------------------------- build ----
-FROM mirror.gcr.io/library/node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS build
+FROM mirror.gcr.io/library/node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS build
 # openssl: Prisma detects the SSL version at install time and downloads the
 # matching engine binaries — without it the detection silently falls back to
 # openssl 1.1 and the engines fail to load at runtime.
@@ -15,7 +15,7 @@ COPY apps/api apps/api
 RUN npm run build --workspace @initpad/api
 
 # ------------------------------------------------ production dependencies ----
-FROM mirror.gcr.io/library/node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS production-dependencies
+FROM mirror.gcr.io/library/node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS production-dependencies
 RUN apk add --no-cache openssl
 WORKDIR /repo
 COPY package.json package-lock.json ./
@@ -24,7 +24,7 @@ COPY apps/api/prisma apps/api/prisma
 RUN npm ci --omit=dev --workspace @initpad/api --include-workspace-root=false
 
 # -------------------------------------------------------------- runtime ----
-FROM mirror.gcr.io/library/node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
+FROM mirror.gcr.io/library/node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94
 # Installed packages take the fixes Alpine published after the base image
 # (ADR-144). npm, npx, corepack and yarn are build tools with dependencies of
 # their own; the runtime never calls them, so the image does not ship them.
