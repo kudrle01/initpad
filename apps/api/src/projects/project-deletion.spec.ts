@@ -28,6 +28,107 @@ const PROJECT = {
   ],
 };
 
+function makeDeletion(prisma: Record<string, unknown>, teardown = jest.fn()) {
+  const scm = {
+    deletePackages: jest.fn().mockResolvedValue(undefined),
+    detachRepo: jest.fn().mockResolvedValue(undefined),
+  };
+  return new ProjectDeletion(
+    prisma as never,
+    { teardown, removeImages: jest.fn().mockResolvedValue(undefined) } as never,
+    {
+      connection: jest.fn().mockReturnValue(undefined),
+      allocation: jest.fn().mockReturnValue(undefined),
+    } as never,
+    { complete: jest.fn().mockResolvedValue(undefined) } as never,
+    { purgeProjectObjects: jest.fn().mockResolvedValue([]) } as never,
+    { provider: jest.fn().mockReturnValue(scm) } as never,
+    () => ({ username: 'owner', token: 'token' }),
+  );
+}
+
+const RETIRED_AGENT_PROJECT = {
+  ...PROJECT,
+  environments: [
+    {
+      ...PROJECT.environments[0],
+      activeOperationId: 'stuck-operation',
+      target: {
+        id: 'target-1',
+        scope: 'user',
+        kind: 'docker',
+        name: 'old-vps',
+        managementState: 'retired',
+      },
+    },
+  ],
+};
+
+function deletionPrisma() {
+  return {
+    deploymentOperation: { findMany: jest.fn().mockResolvedValue([{ id: 'stuck-operation' }]) },
+    workloadDiagnostic: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    agentJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    environment: { update: jest.fn().mockResolvedValue(undefined) },
+    project: { delete: jest.fn().mockResolvedValue(undefined) },
+  };
+}
+
+describe('ProjectDeletion on a disconnected target', () => {
+  it('requires the cleanup-debt acknowledgement before abandoning the deployment', async () => {
+    const prisma = deletionPrisma();
+    const deletion = makeDeletion(prisma);
+
+    await expect(
+      deletion.execute(RETIRED_AGENT_PROJECT as never, { repoAction: 'detach' }),
+    ).rejects.toThrow(/dev \(old-vps\) cannot be cleaned up/);
+    expect(prisma.project.delete).not.toHaveBeenCalled();
+  });
+
+  it('deletes the project without contacting the retired Agent once acknowledged', async () => {
+    const prisma = deletionPrisma();
+    const teardown = jest.fn();
+    const deletion = makeDeletion(prisma, teardown);
+
+    await deletion.execute(RETIRED_AGENT_PROJECT as never, {
+      repoAction: 'detach',
+      confirmCleanupDebt: true,
+    });
+
+    expect(teardown).not.toHaveBeenCalled();
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          deploymentOperation: { environment: { projectId: 'project-1' } },
+          status: { in: ['blocked', 'queued', 'leased'] },
+        },
+      }),
+    );
+    expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'project-1' } });
+  });
+
+  it('still requires Agent cleanup on a connected target', async () => {
+    const prisma = deletionPrisma();
+    const deletion = makeDeletion(prisma);
+    const connected = {
+      ...RETIRED_AGENT_PROJECT,
+      environments: [
+        {
+          ...RETIRED_AGENT_PROJECT.environments[0],
+          target: { ...RETIRED_AGENT_PROJECT.environments[0].target, managementState: 'active' },
+        },
+      ],
+    };
+
+    await expect(
+      deletion.execute(connected as never, { repoAction: 'detach', confirmCleanupDebt: true }),
+    ).rejects.toThrow(/Remove Agent-managed deployments first/);
+  });
+});
+
 describe('ProjectDeletion ordering', () => {
   it('fences active work before teardown and preserves source until artifacts are removed', async () => {
     const complete = jest.fn().mockResolvedValue(undefined);

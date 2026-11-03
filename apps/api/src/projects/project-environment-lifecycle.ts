@@ -8,6 +8,7 @@ import { ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectAgentDelivery, type AgentProjectAction } from './project-agent-delivery';
 import { deployedImageRef, workloadKey } from './project-deployment-identity';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
+import { unmanagedTarget } from './project-deletion';
 
 /** Start, stop and removal state machine for one project environment. */
 export class ProjectEnvironmentLifecycle {
@@ -91,6 +92,7 @@ export class ProjectEnvironmentLifecycle {
   }
 
   async remove(projectId: string, envName: EnvName, actorUserId?: string): Promise<void> {
+    if (await this.abandonOnUnmanagedTarget(projectId, envName, actorUserId)) return;
     const { project, template, environment, slug } = await this.context(projectId, envName);
     const repository = repositoryRef(project);
     if (environment.activeOperationId) {
@@ -332,6 +334,74 @@ export class ProjectEnvironmentLifecycle {
       // Another replica may still own this operation. A worker without the
       // execution fence must leave durable state untouched.
     }
+  }
+
+  /**
+   * A disconnected or retired target has revoked credentials, so nothing can
+   * be queued for it. Removal then only releases the environment record and
+   * leaves an explicit cleanup marker; the workload may remain on that server.
+   */
+  private async abandonOnUnmanagedTarget(
+    projectId: string,
+    envName: EnvName,
+    actorUserId?: string,
+  ): Promise<boolean> {
+    const environment = await this.prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId, name: envName } },
+      include: { target: true },
+    });
+    if (!unmanagedTarget(environment)) return false;
+    const target = environment.target!;
+    const hadDeployment =
+      environment.status !== 'empty' ||
+      environment.version !== null ||
+      environment.activeOperationId !== null;
+    if (!hadDeployment) return true;
+
+    const now = new Date();
+    const reason =
+      `Cleanup pending: target '${target.name}' is ${target.managementState}; ` +
+      'the deployment was released in InitPad but may still run on that server.';
+    const unfinished = await this.prisma.deploymentOperation.findMany({
+      where: { environmentId: environment.id, finishedAt: null },
+      select: { id: true },
+    });
+    await this.prisma.agentJob.updateMany({
+      where: {
+        deploymentOperation: { environmentId: environment.id },
+        status: { in: ['blocked', 'queued', 'leased'] },
+      },
+      data: {
+        status: 'cancelled',
+        message: 'Target is no longer connected',
+        leaseTokenHash: null,
+        leaseExpiresAt: null,
+        leasedByAgentId: null,
+        finishedAt: now,
+      },
+    });
+    for (const operation of unfinished) {
+      await this.operations.complete(operation.id, 'cancelled', 'Target is no longer connected');
+    }
+    // Release the lock of the cancelled operation so the remove record can claim it.
+    await this.prisma.environment.update({
+      where: { id: environment.id },
+      data: { activeOperationId: null },
+    });
+    const operationId = await this.operations.begin(
+      projectId,
+      envName,
+      'remove',
+      environment.version,
+      environment.buildArtifactId,
+      actorUserId,
+    );
+    await this.prisma.environment.update({
+      where: { id: environment.id },
+      data: this.emptyState(reason),
+    });
+    await this.operations.complete(operationId, 'succeeded', reason);
+    return true;
   }
 
   private async context(projectId: string, envName: EnvName) {

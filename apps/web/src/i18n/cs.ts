@@ -342,6 +342,17 @@ export const cs = {
     'Smazat záznam v InitPadu, i když chráněný úklid ještě čeká',
   'The public application is already gone. A target administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.':
     'Veřejná aplikace už je pryč. Správce cíle musí uvedené cesty v karanténě ještě smazat ručně. Po smazání záznamu projektu už InitPad tento úklid zopakovat nemůže.',
+  'Release deployment': 'Uvolnit nasazení',
+  'Release the {environment} deployment?': 'Uvolnit nasazení {environment}?',
+  'The server is disconnected, so InitPad cannot remove the workload from it. Only the InitPad record is released.':
+    'Server je odpojený, takže z něj InitPad nemůže aplikaci odstranit. Uvolní se jen záznam v InitPadu.',
+  'The container may keep running on that server and must be removed there manually.':
+    'Kontejner může na serveru dál běžet a je potřeba ho tam odstranit ručně.',
+  'The environment can then be pointed at another target or the project deleted.':
+    'Prostředí pak lze přesměrovat na jiný cíl nebo projekt smazat.',
+  'server disconnected · left on the server': 'server odpojen · zůstane na serveru',
+  'Some deployments run on a disconnected or retired server. InitPad can no longer reach it, so their containers may keep running there and must be removed on that server manually.':
+    'Některá nasazení běží na odpojeném nebo vyřazeném serveru. InitPad se k němu už nepřipojí, takže kontejnery tam mohou dál běžet a je potřeba je na serveru odstranit ručně.',
   'Also delete the source repository and release its name':
     'Smazat také zdrojový repozitář a uvolnit jeho název',
   'Optional and irreversible. If you preserve the repository, its name remains occupied in Gitea and should later be added back as an existing project. Delete it if a brand-new project must reuse the same name.':

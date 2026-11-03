@@ -240,6 +240,10 @@ export function EnvironmentPipeline({
             !targetNeedsDeploy;
           // Any environment can be pointed at a different target.
           const canTarget = targetAcceptsManagement || env.status === 'empty';
+          // A disconnected server accepts no commands; its deployment can
+          // only be released in InitPad (the workload stays on the server).
+          const canRelease =
+            targetUnavailable && (hasDeployment || env.status === 'deploying' || !!env.version);
           const canInspectWorkload =
             targetAcceptsManagement &&
             hasDeployment &&
@@ -281,7 +285,9 @@ export function EnvironmentPipeline({
                       />
                     )}
                     {!readOnly &&
-                      (targetAcceptsManagement ? hasDeployment || canTarget : canTarget) && (
+                      (targetAcceptsManagement
+                        ? hasDeployment || canTarget
+                        : canTarget || canRelease) && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -374,6 +380,17 @@ export function EnvironmentPipeline({
                                   </DropdownMenuItem>
                                 </>
                               )}
+                            {canRelease && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  destructive
+                                  onSelect={() => onRemoveEnv(env.name)}
+                                >
+                                  <Trash2 className="h-4 w-4" /> {t('Release deployment')}
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}

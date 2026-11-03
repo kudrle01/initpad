@@ -42,8 +42,25 @@ export class ProjectDeletion {
   ) {}
 
   async execute(row: ProjectDeletionRow, opts: ProjectDeletionOptions): Promise<void> {
+    // A disconnected or retired target can no longer receive management
+    // commands (its credentials are revoked), so its deployments can only be
+    // abandoned: the record is released while the workload may survive on that
+    // server. This is cleanup debt and requires the explicit acknowledgement.
+    const abandoned = row.environments.filter(
+      (environment) => unmanagedTarget(environment) && hasDeploymentState(environment),
+    );
+    if (abandoned.length > 0 && !opts.confirmCleanupDebt && opts.repoAction !== 'gone') {
+      throw new BadRequestException(
+        `${abandoned
+          .map((environment) => `${environment.name} (${environment.target!.name})`)
+          .join(', ')} cannot be cleaned up because the target is no longer connected. ` +
+          'Reconnect the target, or confirm that the deployment may remain on that server.',
+      );
+    }
+
     const remoteAgentDeployments = row.environments.filter(
       (environment) =>
+        !unmanagedTarget(environment) &&
         environment.target?.scope === 'user' &&
         environment.target.kind === 'docker' &&
         (environment.status !== 'empty' ||
@@ -60,9 +77,18 @@ export class ProjectDeletion {
     const repository = repositoryRef(row);
     await this.cancelUnfinishedOperations(row.id);
     await this.cancelDiagnosticJobs(row.id);
+    await this.cancelLifecycleJobs(row.id);
 
     const slug = workloadKey(row);
     for (const environment of row.environments) {
+      if (unmanagedTarget(environment)) {
+        if (hasDeploymentState(environment)) {
+          this.logger.warn(
+            `Project ${row.id} deletion abandoned ${environment.name} on ${environment.target!.managementState} target ${environment.target!.id}; its workload was not removed`,
+          );
+        }
+        continue;
+      }
       const teardownWarning = await this.teardownEnvironment(slug, repository, environment);
       if (!teardownWarning) continue;
       if (!opts.confirmCleanupDebt) {
@@ -157,6 +183,28 @@ export class ProjectDeletion {
     }
   }
 
+  /**
+   * Fence queued Agent lifecycle jobs. A disabled Agent never leases them, and
+   * they must not stay queued for a target that may later be reconnected.
+   */
+  private async cancelLifecycleJobs(projectId: string): Promise<void> {
+    await this.prisma.agentJob.updateMany({
+      where: {
+        deploymentOperation: { environment: { projectId } },
+        status: { in: ['blocked', 'queued', 'leased'] },
+      },
+      data: {
+        status: 'cancelled',
+        message: 'Project deletion requested',
+        resultCode: 'project_deleted',
+        leaseTokenHash: null,
+        leaseExpiresAt: null,
+        leasedByAgentId: null,
+        finishedAt: new Date(),
+      },
+    });
+  }
+
   /** Fence target-scoped diagnostic leases before deleting project identity. */
   private async cancelDiagnosticJobs(projectId: string): Promise<void> {
     const diagnostics = await this.prisma.workloadDiagnostic.findMany({
@@ -195,4 +243,25 @@ export class ProjectDeletion {
       },
     });
   }
+}
+
+type DeletionEnvironment = ProjectDeletionRow['environments'][number];
+
+/** A user target that was disconnected or retired and accepts no commands. */
+export function unmanagedTarget(environment: {
+  target?: { scope: string; managementState?: string | null } | null;
+}): boolean {
+  return (
+    environment.target?.scope === 'user' &&
+    (environment.target.managementState ?? 'active') !== 'active'
+  );
+}
+
+function hasDeploymentState(environment: DeletionEnvironment): boolean {
+  return (
+    environment.status !== 'empty' ||
+    environment.version !== null ||
+    environment.activeOperationId !== null ||
+    environment.statusReason?.startsWith('Cleanup pending:') === true
+  );
 }

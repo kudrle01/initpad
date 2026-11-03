@@ -277,6 +277,30 @@ export default function ProjectDetail() {
     const current = currentProject.environments.find((candidate) => candidate.name === environment);
     const cancelling = current?.status === 'deploying';
     const cleanupPending = current?.status === 'empty' && Boolean(current.statusReason);
+    if (
+      current?.target?.scope === 'user' &&
+      (current.target.managementState ?? 'active') !== 'active'
+    ) {
+      const released = await confirmAction({
+        title: t('Release the {environment} deployment?', { environment: environment }),
+        description: t(
+          'The server is disconnected, so InitPad cannot remove the workload from it. Only the InitPad record is released.',
+        ),
+        confirmLabel: t('Release deployment'),
+        tone: 'danger',
+        details: [
+          { label: t('Environment'), value: environment.toUpperCase() },
+          { label: t('Target'), value: current.target.name },
+        ],
+        consequences: [
+          t('The container may keep running on that server and must be removed there manually.'),
+          t('The verified build remains in project history and can be deployed again.'),
+          t('The environment can then be pointed at another target or the project deleted.'),
+        ],
+      });
+      if (released) await removeEnvironment(environment);
+      return;
+    }
     const confirmed = await confirmAction({
       title: cancelling
         ? t('Cancel the {environment} deployment?', { environment: environment })
