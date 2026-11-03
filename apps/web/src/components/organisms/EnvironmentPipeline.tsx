@@ -242,8 +242,7 @@ export function EnvironmentPipeline({
           const canTarget = targetAcceptsManagement || env.status === 'empty';
           // A disconnected server accepts no commands; its deployment can
           // only be released in InitPad (the workload stays on the server).
-          const canRelease =
-            targetUnavailable && (hasDeployment || env.status === 'deploying' || !!env.version);
+          const canRelease = targetUnavailable && (env.status !== 'empty' || !!env.version);
           const canInspectWorkload =
             targetAcceptsManagement &&
             hasDeployment &&

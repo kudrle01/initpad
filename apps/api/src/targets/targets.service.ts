@@ -651,12 +651,16 @@ export class TargetsService implements OnModuleInit {
   async remove(id: string, ownerId: string): Promise<void> {
     const row = await this.getUserTarget(id, ownerId, 'maintain');
     const inUse = await this.prisma.environment.count({ where: { targetId: row.id } });
-    if (inUse > 0) {
+    if (inUse > 0 && this.managementState(row) === 'active') {
       throw new BadRequestException(
         `This target is used by ${inUse} environment(s). Point them at another target first.`,
       );
     }
-    await this.prisma.target.delete({ where: { id: row.id } });
+    if (inUse > 0) {
+      await this.removeUnmanaged(row);
+    } else {
+      await this.prisma.target.delete({ where: { id: row.id } });
+    }
     await this.auditEvents.record({
       workspaceId: row.workspaceId!,
       actorUserId: ownerId,
@@ -666,6 +670,47 @@ export class TargetsService implements OnModuleInit {
       resourceName: row.name,
       details: { kind: row.kind },
     });
+  }
+
+  /**
+   * A disconnected or retired server accepts no commands, so its environment
+   * bindings can only be released in InitPad. Empty environments are unbound
+   * together with their gateway route records; an environment that still
+   * records a deployment must be released (or its project deleted) first, so
+   * deleting a server never silently forgets a workload.
+   */
+  private async removeUnmanaged(row: TargetRow): Promise<void> {
+    const bound = await this.prisma.environment.findMany({
+      where: { targetId: row.id },
+      select: {
+        name: true,
+        status: true,
+        version: true,
+        activeOperationId: true,
+        project: { select: { name: true } },
+      },
+    });
+    const deployed = bound.filter(
+      (environment) =>
+        environment.status !== 'empty' ||
+        environment.version !== null ||
+        environment.activeOperationId !== null,
+    );
+    if (deployed.length > 0) {
+      throw new BadRequestException(
+        `Release the deployments still recorded on this server first: ${deployed
+          .map((environment) => `${environment.project.name}/${environment.name}`)
+          .join(', ')}.`,
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.gatewayRoute.deleteMany({ where: { targetId: row.id } }),
+      this.prisma.environment.updateMany({
+        where: { targetId: row.id },
+        data: { targetId: null, allocationId: null },
+      }),
+      this.prisma.target.delete({ where: { id: row.id } }),
+    ]);
   }
 
   async disconnect(id: string, userId: string): Promise<void> {
@@ -830,10 +875,16 @@ export class TargetsService implements OnModuleInit {
     nextState: Exclude<TargetManagementState, 'active'>,
   ): Promise<void> {
     if (this.managementState(row) === nextState) return;
+    // Agent-backed operations are only ever finished by the Agent itself. Its
+    // credential is revoked in the same transaction below, so an in-flight
+    // operation can never complete afterwards and is cancelled instead of
+    // blocking a server that may already be gone. Direct (SSH/SFTP) operations
+    // execute inside the API process and must still finish first.
+    const agentBacked = row.kind === 'docker';
     const activeOperations = await this.prisma.environment.count({
       where: { targetId: row.id, activeOperationId: { not: null } },
     });
-    if (activeOperations > 0) {
+    if (activeOperations > 0 && !agentBacked) {
       throw new BadRequestException(
         `This target has ${activeOperations} environment operation(s) in progress. Wait for them to finish or cancel them before changing target management.`,
       );
@@ -899,6 +950,29 @@ export class TargetsService implements OnModuleInit {
           finishedAt: now,
         },
       }),
+      ...(agentBacked && activeOperations > 0
+        ? [
+            this.prisma.deploymentOperation.updateMany({
+              where: { finishedAt: null, environment: { targetId: row.id } },
+              data: {
+                status: 'cancelled',
+                phase: 'cancelled',
+                message,
+                finishedAt: now,
+                executionOwner: null,
+                executionLeaseExpiresAt: null,
+              },
+            }),
+            this.prisma.environment.updateMany({
+              where: { targetId: row.id, activeOperationId: { not: null } },
+              data: {
+                activeOperationId: null,
+                status: 'failed',
+                statusReason: `${message}; the operation in progress was cancelled`,
+              },
+            }),
+          ]
+        : []),
     ]);
 
     await this.auditEvents.record({
@@ -908,7 +982,11 @@ export class TargetsService implements OnModuleInit {
       resourceType: 'target',
       resourceId: row.id,
       resourceName: row.name,
-      details: { kind: row.kind, boundEnvironments: bindings },
+      details: {
+        kind: row.kind,
+        boundEnvironments: bindings,
+        ...(agentBacked && activeOperations > 0 ? { cancelledOperations: activeOperations } : {}),
+      },
     });
     if (agent) {
       await this.auditEvents.record({
