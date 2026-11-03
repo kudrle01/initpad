@@ -771,6 +771,90 @@ describe('target management lifecycle', () => {
     expect(targetUpdate).not.toHaveBeenCalled();
   });
 
+  it('cancels in-flight Agent operations instead of blocking a gone server', async () => {
+    const agentTarget = { ...remote, kind: 'docker', host: null, secret: null };
+    const { service, prisma, targetUpdate, audit } = setup(1, agentTarget as TargetRow);
+    prisma.deploymentOperation = { updateMany: jest.fn(async () => ({ count: 1 })) };
+    prisma.environment.updateMany = jest.fn(async () => ({ count: 1 }));
+
+    await service.retire(remote.id, 'owner-1');
+
+    expect(targetUpdate).toHaveBeenCalled();
+    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+      where: { finishedAt: null, environment: { targetId: remote.id } },
+      data: expect.objectContaining({ status: 'cancelled', phase: 'cancelled' }),
+    });
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { targetId: remote.id, activeOperationId: { not: null } },
+      data: expect.objectContaining({ activeOperationId: null, status: 'failed' }),
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'target.retired',
+        details: expect.objectContaining({ cancelledOperations: 1 }),
+      }),
+    );
+  });
+
+  it('deletes a retired server after unbinding its empty environments', async () => {
+    const retired = { ...remote, managementState: 'retired', secret: null } as TargetRow;
+    const { service, prisma } = setup(0, retired);
+    prisma.environment.count = jest.fn(async () => 2);
+    prisma.environment.findMany = jest.fn(async () => [
+      {
+        name: 'dev',
+        status: 'empty',
+        version: null,
+        activeOperationId: null,
+        project: { name: 'app' },
+      },
+    ]);
+    prisma.environment.updateMany = jest.fn(async () => ({ count: 2 }));
+    prisma.gatewayRoute = { deleteMany: jest.fn(async () => ({ count: 1 })) };
+    prisma.target.delete = jest.fn(async () => retired);
+
+    await service.remove(remote.id, 'owner-1');
+
+    expect(prisma.gatewayRoute.deleteMany).toHaveBeenCalledWith({ where: { targetId: remote.id } });
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { targetId: remote.id },
+      data: { targetId: null, allocationId: null },
+    });
+    expect(prisma.target.delete).toHaveBeenCalledWith({ where: { id: remote.id } });
+  });
+
+  it('refuses to delete a retired server that still records a deployment', async () => {
+    const retired = { ...remote, managementState: 'retired', secret: null } as TargetRow;
+    const { service, prisma } = setup(0, retired);
+    prisma.environment.count = jest.fn(async () => 1);
+    prisma.environment.findMany = jest.fn(async () => [
+      {
+        name: 'prod',
+        status: 'running',
+        version: 'a'.repeat(40),
+        activeOperationId: null,
+        project: { name: 'shop' },
+      },
+    ]);
+    prisma.target.delete = jest.fn();
+
+    await expect(service.remove(remote.id, 'owner-1')).rejects.toThrow(
+      'Release the deployments still recorded on this server first: shop/prod.',
+    );
+    expect(prisma.target.delete).not.toHaveBeenCalled();
+  });
+
+  it('still refuses to delete an active server that environments use', async () => {
+    const { service, prisma } = setup(0);
+    prisma.environment.count = jest.fn(async () => 1);
+    prisma.target.delete = jest.fn();
+
+    await expect(service.remove(remote.id, 'owner-1')).rejects.toThrow(
+      'Point them at another target first',
+    );
+    expect(prisma.target.delete).not.toHaveBeenCalled();
+  });
+
   it('rejects management commands after a target is disconnected', () => {
     const { service } = setup();
     expect(() =>

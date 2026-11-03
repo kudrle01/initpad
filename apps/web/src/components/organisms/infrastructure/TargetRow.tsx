@@ -6,7 +6,6 @@ import {
   Cloud,
   Container,
   Link2Off,
-  MoreHorizontal,
   Pencil,
   Play,
   PowerOff,
@@ -28,13 +27,6 @@ import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { TargetUsageList } from '@/components/molecules/TargetUsageList';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { ProviderKind, Target } from '@/types';
 import { t, plural, formatDateTime, formatNumber } from '@/i18n';
@@ -117,6 +109,15 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 
 const PANEL = 'min-w-0 rounded-lg border border-border/70 bg-card p-4';
 
+function LifecycleAction({ description, children }: { description: string; children: ReactNode }) {
+  return (
+    <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <p className="min-w-0 text-xs text-muted-foreground">{description}</p>
+      <div className="shrink-0">{children}</div>
+    </li>
+  );
+}
+
 // One server is one row. The row answers "is it up, and can this workspace
 // deploy to it?"; the access policy, connection details and every management
 // action open underneath on demand.
@@ -175,6 +176,20 @@ export function TargetRow({
 
   // Delete is offered for every workspace server; the rest depend on the role.
   const hasLifecycleActions = isUserTarget;
+  // An unmanaged server can be deleted once no environment on it still
+  // records a deployment; its empty bindings are released by the API.
+  const deployedUsage = usage.filter((item) => item.status !== 'empty');
+  const canDelete = unavailable ? deployedUsage.length === 0 : usage.length === 0;
+  const deleteHint = canDelete
+    ? t('Removes the server from InitPad. Nothing on the server itself is deleted.')
+    : unavailable
+      ? t('Release the deployments on this server first: {list}.', {
+          list: deployedUsage.map((item) => `${item.projectName}/${item.environment}`).join(', '),
+        })
+      : t(
+          'Used by {count} environments. Point them at another server, or disconnect or retire this one first.',
+          { count: formatNumber(usage.length) },
+        );
 
   return (
     <li>
@@ -501,59 +516,50 @@ export function TargetRow({
                       </Button>
                     )}
                   </div>
-
-                  {/* Rare, consequential lifecycle actions stay out of the way. */}
-                  {hasLifecycleActions && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="h-10 w-10 shrink-0 rounded-full sm:h-8 sm:w-8"
-                          disabled={busy}
-                          aria-label={t('More actions for {name}', { name: target.name })}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        {canManageLifecycle && managementState === 'active' && (
-                          <DropdownMenuItem onSelect={onDisconnect}>
-                            <Link2Off className="h-4 w-4 text-muted-foreground" /> {t('Disconnect')}
-                          </DropdownMenuItem>
-                        )}
-                        {canManageLifecycle && managementState !== 'retired' && (
-                          <DropdownMenuItem onSelect={onRetire}>
-                            <Archive className="h-4 w-4 text-muted-foreground" /> {t('Retire')}
-                          </DropdownMenuItem>
-                        )}
-                        {canManageLifecycle && managementState !== 'retired' && (
-                          <DropdownMenuSeparator />
-                        )}
-                        <DropdownMenuItem
-                          destructive
-                          disabled={usage.length > 0}
-                          title={
-                            usage.length > 0
-                              ? plural('Used by {count} environments', usage.length)
-                              : undefined
-                          }
-                          onSelect={onDelete}
-                        >
-                          <Trash2 className="h-4 w-4" /> {t('Delete server')}
-                          {usage.length > 0 && (
-                            <span className="ml-auto pl-3 text-xs text-muted-foreground">
-                              {t('in use')}
-                            </span>
-                          )}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
                 </div>
               )}
             </section>
           </div>
+
+          {!readOnly && hasLifecycleActions && (
+            <section className={PANEL} aria-label={t('Disconnect and delete')}>
+              <h3 className="text-sm font-semibold">{t('Disconnect and delete')}</h3>
+              <ul className="mt-3 divide-y divide-border/70">
+                {canManageLifecycle && managementState === 'active' && (
+                  <LifecycleAction
+                    description={t(
+                      'InitPad stops managing this server and revokes its access. Running applications stay online.',
+                    )}
+                  >
+                    <Button variant="secondary" size="sm" disabled={busy} onClick={onDisconnect}>
+                      <Link2Off className="h-3.5 w-3.5" /> {t('Disconnect')}
+                    </Button>
+                  </LifecycleAction>
+                )}
+                {canManageLifecycle && managementState !== 'retired' && (
+                  <LifecycleAction
+                    description={t(
+                      'For a server you are shutting down. History and URLs stay visible; deployments on it can then be released.',
+                    )}
+                  >
+                    <Button variant="secondary" size="sm" disabled={busy} onClick={onRetire}>
+                      <Archive className="h-3.5 w-3.5" /> {t('Retire')}
+                    </Button>
+                  </LifecycleAction>
+                )}
+                <LifecycleAction description={deleteHint}>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={busy || !canDelete}
+                    onClick={onDelete}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> {t('Delete server')}
+                  </Button>
+                </LifecycleAction>
+              </ul>
+            </section>
+          )}
         </div>
       )}
     </li>

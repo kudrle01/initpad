@@ -342,6 +342,17 @@ export const cs = {
     'Smazat záznam v InitPadu, i když chráněný úklid ještě čeká',
   'The public application is already gone. A target administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.':
     'Veřejná aplikace už je pryč. Správce cíle musí uvedené cesty v karanténě ještě smazat ručně. Po smazání záznamu projektu už InitPad tento úklid zopakovat nemůže.',
+  'Disconnect and delete': 'Odpojení a smazání',
+  'InitPad stops managing this server and revokes its access. Running applications stay online.':
+    'InitPad přestane server spravovat a zneplatní jeho přístup. Běžící aplikace zůstanou online.',
+  'For a server you are shutting down. History and URLs stay visible; deployments on it can then be released.':
+    'Pro server, který rušíte. Historie a adresy zůstanou viditelné a nasazení na něm pak půjde uvolnit.',
+  'Removes the server from InitPad. Nothing on the server itself is deleted.':
+    'Odebere server z InitPadu. Na samotném serveru se nic nesmaže.',
+  'Release the deployments on this server first: {list}.':
+    'Nejdřív uvolněte nasazení na tomto serveru: {list}.',
+  'Used by {count} environments. Point them at another server, or disconnect or retire this one first.':
+    'Používá ho prostředí: {count}. Přesměrujte je na jiný server, nebo tento nejdřív odpojte či vyřaďte.',
   'Release deployment': 'Uvolnit nasazení',
   'Release the {environment} deployment?': 'Uvolnit nasazení {environment}?',
   'The server is disconnected, so InitPad cannot remove the workload from it. Only the InitPad record is released.':
@@ -559,10 +570,8 @@ export const cs = {
   'Restore or reconnect this server before editing it':
     'Před úpravou tento server obnovte nebo znovu připojte',
   'Edit server': 'Upravit server',
-  'More actions for {name}': 'Další akce pro {name}',
   Disconnect: 'Odpojit',
   Retire: 'Vyřadit',
-  'in use': 'používá se',
   // components/organisms/PipelinePresetField.tsx
   Pipeline: 'Pipeline',
   // components/organisms/PipelinePresetSettings.tsx
