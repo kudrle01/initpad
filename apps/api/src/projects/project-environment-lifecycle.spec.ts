@@ -295,4 +295,58 @@ describe('ProjectEnvironmentLifecycle', () => {
     });
     expect(deployment.teardown).not.toHaveBeenCalled();
   });
+
+  it('releases an Agent deployment on a retired target without queueing work', async () => {
+    const environmentUpdate = jest.fn(async () => undefined);
+    const agentJobs = jest.fn(async () => ({ count: 1 }));
+    const prisma = {
+      environment: {
+        findUniqueOrThrow: jest.fn(async () => ({
+          id: 'env-1',
+          provider: 'docker',
+          status: 'running',
+          version: 'a'.repeat(40),
+          buildArtifactId: 'artifact-1',
+          activeOperationId: 'stuck-operation',
+          target: { scope: 'user', name: 'old-vps', managementState: 'retired' },
+        })),
+        update: environmentUpdate,
+      },
+      deploymentOperation: {
+        findMany: jest.fn(async () => [{ id: 'stuck-operation' }]),
+      },
+      agentJob: { updateMany: agentJobs },
+    };
+    const complete = jest.fn(async () => undefined);
+    const queueLifecycle = jest.fn();
+    const lifecycle = make(prisma, {}, { complete }, { queueLifecycle });
+
+    await lifecycle.remove('project-1', 'dev');
+
+    expect(queueLifecycle).not.toHaveBeenCalled();
+    expect(agentJobs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: { in: ['blocked', 'queued', 'leased'] } }),
+      }),
+    );
+    expect(complete).toHaveBeenCalledWith(
+      'stuck-operation',
+      'cancelled',
+      'Target is no longer connected',
+    );
+    expect(environmentUpdate).toHaveBeenLastCalledWith({
+      where: { id: 'env-1' },
+      data: expect.objectContaining({
+        status: 'empty',
+        version: null,
+        activeOperationId: null,
+        statusReason: expect.stringMatching(/^Cleanup pending: target 'old-vps' is retired/),
+      }),
+    });
+    expect(complete).toHaveBeenLastCalledWith(
+      'operation-1',
+      'succeeded',
+      expect.stringContaining('Cleanup pending'),
+    );
+  });
 });

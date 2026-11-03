@@ -44,13 +44,17 @@ export function DeleteProjectDialog({
     (env) => env.status !== 'empty' || env.version !== null || env.url !== null,
   );
   const productionDeployed = deployed.some((env) => env.name === 'prod');
+  // A disconnected or retired server accepts no cleanup commands; its
+  // deployments can only be left behind on that server.
+  const abandoned = deployed.filter(
+    (env) => env.target?.scope === 'user' && env.target.managementState !== 'active',
+  );
   const cleanupPending = environments.filter(
     (env) => env.status === 'empty' && env.statusReason?.startsWith('Cleanup pending:'),
   );
+  const debtRequired = cleanupPending.length > 0 || abandoned.length > 0;
   const confirmed =
-    match &&
-    (!productionDeployed || confirmProduction) &&
-    (!cleanupPending.length || confirmCleanupDebt);
+    match && (!productionDeployed || confirmProduction) && (!debtRequired || confirmCleanupDebt);
 
   function confirm() {
     if (!confirmed) return;
@@ -102,8 +106,13 @@ export function DeleteProjectDialog({
                   className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                 >
                   <span className="capitalize">{t('{name} deployment', { name: env.name })}</span>
-                  <span className="break-words text-xs sm:text-right">
-                    {env.target?.name ?? env.provider} · {statusLabel(env.status)}
+                  <span
+                    className={`break-words text-xs sm:text-right${abandoned.includes(env) ? ' text-warning' : ''}`}
+                  >
+                    {env.target?.name ?? env.provider} ·{' '}
+                    {abandoned.includes(env)
+                      ? t('server disconnected · left on the server')
+                      : statusLabel(env.status)}
                   </span>
                 </li>
               ))
@@ -151,7 +160,7 @@ export function DeleteProjectDialog({
             </label>
           )}
 
-          {cleanupPending.length > 0 && (
+          {debtRequired && (
             <label className="flex cursor-pointer items-start gap-3 tint-warning rounded-lg border border-warning/30 p-3 text-sm">
               <input
                 type="checkbox"
@@ -164,11 +173,20 @@ export function DeleteProjectDialog({
                 <span className="block font-medium">
                   {t('Delete the InitPad record with protected cleanup still pending')}
                 </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {t(
-                    'The public application is already gone. A target administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.',
-                  )}
-                </span>
+                {cleanupPending.length > 0 && (
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {t(
+                      'The public application is already gone. A target administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.',
+                    )}
+                  </span>
+                )}
+                {abandoned.length > 0 && (
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {t(
+                      'Some deployments run on a disconnected or retired server. InitPad can no longer reach it, so their containers may keep running there and must be removed on that server manually.',
+                    )}
+                  </span>
+                )}
               </span>
             </label>
           )}

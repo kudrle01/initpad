@@ -104,4 +104,49 @@ describe('DeleteProjectDialog', () => {
       screen.getByRole('checkbox', { name: /also delete the source repository/i }),
     ).not.toBeChecked();
   });
+
+  it('requires an acknowledgement for deployments on a retired server', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(
+      <DeleteProjectDialog
+        open
+        onOpenChange={() => undefined}
+        projectName="billing-api"
+        environments={[
+          {
+            ...environment('dev', 'running'),
+            target: {
+              id: 'target-1',
+              name: 'old-vps',
+              kind: 'docker',
+              scope: 'user',
+              host: null,
+              managementState: 'retired',
+            },
+          },
+        ]}
+        hasRepository={false}
+        deleting={false}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    expect(screen.getByText(/left on the server/i)).toBeInTheDocument();
+    const deleteButton = screen.getByRole('button', { name: /^delete project$/i });
+    await user.type(screen.getByPlaceholderText('billing-api'), 'billing-api');
+    expect(deleteButton).toBeDisabled();
+
+    await user.click(
+      screen.getByRole('checkbox', {
+        name: /delete the initpad record with protected cleanup still pending/i,
+      }),
+    );
+    await user.click(deleteButton);
+    expect(onConfirm).toHaveBeenCalledWith({
+      deleteRepository: false,
+      confirmProduction: false,
+      confirmCleanupDebt: true,
+    });
+  });
 });
