@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const workflow = readFileSync('.github/workflows/release-platform.yml', 'utf8');
 const nativeBuilder =
-  'docker/github-builder/.github/workflows/build.yml@58cb9f5b71b1836d6f690c1e95effdeb9b98cb8a';
+  'docker/github-builder/.github/workflows/build.yml@cbc9d42f8c89a55623392aadd03600965b80e963';
 
 test('builds every platform component on native amd64 and arm64 runners', () => {
   assert.equal(workflow.split(`uses: ${nativeBuilder}`).length - 1, 3);
