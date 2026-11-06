@@ -1,0 +1,18 @@
+{
+  "admin": {
+    "listen": "unix//run/initpad-gateway/admin.sock|0200"
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "initpad": {
+          "listen": [":8080"],
+          "automatic_https": {
+            "disable": true
+          },
+          "routes": []
+        }
+      }
+    }
+  }
+}
