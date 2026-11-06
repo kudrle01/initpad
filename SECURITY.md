@@ -56,6 +56,7 @@ The repository is checked continuously, not only when it changes:
 | GitHub secret scanning and push protection | pushed commits | every push |
 | Dependabot security updates | npm, pip, Composer, Docker and GitHub Actions | as soon as an advisory is published |
 | Dependabot version updates | the same ecosystems, majors planned by hand | weekly, on Monday |
+| Dependabot auto-merge | patch and minor updates outside container images, once the required checks pass | every Dependabot pull request |
 | OpenSSF Scorecard | repository and supply-chain practices | push to `main`, weekly |
 
 Findings appear under the repository's **Security** tab. An alert that cannot be
