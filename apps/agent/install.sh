@@ -16,6 +16,7 @@ EXPECTED_TARGET_ID=
 UNINSTALL=false
 REMOVE_WORKLOADS=false
 ASSUME_YES=false
+SKIP_CAPACITY_CHECK=false
 # Where Manage Agent stores the private CA for --ca-file (ADR-161).
 MANAGED_CA_DIR=/etc/initpad-agent
 
@@ -39,6 +40,7 @@ Options:
   --ca-file PATH               Private CA certificate trusted by the Agent
   --expected-target-id ID      Refuse an identity belonging to another target
   --re-enroll                  Replace a stale/revoked identity using a new token
+  --skip-capacity-check        Do not stop on a server below the minimum size
   -h, --help                   Show this help
 
 Uninstall:
@@ -110,6 +112,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --re-enroll)
       REENROLL=true
+      shift
+      ;;
+    --skip-capacity-check)
+      SKIP_CAPACITY_CHECK=true
       shift
       ;;
     --uninstall)
@@ -272,6 +278,79 @@ printf '%s\n' "$IMAGE" | grep -Eq '^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$' \
 command -v docker >/dev/null 2>&1 || fail 'Docker Engine is required'
 [ -S /var/run/docker.sock ] || fail '/var/run/docker.sock is not available'
 docker info >/dev/null 2>&1 || fail 'Docker Engine is not reachable'
+
+# ---- capacity
+# The Agent and every deployed environment share this host. Below the minimum a
+# server is only fit to run the Agent, and the kernel's out-of-memory killer
+# can take the Agent or an application down, which looks like a disconnected
+# server. Sizes are those of the Docker daemon's host. RAM is compared with a
+# little headroom because a "1.5 GB" or "4 GB" VM reports less than its nominal
+# size.
+MIN_MEMORY_MIB=1400
+REC_MEMORY_MIB=3600
+MIN_CPUS=1
+REC_CPUS=2
+MIN_DISK_MIB=10240
+REC_DISK_MIB=20480
+
+check_capacity() {
+  mem_bytes=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
+  cpus=$(docker info --format '{{.NCPU}}' 2>/dev/null || echo 0)
+  case "$mem_bytes" in ''|*[!0-9]*) mem_bytes=0 ;; esac
+  case "$cpus" in ''|*[!0-9]*) cpus=0 ;; esac
+  mem_mib=$((mem_bytes / 1048576))
+  problems=
+  notes=
+
+  if [ "$mem_mib" -gt 0 ] && [ "$mem_mib" -lt "$MIN_MEMORY_MIB" ]; then
+    problems="$problems
+  - RAM: ${mem_mib} MiB available, at least 1.5 GB is required"
+  elif [ "$mem_mib" -gt 0 ] && [ "$mem_mib" -lt "$REC_MEMORY_MIB" ]; then
+    notes="$notes
+  - RAM: ${mem_mib} MiB available, 4 GB is recommended for dev, test and prod"
+  fi
+  if [ "$cpus" -gt 0 ] && [ "$cpus" -lt "$MIN_CPUS" ]; then
+    problems="$problems
+  - CPU: ${cpus} available, at least ${MIN_CPUS} is required"
+  elif [ "$cpus" -gt 0 ] && [ "$cpus" -lt "$REC_CPUS" ]; then
+    notes="$notes
+  - CPU: ${cpus} available, ${REC_CPUS} are recommended"
+  fi
+
+  # Free space is only measurable when the Docker daemon is on this host.
+  if [ -z "$PUBLISHED_HOST" ]; then
+    root_dir=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+    if [ -n "$root_dir" ] && [ -d "$root_dir" ]; then
+      free_kib=$(df -Pk "$root_dir" 2>/dev/null | awk 'NR==2 {print $4}')
+      case "$free_kib" in ''|*[!0-9]*) free_kib= ;; esac
+      if [ -n "$free_kib" ]; then
+        free_mib=$((free_kib / 1024))
+        if [ "$free_mib" -lt "$MIN_DISK_MIB" ]; then
+          problems="$problems
+  - Disk: $((free_mib / 1024)) GiB free in $root_dir, at least 10 GiB is required"
+        elif [ "$free_mib" -lt "$REC_DISK_MIB" ]; then
+          notes="$notes
+  - Disk: $((free_mib / 1024)) GiB free in $root_dir, 20 GiB is recommended"
+        fi
+      fi
+    fi
+  fi
+
+  if [ -n "$notes" ]; then
+    warn "this server is below the recommended size:$notes"
+  fi
+  if [ -n "$problems" ]; then
+    if [ "$SKIP_CAPACITY_CHECK" = true ]; then
+      warn "this server is below the minimum size; continuing because of --skip-capacity-check:$problems"
+    else
+      fail "this server is below the minimum size:$problems
+Resize the server, or rerun with --skip-capacity-check to install anyway."
+    fi
+  fi
+}
+# ---- end capacity
+
+check_capacity
 
 # Do not silently modify the host's service policy. Some installations use a
 # non-systemd or externally managed Docker daemon, but a conventional systemd
