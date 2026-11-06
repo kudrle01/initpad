@@ -223,8 +223,8 @@ export const cs = {
   'Loading Agent release information…': 'Načítání informací o vydání Agenta…',
   '{reason}. Ask the instance administrator to run <install>deploy/install.sh</install>. Source-build lab users can enroll with <enroll>deploy/agent-lab.sh enroll</enroll>.':
     '{reason}. Požádejte správce instance, aby spustil <install>deploy/install.sh</install>. Uživatelé laboratorního buildu ze zdrojů se mohou zaregistrovat příkazem <enroll>deploy/agent-lab.sh enroll</enroll>.',
-  'Managed gateway installations also need the target-local Caddy socket, gateway container and optional private CA flags shown by the installer help.':
-    'Instalace se spravovanou bránou potřebují navíc místní socket Caddy na cíli, kontejner brány a volitelné přepínače pro soukromou CA, které ukáže nápověda instalátoru.',
+  'This command also sets up the managed gateway for {domain}: a private CA, a TLS edge and the gateway. Point {domain} and *.{domain} in DNS at this server first, and install the CA root certificate the installer prints on the computers that open the applications.':
+    'Tento příkaz zároveň nastaví spravovanou bránu pro {domain}: soukromou CA, TLS vstup a bránu. Nejdřív v DNS nasměrujte {domain} a *.{domain} na tento server a na počítače, ze kterých se aplikace otevírají, nainstalujte kořenový certifikát CA, který instalátor vypíše.',
   'Agent {version} is current': 'Agent {version} je aktuální',
   'Connected to this target and ready to receive jobs. No action is required.':
     'Je připojený k tomuto cíli a připravený přijímat úlohy. Není potřeba nic dělat.',

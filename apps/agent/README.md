@@ -144,22 +144,22 @@ co chybí; mezi minimem a doporučením jen varuje. Kontrolu obejdete
 parametrem `--skip-capacity-check`. Volné místo se u vzdáleného Docker daemonu
 (`--published-host`) nezjišťuje.
 
-| | Minimum | Doporučeno |
-|---|---|---|
-| RAM | 1,5 GB | 4 GB |
-| CPU | 1 vCPU | 2 vCPU |
-| Volné místo v Dockeru | 10 GiB | 20 GiB |
+|                       | Minimum | Doporučeno |
+| --------------------- | ------- | ---------- |
+| RAM                   | 1,5 GB  | 4 GB       |
+| CPU                   | 1 vCPU  | 2 vCPU     |
+| Volné místo v Dockeru | 10 GiB  | 20 GiB     |
 
 RAM se porovnává s malou rezervou, protože server o nominální velikosti 1,5
 nebo 4 GB hlásí o něco méně. Minimum stačí na Agenta a jedno prostředí;
 doporučená velikost na dev, test a prod. Paměť a CPU určují tyto limity:
 
-| Co | RAM | CPU | Poznámka |
-|---|---|---|---|
-| Agent | 384 MB | 0,5 | Pevný limit kontejneru Agenta. Při aktualizaci krátce běží starý i nový Agent. |
-| Každé nasazené prostředí | 512 MB | 1 | Výchozí limit allocation, lze změnit v allocation serveru. |
-| Nasazení nové verze | +1 limit prostředí | | Kandidát běží vedle aktuální revize, dokud neprojde health check. |
-| Systém a Docker | asi 0,5 GB | | Ubuntu Server bez grafického prostředí. |
+| Co                       | RAM                | CPU | Poznámka                                                                       |
+| ------------------------ | ------------------ | --- | ------------------------------------------------------------------------------ |
+| Agent                    | 384 MB             | 0,5 | Pevný limit kontejneru Agenta. Při aktualizaci krátce běží starý i nový Agent. |
+| Každé nasazené prostředí | 512 MB             | 1   | Výchozí limit allocation, lze změnit v allocation serveru.                     |
+| Nasazení nové verze      | +1 limit prostředí |     | Kandidát běží vedle aktuální revize, dokud neprojde health check.              |
+| Systém a Docker          | asi 0,5 GB         |     | Ubuntu Server bez grafického prostředí.                                        |
 
 Orientačně tedy RAM ≈ 1 GB + počet prostředí × jejich limit + jedno
 prostředí navíc pro probíhající nasazení. Server pro jeden projekt s dev,
@@ -234,6 +234,7 @@ když vše běží na jednom vývojovém počítači.
    První příkaz nevypíše žádný workload. Oba příkazy `inspect` vrátí not found,
    pokud test image stáhl a síť vytvořil sám. Image, který byl v cache už před
    testem, se záměrně zachovává.
+
 10. **Disable Agent** zneplatní credential. Běžící proces dostane odpověď `401`,
     zaznamená `agent.credential_rejected` a skončí. Poté je nutný nový
     enrollment.
@@ -285,13 +286,14 @@ Po úspěšných diagnostických testech výše ověřte skutečnou cestu projek
    `http://127.0.0.1` se proto odkaz zobrazený InitPadem musí otevřít ze stejného
    vývojového počítače. Bridge nepublikuje port Docker API 2375 a nenahrazuje
    produkční ingress na skutečném targetu.
+
 5. V nástrojích prostředí spusťte **Stop**, **Start** a poté **Remove
    deployment**. Každá operace musí projít jobem Agenta a prostředí musí postupně
    skončit ve stavech `stopped`, `running` a `empty`. Příkaz `docker ps -a` výše
    po odstranění nesmí vrátit žádný kontejner.
 6. Spusťte další deploy, zastavte Agenta dříve, než job převezme, a počkejte, až
    UI označí target jako offline. Operace musí zůstat ve stavu `Waiting for
-   Agent`, nesmí selhat ani proběhnout lokálně. Agenta znovu spusťte, stejná
+Agent`, nesmí selhat ani proběhnout lokálně. Agenta znovu spusťte, stejná
    operace pak skončí právě jednou.
 7. Ověřte, že druhý workspace nevidí ani nemůže alokovat target Agenta prvního
    workspace. Dva workloady Agentů na jednom fyzickém daemonu otestujete tak, že
@@ -345,7 +347,36 @@ lab připojuje mezi Agenta a Caddy vyhrazený Unix socket. Caddy běží uvnitř
 stejného izolovaného daemonu jako workloady, nemá Docker socket a neotevírá
 žádný admin TCP listener.
 
-Produkční referenci brány (Caddy, vnitřní CA, postup pro Agenta) popisuje
+### Brána jedním příkazem (`--gateway-domain`)
+
+U serveru se **Spravovanou bránou** vygeneruje **Manage Agent** příkaz, který
+bránu postaví sám (ADR-165). Doménu bere z veřejné URL serveru. Ručně:
+
+```sh
+sudo sh ./initpad-agent-install.sh --url ... --image ... \
+  --expected-target-id ... --gateway-domain apps.example.lan
+```
+
+Instalátor na stejném hostu spustí tři označené kontejnery: vnitřní CA
+(`step-ca`), TLS vstup (Caddy na portech 80 a 443) a vnitřní bránu, kterou
+Agent konfiguruje přes Unix socket. Agent kořenový certifikát CA důvěřuje
+automaticky; pokud už dostal `--ca-file`, obě CA se spojí do
+`/etc/initpad-agent/trust-bundle.crt`. Na konci instalátor vypíše cestu ke
+kořeni (`/var/lib/initpad-gateway/ca-root.crt`) a jeho otisk.
+
+Před instalací musí v DNS existovat záznam `A` pro doménu i wildcard
+`*.doména` na IP tohoto serveru; bez toho CA žádné jméno neověří. Doména nesmí
+končit na `.local` (mDNS) ani být IP adresou. Kořenový certifikát nainstalujte
+na počítače, kde se aplikace otevírají. Opakované spuštění CA i heslo zachová
+a kontejnery nahradí aktuální definicí. Certifikáty platí sedm dní a Caddy je
+obnovuje sám.
+
+Odinstalace brány je výslovná: `--uninstall --remove-gateway` smaže kontejnery,
+volumes včetně soukromého klíče CA a `/var/lib/initpad-gateway`. Bez toho brána
+při odinstalaci Agenta zůstane. Klientům by po smazání CA nové brány přestaly
+důvěřovat, proto instalátor před odstraněním žádá potvrzení.
+
+Produkční referenci pro ruční nasazení bez instalátoru (Compose) popisuje
 [`deploy/gateway/README.md`](../../deploy/gateway/README.md) a ADR-164.
 
 ### Lokální acceptance DNS a TLS na macOS

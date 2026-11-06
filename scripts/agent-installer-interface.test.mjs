@@ -180,3 +180,106 @@ test('checks capacity after validation and never on uninstall', () => {
   assert.ok(call > source.indexOf('uninstall_agent\n  exit 0'));
   assert.ok(call < source.indexOf('run the installer in an interactive terminal'));
 });
+
+// Runs only the gateway validation of the installer; it fails before any
+// Docker call, so no daemon is needed.
+function runGatewayValidation(variables) {
+  const source = readFileSync(installer, 'utf8');
+  const block = source.slice(
+    source.indexOf('# ---- gateway'),
+    source.indexOf('# ---- end gateway'),
+  );
+  const script = `PROGRAM=t
+fail() { printf '%s\\\\n' "$1" >&2; exit 1; }
+warn() { printf 'warning: %s\\\\n' "$1" >&2; }
+GATEWAY_ADMIN_SOCKET=
+GATEWAY_CONTAINER=
+PUBLISHED_HOST=
+${variables}
+${block}
+docker() { echo "docker must not be called" >&2; exit 99; }
+getent() { return 0; }
+mkdir() { echo "reached filesystem setup" >&2; exit 0; }
+setup_gateway`;
+  const result = spawnSync('sh', ['-c', script], { encoding: 'utf8' });
+  return { status: result.status, err: result.stderr };
+}
+
+test('documents the one-command gateway and its removal', () => {
+  const help = execFileSync(installer, ['--help'], { encoding: 'utf8' });
+  assert.match(help, /--gateway-domain DOMAIN\s+Set up the managed gateway on this server/);
+  assert.match(help, /--remove-gateway\s+Also remove the gateway this installer set up/);
+});
+
+test('rejects a gateway domain that is not a plain DNS name', () => {
+  for (const domain of [
+    '10.0.0.5',
+    'Apps.Example.lan',
+    'nodots',
+    'a b.example.lan',
+    '-x.example.lan',
+  ]) {
+    const result = runGatewayValidation(`GATEWAY_DOMAIN='${domain}'`);
+    assert.equal(result.status, 1, `${domain} was accepted`);
+    assert.match(result.err, /--gateway-domain must be/);
+  }
+});
+
+test('warns about .local and refuses to mix --gateway-domain with a hand-made gateway', () => {
+  const local = runGatewayValidation(`GATEWAY_DOMAIN=apps.lab.local`);
+  assert.match(local.err, /ends in \.local, which is reserved for mDNS/);
+  assert.match(local.err, /reached filesystem setup/);
+
+  const mixed = runGatewayValidation(
+    `GATEWAY_DOMAIN=apps.lab.lan\nGATEWAY_ADMIN_SOCKET=/run/x/admin.sock`,
+  );
+  assert.equal(mixed.status, 1);
+  assert.match(mixed.err, /do not combine it with --gateway-admin-socket/);
+
+  const remote = runGatewayValidation(`GATEWAY_DOMAIN=apps.lab.lan\nPUBLISHED_HOST=docker.lab`);
+  assert.equal(remote.status, 1);
+  assert.match(remote.err, /needs a local Docker daemon/);
+});
+
+test('starts every gateway container hardened, pinned and owned by the installer', () => {
+  const source = readFileSync(installer, 'utf8');
+  const block = source.slice(
+    source.indexOf('# ---- gateway'),
+    source.indexOf('# ---- end gateway'),
+  );
+
+  assert.match(block, /^CADDY_IMAGE='[^']+@sha256:[a-f0-9]{64}'$/m);
+  assert.match(block, /^STEP_CA_IMAGE='[^']+@sha256:[a-f0-9]{64}'$/m);
+  const runs = block.split('docker run -d --name ').slice(1);
+  assert.equal(runs.length, 3);
+  for (const run of runs) {
+    const command = run.slice(0, run.indexOf('>/dev/null'));
+    assert.match(command, /--read-only/);
+    assert.match(command, /--cap-drop ALL --cap-add NET_BIND_SERVICE/);
+    assert.match(command, /--security-opt no-new-privileges/);
+    assert.match(command, /--memory \d+m/);
+    assert.match(command, /--label "\$GATEWAY_LABEL"/);
+  }
+  assert.doesNotMatch(block, /docker\.sock/);
+  // Only the edge publishes ports (HTTP and HTTPS).
+  const edgeRun = runs.find((run) => run.startsWith('"$GATEWAY_EDGE"'));
+  assert.equal([...block.matchAll(/--publish /g)].length, 2);
+  assert.equal([...edgeRun.matchAll(/--publish /g)].length, 2);
+  // A foreign container with the same name is never replaced.
+  assert.match(block, /was not created by this installer/);
+});
+
+test('sets up the gateway after the capacity check and removes it only on request', () => {
+  const source = readFileSync(installer, 'utf8');
+  const setup = source.indexOf('\nif [ -n "$GATEWAY_DOMAIN" ]; then\n  setup_gateway');
+  assert.ok(setup > source.indexOf('\ncheck_capacity\n'));
+  assert.ok(setup < source.indexOf('--published-host contains unsupported characters'));
+  assert.ok(setup > source.indexOf('uninstall_agent\n  exit 0'));
+
+  const removal = source.indexOf('remove_gateway\n  fi');
+  assert.ok(removal > source.indexOf("Type 'uninstall' to continue"));
+  assert.match(
+    source,
+    /\[ "\$REMOVE_GATEWAY" = false \] \|\| fail '--remove-gateway is only valid with --uninstall'/,
+  );
+});
