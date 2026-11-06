@@ -23,7 +23,7 @@ srozumitelném a samostatně nasaditelném systému.
 
 | Část | Stav |
 |---|---|
-| Self-hosted platforma | Veřejný podepsaný release `0.2.10`; candidate gate, bootstrap z `0.2.9` i stable audit ověřeny se zachováním dat a workloadů |
+| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.23` prošel anonymním auditem; živá acceptance candidate gate, bootstrapu z `0.2.9` a stable auditu se zachováním dat a workloadů proběhla na `0.2.10` |
 | InitPad Agent | Doporučený release `0.14.3`; reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu |
 | Hosted SaaS | Ve vývoji; nejde zatím o produkční deployment profil |
 
@@ -144,7 +144,7 @@ zranitelností, a proto vyžaduje přístup k internetu.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.10
+npm run audit:public-release -- --tag initpad-v0.2.23
 npm run audit:public-release -- --tag agent-v0.14.3
 ```
 

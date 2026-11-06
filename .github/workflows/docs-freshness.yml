@@ -1,0 +1,84 @@
+name: Documentation freshness
+
+on:
+  # A release does not change this repository, so the documents describing the
+  # current release are compared with GitHub after each release run and weekly.
+  workflow_run:
+    workflows: [Release InitPad Platform, Release InitPad Agent]
+    types: [completed]
+  schedule:
+    - cron: '51 5 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - 'deploy/agent-release.env'
+      - 'scripts/docs-freshness.mjs'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-freshness
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check documented releases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.14.0
+
+      - name: Compare documents with published releases
+        id: freshness
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node scripts/docs-freshness.mjs > report.txt
+          status=$?
+          cat report.txt
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # One open issue tracks stale documentation; it is updated while stale
+      # and closed once the documents name the current releases again.
+      - name: Open, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ steps.freshness.outputs.status }}
+          TITLE: Documentation is behind the latest release
+        run: |
+          set -euo pipefail
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty')
+          if [ "$STATUS" = "1" ]; then
+            {
+              cat report.txt
+              echo
+              echo "Update the documents in a pull request; this issue closes when the next check passes."
+            } > body.md
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --body-file body.md
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file body.md
+            fi
+          elif [ "$STATUS" = "0" ] && [ -n "$issue" ]; then
+            gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --comment "The documents name the current releases again."
+          elif [ "$STATUS" != "0" ]; then
+            echo "Freshness check failed to run" >&2
+            exit 1
+          fi

@@ -1,7 +1,9 @@
 # Release readiness a známá omezení
 
 Release baseline tohoto dokumentu je doporučený Agent 0.14.3, odmítnuté
-release 0.13.0 a 0.14.0 a podepsaná platforma 0.2.10. Dokument současně
+release 0.13.0 a 0.14.0 a živě ověřená podepsaná platforma 0.2.10. Nejnovější
+vydaná platforma `initpad-v0.2.23` prošla anonymním auditem veřejného releasu;
+živá acceptance na ní zatím zopakována nebyla. Dokument současně
 sleduje novější změny na `main`; ty nejsou automaticky součástí digest-pinned
 image 0.2.10. Proto níže výslovně odděluje vydaný a živě ověřený self-hosted
 profil od post-release mechanismů, které mají automatizované testy, ale teprve
@@ -245,6 +247,7 @@ npm run audit:public-release -- --tag initpad-v0.2.7
 npm run audit:public-release -- --tag initpad-v0.2.8
 npm run audit:public-release -- --tag initpad-v0.2.9
 npm run audit:public-release -- --tag initpad-v0.2.10
+npm run audit:public-release -- --tag initpad-v0.2.23
 npm run audit:public-release -- --tag agent-v0.14.2
 npm run audit:public-release -- --tag agent-v0.14.3
 ```
