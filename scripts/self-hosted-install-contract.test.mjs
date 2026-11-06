@@ -110,6 +110,13 @@ test('trusts the internal CA only for the registry hostname (ADR-161)', () => {
     daemon.indexOf('SSL_CERT_FILE') < daemon.indexOf('dockerd-entrypoint.sh'),
     'the bundle must be exported before the daemon starts',
   );
+  // Name resolution is checked before anything starts and again from inside Docker.
+  assert.ok(
+    installer.indexOf('report_dns "$DOMAIN"') < installer.indexOf('# ---- 2. core services'),
+    'DNS is reported before the services start',
+  );
+  assert.match(installer, /exec -T runner-docker nslookup "\$ci_git"/);
+  assert.match(installer, /Domains=~\$\{name#\*\.\}/);
   // An active ufw would drop CI traffic to the server's own address.
   assert.match(installer, /ufw allow in on "\$runner_bridge" to any port 80,443/);
   assert.ok(
