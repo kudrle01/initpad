@@ -190,6 +190,7 @@ export function completeJob(
     message: string;
     resultCode?: string;
     result?: AgentJobResult;
+    gatewayCaSha256?: string;
   },
   fetchImpl: FetchLike = fetch,
 ): Promise<AgentJobSummary> {

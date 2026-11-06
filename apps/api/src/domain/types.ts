@@ -75,6 +75,8 @@ export interface Target {
     status: GatewayPreflightStatus;
     checkedAt: string | null;
     error: string | null;
+    // SHA-256 (hex) of the gateway CA root, when the Agent reported one.
+    caSha256?: string | null;
   } | null;
   verifiedAt: string | null;
   // Agent targets are ready when enrolled, enabled, on a compatible version,

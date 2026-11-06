@@ -143,6 +143,13 @@ export class AgentJobCompleteDto extends AgentLeaseDto {
   @Type(() => AgentJobResultDto)
   result?: AgentJobResultDto;
 
+  // Accepted only from a passed gateway-preflight job: SHA-256 (hex) of the
+  // gateway CA root the Agent's installer set up.
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-f0-9]{64}$/)
+  gatewayCaSha256?: string;
+
   @IsOptional()
   @ValidateNested()
   @Type(() => AgentJobDiagnosticDto)

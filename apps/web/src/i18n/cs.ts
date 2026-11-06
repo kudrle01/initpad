@@ -124,6 +124,24 @@ export const cs = {
   'Queue a read-only gateway preflight (Agent 0.5.0 or newer)':
     'Zařadit předběžnou kontrolu brány do fronty (pouze čtení, Agent 0.5.0 nebo novější)',
   'Test gateway': 'Otestovat bránu',
+  // components/organisms/agent-setup/GatewayCaDownload.tsx
+  'Gateway certificate': 'Certifikát brány',
+  'Install this certificate authority in the browser of every computer that opens the applications, so it trusts their HTTPS addresses.':
+    'Nainstalujte tuto certifikační autoritu do prohlížeče každého počítače, ze kterého se aplikace otevírají, aby jejich HTTPS adresám důvěřoval.',
+  'Download certificate': 'Stáhnout certifikát',
+  'SHA-256 fingerprint. Compare it with the downloaded file before installing it:':
+    'Otisk SHA-256. Před instalací ho porovnejte se staženým souborem:',
+  'The fingerprint is not known yet. Run the gateway test, or compare the file with the fingerprint printed by the installer on the Agent server.':
+    'Otisk zatím není znám. Spusťte test brány, nebo soubor porovnejte s otiskem, který vypsal instalátor na serveru Agenta.',
+  'How to install the certificate': 'Jak certifikát nainstalovat',
+  'Windows: open the file → Install Certificate → Local Machine → Trusted Root Certification Authorities.':
+    'Windows: otevřete soubor → Nainstalovat certifikát → Místní počítač → Důvěryhodné kořenové certifikační autority.',
+  'macOS: double-click the file, add it to Keychain Access (System) and set it to Always Trust.':
+    'macOS: dvakrát klikněte na soubor, přidejte ho do Klíčenky (Systém) a nastavte Vždy důvěřovat.',
+  'Firefox: Settings → Privacy & Security → View Certificates → Authorities → Import.':
+    'Firefox: Nastavení → Soukromí a zabezpečení → Zobrazit certifikáty → Autority → Importovat.',
+  'Check the fingerprint: openssl x509 -in initpad-gateway-ca.crt -noout -fingerprint -sha256':
+    'Kontrola otisku: openssl x509 -in initpad-gateway-ca.crt -noout -fingerprint -sha256',
   'No protocol jobs yet.': 'Zatím žádné úlohy protokolu.',
   'Recent Agent tests · newest first': 'Poslední testy Agenta · od nejnovějších',
   '{kind} · attempt {attempt}': '{kind} · pokus {attempt}',

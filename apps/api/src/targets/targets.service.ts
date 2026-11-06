@@ -165,6 +165,7 @@ export interface TargetRow {
   gatewayPreflightJobId?: string | null;
   gatewayPreflightAt?: Date | null;
   gatewayPreflightError?: string | null;
+  gatewayCaSha256?: string | null;
   verifiedAt: Date | null;
   ownerId: string | null;
   workspaceId: string | null;
@@ -601,6 +602,7 @@ export class TargetsService implements OnModuleInit {
                 gatewayPreflightJobId: null,
                 gatewayPreflightAt: null,
                 gatewayPreflightError: null,
+                gatewayCaSha256: null,
               }
             : {}),
           ...(connectionChanged ? { verifiedAt: null } : {}),
@@ -916,6 +918,7 @@ export class TargetsService implements OnModuleInit {
                 gatewayPreflightJobId: null,
                 gatewayPreflightAt: null,
                 gatewayPreflightError: null,
+                gatewayCaSha256: null,
               }
             : {}),
         },
@@ -1136,6 +1139,7 @@ export class TargetsService implements OnModuleInit {
               status: (row.gatewayPreflightStatus ?? 'not-run') as GatewayPreflightStatus,
               checkedAt: row.gatewayPreflightAt?.toISOString() ?? null,
               error: row.gatewayPreflightError ?? null,
+              caSha256: row.gatewayCaSha256 ?? null,
             }
           : null,
       verifiedAt: row.verifiedAt ? row.verifiedAt.toISOString() : null,

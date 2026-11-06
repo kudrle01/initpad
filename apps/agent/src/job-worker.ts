@@ -48,6 +48,7 @@ export interface AgentJobClient {
       resultCode?: string;
       result?: AgentJobResult;
       diagnostic?: AgentJobDiagnostic;
+      gatewayCaSha256?: string;
     },
   ): Promise<AgentJobSummary>;
   downloadArtifact?(
@@ -345,11 +346,15 @@ export async function executeClaimedJob(
       });
       return;
     }
+    // Set by the one-command gateway installer from the CA root it serves for
+    // download; absent for a gateway the operator built themselves.
+    const caSha256 = (process.env.INITPAD_AGENT_GATEWAY_CA_SHA256 ?? '').trim().toLowerCase();
     await complete({
       leaseToken: job.leaseToken,
       status: 'succeeded',
       message: 'Gateway DNS, TLS and Caddy adapter preflight passed',
       resultCode: 'ok',
+      ...(/^[a-f0-9]{64}$/.test(caSha256) ? { gatewayCaSha256: caSha256 } : {}),
     });
     return;
   }
