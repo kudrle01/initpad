@@ -599,6 +599,11 @@ databázových identit, managed workloadů i tří release digestů. Stejný rel
 pak byl bez přestavění povýšen na stable, znovu prošel anonymním auditem a
 VM po návratu na `stable` hlásila zdravou podepsanou verzi 0.2.10.
 
+Standardní candidate aktualizace tlačítkem **Install update** z 0.2.23 na
+0.2.24 prošla 6. listopadu 2026 bez problémů se zachováním dat a workloadů.
+Release byl poté bez přestavění povýšen na stable a znovu prošel anonymním
+auditem (`npm run audit:public-release -- --tag initpad-v0.2.24`).
+
 ## 11. Ověř smazání a opětovné použití názvu
 
 V Team Alpha vytvoř samostatný projekt `delete-recreate`, počkej na dokončení
