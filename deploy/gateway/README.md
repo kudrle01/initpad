@@ -111,6 +111,20 @@ veřejnou URL zadejte `https://<GATEWAY_DOMAIN>`. Pak v **Manage Agent** spusťt
   (Let's Encrypt) kořen nepotřebujete, odeberte řádek `trusted_roots` z
   `Caddyfile`.
 
+## Firewall na hostu
+
+CA ověřuje jméno připojením na adresu, na kterou se jméno překládá, tedy na
+tento server. Pokud host zahazuje provoz z Docker sítí na sebe sama (typicky
+aktivní `ufw`), certifikát nevznikne. Povolte jen síť brány:
+
+```sh
+BR=br-$(docker network inspect initpad-gateway-net -f '{{printf "%.12s" .Id}}')
+sudo ufw allow in on "$BR" to any port 80,443 proto tcp
+```
+
+Jednopříkazový instalátor to udělá sám. Apex (`initpad-apps.lab.local`) i
+wildcard (`*.initpad-apps.lab.local`) musí mít záznam v DNS.
+
 ## Co tahle reference neřeší
 
 - Vysokou dostupnost. Je to jedna brána na jednom serveru.

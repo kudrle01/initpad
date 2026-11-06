@@ -293,3 +293,9 @@ test('gateway edge sets an explicit ACME issuer so .local names do not use the i
   );
   assert.doesNotMatch(edge, /acme_ca\b/);
 });
+
+test('gateway installer lets the CA reach the server through ufw and checks it', () => {
+  const script = readFileSync(installer, 'utf8');
+  assert.match(script, /ufw allow in on "\$gateway_bridge" to any port/);
+  assert.match(script, /docker exec "\$GATEWAY_CA" wget/);
+});

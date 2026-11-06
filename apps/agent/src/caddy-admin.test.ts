@@ -77,7 +77,7 @@ test('refuses ambiguous or unbounded Caddy admin socket configuration', async ()
   );
   await assert.rejects(
     new CaddyAdminClient('', privateResolver, fetch, '/tmp/admin.sock').ready(signal()),
-    /bounded path below \/run/,
+    /bounded path below \/run or/,
   );
 });
 

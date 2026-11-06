@@ -5,7 +5,9 @@ const ROUTES_PATH = '/config/apps/http/servers/initpad/routes';
 const MAX_ROUTE_COUNT = 10_000;
 const MAX_RECONCILE_ATTEMPTS = 5;
 const MAX_ADMIN_RESPONSE_BYTES = 1024 * 1024;
-const ADMIN_SOCKET = /^\/(?:var\/)?run\/[A-Za-z0-9._/-]+\.sock$/;
+// /run (tmpfs) or the gateway installer's persistent directory, which survives reboots.
+const ADMIN_SOCKET =
+  /^\/(?:(?:var\/)?run|var\/lib\/initpad-gateway-admin)\/[A-Za-z0-9._/-]+\.sock$/;
 
 type Resolver = (hostname: string) => Promise<Array<{ address: string; family: number }>>;
 type CaddyRoute = Record<string, unknown>;
@@ -222,7 +224,9 @@ export class CaddyAdminClient {
       throw new Error('Configure either the Caddy admin Unix socket or URL, not both');
     }
     if (!ADMIN_SOCKET.test(socket) || socket.includes('/../') || socket.includes('//')) {
-      throw new Error('Caddy adapter socket must be a bounded path below /run');
+      throw new Error(
+        'Caddy adapter socket must be a bounded path below /run or /var/lib/initpad-gateway-admin',
+      );
     }
     this.socket = socket;
     return socket;
