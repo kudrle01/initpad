@@ -138,7 +138,21 @@ enrollment token.
   neotevírá; porty 80 a 443 potřebuje jen managed gateway.
 - Oprávnění root pro jednorázové spuštění instalátoru.
 
-Instalátor kapacitu nekontroluje. Paměť a CPU určují tyto limity:
+Instalátor velikost serveru před registrací zkontroluje podle Docker daemonu
+(RAM a CPU) a volného místa v `DockerRootDir`. Pod minimem skončí s výpisem,
+co chybí; mezi minimem a doporučením jen varuje. Kontrolu obejdete
+parametrem `--skip-capacity-check`. Volné místo se u vzdáleného Docker daemonu
+(`--published-host`) nezjišťuje.
+
+| | Minimum | Doporučeno |
+|---|---|---|
+| RAM | 1,5 GB | 4 GB |
+| CPU | 1 vCPU | 2 vCPU |
+| Volné místo v Dockeru | 10 GiB | 20 GiB |
+
+RAM se porovnává s malou rezervou, protože server o nominální velikosti 1,5
+nebo 4 GB hlásí o něco méně. Minimum stačí na Agenta a jedno prostředí;
+doporučená velikost na dev, test a prod. Paměť a CPU určují tyto limity:
 
 | Co | RAM | CPU | Poznámka |
 |---|---|---|---|

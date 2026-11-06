@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -92,4 +93,90 @@ test('uninstalls only what the installer and Agent created for this target', () 
     uninstall.indexOf('[ "$answer" = uninstall ]') < uninstall.indexOf('docker rm -f "$name"'),
   );
   assert.match(uninstall, /run in an interactive terminal to confirm, or pass --yes/);
+});
+
+// Runs only the capacity function of the installer against a stub Docker
+// daemon and `df`, so the thresholds are tested without a real host.
+function runCapacity({ memMiB, cpus, freeGiB, skip = false }) {
+  const source = readFileSync(installer, 'utf8');
+  const block = source.slice(
+    source.indexOf('# ---- capacity'),
+    source.indexOf('# ---- end capacity'),
+  );
+  const dir = mkdtempSync(resolve(tmpdir(), 'agent-capacity-'));
+  try {
+    writeFileSync(
+      resolve(dir, 'docker'),
+      `#!/bin/sh
+case "$*" in
+  *MemTotal*) echo ${memMiB * 1048576} ;;
+  *NCPU*) echo ${cpus} ;;
+  *DockerRootDir*) echo ${dir} ;;
+esac
+`,
+    );
+    writeFileSync(
+      resolve(dir, 'df'),
+      `#!/bin/sh\necho Filesystem\necho x 1 1 ${freeGiB * 1048576} 1% /\n`,
+    );
+    chmodSync(resolve(dir, 'docker'), 0o755);
+    chmodSync(resolve(dir, 'df'), 0o755);
+    const script = `PROGRAM=t
+PUBLISHED_HOST=
+SKIP_CAPACITY_CHECK=${skip}
+fail() { printf '%s\\n' "$1" >&2; exit 1; }
+warn() { printf 'warning: %s\\n' "$1" >&2; }
+${block}
+check_capacity
+echo done`;
+    const result = spawnSync('sh', ['-c', script], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+    });
+    return { status: result.status, out: result.stdout, err: result.stderr };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('stops an Agent install on a server below the minimum size', () => {
+  const small = runCapacity({ memMiB: 900, cpus: 1, freeGiB: 30 });
+  assert.equal(small.status, 1);
+  assert.match(small.err, /below the minimum size/);
+  assert.match(small.err, /RAM: 900 MiB/);
+  assert.match(small.err, /--skip-capacity-check/);
+
+  const tinyDisk = runCapacity({ memMiB: 4000, cpus: 2, freeGiB: 5 });
+  assert.equal(tinyDisk.status, 1);
+  assert.match(tinyDisk.err, /Disk: 5 GiB free/);
+});
+
+test('warns, but continues, between the minimum and recommended size', () => {
+  const ok = runCapacity({ memMiB: 2000, cpus: 1, freeGiB: 15 });
+  assert.equal(ok.status, 0);
+  assert.match(ok.out, /done/);
+  assert.match(ok.err, /below the recommended size/);
+  assert.match(ok.err, /RAM: 2000 MiB/);
+  assert.match(ok.err, /CPU: 1 available/);
+  assert.match(ok.err, /Disk: 15 GiB free/);
+});
+
+test('accepts a recommended-size server silently and lets the operator override', () => {
+  const big = runCapacity({ memMiB: 3900, cpus: 2, freeGiB: 40 });
+  assert.equal(big.status, 0);
+  assert.equal(big.err, '');
+
+  const forced = runCapacity({ memMiB: 900, cpus: 1, freeGiB: 30, skip: true });
+  assert.equal(forced.status, 0);
+  assert.match(forced.err, /continuing because of --skip-capacity-check/);
+});
+
+test('checks capacity after validation and never on uninstall', () => {
+  const source = readFileSync(installer, 'utf8');
+  const call = source.indexOf('\ncheck_capacity\n');
+  assert.ok(
+    call > source.indexOf("docker info >/dev/null 2>&1 || fail 'Docker Engine is not reachable'"),
+  );
+  assert.ok(call > source.indexOf('uninstall_agent\n  exit 0'));
+  assert.ok(call < source.indexOf('run the installer in an interactive terminal'));
 });
