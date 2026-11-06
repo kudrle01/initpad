@@ -1,0 +1,40 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge for Dependabot
+    # Dependabot opens the pull request from this repository; a fork or a
+    # human-authored pull request never reaches the write token below.
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'kudrle01/initpad'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Read Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      # Patch and minor updates merge on their own once the required checks of
+      # the main ruleset pass. Majors, a changed package maintainer, and image
+      # updates stay manual: images are verified only by the path-filtered
+      # container image workflow, which is not a required check.
+      - name: Enable auto-merge
+        if: >-
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+           steps.metadata.outputs.update-type == 'version-update:semver-minor') &&
+          steps.metadata.outputs.maintainer-changes != 'true' &&
+          !startsWith(steps.metadata.outputs.package-ecosystem, 'docker')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
