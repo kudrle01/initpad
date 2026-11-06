@@ -95,8 +95,18 @@ function slug(value: string): string {
     .trim()
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
     // Collapse dot runs so no component can carry a `..` traversal sequence.
-    .replace(/\.{2,}/g, '.')
-    .replace(/^[.-]+|[.-]+$/g, '');
-  if (!cleaned) throw new Error('artifactObjectKey: component is empty after sanitisation');
-  return cleaned;
+    .replace(/\.{2,}/g, '.');
+  const trimmed = trimEdges(cleaned, '.-');
+  if (!trimmed) throw new Error('artifactObjectKey: component is empty after sanitisation');
+  return trimmed;
+}
+
+// A linear scan instead of /[.-]+$/, which backtracks quadratically on a long
+// run of dots and dashes that is not at the end of the string.
+function trimEdges(value: string, characters: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && characters.includes(value[start])) start += 1;
+  while (end > start && characters.includes(value[end - 1])) end -= 1;
+  return value.slice(start, end);
 }

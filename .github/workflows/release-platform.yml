@@ -9,17 +9,18 @@ concurrency:
   group: platform-release-${{ github.ref }}
   cancel-in-progress: false
 
+# Each job requests only what it uses; the default grants nothing to write.
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
+  contents: read
 
 jobs:
   verify:
     name: Verify release source
     runs-on: ubuntu-24.04
+    # Reads GHCR only to refuse a version tag that already exists.
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 30
     outputs:
       platform-version: ${{ steps.release.outputs.platform-version }}
@@ -218,6 +219,12 @@ jobs:
     name: Sign and publish platform
     needs: [verify, build_api, build_web, build_supervisor]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     timeout-minutes: 30
     env:
       PLATFORM_VERSION: ${{ needs.verify.outputs.platform-version }}

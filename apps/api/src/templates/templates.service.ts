@@ -5,6 +5,8 @@ import { config } from '../config';
 import { TemplateManifest } from '../domain/types';
 import { adaptWorkflowForGitHub } from '../scm/github/github-workflow';
 
+const TEMPLATE_ID = /^[a-z0-9-]{1,64}$/;
+
 /**
  * Template catalog. A template is a directory with a template.json manifest
  * and the project scaffold under files/. Adding a template means adding a
@@ -28,6 +30,7 @@ export class TemplatesService {
   }
 
   filesDir(id: string): string {
+    if (!TEMPLATE_ID.test(id)) throw new NotFoundException(`Template '${id}' not found`);
     this.get(id);
     return join(config.templatesDir, id, 'files');
   }

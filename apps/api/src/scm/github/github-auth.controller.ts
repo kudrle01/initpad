@@ -47,14 +47,17 @@ export class GitHubAuthController {
   @Get('callback')
   @RateLimited(RATE_LIMITS.githubCallback)
   async callback(
-    @Query('code') code: string,
-    @Query('state') state: string,
+    // A repeated query parameter arrives as an array; only one string is valid.
+    @Query('code') codeRaw: unknown,
+    @Query('state') stateRaw: unknown,
     @Req() req: Request,
     @Res() res: Response,
   ) {
     if (!this.oauth.isConfigured())
       return res.redirect(this.frontend('/login?error=github_unavailable'));
 
+    const code = typeof codeRaw === 'string' ? codeRaw : undefined;
+    const state = typeof stateRaw === 'string' ? stateRaw : undefined;
     const nonce = readStringCookie(req, GITHUB_OAUTH_NONCE_COOKIE);
     const verified = nonce ? await this.oauth.verifyState(state, nonce) : null;
     res.clearCookie(GITHUB_OAUTH_NONCE_COOKIE, { path: '/' });

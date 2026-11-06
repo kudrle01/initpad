@@ -95,6 +95,14 @@ describe('GitHubOAuthService', () => {
     });
   });
 
+  it('rejects a state or nonce repeated as an array without throwing', async () => {
+    const service = new GitHubOAuthService(oauthStateStore().prisma as never);
+    const { state, nonce } = await service.authorizeUrl('login');
+    await expect(service.verifyState([state, state] as never, nonce)).resolves.toBeNull();
+    await expect(service.verifyState(['a.b'] as never, nonce)).resolves.toBeNull();
+    await expect(service.verifyState(state, [nonce] as never)).resolves.toBeNull();
+  });
+
   it('rejects a tampered or expired state', async () => {
     const service = new GitHubOAuthService(oauthStateStore().prisma as never);
     await expect(service.verifyState('garbage', 'browser-nonce')).resolves.toBeNull();

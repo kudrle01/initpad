@@ -1,22 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import {
-  chmod,
-  chown,
-  copyFile,
-  lstat,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { chmod, chown, copyFile, lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { finished } from 'node:stream/promises';
 import { asSignedPlatformRelease, verifyPlatformRelease } from './release.js';
 import { loadState, saveState, stateDirectory } from './state.js';
+import { readVerifiedFile } from './verified-file.js';
 import type {
   PlatformReleaseManifest,
   SignedPlatformRelease,
@@ -217,11 +208,15 @@ async function readPlan(path: string): Promise<UpdatePlan> {
   if (dirname(resolve(path)) !== stateDirectory()) {
     throw new Error('Platform update plan path is invalid');
   }
-  const stat = await lstat(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) {
-    throw new Error('Platform update plan must be a mode-0600 regular file');
-  }
-  const raw = await readFile(path, 'utf8');
+  const notPrivate = 'Platform update plan must be a mode-0600 regular file';
+  const raw = await readVerifiedFile(
+    path,
+    (stat) => {
+      if (!stat.isFile() || (stat.mode & 0o077) !== 0) throw new Error(notPrivate);
+      if (stat.size > 2 * 1024 * 1024) throw new Error('Platform update plan is too large');
+    },
+    notPrivate,
+  );
   if (Buffer.byteLength(raw) > 2 * 1024 * 1024)
     throw new Error('Platform update plan is too large');
   const plan = JSON.parse(raw) as UpdatePlan;

@@ -14,6 +14,15 @@ describe('artifactObjectKey', () => {
     digest: 'sha256:abc123',
   };
 
+  it('trims edge dots and dashes in linear time', () => {
+    expect(artifactObjectKey({ ...base, workspaceId: '..-ws-..' })).toBe(
+      'artifacts/ws/proj_1/art_1/sha256-abc123.tar',
+    );
+    const started = Date.now();
+    artifactObjectKey({ ...base, projectId: `${'.-'.repeat(50_000)}x${'-'.repeat(50_000)}y` });
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it('builds a stable, tenant-scoped key from internal IDs and the digest', () => {
     expect(artifactObjectKey(base)).toBe('artifacts/ws_1/proj_1/art_1/sha256-abc123.tar');
   });

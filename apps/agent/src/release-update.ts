@@ -1,7 +1,8 @@
-import { chmod, lstat, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { verify, type Bundle } from 'sigstore';
 import { AGENT_VERSION } from './types.js';
+import { readVerifiedFile } from './verified-file.js';
 
 const STABLE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const IMAGE = /^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$/;
@@ -177,14 +178,18 @@ export async function readUpdatePlan(path: string): Promise<AgentUpdatePlan> {
   if (dirname(path) !== PLAN_DIRECTORY || path !== updatePlanPathFromFilename(path)) {
     throw new Error('Agent update plan path is invalid');
   }
-  const stat = await lstat(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) {
-    throw new Error('Agent update plan must be a mode-0600 regular file');
-  }
-  if (typeof process.geteuid === 'function' && stat.uid !== process.geteuid()) {
-    throw new Error('Agent update plan is owned by a different user');
-  }
-  const raw = await readFile(path, 'utf8');
+  const notPrivate = 'Agent update plan must be a mode-0600 regular file';
+  const raw = await readVerifiedFile(
+    path,
+    (stat) => {
+      if (!stat.isFile() || (stat.mode & 0o077) !== 0) throw new Error(notPrivate);
+      if (typeof process.geteuid === 'function' && stat.uid !== process.geteuid()) {
+        throw new Error('Agent update plan is owned by a different user');
+      }
+      if (stat.size > 16 * 1024) throw new Error('Agent update plan is too large');
+    },
+    notPrivate,
+  );
   if (Buffer.byteLength(raw) > 16 * 1024) throw new Error('Agent update plan is too large');
   const plan = JSON.parse(raw) as unknown;
   assertUpdatePlan(plan);

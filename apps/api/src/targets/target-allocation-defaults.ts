@@ -10,7 +10,11 @@ export interface AllocationUsageDefaults {
 }
 
 function appendPath(base: string, namespace: string): string {
-  const trimmed = base.replace(/\/+$/, '');
+  // A linear scan instead of /\/+$/, which backtracks quadratically on a long
+  // run of slashes that is not at the end of the string.
+  let end = base.length;
+  while (end > 0 && base[end - 1] === '/') end -= 1;
+  const trimmed = base.slice(0, end);
   return `${trimmed || '/'}${trimmed ? '/' : ''}${namespace}`;
 }
 

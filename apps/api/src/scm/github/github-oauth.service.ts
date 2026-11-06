@@ -110,7 +110,12 @@ export class GitHubOAuthService {
     browserNonce: string | undefined,
   ): Promise<VerifiedOAuthState | null> {
     const verified = this.parseState(raw);
-    if (!verified || !raw || !browserNonce || !this.equalSecret(browserNonce, verified.nonce)) {
+    if (
+      !verified ||
+      typeof raw !== 'string' ||
+      typeof browserNonce !== 'string' ||
+      !this.equalSecret(browserNonce, verified.nonce)
+    ) {
       return null;
     }
     const usedAt = new Date();
@@ -127,7 +132,7 @@ export class GitHubOAuthService {
   }
 
   private parseState(raw: string | undefined): VerifiedOAuthState | null {
-    if (!raw || !raw.includes('.')) return null;
+    if (typeof raw !== 'string' || !raw.includes('.')) return null;
     const [payload, sig] = raw.split('.', 2);
     const expected = this.hmac(payload);
     const a = Buffer.from(sig);
