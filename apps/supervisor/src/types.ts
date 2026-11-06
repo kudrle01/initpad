@@ -1,4 +1,4 @@
-export const SUPERVISOR_VERSION = '0.2.29';
+export const SUPERVISOR_VERSION = '0.2.30';
 
 export type UpdateOperationStatus = 'accepted' | 'running' | 'succeeded' | 'failed' | 'rolled-back';
 
