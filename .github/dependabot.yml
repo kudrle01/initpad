@@ -18,6 +18,12 @@ updates:
       - dependency-name: "@opentelemetry/*"
     groups:
       npm-dependencies:
+        applies-to: version-updates
+        patterns: ["*"]
+      # Security updates arrive as soon as an advisory is published and are
+      # reviewed in one pull request instead of one per package.
+      npm-security:
+        applies-to: security-updates
         patterns: ["*"]
     open-pull-requests-limit: 5
     commit-message:

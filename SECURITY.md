@@ -41,3 +41,23 @@ are documented in [THREAT_MODEL.md](THREAT_MODEL.md) and
 After a fix is available, the project may publish a GitHub security advisory
 with affected versions, impact, remediation and credit. Reporters may request
 embargo coordination or anonymity.
+
+## Automated security checks
+
+The repository is checked continuously, not only when it changes:
+
+| Check | Scope | When |
+| --- | --- | --- |
+| CodeQL (`security-extended`) | TypeScript, template Python, GitHub Actions workflows | every pull request and push to `main`, weekly |
+| Dependency review | dependencies added or changed by a pull request; fails on moderate or higher | every pull request |
+| `npm audit` release gate | production npm dependencies, with exceptions in `security/npm-audit-exceptions.json` | every pull request and push to `main`, daily |
+| Trivy | platform and template container images and template dependencies | when images change, weekly |
+| Gitleaks | complete Git history | every pull request and push to `main` |
+| GitHub secret scanning and push protection | pushed commits | every push |
+| Dependabot security updates | npm, pip, Composer, Docker and GitHub Actions | as soon as an advisory is published |
+| Dependabot version updates | the same ecosystems, majors planned by hand | weekly, on Monday |
+| OpenSSF Scorecard | repository and supply-chain practices | push to `main`, weekly |
+
+Findings appear under the repository's **Security** tab. An alert that cannot be
+fixed yet, for example because no patched version exists, is dismissed with a
+recorded reason and revisited when Dependabot reports a fix.
