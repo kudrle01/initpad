@@ -39,7 +39,7 @@ function fakeEngine(
   const gatewayId = 'gateway-container-id';
   const scopedNetwork = workloadNetworkName({ ...payload, routingMode: 'managed-gateway' });
   const legacyNetwork = legacyWorkloadNetworkName({ ...payload, routingMode: 'managed-gateway' });
-  const workloadId = 'managed-workload-id';
+  const workloadId = 'b'.repeat(64);
   let connected = false;
   const requests: DockerHttpRequest[] = [];
   const transport: DockerTransport = async (request) => {
@@ -211,7 +211,7 @@ function publicationEngine() {
     'com.initpad.routing.mode': 'managed-gateway',
   };
   const desired = {
-    Id: 'desired-id',
+    Id: 'd'.repeat(64),
     Names: ['/initpad-team-alpha-customer-portal-dev-rev-a1b2c3d4e5f6'],
     Image: `registry.test/acme/customer-portal:${'a'.repeat(40)}`,
     State: 'running',
@@ -222,7 +222,7 @@ function publicationEngine() {
     },
   };
   const previous = {
-    Id: 'previous-id',
+    Id: 'e'.repeat(64),
     Names: ['/initpad-team-alpha-customer-portal-dev-rev-111111111111'],
     Image: `registry.test/acme/customer-portal:${'b'.repeat(40)}`,
     State: 'running',
@@ -257,10 +257,7 @@ test('publishes only the verified workload slot and retires the previous revisio
   );
   const signal = new AbortController().signal;
 
-  assert.equal(
-    await network.resolveUpstream(payload, signal),
-    'initpad-team-alpha-customer-portal-dev-rev-a1b2c3d4e5f6:8080',
-  );
+  assert.equal(await network.resolveUpstream(payload, signal), `${'d'.repeat(12)}:8080`);
   await network.commit(payload, signal);
 
   const containerDeletes = engine.requests.filter(
@@ -270,7 +267,7 @@ test('publishes only the verified workload slot and retires the previous revisio
     (request) => request.method === 'DELETE' && request.path.startsWith('/images/'),
   );
   assert.equal(containerDeletes.length, 1);
-  assert.match(containerDeletes[0].path, /previous-id/);
+  assert.match(containerDeletes[0].path, new RegExp('e'.repeat(64)));
   assert.equal(imageDeletes.length, 1);
   assert.match(decodeURIComponent(imageDeletes[0].path), /customer-portal:b{40}/);
 });
@@ -289,5 +286,5 @@ test('discards only the failed candidate during route rollback', async () => {
     (request) => request.method === 'DELETE' && request.path.startsWith('/containers/'),
   );
   assert.equal(deletes.length, 1);
-  assert.match(deletes[0].path, /desired-id/);
+  assert.match(deletes[0].path, new RegExp('d'.repeat(64)));
 });

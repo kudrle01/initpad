@@ -198,6 +198,13 @@ report_dns() { # <name>... — warn when a name does not resolve to this server
     resolved=$(getent ahostsv4 "$name" 2>/dev/null | awk 'NR==1 {print $1}' || true)
     if [ -z "$resolved" ]; then
       warn "$name does not resolve yet. Create a DNS A record $name → ${ip:-<IP of this server>}."
+      case "$name" in
+        *.local)
+          if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+            warn "If the record exists, systemd-resolved is not sending .local names to your DNS server (it treats them as mDNS). Tell it which server answers the whole zone, then repeat: printf '[Resolve]\\nDNS=<ip of your DNS server>\\nDomains=~${name#*.}\\n' | sudo tee /etc/systemd/resolved.conf.d/initpad-zone.conf && sudo systemctl restart systemd-resolved. Prefer .lan, home.arpa or a subdomain you own over .local."
+          fi
+          ;;
+      esac
     elif [ -n "$ip" ] && [ "$resolved" != "$ip" ] && [ "${resolved%%.*}" != 127 ]; then
       warn "$name resolves to $resolved, but this server's address is $ip."
     fi
@@ -482,6 +489,12 @@ OIDC_SECRET=$(get_env INITPAD_OIDC_CLIENT_SECRET)
 DB_PASSWORD=$(get_env INITPAD_DB_PASSWORD)
 DOMAIN=$(get_env INITPAD_DOMAIN || true)
 
+# Both names are needed by browsers, Agents and the CI runner. Say so now, not
+# after an hour of failed builds.
+if [ -n "${DOMAIN:-}" ]; then
+  report_dns "$DOMAIN" "$(get_env INITPAD_GIT_DOMAIN || true)"
+fi
+
 # ---- 2. core services -------------------------------------------------------
 say "Starting core services (postgres, gitea, deployment targets)"
 $COMPOSE up -d postgres gitea fake-sftp static-web
@@ -668,6 +681,26 @@ else
   $COMPOSE --profile runner up -d runner-docker
 fi
 wait_healthy runner-docker 60
+# The CI daemon resolves names through Docker, not through this shell.
+if [ -n "$(get_env INITPAD_GIT_DOMAIN || true)" ]; then
+  ci_git=$(get_env INITPAD_GIT_DOMAIN)
+  $COMPOSE --profile runner exec -T runner-docker nslookup "$ci_git" >/dev/null 2>&1 \
+    || warn "The CI daemon cannot resolve $ci_git. Builds will fail at 'prepare image' until the name resolves from inside Docker (check the DNS record and the host resolver)."
+fi
+# CI jobs reach the registry and the platform through the server's own address.
+# An active ufw drops that traffic from Docker networks and every build would
+# fail at "prepare image" or "notify platform". Allow only the runner network.
+if systemctl is-active --quiet ufw 2>/dev/null; then
+  runner_net=$(docker network ls --format '{{.Name}}' | grep -E '(^|_)ci-control$' | head -n 1 || true)
+  if [ -n "$runner_net" ]; then
+    runner_bridge="br-$(docker network inspect "$runner_net" --format '{{printf "%.12s" .Id}}')"
+    if sudo ufw allow in on "$runner_bridge" to any port 80,443 proto tcp comment 'InitPad CI runner' >/dev/null; then
+      say "ufw: the CI runner network may reach this server on ports 80 and 443"
+    else
+      warn "ufw is active and the CI runner needs ports 80 and 443 on this server. Run: sudo ufw allow in on $runner_bridge to any port 80,443 proto tcp"
+    fi
+  fi
+fi
 say "Starting the CI runner"
 if [ "$runner_config_changed" = yes ]; then
   # Bind-mounted config content is not part of Compose's service hash. Recreate

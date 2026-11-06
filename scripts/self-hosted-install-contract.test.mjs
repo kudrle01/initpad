@@ -103,6 +103,22 @@ test('trusts the internal CA only for the registry hostname (ADR-161)', () => {
   assert.doesNotMatch(installer, /update-ca-certificates|\/usr\/local\/share\/ca-certificates/);
   assert.doesNotMatch(compose, /--insecure-registry=\$\{INITPAD_(CI_)?REGISTRY_HOST/);
   assert.match(daemon, /certs\.d\/\$INITPAD_CI_REGISTRY_HOST/);
+  // The containerd image store fetches tokens with the system roots, so the
+  // daemon's own bundle must carry the CA before it starts (push, not pull).
+  assert.match(daemon, /SSL_CERT_FILE=\/tmp\/initpad-ca-bundle\.crt/);
+  assert.ok(
+    daemon.indexOf('SSL_CERT_FILE') < daemon.indexOf('dockerd-entrypoint.sh'),
+    'the bundle must be exported before the daemon starts',
+  );
+  // Name resolution is checked before anything starts and again from inside Docker.
+  assert.ok(
+    installer.indexOf('report_dns "$DOMAIN"') < installer.indexOf('# ---- 2. core services'),
+    'DNS is reported before the services start',
+  );
+  assert.match(installer, /exec -T runner-docker nslookup "\$ci_git"/);
+  assert.match(installer, /Domains=~\$\{name#\*\.\}/);
+  // An active ufw would drop CI traffic to the server's own address.
+  assert.match(installer, /ufw allow in on "\$runner_bridge" to any port 80,443/);
   assert.ok(
     daemon.indexOf('certs.d') < daemon.indexOf('dockerd-entrypoint.sh'),
     'the CA must be in place before the daemon starts',

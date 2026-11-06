@@ -254,7 +254,7 @@ kontejner. Nemění release, identitu, control plane ani aplikační workload.
 Zopakujte `before-update 0.14.1`, nainstalujte aktualizaci bez injekce chyby a
 dokončete příkazem `after-update 0.14.2`.
 
-## 6. Brána jedním příkazem (0.15.0, opraveno v 0.15.1)
+## 6. Brána jedním příkazem (0.15.0, opraveno v 0.15.1 a 0.15.2)
 
 Na disposable hostu s volnými porty 80 a 443 a s DNS (`A` i wildcard `A` na
 host) nasaďte target se **Spravovanou bránou**. Příkaz z **Manage Agent** musí
@@ -274,6 +274,11 @@ obsahovat `--gateway-domain` s doménou z veřejné URL targetu.
 6. `--uninstall` bez `--remove-gateway` bránu ponechá. S
    `--remove-gateway` po potvrzení nezůstane žádný kontejner, volume, síť ani
    `/var/lib/initpad-gateway`.
+
+Po nasazení aplikace (DEV) musí veřejné `/health` odpovědět HTTP 200. Jméno
+kontejneru aplikace je u delšího uživatele a projektu delší než 63 znaků a jako
+cíl trasy by ho brána neodmítla jen jako `no such host`; 0.15.2 proto trasu
+míří na 12znakové ID kontejneru.
 
 Jakýkoli ruční zásah mimo výše uvedené kroky je selhání a musí být
 zdokumentován.
