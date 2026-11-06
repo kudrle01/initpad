@@ -1,0 +1,8 @@
+# Advisories accepted after review for this template's lockfile, read by
+# OSV-Scanner and the OpenSSF Scorecard Vulnerabilities check. Every entry
+# needs a reason and an expiry.
+
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2027-02-06
+reason = "deepmerge has no patched release. It is a development-only transitive dependency of fork-ts-checker-webpack-plugin (@nestjs/cli) and jest-config that merges trusted build and test configuration, never request data. Revisit when a fix is published or on expiry."

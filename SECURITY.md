@@ -61,4 +61,6 @@ The repository is checked continuously, not only when it changes:
 
 Findings appear under the repository's **Security** tab. An alert that cannot be
 fixed yet, for example because no patched version exists, is dismissed with a
-recorded reason and revisited when Dependabot reports a fix.
+recorded reason and revisited when Dependabot reports a fix. The same
+exception, with an expiry date, is listed in `osv-scanner.toml` for OSV-based
+tools such as the Scorecard Vulnerabilities check.
