@@ -11,3 +11,11 @@ vulnerabilities:
       - usr/local/libexec/docker/cli-plugins/docker-compose
     statement: HTTP/2 SETTINGS flood DoS; Compose speaks only HTTP/1.1 to the local Docker socket.
     expired_at: 2026-11-09
+
+  # Same vendored golang.org/x/net in Compose (0.60.0, fixed in 0.62.0); no newer
+  # Docker CLI image than 29.9.3 exists yet. Remove once one ships the fix.
+  - id: CVE-2026-78661
+    paths:
+      - usr/local/libexec/docker/cli-plugins/docker-compose
+    statement: Denial of service through crafted HTML in x/net/html; Compose never parses HTML.
+    expired_at: 2026-11-13
