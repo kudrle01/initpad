@@ -10,6 +10,7 @@ ALLOW_INSECURE_HTTP=false
 PUBLISHED_HOST=
 GATEWAY_ADMIN_SOCKET=
 GATEWAY_CONTAINER=
+GATEWAY_CA_SHA256=
 CA_FILE=
 REENROLL=false
 EXPECTED_TARGET_ID=
@@ -376,6 +377,21 @@ http://127.0.0.1:5555 {
 	respond 403
 }
 
+# The public CA root may be downloaded over HTTP, because a browser cannot trust
+# the CA before it has it. Every other plain-HTTP request goes to HTTPS.
+http://{$GATEWAY_DOMAIN} {
+	handle /initpad-ca.crt {
+		root * /etc/caddy
+		rewrite * /ca-root.crt
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition `attachment; filename="initpad-gateway-ca.crt"`
+		file_server
+	}
+	handle {
+		redir https://{host}{uri} 308
+	}
+}
+
 {$GATEWAY_DOMAIN} {
 	header -Server
 	reverse_proxy initpad-gateway:8080
@@ -433,8 +449,17 @@ EDGE
     warn "the gateway CA cannot reach http://$GATEWAY_DOMAIN/ from inside Docker, so no certificate can be issued. Check that $GATEWAY_DOMAIN resolves to this server and that no firewall blocks ports $GATEWAY_HTTP_PORT and $GATEWAY_HTTPS_PORT for Docker networks."
   fi
 
+  # The Agent reports this fingerprint to InitPad, which shows it next to the
+  # download link so a browser's user can check the file they received.
+  if command -v openssl >/dev/null 2>&1; then
+    GATEWAY_CA_SHA256=$(openssl x509 -in "$GATEWAY_STATE_DIR/ca-root.crt" -noout -fingerprint -sha256 2>/dev/null \
+      | sed 's/^.*=//; s/://g' | tr 'A-F' 'a-f')
+    printf '%s' "$GATEWAY_CA_SHA256" | grep -Eq '^[a-f0-9]{64}$' || GATEWAY_CA_SHA256=
+  fi
+
   printf '\nGateway ready for %s.\n' "$GATEWAY_DOMAIN"
   printf '  CA root certificate: %s/ca-root.crt\n' "$GATEWAY_STATE_DIR"
+  printf '  Download for browsers: http://%s/initpad-ca.crt\n' "$GATEWAY_DOMAIN"
   command -v openssl >/dev/null 2>&1 \
     && openssl x509 -in "$GATEWAY_STATE_DIR/ca-root.crt" -noout -fingerprint -sha256
   printf '  Install that certificate on every computer whose browser opens the applications,\n'
@@ -745,6 +770,9 @@ run_agent_container() {
       --mount "type=bind,src=$gateway_dir,dst=$gateway_dir,readonly" \
       --env "INITPAD_AGENT_GATEWAY_ADMIN_SOCKET=$GATEWAY_ADMIN_SOCKET" \
       --env "INITPAD_AGENT_GATEWAY_CONTAINER=$GATEWAY_CONTAINER"
+    if [ -n "$GATEWAY_CA_SHA256" ]; then
+      set -- "$@" --env "INITPAD_AGENT_GATEWAY_CA_SHA256=$GATEWAY_CA_SHA256"
+    fi
   fi
   if [ -n "$CA_FILE" ]; then
     set -- "$@" \

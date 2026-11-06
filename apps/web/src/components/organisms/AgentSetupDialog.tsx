@@ -167,6 +167,12 @@ export function AgentSetupDialog({
       ? (distribution?.privateCa?.registryHost ?? null)
       : null;
   const reEnrollCommand = installCommand ? `${installCommand} --re-enroll` : null;
+  // Once the update is queued, the button must go: a second click would only
+  // be refused, and the user needs to see that something is happening.
+  const updateJob = jobs.find(
+    (job) => job.kind === 'agent-update' && ['queued', 'leased'].includes(job.status),
+  );
+  const installingUpdate = testBusy === 'update' || Boolean(updateJob);
   const isCurrentOnline = Boolean(
     state === 'online' &&
     agent?.version &&
@@ -364,24 +370,36 @@ export function AgentSetupDialog({
                   </p>
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-                  {updateStatus.updateMethod === 'remote' && (
-                    <Button
-                      size="sm"
-                      disabled={busy || testBusy !== null || state !== 'online'}
-                      title={
-                        state === 'online'
-                          ? t('Install the verified update on this Agent')
-                          : t('The Agent must be online before it can update itself')
-                      }
-                      onClick={() => void updateAgent()}
-                    >
-                      {testBusy === 'update' ? (
-                        <Spinner className="h-3.5 w-3.5" />
-                      ) : (
+                  {updateStatus.updateMethod === 'remote' &&
+                    (installingUpdate ? (
+                      <span
+                        className="inline-flex items-center gap-2 text-sm font-medium"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        <Spinner className="h-4 w-4" />
+                        {t('Installing the update…')}
+                        {updateJob && updateJob.progressPercent > 0
+                          ? ` ${updateJob.progressPercent} %`
+                          : ''}
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        disabled={busy || testBusy !== null || state !== 'online'}
+                        title={
+                          state === 'online'
+                            ? t('Install the verified update on this Agent')
+                            : t('The Agent must be online before it can update itself')
+                        }
+                        onClick={() => void updateAgent()}
+                      >
                         <Sparkles className="h-3.5 w-3.5" />
-                      )}
-                      {t('Install update')}
-                    </Button>
+                        {t('Install update')}
+                      </Button>
+                    ))}
+                  {installingUpdate && updateJob?.message && (
+                    <span className="basis-full text-muted-foreground">{updateJob.message}</span>
                   )}
                   {externalHref(updateStatus.releaseUrl) && (
                     <a

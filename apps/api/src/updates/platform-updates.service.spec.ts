@@ -128,6 +128,38 @@ describe('PlatformUpdatesService', () => {
     await expect(service.status()).resolves.toMatchObject({ canInstall: false });
   });
 
+  it('keeps the running operation visible while the restarting Supervisor is unreachable', async () => {
+    const prisma = {
+      platformUpdateOperation: {
+        findUnique: jest.fn(async () => null),
+        findMany: jest.fn(async () => [row({ status: 'running', stage: 'running' })]),
+      },
+    };
+    const releaseCatalog = { latest: jest.fn(async () => catalog()) };
+    const supervisor = {
+      configured: true,
+      status: jest.fn(async () => {
+        throw new TypeError('fetch failed');
+      }),
+    };
+    const service = new PlatformUpdatesService(
+      prisma as never,
+      releaseCatalog as never,
+      supervisor as never,
+    );
+
+    const status = await service.status();
+
+    // The UI keeps polling on the durable operation and says what happened
+    // instead of printing Node's bare "fetch failed".
+    expect(status.operation).toMatchObject({ status: 'running', toVersion: '0.3.0' });
+    expect(status.supervisorOnline).toBe(false);
+    expect(status.supervisorError).toBe(
+      'The update Supervisor is not reachable (it may be restarting)',
+    );
+    expect(status.canInstall).toBe(false);
+  });
+
   it('records the requesting administrator before sending the signed payload', async () => {
     const create = jest.fn(async () => row({ supervisorOperationId: null, status: 'requesting' }));
     const update = jest.fn(async () => row());

@@ -299,3 +299,13 @@ test('gateway installer lets the CA reach the server through ufw and checks it',
   assert.match(script, /ufw allow in on "\$gateway_bridge" to any port/);
   assert.match(script, /docker exec "\$GATEWAY_CA" wget/);
 });
+
+test('gateway edge serves only the public CA root over HTTP and the Agent learns its fingerprint', () => {
+  const script = readFileSync(installer, 'utf8');
+  const edge = script.slice(script.indexOf("<<'EDGE'"), script.indexOf('\nEDGE\n'));
+  assert.match(edge, /http:\/\/\{\$GATEWAY_DOMAIN\} \{[\s\S]*?handle \/initpad-ca\.crt \{/);
+  assert.match(edge, /rewrite \* \/ca-root\.crt/);
+  assert.doesNotMatch(edge, /ca-root\.key|intermediate|\.key/);
+  assert.match(edge, /redir https:\/\/\{host\}\{uri\} 308/);
+  assert.match(script, /INITPAD_AGENT_GATEWAY_CA_SHA256=\$GATEWAY_CA_SHA256/);
+});

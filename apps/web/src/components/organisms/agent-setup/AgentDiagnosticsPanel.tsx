@@ -4,6 +4,7 @@ import { Spinner } from '@/components/atoms/Spinner';
 import { InfoTip } from '@/components/molecules/InfoTip';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Button } from '@/components/ui/button';
+import { GatewayCaDownload } from './GatewayCaDownload';
 import { t, formatDateTime } from '@/i18n';
 
 interface Props {
@@ -223,6 +224,8 @@ export function AgentDiagnosticsPanel({
           </Button>
         </div>
       )}
+
+      <GatewayCaDownload target={target} />
 
       {protocolError && <p className="text-xs text-destructive">{protocolError}</p>}
       {jobs.length === 0 ? (

@@ -427,6 +427,8 @@ model Target {
   gatewayPreflightJobId    String?
   gatewayPreflightAt       DateTime?
   gatewayPreflightError    String?
+  // SHA-256 (hex) of the gateway CA root the Agent reported with its last passed preflight.
+  gatewayCaSha256          String?
   // Last successful connection test; null = never verified.
   verifiedAt               DateTime?
   // Owner of a user target; null for built-in (shared) targets.

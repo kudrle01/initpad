@@ -427,6 +427,52 @@ describe('AgentJobsService durable lease protocol', () => {
     });
   });
 
+  it('stores the gateway CA fingerprint only for the current passed preflight job', async () => {
+    const { service, prisma } = setup();
+    const terminal = job({
+      kind: 'gateway-preflight',
+      status: 'succeeded',
+      message: 'Gateway DNS, TLS and Caddy adapter preflight passed',
+      resultCode: 'ok',
+      leaseExpiresAt: null,
+      finishedAt: NOW,
+    });
+    prisma.agentJob.findUnique
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce({ ...terminal, deploymentOperation: null });
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+    prisma.agentJob.findFirst.mockResolvedValue({ kind: 'gateway-preflight' });
+    const sha256 = 'ab'.repeat(32);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'succeeded',
+      message: terminal.message,
+      resultCode: 'ok',
+      gatewayCaSha256: sha256,
+    });
+
+    expect(prisma.target.updateMany).toHaveBeenCalledWith({
+      where: { gatewayPreflightJobId: 'job-1' },
+      data: { gatewayCaSha256: sha256 },
+    });
+  });
+
+  it('rejects a gateway CA fingerprint from any job other than a gateway preflight', async () => {
+    const { service, prisma } = setup();
+    prisma.agentJob.findFirst.mockResolvedValue({ kind: 'probe' });
+
+    await expect(
+      service.complete('Bearer credential', 'job-1', {
+        leaseToken: LEASE,
+        status: 'succeeded',
+        message: 'ok',
+        resultCode: 'ok',
+        gatewayCaSha256: 'ab'.repeat(32),
+      }),
+    ).rejects.toThrow('gateway preflight');
+  });
+
   it('publishes a successful gateway route only through its generation and job fences', async () => {
     const { service, prisma } = setup();
     const terminal = job({

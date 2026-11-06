@@ -177,3 +177,4 @@ stabilní.
 | [ADR-163](./ADR-163.md) | Accepted | Vestavěné object storage je SeaweedFS místo MinIO |
 | [ADR-164](./ADR-164.md) | Accepted | Produkční reference spravované brány s vnitřní CA |
 | [ADR-165](./ADR-165.md) | Accepted | Instalátor Agenta postaví spravovanou bránu jedním příkazem |
+| [ADR-166](./ADR-166.md) | Accepted | Certifikát brány ke stažení s ověřitelným otiskem |

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import {
   KeyRound,
@@ -145,6 +145,31 @@ export default function Admin() {
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [loadUpdates, updates?.operation?.status]);
+
+  // Confirm the outcome once an update this page watched has finished. A
+  // successful update replaced the web bundle too, so reload to pick it up.
+  const watchedUpdate = useRef(false);
+  useEffect(() => {
+    const operation = updates?.operation;
+    if (!operation) return;
+    if (['requesting', 'accepted', 'running'].includes(operation.status)) {
+      watchedUpdate.current = true;
+      return;
+    }
+    if (!watchedUpdate.current) return;
+    watchedUpdate.current = false;
+    if (operation.status === 'succeeded') {
+      toast.success(t('InitPad {version} is installed', { version: operation.toVersion }));
+      // Deliberately not cleaned up: the reload must happen even if the page re-renders.
+      window.setTimeout(() => window.location.reload(), 2_000);
+      return;
+    }
+    toast.error(
+      t('The update to InitPad {version} did not complete. The previous version is running.', {
+        version: operation.toVersion,
+      }),
+    );
+  }, [updates?.operation, toast]);
 
   // Only platform administrators reach this page; ordinary users are redirected.
   if (user && user.platformRole !== 'admin') {

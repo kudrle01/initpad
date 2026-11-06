@@ -543,6 +543,11 @@ export class AgentJobsService implements OnModuleInit {
     });
     if (!binding) throw this.leases.lostLease();
     const diagnosticJob = binding?.kind === 'logs';
+    if (dto.gatewayCaSha256 && binding.kind !== 'gateway-preflight') {
+      throw new BadRequestException(
+        'A gateway CA fingerprint is accepted only for a gateway preflight',
+      );
+    }
     if (dto.diagnostic && !diagnosticJob) {
       throw new BadRequestException('Diagnostic output is accepted only for a logs job');
     }
@@ -580,6 +585,13 @@ export class AgentJobsService implements OnModuleInit {
           finishedAt: now,
         },
       });
+      if (result.count === 1 && dto.gatewayCaSha256 && dto.status === 'succeeded') {
+        // Same fence as the preflight status: only the target's current preflight job.
+        await transaction.target.updateMany({
+          where: { gatewayPreflightJobId: jobId },
+          data: { gatewayCaSha256: dto.gatewayCaSha256 },
+        });
+      }
       if (result.count === 1 && diagnosticJob) {
         await transaction.workloadDiagnostic.updateMany({
           where: { currentJobId: jobId, status: { in: ['queued', 'running'] } },

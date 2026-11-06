@@ -58,15 +58,21 @@ export class ProjectDeletion {
       );
     }
 
-    const remoteAgentDeployments = row.environments.filter(
-      (environment) =>
+    // Only an environment that may actually hold a workload on the server needs
+    // an Agent cleanup first. A build or publish that failed before anything was
+    // deployed leaves status "failed" but nothing to remove, and the user could
+    // otherwise neither remove it from the target nor delete the project.
+    const remoteAgentDeployments: typeof row.environments = [];
+    for (const environment of row.environments) {
+      if (
         !unmanagedTarget(environment) &&
         environment.target?.scope === 'user' &&
         environment.target.kind === 'docker' &&
-        (environment.status !== 'empty' ||
-          environment.version !== null ||
-          environment.activeOperationId !== null),
-    );
+        (await this.mayHoldRemoteWorkload(environment))
+      ) {
+        remoteAgentDeployments.push(environment);
+      }
+    }
     if (remoteAgentDeployments.length > 0) {
       throw new BadRequestException(
         `Remove Agent-managed deployments first (${remoteAgentDeployments.map((item) => item.name).join(', ')}). ` +
@@ -126,6 +132,31 @@ export class ProjectDeletion {
 
     rmSync(row.repoPath, { recursive: true, force: true });
     await this.prisma.project.delete({ where: { id: row.id } });
+  }
+
+  /**
+   * True when a workload may exist on the Agent's server: InitPad recorded a
+   * version or address, the workload is running or stopped, or a deploy/start
+   * job succeeded or is in flight (cancelling it cannot undo a started
+   * container). A failed job rolls its candidate back, so it does not count.
+   */
+  private async mayHoldRemoteWorkload(environment: DeletionEnvironment): Promise<boolean> {
+    if (
+      environment.version !== null ||
+      environment.url !== null ||
+      environment.status === 'running' ||
+      environment.status === 'stopped'
+    ) {
+      return true;
+    }
+    const jobs = await this.prisma.agentJob.count({
+      where: {
+        deploymentOperation: { environmentId: environment.id },
+        kind: { in: ['deploy', 'start'] },
+        status: { in: ['leased', 'succeeded'] },
+      },
+    });
+    return jobs > 0;
   }
 
   private async cancelUnfinishedOperations(projectId: string): Promise<void> {

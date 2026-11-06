@@ -42,6 +42,14 @@ function operationDto(row: {
   };
 }
 
+/** Node reports a refused connection only as "fetch failed"; say what it means. */
+function supervisorErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  return !message || message === 'fetch failed'
+    ? 'The update Supervisor is not reachable (it may be restarting)'
+    : message;
+}
+
 @Injectable()
 export class PlatformUpdatesService {
   constructor(
@@ -58,7 +66,7 @@ export class PlatformUpdatesService {
             (value) => ({ value, error: null }),
             (error: unknown) => ({
               value: null,
-              error: error instanceof Error ? error.message : 'Supervisor is unavailable',
+              error: supervisorErrorMessage(error),
             }),
           )
         : Promise.resolve({ value: null, error: 'Platform update Supervisor is not configured' }),
@@ -101,7 +109,9 @@ export class PlatformUpdatesService {
       catalogCheckedAt: catalogResult.checkedAt,
       catalogStale: catalogResult.stale,
       catalogError: catalogResult.error,
-      operation: supervisorResult.value?.operation ?? null,
+      // While the Supervisor restarts itself at the end of an update it cannot
+      // answer. The durable operation keeps the UI polling until it can.
+      operation: supervisorResult.value?.operation ?? active,
       history,
     };
   }

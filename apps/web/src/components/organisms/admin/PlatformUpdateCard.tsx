@@ -48,7 +48,9 @@ export function PlatformUpdateCard({
 }) {
   const operation = status?.operation;
   const active = operation && ['requesting', 'accepted', 'running'].includes(operation.status);
-  const reconnecting = Boolean(error && active);
+  // The Supervisor restarts itself at the end of an update; both a failed
+  // request and the API's report that it is unreachable mean "reconnecting".
+  const reconnecting = Boolean((error || status?.supervisorError) && active);
   const progress = operation ? (UPDATE_STAGE_PROGRESS[operation.stage] ?? (active ? 15 : 100)) : 0;
 
   return (

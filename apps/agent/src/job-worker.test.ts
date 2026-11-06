@@ -254,6 +254,42 @@ test('runs the fixed gateway preflight interface without accepting an admin URL'
   assert.deepEqual(completions, ['succeeded:ok']);
 });
 
+test('reports the gateway CA fingerprint set by the installer with a passed preflight', async () => {
+  const fingerprint = 'cd'.repeat(32);
+  const previous = process.env.INITPAD_AGENT_GATEWAY_CA_SHA256;
+  const reported: Array<string | undefined> = [];
+  const client: AgentJobClient = {
+    renew: async () => ({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() }),
+    progress: async (_jobId, input) => summary({ sequence: input.sequence }),
+    complete: async (_jobId, input) => {
+      reported.push(input.gatewayCaSha256);
+      return summary({ status: input.status });
+    },
+  };
+  const run = () =>
+    executeClaimedJob(
+      claim({
+        kind: 'gateway-preflight',
+        payload: { adapter: 'caddy', publicUrl: 'https://apps.example.test' },
+      }),
+      new AbortController().signal,
+      client,
+      { gateway: { run: async () => undefined } },
+    );
+  try {
+    process.env.INITPAD_AGENT_GATEWAY_CA_SHA256 = fingerprint.toUpperCase();
+    await run();
+    process.env.INITPAD_AGENT_GATEWAY_CA_SHA256 = 'not-a-fingerprint';
+    await run();
+    delete process.env.INITPAD_AGENT_GATEWAY_CA_SHA256;
+    await run();
+  } finally {
+    if (previous === undefined) delete process.env.INITPAD_AGENT_GATEWAY_CA_SHA256;
+    else process.env.INITPAD_AGENT_GATEWAY_CA_SHA256 = previous;
+  }
+  assert.deepEqual(reported, [fingerprint, undefined, undefined]);
+});
+
 test('runs the bounded gateway route interface and reports its generation', async () => {
   const progress: number[] = [];
   const completions: Array<{ status: string; message: string }> = [];
