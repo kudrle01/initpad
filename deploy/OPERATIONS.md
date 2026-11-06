@@ -38,7 +38,7 @@ Kontejnery mají `restart: unless-stopped`, takže po restartu hosta naběhnou s
 ## Zálohy
 
 Automatická záloha databáze (pg_dump) + datových volumes (Gitea repozitáře,
-MinIO artefakty, workspace a Supervisor state) včetně aktivního release
+artefakty v object storage, workspace a Supervisor state) včetně aktivního release
 descriptoru do `./backups/<časové-razítko>/`:
 
 ```bash
@@ -129,7 +129,7 @@ deploymentu. Výpadkové režimy aktivní práci nejprve samy zkontrolují:
 ./recovery-drill.sh registry-outage
 ```
 
-První test musí během odstávky MinIO vidět API jako `503 not-ready` s
+První test musí během odstávky object storage vidět API jako `503 not-ready` s
 `artifactStore: unavailable` a po navrácení opět `200`. Druhý bezpečně zastaví
 a obnoví vestavěnou Giteu/OCI registry a čeká na její health check.
 
@@ -180,12 +180,18 @@ chybí, skončí bez dalšího mazání a vyžádá obnovu přesné instalované
 
 ## Object storage: produkční hranice
 
-Compose profil obsahuje připnutý MinIO image, aby šlo lokální a školní
-single-node scénář spustit bez další služby. Upstream ale ukončil distribuci
-aktuálních komunitních binárních image a poslední dostupný image předchází
-pozdější bezpečnostní opravě ve zdrojovém kódu. Vestavěné MinIO proto používej
-jen v důvěryhodné síti, nevystavuj jeho porty veřejně a nepovažuj jej za
-produkční bezpečnostní hranici.
+Compose profil obsahuje připnutý SeaweedFS S3 gateway (služba `s3`, ADR-163),
+aby šlo lokální a školní single-node scénář spustit bez další služby. Je to
+jeden proces bez replikace, takže ho používej jen v důvěryhodné síti,
+nevystavuj jeho porty veřejně a nepovažuj jej za produkční bezpečnostní hranici.
+
+**Upgrade ze starší instalace s MinIO.** Dřívější verze používaly službu
+`minio` a volume `minio-data` ve formátu MinIO. SeaweedFS ho nepřečte. Ověřené
+buildy v něm jsou jen cache zdroje pravdy, takže po přechodu se aplikace nasadí
+z nového buildu; starší artefakty (např. pro vrácení verze) nebudou dostupné.
+Starý `.env` s `INITPAD_ARTIFACT_S3_ENDPOINT=http://minio:9000` dál funguje
+(síťový alias), bucket vytvoří `docker compose run --rm s3-init`. Zálohy
+`minio-data.tar.gz` `restore.sh` už neobnoví.
 
 Pro veřejný nebo firemní produkční provoz nastav `INITPAD_ARTIFACT_S3_ENDPOINT`,
 region, bucket a samostatné omezené credentials na aktivně udržované externí

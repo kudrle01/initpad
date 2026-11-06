@@ -174,3 +174,4 @@ stabilní.
 | [ADR-160](./ADR-160.md) | Proposed | Vlastní projekty a jejich workflow popisuje manifest a napojují se přes ověřený handoff |
 | [ADR-161](./ADR-161.md) | Accepted | Instalátor nastaví síť z jedné odpovědi a rozdá vlastní CA |
 | [ADR-162](./ADR-162.md) | Accepted | Agenta odinstaluje ověřený příkaz na serveru, ne InitPad na dálku |
+| [ADR-163](./ADR-163.md) | Accepted | Vestavěné object storage je SeaweedFS místo MinIO |

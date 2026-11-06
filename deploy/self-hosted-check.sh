@@ -262,7 +262,7 @@ check_running() {
   "${COMPOSE[@]}" config --quiet
 
   local service domain web_port response mapping channel running_version users
-  for service in postgres minio gitea api web supervisor runner-image-cache runner-docker act_runner fake-sftp static-web; do
+  for service in postgres s3 gitea api web supervisor runner-image-cache runner-docker act_runner fake-sftp static-web; do
     assert_service "$service"
   done
   domain=$(get_env INITPAD_DOMAIN)
@@ -369,7 +369,7 @@ check_backup() {
   [ -d "$directory" ] || fail "Backup directory '$directory' does not exist."
   local required file mode
   required=(
-    SHA256SUMS postgres.dump initpad.env gitea-data.tar.gz minio-data.tar.gz
+    SHA256SUMS postgres.dump initpad.env gitea-data.tar.gz s3-data.tar.gz
     api-data.tar.gz supervisor-data.tar.gz sftp-www.tar.gz runner-data.tar.gz
     platform-release.override.yml
   )
@@ -382,7 +382,7 @@ check_backup() {
   [ "$mode" = 600 ] || fail "Backup platform release descriptor mode is $mode, expected 600."
   (cd "$directory" && sha256sum --strict -c SHA256SUMS >/dev/null) || \
     fail "Backup checksum verification failed."
-  for file in gitea-data.tar.gz minio-data.tar.gz api-data.tar.gz \
+  for file in gitea-data.tar.gz s3-data.tar.gz api-data.tar.gz \
     supervisor-data.tar.gz sftp-www.tar.gz runner-data.tar.gz; do
     tar -tzf "$directory/$file" >/dev/null || fail "Backup archive '$file' is unreadable."
   done

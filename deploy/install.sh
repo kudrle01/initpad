@@ -111,7 +111,7 @@ set_env() {
   chmod 600 .env
 }
 
-# This stack bundles Gitea, MinIO, a CI runner and the Docker socket; the SaaS
+# This stack bundles Gitea, an S3 object store, a CI runner and the Docker socket; the SaaS
 # edition has its own profile without them (ADR-153).
 if [ "$(get_env INITPAD_EDITION)" = "saas" ]; then
   fail "INITPAD_EDITION=saas is not installed by this script. Deploy the SaaS edition with saas.compose.yml (see SAAS_STAGING.md)."

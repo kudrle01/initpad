@@ -1,4 +1,4 @@
-# Public control-plane profile. It deliberately does not include Gitea, MinIO,
+# Public control-plane profile. It deliberately does not include Gitea, an S3 object store,
 # a CI runner, deployment targets, Caddy or the self-hosted update Supervisor.
 # Database, object storage, edge/WAF and secrets are owned by the deployment
 # environment. Validate a prepared environment with ./saas-check.sh.

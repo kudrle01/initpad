@@ -112,7 +112,7 @@ SaaS staging topologii s externí databází a object storem.
 
 ### Vestavěný object store je pouze důvěryhodný profil
 
-Připnutý komunitní MinIO image zajišťuje reprodukovatelnost lokální instalace,
+Připnutý SeaweedFS image (ADR-163) zajišťuje reprodukovatelnost lokální instalace,
 ale není doporučenou veřejnou produkční hranicí. Produkce musí použít
 samostatně udržované privátní S3-compatible úložiště a nacvičenou obnovu.
 

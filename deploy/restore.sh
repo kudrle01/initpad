@@ -60,7 +60,7 @@ fi
 [ -d "$src" ] || fail "Backup directory '$src' not found."
 required_files=(
   postgres.dump initpad.env SHA256SUMS
-  gitea-data.tar.gz minio-data.tar.gz api-data.tar.gz
+  gitea-data.tar.gz s3-data.tar.gz api-data.tar.gz
   sftp-www.tar.gz runner-data.tar.gz
 )
 for file in "${required_files[@]}"; do
@@ -232,7 +232,7 @@ restore_volume() {
 
 say "Restoring data volumes"
 restore_volume initpad_gitea-data gitea-data.tar.gz
-restore_volume initpad_minio-data minio-data.tar.gz
+restore_volume initpad_s3-data s3-data.tar.gz
 restore_volume initpad_api-data api-data.tar.gz
 restore_volume initpad_supervisor-data supervisor-data.tar.gz no
 restore_volume initpad_sftp-www sftp-www.tar.gz
@@ -263,7 +263,7 @@ wait_healthy() {
 }
 
 say "Verifying restored services"
-wait_healthy minio 60
+wait_healthy s3 60
 wait_healthy gitea 60
 wait_healthy api 60
 wait_healthy supervisor 60

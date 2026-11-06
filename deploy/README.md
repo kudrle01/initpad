@@ -31,8 +31,8 @@ instalační příkaz ověřující checksum. Na hostu záměrně není vyžadov
 `initpad-agent`, Makefile ani checkout repozitáře. Instalátor potřebuje pouze
 Docker a identitu Agenta ukládá mimo jeho nahraditelný kontejner.
 
-Přibalené S3-compatible object storage používá připnutou starší binární verzi
-MinIO a je určeno pro lokální vyhodnocení a důvěryhodné single-node instalace.
+Přibalené S3-compatible object storage používá připnutý SeaweedFS (ADR-163)
+a je určeno pro lokální vyhodnocení a důvěryhodné single-node instalace.
 Nejde o doporučenou hranici úložiště pro veřejnou produkci. Před veřejným
 zpřístupněním InitPadu nastavte proměnné `INITPAD_ARTIFACT_S3_*` pro samostatně
 udržovanou S3-compatible službu. Zdůvodnění popisuje
@@ -158,7 +158,7 @@ postupů zatím nepředstavuje úplný test veřejného SaaS nasazení.
 Soubor `saas.compose.yml` představuje samostatnou hranici control plane, nikoli
 režim self-hosted stacku. Obsahuje pouze image API a webu. PostgreSQL, privátní
 S3-compatible úložiště, secrety a veřejný edge zajišťuje prostředí nasazení.
-Gitea, MinIO, lokální runner, simulované targety, Supervisor ani Docker socket
+Gitea, object storage, lokální runner, simulované targety, Supervisor ani Docker socket
 hostu v tomto profilu nejsou.
 
 Vyjděte ze souboru `.env.saas.example` a každou položku `*_FILE` nasměrujte na
@@ -205,7 +205,7 @@ alerty a incident acceptance popsané v
 
 - **Záloha:** spusťte `./backup.sh /secure/path/initpad-backup`. Skript krátce
   zastaví procesy provádějící zápis, vytvoří dump PostgreSQL, archivuje Giteu,
-  MinIO artefakty, data API a Supervisoru, aktivní podepsaný release descriptor,
+  artefakty v object storage, data API a Supervisoru, aktivní podepsaný release descriptor,
   publikované statické soubory, volitelná data Caddy a registraci runneru a
   zkopíruje `.env`. Dříve běžící služby znovu spustí i při selhání zálohy.
   Záloha obsahuje přihlašovací údaje; zašifrujte ji a uchovávejte kopii mimo
