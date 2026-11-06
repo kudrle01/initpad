@@ -344,12 +344,26 @@ INNER
     --entrypoint /bin/sh \
     "$CADDY_IMAGE" -ec 'rm -f /run/initpad-gateway/admin.sock; if [ -s /config/caddy/autosave.json ]; then exec caddy run --resume; fi; exec caddy run --config /etc/caddy/inner.json' >/dev/null
 
+  # The CA validates a name by connecting to the address it resolves to, which
+  # is this server. A host firewall that drops traffic from Docker networks to
+  # the server itself would stop every certificate, so allow just that path.
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+    gateway_bridge="br-$(docker network inspect "$GATEWAY_NETWORK" --format '{{printf "%.12s" .Id}}')"
+    ufw allow in on "$gateway_bridge" to any port "$GATEWAY_HTTP_PORT,$GATEWAY_HTTPS_PORT" proto tcp comment 'InitPad gateway CA validation' >/dev/null \
+      || warn "could not add the ufw rule that lets the gateway CA reach this server on ports $GATEWAY_HTTP_PORT and $GATEWAY_HTTPS_PORT"
+    printf 'ufw: allowed %s to reach this server on ports %s and %s (certificate validation).\n' "$gateway_bridge" "$GATEWAY_HTTP_PORT" "$GATEWAY_HTTPS_PORT"
+  fi
+
   # --- TLS edge
   cat > "$GATEWAY_STATE_DIR/Caddyfile" <<'EDGE'
 {
 	admin off
-	acme_ca https://ca:9000/acme/acme/directory
-	acme_ca_root /etc/caddy/ca-root.crt
+	# Explicit issuer: for names such as *.local Caddy would otherwise pick
+	# its own internal CA instead of the private CA the Agent trusts.
+	cert_issuer acme {
+		dir https://ca:9000/acme/acme/directory
+		trusted_roots /etc/caddy/ca-root.crt
+	}
 	on_demand_tls {
 		ask http://127.0.0.1:5555/allowed
 	}
@@ -414,6 +428,10 @@ EDGE
     fi
     sleep 2
   done
+
+  if ! docker exec "$GATEWAY_CA" wget -q -T 5 -O /dev/null "http://$GATEWAY_DOMAIN/" 2>/dev/null; then
+    warn "the gateway CA cannot reach http://$GATEWAY_DOMAIN/ from inside Docker, so no certificate can be issued. Check that $GATEWAY_DOMAIN resolves to this server and that no firewall blocks ports $GATEWAY_HTTP_PORT and $GATEWAY_HTTPS_PORT for Docker networks."
+  fi
 
   printf '\nGateway ready for %s.\n' "$GATEWAY_DOMAIN"
   printf '  CA root certificate: %s/ca-root.crt\n' "$GATEWAY_STATE_DIR"

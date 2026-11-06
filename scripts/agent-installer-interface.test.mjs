@@ -283,3 +283,19 @@ test('sets up the gateway after the capacity check and removes it only on reques
     /\[ "\$REMOVE_GATEWAY" = false \] \|\| fail '--remove-gateway is only valid with --uninstall'/,
   );
 });
+
+test('gateway edge sets an explicit ACME issuer so .local names do not use the internal CA', () => {
+  const script = readFileSync(installer, 'utf8');
+  const edge = script.slice(script.indexOf("<<'EDGE'"), script.indexOf('\nEDGE\n'));
+  assert.match(
+    edge,
+    /cert_issuer acme\s*\{[\s\S]*?dir https:\/\/ca:9000\/acme\/acme\/directory[\s\S]*?trusted_roots \/etc\/caddy\/ca-root\.crt/,
+  );
+  assert.doesNotMatch(edge, /acme_ca\b/);
+});
+
+test('gateway installer lets the CA reach the server through ufw and checks it', () => {
+  const script = readFileSync(installer, 'utf8');
+  assert.match(script, /ufw allow in on "\$gateway_bridge" to any port/);
+  assert.match(script, /docker exec "\$GATEWAY_CA" wget/);
+});
