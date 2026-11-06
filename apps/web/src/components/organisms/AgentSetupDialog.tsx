@@ -13,6 +13,7 @@ import { CopyField } from '@/components/molecules/CopyField';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
 import { AgentDiagnosticsPanel } from '@/components/organisms/agent-setup/AgentDiagnosticsPanel';
+import { AgentUninstallSection } from '@/components/organisms/agent-setup/AgentUninstallSection';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -673,6 +674,10 @@ export function AgentSetupDialog({
             onTestLifecycle={onTestLifecycle}
             onTestGateway={onTestGateway}
           />
+
+          {agent && state !== 'not-enrolled' && distribution && (
+            <AgentUninstallSection targetId={currentTarget.id} distribution={distribution} />
+          )}
         </div>
 
         <DialogFooter>

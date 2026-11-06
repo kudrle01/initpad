@@ -54,3 +54,42 @@ test('verifies a changed control-plane URL before replacing a saved identity end
   assert.match(source, /migrate-url --url "\$CONTROL_PLANE_URL"/);
   assert.match(source, /existing URL and identity were preserved/);
 });
+
+test('uninstalls only what the installer and Agent created for this target', () => {
+  const help = execFileSync(installer, ['--help'], { encoding: 'utf8' });
+  const source = readFileSync(installer, 'utf8');
+  const uninstall = source.slice(
+    source.indexOf('# ---- uninstall'),
+    source.indexOf('if [ "$UNINSTALL" = true ]; then'),
+  );
+
+  assert.match(help, /--uninstall\s+Remove the Agent container/);
+  assert.match(help, /--remove-workloads\s+Also remove the containers and networks/);
+  // The uninstall branch ends before any install-only step such as the
+  // enrollment prompt or an image pull.
+  assert.ok(
+    source.indexOf('uninstall_agent\n  exit 0') <
+      source.indexOf('[ -n "$IMAGE" ] || fail \'--image is required\''),
+  );
+  // A server enrolled for another target is left untouched.
+  assert.match(uninstall, /not '\$EXPECTED_TARGET_ID'; nothing was removed/);
+  // Agent containers are recognised by their label, never by name alone.
+  assert.match(uninstall, /index \.Config\.Labels "com\.initpad\.agent"/);
+  assert.match(uninstall, /used by an unmanaged container; it was not removed/);
+  // Workloads and networks are filtered by both the managed and target labels.
+  for (const kind of ['docker ps -aq', 'docker network ls -q']) {
+    const at = uninstall.indexOf(kind);
+    assert.ok(at > 0, `${kind} is missing`);
+    const call = uninstall.slice(at, uninstall.indexOf(')', at));
+    assert.match(call, /label=com\.initpad\.managed=true/);
+    assert.match(call, /label=com\.initpad\.target=\$target_id/);
+  }
+  // Registry trust is removed only when it is byte-identical to the CA copy
+  // Manage Agent installed.
+  assert.match(uninstall, /cmp -s "\$file" "\$MANAGED_CA_DIR\/ca\.crt"/);
+  // Nothing is removed without an explicit confirmation.
+  assert.ok(
+    uninstall.indexOf('[ "$answer" = uninstall ]') < uninstall.indexOf('docker rm -f "$name"'),
+  );
+  assert.match(uninstall, /run in an interactive terminal to confirm, or pass --yes/);
+});

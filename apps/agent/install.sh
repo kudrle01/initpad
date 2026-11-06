@@ -13,13 +13,19 @@ GATEWAY_CONTAINER=
 CA_FILE=
 REENROLL=false
 EXPECTED_TARGET_ID=
+UNINSTALL=false
+REMOVE_WORKLOADS=false
+ASSUME_YES=false
+# Where Manage Agent stores the private CA for --ca-file (ADR-161).
+MANAGED_CA_DIR=/etc/initpad-agent
 
 usage() {
   cat <<'EOF'
-Install or update InitPad Agent on a Linux Docker server.
+Install, update or uninstall InitPad Agent on a Linux Docker server.
 
 Usage:
   initpad-agent-install --url <control-plane-url> --image <image@sha256:digest> [options]
+  initpad-agent-install --uninstall [--expected-target-id ID] [--remove-workloads] [--yes]
 
 Required:
   --url URL                    Public InitPad control-plane URL
@@ -34,6 +40,13 @@ Options:
   --expected-target-id ID      Refuse an identity belonging to another target
   --re-enroll                  Replace a stale/revoked identity using a new token
   -h, --help                   Show this help
+
+Uninstall:
+  --uninstall                  Remove the Agent container, its saved identity
+                               and the CA installed for it; keep applications
+  --remove-workloads           Also remove the containers and networks InitPad
+                               deployed for this target
+  --yes                        Do not ask for confirmation
 
 The enrollment token is requested by the Agent through a hidden terminal
 prompt. It is never accepted as an argument or written to shell history.
@@ -99,6 +112,18 @@ while [ "$#" -gt 0 ]; do
       REENROLL=true
       shift
       ;;
+    --uninstall)
+      UNINSTALL=true
+      shift
+      ;;
+    --remove-workloads)
+      REMOVE_WORKLOADS=true
+      shift
+      ;;
+    --yes)
+      ASSUME_YES=true
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -111,6 +136,125 @@ done
 
 [ "$(id -u)" -eq 0 ] || fail 'run this installer as root (for example with sudo)'
 [ "$(uname -s)" = Linux ] || fail 'the production installer currently supports Linux Docker servers'
+
+case "$EXPECTED_TARGET_ID" in
+  *[!A-Za-z0-9_-]*) fail '--expected-target-id contains unsupported characters' ;;
+esac
+
+# ---- uninstall -----------------------------------------------------------
+# Removes only what this installer and the Agent created: containers labeled
+# com.initpad.agent, the identity directory, the CA copy Manage Agent
+# installed (and Docker registry trust that is byte-identical to it) and, on
+# request, workloads and networks labeled for exactly this target.
+saved_target_id() {
+  [ -f "$DATA_DIR/agent.json" ] || return 0
+  sed -n 's/^[[:space:]]*"targetId":[[:space:]]*"\([^"]*\)"[,]*[[:space:]]*$/\1/p' "$DATA_DIR/agent.json"
+}
+
+agent_containers() {
+  for name in "$CONTAINER_NAME" "${CONTAINER_NAME}-previous"; do
+    docker container inspect "$name" >/dev/null 2>&1 || continue
+    [ "$(docker container inspect --format '{{ index .Config.Labels "com.initpad.agent" }}' "$name")" = true ] \
+      || fail "container name '$name' is used by an unmanaged container; it was not removed"
+    printf '%s\n' "$name"
+  done
+}
+
+managed_docker_ca_files() {
+  [ -f "$MANAGED_CA_DIR/ca.crt" ] || return 0
+  for file in /etc/docker/certs.d/*/ca.crt; do
+    [ -f "$file" ] && cmp -s "$file" "$MANAGED_CA_DIR/ca.crt" && printf '%s\n' "$file"
+  done
+  return 0
+}
+
+uninstall_agent() {
+  [ -L "$DATA_DIR" ] && fail "$DATA_DIR must not be a symbolic link"
+  [ -L "$MANAGED_CA_DIR" ] && fail "$MANAGED_CA_DIR must not be a symbolic link"
+  command -v docker >/dev/null 2>&1 || fail 'Docker Engine is required'
+  docker info >/dev/null 2>&1 || fail 'Docker Engine is not reachable'
+
+  target_id=$(saved_target_id) || exit 1
+  if [ -n "$EXPECTED_TARGET_ID" ] && [ -n "$target_id" ] && [ "$target_id" != "$EXPECTED_TARGET_ID" ]; then
+    fail "this server's Agent belongs to target '$target_id', not '$EXPECTED_TARGET_ID'; nothing was removed"
+  fi
+  target_id=${target_id:-$EXPECTED_TARGET_ID}
+  if [ "$REMOVE_WORKLOADS" = true ] && [ -z "$target_id" ]; then
+    fail '--remove-workloads needs --expected-target-id when no Agent identity is saved'
+  fi
+
+  containers=$(agent_containers) || exit 1
+  ca_files=$(managed_docker_ca_files)
+  workloads=
+  networks=
+  if [ "$REMOVE_WORKLOADS" = true ]; then
+    workloads=$(docker ps -aq --filter label=com.initpad.managed=true \
+      --filter "label=com.initpad.target=$target_id")
+    networks=$(docker network ls -q --filter label=com.initpad.managed=true \
+      --filter "label=com.initpad.target=$target_id")
+  fi
+
+  if [ -z "$containers$ca_files$workloads$networks" ] && [ ! -e "$DATA_DIR" ] && [ ! -e "$MANAGED_CA_DIR" ]; then
+    printf 'InitPad Agent is not installed on this server; nothing to remove.\n'
+    return 0
+  fi
+
+  printf 'This removes from this server:\n'
+  [ -n "$containers" ] && printf '  - Agent container(s): %s\n' "$(printf '%s' "$containers" | tr '\n' ' ')"
+  [ -d "$DATA_DIR" ] && printf '  - Agent identity: %s\n' "$DATA_DIR"
+  [ -d "$MANAGED_CA_DIR" ] && printf '  - InitPad CA: %s\n' "$MANAGED_CA_DIR"
+  for file in $ca_files; do printf '  - Docker registry trust: %s\n' "$file"; done
+  if [ "$REMOVE_WORKLOADS" = true ]; then
+    printf '  - %s application container(s) and %s network(s) of target %s\n' \
+      "$(printf '%s' "$workloads" | grep -c . || true)" \
+      "$(printf '%s' "$networks" | grep -c . || true)" "$target_id"
+  else
+    printf 'Applications deployed by InitPad keep running (add --remove-workloads to remove them).\n'
+  fi
+
+  if [ "$ASSUME_YES" != true ]; then
+    [ -t 0 ] || fail 'run in an interactive terminal to confirm, or pass --yes'
+    printf "Type 'uninstall' to continue: "
+    IFS= read -r answer || answer=
+    [ "$answer" = uninstall ] || fail 'cancelled; nothing was removed'
+  fi
+
+  images=
+  for name in $containers; do
+    images="$images $(docker container inspect --format '{{.Config.Image}}' "$name")"
+    docker rm -f "$name" >/dev/null
+  done
+  if [ "$REMOVE_WORKLOADS" = true ]; then
+    # shellcheck disable=SC2086
+    [ -z "$workloads" ] || docker rm -f $workloads >/dev/null
+    for network in $networks; do
+      # A managed gateway outside this target may still be attached.
+      for attached in $(docker network inspect --format '{{range .Containers}}{{.Name}} {{end}}' "$network"); do
+        docker network disconnect -f "$network" "$attached" >/dev/null 2>&1 || true
+      done
+      docker network rm "$network" >/dev/null || warn "network $network could not be removed"
+    done
+  fi
+  rm -rf "$DATA_DIR"
+  for file in $ca_files; do
+    rm -f "$file"
+    rmdir "$(dirname "$file")" 2>/dev/null || true
+  done
+  rm -rf "$MANAGED_CA_DIR"
+  for image in $images; do
+    docker image rm "$image" >/dev/null 2>&1 || true
+  done
+
+  printf '\nInitPad Agent was removed from this server.\n'
+  printf 'In InitPad, disconnect the Agent or delete this server so it is no longer shown as offline.\n'
+}
+
+if [ "$UNINSTALL" = true ]; then
+  uninstall_agent
+  exit 0
+fi
+[ "$REMOVE_WORKLOADS" = false ] || fail '--remove-workloads is only valid with --uninstall'
+
 [ -n "$CONTROL_PLANE_URL" ] || fail '--url is required'
 [ -n "$IMAGE" ] || fail '--image is required'
 
@@ -124,10 +268,6 @@ esac
 
 printf '%s\n' "$IMAGE" | grep -Eq '^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$' \
   || fail '--image must be an immutable OCI reference ending in @sha256:<64 lowercase hex characters>'
-
-case "$EXPECTED_TARGET_ID" in
-  *[!A-Za-z0-9_-]*) fail '--expected-target-id contains unsupported characters' ;;
-esac
 
 command -v docker >/dev/null 2>&1 || fail 'Docker Engine is required'
 [ -S /var/run/docker.sock ] || fail '/var/run/docker.sock is not available'

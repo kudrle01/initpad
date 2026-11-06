@@ -218,6 +218,34 @@ describe('AgentSetupDialog distribution', () => {
     expect(screen.queryByRole('link', { name: /download script only/i })).not.toBeInTheDocument();
   });
 
+  it('shows the verified uninstall command only on request', async () => {
+    vi.mocked(api.getAgentDistribution).mockResolvedValue({
+      available: true,
+      version: '0.14.1',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      unavailableReason: null,
+      installer: { path: '/api/agent/distribution/install.sh', sha256: 'd'.repeat(64) },
+      privateCa: null,
+    });
+    const user = userEvent.setup();
+
+    renderDialog([], { ...enrollment, state: 'disabled', enrollmentPending: false }, null);
+
+    const summary = await screen.findByText('Uninstall from the server');
+    expect(screen.queryByText(/--uninstall/)).not.toBeInTheDocument();
+
+    await user.click(summary);
+    const command = screen.getByText(/--uninstall/);
+    expect(command).toHaveTextContent(`sha256sum -c -`);
+    expect(command).toHaveTextContent("--uninstall --expected-target-id 'target-1'");
+    expect(command).not.toHaveTextContent('--remove-workloads');
+
+    await user.click(
+      screen.getByRole('checkbox', { name: /also remove applications initpad deployed/i }),
+    );
+    expect(screen.getByText(/--uninstall/)).toHaveTextContent(/--remove-workloads$/);
+  });
+
   it('never offers a stale distribution downgrade after a successful remote update', async () => {
     vi.mocked(api.getAgentDistribution).mockResolvedValue({
       available: true,
