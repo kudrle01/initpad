@@ -1,6 +1,7 @@
-import { chmod, lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { AgentConfig } from './types.js';
+import { readVerifiedFile } from './verified-file.js';
 
 export const DEFAULT_CONFIG_PATH = '/var/lib/initpad-agent/agent.json';
 
@@ -82,21 +83,25 @@ export async function preflightConfigStorage(path: string): Promise<void> {
 }
 
 export async function loadConfig(path: string): Promise<AgentConfig> {
-  const stat = await lstat(path);
-  if (!stat.isFile() || stat.isSymbolicLink()) {
-    throw new Error(`Agent config is not a regular file: ${path}`);
-  }
-  if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
-    throw new Error(`Agent config permissions are too broad: ${path} must be mode 0600`);
-  }
-  if (
-    process.platform !== 'win32' &&
-    typeof process.geteuid === 'function' &&
-    stat.uid !== process.geteuid()
-  ) {
-    throw new Error(`Agent config is owned by a different user: ${path}`);
-  }
-  const value: unknown = JSON.parse(await readFile(path, 'utf8'));
+  const notRegular = `Agent config is not a regular file: ${path}`;
+  const raw = await readVerifiedFile(
+    path,
+    (stat) => {
+      if (!stat.isFile()) throw new Error(notRegular);
+      if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
+        throw new Error(`Agent config permissions are too broad: ${path} must be mode 0600`);
+      }
+      if (
+        process.platform !== 'win32' &&
+        typeof process.geteuid === 'function' &&
+        stat.uid !== process.geteuid()
+      ) {
+        throw new Error(`Agent config is owned by a different user: ${path}`);
+      }
+    },
+    notRegular,
+  );
+  const value: unknown = JSON.parse(raw);
   assertConfig(value);
   return value;
 }

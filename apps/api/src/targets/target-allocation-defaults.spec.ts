@@ -14,6 +14,18 @@ describe('allocationUsageDefaults (ADR-060)', () => {
     });
   });
 
+  it('strips any run of trailing slashes in linear time', () => {
+    expect(
+      allocationUsageDefaults({ ...builtIn, remotePath: '/srv/www///' }, 'team-alpha').rootPath,
+    ).toBe('/srv/www/team-alpha');
+    expect(allocationUsageDefaults({ ...builtIn, remotePath: '///' }, 'team-alpha').rootPath).toBe(
+      '/team-alpha',
+    );
+    const started = Date.now();
+    allocationUsageDefaults({ ...builtIn, remotePath: `${'/'.repeat(100_000)}x` }, 'team-alpha');
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it('preserves exact paths for legacy backfill', () => {
     expect(allocationUsageDefaults(builtIn, 'team-alpha', true)).toEqual({
       rootPath: '/srv/www/',

@@ -9,17 +9,20 @@ concurrency:
   group: agent-release-${{ github.ref }}
   cancel-in-progress: false
 
+# Each job requests only what it uses; the default grants nothing to write.
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
+  contents: read
 
 jobs:
   release:
     name: Build, sign and publish
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     timeout-minutes: 45
 
     steps:
