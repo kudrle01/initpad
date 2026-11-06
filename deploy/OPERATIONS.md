@@ -529,9 +529,15 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
 
 ## Kapacita a škálování
 
-- Pro pohodlný self-hosted provoz včetně sestavování šablon počítej
-  alespoň se 2 vCPU, 4 GB RAM a 20 GB volného disku. Samotné zobrazení
-  aplikace spotřebuje méně; CI build je záměrně nejnáročnější část.
+- Minimum pro self-hosted provoz včetně sestavování šablon jsou 2 CPU jádra,
+  6 GiB RAM a 20 GiB volného místa na úložišti Dockeru (`DockerRootDir`).
+  Doporučeno je 4 vCPU, 8 GiB RAM a 40 GiB volného místa, tedy například VM
+  s diskem 80 GB. Stejné hodnoty kontroluje `./self-hosted-check.sh
+  preflight`: pod minimem selže, pod doporučením varuje. `install.sh` sám
+  kapacitu nekontroluje, proto preflight spusť před první instalací.
+- CI build je záměrně nejnáročnější část: runner má výchozí limit 1,5 GiB
+  RAM a 1 CPU (níže). Každá aplikace nasazená na vestavěný cíl dostane
+  512 MB RAM (`INITPAD_DEPLOY_MEMORY_MB`).
 - Orientačně: každý projekt = 3 prostředí; N týmů × 3 běžící kontejnery + CI
   buildy. Hlídej RAM, CPU a **volné místo** (buildy a image rostou).
 - Runner provádí jeden CI job najednou a ostatní commity pravdivě zobrazí jako
@@ -557,8 +563,11 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
   dostatečnou rezervu pro databázi, Gitea, API a běžící aplikace. Změnu uplatní
   opětovné `./install.sh`; nevyžaduje nový projekt.
 - Kvóty na tým nastav přes **Allocations** (max prostředí, ADR-060).
-- Když jeden host nestačí, přesuň nasazovací cíle na další stroje přes **Agenta**
-  po dokončení jeho job/delivery protokolu (roadmapa), případně managed DB/S3.
+- Když jeden host nestačí, přesuň nasazování aplikací na další servery
+  s **Agentem** (požadavky viz
+  [README Agenta](../apps/agent/README.md#požadavky-na-server)). Na hostu
+  platformy pak zůstane jen platforma a CI. Databázi a object storage lze
+  přesunout na spravované služby (`INITPAD_ARTIFACT_S3_*`).
 
 ## Troubleshooting
 

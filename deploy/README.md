@@ -43,6 +43,23 @@ průvodce (servisní účet a administrátorský token přes CLI), registraci SS
 (platforma je OIDC přihlášením pro Giteu), registraci izolovaného CI runneru,
 verzované databázové migrace a sestavení kontejnerů.
 
+## Požadavky na server
+
+| | Minimum | Doporučeno |
+|---|---|---|
+| Systém | Linux s Docker Engine a pluginem Compose; `amd64` je živě ověřené, image vychází i pro `arm64` | Ubuntu Server 24.04 LTS `amd64` bez grafického prostředí, správa přes SSH |
+| CPU | 2 jádra | 4 vCPU |
+| RAM | 6 GiB | 8 GiB |
+| Volné místo pro Docker | 20 GiB | 40 GiB (disk VM 80 GB) |
+
+Grafické prostředí server nepotřebuje, InitPad se otevírá z prohlížeče na
+jiném počítači. Výjimkou je jen volba *Jen tento počítač*. Před první
+instalací spusťte `./self-hosted-check.sh preflight`: ověří čistý host,
+Docker Compose a kapacitu, pod minimem selže a pod doporučením varuje.
+Samotný `install.sh` kapacitu nekontroluje. Nároky rostou hlavně s CI buildy
+a s aplikacemi nasazenými přímo na tento host (viz
+[Kapacita a škálování](./OPERATIONS.md#kapacita-a-škálování)).
+
 ## Instalace na server
 
 1. Vytvořte dva DNS záznamy typu A, které ukazují na IP serveru: jeden pro

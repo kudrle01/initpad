@@ -130,6 +130,29 @@ neočekávaném restartu používá v případě potřeby
 `systemctl enable --now docker` a `docker start initpad-agent`, nikdy nový
 enrollment token.
 
+## Požadavky na server
+
+- Linux `amd64` nebo `arm64` s běžícím Docker Engine. Grafické prostředí ani
+  checkout repozitáře nejsou potřeba, server stačí spravovat přes SSH.
+- Odchozí HTTPS na adresu control plane. Příchozí port pro správu se
+  neotevírá; porty 80 a 443 potřebuje jen managed gateway.
+- Oprávnění root pro jednorázové spuštění instalátoru.
+
+Instalátor kapacitu nekontroluje. Paměť a CPU určují tyto limity:
+
+| Co | RAM | CPU | Poznámka |
+|---|---|---|---|
+| Agent | 384 MB | 0,5 | Pevný limit kontejneru Agenta. Při aktualizaci krátce běží starý i nový Agent. |
+| Každé nasazené prostředí | 512 MB | 1 | Výchozí limit allocation, lze změnit v allocation serveru. |
+| Nasazení nové verze | +1 limit prostředí | | Kandidát běží vedle aktuální revize, dokud neprojde health check. |
+| Systém a Docker | asi 0,5 GB | | Ubuntu Server bez grafického prostředí. |
+
+Orientačně tedy RAM ≈ 1 GB + počet prostředí × jejich limit + jedno
+prostředí navíc pro probíhající nasazení. Server pro jeden projekt s dev,
+test a prod a výchozími limity vystačí se 2 vCPU a 4 GB RAM. S nižšími
+limity allocation (například 256 MB) se tytéž tři prostředí vejdou do 2 GB. Na disk počítejte image všech nasazených prostředí
+a 30 MB logů na kontejner (3 × 10 MB).
+
 ## Odinstalace
 
 **Manage Agent → Odinstalovat ze serveru** zobrazí příkaz, který stáhne
