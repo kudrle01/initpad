@@ -10,7 +10,7 @@ COPY apps/web apps/web
 RUN npm run build --workspace @initpad/web
 
 # -------------------------------------------------------------- runtime ----
-FROM mirror.gcr.io/library/nginx:alpine@sha256:b2f80f8f88146b0772fdcc7d92cea621aa8c2889fa8d07ed61d4884fcea53e09
+FROM mirror.gcr.io/library/nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
 # Installed packages take the fixes Alpine published after the base image.
 RUN apk upgrade --no-cache
 COPY apps/web/nginx-main.conf /etc/nginx/nginx.conf
