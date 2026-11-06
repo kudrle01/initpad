@@ -345,6 +345,9 @@ lab připojuje mezi Agenta a Caddy vyhrazený Unix socket. Caddy běží uvnitř
 stejného izolovaného daemonu jako workloady, nemá Docker socket a neotevírá
 žádný admin TCP listener.
 
+Produkční referenci brány (Caddy, vnitřní CA, postup pro Agenta) popisuje
+[`deploy/gateway/README.md`](../../deploy/gateway/README.md) a ADR-164.
+
 ### Lokální acceptance DNS a TLS na macOS
 
 Lab poskytuje věrný lokální ekvivalent bez nutnosti registrované domény.

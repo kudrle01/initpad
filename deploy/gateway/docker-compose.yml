@@ -1,0 +1,116 @@
+# Production reference for the InitPad managed gateway on an Agent server
+# (ADR-164). Three parts:
+#   ca      private certificate authority (step-ca), optional profile "ca"
+#   edge    Caddy that terminates TLS on 80/443 and gets its certificates from ca
+#   gateway the inner Caddy that InitPad Agent configures over a Unix socket
+# Start it with ./setup.sh; see README.md.
+name: initpad-gateway
+
+services:
+  ca:
+    image: smallstep/step-ca:0.28.4@sha256:0f88382ac5af5c6b7bbba0c6e8fcefef52aee6f22ea364df8e02a09ffd0d22f3
+    profiles: ['ca']
+    environment:
+      DOCKER_STEPCA_INIT_NAME: ${GATEWAY_CA_NAME:-InitPad Gateway CA}
+      DOCKER_STEPCA_INIT_DNS_NAMES: ca,localhost,${GATEWAY_CA_HOST:-ca.lab.local}
+      DOCKER_STEPCA_INIT_ACME: 'true'
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/ca_password
+    secrets: [ca_password]
+    volumes:
+      - ca-data:/home/step
+    networks:
+      edge:
+        aliases: [ca]
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'step',
+          'ca',
+          'health',
+          '--ca-url=https://localhost:9000',
+          '--root=/home/step/certs/root_ca.crt',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    read_only: true
+    tmpfs: ['/tmp:size=16m']
+    # The binary carries the net_bind_service file capability; without it in
+    # the bounding set the kernel refuses to execute it.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    restart: unless-stopped
+
+  edge:
+    image: caddy:2.11-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+    environment:
+      GATEWAY_DOMAIN: ${GATEWAY_DOMAIN:?set GATEWAY_DOMAIN, for example apps.example.lan}
+      GATEWAY_CA_URL: ${GATEWAY_CA_URL:-https://ca:9000/acme/acme/directory}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./ca-root.crt:/etc/caddy/ca-root.crt:ro
+      - edge-data:/data
+    networks: [edge]
+    depends_on:
+      gateway: { condition: service_started }
+    read_only: true
+    tmpfs: ['/config:size=4m']
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+
+  # InitPad Agent finds this container by name and its label, connects it to
+  # the network of each project that has an active route and replaces its
+  # routes. It receives no Docker socket and publishes no port.
+  gateway:
+    image: caddy:2.11-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+    container_name: initpad-gateway
+    labels:
+      com.initpad.gateway: 'true'
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        rm -f /run/initpad-gateway/admin.sock
+        if [ -s /config/caddy/autosave.json ]; then exec caddy run --resume; fi
+        exec caddy run --config /etc/caddy/inner.json
+    volumes:
+      - ./inner.json:/etc/caddy/inner.json:ro
+      - gateway-config:/config
+      - /var/lib/initpad-gateway-admin:/run/initpad-gateway
+    networks: [edge]
+    read_only: true
+    tmpfs:
+      - /tmp:size=4m,mode=1777
+      - /data:size=16m,mode=0700
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 64m
+    cpus: 0.15
+    pids_limit: 64
+    restart: unless-stopped
+
+secrets:
+  ca_password:
+    file: ./secrets/ca_password
+
+volumes:
+  ca-data: {}
+  edge-data: {}
+  gateway-config: {}
+
+networks:
+  edge: {}
