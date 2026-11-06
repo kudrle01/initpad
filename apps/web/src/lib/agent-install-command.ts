@@ -11,6 +11,11 @@ export interface AgentInstallCommandInput {
   distribution: CommandDistribution;
   image: string;
   targetId: string;
+  /**
+   * DNS name the managed gateway serves applications under. When set, the
+   * installer also sets up the gateway (private CA, TLS edge, inner gateway).
+   */
+  gatewayDomain?: string | null;
 }
 
 export interface AgentUninstallCommandInput {
@@ -63,6 +68,22 @@ function downloadSteps(
   return { steps, caOption };
 }
 
+// A DNS name whose last label is not numeric, so an IP address never qualifies.
+const GATEWAY_DOMAIN =
+  /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.(?!\d+$)[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+
+/** The gateway DNS name of a managed-gateway target's public URL, or null. */
+export function gatewayDomainOf(publicUrl: string | null | undefined): string | null {
+  if (!publicUrl) return null;
+  try {
+    const url = new URL(publicUrl);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === 'https:' && GATEWAY_DOMAIN.test(host) ? host : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Builds the one-line, checksum-verified installation command shown in
  * Manage Agent. With an internal CA it also trusts the CA for the registry in
@@ -74,12 +95,18 @@ export function buildAgentInstallCommand({
   distribution,
   image,
   targetId,
+  gatewayDomain,
 }: AgentInstallCommandInput): string {
   const url = new URL(origin);
   const insecureHttp = url.protocol === 'http:';
   const { steps, caOption } = downloadSteps(url, distribution, true);
+  // Only a validated DNS name is ever put into the shell command.
+  const gatewayOption =
+    gatewayDomain && GATEWAY_DOMAIN.test(gatewayDomain)
+      ? ` --gateway-domain '${gatewayDomain}'`
+      : '';
   steps.push(
-    `sudo sh ./initpad-agent-install.sh --url '${url.origin}' --image '${image}' --expected-target-id '${targetId}'${caOption}${insecureHttp ? ' --allow-insecure-http' : ''}`,
+    `sudo sh ./initpad-agent-install.sh --url '${url.origin}' --image '${image}' --expected-target-id '${targetId}'${caOption}${gatewayOption}${insecureHttp ? ' --allow-insecure-http' : ''}`,
   );
   return steps.join(' && ');
 }

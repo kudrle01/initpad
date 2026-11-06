@@ -26,7 +26,7 @@ import {
 import { useConfirmation } from '@/confirmation';
 import { t, msg, rich, formatDateTime, formatNumber, formatTime, type MessageKey } from '@/i18n';
 import { externalHref } from '@/lib/utils';
-import { buildAgentInstallCommand } from '@/lib/agent-install-command';
+import { buildAgentInstallCommand, gatewayDomainOf } from '@/lib/agent-install-command';
 
 interface Props {
   open: boolean;
@@ -148,6 +148,10 @@ export function AgentSetupDialog({
       ? compareStableVersions(desiredAgentVersion, agent.version)
       : null;
   const wouldDowngradeAgent = desiredComparedWithRunning !== null && desiredComparedWithRunning < 0;
+  const gatewayDomain =
+    currentTarget.routingMode === 'managed-gateway'
+      ? gatewayDomainOf(currentTarget.publicUrl)
+      : null;
   const installCommand =
     distribution?.available && desiredImage && installerUrl && !wouldDowngradeAgent
       ? buildAgentInstallCommand({
@@ -155,6 +159,7 @@ export function AgentSetupDialog({
           distribution,
           image: desiredImage,
           targetId: currentTarget.id,
+          gatewayDomain,
         })
       : null;
   const privateCaRegistry =
@@ -531,10 +536,11 @@ export function AgentSetupDialog({
                     </div>
                   </div>
                 )}
-                {currentTarget.routingMode === 'managed-gateway' && installCommand && (
+                {gatewayDomain && installCommand && (
                   <p className="mt-1.5 text-xs text-muted-foreground">
                     {t(
-                      'Managed gateway installations also need the target-local Caddy socket, gateway container and optional private CA flags shown by the installer help.',
+                      'This command also sets up the managed gateway for {domain}: a private CA, a TLS edge and the gateway. Point {domain} and *.{domain} in DNS at this server first, and install the CA root certificate the installer prints on the computers that open the applications.',
+                      { domain: gatewayDomain },
                     )}
                   </p>
                 )}

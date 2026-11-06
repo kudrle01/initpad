@@ -1,5 +1,10 @@
 # Spravovaná brána pro Agenta (produkční reference)
 
+> Pro běžnou instalaci to nepotřebujete. Příkaz z **Manage Agent** obsahuje
+> `--gateway-domain` a bránu postaví sám (ADR-165, [README Agenta](../../apps/agent/README.md)).
+> Tato složka je ruční varianta přes Docker Compose, pro případy, kdy chcete
+> bránu mít pod vlastní správou nebo použít vlastní CA.
+
 Referenční nasazení brány, kterou InitPad Agent potřebuje pro režim
 **Spravovaná brána** (ADR-073). Dává aplikacím stálé HTTPS adresy
 `https://<projekt>-<prostředí>-<id>.<doména>` místo náhodných portů. Zdůvodnění a

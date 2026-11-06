@@ -17,6 +17,8 @@ UNINSTALL=false
 REMOVE_WORKLOADS=false
 ASSUME_YES=false
 SKIP_CAPACITY_CHECK=false
+GATEWAY_DOMAIN=
+REMOVE_GATEWAY=false
 # Where Manage Agent stores the private CA for --ca-file (ADR-161).
 MANAGED_CA_DIR=/etc/initpad-agent
 
@@ -26,7 +28,7 @@ Install, update or uninstall InitPad Agent on a Linux Docker server.
 
 Usage:
   initpad-agent-install --url <control-plane-url> --image <image@sha256:digest> [options]
-  initpad-agent-install --uninstall [--expected-target-id ID] [--remove-workloads] [--yes]
+  initpad-agent-install --uninstall [--expected-target-id ID] [--remove-workloads] [--remove-gateway] [--yes]
 
 Required:
   --url URL                    Public InitPad control-plane URL
@@ -35,6 +37,9 @@ Required:
 Options:
   --allow-insecure-http        Permit HTTP for a trusted local test only
   --published-host HOST        Health-check host for a remote Docker daemon
+  --gateway-domain DOMAIN      Set up the managed gateway on this server: a private
+                               CA, a TLS edge on ports 80/443 and the inner gateway
+                               for DOMAIN and *.DOMAIN (DNS must point both here)
   --gateway-admin-socket PATH  Private local Caddy admin Unix socket
   --gateway-container NAME     Labeled local Caddy gateway container
   --ca-file PATH               Private CA certificate trusted by the Agent
@@ -48,6 +53,8 @@ Uninstall:
                                and the CA installed for it; keep applications
   --remove-workloads           Also remove the containers and networks InitPad
                                deployed for this target
+  --remove-gateway             Also remove the gateway this installer set up,
+                               including the CA and its private key
   --yes                        Do not ask for confirmation
 
 The enrollment token is requested by the Agent through a hidden terminal
@@ -118,6 +125,15 @@ while [ "$#" -gt 0 ]; do
       SKIP_CAPACITY_CHECK=true
       shift
       ;;
+    --gateway-domain)
+      require_value "$@"
+      GATEWAY_DOMAIN=$2
+      shift 2
+      ;;
+    --remove-gateway)
+      REMOVE_GATEWAY=true
+      shift
+      ;;
     --uninstall)
       UNINSTALL=true
       shift
@@ -146,6 +162,280 @@ done
 case "$EXPECTED_TARGET_ID" in
   *[!A-Za-z0-9_-]*) fail '--expected-target-id contains unsupported characters' ;;
 esac
+
+# ---- gateway
+# One-command managed gateway (ADR-165): a private CA, a TLS edge and the inner
+# gateway InitPad Agent configures, all as labelled Docker containers on this
+# host. The Agent trusts the CA automatically; the root certificate is printed
+# for the computers that open the applications. Re-running the installer keeps
+# the CA and replaces the containers with the current definition.
+CADDY_IMAGE='caddy:2.11-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f'
+STEP_CA_IMAGE='smallstep/step-ca:0.28.4@sha256:0f88382ac5af5c6b7bbba0c6e8fcefef52aee6f22ea364df8e02a09ffd0d22f3'
+GATEWAY_STATE_DIR=${INITPAD_GATEWAY_STATE_DIR:-/var/lib/initpad-gateway}
+GATEWAY_ADMIN_DIR=${INITPAD_GATEWAY_ADMIN_DIR:-/var/lib/initpad-gateway-admin}
+GATEWAY_HTTP_PORT=${INITPAD_GATEWAY_HTTP_PORT:-80}
+GATEWAY_HTTPS_PORT=${INITPAD_GATEWAY_HTTPS_PORT:-443}
+GATEWAY_NETWORK=initpad-gateway-net
+GATEWAY_INNER=initpad-gateway
+GATEWAY_EDGE=initpad-gateway-edge
+GATEWAY_CA=initpad-gateway-ca
+GATEWAY_LABEL=com.initpad.gateway.installer=true
+# Certificates last a week (step-ca defaults to 24 hours), so a short CA outage
+# does not take the applications down.
+GATEWAY_CERT_DURATION=168h
+
+gateway_owned() {
+  [ "$(docker container inspect --format '{{ index .Config.Labels "com.initpad.gateway.installer" }}' "$1" 2>/dev/null || true)" = true ]
+}
+
+gateway_replace_container() {
+  if docker container inspect "$1" >/dev/null 2>&1; then
+    gateway_owned "$1" || fail "a container named $1 exists and was not created by this installer; remove or rename it first"
+    docker rm -f "$1" >/dev/null
+  fi
+}
+
+gateway_wait_healthy() {
+  waited=0
+  until [ "$(docker inspect --format '{{.State.Health.Status}}' "$1" 2>/dev/null || true)" = healthy ]; do
+    waited=$((waited + 2))
+    [ "$waited" -le "$2" ] || return 1
+    sleep 2
+  done
+}
+
+setup_gateway() {
+  printf '%s\n' "$GATEWAY_DOMAIN" \
+    | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$' \
+    || fail '--gateway-domain must be a lower-case DNS name such as apps.example.lan'
+  printf '%s\n' "$GATEWAY_DOMAIN" | grep -Eq '\.[0-9]+$' \
+    && fail '--gateway-domain must be a DNS name, not an IP address'
+  case "$GATEWAY_DOMAIN" in
+    *.local)
+      warn "$GATEWAY_DOMAIN ends in .local, which is reserved for mDNS. Many Linux resolvers do not send it to your DNS server, so lookups can fail. Prefer .lan, home.arpa or a subdomain you own."
+      ;;
+  esac
+  [ -z "$GATEWAY_ADMIN_SOCKET$GATEWAY_CONTAINER" ] \
+    || fail '--gateway-domain sets up the gateway itself; do not combine it with --gateway-admin-socket or --gateway-container'
+  [ -z "$PUBLISHED_HOST" ] || fail '--gateway-domain needs a local Docker daemon; it cannot be combined with --published-host'
+  case "$GATEWAY_STATE_DIR$GATEWAY_ADMIN_DIR" in
+    *[!A-Za-z0-9._/-]*) fail 'the gateway directories contain unsupported characters' ;;
+  esac
+  case "$GATEWAY_HTTP_PORT$GATEWAY_HTTPS_PORT" in
+    *[!0-9]*) fail 'the gateway ports must be numbers' ;;
+  esac
+  [ ! -L "$GATEWAY_STATE_DIR" ] && [ ! -L "$GATEWAY_ADMIN_DIR" ] || fail 'the gateway directories must not be symbolic links'
+
+  printf 'Setting up the managed gateway for %s and *.%s.\n' "$GATEWAY_DOMAIN" "$GATEWAY_DOMAIN"
+
+  # DNS must reach this server, otherwise the CA cannot validate any name.
+  if ! getent hosts "$GATEWAY_DOMAIN" >/dev/null 2>&1; then
+    warn "$GATEWAY_DOMAIN does not resolve on this server yet. Add an A record for it and a wildcard A record for *.$GATEWAY_DOMAIN pointing here; certificates cannot be issued before that."
+  fi
+
+  mkdir -p "$GATEWAY_STATE_DIR" "$GATEWAY_ADMIN_DIR"
+  # The gateway containers run as root without extra capabilities, so they can
+  # only use directories that root owns; nobody else may reach the socket.
+  chown 0:0 "$GATEWAY_STATE_DIR" "$GATEWAY_ADMIN_DIR"
+  chmod 0700 "$GATEWAY_STATE_DIR" "$GATEWAY_ADMIN_DIR"
+
+  docker network inspect "$GATEWAY_NETWORK" >/dev/null 2>&1 \
+    || docker network create --label "$GATEWAY_LABEL" "$GATEWAY_NETWORK" >/dev/null
+
+  # --- CA
+  ca_uid=$(docker run --rm --entrypoint id "$STEP_CA_IMAGE" -u)
+  ca_gid=$(docker run --rm --entrypoint id "$STEP_CA_IMAGE" -g)
+  if [ ! -s "$GATEWAY_STATE_DIR/ca_password" ]; then
+    (umask 077 && head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$GATEWAY_STATE_DIR/ca_password")
+    printf 'Created the CA password in %s/ca_password. Back it up with the ca data volume; the CA cannot be restored without it.\n' "$GATEWAY_STATE_DIR"
+  fi
+  chown "$ca_uid:$ca_gid" "$GATEWAY_STATE_DIR/ca_password"
+  chmod 0400 "$GATEWAY_STATE_DIR/ca_password"
+  # The CA container reads the password as its own user, so the directory
+  # must be traversable for it while the file stays private.
+  chmod 0711 "$GATEWAY_STATE_DIR"
+
+  gateway_replace_container "$GATEWAY_CA"
+  docker volume inspect initpad-gateway-ca-data >/dev/null 2>&1 \
+    || docker volume create --label "$GATEWAY_LABEL" initpad-gateway-ca-data >/dev/null
+  docker run -d --name "$GATEWAY_CA" \
+    --label "$GATEWAY_LABEL" \
+    --network "$GATEWAY_NETWORK" --network-alias ca \
+    --restart unless-stopped \
+    --read-only --tmpfs /tmp:size=16m \
+    --cap-drop ALL --cap-add NET_BIND_SERVICE \
+    --security-opt no-new-privileges \
+    --memory 128m --cpus 0.25 --pids-limit 64 \
+    --env "DOCKER_STEPCA_INIT_NAME=InitPad Gateway CA" \
+    --env "DOCKER_STEPCA_INIT_DNS_NAMES=ca,localhost" \
+    --env DOCKER_STEPCA_INIT_ACME=true \
+    --env DOCKER_STEPCA_INIT_PASSWORD_FILE=/run/secrets/ca_password \
+    --mount "type=bind,src=$GATEWAY_STATE_DIR/ca_password,dst=/run/secrets/ca_password,readonly" \
+    --mount type=volume,src=initpad-gateway-ca-data,dst=/home/step \
+    --health-cmd 'step ca health --ca-url=https://localhost:9000 --root=/home/step/certs/root_ca.crt' \
+    --health-interval 5s --health-timeout 5s --health-retries 20 \
+    "$STEP_CA_IMAGE" >/dev/null
+  gateway_wait_healthy "$GATEWAY_CA" 120 \
+    || fail "the gateway CA did not become healthy; see: docker logs $GATEWAY_CA"
+
+  # Lengthen the certificate lifetime once, then restart the CA.
+  if ! docker exec "$GATEWAY_CA" grep -q defaultTLSCertDuration /home/step/config/ca.json; then
+    docker exec "$GATEWAY_CA" sed -i \
+      "s/\"name\": \"acme\"/\"name\": \"acme\", \"claims\": {\"defaultTLSCertDuration\": \"$GATEWAY_CERT_DURATION\"}/" \
+      /home/step/config/ca.json
+    docker exec "$GATEWAY_CA" grep -q defaultTLSCertDuration /home/step/config/ca.json \
+      || warn 'could not lengthen the certificate lifetime; certificates last 24 hours, so keep the CA running'
+    docker restart "$GATEWAY_CA" >/dev/null
+    gateway_wait_healthy "$GATEWAY_CA" 120 \
+      || fail "the gateway CA did not restart; see: docker logs $GATEWAY_CA"
+  fi
+
+  docker cp "$GATEWAY_CA:/home/step/certs/root_ca.crt" "$GATEWAY_STATE_DIR/ca-root.crt"
+  chmod 0644 "$GATEWAY_STATE_DIR/ca-root.crt"
+
+  # --- trust for the Agent: the gateway root, plus any CA already passed in
+  mkdir -p "$MANAGED_CA_DIR"
+  [ ! -L "$MANAGED_CA_DIR" ] || fail "$MANAGED_CA_DIR must not be a symbolic link"
+  bundle="$MANAGED_CA_DIR/trust-bundle.crt"
+  {
+    if [ -n "$CA_FILE" ] && [ "$CA_FILE" != "$bundle" ]; then cat "$CA_FILE"; fi
+    cat "$GATEWAY_STATE_DIR/ca-root.crt"
+  } > "$bundle.new"
+  chmod 0644 "$bundle.new"
+  mv "$bundle.new" "$bundle"
+  CA_FILE=$bundle
+
+  # --- inner gateway
+  cat > "$GATEWAY_STATE_DIR/inner.json" <<'INNER'
+{
+  "admin": {
+    "listen": "unix//run/initpad-gateway/admin.sock|0200"
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "initpad": {
+          "listen": [":8080"],
+          "automatic_https": {
+            "disable": true
+          },
+          "routes": []
+        }
+      }
+    }
+  }
+}
+INNER
+  chmod 0644 "$GATEWAY_STATE_DIR/inner.json"
+  gateway_replace_container "$GATEWAY_INNER"
+  docker volume inspect initpad-gateway-config >/dev/null 2>&1 \
+    || docker volume create --label "$GATEWAY_LABEL" initpad-gateway-config >/dev/null
+  docker run -d --name "$GATEWAY_INNER" \
+    --label "$GATEWAY_LABEL" --label com.initpad.gateway=true \
+    --network "$GATEWAY_NETWORK" \
+    --restart unless-stopped \
+    --read-only --tmpfs /tmp:size=4m,mode=1777 --tmpfs /data:size=16m,mode=0700 \
+    --cap-drop ALL --cap-add NET_BIND_SERVICE \
+    --security-opt no-new-privileges \
+    --memory 64m --cpus 0.15 --pids-limit 64 \
+    --mount "type=bind,src=$GATEWAY_STATE_DIR/inner.json,dst=/etc/caddy/inner.json,readonly" \
+    --mount type=volume,src=initpad-gateway-config,dst=/config \
+    --mount "type=bind,src=$GATEWAY_ADMIN_DIR,dst=/run/initpad-gateway" \
+    --entrypoint /bin/sh \
+    "$CADDY_IMAGE" -ec 'rm -f /run/initpad-gateway/admin.sock; if [ -s /config/caddy/autosave.json ]; then exec caddy run --resume; fi; exec caddy run --config /etc/caddy/inner.json' >/dev/null
+
+  # --- TLS edge
+  cat > "$GATEWAY_STATE_DIR/Caddyfile" <<'EDGE'
+{
+	admin off
+	acme_ca https://ca:9000/acme/acme/directory
+	acme_ca_root /etc/caddy/ca-root.crt
+	on_demand_tls {
+		ask http://127.0.0.1:5555/allowed
+	}
+}
+
+http://127.0.0.1:5555 {
+	bind 127.0.0.1
+	@allowed expression {query.domain}.endsWith('.{$GATEWAY_DOMAIN}') && {query.domain}.size() <= 253
+	respond @allowed 200
+	respond 403
+}
+
+{$GATEWAY_DOMAIN} {
+	header -Server
+	reverse_proxy initpad-gateway:8080
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	header -Server
+	reverse_proxy initpad-gateway:8080
+}
+EDGE
+  chmod 0644 "$GATEWAY_STATE_DIR/Caddyfile"
+  gateway_replace_container "$GATEWAY_EDGE"
+  docker volume inspect initpad-gateway-edge-data >/dev/null 2>&1 \
+    || docker volume create --label "$GATEWAY_LABEL" initpad-gateway-edge-data >/dev/null
+  docker run -d --name "$GATEWAY_EDGE" \
+    --label "$GATEWAY_LABEL" \
+    --network "$GATEWAY_NETWORK" \
+    --restart unless-stopped \
+    --publish "$GATEWAY_HTTP_PORT:80" --publish "$GATEWAY_HTTPS_PORT:443" \
+    --read-only --tmpfs /config:size=4m \
+    --cap-drop ALL --cap-add NET_BIND_SERVICE \
+    --security-opt no-new-privileges \
+    --memory 128m --cpus 0.5 --pids-limit 128 \
+    --env "GATEWAY_DOMAIN=$GATEWAY_DOMAIN" \
+    --mount "type=bind,src=$GATEWAY_STATE_DIR/Caddyfile,dst=/etc/caddy/Caddyfile,readonly" \
+    --mount "type=bind,src=$GATEWAY_STATE_DIR/ca-root.crt,dst=/etc/caddy/ca-root.crt,readonly" \
+    --mount type=volume,src=initpad-gateway-edge-data,dst=/data \
+    "$CADDY_IMAGE" >/dev/null \
+    || fail "the TLS edge could not start; are ports $GATEWAY_HTTP_PORT and $GATEWAY_HTTPS_PORT already in use?"
+
+  # The Agent finds the gateway by container name and talks to it over the socket.
+  waited=0
+  until [ -S "$GATEWAY_ADMIN_DIR/admin.sock" ]; do
+    waited=$((waited + 1))
+    [ "$waited" -le 30 ] || fail "the inner gateway did not start; see: docker logs $GATEWAY_INNER"
+    sleep 1
+  done
+  GATEWAY_CONTAINER=$GATEWAY_INNER
+  GATEWAY_ADMIN_SOCKET=$GATEWAY_ADMIN_DIR/admin.sock
+
+  waited=0
+  until docker logs "$GATEWAY_EDGE" 2>&1 | grep -q 'certificate obtained successfully'; do
+    waited=$((waited + 2))
+    if [ "$waited" -gt 60 ]; then
+      warn "the TLS edge has no certificate for $GATEWAY_DOMAIN yet. It keeps retrying. Check that $GATEWAY_DOMAIN and *.$GATEWAY_DOMAIN resolve to this server, then: docker logs $GATEWAY_EDGE"
+      break
+    fi
+    sleep 2
+  done
+
+  printf '\nGateway ready for %s.\n' "$GATEWAY_DOMAIN"
+  printf '  CA root certificate: %s/ca-root.crt\n' "$GATEWAY_STATE_DIR"
+  command -v openssl >/dev/null 2>&1 \
+    && openssl x509 -in "$GATEWAY_STATE_DIR/ca-root.crt" -noout -fingerprint -sha256
+  printf '  Install that certificate on every computer whose browser opens the applications,\n'
+  printf '  after checking the fingerprint. The Agent on this server already trusts it.\n\n'
+}
+
+remove_gateway() {
+  for name in "$GATEWAY_EDGE" "$GATEWAY_INNER" "$GATEWAY_CA"; do
+    if docker container inspect "$name" >/dev/null 2>&1 && gateway_owned "$name"; then
+      docker rm -f "$name" >/dev/null
+    fi
+  done
+  for volume in initpad-gateway-ca-data initpad-gateway-config initpad-gateway-edge-data; do
+    docker volume rm "$volume" >/dev/null 2>&1 || true
+  done
+  docker network rm "$GATEWAY_NETWORK" >/dev/null 2>&1 || true
+  rm -rf "$GATEWAY_STATE_DIR" "$GATEWAY_ADMIN_DIR"
+}
+# ---- end gateway
 
 # ---- uninstall -----------------------------------------------------------
 # Removes only what this installer and the Agent created: containers labeled
@@ -200,7 +490,12 @@ uninstall_agent() {
       --filter "label=com.initpad.target=$target_id")
   fi
 
-  if [ -z "$containers$ca_files$workloads$networks" ] && [ ! -e "$DATA_DIR" ] && [ ! -e "$MANAGED_CA_DIR" ]; then
+  gateway_present=false
+  for name in "$GATEWAY_EDGE" "$GATEWAY_INNER" "$GATEWAY_CA"; do
+    if docker container inspect "$name" >/dev/null 2>&1 && gateway_owned "$name"; then gateway_present=true; fi
+  done
+  if [ -z "$containers$ca_files$workloads$networks" ] && [ ! -e "$DATA_DIR" ] && [ ! -e "$MANAGED_CA_DIR" ] \
+    && { [ "$gateway_present" = false ] || [ "$REMOVE_GATEWAY" = false ]; }; then
     printf 'InitPad Agent is not installed on this server; nothing to remove.\n'
     return 0
   fi
@@ -210,6 +505,12 @@ uninstall_agent() {
   [ -d "$DATA_DIR" ] && printf '  - Agent identity: %s\n' "$DATA_DIR"
   [ -d "$MANAGED_CA_DIR" ] && printf '  - InitPad CA: %s\n' "$MANAGED_CA_DIR"
   for file in $ca_files; do printf '  - Docker registry trust: %s\n' "$file"; done
+  if [ "$REMOVE_GATEWAY" = true ] && [ "$gateway_present" = true ]; then
+    printf '  - Gateway: edge, inner gateway and CA containers, the CA volume with its private key and %s\n' "$GATEWAY_STATE_DIR"
+    printf '    (applications lose HTTPS; a new gateway would get a new CA that every client must trust again)\n'
+  elif [ "$gateway_present" = true ]; then
+    printf 'The gateway installed with --gateway-domain stays (add --remove-gateway to remove it).\n'
+  fi
   if [ "$REMOVE_WORKLOADS" = true ]; then
     printf '  - %s application container(s) and %s network(s) of target %s\n' \
       "$(printf '%s' "$workloads" | grep -c . || true)" \
@@ -241,6 +542,9 @@ uninstall_agent() {
       docker network rm "$network" >/dev/null || warn "network $network could not be removed"
     done
   fi
+  if [ "$REMOVE_GATEWAY" = true ] && [ "$gateway_present" = true ]; then
+    remove_gateway
+  fi
   rm -rf "$DATA_DIR"
   for file in $ca_files; do
     rm -f "$file"
@@ -260,6 +564,7 @@ if [ "$UNINSTALL" = true ]; then
   exit 0
 fi
 [ "$REMOVE_WORKLOADS" = false ] || fail '--remove-workloads is only valid with --uninstall'
+[ "$REMOVE_GATEWAY" = false ] || fail '--remove-gateway is only valid with --uninstall'
 
 [ -n "$CONTROL_PLANE_URL" ] || fail '--url is required'
 [ -n "$IMAGE" ] || fail '--image is required'
@@ -361,6 +666,10 @@ if command -v systemctl >/dev/null 2>&1 \
   warn 'Docker is running but docker.service is not enabled for host boot; run: sudo systemctl enable docker'
 fi
 [ -t 0 ] || fail 'run the installer in an interactive terminal so the enrollment token can be entered securely'
+
+if [ -n "$GATEWAY_DOMAIN" ]; then
+  setup_gateway
+fi
 
 case "$PUBLISHED_HOST" in
   *[!A-Za-z0-9.:-]*) fail '--published-host contains unsupported characters' ;;

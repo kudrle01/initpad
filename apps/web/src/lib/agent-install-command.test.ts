@@ -3,6 +3,7 @@ import {
   AGENT_PRIVATE_CA_FILE,
   buildAgentInstallCommand,
   buildAgentUninstallCommand,
+  gatewayDomainOf,
 } from './agent-install-command';
 
 const installer = { path: '/api/agent/distribution/install.sh', sha256: 'a'.repeat(64) };
@@ -116,5 +117,54 @@ describe('buildAgentUninstallCommand', () => {
     );
     expect(command).toContain('curl --cacert initpad-ca.crt -fsSLo initpad-agent-install.sh');
     expect(command).not.toMatch(/sudo install|--ca-file|--image|--url/);
+  });
+});
+
+describe('managed gateway in the install command', () => {
+  const base = {
+    origin: 'https://platform.example.org',
+    distribution: { installer, privateCa: null },
+    image,
+    targetId: 't1',
+  };
+
+  it('adds the gateway domain so one command sets up the gateway', () => {
+    const command = buildAgentInstallCommand({ ...base, gatewayDomain: 'apps.lab.example' });
+    expect(command).toMatch(/--expected-target-id 't1' --gateway-domain 'apps\.lab\.example'$/);
+  });
+
+  it('keeps the CA option before the gateway option so both reach the installer', () => {
+    const command = buildAgentInstallCommand({
+      ...base,
+      origin: 'https://initpad.lab.example',
+      distribution: { installer, privateCa },
+      gatewayDomain: 'apps.lab.example',
+    });
+    expect(command).toMatch(
+      /--ca-file '\/etc\/initpad-agent\/ca\.crt' --gateway-domain 'apps\.lab\.example'$/,
+    );
+  });
+
+  it('never puts a value that is not a plain DNS name into the shell command', () => {
+    for (const domain of [
+      "x'; rm -rf /; '",
+      'a b.example',
+      'UPPER.example',
+      '-bad.example',
+      'nodots',
+    ]) {
+      expect(buildAgentInstallCommand({ ...base, gatewayDomain: domain })).not.toContain(
+        '--gateway-domain',
+      );
+    }
+  });
+
+  it('derives the domain from the public URL of a gateway target', () => {
+    expect(gatewayDomainOf('https://Apps.Lab.Example')).toBe('apps.lab.example');
+    expect(gatewayDomainOf('https://apps.lab.example/')).toBe('apps.lab.example');
+    expect(gatewayDomainOf('http://apps.lab.example')).toBeNull();
+    expect(gatewayDomainOf('https://10.0.0.5')).toBeNull();
+    expect(gatewayDomainOf('not a url')).toBeNull();
+    expect(gatewayDomainOf(null)).toBeNull();
   });
 });
