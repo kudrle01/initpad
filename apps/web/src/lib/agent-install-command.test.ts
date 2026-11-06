@@ -47,7 +47,7 @@ describe('buildAgentInstallCommand', () => {
     );
     expect(steps[3]).toBe(`sudo install -D -m 644 initpad-ca.crt '${AGENT_PRIVATE_CA_FILE}'`);
     expect(steps[4]).toMatch(/^curl --cacert initpad-ca\.crt -fsSLo initpad-agent-install\.sh /);
-    expect(steps.at(-1)).toMatch(/ --ca-file '\/etc\/initpad-agent\/ca\.crt'$/);
+    expect(steps[steps.length - 1]).toMatch(/ --ca-file '\/etc\/initpad-agent\/ca\.crt'$/);
     expect(command).not.toMatch(/update-ca-certificates|--insecure|-k /);
   });
 
