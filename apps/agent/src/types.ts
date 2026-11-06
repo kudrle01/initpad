@@ -1,4 +1,4 @@
-export const AGENT_VERSION = '0.14.3';
+export const AGENT_VERSION = '0.15.0';
 export const PROTOCOL_VERSION = 1;
 
 export interface AgentConfig {
