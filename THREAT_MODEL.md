@@ -200,10 +200,10 @@ konfiguraci v paměti.
   ponechají, dokud nebudou aktualizováni nebo explicitně znovu zaregistrováni.
   Jednotlivé claimy používají krátkodobé fencing tokeny. Existuje vynucování
   allocation, ověřená autorizace artefaktů, doručování konfigurace bezpečné vůči
-  secretům a Docker allow-list bez shellu. Doporučený Agent 0.15.1 má podepsaný
+  secretům a Docker allow-list bez shellu. Doporučený Agent 0.15.2 má podepsaný
   veřejný multi-arch image, SBOM, provenance a immutable zkontrolovaný kanál
   releasů; živou aktualizací, restartem hostu a rollback acceptance na
-  samostatném Linux hostu prošel jeho předchůdce 0.14.3, u 0.15.1 zatím neproběhla. Stále je nutná nezávislá bezpečnostní revize. Checksum instalátoru doručený ze stejného HTTPS originu
+  samostatném Linux hostu prošel jeho předchůdce 0.14.3, u 0.15.2 zatím neproběhla. Stále je nutná nezávislá bezpečnostní revize. Checksum instalátoru doručený ze stejného HTTPS originu
   control plane odhalí poškození a naváže UI na přesné bajty, ale nevytváří
   nezávislý kořen důvěry. Souborové systémy pouze pro čtení a odebrané
   capabilities nesnižují oprávnění, které předává připojený Docker socket.

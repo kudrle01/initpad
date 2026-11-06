@@ -23,8 +23,8 @@ srozumitelném a samostatně nasaditelném systému.
 
 | Část                  | Stav                                                                                                                                                                                                                                                                                     |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.26`; živou candidate acceptance aktualizace tlačítkem **Install update** (z `0.2.23` na `0.2.24`) se zachováním dat a workloadů prošel `0.2.24`, u `0.2.26` ji nikdo neprovedl; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10`            |
-| InitPad Agent         | Doporučený release `0.15.1` (spravovaná brána jedním příkazem, kontrola velikosti serveru); ověřen lokálně v Dockeru a anonymním auditem, živá acceptance na hostu zatím neproběhla. Reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu u `0.14.3` |
+| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.27`; živou candidate acceptance aktualizace tlačítkem **Install update** (z `0.2.23` na `0.2.24`) se zachováním dat a workloadů prošel `0.2.24`, u `0.2.27` ji nikdo neprovedl; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10`            |
+| InitPad Agent         | Doporučený release `0.15.2` (spravovaná brána jedním příkazem, kontrola velikosti serveru); ověřen lokálně v Dockeru a anonymním auditem, živá acceptance na hostu zatím neproběhla. Reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu u `0.14.3` |
 | Hosted SaaS           | Ve vývoji; nejde zatím o produkční deployment profil                                                                                                                                                                                                                                     |
 
 Release assets, checksumy a OCI images jsou veřejné a ověřitelné bez GitHub
@@ -144,8 +144,8 @@ zranitelností, a proto vyžaduje přístup k internetu.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.26
-npm run audit:public-release -- --tag agent-v0.15.1
+npm run audit:public-release -- --tag initpad-v0.2.27
+npm run audit:public-release -- --tag agent-v0.15.2
 ```
 
 Změna šablony nebo kontejnerové image navíc spouští samostatný GitHub Actions

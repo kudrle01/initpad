@@ -29,7 +29,7 @@ Instalátor provede instalaci a enrollment bez klonování repozitáře, zachov�
 aktualizacemi identitu přístupnou pouze uživateli root a při chybějícím
 heartbeat náhradního kontejneru obnoví předchozí kontejner. Repozitář publikuje
 podepsané veřejné image pro `amd64/arm64`. Aktuálním zkontrolovaným distribučním
-releasem je Agent 0.15.1. Jeho image prošel anonymním auditem veřejného
+releasem je Agent 0.15.2. Jeho image prošel anonymním auditem veřejného
 releasu; instalátor brány byl ověřen lokálně v Dockeru a živou acceptance na
 hostu (sekce 6 v [`ACCEPTANCE.md`](./ACCEPTANCE.md)) zatím neprošel. Předchozí
 Agent 0.14.3 prošel CLI runtime probe, ověřením podpisu, živou aktualizací,
