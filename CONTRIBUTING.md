@@ -49,6 +49,12 @@ docker compose -f deploy/docker-compose.yml --profile runner config --quiet
 Changes to templates or container images must pass the dedicated image workflow
 or the relevant local image probes.
 
+`main` accepts changes only through pull requests that pass the required
+checks, for maintainers too, and never a force push. A platform release is
+prepared with `npm run release:platform:prepare -- <version>`, merged as a
+`chore(release): prepare InitPad <version>` pull request, and tagged from the
+updated `main` with `npm run release:platform:tag -- <version>`.
+
 ## Database and compatibility
 
 - Use additive Prisma migrations and keep historical migrations intact.

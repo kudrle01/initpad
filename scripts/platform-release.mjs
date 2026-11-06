@@ -202,8 +202,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       process.stdout.write(
         [
           `InitPad ${version} is ready for review.`,
-          'Review git diff, then commit and push main.',
-          `After the main workflow is green, run: npm run release:platform:tag -- ${version}`,
+          'Review git diff, then open a release pull request (main accepts no direct pushes):',
+          `  git switch -c release/initpad-v${version}`,
+          '  git add -A',
+          `  git commit -m "chore(release): prepare InitPad ${version}"`,
+          `  git push -u origin release/initpad-v${version}`,
+          '  gh pr create --fill',
+          'After it is merged and the main workflow is green, run:',
+          '  git switch main && git pull --ff-only',
+          `  npm run release:platform:tag -- ${version}`,
           '',
         ].join('\n'),
       );
