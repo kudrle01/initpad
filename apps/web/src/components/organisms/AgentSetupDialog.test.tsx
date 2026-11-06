@@ -435,6 +435,63 @@ describe('AgentSetupDialog distribution', () => {
     expect(onUpdateAgent).toHaveBeenCalledTimes(1);
   });
 
+  it('replaces the Install update button with a progress indicator while the update job runs', async () => {
+    vi.mocked(api.getAgentDistribution).mockResolvedValue({
+      available: true,
+      version: '0.13.0',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      unavailableReason: null,
+      installer: { path: '/api/agent/distribution/install.sh', sha256: 'd'.repeat(64) },
+      privateCa: null,
+    });
+    vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
+      enabled: true,
+      channel: 'stable',
+      checkedAt: '2026-09-16T10:00:00.000Z',
+      stale: false,
+      currentVersion: '0.13.0',
+      latestVersion: '0.14.0',
+      updateAvailable: true,
+      updateMethod: 'remote',
+      image: `ghcr.io/example/initpad-agent@sha256:${'e'.repeat(64)}`,
+      releaseUrl: null,
+      publishedAt: null,
+      error: null,
+    });
+    const running: AgentJobSummary = {
+      id: 'job-update',
+      correlationId: 'c',
+      kind: 'agent-update',
+      status: 'leased',
+      attempt: 1,
+      progressSequence: 2,
+      progressPercent: 55,
+      progressStage: 'verifying',
+      message: 'Preflighting the candidate with the existing identity',
+      resultCode: null,
+      createdAt: '2026-09-16T10:00:00.000Z',
+      leasedAt: '2026-09-16T10:00:01.000Z',
+      leaseExpiresAt: '2026-09-16T10:01:00.000Z',
+      finishedAt: null,
+    };
+
+    renderDialog(
+      [running],
+      {
+        ...enrollment,
+        state: 'online',
+        enrollmentPending: false,
+        credentialGeneration: 1,
+        version: '0.13.0',
+      },
+      null,
+    );
+
+    expect(await screen.findByText(/Installing the update/)).toBeInTheDocument();
+    expect(screen.getByText(/55 %/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Install update' })).not.toBeInTheDocument();
+  });
+
   it('never suggests a host binary when distribution is unavailable', async () => {
     vi.mocked(api.getAgentDistribution).mockResolvedValue({
       available: false,

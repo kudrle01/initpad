@@ -254,7 +254,7 @@ kontejner. Nemění release, identitu, control plane ani aplikační workload.
 Zopakujte `before-update 0.14.1`, nainstalujte aktualizaci bez injekce chyby a
 dokončete příkazem `after-update 0.14.2`.
 
-## 6. Brána jedním příkazem (0.15.0, opraveno v 0.15.1 a 0.15.2)
+## 6. Brána jedním příkazem (0.15.0, opraveno v 0.15.1 až 0.15.3)
 
 Na disposable hostu s volnými porty 80 a 443 a s DNS (`A` i wildcard `A` na
 host) nasaďte target se **Spravovanou bránou**. Příkaz z **Manage Agent** musí
@@ -279,6 +279,13 @@ Po nasazení aplikace (DEV) musí veřejné `/health` odpovědět HTTP 200. Jmé
 kontejneru aplikace je u delšího uživatele a projektu delší než 63 znaků a jako
 cíl trasy by ho brána neodmítla jen jako `no such host`; 0.15.2 proto trasu
 míří na 12znakové ID kontejneru.
+
+V 0.15.3 musí GUI u targetu nabídnout stažení kořene CA brány s otiskem
+SHA-256 (ADR-166). Z jiného počítače v síti stáhněte soubor z
+`http://<doména brány>/initpad-ca.crt`, porovnejte otisk
+(`openssl x509 -noout -fingerprint -sha256`) a po instalaci do prohlížeče
+otevřete aplikaci přes HTTPS bez varování. Přes HTTP musí být dostupný jen tento
+soubor, ostatní adresy přesměrují na HTTPS.
 
 Jakýkoli ruční zásah mimo výše uvedené kroky je selhání a musí být
 zdokumentován.

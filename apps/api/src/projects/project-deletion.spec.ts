@@ -20,6 +20,7 @@ const PROJECT = {
       provider: 'docker',
       status: 'running',
       version: 'a'.repeat(40),
+      url: null,
       activeOperationId: null,
       target: { id: 'builtin-docker', scope: 'builtin', kind: 'docker', name: 'Docker' },
       allocation: null,
@@ -71,7 +72,10 @@ function deletionPrisma() {
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
-    agentJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    agentJob: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      count: jest.fn().mockResolvedValue(0),
+    },
     environment: { update: jest.fn().mockResolvedValue(undefined) },
     project: { delete: jest.fn().mockResolvedValue(undefined) },
   };
@@ -126,6 +130,40 @@ describe('ProjectDeletion on a disconnected target', () => {
     await expect(
       deletion.execute(connected as never, { repoAction: 'detach', confirmCleanupDebt: true }),
     ).rejects.toThrow(/Remove Agent-managed deployments first/);
+  });
+});
+
+describe('ProjectDeletion of a project that never deployed', () => {
+  const connectedAgentProject = (environment: Record<string, unknown>) => ({
+    ...RETIRED_AGENT_PROJECT,
+    environments: [
+      {
+        ...RETIRED_AGENT_PROJECT.environments[0],
+        target: { ...RETIRED_AGENT_PROJECT.environments[0].target, managementState: 'active' },
+        ...environment,
+      },
+    ],
+  });
+  const failedBuild = { status: 'failed', version: null, url: null, activeOperationId: null };
+
+  it('deletes a project whose build or publish failed before anything was deployed', async () => {
+    const prisma = deletionPrisma();
+    const deletion = makeDeletion(prisma);
+
+    await deletion.execute(connectedAgentProject(failedBuild) as never, { repoAction: 'detach' });
+
+    expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'project-1' } });
+  });
+
+  it('still blocks while a deploy job succeeded or is in flight on the server', async () => {
+    const prisma = deletionPrisma();
+    prisma.agentJob.count.mockResolvedValue(1);
+    const deletion = makeDeletion(prisma);
+
+    await expect(
+      deletion.execute(connectedAgentProject(failedBuild) as never, { repoAction: 'detach' }),
+    ).rejects.toThrow(/Remove Agent-managed deployments first/);
+    expect(prisma.project.delete).not.toHaveBeenCalled();
   });
 });
 

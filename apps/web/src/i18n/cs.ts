@@ -1194,6 +1194,10 @@ export const cs = {
   'Only expand-contract, image-compatible database releases are accepted automatically.':
     'Automaticky se přijímají jen vydání s databázovými změnami typu expand-contract kompatibilními s image.',
   'InitPad {latestVersion} update started': 'Aktualizace na InitPad {latestVersion} zahájena',
+  'Installing the update…': 'Instaluje se aktualizace…',
+  'InitPad {version} is installed': 'InitPad {version} je nainstalován',
+  'The update to InitPad {version} did not complete. The previous version is running.':
+    'Aktualizace na InitPad {version} se nedokončila. Běží předchozí verze.',
   'Platform administration': 'Administrace platformy',
   'Instance-wide settings. Only platform administrators can open this page.':
     'Nastavení celé instance. Tuto stránku mohou otevřít jen administrátoři platformy.',
