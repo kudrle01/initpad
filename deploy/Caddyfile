@@ -1,18 +1,44 @@
 # Reverse proxy for server installs (profile "server"). By default Caddy obtains
 # and renews public TLS certificates automatically (Let's Encrypt) for both
 # domains. For a LAN / school network without public reachability, set
-# INITPAD_TLS_DIRECTIVE="tls internal" in deploy/.env — Caddy then issues
-# certificates from its own local CA (clients must trust that root, see
-# OPERATIONS.md). Empty value = public automatic HTTPS.
+# INITPAD_TLS_DIRECTIVE="tls internal" in deploy/.env (./install.sh asks) —
+# Caddy then issues certificates from its own local CA (clients must trust that
+# root, see OPERATIONS.md). Empty value = public automatic HTTPS.
 #
 # API requests go straight to the API, so every path into it has exactly one
 # trusted proxy hop: Caddy here, or the bundled web proxy for direct and CI
 # traffic. INITPAD_TRUST_PROXY_HOPS therefore stays 1 and per-IP rate limits
 # see the real client. Caddy replaces any client-supplied X-Forwarded-For.
 
+# Public root certificate of the internal CA, so people can install it before
+# their browser trusts the site (ADR-161). The rewrite pins the one file: the
+# CA's private key in the same directory is never reachable. Without "tls
+# internal" the file does not exist and the path answers 404.
+(initpad_ca) {
+	handle /initpad-ca.crt {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition "attachment; filename=\"initpad-root-ca.crt\""
+		header Cache-Control no-store
+		file_server
+	}
+}
+
+# Plain HTTP serves only the CA download, which a client without the CA cannot
+# fetch over HTTPS without a warning; everything else redirects to HTTPS.
+# Caddy still answers ACME HTTP-01 challenges before these routes.
+http://{$INITPAD_DOMAIN} {
+	import initpad_ca
+	handle {
+		redir https://{host}{uri} 308
+	}
+}
+
 {$INITPAD_DOMAIN} {
 	{$INITPAD_TLS_DIRECTIVE}
 	header Strict-Transport-Security "max-age=31536000"
+	import initpad_ca
 	handle /api/* {
 		reverse_proxy api:3000
 	}

@@ -130,6 +130,29 @@ neočekávaném restartu používá v případě potřeby
 `systemctl enable --now docker` a `docker start initpad-agent`, nikdy nový
 enrollment token.
 
+## Odinstalace
+
+**Manage Agent → Odinstalovat ze serveru** zobrazí příkaz, který stáhne
+stejný ověřený instalátor a spustí ho v režimu `--uninstall` (ADR-162).
+Skript:
+
+- odmítne pokračovat, pokud uložená identita patří jinému targetu než
+  `--expected-target-id`,
+- odstraní kontejnery `initpad-agent` a `initpad-agent-previous`, ale jen
+  s labelem `com.initpad.agent=true`,
+- smaže identitu v `/var/lib/initpad-agent`, certifikát v
+  `/etc/initpad-agent` a záznamy v `/etc/docker/certs.d/*/ca.crt`, které jsou
+  s ním bajtově shodné, a image Agenta, pokud ji nic jiného nepoužívá,
+- s `--remove-workloads` navíc smaže kontejnery a sítě s labely
+  `com.initpad.managed=true` a `com.initpad.target=<id>`; kontejnery jiných
+  targetů a cizí kontejnery zůstanou,
+- vypíše, co odstraní, a čeká na napsání `uninstall`; bez terminálu vyžaduje
+  `--yes`.
+
+Aplikace je čistší odebrat v InitPadu, dokud je Agent připojený. InitPad o
+smazání přímo na serveru neví a dál je zobrazuje jako nasazené. Po odinstalaci
+Agenta v InitPadu odpojte nebo server smažte. Opakované spuštění je bezpečné.
+
 ## Lokální acceptance bez VM
 
 Lab používá vyhrazený Docker-in-Docker daemon. Agent nikdy nedostane socket

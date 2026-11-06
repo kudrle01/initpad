@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # InitPad one-command installer.
 #
-#   ./install.sh            local install  → http://localhost:8080
+#   ./install.sh            first run in a terminal asks how InitPad is reached
+#                           (this computer, internal network, public domain)
+#   ./install.sh --domain initpad.lab.example --tls internal
+#                           the same without questions (see --help)
+#   ./install.sh --reconfigure
+#                           ask again, e.g. to move to another domain
 #   ./install.sh --update-agent-release
 #                           explicitly adopt the current reviewed Agent release
-#   (set INITPAD_DOMAIN + INITPAD_GIT_DOMAIN in deploy/.env first for a
-#    server install with automatic HTTPS)
 #
 # Idempotent: safe to re-run. Requires Docker with the compose plugin.
 # Fully fresh start: docker compose down -v && rm .env && ./install.sh
@@ -14,26 +17,64 @@ cd "$(dirname "$0")"
 
 COMPOSE="docker compose"
 say()  { printf '\033[1;32m›\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m!\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 random_secret() {
   openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'
 }
 
+usage() {
+  cat <<EOF
+Usage: $0 [options]
+
+Network (written to deploy/.env; asked interactively on the first run):
+  --local                 only this computer: http://localhost
+  --domain NAME           platform hostname, e.g. initpad.lab.example
+  --git-domain NAME       Git hostname (default: git.<parent of --domain>)
+  --tls internal|public   internal = certificates from InitPad's own CA for a
+                          network with its own DNS (domain controller);
+                          public = Let's Encrypt, needs ports 80/443 reachable
+                          from the internet. Default: internal for .local,
+                          .internal, .lan, .home.arpa and .test, else public.
+  --reconfigure           ask the network questions again
+
+Other:
+  --update-agent-release  replace the configured Agent distribution with the
+                          reviewed repository release
+  -h, --help              show this help
+EOF
+}
+
 UPDATE_AGENT_RELEASE=no
-case "${1:-}" in
-  '') ;;
-  --update-agent-release)
-    UPDATE_AGENT_RELEASE=yes
-    shift
-    ;;
-  -h|--help)
-    printf 'Usage: %s [--update-agent-release]\n' "$0"
-    printf '  --update-agent-release  replace the configured Agent distribution with the reviewed repository release\n'
-    exit 0
-    ;;
-  *) fail "Unknown option: $1 (try --help)." ;;
-esac
-[ "$#" -eq 0 ] || fail "Unexpected arguments (try --help)."
+RECONFIGURE=no
+ARG_LOCAL=no
+ARG_DOMAIN=
+ARG_GIT_DOMAIN=
+ARG_TLS=
+need_value() { [ "$#" -ge 2 ] && [ -n "$2" ] || fail "$1 requires a value (try --help)."; }
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --update-agent-release) UPDATE_AGENT_RELEASE=yes ;;
+    --reconfigure) RECONFIGURE=yes ;;
+    --local) ARG_LOCAL=yes ;;
+    --domain) need_value "$@"; ARG_DOMAIN=$2; shift ;;
+    --domain=*) ARG_DOMAIN=${1#*=} ;;
+    --git-domain) need_value "$@"; ARG_GIT_DOMAIN=$2; shift ;;
+    --git-domain=*) ARG_GIT_DOMAIN=${1#*=} ;;
+    --tls) need_value "$@"; ARG_TLS=$2; shift ;;
+    --tls=*) ARG_TLS=${1#*=} ;;
+    -h|--help) usage; exit 0 ;;
+    *) fail "Unknown option: $1 (try --help)." ;;
+  esac
+  shift
+done
+if [ "$ARG_LOCAL" = yes ] && [ -n "$ARG_DOMAIN$ARG_GIT_DOMAIN$ARG_TLS" ]; then
+  fail "--local cannot be combined with --domain, --git-domain or --tls."
+fi
+if [ -z "$ARG_DOMAIN" ] && [ -n "$ARG_GIT_DOMAIN$ARG_TLS" ]; then
+  fail "--git-domain and --tls require --domain."
+fi
+case "$ARG_TLS" in ''|internal|public) ;; *) fail "--tls must be 'internal' or 'public'." ;; esac
 
 command -v docker >/dev/null || fail "Docker is not installed (https://docs.docker.com/get-docker/)."
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
@@ -54,9 +95,11 @@ Then re-run ./install.sh. The global user-namespace restriction will stay enable
 fi
 
 # ---- 1. configuration + secrets --------------------------------------------
+FRESH_ENV=no
 if [ ! -f .env ]; then
   say "Creating .env from .env.example"
   cp .env.example .env
+  FRESH_ENV=yes
 fi
 chmod 600 .env
 
@@ -72,6 +115,196 @@ set_env() {
 # edition has its own profile without them (ADR-153).
 if [ "$(get_env INITPAD_EDITION)" = "saas" ]; then
   fail "INITPAD_EDITION=saas is not installed by this script. Deploy the SaaS edition with saas.compose.yml (see SAAS_STAGING.md)."
+fi
+
+# ---- network: how browsers, Git clients and Agents reach this instance -------
+# One answer (or flag) fills every address variable consistently, so an
+# operator never has to edit the split between browser-facing and internal
+# addresses by hand (ADR-161).
+valid_hostname() {
+  printf '%s\n' "$1" | grep -Eq '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$' &&
+    [ "${#1}" -le 253 ]
+}
+normalize_hostname() { # lower-case, without scheme, path, port or trailing dot
+  local h
+  h=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  h=${h#http://}; h=${h#https://}; h=${h%%/*}; h=${h%%:*}; h=${h%.}
+  printf '%s' "$h"
+}
+default_git_domain() { # git.<parent> for a.b.c, git.<name> for b.c
+  local d=$1 parent=${1#*.}
+  case "$parent" in *.*) printf 'git.%s' "$parent" ;; *) printf 'git.%s' "$d" ;; esac
+}
+default_tls_mode() {
+  case "$1" in
+    *.local|*.internal|*.lan|*.home.arpa|*.test|*.intranet|*.corp) printf internal ;;
+    *) printf public ;;
+  esac
+}
+server_ip() {
+  ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") {print $(i+1); exit}}' ||
+    true
+}
+
+apply_local_network() {
+  local web_port gitea_port
+  web_port=$(get_env INITPAD_WEB_PORT); web_port=${web_port:-8080}
+  gitea_port=$(get_env INITPAD_GITEA_HTTP_PORT); gitea_port=${gitea_port:-3001}
+  set_env INITPAD_PUBLIC_URL "http://localhost:$web_port"
+  set_env INITPAD_GITEA_PUBLIC_URL "http://gitea.localhost:$gitea_port"
+  set_env INITPAD_REGISTRY_HOST "127.0.0.1:$gitea_port"
+  set_env INITPAD_CI_REGISTRY_HOST "host.docker.internal:$gitea_port"
+  set_env INITPAD_GITEA_RUNNER_URL "http://host.docker.internal:$gitea_port"
+  set_env INITPAD_DOMAIN ""
+  set_env INITPAD_GIT_DOMAIN ""
+  set_env INITPAD_TLS_DIRECTIVE ""
+  say "Network: this computer only (http://localhost:$web_port)"
+}
+
+apply_domain_network() { # <platform domain> <git domain> <internal|public>
+  local domain=$1 git=$2 tls=$3 gitea_port
+  gitea_port=$(get_env INITPAD_GITEA_HTTP_PORT); gitea_port=${gitea_port:-3001}
+  set_env INITPAD_DOMAIN "$domain"
+  set_env INITPAD_GIT_DOMAIN "$git"
+  set_env INITPAD_PUBLIC_URL "https://$domain"
+  set_env INITPAD_GITEA_PUBLIC_URL "https://$git"
+  # The host daemon, Agent servers and CI jobs all address the registry by the
+  # Git hostname; with an internal CA install.sh makes each daemon trust it.
+  set_env INITPAD_REGISTRY_HOST "$git"
+  set_env INITPAD_CI_REGISTRY_HOST "$git"
+  if [ "$tls" = internal ]; then
+    set_env INITPAD_TLS_DIRECTIVE "tls internal"
+    # Checkout jobs clone over the private same-host port, so the throwaway
+    # job images never need the CA (the nested daemon gets it for the registry).
+    set_env INITPAD_GITEA_RUNNER_URL "http://host.docker.internal:$gitea_port"
+    say "Network: https://$domain and https://$git with certificates from InitPad's own CA"
+  else
+    set_env INITPAD_TLS_DIRECTIVE ""
+    set_env INITPAD_GITEA_RUNNER_URL "https://$git"
+    say "Network: https://$domain and https://$git with Let's Encrypt certificates"
+  fi
+}
+
+check_domain_pair() { # <platform domain> <git domain>
+  valid_hostname "$1" || fail "'$1' is not a valid hostname (e.g. initpad.lab.example)."
+  valid_hostname "$2" || fail "'$2' is not a valid hostname (e.g. git.lab.example)."
+  [ "$1" != "$2" ] || fail "The platform and Git need two different hostnames."
+}
+
+report_dns() { # <name>... — warn when a name does not resolve to this server
+  local ip name resolved
+  ip=$(server_ip)
+  for name in "$@"; do
+    resolved=$(getent ahostsv4 "$name" 2>/dev/null | awk 'NR==1 {print $1}' || true)
+    if [ -z "$resolved" ]; then
+      warn "$name does not resolve yet. Create a DNS A record $name → ${ip:-<IP of this server>}."
+    elif [ -n "$ip" ] && [ "$resolved" != "$ip" ] && [ "${resolved%%.*}" != 127 ]; then
+      warn "$name resolves to $resolved, but this server's address is $ip."
+    fi
+  done
+}
+
+ask() { # <prompt> <default> → answer on stdout
+  local answer
+  if [ -n "$2" ]; then printf '%s [%s]: ' "$1" "$2" >&2; else printf '%s: ' "$1" >&2; fi
+  IFS= read -r answer || answer=
+  printf '%s' "${answer:-$2}"
+}
+
+network_wizard() {
+  local current_domain current_git current_tls choice default_choice domain git tls ip answer
+  current_domain=$(get_env INITPAD_DOMAIN || true)
+  current_git=$(get_env INITPAD_GIT_DOMAIN || true)
+  current_tls=$(get_env INITPAD_TLS_DIRECTIVE || true)
+  default_choice=1
+  if [ -n "$current_domain" ]; then
+    if [ "$current_tls" = "tls internal" ]; then default_choice=2; else default_choice=3; fi
+  fi
+  ip=$(server_ip)
+
+  cat >&2 <<EOF
+
+  How will people reach this InitPad?
+
+    1) Only this computer          http://localhost:8080
+    2) Internal network with DNS   e.g. names on your domain controller; HTTPS
+                                   with InitPad's own certificate authority
+    3) Public internet domain      HTTPS from Let's Encrypt; ports 80 and 443
+                                   must be reachable from the internet
+
+EOF
+  while :; do
+    choice=$(ask "  Choice" "$default_choice")
+    case "$choice" in 1|2|3) break ;; esac
+    printf '  Enter 1, 2 or 3.\n' >&2
+  done
+  if [ "$choice" = 1 ]; then
+    apply_local_network
+    return
+  fi
+  [ "$choice" = 2 ] && tls=internal || tls=public
+
+  printf '\n  InitPad needs two hostnames that point to this server%s:\n' \
+    "${ip:+ ($ip)}" >&2
+  printf '  one for the platform and one for Git and its image registry.\n\n' >&2
+  while :; do
+    domain=$(normalize_hostname "$(ask "  Platform hostname" "${current_domain:-}")")
+    valid_hostname "$domain" && break
+    printf '  Enter a hostname such as initpad.lab.example.\n' >&2
+  done
+  if [ -n "$current_git" ] && [ "$domain" = "$current_domain" ]; then
+    git=$current_git
+  else
+    git=$(default_git_domain "$domain")
+  fi
+  while :; do
+    git=$(normalize_hostname "$(ask "  Git hostname" "$git")")
+    valid_hostname "$git" && [ "$git" != "$domain" ] && break
+    printf '  Enter a hostname different from %s.\n' "$domain" >&2
+  done
+  case "$domain $git" in
+    *.local\ *|*.local)
+      printf '\n  Note: .local is also used by mDNS (Bonjour, Avahi). Windows clients in\n' >&2
+      printf '  the domain resolve it through DNS; Linux and macOS may need a\n' >&2
+      printf '  configuration change. A subdomain of a real domain avoids this.\n' >&2
+      ;;
+  esac
+  printf '\n  Create these DNS records (A) before using InitPad:\n' >&2
+  printf '    %-40s → %s\n' "$domain" "${ip:-<this server>}" "$git" "${ip:-<this server>}" >&2
+  printf '\n' >&2
+  answer=$(ask "  Continue? (Y/n)" "Y")
+  case "$answer" in [Nn]*) fail "Cancelled. Run ./install.sh --reconfigure to start again." ;; esac
+  apply_domain_network "$domain" "$git" "$tls"
+}
+
+if [ "$ARG_LOCAL" = yes ]; then
+  apply_local_network
+elif [ -n "$ARG_DOMAIN" ]; then
+  domain=$(normalize_hostname "$ARG_DOMAIN")
+  if [ -n "$ARG_GIT_DOMAIN" ]; then
+    git_domain=$(normalize_hostname "$ARG_GIT_DOMAIN")
+  else
+    git_domain=$(default_git_domain "$domain")
+  fi
+  check_domain_pair "$domain" "$git_domain"
+  tls_mode=${ARG_TLS:-$(default_tls_mode "$domain")}
+  apply_domain_network "$domain" "$git_domain" "$tls_mode"
+elif [ "$FRESH_ENV" = yes ] || [ "$RECONFIGURE" = yes ]; then
+  if [ -t 0 ] && [ -t 2 ]; then
+    network_wizard
+  elif [ "$RECONFIGURE" = yes ]; then
+    fail "--reconfigure needs a terminal; pass --local or --domain instead."
+  else
+    say "No terminal: installing for this computer only (use --domain for a server)"
+  fi
+fi
+
+# Installations configured by hand for the internal CA before ADR-161 sent CI
+# checkouts to the public Git URL, which throwaway job images do not trust.
+if [ "$(get_env INITPAD_TLS_DIRECTIVE || true)" = "tls internal" ] &&
+  [ "$(get_env INITPAD_GITEA_RUNNER_URL || true)" = "$(get_env INITPAD_GITEA_PUBLIC_URL || true)" ]; then
+  gitea_port=$(get_env INITPAD_GITEA_HTTP_PORT); gitea_port=${gitea_port:-3001}
+  set_env INITPAD_GITEA_RUNNER_URL "http://host.docker.internal:$gitea_port"
 fi
 
 # Reconcile generated secrets from the current example into legacy installs.
@@ -97,6 +330,11 @@ runtime_update_dir=.runtime/platform-update
 runtime_override=$runtime_update_dir/platform-release.override.yml
 mkdir -p "$runtime_update_dir"
 chmod 700 "$runtime_update_dir"
+# Public CA certificate for the internal-TLS mode; mounted into the API and
+# the CI daemon, so it must exist before Compose would create it as root.
+mkdir -p .runtime/tls
+[ -w .runtime/tls ] || fail "deploy/.runtime/tls is not writable (Docker may have created it as root).
+Run:  sudo chown \"\$(id -u):\$(id -g)\" '$PWD/.runtime/tls'   and re-run ./install.sh."
 if [ ! -f "$runtime_override" ]; then
   printf 'services: {}\n' > "$runtime_override"
   chmod 600 "$runtime_override"
@@ -342,21 +580,9 @@ say "Reloading Gitea authentication providers"
 $COMPOSE restart gitea >/dev/null
 wait_healthy gitea 60
 
-# ---- 6. runner (+ optional HTTPS proxy) --------------------------------------
-rotate_runner_if_address_changed
-say "Starting the isolated CI Docker daemon"
-$COMPOSE --profile runner up -d runner-docker
-wait_healthy runner-docker 60
-say "Starting the CI runner"
-if [ "$runner_config_changed" = yes ]; then
-  # Bind-mounted config content is not part of Compose's service hash. Recreate
-  # only when the rendered file changed so the runner actually reads the new
-  # capacity without interrupting jobs on every idempotent installer run.
-  $COMPOSE --profile runner up -d --force-recreate act_runner
-  rm -f .runtime/runner-config.changed
-else
-  $COMPOSE --profile runner up -d act_runner
-fi
+# ---- 6. HTTPS proxy, internal CA trust and runner ---------------------------
+# Caddy starts before the CI daemon: with an internal CA the daemon must
+# receive the CA certificate when it starts.
 if [ -n "${DOMAIN:-}" ]; then
   say "Starting Caddy reverse proxy for https://$DOMAIN"
   # A Caddyfile replaced by git keeps its old inode inside a running container,
@@ -368,6 +594,89 @@ if [ -n "${DOMAIN:-}" ]; then
   else
     $COMPOSE --profile server up -d caddy
   fi
+elif [ -n "$($COMPOSE --profile server ps -q caddy 2>/dev/null)" ]; then
+  say "Stopping Caddy: no domain is configured any more"
+  $COMPOSE --profile server stop caddy >/dev/null
+fi
+
+# With "tls internal" every certificate comes from Caddy's local CA. Export
+# only its public root certificate (never the key) so that people can trust it,
+# and make each Docker daemon that talks to the registry trust it for exactly
+# the Git hostname (ADR-161).
+CA_FILE=.runtime/tls/initpad-root-ca.crt
+INTERNAL_CA=no
+ca_changed=no
+[ "$(get_env INITPAD_TLS_DIRECTIVE || true)" = "tls internal" ] && [ -n "${DOMAIN:-}" ] && INTERNAL_CA=yes
+
+export_internal_ca() {
+  local tmp i
+  tmp=$(mktemp)
+  for i in $(seq 1 30); do
+    if $COMPOSE --profile server exec -T caddy \
+        cat /data/caddy/pki/authorities/local/root.crt > "$tmp" 2>/dev/null &&
+      grep -q 'BEGIN CERTIFICATE' "$tmp"; then
+      break
+    fi
+    : > "$tmp"
+    sleep 2
+  done
+  [ -s "$tmp" ] || { rm -f "$tmp"; fail "Caddy did not create its internal CA — check: docker compose logs caddy"; }
+  if ! cmp -s "$tmp" "$CA_FILE"; then
+    mv "$tmp" "$CA_FILE"
+    chmod 644 "$CA_FILE"
+    ca_changed=yes
+  else
+    rm -f "$tmp"
+  fi
+}
+
+trust_ca_in_host_docker() { # <registry host>
+  local registry=$1 dir
+  if docker info --format '{{.SecurityOptions}}' 2>/dev/null | grep -q rootless; then
+    dir=${XDG_CONFIG_HOME:-$HOME/.config}/docker/certs.d/$registry
+  else
+    dir=/etc/docker/certs.d/$registry
+  fi
+  cmp -s "$CA_FILE" "$dir/ca.crt" 2>/dev/null && return 0
+  say "Letting the host Docker daemon trust the InitPad CA for $registry only ($dir/ca.crt)"
+  if mkdir -p "$dir" 2>/dev/null && install -m 644 "$CA_FILE" "$dir/ca.crt" 2>/dev/null; then
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1 &&
+    sudo mkdir -p "$dir" && sudo install -m 644 "$CA_FILE" "$dir/ca.crt"; then
+    return 0
+  fi
+  fail "Could not write $dir/ca.crt. Run as root:
+  mkdir -p '$dir' && install -m 644 '$PWD/$CA_FILE' '$dir/ca.crt'
+Then re-run ./install.sh."
+}
+
+if [ "$INTERNAL_CA" = yes ]; then
+  export_internal_ca
+  trust_ca_in_host_docker "$(get_env INITPAD_REGISTRY_HOST)"
+elif [ -f "$CA_FILE" ]; then
+  rm -f "$CA_FILE"
+  ca_changed=yes
+fi
+
+rotate_runner_if_address_changed
+say "Starting the isolated CI Docker daemon"
+if [ "$ca_changed" = yes ] && [ -n "$($COMPOSE --profile runner ps -q runner-docker 2>/dev/null)" ]; then
+  # The daemon copies the CA only when it starts.
+  $COMPOSE --profile runner up -d --force-recreate runner-docker
+else
+  $COMPOSE --profile runner up -d runner-docker
+fi
+wait_healthy runner-docker 60
+say "Starting the CI runner"
+if [ "$runner_config_changed" = yes ]; then
+  # Bind-mounted config content is not part of Compose's service hash. Recreate
+  # only when the rendered file changed so the runner actually reads the new
+  # capacity without interrupting jobs on every idempotent installer run.
+  $COMPOSE --profile runner up -d --force-recreate act_runner
+  rm -f .runtime/runner-config.changed
+else
+  $COMPOSE --profile runner up -d act_runner
 fi
 
 # ---- 7. summary ---------------------------------------------------------------
@@ -406,6 +715,25 @@ if [ -n "${DOMAIN:-}" ]; then
   echo "  Ports 8080, 3001 and 8085 stay published for the CI network and local"
   echo "  checks, and Docker bypasses ufw. Block them on the public interface;"
   echo "  see deploy/OPERATIONS.md (Bezpečnost)."
+fi
+if [ "$INTERNAL_CA" = yes ]; then
+  GIT_DOMAIN=$(get_env INITPAD_GIT_DOMAIN || true)
+  ca_fingerprint=$(openssl x509 -in "$CA_FILE" -noout -fingerprint -sha256 2>/dev/null | \
+    sed 's/^[^=]*=//' || true)
+  echo ""
+  echo "  HTTPS uses InitPad's own certificate authority. Install it as a trusted"
+  echo "  root certificate on every computer that opens InitPad:"
+  echo "    Download   http://${DOMAIN}/initpad-ca.crt"
+  echo "    File       $PWD/$CA_FILE"
+  [ -n "$ca_fingerprint" ] && echo "    SHA-256    $ca_fingerprint"
+  echo "  In a Windows domain, distribute it with a GPO: Computer Configuration →"
+  echo "  Policies → Windows Settings → Security Settings → Public Key Policies →"
+  echo "  Trusted Root Certification Authorities. The command in Manage Agent"
+  echo "  installs it on Agent servers for ${GIT_DOMAIN} automatically."
+fi
+if [ -n "${DOMAIN:-}" ]; then
+  echo ""
+  report_dns "$DOMAIN" "$(get_env INITPAD_GIT_DOMAIN || true)"
 fi
 echo "  Re-run ./install.sh anytime — it only fixes what is missing."
 echo ""

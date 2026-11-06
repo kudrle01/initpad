@@ -13,6 +13,7 @@ import { CopyField } from '@/components/molecules/CopyField';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
 import { AgentDiagnosticsPanel } from '@/components/organisms/agent-setup/AgentDiagnosticsPanel';
+import { AgentUninstallSection } from '@/components/organisms/agent-setup/AgentUninstallSection';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -25,6 +26,7 @@ import {
 import { useConfirmation } from '@/confirmation';
 import { t, msg, rich, formatDateTime, formatNumber, formatTime, type MessageKey } from '@/i18n';
 import { externalHref } from '@/lib/utils';
+import { buildAgentInstallCommand } from '@/lib/agent-install-command';
 
 interface Props {
   open: boolean;
@@ -128,7 +130,6 @@ export function AgentSetupDialog({
   const canUpdateExistingAgent = Boolean(
     agent && agent.credentialGeneration > 0 && (state === 'online' || state === 'offline'),
   );
-  const insecureFlag = window.location.protocol === 'http:' ? ' --allow-insecure-http' : '';
   const installerUrl = distribution?.available
     ? new URL(distribution.installer.path, window.location.origin).toString()
     : null;
@@ -149,7 +150,16 @@ export function AgentSetupDialog({
   const wouldDowngradeAgent = desiredComparedWithRunning !== null && desiredComparedWithRunning < 0;
   const installCommand =
     distribution?.available && desiredImage && installerUrl && !wouldDowngradeAgent
-      ? `curl -fsSLo initpad-agent-install.sh '${installerUrl}' && printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c - && sudo sh ./initpad-agent-install.sh --url '${window.location.origin}' --image '${desiredImage}' --expected-target-id '${currentTarget.id}'${insecureFlag}`
+      ? buildAgentInstallCommand({
+          origin: window.location.origin,
+          distribution,
+          image: desiredImage,
+          targetId: currentTarget.id,
+        })
+      : null;
+  const privateCaRegistry =
+    installCommand && window.location.protocol === 'https:'
+      ? (distribution?.privateCa?.registryHost ?? null)
       : null;
   const reEnrollCommand = installCommand ? `${installCommand} --re-enroll` : null;
   const isCurrentOnline = Boolean(
@@ -458,6 +468,14 @@ export function AgentSetupDialog({
                       )}
                     </p>
                     <CopyField command={installCommand} />
+                    {privateCaRegistry && (
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        {t(
+                          'This InitPad uses its own certificate authority. The command first downloads its certificate, checks the fingerprint and lets Docker on the server trust it for {registry} only.',
+                          { registry: privateCaRegistry },
+                        )}
+                      </p>
+                    )}
                     <p className="mt-1.5 text-xs text-muted-foreground">
                       {t(
                         'It verifies the checksum and immutable Agent {version} image, verifies that any saved identity belongs to this target, then starts and health-checks the Agent. A new server requests the token through a hidden prompt, so it never enters shell history.',
@@ -574,6 +592,14 @@ export function AgentSetupDialog({
                     )}
                   </p>
                   <CopyField command={installCommand} />
+                  {privateCaRegistry && (
+                    <p className="text-xs text-muted-foreground">
+                      {t(
+                        'This InitPad uses its own certificate authority. The command first downloads its certificate, checks the fingerprint and lets Docker on the server trust it for {registry} only.',
+                        { registry: privateCaRegistry },
+                      )}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     {t(
                       'The installer verifies the checksum, immutable image, target binding and saved credential before replacing the running container. If the new Agent cannot heartbeat, it restores the previous container.',
@@ -648,6 +674,10 @@ export function AgentSetupDialog({
             onTestLifecycle={onTestLifecycle}
             onTestGateway={onTestGateway}
           />
+
+          {agent && state !== 'not-enrolled' && distribution && (
+            <AgentUninstallSection targetId={currentTarget.id} distribution={distribution} />
+          )}
         </div>
 
         <DialogFooter>

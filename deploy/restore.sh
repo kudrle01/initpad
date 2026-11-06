@@ -162,6 +162,9 @@ restore_db_password=$(get_env INITPAD_DB_PASSWORD)
 ./render-runner-config.sh
 
 say "Ensuring database is up"
+# The API and CI daemon mount the exported public CA directory (ADR-161);
+# create it as this user before Compose would create it as root.
+mkdir -p .runtime/tls
 "${COMPOSE[@]}" up -d postgres >/dev/null
 # Wait for readiness.
 database_ready=0

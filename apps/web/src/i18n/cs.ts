@@ -199,6 +199,17 @@ export const cs = {
   'Agent installer': 'Instalátor Agenta',
   'Downloads the script without running it': 'Stáhne skript, aniž by ho spustil',
   'Download script only': 'Jen stáhnout skript',
+  'This InitPad uses its own certificate authority. The command first downloads its certificate, checks the fingerprint and lets Docker on the server trust it for {registry} only.':
+    'Tento InitPad používá vlastní certifikační autoritu. Příkaz nejdřív stáhne její certifikát, ověří otisk a nastaví, aby mu Docker na serveru důvěřoval jen pro {registry}.',
+  'Uninstall from the server': 'Odinstalovat ze serveru',
+  'Run this command on the Docker server. It verifies the installer checksum, refuses a server enrolled for another target, lists what it removes and asks you to confirm. It removes the Agent container, its saved identity and the InitPad CA installed for it.':
+    'Spusťte tento příkaz na Docker serveru. Ověří kontrolní součet instalátoru, odmítne server zaregistrovaný pro jiný cíl, vypíše, co odstraní, a vyžádá potvrzení. Odstraní kontejner Agenta, jeho uloženou identitu a certifikát InitPadu, který pro něj byl nainstalován.',
+  'Also remove applications InitPad deployed on this server':
+    'Odstranit i aplikace, které InitPad na tento server nasadil',
+  'Deletes their containers and networks directly on the server. InitPad keeps showing them as deployed, so prefer removing environments in InitPad while the Agent is connected.':
+    'Smaže jejich kontejnery a sítě přímo na serveru. InitPad je dál zobrazí jako nasazené, proto je raději odeberte v InitPadu, dokud je Agent připojený.',
+  'Afterwards disconnect the Agent here or delete the server, so InitPad no longer waits for it.':
+    'Potom Agenta zde odpojte nebo server smažte, aby na něj InitPad už nečekal.',
   'Copy and run this command in an interactive terminal on the Docker server.':
     'Zkopírujte tento příkaz a spusťte ho v interaktivním terminálu na Docker serveru.',
   'It verifies the checksum and immutable Agent {version} image, verifies that any saved identity belongs to this target, then starts and health-checks the Agent. A new server requests the token through a hidden prompt, so it never enters shell history.':

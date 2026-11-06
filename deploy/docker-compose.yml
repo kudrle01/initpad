@@ -207,6 +207,7 @@ services:
       INITPAD_OIDC_PUBLIC_URL: ${INITPAD_PUBLIC_URL:-http://localhost:8080}/api
       INITPAD_OIDC_CLIENT_SECRET: ${INITPAD_OIDC_CLIENT_SECRET:?run install.sh to generate secrets}
       INITPAD_OIDC_KEY_FILE: /data/oidc-key.pem
+      INITPAD_PRIVATE_CA_FILE: /run/initpad-tls/initpad-root-ca.crt
       INITPAD_TEMPLATES_DIR: /templates
       INITPAD_WORKSPACE_DIR: /data/workspace
       # Durable object storage for verified build artifacts (ADR-059). Local demo
@@ -225,6 +226,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../templates:/templates:ro
       - api-data:/data
+      # Public root of the internal CA only (ADR-161): Manage Agent pins its
+      # checksum in the generated installation command.
+      - ./.runtime/tls:/run/initpad-tls:ro
     extra_hosts:
       # Works on Docker Desktop out of the box; this line makes it work on
       # plain Linux too (health checks of host-published app ports).
@@ -374,6 +378,9 @@ services:
     environment:
       DOCKER_TLS_CERTDIR: ''
       DOCKER_HOST: tcp://127.0.0.1:2375
+      # With "tls internal" the entry point trusts InitPad's CA for exactly this
+      # registry host (ADR-161); .runtime/tls holds only the public root.
+      INITPAD_CI_REGISTRY_HOST: ${INITPAD_CI_REGISTRY_HOST:-host.docker.internal:3001}
     command:
       - '--host=tcp://0.0.0.0:2375'
       - '--tls=false'
@@ -388,6 +395,7 @@ services:
       - '--insecure-registry=172.31.250.10:5000'
     volumes:
       - ./runner:/opt/initpad-runner:ro
+      - ./.runtime/tls:/opt/initpad-tls:ro
       - runner-docker-data:/home/rootless/.local/share/docker
       - runner-reset:/run/initpad-ci-reset:ro
     read_only: true
