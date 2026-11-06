@@ -24,7 +24,7 @@ export function GatewayCaDownload({ target }: { target: Target }) {
     : null;
 
   return (
-    <div className="mt-3 rounded-lg border border-border p-3">
+    <div className="mt-3 border-t border-border/70 pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-sm font-medium">

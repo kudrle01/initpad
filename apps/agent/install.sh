@@ -406,11 +406,14 @@ https:// {
 }
 EDGE
   chmod 0644 "$GATEWAY_STATE_DIR/Caddyfile"
+  # The Agent compares this with the configuration it ships and refreshes the edge itself.
+  GATEWAY_EDGE_CONFIG=$(sha256sum "$GATEWAY_STATE_DIR/Caddyfile" | cut -c1-16)
   gateway_replace_container "$GATEWAY_EDGE"
   docker volume inspect initpad-gateway-edge-data >/dev/null 2>&1 \
     || docker volume create --label "$GATEWAY_LABEL" initpad-gateway-edge-data >/dev/null
   docker run -d --name "$GATEWAY_EDGE" \
     --label "$GATEWAY_LABEL" \
+    --label "com.initpad.gateway.edge-config=$GATEWAY_EDGE_CONFIG" \
     --network "$GATEWAY_NETWORK" \
     --restart unless-stopped \
     --publish "$GATEWAY_HTTP_PORT:80" --publish "$GATEWAY_HTTPS_PORT:443" \
