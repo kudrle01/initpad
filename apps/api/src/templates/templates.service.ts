@@ -31,8 +31,11 @@ export class TemplatesService {
 
   filesDir(id: string): string {
     if (!TEMPLATE_ID.test(id)) throw new NotFoundException(`Template '${id}' not found`);
-    this.get(id);
-    return join(config.templatesDir, id, 'files');
+    // The path is built from the id read from the installed manifest, so a
+    // request value only selects a template and never becomes a path segment.
+    const { id: installedId } = this.get(id);
+    if (!TEMPLATE_ID.test(installedId)) throw new NotFoundException(`Template '${id}' not found`);
+    return join(config.templatesDir, installedId, 'files');
   }
 
   importWorkflow(id: string, provider: string): string {
@@ -40,10 +43,13 @@ export class TemplatesService {
       throw new BadRequestException(`Unsupported workflow provider '${provider}'`);
     }
     const path = join(this.filesDir(id), '.gitea', 'workflows', 'ci.yml');
-    if (!existsSync(path)) {
+    let source: string;
+    try {
+      source = readFileSync(path, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       throw new NotFoundException(`Template '${id}' has no import workflow`);
     }
-    const source = readFileSync(path, 'utf8');
     return provider === 'github' ? adaptWorkflowForGitHub(source, 'ci.yml') : source;
   }
 
