@@ -120,6 +120,7 @@ describe('AgentSetupDialog distribution', () => {
         path: '/api/agent/distribution/installer',
         sha256: 'b'.repeat(64),
       },
+      privateCa: null,
     };
     vi.mocked(api.getAgentDistribution).mockResolvedValue(release);
 
@@ -154,6 +155,7 @@ describe('AgentSetupDialog distribution', () => {
         path: '/api/agent/distribution/install.sh',
         sha256: 'd'.repeat(64),
       },
+      privateCa: null,
     };
     vi.mocked(api.getAgentDistribution).mockResolvedValue(release);
 
@@ -192,6 +194,7 @@ describe('AgentSetupDialog distribution', () => {
         path: '/api/agent/distribution/install.sh',
         sha256: 'd'.repeat(64),
       },
+      privateCa: null,
     };
     vi.mocked(api.getAgentDistribution).mockResolvedValue(release);
 
@@ -225,6 +228,7 @@ describe('AgentSetupDialog distribution', () => {
         path: '/api/agent/distribution/install.sh',
         sha256: 'd'.repeat(64),
       },
+      privateCa: null,
     });
     vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
       enabled: true,
@@ -271,6 +275,7 @@ describe('AgentSetupDialog distribution', () => {
         path: '/api/agent/distribution/install.sh',
         sha256: 'd'.repeat(64),
       },
+      privateCa: null,
     });
     vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
       enabled: true,
@@ -314,6 +319,7 @@ describe('AgentSetupDialog distribution', () => {
       image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
       unavailableReason: null,
       installer: { path: '/api/agent/distribution/install.sh', sha256: 'd'.repeat(64) },
+      privateCa: null,
     });
     vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
       enabled: true,
@@ -363,6 +369,7 @@ describe('AgentSetupDialog distribution', () => {
       image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
       unavailableReason: null,
       installer: { path: '/api/agent/distribution/install.sh', sha256: 'd'.repeat(64) },
+      privateCa: null,
     });
     vi.mocked(api.getAgentUpdateStatus).mockResolvedValue({
       enabled: true,
@@ -410,6 +417,7 @@ describe('AgentSetupDialog distribution', () => {
         path: '/api/agent/distribution/installer',
         sha256: 'b'.repeat(64),
       },
+      privateCa: null,
     });
 
     renderDialog();
@@ -427,6 +435,7 @@ describe('AgentSetupDialog distribution', () => {
       image: null,
       unavailableReason: 'Not relevant to this test',
       installer: { path: '/api/agent/distribution/install.sh', sha256: 'b'.repeat(64) },
+      privateCa: null,
     });
 
     renderDialog([

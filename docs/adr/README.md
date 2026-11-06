@@ -172,3 +172,4 @@ stabilní.
 | [ADR-158](./ADR-158.md) | Accepted | Staging vynucuje egress podle portů a alertuje z vlastního collectoru |
 | [ADR-159](./ADR-159.md) | Accepted | Čtení commitů a stavu pipeline z GitHubu šetří limit instalace |
 | [ADR-160](./ADR-160.md) | Proposed | Vlastní projekty a jejich workflow popisuje manifest a napojují se přes ověřený handoff |
+| [ADR-161](./ADR-161.md) | Accepted | Instalátor nastaví síť z jedné odpovědi a rozdá vlastní CA |

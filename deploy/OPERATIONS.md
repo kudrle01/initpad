@@ -250,14 +250,25 @@ cílové topologii projít před schválením active-active mutačního provozu.
 
 ## HTTPS
 
-- **Veřejná doména:** nastav `INITPAD_DOMAIN` + `INITPAD_GIT_DOMAIN` v `.env`,
-  otevři porty 80/443 a spusť `./install.sh` — Caddy vystaví Let's Encrypt
-  certifikát automaticky.
-- **LAN / škola bez veřejné dostupnosti:** navíc nastav
-  `INITPAD_TLS_DIRECTIVE="tls internal"`. Caddy pak vydá certifikát z vlastní
-  lokální CA. Na klientech buď nainstaluj Caddy root CA (v kontejneru
-  `/data/caddy/pki/authorities/local/root.crt`, zálohovaný ve volume
-  `caddy-data`), nebo přijmi varování prohlížeče.
+- **Veřejná doména:** otevři porty 80/443 a spusť
+  `./install.sh --domain platform.example.org --tls public` (nebo zvol
+  v průvodci volbu 3). Caddy vystaví Let's Encrypt certifikát automaticky.
+- **LAN / škola bez veřejné dostupnosti:** vytvoř A záznamy na interním DNS
+  a spusť `./install.sh --domain initpad.lab.example --tls internal` (volba 2).
+  Caddy vydá certifikáty z vlastní lokální CA. Instalátor exportuje jen její
+  veřejný kořenový certifikát do `.runtime/tls/initpad-root-ca.crt`, nastaví
+  jej Docker démonu hostu (`/etc/docker/certs.d/<git>/ca.crt`) i CI démonu
+  pro jméno Gitu a Caddy jej nabízí na `http://<platforma>/initpad-ca.crt`.
+  Klienti jej nainstalují jako důvěryhodný kořen (ve Windows doméně přes
+  GPO); otisk SHA-256 vypisuje instalátor. Postup pro Agent servery je
+  v [README](./README.md#instalace-na-server).
+- **Změna domény nebo režimu:** `./install.sh --reconfigure`. Instalátor
+  znovu sladí SSO, registraci CI runneru i důvěru v CA.
+- **Obnova na jiném hostu:** CA je ve volume `caddy-data`, takže se obnoví
+  spolu se zálohou. Po `./restore.sh` spusť `./install.sh`, aby znovu
+  exportoval certifikát a nastavil jej Docker démonům nového hostu.
+- **Obnova klíče CA:** smazání volume `caddy-data` vytvoří novou CA. Klienti
+  a Agent servery pak musí nainstalovat nový certifikát.
 
 ## Aktualizace
 

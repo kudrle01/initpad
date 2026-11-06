@@ -268,6 +268,12 @@ export interface AgentDistribution {
     path: string;
     sha256: string;
   };
+  /** Internal CA of a "tls internal" installation (ADR-161), else null. */
+  privateCa: {
+    path: string;
+    sha256: string;
+    registryHost: string;
+  } | null;
 }
 
 export interface AgentUpdateStatus {

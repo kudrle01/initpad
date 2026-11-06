@@ -199,6 +199,8 @@ export const cs = {
   'Agent installer': 'Instalátor Agenta',
   'Downloads the script without running it': 'Stáhne skript, aniž by ho spustil',
   'Download script only': 'Jen stáhnout skript',
+  'This InitPad uses its own certificate authority. The command first downloads its certificate, checks the fingerprint and lets Docker on the server trust it for {registry} only.':
+    'Tento InitPad používá vlastní certifikační autoritu. Příkaz nejdřív stáhne její certifikát, ověří otisk a nastaví, aby mu Docker na serveru důvěřoval jen pro {registry}.',
   'Copy and run this command in an interactive terminal on the Docker server.':
     'Zkopírujte tento příkaz a spusťte ho v interaktivním terminálu na Docker serveru.',
   'It verifies the checksum and immutable Agent {version} image, verifies that any saved identity belongs to this target, then starts and health-checks the Agent. A new server requests the token through a hidden prompt, so it never enters shell history.':

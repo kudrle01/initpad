@@ -45,38 +45,86 @@ verzované databázové migrace a sestavení kontejnerů.
 
 ## Instalace na server
 
-1. Nasměrujte na server dva DNS záznamy, například `platform.example.org` a
-   `git.example.org`.
-2. V souboru `deploy/.env` nastavte:
+1. Vytvořte dva DNS záznamy typu A, které ukazují na IP serveru: jeden pro
+   platformu (např. `initpad.lab.example`) a jeden pro Git a registry image
+   (např. `git.lab.example`). V interní síti je vytvořte na svém DNS serveru,
+   typicky na řadiči domény. Na tento DNS server musí být nasměrovaný i
+   samotný server InitPadu, protože jeho Docker démon jména také překládá.
+2. Spusťte `./install.sh`. Při prvním spuštění se zeptá, jak budou uživatelé
+   InitPad otevírat:
 
-   ```ini
-   INITPAD_PUBLIC_URL=https://platform.example.org
-   INITPAD_GITEA_PUBLIC_URL=https://git.example.org
-   INITPAD_REGISTRY_HOST=git.example.org
-   INITPAD_DOMAIN=platform.example.org
-   INITPAD_GIT_DOMAIN=git.example.org
+   | Volba | Kdy | HTTPS |
+   |---|---|---|
+   | 1) Jen tento počítač | lokální vyzkoušení | ne, `http://localhost:8080` |
+   | 2) Interní síť s DNS | škola nebo firma, jména na řadiči domény | vlastní certifikační autorita InitPadu |
+   | 3) Veřejná doména | server dostupný z internetu na portech 80 a 443 | Let's Encrypt |
+
+   U voleb 2 a 3 zadáte jméno platformy a jméno Gitu (nabídne se
+   `git.<nadřazená doména>`). Instalátor podle odpovědi vyplní všechny
+   adresy v `deploy/.env` (`INITPAD_PUBLIC_URL`, `INITPAD_GITEA_PUBLIC_URL`,
+   `INITPAD_DOMAIN`, `INITPAD_GIT_DOMAIN`, `INITPAD_TLS_DIRECTIVE`, registry
+   a interní adresy pro CI) a na konci zkontroluje, že se jména překládají
+   na tento server. Bez dotazů lze totéž nastavit parametry:
+
+   ```bash
+   ./install.sh --domain initpad.lab.example --tls internal   # interní síť
+   ./install.sh --domain platform.example.org --tls public    # internet
+   ./install.sh --local                                       # jen tento počítač
    ```
 
-   Vestavěné odkazy na aplikace automaticky používají hostname z
-   `INITPAD_PUBLIC_URL`. Proměnnou `INITPAD_DEPLOY_PUBLIC_HOST` nastavujte pouze
-   u dělené topologie, ve které aplikace záměrně používají jiný hostname.
+   `--git-domain` jméno Gitu přepíše. Bez `--tls` se použije `internal` pro
+   domény `.local`, `.internal`, `.lan`, `.home.arpa`, `.test`, `.intranet`
+   a `.corp`, jinak `public`. Další spuštění `./install.sh` konfiguraci sítě
+   nemění. Pro změnu domény nebo režimu spusťte `./install.sh --reconfigure`.
 
-   Nasazení s přímými porty se ve výchozím stavu vážou na `127.0.0.1`. Pro
-   stabilní HTTPS adresy aplikací upřednostněte managed gateway. Pokud musí
-   důvěryhodní klienti v LAN přistupovat k náhodným přímým portům, nastavte
-   explicitně `INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0` a ve firewallu omezte jejich
-   rozsah pouze na tuto LAN. Samotná změna bind adresy není access-control
-   pravidlem.
+   Doména `.local` koliduje s mDNS (Bonjour, Avahi). Klienti s Windows v doméně
+   ji přeloží přes DNS, Linux a macOS mohou potřebovat úpravu konfigurace.
+   Pokud doménu teprve volíte, použijte subdoménu skutečné domény nebo
+   `.internal`.
 
-3. Spusťte `./install.sh`. Nastavení `INITPAD_DOMAIN` aktivuje profil `server`;
-   Caddy ukončuje HTTPS pro obě domény pomocí automatických certifikátů,
-   posílá hlavičku HSTS a požadavky na `/api/*` předává přímo API.
-   `INITPAD_TRUST_PROXY_HOPS` proto zůstává `1`.
+3. **Jen u interní sítě:** nainstalujte kořenový certifikát InitPadu jako
+   důvěryhodný na počítače, které InitPad otevírají. Instalátor vypíše jeho
+   umístění a otisk SHA-256:
+   - stažení: `http://<jméno platformy>/initpad-ca.crt` (přes HTTP, aby šel
+     stáhnout ještě bez varování prohlížeče; otisk ověřte podle výpisu
+     instalátoru),
+   - soubor na serveru: `deploy/.runtime/tls/initpad-root-ca.crt`,
+   - v doméně Windows jej rozdejte skupinovou politikou: *Computer
+     Configuration → Policies → Windows Settings → Security Settings → Public
+     Key Policies → Trusted Root Certification Authorities*.
+
+   Instalátor sám zajistí důvěru tam, kde ji InitPad potřebuje na serveru:
+   Docker démon hostu dostane certifikát do
+   `/etc/docker/certs.d/<jméno Gitu>/ca.crt` (zápis může vyžádat heslo pro
+   `sudo`) a izolovaný CI démon do své konfigurace. Certifikát platí jen pro
+   registry na jménu Gitu, systémové úložiště certifikátů instalátor nemění.
+   Klonování repozitáře v CI jobech jde přes interní port Gitey, takže
+   certifikát nepotřebuje.
+
+   **Agent servery** dostanou certifikát automaticky. Příkaz z **Manage
+   Agent** jej v tomto režimu nejdřív stáhne přes HTTP, ověří jeho otisk
+   SHA-256 (prohlížeč administrátora jej dostal přes ověřené HTTPS), uloží
+   jej do `/etc/docker/certs.d/<jméno Gitu>/ca.crt` a
+   `/etc/initpad-agent/ca.crt`, použije jej pro stažení instalátoru a předá
+   jej Agentovi parametrem `--ca-file`. Systémové úložiště certifikátů na
+   cílovém serveru se nemění.
+
 4. Ve firewallu otevřete porty 80 a 443 pro platformu, Git a managed gateway.
-   Nakonfigurovaný rozsah přímých portů otevírejte pouze při použití výše
-   uvedeného LAN režimu a jen pro důvěryhodné zdrojové sítě. Porty 8080, 3001
-   a 8085 Docker publikuje mimo `ufw`; na veřejném rozhraní je zablokujte
-   podle [provozního runbooku](./OPERATIONS.md#bezpečnost).
+   Porty 8080, 3001 a 8085 Docker publikuje mimo `ufw`; na veřejném rozhraní
+   je zablokujte podle [provozního runbooku](./OPERATIONS.md#bezpečnost).
+
+Caddy ukončuje HTTPS pro obě jména, posílá hlavičku HSTS a požadavky na
+`/api/*` předává přímo API, `INITPAD_TRUST_PROXY_HOPS` proto zůstává `1`.
+Vestavěné odkazy na aplikace používají hostname z `INITPAD_PUBLIC_URL`.
+Proměnnou `INITPAD_DEPLOY_PUBLIC_HOST` nastavujte pouze u dělené topologie,
+ve které aplikace záměrně používají jiný hostname.
+
+Nasazení s přímými porty se ve výchozím stavu vážou na `127.0.0.1`. Pro
+stabilní HTTPS adresy aplikací upřednostněte managed gateway. Pokud musí
+důvěryhodní klienti v LAN přistupovat k náhodným přímým portům, nastavte
+explicitně `INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0` a ve firewallu omezte jejich
+rozsah pouze na tuto LAN. Samotná změna bind adresy není access-control
+pravidlem.
 
 Pro reprodukovatelné self-hosted ověření na Windows a VirtualBoxu postupujte
 podle [SELF_HOSTED_ACCEPTANCE.md](./SELF_HOSTED_ACCEPTANCE.md). Dokument pokrývá

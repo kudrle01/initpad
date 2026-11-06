@@ -4,6 +4,18 @@ import { readFile } from 'node:fs/promises';
 import { config } from '../config';
 
 const INSTALLER_PATH = '/api/agent/distribution/install.sh';
+// Served by the bundled Caddy over plain HTTP as well, because a new Agent
+// server cannot verify HTTPS before it has the CA (ADR-161).
+const PRIVATE_CA_PATH = '/initpad-ca.crt';
+
+export interface AgentPrivateCa {
+  /** Platform-relative download path of the public root certificate. */
+  path: string;
+  /** SHA-256 of the exact certificate bytes; the command verifies it. */
+  sha256: string;
+  /** Registry the Agent server's Docker daemon pulls images from. */
+  registryHost: string;
+}
 
 export interface AgentDistributionMetadata {
   available: boolean;
@@ -14,11 +26,41 @@ export interface AgentDistributionMetadata {
     path: string;
     sha256: string;
   };
+  privateCa: AgentPrivateCa | null;
 }
+
+type StaticMetadata = Omit<AgentDistributionMetadata, 'privateCa'>;
 
 interface DistributionArtifacts {
   installer: Buffer;
-  metadata: AgentDistributionMetadata;
+  metadata: StaticMetadata;
+}
+
+/**
+ * The CA is read on every request: install.sh exports it only after Caddy has
+ * started, and a reconfiguration may add, replace or remove it without the
+ * API process restarting.
+ */
+async function readPrivateCa(): Promise<AgentPrivateCa | null> {
+  const file = config.agentDistribution.privateCaFile;
+  if (!file) return null;
+  let certificate: Buffer;
+  try {
+    certificate = await readFile(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  const text = certificate.toString('utf8');
+  // Only a public certificate may ever be offered, never key material.
+  if (!text.startsWith('-----BEGIN CERTIFICATE-----') || text.includes('PRIVATE KEY')) {
+    throw new Error('The private CA file must contain only a PEM certificate');
+  }
+  return {
+    path: PRIVATE_CA_PATH,
+    sha256: createHash('sha256').update(certificate).digest('hex'),
+    registryHost: config.registry.host,
+  };
 }
 
 function parseVersion(packageJson: Buffer): string {
@@ -40,8 +82,9 @@ function parseVersion(packageJson: Buffer): string {
 export class AgentDistributionService {
   private artifactsPromise: Promise<DistributionArtifacts> | null = null;
 
-  metadata(): Promise<AgentDistributionMetadata> {
-    return this.artifacts().then(({ metadata }) => metadata);
+  async metadata(): Promise<AgentDistributionMetadata> {
+    const [{ metadata }, privateCa] = await Promise.all([this.artifacts(), readPrivateCa()]);
+    return { ...metadata, privateCa };
   }
 
   installer(): Promise<Buffer> {

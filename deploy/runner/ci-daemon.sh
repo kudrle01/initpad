@@ -20,6 +20,17 @@ if [ -d "$data" ] && [ -n "$(ls -A "$data")" ]; then
   fi
 fi
 
+# With "tls internal" the registry certificate comes from InitPad's own CA.
+# Trust it for the one configured registry host only (ADR-161); a rootless
+# daemon reads per-registry CAs from its user configuration, which is a tmpfs
+# rebuilt on every start.
+ca=/opt/initpad-tls/initpad-root-ca.crt
+if [ -s "$ca" ] && [ -n "${INITPAD_CI_REGISTRY_HOST:-}" ]; then
+  certs=${XDG_CONFIG_HOME:-$HOME/.config}/docker/certs.d/$INITPAD_CI_REGISTRY_HOST
+  mkdir -p "$certs"
+  cp "$ca" "$certs/ca.crt"
+fi
+
 dockerd-entrypoint.sh "$@" &
 daemon=$!
 trap 'kill -TERM "$daemon" 2>/dev/null || :; wait "$daemon" || :; exit 0' TERM INT

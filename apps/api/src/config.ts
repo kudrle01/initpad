@@ -111,6 +111,9 @@ export const config = {
     packagePath:
       process.env.INITPAD_AGENT_PACKAGE_PATH ||
       resolve(process.cwd(), '../../apps/agent/package.json'),
+    // Public root certificate of the internal CA ("tls internal", ADR-161),
+    // exported by install.sh. Absent file = publicly trusted HTTPS or HTTP.
+    privateCaFile: (process.env.INITPAD_PRIVATE_CA_FILE || '').trim(),
   },
   updates: {
     enabled: process.env.INITPAD_UPDATE_CHECKS_ENABLED !== 'false',
