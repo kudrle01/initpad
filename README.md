@@ -21,11 +21,11 @@ srozumitelném a samostatně nasaditelném systému.
 
 ## Stav projektu
 
-| Část | Stav |
-|---|---|
-| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.24` prošel anonymním auditem i živou candidate acceptance aktualizace z `0.2.23` se zachováním dat a workloadů; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10` |
-| InitPad Agent | Doporučený release `0.14.3`; reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu |
-| Hosted SaaS | Ve vývoji; nejde zatím o produkční deployment profil |
+| Část                  | Stav                                                                                                                                                                                                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.25`; živou candidate acceptance aktualizace tlačítkem **Install update** (z `0.2.23` na `0.2.24`) se zachováním dat a workloadů prošel `0.2.24`, u `0.2.25` ji nikdo neprovedl; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10`            |
+| InitPad Agent         | Doporučený release `0.15.0` (spravovaná brána jedním příkazem, kontrola velikosti serveru); ověřen lokálně v Dockeru a anonymním auditem, živá acceptance na hostu zatím neproběhla. Reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu u `0.14.3` |
+| Hosted SaaS           | Ve vývoji; nejde zatím o produkční deployment profil                                                                                                                                                                                                                                     |
 
 Release assets, checksumy a OCI images jsou veřejné a ověřitelné bez GitHub
 credentials. Aktuální omezení a podmínky produkčního použití jsou v
@@ -97,11 +97,11 @@ pipeline a počkejte na dev URL. Podrobné nasazení na server, DNS a HTTPS popi
 
 ## Projektové šablony
 
-| Ekosystém | Šablony |
-|---|---|
+| Ekosystém               | Šablony                                            |
+| ----------------------- | -------------------------------------------------- |
 | JavaScript / TypeScript | Express, NestJS, Next.js, React + Vite, Vue + Vite |
-| Python | Django, FastAPI, Flask |
-| PHP | PHP, Laravel, Nette, Symfony |
+| Python                  | Django, FastAPI, Flask                             |
+| PHP                     | PHP, Laravel, Nette, Symfony                       |
 
 Každá šablona obsahuje zamčený aplikační dependency lockfile, Dockerfile,
 health endpoint a CI workflow. PHP frameworky mají verzovaný skeleton i
@@ -144,8 +144,8 @@ zranitelností, a proto vyžaduje přístup k internetu.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.24
-npm run audit:public-release -- --tag agent-v0.14.3
+npm run audit:public-release -- --tag initpad-v0.2.25
+npm run audit:public-release -- --tag agent-v0.15.0
 ```
 
 Změna šablony nebo kontejnerové image navíc spouští samostatný GitHub Actions
