@@ -5,6 +5,10 @@ on:
     branches: ['main']
   pull_request:
     branches: ['main']
+  # The dependency audit must also fail when an advisory is published for an
+  # unchanged lockfile.
+  schedule:
+    - cron: '7 4 * * *'
   workflow_dispatch:
 
 concurrency:
