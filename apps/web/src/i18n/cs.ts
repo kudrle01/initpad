@@ -233,6 +233,13 @@ export const cs = {
   'It verifies the checksum and immutable Agent {version} image, verifies that any saved identity belongs to this target, then starts and health-checks the Agent. A new server requests the token through a hidden prompt, so it never enters shell history.':
     'Ověří kontrolní součet a neměnný image Agenta {version}, zkontroluje, že případná uložená identita patří k tomuto cíli, a pak Agenta spustí a ověří jeho stav. Nový server si token vyžádá skrytou výzvou, takže se nedostane do historie shellu.',
   'Replace an invalid existing identity': 'Nahradit neplatnou stávající identitu',
+  'Refresh the gateway on the server': 'Obnovit bránu na serveru',
+  'Application gateway': 'Brána aplikací',
+  'Diagnostics and removal': 'Diagnostika a odebrání',
+  'A new token replaces the saved identity of this server. Use it only to reconnect a server whose credential was rejected.':
+    'Nový token nahradí uloženou identitu serveru. Použijte ho jen pro obnovu serveru, jehož přihlašovací údaje byly odmítnuty.',
+  'Agent 0.16 and newer refresh the gateway themselves after an update. Run this on the Docker server only for an older Agent or if that did not happen. The saved identity is kept, so no enrollment token is needed.':
+    'Agent 0.16 a novější obnoví bránu po aktualizaci sám. Spusťte to na Docker serveru jen u staršího Agenta nebo když se obnova nestala. Uložená identita zůstane zachována, registrační token není potřeba.',
   'Use this only if verification says the saved credential was rejected, or when reconnecting a server from a deleted or restored target. It replaces the old identity using the enrollment token above.':
     'Použijte jen tehdy, když ověření hlásí odmítnutí uložených údajů, nebo při opětovném připojení serveru ze smazaného či obnoveného cíle. Starou identitu nahradí pomocí registračního tokenu výše.',
   'HTTP enrollment is for a trusted local test only. Use HTTPS before exposing InitPad or this Agent connection outside an isolated network.':

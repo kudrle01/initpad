@@ -66,12 +66,13 @@ function renderDialog(
   agentStatus: AgentStatus | null = enrollment,
   currentEnrollment: AgentEnrollment | null = enrollment,
   onUpdateAgent: () => void = () => undefined,
+  dialogTarget: Target = target,
 ) {
   render(
     <ConfirmationProvider>
       <AgentSetupDialog
         open
-        target={target}
+        target={dialogTarget}
         agent={agentStatus}
         jobs={jobs}
         protocolError={null}
@@ -218,6 +219,39 @@ describe('AgentSetupDialog distribution', () => {
     expect(screen.queryByRole('link', { name: /download script only/i })).not.toBeInTheDocument();
   });
 
+  it('offers a token-free gateway refresh command for a current online Agent', async () => {
+    vi.mocked(api.getAgentDistribution).mockResolvedValue({
+      available: true,
+      version: '0.14.1',
+      image: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
+      unavailableReason: null,
+      installer: { path: '/api/agent/distribution/install.sh', sha256: 'd'.repeat(64) },
+      privateCa: null,
+    });
+
+    renderDialog(
+      [],
+      {
+        ...enrollment,
+        state: 'online',
+        enrollmentPending: false,
+        credentialGeneration: 1,
+        version: '0.14.1',
+        enrolledAt: '2026-09-15T12:00:00.000Z',
+        lastSeenAt: '2026-09-15T12:01:00.000Z',
+      },
+      null,
+      () => undefined,
+      { ...target, routingMode: 'managed-gateway' },
+    );
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Refresh the gateway on the server' }),
+    );
+    expect(screen.getByText(/--gateway-domain/)).toBeInTheDocument();
+    expect(screen.queryByText(/--re-enroll/)).not.toBeInTheDocument();
+  });
+
   it('shows the verified uninstall command only on request', async () => {
     vi.mocked(api.getAgentDistribution).mockResolvedValue({
       available: true,
@@ -231,6 +265,7 @@ describe('AgentSetupDialog distribution', () => {
 
     renderDialog([], { ...enrollment, state: 'disabled', enrollmentPending: false }, null);
 
+    await user.click(await screen.findByRole('button', { name: 'Diagnostics and removal' }));
     const summary = await screen.findByText('Uninstall from the server');
     expect(screen.queryByText(/--uninstall/)).not.toBeInTheDocument();
 
@@ -513,7 +548,7 @@ describe('AgentSetupDialog distribution', () => {
     expect(screen.queryByText(/sudo initpad-agent enroll/)).not.toBeInTheDocument();
   });
 
-  it('turns a first diagnostic pull timeout into an actionable retry message', () => {
+  it('turns a first diagnostic pull timeout into an actionable retry message', async () => {
     vi.mocked(api.getAgentDistribution).mockResolvedValue({
       available: false,
       version: '0.12.1',
@@ -542,6 +577,7 @@ describe('AgentSetupDialog distribution', () => {
       },
     ]);
 
+    await userEvent.click(screen.getByRole('button', { name: 'Diagnostics and removal' }));
     expect(
       screen.getByText(/diagnostic image pull timed out.+run Test Docker again/i),
     ).toBeInTheDocument();

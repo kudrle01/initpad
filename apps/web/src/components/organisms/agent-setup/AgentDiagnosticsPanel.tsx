@@ -1,14 +1,12 @@
-import { Activity, Container, Globe2 } from 'lucide-react';
-import type { AgentJobSummary, Target } from '@/types';
+import { Activity, Container } from 'lucide-react';
+import type { AgentJobSummary } from '@/types';
 import { Spinner } from '@/components/atoms/Spinner';
 import { InfoTip } from '@/components/molecules/InfoTip';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { GatewayCaDownload } from './GatewayCaDownload';
 import { t, formatDateTime } from '@/i18n';
 
 interface Props {
-  target: Target;
   jobs: AgentJobSummary[];
   protocolError: string | null;
   testBusy: 'protocol' | 'lifecycle' | 'gateway' | 'update' | null;
@@ -16,7 +14,6 @@ interface Props {
   canQueueProbe: boolean;
   onTestProtocol: () => void;
   onTestLifecycle: () => void;
-  onTestGateway: () => void;
 }
 
 function hasExpiredLease(job: AgentJobSummary, now = Date.now()): boolean {
@@ -45,7 +42,6 @@ function agentJobMessage(job: AgentJobSummary, leaseExpired: boolean): string {
 }
 
 export function AgentDiagnosticsPanel({
-  target,
   jobs,
   protocolError,
   testBusy,
@@ -53,7 +49,6 @@ export function AgentDiagnosticsPanel({
   canQueueProbe,
   onTestProtocol,
   onTestLifecycle,
-  onTestGateway,
 }: Props) {
   return (
     <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3">
@@ -154,78 +149,6 @@ export function AgentDiagnosticsPanel({
           {t('Test Docker')}
         </Button>
       </div>
-
-      {target.routingMode === 'managed-gateway' && (
-        <div className="flex flex-wrap items-start justify-between gap-2 border-t border-border/70 pt-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1">
-              <p className="flex items-center gap-1.5 text-sm font-medium">
-                <Globe2 className="h-4 w-4 text-primary" /> {t('Production gateway preflight')}
-              </p>
-              <InfoTip
-                label={t('About the gateway preflight')}
-                items={[
-                  {
-                    title: t('Checks'),
-                    description: t(
-                      'The configured DNS zone, trusted TLS on port 443 and the private Caddy adapter.',
-                    ),
-                  },
-                  {
-                    title: t('Impact'),
-                    description: t(
-                      'Read-only: no route is created and gateway configuration is not changed.',
-                    ),
-                  },
-                ]}
-              />
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t('Checks DNS, TLS and the private gateway without changing routes.')}
-            </p>
-            {target.gatewayPreflight && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <StatusBadge
-                  status={
-                    target.gatewayPreflight.status === 'passed'
-                      ? 'success'
-                      : target.gatewayPreflight.status
-                  }
-                  label={t('preflight {status}', { status: target.gatewayPreflight.status })}
-                />
-                {target.gatewayPreflight.checkedAt && (
-                  <span className="text-muted-foreground">
-                    {formatDateTime(target.gatewayPreflight.checkedAt)}
-                  </span>
-                )}
-              </div>
-            )}
-            {target.gatewayPreflight?.error && (
-              <p className="mt-2 text-xs text-destructive">{target.gatewayPreflight.error}</p>
-            )}
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={busy || testBusy !== null || !canQueueProbe}
-            title={
-              canQueueProbe
-                ? t('Queue a read-only gateway preflight (Agent 0.5.0 or newer)')
-                : t('The Agent must be enrolled')
-            }
-            onClick={onTestGateway}
-          >
-            {testBusy === 'gateway' ? (
-              <Spinner className="h-4 w-4" />
-            ) : (
-              <Globe2 className="h-4 w-4" />
-            )}
-            {t('Test gateway')}
-          </Button>
-        </div>
-      )}
-
-      <GatewayCaDownload target={target} />
 
       {protocolError && <p className="text-xs text-destructive">{protocolError}</p>}
       {jobs.length === 0 ? (

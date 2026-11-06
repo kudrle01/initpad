@@ -19,7 +19,7 @@ RUN npm ci --omit=dev --workspace @initpad/agent --include-workspace-root=false
 FROM mirror.gcr.io/library/node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216
 LABEL org.opencontainers.image.title="InitPad Agent"
 LABEL org.opencontainers.image.description="Outbound-only agent for an InitPad Docker target"
-LABEL org.opencontainers.image.version="0.15.3"
+LABEL org.opencontainers.image.version="0.16.0"
 # Installed packages take the fixes Alpine published after the base image
 # (ADR-144). npm, npx, corepack and yarn are build tools with dependencies of
 # their own; the runtime never calls them, so the image does not ship them.

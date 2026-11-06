@@ -10,8 +10,10 @@ import type {
 } from '@/types';
 import { api } from '@/api';
 import { CopyField } from '@/components/molecules/CopyField';
+import { Disclosure } from '@/components/molecules/Disclosure';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Spinner } from '@/components/atoms/Spinner';
+import { AgentGatewaySection } from '@/components/organisms/agent-setup/AgentGatewaySection';
 import { AgentDiagnosticsPanel } from '@/components/organisms/agent-setup/AgentDiagnosticsPanel';
 import { AgentUninstallSection } from '@/components/organisms/agent-setup/AgentUninstallSection';
 import { Button } from '@/components/ui/button';
@@ -127,6 +129,7 @@ export function AgentSetupDialog({
   const currentTarget = target;
   const state = agent?.state ?? 'not-enrolled';
   const canQueueProbe = state === 'online' || state === 'offline';
+  const isEnrolled = Boolean(agent && agent.credentialGeneration > 0 && state !== 'disabled');
   const canUpdateExistingAgent = Boolean(
     agent && agent.credentialGeneration > 0 && (state === 'online' || state === 'offline'),
   );
@@ -268,61 +271,63 @@ export function AgentSetupDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted p-3.5">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('Agent status')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {agent?.version
-                  ? t('Version {version} · protocol {protocolVersion}', {
-                      version: agent.version,
-                      protocolVersion: agent.protocolVersion,
-                    })
-                  : t('No Agent heartbeat received yet')}
-              </p>
-              {agent?.credentialGeneration ? (
+        <div className="flex min-w-0 flex-col gap-3">
+          <section className="min-w-0 rounded-lg bg-muted p-3.5">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{t('Agent status')}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {agent.credentialActivatedAt
-                    ? t('Credential generation {generation} · active since {date}', {
-                        generation: agent.credentialGeneration,
-                        date: formatDateTime(agent.credentialActivatedAt),
+                  {agent?.version
+                    ? t('Version {version} · protocol {protocolVersion}', {
+                        version: agent.version,
+                        protocolVersion: agent.protocolVersion,
                       })
-                    : t('Credential generation {generation}', {
-                        generation: agent.credentialGeneration,
-                      })}
+                    : t('No Agent heartbeat received yet')}
                 </p>
-              ) : null}
+              </div>
+              <StatusBadge
+                status={state}
+                label={t(STATE_LABEL[state])}
+                className={state === 'offline' ? 'bg-warning/10 text-warning' : undefined}
+              />
             </div>
-            <StatusBadge
-              status={state}
-              label={t(STATE_LABEL[state])}
-              className={state === 'offline' ? 'bg-warning/10 text-warning' : undefined}
-            />
-          </div>
+            {agent?.lastSeenAt && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('Last contact: {date}', { date: formatDateTime(agent.lastSeenAt) })}
+              </p>
+            )}
+            {agent?.capabilities && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('Docker {engineVersion} · API {apiVersion}', {
+                  engineVersion: agent.capabilities.engineVersion,
+                  apiVersion: agent.capabilities.apiVersion,
+                })}
+                {' · '}
+                {agent.capabilities.os}/{agent.capabilities.arch}
+                {agent.capabilities.rootless ? ` · ${t('rootless')}` : ''}
+                {' · '}
+                {t('{cpus} CPU · {memoryBytes} available to Docker', {
+                  cpus: agent.capabilities.cpus,
+                  memoryBytes: formatMemory(agent.capabilities.memoryBytes),
+                })}
+              </p>
+            )}
+          </section>
 
           {state === 'offline' && (
             <div
-              className="tint-warning flex items-start gap-3 rounded-lg border border-warning/30 p-4"
+              className="tint-warning flex items-start gap-2.5 rounded-lg border border-warning/30 p-3"
               role="status"
               aria-live="polite"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
-                <WifiOff className="h-5 w-5" />
-              </span>
+              <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold">{t('Agent is offline')}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {t(
                     'The control plane has not received a heartbeat for more than 90 seconds. Jobs remain safely queued and continue automatically after the Agent reconnects.',
                   )}
                 </p>
-                {agent?.lastSeenAt && (
-                  <p className="mt-2 text-xs font-medium text-foreground">
-                    {t('Last contact: {date}', {
-                      date: formatDateTime(agent.lastSeenAt),
-                    })}
-                  </p>
-                )}
               </div>
             </div>
           )}
@@ -423,27 +428,6 @@ export function AgentSetupDialog({
             <p className="tint-warning rounded-lg border border-warning/30 p-2.5 text-xs text-muted-foreground">
               {t('{error} Agent management remains available.', { error: updateStatus.error })}
             </p>
-          )}
-
-          {agent?.capabilities && (
-            <div className="grid gap-1 rounded-lg bg-muted p-3 text-xs text-muted-foreground sm:grid-cols-2">
-              <span>
-                {t('Docker {engineVersion} · API {apiVersion}', {
-                  engineVersion: agent.capabilities.engineVersion,
-                  apiVersion: agent.capabilities.apiVersion,
-                })}
-              </span>
-              <span className="sm:text-right">
-                {agent.capabilities.os}/{agent.capabilities.arch}
-                {agent.capabilities.rootless ? ` · ${t('rootless')}` : ''}
-              </span>
-              <span className="sm:col-span-2">
-                {t('{cpus} CPU · {memoryBytes} available to Docker', {
-                  cpus: agent.capabilities.cpus,
-                  memoryBytes: formatMemory(agent.capabilities.memoryBytes),
-                })}
-              </span>
-            </div>
           )}
 
           {enrollment ? (
@@ -681,27 +665,57 @@ export function AgentSetupDialog({
             </div>
           )}
 
-          {agent?.lastSeenAt && state !== 'offline' && (
-            <p className="text-xs text-muted-foreground">
-              {t('Last contact: {date}', { date: formatDateTime(agent.lastSeenAt) })}
-            </p>
-          )}
-
-          <AgentDiagnosticsPanel
+          <AgentGatewaySection
             target={target}
-            jobs={jobs}
-            protocolError={protocolError}
-            testBusy={testBusy}
-            busy={busy}
+            testing={testBusy === 'gateway'}
+            disabled={busy || testBusy !== null}
             canQueueProbe={canQueueProbe}
-            onTestProtocol={onTestProtocol}
-            onTestLifecycle={onTestLifecycle}
+            refreshCommand={
+              gatewayDomain && installCommand && state === 'online' && !enrollment
+                ? installCommand
+                : null
+            }
             onTestGateway={onTestGateway}
           />
 
-          {agent && state !== 'not-enrolled' && distribution && (
-            <AgentUninstallSection targetId={currentTarget.id} distribution={distribution} />
-          )}
+          <Disclosure
+            summary={t('Diagnostics and removal')}
+            className="rounded-lg border border-border px-3"
+            contentClassName="flex flex-col gap-3 pb-3"
+          >
+            <AgentDiagnosticsPanel
+              jobs={jobs}
+              protocolError={protocolError}
+              testBusy={testBusy}
+              busy={busy}
+              canQueueProbe={canQueueProbe}
+              onTestProtocol={onTestProtocol}
+              onTestLifecycle={onTestLifecycle}
+            />
+            {isEnrolled && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted p-3">
+                <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                  {t(
+                    'A new token replaces the saved identity of this server. Use it only to reconnect a server whose credential was rejected.',
+                  )}
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void issueEnrollment()}
+                >
+                  {busy && <Spinner className="h-4 w-4" />}
+                  {enrollment || agent?.enrollmentPending
+                    ? t('Generate a new token')
+                    : t('Generate enrollment')}
+                </Button>
+              </div>
+            )}
+            {agent && state !== 'not-enrolled' && distribution && (
+              <AgentUninstallSection targetId={currentTarget.id} distribution={distribution} />
+            )}
+          </Disclosure>
         </div>
 
         <DialogFooter>
@@ -710,12 +724,14 @@ export function AgentSetupDialog({
               {t('Disconnect Agent')}
             </Button>
           )}
-          <Button disabled={busy} onClick={() => void issueEnrollment()}>
-            {busy && <Spinner className="h-4 w-4" />}
-            {enrollment || agent?.enrollmentPending
-              ? t('Generate a new token')
-              : t('Generate enrollment')}
-          </Button>
+          {!isEnrolled && (
+            <Button disabled={busy} onClick={() => void issueEnrollment()}>
+              {busy && <Spinner className="h-4 w-4" />}
+              {enrollment || agent?.enrollmentPending
+                ? t('Generate a new token')
+                : t('Generate enrollment')}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

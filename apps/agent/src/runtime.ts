@@ -8,6 +8,7 @@ import {
   ControlPlaneError,
 } from './control-plane.js';
 import { inspectDocker } from './docker.js';
+import { GatewayEdgeReconciler } from './gateway-edge.js';
 import { executeClaimedJob } from './job-worker.js';
 import { saveConfig } from './config.js';
 import { reconcileCredentialRotation } from './credential-rotation.js';
@@ -96,6 +97,17 @@ export async function runAgent(
     targetId: config.targetId,
     credentialGeneration: config.credentialGeneration,
   });
+  // Best effort: a failed edge refresh must never keep the Agent from working.
+  void new GatewayEdgeReconciler(dockerHost)
+    .reconcile(runtimeSignal)
+    .then((result) => {
+      if (result.status !== 'absent') log('info', 'gateway.edge', { ...result });
+    })
+    .catch((error: unknown) =>
+      log('warn', 'gateway.edge_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
   try {
     await Promise.all([
       runHeartbeatLoop(config, runtimeSignal, dockerHost, configPath),
