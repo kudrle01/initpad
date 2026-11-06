@@ -249,6 +249,16 @@ alerty a incident acceptance popsané v
 
 ## Řešení problémů
 
+- **CI build padá na „prepare image“ s `lookup … i/o timeout` nebo
+  `no such host`, případně `docker push` s `x509`:** server musí přeložit
+  jméno platformy i Gitey (`INITPAD_DOMAIN`, `INITPAD_GIT_DOMAIN`). U jmen
+  končících na `.local` (mDNS) posílá `systemd-resolved` na DNS server jen ty
+  domény, které mají na rozhraní routovací doménu, takže se přeloží jen jedno
+  jméno. Nastavte ji pro celou zónu:
+  `printf '[Resolve]\nDNS=<ip DNS>\nDomains=~lab.local\n' | sudo tee /etc/systemd/resolved.conf.d/lab-local.conf`
+  a `sudo systemctl restart systemd-resolved`. Pro produkci používejte `.lan`,
+  `home.arpa` nebo subdoménu své domény místo `.local`. S aktivním `ufw` instalátor
+  povolí síti CI runneru porty 80 a 443 na serveru (`sudo ufw status`).
 - **`database volume was initialized with a different password`:** existuje
   starší volume `pgdata`, ale `.env` byl vygenerován znovu. Pro nový začátek
   spusťte `docker compose down -v && rm .env && ./install.sh`; příkaz odstraní

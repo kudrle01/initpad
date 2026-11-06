@@ -31,6 +31,16 @@ if [ -s "$ca" ] && [ -n "${INITPAD_CI_REGISTRY_HOST:-}" ]; then
   cp "$ca" "$certs/ca.crt"
 fi
 
+# The daemon's containerd image store fetches registry tokens with the system
+# trust store and ignores certs.d, so `docker push` failed with "x509: certificate
+# signed by unknown authority" although login and pull worked. This container
+# is the isolated, throw-away CI daemon, so its own trust bundle may carry
+# InitPad's CA; the host's trust store stays unchanged.
+if [ -s "$ca" ] && [ -n "${INITPAD_CI_REGISTRY_HOST:-}" ]; then
+  cat /etc/ssl/certs/ca-certificates.crt "$ca" > /tmp/initpad-ca-bundle.crt
+  export SSL_CERT_FILE=/tmp/initpad-ca-bundle.crt
+fi
+
 dockerd-entrypoint.sh "$@" &
 daemon=$!
 trap 'kill -TERM "$daemon" 2>/dev/null || :; wait "$daemon" || :; exit 0' TERM INT

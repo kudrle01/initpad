@@ -120,7 +120,15 @@ export class GatewayDockerNetwork {
 
   async resolveUpstream(payload: GatewayRoutePayload, signal: AbortSignal): Promise<string> {
     const workload = await this.activeWorkload(payload, signal);
-    return `${this.containerName(workload)}:${payload.containerPort}`;
+    // The container name embeds the owner, project and environment and can be
+    // up to 128 characters; a DNS label is limited to 63, so Caddy would reject
+    // the longer ones as "no such host" before asking Docker. Docker registers
+    // the 12-character container ID as an alias on every user-defined network,
+    // which is always a valid label and unique to this revision.
+    if (!/^[a-f0-9]{64}$/.test(workload.Id ?? '')) {
+      throw new Error('Managed workload has an invalid Docker container ID');
+    }
+    return `${workload.Id.slice(0, 12)}:${payload.containerPort}`;
   }
 
   async commit(payload: GatewayRoutePayload, signal: AbortSignal): Promise<void> {
