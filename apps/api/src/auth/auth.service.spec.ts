@@ -84,6 +84,17 @@ describe('AuthService', () => {
       expect(users[0]).toMatchObject({ platformRole: 'admin' });
     });
 
+    it('refuses a username Gitea reserves before creating anything', async () => {
+      config.auth.bootstrapToken = setupToken;
+      const { service, gitea, users } = registration();
+
+      await expect(service.register({ ...account(setupToken), username: 'Admin' })).rejects.toThrow(
+        'reserved',
+      );
+      expect(gitea.createUser).not.toHaveBeenCalled();
+      expect(users).toHaveLength(0);
+    });
+
     it('refuses a production first administrator without a configured token', async () => {
       config.auth.bootstrapToken = '';
       process.env.NODE_ENV = 'production';

@@ -10,6 +10,7 @@ jest.mock('../config', () => ({
   },
 }));
 
+import { BadRequestException } from '@nestjs/common';
 import { GiteaService } from './gitea.service';
 import { ScmHttpStatusError } from './scm-http';
 
@@ -367,6 +368,30 @@ describe('GiteaService managed account hardening', () => {
     const body = JSON.parse(String(init.body));
     expect(body).toMatchObject({ login_name: 'alice', source_id: 0, must_change_password: false });
     expect(body.password).toHaveLength(47);
+  });
+
+  describe('createUser 422 answers', () => {
+    const input = { username: 'alice', email: 'a@example.test', password: 'long-password-1' };
+
+    it('explains a reserved name instead of reporting a duplicate', async () => {
+      jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValueOnce(
+          new Response('{"message":"name is reserved [name: admin]"}', { status: 422 }),
+        );
+      await expect(new GiteaService().createUser(input)).rejects.toThrow('reserved');
+    });
+
+    it('reports a taken name or e-mail as a client error', async () => {
+      jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValueOnce(
+          new Response('{"message":"user already exists [name: alice]"}', { status: 422 }),
+        );
+      const error = await new GiteaService().createUser(input).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toBe('Username or e-mail is already taken');
+    });
   });
 
   it('does not copy an upstream response body into clone-token errors', async () => {

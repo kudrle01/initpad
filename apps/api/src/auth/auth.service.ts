@@ -20,6 +20,7 @@ import { encryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
 import { config } from '../config';
 import { accountIdentifierEquals, normalizeAccountIdentifier } from '../common/account-identifier';
+import { isReservedUsername, RESERVED_USERNAME_MESSAGE } from '../common/reserved-usernames';
 import { MailDeliveryService, type MailKind } from '../mail/mail-delivery.service';
 import { AuditEventsService, type RecordAuditEvent } from '../audit/audit-events.service';
 import { SessionsService, type SessionClient } from './sessions.service';
@@ -275,6 +276,9 @@ export class AuthService implements OnModuleInit {
   }) {
     const username = normalizeAccountIdentifier(input.username);
     const email = normalizeAccountIdentifier(input.email);
+    if (isReservedUsername(username)) {
+      throw new BadRequestException(RESERVED_USERNAME_MESSAGE);
+    }
     const existing = await this.prisma.user.findFirst({
       where: {
         OR: [

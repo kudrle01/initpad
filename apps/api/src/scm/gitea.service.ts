@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomBytes } from 'crypto';
@@ -10,6 +10,7 @@ import { pipeline } from 'stream/promises';
 import { createGunzip } from 'zlib';
 import * as tar from 'tar-fs';
 import { config } from '../config';
+import { RESERVED_USERNAME_MESSAGE } from '../common/reserved-usernames';
 import {
   RepoArchive,
   ScmActor,
@@ -190,7 +191,13 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       }),
     });
     if (res.status === 422) {
-      throw new Error('A user with this username or e-mail already exists in Gitea');
+      // Gitea answers 422 both for a taken name/e-mail and for a reserved or
+      // invalid name; tell them apart so the user can act on it.
+      const detail = await res.text().catch(() => '');
+      if (/reserved|not allowed|invalid/i.test(detail) && !/already exists/i.test(detail)) {
+        throw new BadRequestException(RESERVED_USERNAME_MESSAGE);
+      }
+      throw new BadRequestException('Username or e-mail is already taken');
     }
     if (!res.ok) {
       throw scmStatusError('Gitea', 'create user', res, 'Gitea user creation failed');
