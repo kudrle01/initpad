@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Reclaim disk safely (ADR-062). Removes dangling images and the Docker build
-# cache only. It NEVER touches named data volumes (pgdata, minio-data,
+# cache only. It NEVER touches named data volumes (pgdata, s3-data,
 # gitea-data, api-data, …) or images backing a running deployment, so it is safe
 # to run on a schedule. Verified build artifacts in object storage are pruned
 # separately by the platform's own retention (ADR-059).

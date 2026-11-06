@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 COMPOSE=(docker compose --profile runner --profile server)
 WRITER_SERVICES=(
   api web supervisor act_runner runner-docker
-  gitea minio fake-sftp static-web caddy
+  gitea s3 fake-sftp static-web caddy
 )
 running_services=()
 quiesced=0
@@ -98,7 +98,7 @@ mkdir "$working_destination"
 chmod 700 "$working_destination"
 
 # Do not freeze a workflow halfway through a Docker build. The nested daemon is
-# disposable and deliberately not backed up; verified artifacts live in MinIO.
+# disposable and deliberately not backed up; verified artifacts live in the object store.
 runner_docker_id=$("${COMPOSE[@]}" ps -q runner-docker 2>/dev/null || true)
 if [ -n "$runner_docker_id" ] && \
    [ "$(docker inspect --format '{{.State.Running}}' "$runner_docker_id" 2>/dev/null || true)" = true ]; then
@@ -134,7 +134,7 @@ archive_volume() {
 
 say "Archiving inactive data volumes"
 archive_volume initpad_gitea-data gitea-data.tar.gz
-archive_volume initpad_minio-data minio-data.tar.gz
+archive_volume initpad_s3-data s3-data.tar.gz
 archive_volume initpad_api-data api-data.tar.gz
 archive_volume initpad_supervisor-data supervisor-data.tar.gz no
 archive_volume initpad_sftp-www sftp-www.tar.gz

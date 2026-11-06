@@ -68,9 +68,9 @@ artifact_store_outage() {
     local status=$?
     if [ "$outage_started" -eq 1 ]; then
       say "Restoring artifact storage"
-      docker compose up -d minio >/dev/null
-      wait_healthy minio 60
-      docker compose run --rm minio-init >/dev/null
+      docker compose up -d s3 >/dev/null
+      wait_healthy s3 60
+      docker compose run --rm s3-init >/dev/null
     fi
     rm -f "$response_file"
     return "$status"
@@ -81,17 +81,17 @@ artifact_store_outage() {
   grep -q '"artifactStore":"ok"' "$response_file" || \
     fail "Readiness does not report a healthy artifact store. Re-run ./install.sh first."
 
-  say "Stopping MinIO for a controlled outage"
+  say "Stopping the object store for a controlled outage"
   outage_started=1
-  docker compose stop minio >/dev/null
+  docker compose stop s3 >/dev/null
   wait_http_status 503 15
   grep -q '"artifactStore":"unavailable"' "$response_file" || \
     fail "API returned 503 but did not identify artifact storage as unavailable."
 
-  say "Restoring MinIO and its private bucket policy"
-  docker compose up -d minio >/dev/null
-  wait_healthy minio 60
-  docker compose run --rm minio-init >/dev/null
+  say "Restoring the object store and its private bucket policy"
+  docker compose up -d s3 >/dev/null
+  wait_healthy s3 60
+  docker compose run --rm s3-init >/dev/null
   wait_http_status 200 30
   grep -q '"artifactStore":"ok"' "$response_file" || \
     fail "Artifact store recovered but readiness did not confirm it."
@@ -164,7 +164,7 @@ verify_restore() {
   [ -z "$managed" ] || fail "Managed local workloads survived restore; run restore.sh again."
   say "No managed local workload survived: OK"
 
-  docker compose run --rm minio-init >/dev/null
+  docker compose run --rm s3-init >/dev/null
   say "Private artifact bucket is reachable: OK"
   trap - EXIT
   rm -f "$response_file"
@@ -179,7 +179,7 @@ case "${1:-}" in
     command cat <<'EOF'
 Usage: ./recovery-drill.sh <command>
 
-  artifact-store-outage  Stop MinIO, require API 503, restore it, require API 200
+  artifact-store-outage  Stop the object store, require API 503, restore it, require API 200
   registry-outage        Stop and health-check recovery of the bundled Gitea/OCI service
   verify-restore         Read-only invariant check immediately after restore.sh
 

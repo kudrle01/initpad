@@ -377,7 +377,7 @@ ls -1 ./backups/acceptance | sort
 ```
 
 Výpis musí obsahovat `SHA256SUMS`, `postgres.dump`, `initpad.env` a archivy
-Gitey, MinIO, API, SFTP a runneru; nesmí zůstat adresář
+Gitey, object storage, API, SFTP a runneru; nesmí zůstat adresář
 `acceptance.partial-*`. Stejný příkaz se stejným cílem se musí bezpečně
 odmítnout, nikoli zálohu přepsat. Kontrola obnoví dump pouze do krátkodobé
 izolované databáze, uloží fingerprint zálohovaných identit a databázi zase
@@ -401,7 +401,7 @@ Na výzvu napiš `restore`. Po obnově ověř:
   nevrátí nic;
 - obnovená aktivní prostředí pravdivě ukazují, že po restore vyžadují deploy;
   existující Gitea OCI image umožní nasadit stejný zachovaný build znovu;
-- `docker compose run --rm minio-init` potvrdí dostupný privátní artifact bucket;
+- `docker compose run --rm s3-init` potvrdí dostupný privátní artifact bucket;
 - CI runner je online;
 - `restore.sh` vypíše `Restore complete` až po health ověření;
 - `docker compose --profile runner ps` nehlásí unhealthy službu.
