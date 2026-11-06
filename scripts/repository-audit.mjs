@@ -473,6 +473,38 @@ for (const path of [
   }
 }
 
+// Documentation must not point at files or npm scripts that no longer exist.
+// Released versions are compared against GitHub by scripts/docs-freshness.mjs.
+const npmScripts = new Set();
+for (const path of trackedFiles.filter((path) => /^(apps\/[^/]+\/)?package\.json$/.test(path))) {
+  for (const name of Object.keys(
+    JSON.parse(readFileSync(resolve(root, path), 'utf8')).scripts ?? {},
+  ))
+    npmScripts.add(name);
+}
+for (const path of trackedFiles.filter(
+  (path) => path.endsWith('.md') && !path.startsWith('templates/') && tracked.has(path),
+)) {
+  const content = readFileSync(resolve(root, path), 'utf8');
+  for (const [, link] of content.matchAll(/\]\(([^)\s]+)\)/g)) {
+    const target = link.split('#')[0];
+    if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
+    let decoded;
+    try {
+      decoded = decodeURIComponent(target);
+    } catch {
+      failures.push(`${path}: malformed link ${link}`);
+      continue;
+    }
+    if (!existsSync(resolve(root, dirname(path), decoded))) {
+      failures.push(`${path}: link to missing file ${link}`);
+    }
+  }
+  for (const [, name] of content.matchAll(/npm run ([a-z][\w:.-]*[\w])/g)) {
+    if (!npmScripts.has(name)) failures.push(`${path}: unknown npm script "${name}"`);
+  }
+}
+
 if (failures.length > 0) {
   console.error('Repository audit failed:');
   for (const failure of failures) console.error(`  - ${failure}`);

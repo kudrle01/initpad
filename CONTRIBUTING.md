@@ -66,5 +66,20 @@ and generated runtime data do not belong in the repository. Comments should
 explain an invariant, security boundary or non-obvious trade-off; do not narrate
 code that is already clear from its names and types.
 
+Documentation is kept current by three checks:
+
+- `npm run audit:repo` (every pull request) fails on a Markdown link to a
+  missing file and on an `npm run` command that no `package.json` defines.
+- `npm run audit:docs` compares `README.md`, `docs/RELEASE_READINESS.md`,
+  `THREAT_MODEL.md` and `apps/agent/README.md` with the newest published
+  platform release and the reviewed Agent in `deploy/agent-release.env`. The
+  *Documentation freshness* workflow runs it after every release and weekly,
+  and keeps one issue open while the documents are behind.
+- The pull request template asks which documents a change affects.
+
+When a release changes what these documents describe, update them in the
+release pull request or right after the release, keeping verified history
+(such as the live acceptance baseline) separate from the newest release.
+
 By contributing, you agree that your contribution is licensed under the
 Apache License 2.0 used by this project.
