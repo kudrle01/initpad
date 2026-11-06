@@ -1,4 +1,4 @@
-FROM mirror.gcr.io/library/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS build
+FROM mirror.gcr.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/supervisor/package.json apps/supervisor/
@@ -8,15 +8,15 @@ COPY apps/supervisor apps/supervisor
 RUN npm run build --workspace @initpad/supervisor \
     && find apps/supervisor/dist -name '*.test.js*' -delete
 
-FROM mirror.gcr.io/library/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS production-dependencies
+FROM mirror.gcr.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS production-dependencies
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/supervisor/package.json apps/supervisor/
 RUN npm ci --omit=dev --workspace @initpad/supervisor --include-workspace-root=false
 
-FROM mirror.gcr.io/library/docker:29.9.2-cli@sha256:5e6baf67325a79f64ed3bed6863954d5e05d0f3d4e57cbdb14809346814bbfdb AS docker-cli
+FROM mirror.gcr.io/library/docker:29.9.3-cli@sha256:2357639ad1ea7d0194134bf3292622fd4e562483966ed674e5d7c945b5f3b28d AS docker-cli
 
-FROM mirror.gcr.io/library/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
+FROM mirror.gcr.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202
 LABEL org.opencontainers.image.title="InitPad Supervisor"
 LABEL org.opencontainers.image.description="Typed, signed and health-gated self-hosted updates"
 LABEL org.opencontainers.image.version="0.2.23"
