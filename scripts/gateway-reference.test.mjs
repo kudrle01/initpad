@@ -48,7 +48,7 @@ test('only certifies the gateway zone and trusts only the configured CA', () => 
   assert.match(caddyfile, /on_demand_tls\s*\{\s*ask http:\/\/127\.0\.0\.1:5555\/allowed/);
   assert.match(caddyfile, /bind 127\.0\.0\.1/);
   assert.match(caddyfile, /endsWith\('\.\{\$GATEWAY_DOMAIN\}'\)/);
-  assert.match(caddyfile, /acme_ca_root \/etc\/caddy\/ca-root\.crt/);
+  assert.match(caddyfile, /cert_issuer acme\s*\{[\s\S]*?trusted_roots \/etc\/caddy\/ca-root\.crt/);
   assert.match(caddyfile, /admin off/);
 });
 

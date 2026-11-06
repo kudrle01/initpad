@@ -108,7 +108,7 @@ veřejnou URL zadejte `https://<GATEWAY_DOMAIN>`. Pak v **Manage Agent** spusťt
 - **Ověření:** `docker compose logs edge | grep "certificate obtained"`.
 - **Vlastní nebo veřejná CA:** spusťte `./setup.sh --no-ca`, do `.env` dejte
   `GATEWAY_CA_URL` (ACME adresář) a do `ca-root.crt` její kořen. U veřejné CA
-  (Let's Encrypt) kořen nepotřebujete, odeberte řádek `acme_ca_root` z
+  (Let's Encrypt) kořen nepotřebujete, odeberte řádek `trusted_roots` z
   `Caddyfile`.
 
 ## Co tahle reference neřeší

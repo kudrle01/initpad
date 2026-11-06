@@ -254,7 +254,7 @@ kontejner. Nemění release, identitu, control plane ani aplikační workload.
 Zopakujte `before-update 0.14.1`, nainstalujte aktualizaci bez injekce chyby a
 dokončete příkazem `after-update 0.14.2`.
 
-## 6. Brána jedním příkazem (0.15.0)
+## 6. Brána jedním příkazem (0.15.0, opraveno v 0.15.1)
 
 Na disposable hostu s volnými porty 80 a 443 a s DNS (`A` i wildcard `A` na
 host) nasaďte target se **Spravovanou bránou**. Příkaz z **Manage Agent** musí
@@ -264,7 +264,9 @@ obsahovat `--gateway-domain` s doménou z veřejné URL targetu.
 2. `docker ps` ukáže `initpad-gateway-ca`, `initpad-gateway` a
    `initpad-gateway-edge`; porty 80 a 443 publikuje jen poslední z nich.
 3. **Test gateway** projde DNS, TLS i Caddy bez ručního `--ca-file`, socketu a
-   názvu kontejneru.
+   názvu kontejneru. Pro doménu končící na `.local` musí certifikát vydat
+   step-ca (`docker logs initpad-gateway-edge` neobsahuje `"issuer":"local"`);
+   0.15.0 ho chybně vydávalo interní CA Caddy.
 4. Nasaďte aplikaci. Její adresa se z počítače s nainstalovaným kořenem CA
    otevře přes HTTPS bez varování.
 5. Spusťte stejný příkaz znovu. Otisk kořene i heslo CA zůstanou stejné a

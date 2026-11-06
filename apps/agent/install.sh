@@ -348,8 +348,12 @@ INNER
   cat > "$GATEWAY_STATE_DIR/Caddyfile" <<'EDGE'
 {
 	admin off
-	acme_ca https://ca:9000/acme/acme/directory
-	acme_ca_root /etc/caddy/ca-root.crt
+	# Explicit issuer: for names such as *.local Caddy would otherwise pick
+	# its own internal CA instead of the private CA the Agent trusts.
+	cert_issuer acme {
+		dir https://ca:9000/acme/acme/directory
+		trusted_roots /etc/caddy/ca-root.crt
+	}
 	on_demand_tls {
 		ask http://127.0.0.1:5555/allowed
 	}
