@@ -92,6 +92,15 @@ trust_proxy_hops=$(env_value INITPAD_TRUST_PROXY_HOPS)
 [ "$trust_proxy_hops" = 2 ] || \
   fail "INITPAD_TRUST_PROXY_HOPS must be 2 for public edge -> web proxy -> API."
 
+# Without a Supervisor this value is the only source of the version the API
+# reports and the web app shows. It must name this checkout's release, whose
+# saas.compose.yml belongs to the images being deployed (ADR-169).
+platform_version=$(env_value INITPAD_PLATFORM_VERSION)
+checkout_version=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' platform-version.json)
+[ -n "$checkout_version" ] || fail "Cannot read the release version from platform-version.json."
+[ "$platform_version" = "$checkout_version" ] || \
+  fail "INITPAD_PLATFORM_VERSION is $platform_version, but this checkout is release $checkout_version. Set INITPAD_PLATFORM_VERSION=$checkout_version."
+
 web_bind_address=$(env_value INITPAD_WEB_BIND_ADDRESS)
 [ "$web_bind_address" = 127.0.0.1 ] || \
   fail "INITPAD_WEB_BIND_ADDRESS must be 127.0.0.1 so the public edge cannot be bypassed."

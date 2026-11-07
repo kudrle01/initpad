@@ -36,6 +36,19 @@ test('web image runs nginx unprivileged and logs paths without query strings (AD
   }
 });
 
+test('web image revalidates index.html and caches only hashed assets (ADR-169)', () => {
+  const web = read('apps/web/nginx.conf');
+  const block = (start) =>
+    web.slice(web.indexOf(start), web.indexOf('\n    }', web.indexOf(start)));
+  const spa = block('location / {');
+  const assets = block('location ~* ^/assets/');
+
+  assert.match(spa, /^\s+expires -1;$/m);
+  assert.match(assets, /^\s+expires 1y;$/m);
+  // add_header inside a location would drop the server-level CSP and friends.
+  for (const location of [spa, assets]) assert.doesNotMatch(location, /add_header/);
+});
+
 test('Node runtime images ship neither package managers nor compiled tests (ADR-144)', () => {
   for (const app of ['api', 'agent', 'supervisor']) {
     const dockerfile = read(`apps/${app}/Dockerfile`);

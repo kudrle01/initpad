@@ -45,6 +45,10 @@ function fixture() {
   );
   write(resolve(root, 'deploy/.env.example'), 'INITPAD_PLATFORM_VERSION=1.2.3\n');
   write(
+    resolve(root, 'deploy/.env.saas.example'),
+    'INITPAD_PUBLIC_URL=https://initpad.example\nINITPAD_PLATFORM_VERSION=1.2.3\n',
+  );
+  write(
     resolve(root, 'package-lock.json'),
     `${JSON.stringify(
       {
@@ -77,6 +81,10 @@ test('updates only the platform version fields', () => {
   const lock = JSON.parse(readFileSync(resolve(root, 'package-lock.json')));
   assert.equal(lock.packages['apps/supervisor'].version, '1.2.4');
   assert.equal(lock.packages[''].dependencies.tinyglobby, '^0.2.11');
+  assert.match(
+    readFileSync(resolve(root, 'deploy/.env.saas.example'), 'utf8'),
+    /^INITPAD_PLATFORM_VERSION=1\.2\.4$/m,
+  );
   assert.match(
     readFileSync(resolve(root, 'deploy/docker-compose.yml'), 'utf8'),
     /gitea\/act_runner:0\.2\.11@sha256:unchanged/,

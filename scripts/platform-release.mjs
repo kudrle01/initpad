@@ -16,6 +16,7 @@ const versionedFiles = [
   'apps/api/src/config.ts',
   'deploy/docker-compose.yml',
   'deploy/.env.example',
+  'deploy/.env.saas.example',
   'package-lock.json',
 ];
 
@@ -141,6 +142,14 @@ export function preparePlatformVersion({ root = repositoryRoot, nextVersion }) {
     ],
     [
       'deploy/.env.example',
+      `INITPAD_PLATFORM_VERSION=${currentVersion}`,
+      `INITPAD_PLATFORM_VERSION=${nextVersion}`,
+      1,
+    ],
+    // The SaaS profile has no Supervisor; saas-check.sh requires this value to
+    // name the checkout's release, so the example moves with it.
+    [
+      'deploy/.env.saas.example',
       `INITPAD_PLATFORM_VERSION=${currentVersion}`,
       `INITPAD_PLATFORM_VERSION=${nextVersion}`,
       1,

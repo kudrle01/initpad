@@ -141,6 +141,12 @@ export const cs = {
   'Firefox: Settings → Privacy & Security → View Certificates → Authorities → Import.':
     'Firefox: Nastavení → Soukromí a zabezpečení → Zobrazit certifikáty → Autority → Importovat.',
   'Check the fingerprint: {command}': 'Kontrola otisku: {command}',
+  // pages/RouteError.tsx (stale build after an update)
+  'InitPad was updated': 'InitPad byl aktualizován',
+  'Loading the new version…': 'Načítá se nová verze…',
+  'This page belongs to the previous version. Reload to open the new one.':
+    'Stránka patří k předchozí verzi. Novou otevřete obnovením stránky.',
+  Reload: 'Obnovit',
   'Platform certificate': 'Certifikát platformy',
   'This InitPad issues its own HTTPS certificates. Install its certificate authority once on every computer, so the browser trusts InitPad and its Git server without a warning.':
     'Tento InitPad vydává vlastní HTTPS certifikáty. Nainstalujte jeho certifikační autoritu jednou na každý počítač a prohlížeč bude InitPadu i jeho Git serveru důvěřovat bez varování.',

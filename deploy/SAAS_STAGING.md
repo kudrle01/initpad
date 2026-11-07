@@ -218,8 +218,22 @@ tunel ani collector se při tom nemění.
    Infisicalu podle tabulky výše.
 
 4. V `/secure/runtime/initpad-saas.env` nahraďte `INITPAD_API_IMAGE`,
-   `INITPAD_WEB_IMAGE` a `INITPAD_AGENT_IMAGE` referencemi z prvního kroku a
+   `INITPAD_WEB_IMAGE` a `INITPAD_AGENT_IMAGE` referencemi z prvního kroku
+   a `INITPAD_PLATFORM_VERSION` verzí nového releasu. SaaS profil nemá
+   Supervisor, takže API i postranní panel GUI berou verzi jen z této
+   proměnné; preflight odmítne hodnotu, která neodpovídá checkoutu. Pak
    spusťte preflight a control plane:
+
+   ```bash
+   ENV=/secure/runtime/initpad-saas.env
+   sudo cp -p "$ENV" "$ENV.bak"
+   sudo sed -i \
+     -e 's#^INITPAD_PLATFORM_VERSION=.*#INITPAD_PLATFORM_VERSION=X.Y.Z#' \
+     -e 's#^INITPAD_API_IMAGE=.*#INITPAD_API_IMAGE=<reference API>#' \
+     -e 's#^INITPAD_WEB_IMAGE=.*#INITPAD_WEB_IMAGE=<reference webu>#' \
+     -e 's#^INITPAD_AGENT_IMAGE=.*#INITPAD_AGENT_IMAGE=<reference Agenta>#' \
+     "$ENV"
+   ```
 
    ```bash
    ./saas-check.sh /secure/runtime/initpad-saas.env
@@ -241,6 +255,9 @@ tunel ani collector se při tom nemění.
 
    Oba kontejnery musí být `healthy` a veřejný `https://<origin>/api/health/ready`
    musí potvrdit databázi i úložiště artefaktů.
+   Postranní panel GUI musí po obnovení stránky ukázat `InitPad X.Y.Z`.
+   Otevřené záložky se starým buildem se po prvním přechodu na jinou stránku
+   samy jednou obnoví.
 
 6. Do `docs/RELEASE_READINESS.md` nebo roadmapy zapište datum, původní a novou
    verzi a výsledek kontrol, bez secretů.

@@ -10,7 +10,10 @@ import App from '@/App';
 import RouteError from '@/pages/RouteError';
 import LegacyLinkRedirect from '@/pages/LegacyLinkRedirect';
 import { RouteLoading } from '@/components/molecules/RouteLoading';
+import { installStaleBuildRecovery } from '@/lib/stale-build';
 import '@/index.css';
+
+installStaleBuildRecovery();
 
 const Login = lazy(() => import('@/pages/Login'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
