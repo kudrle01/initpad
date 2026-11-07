@@ -311,6 +311,13 @@ Jde o budoucí práci mimo rozsah diplomové práce.
       první úpravu pole a oprava je součástí releasu 0.2.16. Ten je zatím
       kandidát: anonymní audit kandidáta potvrdil veřejnou dostupnost, podpisy
       a obě architektury, povýšení na `stable` neproběhlo.
+    - Dne 7. listopadu 2026 přešel staging z releasu 0.2.24 s Agentem 0.14.3
+      na release 0.2.30 s Agentem 0.16.0 podle sekce o aktualizaci v
+      `deploy/SAAS_STAGING.md`. API aplikovalo migraci
+      `20261106230000_gateway_ca_fingerprint`, oba kontejnery jsou zdravé na
+      digestech z podepsaného manifestu a `./saas-acceptance.sh dependencies`
+      prošla se 73 migracemi a round-tripem úložiště. Funkce přidané od 0.2.24
+      naživo cíleně ověřeny nejsou.
 - [x] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
   - [x] Uzamknout podporovanou SaaS proxy cestu na veřejný edge/WAF, loopback
