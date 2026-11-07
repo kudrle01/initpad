@@ -23,7 +23,7 @@ srozumitelném a samostatně nasaditelném systému.
 
 | Část                  | Stav                                                                                                                                                                                                                                                                                     |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.31`; živou candidate acceptance aktualizace tlačítkem **Install update** (z `0.2.23` na `0.2.24`) se zachováním dat a workloadů prošel `0.2.24`, u `0.2.31` ji nikdo neprovedl; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10`            |
+| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.32`; živou candidate acceptance aktualizace tlačítkem **Install update** (z `0.2.23` na `0.2.24`) se zachováním dat a workloadů prošel `0.2.24`, u `0.2.32` ji nikdo neprovedl; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10`            |
 | InitPad Agent         | Doporučený release `0.16.0` (spravovaná brána jedním příkazem, kontrola velikosti serveru); ověřen lokálně v Dockeru a anonymním auditem, živá acceptance na hostu zatím neproběhla. Reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu u `0.14.3` |
 | Hosted SaaS           | Ve vývoji; nejde zatím o produkční deployment profil                                                                                                                                                                                                                                     |
 
@@ -144,7 +144,7 @@ zranitelností, a proto vyžaduje přístup k internetu.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.31
+npm run audit:public-release -- --tag initpad-v0.2.32
 npm run audit:public-release -- --tag agent-v0.16.0
 ```
 
