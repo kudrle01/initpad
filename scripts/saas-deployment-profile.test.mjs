@@ -113,6 +113,8 @@ const secretFileVariables = [
   'INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY_FILE',
 ];
 
+const checkoutVersion = JSON.parse(readFileSync('deploy/platform-version.json', 'utf8')).version;
+
 function acceptanceFixture(overrides = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'initpad-saas-check-'));
   const binDirectory = join(directory, 'bin');
@@ -141,7 +143,7 @@ esac
 
   const values = {
     INITPAD_PUBLIC_URL: 'https://initpad.test.example.org',
-    INITPAD_PLATFORM_VERSION: '0.2.10',
+    INITPAD_PLATFORM_VERSION: checkoutVersion,
     INITPAD_API_IMAGE: `ghcr.io/example/initpad-api@sha256:${'a'.repeat(64)}`,
     INITPAD_WEB_IMAGE: `ghcr.io/example/initpad-web@sha256:${'b'.repeat(64)}`,
     INITPAD_AGENT_IMAGE: `ghcr.io/example/initpad-agent@sha256:${'c'.repeat(64)}`,
@@ -203,6 +205,8 @@ test('rejects unsafe SaaS URLs, placeholders and direct secrets before Compose',
     [{ INITPAD_TRUST_PROXY_HOPS: '1' }, /must be 2 for public edge/],
     [{ INITPAD_TRUST_PROXY_HOPS: '3' }, /must be 2 for public edge/],
     [{ INITPAD_WEB_BIND_ADDRESS: '0.0.0.0' }, /must be 127\.0\.0\.1/],
+    // A version left over from an earlier release (ADR-169).
+    [{ INITPAD_PLATFORM_VERSION: '0.2.24' }, /this checkout is release \d+\.\d+\.\d+/],
   ]) {
     const fixture = acceptanceFixture(overrides);
     const result = runChecker(fixture);
