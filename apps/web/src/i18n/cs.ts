@@ -140,8 +140,14 @@ export const cs = {
     'macOS: dvakrát klikněte na soubor, přidejte ho do Klíčenky (Systém) a nastavte Vždy důvěřovat.',
   'Firefox: Settings → Privacy & Security → View Certificates → Authorities → Import.':
     'Firefox: Nastavení → Soukromí a zabezpečení → Zobrazit certifikáty → Autority → Importovat.',
-  'Check the fingerprint: openssl x509 -in initpad-gateway-ca.crt -noout -fingerprint -sha256':
-    'Kontrola otisku: openssl x509 -in initpad-gateway-ca.crt -noout -fingerprint -sha256',
+  'Check the fingerprint: {command}': 'Kontrola otisku: {command}',
+  'Platform certificate': 'Certifikát platformy',
+  'This InitPad issues its own HTTPS certificates. Install its certificate authority once on every computer, so the browser trusts InitPad and its Git server without a warning.':
+    'Tento InitPad vydává vlastní HTTPS certifikáty. Nainstalujte jeho certifikační autoritu jednou na každý počítač a prohlížeč bude InitPadu i jeho Git serveru důvěřovat bez varování.',
+  'On a computer that does not trust InitPad yet, download it from:':
+    'Na počítači, který InitPadu ještě nedůvěřuje, jej stáhněte z adresy:',
+  'InitPad {version}': 'InitPad {version}',
+  'Platform version and updates': 'Verze platformy a aktualizace',
   'No protocol jobs yet.': 'Zatím žádné úlohy protokolu.',
   'Recent Agent tests · newest first': 'Poslední testy Agenta · od nejnovějších',
   '{kind} · attempt {attempt}': '{kind} · pokus {attempt}',

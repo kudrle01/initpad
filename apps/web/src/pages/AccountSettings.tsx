@@ -2,6 +2,7 @@ import { PageHeader } from '@/components/molecules/PageHeader';
 import { EmailVerificationSettings } from '@/components/organisms/settings/EmailVerificationSettings';
 import { GitAccessSettings } from '@/components/organisms/settings/GitAccessSettings';
 import { GitHubIntegrationSettings } from '@/components/organisms/settings/GitHubIntegrationSettings';
+import { PlatformCertificateSettings } from '@/components/organisms/settings/PlatformCertificateSettings';
 import { SessionsSettings } from '@/components/organisms/settings/SessionsSettings';
 import { t } from '@/i18n';
 
@@ -17,6 +18,7 @@ export default function AccountSettings() {
         <GitAccessSettings />
         <GitHubIntegrationSettings />
         <SessionsSettings />
+        <PlatformCertificateSettings />
       </div>
     </div>
   );

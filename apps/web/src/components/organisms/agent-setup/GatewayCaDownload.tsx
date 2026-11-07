@@ -1,15 +1,10 @@
 import { Download, ShieldCheck } from 'lucide-react';
 import { CopyField } from '@/components/molecules/CopyField';
-import { Disclosure } from '@/components/molecules/Disclosure';
+import { CaInstallSteps, formatFingerprint } from '@/components/molecules/CaInstallSteps';
 import { Button } from '@/components/ui/button';
 import { gatewayDomainOf } from '@/lib/agent-install-command';
 import { t } from '@/i18n';
 import type { Target } from '@/types';
-
-/** `ab12…` → `AB:12:…`, the form `openssl` and browsers show. */
-export function formatFingerprint(sha256: string): string {
-  return (sha256.toUpperCase().match(/.{2}/g) ?? []).join(':');
-}
 
 // Where a browser's user gets the gateway CA of a managed-gateway target, with
 // the fingerprint the Agent reported so the downloaded file can be checked.
@@ -56,30 +51,7 @@ export function GatewayCaDownload({ target }: { target: Target }) {
           )}
         </p>
       )}
-      <Disclosure summary={t('How to install the certificate')} className="mt-2">
-        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-          <li>
-            {t(
-              'Windows: open the file → Install Certificate → Local Machine → Trusted Root Certification Authorities.',
-            )}
-          </li>
-          <li>
-            {t(
-              'macOS: double-click the file, add it to Keychain Access (System) and set it to Always Trust.',
-            )}
-          </li>
-          <li>
-            {t(
-              'Firefox: Settings → Privacy & Security → View Certificates → Authorities → Import.',
-            )}
-          </li>
-          <li>
-            {t(
-              'Check the fingerprint: openssl x509 -in initpad-gateway-ca.crt -noout -fingerprint -sha256',
-            )}
-          </li>
-        </ul>
-      </Disclosure>
+      <CaInstallSteps fileName="initpad-gateway-ca.crt" className="mt-2" />
     </div>
   );
 }

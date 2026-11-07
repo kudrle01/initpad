@@ -13,6 +13,11 @@ export interface AgentPrivateCa {
   path: string;
   /** SHA-256 of the exact certificate bytes; the command verifies it. */
   sha256: string;
+  /**
+   * SHA-256 of the certificate itself (DER), the fingerprint browsers and
+   * `openssl x509 -fingerprint` show. People compare it before trusting the CA.
+   */
+  fingerprintSha256: string;
   /** Registry the Agent server's Docker daemon pulls images from. */
   registryHost: string;
 }
@@ -34,6 +39,14 @@ type StaticMetadata = Omit<AgentDistributionMetadata, 'privateCa'>;
 interface DistributionArtifacts {
   installer: Buffer;
   metadata: StaticMetadata;
+}
+
+/** SHA-256 of the first PEM certificate's DER bytes, in lower-case hex. */
+function certificateFingerprint(pem: string): string {
+  const body = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(pem)?.[1];
+  if (!body) throw new Error('The private CA file must contain only a PEM certificate');
+  const der = Buffer.from(body.replace(/\s+/g, ''), 'base64');
+  return createHash('sha256').update(der).digest('hex');
 }
 
 /**
@@ -59,6 +72,7 @@ async function readPrivateCa(): Promise<AgentPrivateCa | null> {
   return {
     path: PRIVATE_CA_PATH,
     sha256: createHash('sha256').update(certificate).digest('hex'),
+    fingerprintSha256: certificateFingerprint(text),
     registryHost: config.registry.host,
   };
 }

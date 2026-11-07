@@ -106,6 +106,9 @@ a s aplikacemi nasazenými přímo na tento host (viz
      stáhnout ještě bez varování prohlížeče; otisk ověřte podle výpisu
      instalátoru),
    - soubor na serveru: `deploy/.runtime/tls/initpad-root-ca.crt`,
+   - v GUI: **Account settings → Platform certificate** nabídne soubor
+     ke stažení, otisk SHA-256 ve tvaru, jaký ukazuje prohlížeč, a návod pro
+     Windows, macOS a Firefox. Stejný certifikát pokryje InitPad i Giteu,
    - v doméně Windows jej rozdejte skupinovou politikou: *Computer
      Configuration → Policies → Windows Settings → Security Settings → Public
      Key Policies → Trusted Root Certification Authorities*.
