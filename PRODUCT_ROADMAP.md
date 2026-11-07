@@ -318,6 +318,15 @@ Jde o budoucí práci mimo rozsah diplomové práce.
       digestech z podepsaného manifestu a `./saas-acceptance.sh dependencies`
       prošla se 73 migracemi a round-tripem úložiště. Funkce přidané od 0.2.24
       naživo cíleně ověřeny nejsou.
+    - Týž den staging přešel přes release 0.2.31 na release 0.2.32 s Agentem
+      0.16.0; nové migrace ani proměnné nepřibyly, mění se jen image a
+      `INITPAD_PLATFORM_VERSION`. Na 0.2.31 se ukázaly dvě vady, které opravuje
+      0.2.32 (ADR-169): otevřená záložka po nasazení selhala na chunku
+      starého buildu a postranní panel ukazoval 0.2.24, protože runbook
+      neměnil `INITPAD_PLATFORM_VERSION`. Veřejný origin teď vrací pro
+      `index.html` hlavičku `Cache-Control: no-cache` a readiness hlásí
+      databázi i úložiště artefaktů jako dostupné. Automatické obnovení
+      záložky se naživo projeví až při přechodu z 0.2.32 na další release.
 - [x] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
   - [x] Uzamknout podporovanou SaaS proxy cestu na veřejný edge/WAF, loopback

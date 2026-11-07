@@ -37,6 +37,9 @@ na stagingu běží; alerty a telemetry-gap acceptance zatím neproběhly.
 Dne 7. listopadu 2026 staging přešel z releasu 0.2.24 na release 0.2.30
 s Agentem 0.16.0 postupem z [aktualizace na nový release](#aktualizace-na-nový-release).
 Migrace se aplikovala, oba kontejnery jsou zdravé a kontrola závislostí prošla.
+Týž den staging přešel přes 0.2.31 na 0.2.32, který je na něm aktuálně
+nasazený. Od 0.2.32 `saas-check.sh` odmítne `INITPAD_PLATFORM_VERSION`, která
+neodpovídá checkoutu, a `index.html` se neukládá do cache (ADR-169).
 
 ## Účty a hodnoty
 
