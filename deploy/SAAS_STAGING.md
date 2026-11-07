@@ -34,6 +34,10 @@ sběr JSON logů kontejnerů, pravidla alertů a kontrolu edge. Egress firewall 
 kontrola edge prošly na stagingu s releasem 0.2.19 dne 25. října 2026. Sběr logů
 na stagingu běží; alerty a telemetry-gap acceptance zatím neproběhly.
 
+Dne 7. listopadu 2026 staging přešel z releasu 0.2.24 na release 0.2.30
+s Agentem 0.16.0 postupem z [aktualizace na nový release](#aktualizace-na-nový-release).
+Migrace se aplikovala, oba kontejnery jsou zdravé a kontrola závislostí prošla.
+
 ## Účty a hodnoty
 
 Každý účet zakládá provozovatel. Hodnoty označené jako secret patří pouze do
@@ -171,6 +175,80 @@ roota, proto jej Compose ani preflight pod jiným uživatelem nepřečtou.
 
 5. Pokračujte kontrolou závislostí a dalšími kroky ze
    [SAAS_ACCEPTANCE.md](./SAAS_ACCEPTANCE.md).
+
+## Aktualizace na nový release
+
+SaaS profil nemá Supervisor ani aktualizaci z administrace. Staging se na nový
+release převádí ručně výměnou immutable referencí v env souboru. Secrety,
+tunel ani collector se při tom nemění.
+
+1. Na vlastním počítači ověřte distribuci platformy i Agenta a vypište nové
+   reference z podepsaných manifestů:
+
+   ```bash
+   npm run audit:public-release -- --tag initpad-vX.Y.Z
+   npm run audit:public-release -- --tag agent-vA.B.C
+   gh release download initpad-vX.Y.Z -p initpad-platform-release.json -O - \
+     | jq -r '.images.api.immutableReference, .images.web.immutableReference'
+   gh release download agent-vA.B.C -p initpad-agent-release.json -O - \
+     | jq -r '.image.immutableReference'
+   ```
+
+   Kandidáta s příznakem prerelease ověříte přepínačem `--allow-prerelease`.
+   Doporučenou verzi Agenta uvádí `deploy/agent-release.env` v tagu platformy.
+
+2. Na hostu si poznamenejte běžící verzi, kvůli záznamu i případnému návratu:
+
+   ```bash
+   git describe --tags
+   grep '^INITPAD_.*_IMAGE=' /secure/runtime/initpad-saas.env
+   ```
+
+3. Přepněte checkout na nový tag a zkontrolujte, co se změnilo v profilu,
+   příkladu env souboru a kitu stagingu:
+
+   ```bash
+   git fetch --tags
+   git diff <běžící tag> initpad-vX.Y.Z --stat -- .env.saas.example saas.compose.yml staging
+   git checkout initpad-vX.Y.Z
+   ```
+
+   Obraz webu a `saas.compose.yml` musí pocházet ze stejného releasu. Nové
+   proměnné z `.env.saas.example` doplňte do env souboru, nové secrety do
+   Infisicalu podle tabulky výše.
+
+4. V `/secure/runtime/initpad-saas.env` nahraďte `INITPAD_API_IMAGE`,
+   `INITPAD_WEB_IMAGE` a `INITPAD_AGENT_IMAGE` referencemi z prvního kroku a
+   spusťte preflight a control plane:
+
+   ```bash
+   ./saas-check.sh /secure/runtime/initpad-saas.env
+   docker compose --env-file /secure/runtime/initpad-saas.env -f saas.compose.yml up -d
+   ```
+
+   Compose vytvoří znovu jen kontejnery se změněnou konfigurací. API před
+   přijetím provozu aplikuje verzované migrace příkazem `prisma migrate deploy`.
+   Pokud diff ze třetího kroku ukázal změnu v `staging/`, zopakujte také
+   příslušný příkaz pro edge, collector nebo egress firewall.
+
+5. Ověřte stav kontejnerů, migraci a závislosti:
+
+   ```bash
+   docker compose --env-file /secure/runtime/initpad-saas.env -f saas.compose.yml ps
+   docker compose --env-file /secure/runtime/initpad-saas.env -f saas.compose.yml logs api | grep -i migrat
+   ./saas-acceptance.sh dependencies /secure/runtime/initpad-saas.env
+   ```
+
+   Oba kontejnery musí být `healthy` a veřejný `https://<origin>/api/health/ready`
+   musí potvrdit databázi i úložiště artefaktů.
+
+6. Do `docs/RELEASE_READINESS.md` nebo roadmapy zapište datum, původní a novou
+   verzi a výsledek kontrol, bez secretů.
+
+Release kanál přijímá pouze expand/contract migrace kompatibilní s předchozím
+obrazem. Při selhání proto stačí vrátit předchozí tag checkoutu a předchozí
+reference v env souboru a znovu spustit `up -d`. Databázi tím nevrátíte; na
+disposable stagingu ji v krajním případě obnovte ze snapshotu Supabase.
 
 ## Dashboard v Grafaně
 

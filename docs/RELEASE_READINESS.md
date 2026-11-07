@@ -1,8 +1,8 @@
 # Release readiness a známá omezení
 
 Release baseline tohoto dokumentu je doporučený Agent 0.16.0, odmítnuté
-release 0.13.0 a 0.14.0 a nejnovější vydaná platforma `initpad-v0.2.29`.
-Agent 0.16.0 a platforma 0.2.29 prošly anonymním auditem, ale ne živou
+release 0.13.0 a 0.14.0 a nejnovější vydaná platforma `initpad-v0.2.30`.
+Agent 0.16.0 a platforma 0.2.30 prošly anonymním auditem, ale ne živou
 candidate acceptance; poslední živě přijatá platforma je `initpad-v0.2.24`.
 Ta 6. listopadu 2026 prošla živou candidate acceptance (aktualizace z 0.2.23
 tlačítkem **Install update** se zachováním dat a workloadů), byla bez
@@ -254,6 +254,7 @@ npm run audit:public-release -- --tag initpad-v0.2.10
 npm run audit:public-release -- --tag initpad-v0.2.23
 npm run audit:public-release -- --tag initpad-v0.2.24
 npm run audit:public-release -- --tag initpad-v0.2.29
+npm run audit:public-release -- --tag initpad-v0.2.30
 npm run audit:public-release -- --tag agent-v0.14.2
 npm run audit:public-release -- --tag agent-v0.14.3
 npm run audit:public-release -- --tag agent-v0.16.0
