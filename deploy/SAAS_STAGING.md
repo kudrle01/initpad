@@ -34,6 +34,10 @@ sběr JSON logů kontejnerů, pravidla alertů a kontrolu edge. Egress firewall 
 kontrola edge prošly na stagingu s releasem 0.2.19 dne 25. října 2026. Sběr logů
 na stagingu běží; alerty a telemetry-gap acceptance zatím neproběhly.
 
+Dne 7. listopadu 2026 staging přešel z releasu 0.2.24 na release 0.2.30
+s Agentem 0.16.0 postupem z [aktualizace na nový release](#aktualizace-na-nový-release).
+Migrace se aplikovala, oba kontejnery jsou zdravé a kontrola závislostí prošla.
+
 ## Účty a hodnoty
 
 Každý účet zakládá provozovatel. Hodnoty označené jako secret patří pouze do
