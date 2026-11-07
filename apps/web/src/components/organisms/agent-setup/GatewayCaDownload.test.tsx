@@ -4,7 +4,8 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Target } from '@/types';
-import { GatewayCaDownload, formatFingerprint } from './GatewayCaDownload';
+import { formatFingerprint } from '@/components/molecules/CaInstallSteps';
+import { GatewayCaDownload } from './GatewayCaDownload';
 
 afterEach(cleanup);
 

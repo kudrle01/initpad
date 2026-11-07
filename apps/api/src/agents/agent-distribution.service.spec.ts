@@ -5,6 +5,19 @@ import { join } from 'node:path';
 import { config } from '../config';
 import { AgentDistributionService } from './agent-distribution.service';
 
+// Public half of a throwaway self-signed root; its key was never kept.
+const TEST_ROOT_CA = `-----BEGIN CERTIFICATE-----
+MIIBbTCCARKgAwIBAgIUFkqhp7bScIYp8O/MmNAkqFz1i5swCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRSW5pdFBhZCBUZXN0IFJvb3QwHhcNMjYxMTA3MTgwNzEzWhcN
+MzYxMTA0MTgwNzEzWjAcMRowGAYDVQQDDBFJbml0UGFkIFRlc3QgUm9vdDBZMBMG
+ByqGSM49AgEGCCqGSM49AwEHA0IABLXIWhKs9NYYebkPvIKcFxid/cyRP4aHODdU
+4iLqO37o8PfuZsBDb6Nd0B64ua0fikozJiKctpwhUrFahy/ttV+jMjAwMB0GA1Ud
+DgQWBBTzz/pkbB4rUHYBK45WcRDi35YZnjAPBgNVHRMBAf8EBTADAQH/MAoGCCqG
+SM49BAMCA0kAMEYCIQDqgKzySIilHZPNFkuz6V5Jpb4v2lm+uUZlQOxrNuCLCgIh
+AMSqHfeH4SEr+9RS8RYdgNcHc5s2sROuZoeEmxSPeJDi
+-----END CERTIFICATE-----
+`;
+
 describe('AgentDistributionService', () => {
   const originalDistribution = { ...config.agentDistribution };
   const originalRegistryHost = config.registry.host;
@@ -42,8 +55,24 @@ describe('AgentDistributionService', () => {
     expect((await service.metadata()).privateCa).toEqual({
       path: '/initpad-ca.crt',
       sha256: createHash('sha256').update(certificate).digest('hex'),
+      fingerprintSha256: createHash('sha256').update(Buffer.from('MIIB', 'base64')).digest('hex'),
       registryHost: 'git.lab.example',
     });
+  });
+
+  it('reports the fingerprint browsers show, which hashes the DER bytes', async () => {
+    // A real self-signed root, so the value can be compared with Node's parser.
+    const { X509Certificate } = await import('node:crypto');
+    const file = join(dir, 'initpad-root-ca.crt');
+    config.agentDistribution.privateCaFile = file;
+    writeFileSync(file, TEST_ROOT_CA);
+
+    const ca = (await new AgentDistributionService().metadata()).privateCa;
+
+    expect(ca?.fingerprintSha256).toBe(
+      new X509Certificate(TEST_ROOT_CA).fingerprint256.replace(/:/g, '').toLowerCase(),
+    );
+    expect(ca?.fingerprintSha256).not.toBe(ca?.sha256);
   });
 
   it('refuses to publish anything but a public certificate', async () => {

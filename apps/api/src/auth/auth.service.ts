@@ -45,6 +45,8 @@ export interface SessionUser {
   edition: 'self-hosted' | 'saas';
   // Base URL of the user guide, or null when the instance does not link one.
   docsUrl: string | null;
+  // Running platform release, shown in the web app's sidebar.
+  platformVersion: string;
   // True while the account must set a new password before doing anything else
   // (admin-provisioned temporary credentials, post-reset). The web app uses it
   // to route the user straight to the change-password screen.
@@ -796,6 +798,7 @@ export class AuthService implements OnModuleInit {
       platformRole: user.platformRole === 'admin' ? 'admin' : 'user',
       edition: config.edition,
       docsUrl: config.docs.url || null,
+      platformVersion: config.updates.platformVersion,
       mustChangePassword: user.mustChangePassword === true,
       emailVerified: user.emailVerifiedAt != null,
     };

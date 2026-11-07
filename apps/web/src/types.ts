@@ -8,6 +8,8 @@ export interface User {
   edition: 'self-hosted' | 'saas';
   // Base URL of the user guide; null when the instance links none.
   docsUrl: string | null;
+  // Running platform release, e.g. "0.2.31". Absent from an older API.
+  platformVersion?: string;
   // Set while the account must choose a new password before doing anything else
   // (admin-provisioned temporary credentials, post-reset).
   mustChangePassword: boolean;
@@ -272,6 +274,8 @@ export interface AgentDistribution {
   privateCa: {
     path: string;
     sha256: string;
+    /** SHA-256 of the certificate (DER), as browsers and openssl show it. */
+    fingerprintSha256?: string;
     registryHost: string;
   } | null;
 }

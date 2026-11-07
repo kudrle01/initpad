@@ -212,6 +212,27 @@ function Navigation({ user, onNavigate }: { user: User; onNavigate?: () => void 
   );
 }
 
+// Release in the sidebar footer, the usual place to answer "which version is
+// this?" in a bug report. Administrators reach the update card from it.
+export function PlatformVersion({ user, onNavigate }: { user: User; onNavigate?: () => void }) {
+  if (!user.platformVersion) return null;
+  const label = t('InitPad {version}', { version: user.platformVersion });
+  const className =
+    'block w-fit rounded px-2 pb-0.5 pt-1 text-[11px] leading-4 text-muted-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40';
+  return user.platformRole === 'admin' ? (
+    <Link
+      to="/admin"
+      onClick={onNavigate}
+      className={cn(className, 'hover:text-foreground')}
+      title={t('Platform version and updates')}
+    >
+      {label}
+    </Link>
+  ) : (
+    <p className={className}>{label}</p>
+  );
+}
+
 function UserMenu({
   user,
   onLogout,
@@ -315,6 +336,7 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
             <Navigation user={user} onNavigate={() => setMobileOpen(false)} />
             <div className="border-t border-border/70 p-2">
               <UserMenu user={user} onLogout={onLogout} onNavigate={() => setMobileOpen(false)} />
+              <PlatformVersion user={user} onNavigate={() => setMobileOpen(false)} />
             </div>
           </DialogContent>
         </Dialog>
@@ -330,6 +352,7 @@ export function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }
         <Navigation user={user} />
         <div className="border-t border-border/70 p-2">
           <UserMenu user={user} onLogout={onLogout} />
+          <PlatformVersion user={user} />
         </div>
       </aside>
 

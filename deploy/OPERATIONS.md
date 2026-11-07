@@ -266,7 +266,8 @@ cílové topologii projít před schválením active-active mutačního provozu.
   jej Docker démonu hostu (`/etc/docker/certs.d/<git>/ca.crt`) i CI démonu
   pro jméno Gitu a Caddy jej nabízí na `http://<platforma>/initpad-ca.crt`.
   Klienti jej nainstalují jako důvěryhodný kořen (ve Windows doméně přes
-  GPO); otisk SHA-256 vypisuje instalátor. Postup pro Agent servery je
+  GPO); otisk SHA-256 vypisuje instalátor a soubor s otiskem nabízí i GUI
+  v **Account settings → Platform certificate** (ADR-168). Postup pro Agent servery je
   v [README](./README.md#instalace-na-server).
 - **Změna domény nebo režimu:** `./install.sh --reconfigure`. Instalátor
   znovu sladí SSO, registraci CI runneru i důvěru v CA.
