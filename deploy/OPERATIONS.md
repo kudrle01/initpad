@@ -553,7 +553,12 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
   kontejnery, volumes, image i build cache. `INITPAD_RUNNER_CAPACITY` proto
   musí být `1`; instalace s vyšší hodnotou ji musí v `deploy/.env` vrátit na
   `1` a znovu spustit `./install.sh`.
-- Každý job si znovu načte job image. Image z Docker Hubu dodává lokální cache
+- Job image se nestahuje, ale načítá se z lokálního seedu (ADR-170): `install.sh`
+  ho při každé instalaci a updatu staví službou `runner-seed` do volume
+  `runner-docker-seed` (asi 0,6 GB) a `runner-docker` ho po každém resetu načte
+  jen pro čtení. Log `runner-docker` ukáže `CI image seed loaded`. Když seed
+  chybí nebo se nenačte, jobu se přidají minuty na stažení image; oprava je
+  znovu `./install.sh`. Ostatní image z Docker Hubu dodává lokální cache
   `runner-image-cache` (volume `initpad_runner-image-cache`, obsah vyprší po 7
   dnech), takže se opakovaně nestahují z internetu. Do cache nikdo nemůže
   zapisovat. Počítej s ní v místě na disku (job image má asi 0,5 GB).
@@ -585,6 +590,10 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
   erased daemon`. Hláška `previous CI daemon state could not be erased` znamená,
   že daemon odmítl start s daty předchozího jobu; zkontroluj místo na disku a
   `docker compose logs runner-docker`.
+- **Příprava jobu trvá minuty:** `docker compose logs runner-docker | grep seed`.
+  Hláška `could not be loaded` nebo žádná znamená chybějící seed; spusť
+  `./install.sh` (nebo `docker compose --profile runner run --rm runner-seed`)
+  a zkontroluj, že server dosáhne na Docker Hub.
 - **Druhý projekt čeká:** při kapacitě 1 je to backpressure, ne konflikt.
   První commit má `running`, druhý `awaiting CI`; jakmile aktivní job uvolní
   slot, runner si sám převezme další. Pokud oba zůstanou čekat, zkontroluj

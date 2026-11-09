@@ -362,6 +362,46 @@ services:
     pids_limit: 128
     restart: unless-stopped
 
+  # The seed volume is written by runner-seed as the rootless user (uid 1000).
+  runner-seed-init:
+    image: alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+    profiles: ['runner']
+    command: ['chown', '1000:1000', '/seed']
+    volumes:
+      - runner-docker-seed:/seed
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    restart: 'no'
+
+  # One-shot image seed for the CI daemons (ADR-170). install.sh runs it on
+  # every install and update; it pulls deploy/runner/seed-images by digest on a
+  # throw-away daemon and saves them to runner-docker-seed. It runs no job code,
+  # and runner-docker mounts the result read-only, so a job cannot change it.
+  runner-seed:
+    image: docker:27.5.1-dind-rootless@sha256:e2ac8e8f66ae21a060b0a8e3005c70f6ed9441aabf409434463d1f6eecd38026
+    profiles: ['runner']
+    privileged: true
+    init: true
+    entrypoint: ['/bin/sh', '/opt/initpad-runner/ci-seed.sh']
+    environment:
+      DOCKER_TLS_CERTDIR: ''
+      DOCKER_HOST: tcp://127.0.0.1:2375
+    volumes:
+      - ./runner:/opt/initpad-runner:ro
+      - runner-docker-seed:/seed
+    depends_on:
+      runner-seed-init: { condition: service_completed_successfully }
+    # Not on ci-control: a running job must not reach this daemon's API, or it
+    # could place its own image in the seed before it is saved.
+    networks: [runner-seed]
+    mem_limit: ${INITPAD_RUNNER_MEMORY_LIMIT:-1536m}
+    cpus: ${INITPAD_RUNNER_CPU_LIMIT:-1.0}
+    pids_limit: ${INITPAD_RUNNER_PIDS_LIMIT:-512}
+    restart: 'no'
+
   # Dedicated rootless Docker daemon for untrusted CI jobs. It is privileged
   # only inside this container so rootless Docker can create namespaces; the
   # physical host socket and filesystem are never mounted into a workflow.
@@ -401,6 +441,8 @@ services:
       - ./.runtime/tls:/opt/initpad-tls:ro
       - runner-docker-data:/home/rootless/.local/share/docker
       - runner-reset:/run/initpad-ci-reset:ro
+      # Images every job needs, loaded after each reset (ADR-170). Read-only.
+      - runner-docker-seed:/opt/initpad-seed:ro
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -442,8 +484,11 @@ services:
       GITEA_RUNNER_NAME: initpad-runner
       GITEA_RUNNER_LABELS: 'ubuntu-latest:docker://catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43'
       CONFIG_FILE: /config.yaml
+      # Waited for after each daemon reset, while the seed loads (ADR-170).
+      INITPAD_CI_SEED_IMAGE: catthehacker/ubuntu:act-latest
     volumes:
       - ./.runtime/act-runner-config.yaml:/config.yaml:ro
+      - runner-docker-seed:/opt/initpad-seed:ro
       - ./runner:/opt/initpad-runner:ro
       - runner-data:/data
       - runner-reset:/run/initpad-ci-reset
@@ -536,6 +581,7 @@ volumes:
   gitea-data: {}
   runner-data: {}
   runner-docker-data: {}
+  runner-docker-seed: {}
   runner-image-cache: {}
   runner-reset: {}
   sftp-www: {}
@@ -555,6 +601,8 @@ networks:
       config:
         - subnet: 172.31.250.0/24
           gateway: 172.31.250.1
+  # Only runner-seed: outbound access to the registry, no job in reach.
+  runner-seed: {}
   net-dev: {}
   net-test: {}
   net-prod: {}
