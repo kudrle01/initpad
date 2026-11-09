@@ -42,6 +42,25 @@ fresh_daemon_after() {
   done
 }
 
+# runner-docker loads the image seed (ADR-168) right after it starts. Taking a
+# job before the load finishes would pull the same image in parallel. The
+# daemon API answers 200 once the labelled job image is present. Without a seed
+# file there is no wait. When a load fails, the wait ends at the timeout and the
+# job pulls the image as before.
+wait_for_seed() {
+  local ref=${INITPAD_CI_SEED_IMAGE:-} waited=0
+  # No seed file (never built, or an older install) means nothing will load.
+  [[ -n $ref && -s /opt/initpad-seed/images.tar ]] || return 0
+  until wget -qO /dev/null -T 5 "$daemon/images/$ref/json" 2>/dev/null; do
+    if ((waited >= ${INITPAD_CI_SEED_WAIT:-120})); then
+      echo "initpad: CI image seed not ready after ${waited}s; the job will pull its image"
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
 stopping=0
 runner=
 trap 'stopping=1; [[ -z $runner ]] || kill -TERM "$runner" 2>/dev/null || :' TERM INT
@@ -54,6 +73,7 @@ request_reset "$used"
 export GITEA_RUNNER_ONCE=1
 while ((stopping == 0)); do
   fresh_daemon_after "$used" >/dev/null
+  wait_for_seed
   started=$SECONDS
   /usr/local/bin/run.sh &
   runner=$!

@@ -47,10 +47,25 @@ trap 'kill -TERM "$daemon" 2>/dev/null || :; wait "$daemon" || :; exit 0' TERM I
 
 # The runner requests a reset by naming the daemon instance its job used. A
 # request for an earlier instance is stale and ignored.
+# The image seed (ADR-168) is a tar written by runner-seed and mounted read-only.
+# Loading it from local disk replaces the job-image pull and unpack that would
+# otherwise start every job. A failed load only costs the pull: the daemon is
+# still clean, and the runner proceeds after its own timeout.
+seed=/opt/initpad-seed/images.tar
+load_seed() {
+  [ -s "$seed" ] || return 0
+  if docker load -q -i "$seed" >/dev/null; then
+    echo 'initpad: CI image seed loaded'
+  else
+    echo 'initpad: CI image seed could not be loaded; jobs will pull their images'
+  fi
+}
+
 current=
 while kill -0 "$daemon" 2>/dev/null; do
   if [ -z "$current" ]; then
     current=$(docker info --format '{{.ID}}' 2>/dev/null) || current=
+    [ -z "$current" ] || load_seed &
   elif [ -s "$request" ] && [ "$(cat "$request")" = "$current" ]; then
     # No graceful shutdown: the state is erased on the next start, and leaving
     # the container's init kills every process the job started.

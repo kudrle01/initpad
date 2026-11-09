@@ -673,6 +673,12 @@ elif [ -f "$CA_FILE" ]; then
 fi
 
 rotate_runner_if_address_changed
+# The seed holds the job image, so a daemon that is erased after every job does
+# not pull and unpack it again for each one (ADR-168). It is rebuilt only when
+# deploy/runner/seed-images changes. A failure costs speed, not correctness.
+say "Preparing the CI image seed"
+$COMPOSE --profile runner run --rm -T runner-seed \
+  || warn "The CI image seed could not be built. Every CI job will pull its job image, which adds minutes to each build. Re-run install.sh when Docker Hub or the network is reachable."
 say "Starting the isolated CI Docker daemon"
 if [ "$ca_changed" = yes ] && [ -n "$($COMPOSE --profile runner ps -q runner-docker 2>/dev/null)" ]; then
   # The daemon copies the CA only when it starts.
