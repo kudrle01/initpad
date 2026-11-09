@@ -181,3 +181,4 @@ stabilní.
 | [ADR-167](./ADR-167.md) | Accepted | Agent udržuje TLS edge brány aktuální |
 | [ADR-168](./ADR-168.md) | Accepted | Certifikát platformy ke stažení v GUI a verze v postranním panelu |
 | [ADR-169](./ADR-169.md) | Accepted | Otevřené záložky přežijí nový release a SaaS hlásí správnou verzi |
+| [ADR-170](./ADR-170.md) | Accepted | Každý CI daemon začíná s předpřipraveným job image |

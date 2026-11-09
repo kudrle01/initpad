@@ -115,6 +115,52 @@ test('reads only the engine ID that leads the daemon info response', () => {
   assert.equal(unexpected.stdout, '');
 });
 
+test('starts every daemon with a job image seed that jobs cannot change (ADR-170)', () => {
+  const seedEntry = read('deploy/runner/ci-seed.sh');
+  const seedList = read('deploy/runner/seed-images');
+  const seed = service('runner-seed');
+  const init = service('runner-seed-init');
+  const daemon = service('runner-docker');
+  const runner = service('act_runner');
+
+  // The seed is written only by runner-seed; everything a job can reach mounts it read-only.
+  assert.match(daemon, /- runner-docker-seed:\/opt\/initpad-seed:ro\n/);
+  assert.match(runner, /- runner-docker-seed:\/opt\/initpad-seed:ro\n/);
+  assert.match(seed, /- runner-docker-seed:\/seed\n/);
+  assert.match(init, /- runner-docker-seed:\/seed\n/);
+  for (const name of ['runner-docker', 'act_runner']) {
+    assert.doesNotMatch(service(name), /- runner-docker-seed:\/seed\b/);
+  }
+  assert.match(seed, /runner-seed-init: \{ condition: service_completed_successfully \}/);
+
+  // No job can reach the seed daemon's API before the images are saved.
+  assert.match(seed, /networks: \[runner-seed\]/);
+  assert.doesNotMatch(seed, /networks: \[[^\]]*ci-control/);
+  assert.match(compose, /\n {2}runner-seed: \{\}\n/);
+
+  // The seed holds exactly the image behind the runner label, pinned by digest.
+  const refs = seedList.split('\n').filter((line) => line && !line.startsWith('#'));
+  assert.deepEqual(refs, [
+    'catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43',
+  ]);
+  for (const file of ['deploy/docker-compose.yml', 'infra/docker-compose.yml']) {
+    assert.ok(read(file).includes(`ubuntu-latest:docker://${refs[0]}`), `${file} label differs`);
+  }
+  assert.match(runner, /INITPAD_CI_SEED_IMAGE: catthehacker\/ubuntu:act-latest\n/);
+  assert.match(seedEntry, /\*:\*@sha256:\*\)/);
+
+  // The daemon loads it after it starts; the runner waits only when a seed exists.
+  assert.match(read('deploy/runner/ci-daemon.sh'), /docker load -q -i "\$seed"/);
+  assert.match(runnerEntry, /-s \/opt\/initpad-seed\/images\.tar \]\] \|\| return 0/);
+  assert.ok(
+    runnerEntry.indexOf('wait_for_seed\n') > runnerEntry.indexOf('fresh_daemon_after "$used"') &&
+      runnerEntry.indexOf('wait_for_seed\n', runnerEntry.indexOf('fresh_daemon_after "$used"')) <
+        runnerEntry.indexOf('run.sh &'),
+    'the runner must wait for the seed after the reset and before it takes a job',
+  );
+  assert.match(read('deploy/install.sh'), /run --rm -T runner-seed/);
+});
+
 test('serves CI images from a cache that jobs cannot write', () => {
   const cache = service('runner-image-cache');
   assert.match(cache, /image: registry:3\.1\.2@sha256:[0-9a-f]{64}/);

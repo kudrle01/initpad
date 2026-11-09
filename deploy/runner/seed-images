@@ -1,0 +1,7 @@
+# Images that every CI daemon starts with (ADR-170). One reference per line, as
+# repository:tag@sha256:digest. The job image must match the "ubuntu-latest"
+# label in deploy/docker-compose.yml; a contract test keeps them identical.
+# Keep this list short: the whole seed is loaded after every daemon reset, so
+# each image here adds to the start of every job, including jobs that never
+# use it. Dockerfile base images stay on the pull-through cache.
+catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43

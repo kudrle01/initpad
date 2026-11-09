@@ -516,6 +516,13 @@ export function EnvironmentPipeline({
                         {pct !== null ? ` · ${pct}%` : ''}
                       </span>
                     </div>
+                    {waitingForRunner && (
+                      <p className="text-xs text-muted-foreground/80">
+                        {t(
+                          'The runner is preparing a clean, isolated build environment. This normally takes a couple of minutes — nothing is stuck.',
+                        )}
+                      </p>
+                    )}
                     {!waitingForRunner && (
                       <div
                         role="progressbar"

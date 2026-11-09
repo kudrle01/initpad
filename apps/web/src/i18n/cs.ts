@@ -348,6 +348,8 @@ export const cs = {
   'View job log in {provider}': 'Zobrazit log úlohy v {provider}',
   'The original SCM handoff job failed. InitPad later published the same verified build successfully, so another runner was not started.':
     'Původní předávací úloha v SCM selhala. InitPad později stejný ověřený build úspěšně publikoval, takže se další runner nespouštěl.',
+  'The runner is preparing a clean, isolated build environment. This normally takes a couple of minutes — nothing is stuck.':
+    'Runner připravuje čisté, izolované prostředí pro build. Obvykle to trvá pár minut – nic není zaseknuté.',
   'Waiting for the {provider} Actions runner to pick up this commit.':
     'Čeká se, až si tento commit převezme runner {provider} Actions.',
   'CI has verified this commit. Deploy the existing build through InitPad; another runner is not required.':
