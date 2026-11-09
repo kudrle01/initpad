@@ -8,27 +8,27 @@
     "packages": [
         {
             "name": "nette/application",
-            "version": "v3.3.0",
+            "version": "v3.3.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nette/application.git",
-                "reference": "104484c317fdb1b29baf77617ca040b97685e9bb"
+                "reference": "9be740fd3f87df584271630436606cb53a9d4bb2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nette/application/zipball/104484c317fdb1b29baf77617ca040b97685e9bb",
-                "reference": "104484c317fdb1b29baf77617ca040b97685e9bb",
+                "url": "https://api.github.com/repos/nette/application/zipball/9be740fd3f87df584271630436606cb53a9d4bb2",
+                "reference": "9be740fd3f87df584271630436606cb53a9d4bb2",
                 "shasum": ""
             },
             "require": {
                 "nette/component-model": "^3.2 || ^4.0",
                 "nette/http": "^3.4",
-                "nette/routing": "^3.1.1",
+                "nette/routing": "^3.1.5",
                 "nette/utils": "^4.1",
-                "php": "8.3 - 8.5"
+                "php": "8.3 - 8.6"
             },
             "conflict": {
-                "latte/latte": "<3.1.4 || >=3.2",
+                "latte/latte": "<3.1.5 || >=3.2",
                 "nette/caching": "<3.2",
                 "nette/di": "<3.2",
                 "nette/forms": "<3.2",
@@ -78,31 +78,24 @@
                 {
                     "name": "David Grudl",
                     "homepage": "https://davidgrudl.com"
-                },
-                {
-                    "name": "Nette Community",
-                    "homepage": "https://nette.org/contributors"
                 }
             ],
-            "description": "🏆 Nette Application: a full-stack component-based MVC kernel for PHP that helps you write powerful and modern web applications. Write less, have cleaner code and your work will bring you joy.",
-            "homepage": "https://nette.org",
+            "description": "🏆 Nette Application: the heart of Nette, a component-based MVC framework. Presenters, components that keep their own state, AJAX snippets, and security built in.",
+            "homepage": "https://doc.nette.org/application",
             "keywords": [
-                "Forms",
-                "component-based",
-                "control",
-                "framework",
+                "ajax",
+                "components",
                 "mvc",
                 "mvp",
                 "nette",
                 "presenter",
-                "routing",
-                "seo"
+                "web framework"
             ],
             "support": {
                 "issues": "https://github.com/nette/application/issues",
-                "source": "https://github.com/nette/application/tree/v3.3.0"
+                "source": "https://github.com/nette/application/tree/v3.3.1"
             },
-            "time": "2026-06-29T19:05:48+00:00"
+            "time": "2026-11-05T23:18:56+00:00"
         },
         {
             "name": "nette/bootstrap",
@@ -196,21 +189,21 @@
         },
         {
             "name": "nette/component-model",
-            "version": "v4.0.1",
+            "version": "v4.0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nette/component-model.git",
-                "reference": "b4e82e1a3a7ca6f66ce766704aa2e148de277276"
+                "reference": "ad4d3f27b6a69157475a781b17d68e7f5ec39184"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nette/component-model/zipball/b4e82e1a3a7ca6f66ce766704aa2e148de277276",
-                "reference": "b4e82e1a3a7ca6f66ce766704aa2e148de277276",
+                "url": "https://api.github.com/repos/nette/component-model/zipball/ad4d3f27b6a69157475a781b17d68e7f5ec39184",
+                "reference": "ad4d3f27b6a69157475a781b17d68e7f5ec39184",
                 "shasum": ""
             },
             "require": {
                 "nette/utils": "^4.1",
-                "php": "8.3 - 8.5"
+                "php": "8.3 - 8.6"
             },
             "require-dev": {
                 "nette/phpstan-rules": "^1.0",
@@ -243,23 +236,21 @@
                 {
                     "name": "David Grudl",
                     "homepage": "https://davidgrudl.com"
-                },
-                {
-                    "name": "Nette Community",
-                    "homepage": "https://nette.org/contributors"
                 }
             ],
-            "description": "⚛ Nette Component Model",
-            "homepage": "https://nette.org",
+            "description": "🧩 Nette Component Model: the tree of named components that presenters, controls and forms in Nette are built on.",
+            "homepage": "https://doc.nette.org/component-model",
             "keywords": [
+                "component tree",
                 "components",
+                "composite",
                 "nette"
             ],
             "support": {
                 "issues": "https://github.com/nette/component-model/issues",
-                "source": "https://github.com/nette/component-model/tree/v4.0.1"
+                "source": "https://github.com/nette/component-model/tree/v4.0.2"
             },
-            "time": "2026-06-21T23:31:36+00:00"
+            "time": "2026-10-27T01:42:42+00:00"
         },
         {
             "name": "nette/di",
