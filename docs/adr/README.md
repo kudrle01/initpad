@@ -183,3 +183,4 @@ stabilní.
 | [ADR-169](./ADR-169.md) | Accepted | Otevřené záložky přežijí nový release a SaaS hlásí správnou verzi |
 | [ADR-170](./ADR-170.md) | Accepted | Každý CI daemon začíná s předpřipraveným job image |
 | [ADR-171](./ADR-171.md) | Accepted | CI joby berou akce ze zrcadel v Gitee |
+| [ADR-172](./ADR-172.md) | Accepted | Pracovní soubory deploye API leží na disku |

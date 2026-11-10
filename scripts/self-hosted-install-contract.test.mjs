@@ -263,3 +263,15 @@ test('enables the CI action mirror only after verifying it (ADR-171)', () => {
       installer.indexOf('say "Starting the CI runner"'),
   );
 });
+
+test('keeps API deployment working files on disk, not in tmpfs (ADR-172)', () => {
+  const compose = readFileSync(resolve(root, 'deploy/docker-compose.yml'), 'utf8');
+  const api = compose.slice(compose.indexOf('\n  api:\n'), compose.indexOf('\n  web:\n'));
+  const backup = readFileSync(resolve(root, 'deploy/backup.sh'), 'utf8');
+
+  assert.match(api, /^ {6}TMPDIR: \/var\/lib\/initpad-work$/m);
+  assert.match(api, /^ {6}- api-work:\/var\/lib\/initpad-work$/m);
+  assert.match(compose, /^ {2}api-work: \{\}$/m);
+  // Exported image archives are disposable and may be large.
+  assert.doesNotMatch(backup, /api-work/);
+});
