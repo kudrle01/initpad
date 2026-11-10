@@ -242,11 +242,10 @@ test('mirrors every action the workflow templates use (ADR-171)', () => {
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#')),
   );
-  const templates = spawnSync(
-    'bash',
-    ['-c', 'cat templates/*/files/.gitea/workflows/*.yml'],
-    { cwd: root, encoding: 'utf8' },
-  ).stdout;
+  const templates = spawnSync('bash', ['-c', 'cat templates/*/files/.gitea/workflows/*.yml'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).stdout;
   const used = [...templates.matchAll(/uses: *([\w.-]+\/[\w.-]+)@/g)].map((match) => match[1]);
   assert.ok(used.length > 0);
   for (const action of used) assert.ok(listed.has(action), `${action} is not mirrored`);

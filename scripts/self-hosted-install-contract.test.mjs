@@ -205,9 +205,7 @@ test('sets aside a signed release older than the checkout', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.override, 'services: {}\n');
   assert.match(result.stderr, /0\.2\.14 is older than this checkout \(0\.2\.33\)/);
-  assert.ok(
-    readdirSync(result.work).includes('platform-release.override.yml.superseded-0.2.14'),
-  );
+  assert.ok(readdirSync(result.work).includes('platform-release.override.yml.superseded-0.2.14'));
 });
 
 test('refuses a checkout older than the installed signed release', () => {
@@ -237,7 +235,7 @@ test('discards a CI runner registration unknown to a recreated Gitea', () => {
   assert.match(rotation, /WHERE uuid='\$runner_uuid'/);
   assert.match(rotation, /\*\[!0-9a-f-\]\*\) fail/);
   assert.ok(
-    rotation.indexOf('stop act_runner') < rotation.indexOf("rm -f /data/.runner"),
+    rotation.indexOf('stop act_runner') < rotation.indexOf('rm -f /data/.runner'),
     'the runner must stop before its registration is removed',
   );
 });
