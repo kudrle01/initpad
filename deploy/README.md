@@ -264,9 +264,22 @@ alerty a incident acceptance popsané v
   povolí síti CI runneru porty 80 a 443 na serveru (`sudo ufw status`).
 - **`database volume was initialized with a different password`:** existuje
   starší volume `pgdata`, ale `.env` byl vygenerován znovu. Pro nový začátek
-  spusťte `docker compose down -v && rm .env && ./install.sh`; příkaz odstraní
-  všechna data platformy. Alternativně vraťte `INITPAD_DB_PASSWORD` na původní
-  hodnotu.
+  spusťte `./reset.sh && ./install.sh`; příkaz odstraní všechna data platformy
+  včetně volume runneru. Samotné `docker compose down -v` vynechá služby
+  z profilů `runner` a `server` a jejich volume nechá. Alternativně vraťte
+  `INITPAD_DB_PASSWORD` na původní hodnotu.
+- **`The installed signed release … is older than this checkout`:** platforma
+  byla dříve aktualizována přes Supervisor a checkout je mezitím novější.
+  Instalátor starý release descriptor odloží vedle souboru jako
+  `.superseded-<verze>` a platformu postaví z checkoutu. Je-li naopak checkout
+  starší než release, instalátor skončí a vypíše tag, na který checkout přepnout.
+- **Runner hlásí `unregistered runner`:** volume runneru přežilo novou Giteu.
+  `./install.sh` registraci, kterou Gitea nezná, odstraní a runner se
+  zaregistruje znovu.
+- **`CI jobs keep fetching their actions from github.com`:** instalátor nemohl
+  vytvořit nebo ověřit zrcadla akcí ze `runner/actions-mirror` (ADR-171). CI
+  funguje dál, jen každý job stahuje akce z GitHubu. Spusťte `./install.sh`
+  znovu, až bude github.com dostupný.
 - **Registrace SSO selže s `no such host: api`:** kontejner API neběží. Spusťte
   znovu `./install.sh`; SSO se registruje až po dosažení healthy stavu API.
 - **Varování platformy fake-sftp na Apple Silicon:** image existuje pouze pro

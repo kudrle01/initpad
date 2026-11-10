@@ -11,7 +11,7 @@
 #                           explicitly adopt the current reviewed Agent release
 #
 # Idempotent: safe to re-run. Requires Docker with the compose plugin.
-# Fully fresh start: docker compose down -v && rm .env && ./install.sh
+# Fully fresh start: ./reset.sh && ./install.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -352,6 +352,32 @@ printf '%s\n' "$platform_version" | \
   fail "deploy/platform-version.json contains an invalid version."
 set_env INITPAD_PLATFORM_VERSION "$platform_version"
 
+# A signed release installed by the Supervisor pins its own images, while
+# Compose reads docker-compose.yml from this checkout. After `git pull` they
+# describe different versions, and a newer Compose file would start older
+# images it was not written for (an older web image cannot run read-only, for
+# example). The source checkout is what the operator just updated, so it wins;
+# a checkout older than the installed release is refused instead.
+release_version=$(sed -n 's/^ *INITPAD_PLATFORM_VERSION: *"\{0,1\}\([0-9][0-9.]*\)"\{0,1\} *$/\1/p' \
+  "$runtime_override" | head -n 1)
+if [ -n "$release_version" ] && [ "$release_version" != "$platform_version" ]; then
+  newest=$(printf '%s\n%s\n' "$release_version" "$platform_version" |
+    sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
+  if [ "$newest" = "$platform_version" ]; then
+    superseded="$runtime_override.superseded-$release_version"
+    cp -p "$runtime_override" "$superseded"
+    printf 'services: {}\n' > "$runtime_override"
+    chmod 600 "$runtime_override"
+    warn "The installed signed release $release_version is older than this checkout ($platform_version).
+  The platform is now built from this checkout; the release descriptor was kept in
+  deploy/$superseded."
+  else
+    fail "The installed signed release $release_version is newer than this checkout ($platform_version).
+Switch the checkout to that release and re-run ./install.sh:
+  git fetch --tags && git switch --detach initpad-v$release_version"
+  fi
+fi
+
 # A normal self-hosted installation should immediately offer the reviewed,
 # checksum-verified Agent installer. Preserve a complete operator override,
 # but populate blank fresh/legacy environments from the versioned release pair.
@@ -443,7 +469,7 @@ Then re-run ./install.sh."
 # row is removed while Gitea is stopped, which also invalidates the old runner
 # authentication token; no credential is ever printed by this migration.
 rotate_runner_if_address_changed() {
-  local desired state stored runner_id runner_name deleted
+  local desired state stored runner_id runner_name runner_uuid known deleted
   desired=$(get_env INITPAD_GITEA_RUNNER_URL)
   desired=${desired:-http://host.docker.internal:3001}
   desired=${desired%/}
@@ -452,12 +478,34 @@ rotate_runner_if_address_changed() {
     "test ! -f /data/.runner || sed -n \
       's/.*\"id\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/id=\1/p;
        s/.*\"name\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/name=\1/p;
+       s/.*\"uuid\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/uuid=\1/p;
        s/.*\"address\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/address=\1/p' \
       /data/.runner" 2>/dev/null || true)
   stored=$(printf '%s\n' "$state" | awk -F= '$1=="address" {sub(/^address=/, ""); print; exit}')
   stored=${stored%/}
   [ -z "$stored" ] && return 0
-  [ "$stored" = "$desired" ] && return 0
+  if [ "$stored" = "$desired" ]; then
+    # The runner volume outlives a recreated Gitea, e.g. after `docker compose
+    # down -v` without --profile runner. A new Gitea may reuse the same id and
+    # name, so only the uuid tells the registrations apart. Act_runner would
+    # keep failing with "unregistered runner" and never register again.
+    runner_uuid=$(printf '%s\n' "$state" | awk -F= '$1=="uuid" {print $2; exit}')
+    case "$runner_uuid" in ''|*[!0-9a-f-]*) fail "Stored CI runner uuid is invalid; refusing an unsafe check.";; esac
+    known=$($COMPOSE exec -T -u git gitea sqlite3 -readonly /data/gitea/gitea.db \
+      "SELECT count(*) FROM action_runner WHERE uuid='$runner_uuid' AND (deleted IS NULL OR deleted=0);" \
+      2>/dev/null | tr -d '\r' | tail -n 1 || true)
+    case "$known" in
+      1) ;;
+      0)
+        say "Discarding a CI runner registration that this Gitea does not know"
+        $COMPOSE --profile runner stop act_runner >/dev/null 2>&1 || true
+        $COMPOSE --profile runner run --rm --no-deps --entrypoint sh act_runner \
+          -c 'rm -f /data/.runner'
+        ;;
+      *) warn "Could not check the CI runner registration against Gitea." ;;
+    esac
+    return 0
+  fi
 
   runner_id=$(printf '%s\n' "$state" | awk -F= '$1=="id" {print $2; exit}')
   runner_name=$(printf '%s\n' "$state" | awk -F= '$1=="name" {sub(/^name=/, ""); print; exit}')
@@ -502,12 +550,14 @@ $COMPOSE up -d postgres gitea fake-sftp static-web
 say "Waiting for PostgreSQL"
 wait_healthy postgres 30
 # A pre-existing database volume keeps the password it was initialized with.
-# Verify that .env matches it; otherwise the API cannot connect later.
+# Verify that .env matches it; otherwise the API cannot connect later. Connect
+# through the Compose network as the API does: the image trusts loopback
+# connections without any password, so a check over 127.0.0.1 always passed.
 if ! $COMPOSE exec -T -e PGPASSWORD="$DB_PASSWORD" postgres \
-    psql -h 127.0.0.1 -U initpad -d initpad -c 'select 1' >/dev/null 2>&1; then
+    psql -h postgres -U initpad -d initpad -c 'select 1' >/dev/null 2>&1; then
   fail "The existing database volume was initialized with a different password
   than INITPAD_DB_PASSWORD in .env. Either restore the original .env, or start
-  fresh:  docker compose down -v && rm .env && ./install.sh"
+  fresh (deletes all platform data):  ./reset.sh && ./install.sh"
 fi
 
 say "Waiting for Gitea"
@@ -550,6 +600,98 @@ if [ -z "$(get_env INITPAD_RUNNER_TOKEN)" ]; then
 else
   say "Runner token already configured"
 fi
+
+# ---- CI action mirrors (ADR-171) ---------------------------------------------
+# Workflows name actions briefly (`uses: actions/checkout@<sha>`), and act_runner
+# fetched each one from github.com at the start of every job: a DNS or network
+# hiccup failed builds on a platform that otherwise runs locally. Keep pull
+# mirrors in this Gitea and point act_runner at them. The mirrors are used only
+# when every listed repository and every action commit the templates pin is
+# present; otherwise jobs keep fetching from github.com as before.
+gitea_api() { # <method> <path>, JSON body on stdin; prints the HTTP status
+  GITEA_TOKEN=$(get_env INITPAD_GITEA_TOKEN) $COMPOSE exec -T -e GITEA_TOKEN gitea sh -c \
+    'curl -sS -o /dev/null -w "%{http_code}" -X "$1" -H "Authorization: token $GITEA_TOKEN" \
+       -H "Content-Type: application/json" --data-binary @- "http://127.0.0.1:3000/api/v1$2"' \
+    sh "$1" "$2" 2>/dev/null || true
+}
+
+ensure_action_mirror() { # <owner/name>
+  local owner=${1%%/*} name=${1#*/} status
+  status=$(gitea_api GET "/orgs/$owner" </dev/null)
+  if [ "$status" = 404 ]; then
+    status=$(gitea_api POST /orgs <<EOF
+{"username":"$owner","visibility":"public","description":"Mirrors of CI actions used by InitPad workflows"}
+EOF
+)
+    [ "$status" = 201 ] || { warn "Could not create the Gitea organization $owner for CI action mirrors (HTTP $status)."; return 1; }
+  elif [ "$status" != 200 ]; then
+    warn "Could not look up the Gitea organization $owner (HTTP $status)."
+    return 1
+  fi
+  status=$(gitea_api GET "/repos/$owner/$name" </dev/null)
+  [ "$status" = 200 ] && return 0
+  [ "$status" = 404 ] || { warn "Could not look up the CI action mirror $owner/$name (HTTP $status)."; return 1; }
+  say "Mirroring CI action $owner/$name from github.com"
+  status=$(gitea_api POST /repos/migrate <<EOF
+{"clone_addr":"https://github.com/$owner/$name.git","repo_owner":"$owner","repo_name":"$name","mirror":true,"private":false,"service":"git","description":"Pull mirror of https://github.com/$owner/$name"}
+EOF
+)
+  [ "$status" = 201 ] || { warn "Could not mirror https://github.com/$owner/$name (HTTP $status)."; return 1; }
+}
+
+action_commit_mirrored() { # <owner/name> <sha>
+  local i
+  [ "$(gitea_api GET "/repos/$1/git/commits/$2" </dev/null)" = 200 ] && return 0
+  # A template may pin a commit newer than the last scheduled mirror sync.
+  gitea_api POST "/repos/$1/mirror-sync" </dev/null >/dev/null
+  for i in $(seq 1 15); do
+    sleep 2
+    [ "$(gitea_api GET "/repos/$1/git/commits/$2" </dev/null)" = 200 ] && return 0
+  done
+  return 1
+}
+
+mirror_ci_actions() {
+  local runner_url entry ref ok=yes
+  runner_url=$(get_env INITPAD_GITEA_RUNNER_URL)
+  runner_url=${runner_url:-http://host.docker.internal:3001}
+  runner_url=${runner_url%/}
+  while IFS= read -r entry; do
+    case "$entry" in ''|'#'*) continue ;; esac
+    if ! printf '%s\n' "$entry" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+      warn "Invalid entry in deploy/runner/actions-mirror: $entry"
+      ok=no
+      continue
+    fi
+    ensure_action_mirror "$entry" || ok=no
+  done < runner/actions-mirror
+  if [ "$ok" = yes ]; then
+    for ref in $(grep -rhoE 'uses: *[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' \
+        ../templates/*/files/.gitea/workflows/ 2>/dev/null | sed 's/^uses: *//' | sort -u); do
+      entry=${ref%@*}
+      if ! grep -qx "$entry" runner/actions-mirror; then
+        warn "Template action $entry is not listed in deploy/runner/actions-mirror."
+        ok=no
+      elif ! action_commit_mirrored "$entry" "${ref#*@}"; then
+        warn "The mirror of $entry lacks the pinned commit ${ref#*@}."
+        ok=no
+      fi
+    done
+  fi
+  if [ "$ok" = yes ]; then
+    set_env INITPAD_CI_ACTIONS_MIRROR "$runner_url"
+    say "CI jobs fetch their actions from this Gitea"
+  else
+    set_env INITPAD_CI_ACTIONS_MIRROR ""
+    warn "CI jobs keep fetching their actions from github.com. Re-run ./install.sh once github.com is reachable."
+  fi
+}
+
+say "Preparing CI action mirrors"
+mirror_ci_actions
+# The runner configuration carries the mirror address; render it again.
+./render-runner-config.sh
+[ -f .runtime/runner-config.changed ] && runner_config_changed=yes
 
 # ---- 4. platform ------------------------------------------------------------
 if grep -qx 'services: {}' "$runtime_override"; then

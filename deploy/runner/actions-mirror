@@ -1,0 +1,12 @@
+# GitHub actions that install.sh keeps as pull mirrors in Gitea (ADR-171).
+# act_runner resolves every short action name (`owner/name@ref`) against these
+# mirrors, so an action used by a workflow must be listed here. A workflow can
+# still name any other action by its full URL, e.g.
+#   uses: https://github.com/docker/login-action@<sha>
+# One `owner/name` per line. The templates use actions/checkout; the setup
+# actions are listed because developers commonly add them.
+actions/checkout
+actions/setup-node
+actions/setup-python
+actions/setup-java
+actions/setup-go

@@ -13,6 +13,11 @@ runner:
   capacity: 1
   timeout: 30m
   shutdown_timeout: 2m
+  # Short action names such as `actions/checkout@<sha>` are fetched from this
+  # Gitea's pull mirrors instead of github.com (ADR-171). install.sh fills in
+  # the runner's Gitea URL only after it verified every mirror; empty keeps
+  # github.com.
+  github_mirror: ''
 
 # The built-in cache server is one store shared by every repository this
 # runner serves, so a job could restore content another project saved. Jobs

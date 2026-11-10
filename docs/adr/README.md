@@ -182,3 +182,4 @@ stabilní.
 | [ADR-168](./ADR-168.md) | Accepted | Certifikát platformy ke stažení v GUI a verze v postranním panelu |
 | [ADR-169](./ADR-169.md) | Accepted | Otevřené záložky přežijí nový release a SaaS hlásí správnou verzi |
 | [ADR-170](./ADR-170.md) | Accepted | Každý CI daemon začíná s předpřipraveným job image |
+| [ADR-171](./ADR-171.md) | Accepted | CI joby berou akce ze zrcadel v Gitee |

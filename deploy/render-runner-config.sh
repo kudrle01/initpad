@@ -39,6 +39,14 @@ esac
 [ "$pids_limit" -ge 64 ] && [ "$pids_limit" -le 4096 ] || \
   fail "INITPAD_RUNNER_PIDS_LIMIT must be between 64 and 4096."
 
+# Set by install.sh once the CI action mirrors in Gitea are verified (ADR-171).
+# Empty means act_runner fetches actions from github.com.
+actions_mirror=$(get_env INITPAD_CI_ACTIONS_MIRROR)
+if [ -n "$actions_mirror" ]; then
+  printf '%s\n' "$actions_mirror" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]+)?$' || \
+    fail "INITPAD_CI_ACTIONS_MIRROR must be an http(s) origin without a path, or empty."
+fi
+
 source_config=../infra/act_runner/config.yaml
 runtime_dir=.runtime
 target_config=$runtime_dir/act-runner-config.yaml
@@ -46,11 +54,15 @@ change_marker=$runtime_dir/runner-config.changed
 [ -f "$source_config" ] || fail "Runner configuration baseline is missing."
 [ "$(grep -c '^  capacity: [0-9][0-9]*$' "$source_config")" -eq 1 ] || \
   fail "Runner configuration must contain exactly one numeric capacity setting."
+[ "$(grep -c "^  github_mirror: ''$" "$source_config")" -eq 1 ] || \
+  fail "Runner configuration must contain exactly one empty github_mirror setting."
 
 mkdir -p "$runtime_dir"
 tmp=$(mktemp "$runtime_dir/act-runner-config.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
-sed "s/^  capacity: [0-9][0-9]*$/  capacity: $capacity/" "$source_config" > "$tmp"
+sed -e "s/^  capacity: [0-9][0-9]*$/  capacity: $capacity/" \
+  -e "s|^  github_mirror: ''$|  github_mirror: '$actions_mirror'|" \
+  "$source_config" > "$tmp"
 chmod 644 "$tmp"
 if [ -f "$target_config" ] && cmp -s "$tmp" "$target_config"; then
   rm -f "$tmp"
