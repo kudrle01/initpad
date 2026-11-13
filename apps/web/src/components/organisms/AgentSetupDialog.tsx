@@ -445,14 +445,10 @@ export function AgentSetupDialog({
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="mb-1.5 eyebrow">{t('Enrollment token')}</p>
-                <CopyField command={enrollment.enrollmentToken} />
-              </div>
-              <div className="min-w-0">
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <p className="eyebrow">
                     {installCommand
-                      ? t('Install and enroll on the Docker server')
+                      ? t('1. Install and enroll on the Docker server')
                       : t('Agent installer')}
                   </p>
                   {installCommand && installerUrl && (
@@ -546,6 +542,17 @@ export function AgentSetupDialog({
                     )}
                   </p>
                 )}
+              </div>
+              <div className="min-w-0">
+                <p className="mb-1.5 eyebrow">
+                  {installCommand ? t('2. Enrollment token') : t('Enrollment token')}
+                </p>
+                {installCommand && (
+                  <p className="mb-1.5 text-xs text-muted-foreground">
+                    {t('Paste this token when the installer asks for it.')}
+                  </p>
+                )}
+                <CopyField command={enrollment.enrollmentToken} />
               </div>
             </div>
           ) : isCurrentOnline ? (
