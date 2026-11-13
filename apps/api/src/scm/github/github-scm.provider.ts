@@ -42,6 +42,7 @@ import {
   findInScmPages,
   SCM_DOWNLOAD_TIMEOUT_MS,
   scmFetch,
+  ScmRepositoryExistsError,
   scmStatusError,
 } from '../scm-http';
 import { adaptWorkflowForGitHub } from './github-workflow';
@@ -844,6 +845,13 @@ export class GitHubScmProvider implements ScmProvider {
     });
     if (!response.ok) {
       if (response.status === 422) {
+        const existing = await this.gh(
+          `/repos/${encodeURIComponent(installation.accountLogin)}/${encodeURIComponent(name)}`,
+          createToken,
+        ).catch(() => null);
+        if (existing?.ok) {
+          throw new ScmRepositoryExistsError('GitHub', `${installation.accountLogin}/${name}`);
+        }
         throw scmStatusError(
           'GitHub',
           'create repository',

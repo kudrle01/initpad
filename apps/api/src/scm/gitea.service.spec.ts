@@ -525,3 +525,42 @@ describe('GiteaService scoped credentials (ADR-134)', () => {
     expect(gitea.tokens.get('kudrla')).toEqual([]);
   });
 });
+
+describe('GiteaService repository provisioning', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  function stub(existing: { empty: boolean } | null) {
+    const calls: string[] = [];
+    jest.spyOn(global, 'fetch').mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      const key = `${init?.method ?? 'GET'} ${url.pathname}`;
+      calls.push(key);
+      const json = (value: unknown, status = 200) =>
+        new Response(JSON.stringify(value), { status });
+      if (key === 'POST /api/v1/admin/users/alice/repos') {
+        return existing ? json({ message: 'exists' }, 409) : json({ id: 7, name: 'test' }, 201);
+      }
+      if (key === 'GET /api/v1/repos/alice/test') {
+        return json({ id: 7, name: 'test', full_name: 'alice/test', empty: existing?.empty });
+      }
+      return json({});
+    });
+    return calls;
+  }
+
+  it('refuses to adopt an existing repository that already has history', async () => {
+    const calls = stub({ empty: false });
+    const service = new GiteaService();
+    const provisionRepo = (
+      service as unknown as {
+        createRepo: (name: string, actor: unknown, token: string) => Promise<unknown>;
+      }
+    ).createRepo.bind(service);
+
+    await expect(
+      provisionRepo('test', { username: 'alice', token: '' }, 'ci-token'),
+    ).rejects.toMatchObject({ name: 'ScmRepositoryExistsError', fullName: 'alice/test' });
+    expect(calls.some((call) => call.includes('/actions/secrets'))).toBe(false);
+    expect(calls).not.toContain('PATCH /api/v1/repos/alice/test');
+  });
+});

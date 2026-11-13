@@ -26,6 +26,7 @@ import {
   SCM_DOWNLOAD_TIMEOUT_MS,
   isScmNotFound,
   scmFetch,
+  ScmRepositoryExistsError,
   scmStatusError,
 } from './scm-http';
 
@@ -162,8 +163,21 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     if (!url || !adminToken) {
       throw new Error('Gitea admin is not configured (INITPAD_GITEA_URL/TOKEN)');
     }
-    const repository = await this.createRepo(name, actor, ciDeployToken);
-    await this.pushScaffold(repository.name, dir, actor);
+    const { repository, created } = await this.createRepo(name, actor, ciDeployToken);
+    try {
+      await this.pushScaffold(repository.name, dir, actor);
+    } catch (error) {
+      // Keep provision() atomic: remove only a repository this call created.
+      // An adopted empty repository from an earlier attempt is left in place.
+      if (created) {
+        await this.deleteRepo(repository, actor).catch((cleanupError: unknown) =>
+          this.logger.warn(
+            `Could not remove ${repository.fullName} after a failed push: ${(cleanupError as Error).message}`,
+          ),
+        );
+      }
+      throw error;
+    }
     this.logger.log(`Repository created and pushed: ${repository.repoUrl}`);
     return repository;
   }
@@ -1000,7 +1014,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     name: string,
     actor: GiteaActor,
     ciDeployToken: string,
-  ): Promise<ScmRepositoryIdentity> {
+  ): Promise<{ repository: ScmRepositoryIdentity; created: boolean }> {
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     // The repository is created FOR the user via the admin endpoint: the user
@@ -1018,8 +1032,10 @@ export class GiteaService implements OnModuleInit, ScmProvider {
         body: JSON.stringify({ name, private: true, auto_init: false, default_branch: 'main' }),
       },
     );
-    // 409 = repo already exists, continue with push after resolving its real
-    // immutable id. Never persist an invented id derived from mutable names.
+    // 409 = repo already exists. Only an empty one (left by an earlier attempt
+    // that failed before its first push) may be adopted; a repository with
+    // history belongs to someone else and must not receive new secrets or a
+    // scaffold. Never persist an invented id derived from mutable names.
     if (!res.ok && res.status !== 409) {
       throw scmStatusError('Gitea', 'create repository', res, 'Repository creation failed');
     }
@@ -1029,6 +1045,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
           name?: string;
           full_name?: string;
           default_branch?: string;
+          empty?: boolean;
         } | null)
       : null;
     if (!data?.id) {
@@ -1047,6 +1064,9 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       data = (await resolved.json()) as typeof data;
     }
     if (!data?.id) throw new Error('repository identity lookup returned no id');
+    if (!res.ok && data.empty === false) {
+      throw new ScmRepositoryExistsError('Gitea', data.full_name || `${actor.username}/${name}`);
+    }
 
     const fullName = data.full_name || `${actor.username}/${data.name || name}`;
     const repository: ScmRepositoryIdentity = {
@@ -1068,7 +1088,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     }).catch(() => undefined);
 
     await this.configureRepoSecrets(repository, ciDeployToken);
-    return repository;
+    return { repository, created: res.ok };
   }
 
   // Each repository receives its own deploy token and a package-only registry

@@ -42,6 +42,21 @@ export class ScmHttpTransportError extends Error {
 }
 
 /**
+ * The requested repository name is already taken by an existing repository
+ * that this provisioning did not create. Nothing external was changed, so the
+ * failure must never be "cleaned up" by deleting that repository.
+ */
+export class ScmRepositoryExistsError extends Error {
+  constructor(
+    readonly provider: ScmHttpProvider,
+    readonly fullName: string,
+  ) {
+    super(`A repository named '${fullName}' already exists in ${provider}`);
+    this.name = 'ScmRepositoryExistsError';
+  }
+}
+
+/**
  * Executes one bounded SCM request. It deliberately does not retry: callers
  * know whether their provider-specific operation is safe to repeat. Transport
  * errors never include the URL, headers or upstream body, which may contain

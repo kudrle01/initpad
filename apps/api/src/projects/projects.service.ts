@@ -36,6 +36,7 @@ import {
   repositoryRef,
 } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
+import { ScmRepositoryExistsError } from '../scm/scm-http';
 import { config } from '../config';
 import { decryptSecret } from '../common/secret';
 import { generateToken, hashToken } from '../common/token';
@@ -693,6 +694,17 @@ export class ProjectsService {
           installationId: repo.installationId,
         });
       } catch (e) {
+        if (e instanceof ScmRepositoryExistsError) {
+          // Nothing was created: record that, so cleanup can never treat the
+          // existing repository as this setup's leftover and delete it.
+          await this.provisioning
+            .compensateEffect(operationId, repositoryEffect)
+            .catch(() => undefined);
+          throw new ConflictException(
+            `A repository named '${e.fullName}' already exists in ${e.provider}. ` +
+              'Choose a different project name, or import the existing repository.',
+          );
+        }
         await this.provisioning
           .failEffect(operationId, repositoryEffect, (e as Error).message)
           .catch(() => undefined);
@@ -1245,6 +1257,15 @@ export class ProjectsService {
         if (!repo) {
           throw new BadRequestException(
             'The created repository identity is incomplete; remove it in the SCM before retrying',
+          );
+        }
+        // Deletion goes by owner/name. Without an identity confirmed by the
+        // provider, that name may belong to a repository this setup never
+        // created, so automatic deletion could destroy someone's history.
+        if (!repo.repositoryId) {
+          throw new BadRequestException(
+            `InitPad cannot prove that '${repo.fullName}' was created by this setup, so it will not delete it. ` +
+              'Check the repository in the SCM, remove it by hand only if it is a leftover, then hide this setup.',
           );
         }
         const scm = this.workspaceScm.provider(repo.provider);
