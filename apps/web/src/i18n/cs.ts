@@ -225,7 +225,10 @@ export const cs = {
   'This token is shown once and expires at <b>{date}</b>. Closing this dialog discards the plaintext.':
     'Tento token se zobrazí jen jednou a jeho platnost skončí v <b>{date}</b>. Zavřením dialogu se čitelná podoba zahodí.',
   'Enrollment token': 'Registrační token',
-  'Install and enroll on the Docker server': 'Instalace a registrace na Docker serveru',
+  '1. Install and enroll on the Docker server': '1. Instalace a registrace na Docker serveru',
+  '2. Enrollment token': '2. Registrační token',
+  'Paste this token when the installer asks for it.':
+    'Až si o něj instalátor řekne, vložte tento token.',
   'Agent installer': 'Instalátor Agenta',
   'Downloads the script without running it': 'Stáhne skript, aniž by ho spustil',
   'Download script only': 'Jen stáhnout skript',
@@ -1392,6 +1395,28 @@ export const cs = {
   'Current step: {step}': 'Aktuální krok: {step}',
   'View project': 'Zobrazit projekt',
   'Retry setup': 'Zopakovat zakládání',
+  'Hide failed setup of {project}?': 'Skrýt nedokončené zakládání projektu {project}?',
+  'Use this when the failure was already resolved, or when there is nothing left to retry or clean up.':
+    'Použijte, když už je problém vyřešený, nebo když už není co zopakovat ani uklidit.',
+  Hide: 'Skrýt',
+  'The record stays in the audit log; only the overview stops showing it.':
+    'Záznam zůstane v auditním logu, jen se přestane zobrazovat v přehledu.',
+  'Leftover resources from this setup will not be cleaned up automatically.':
+    'Prostředky, které po tomto zakládání zůstaly, se automaticky neuklidí.',
+  'Projects being set up': 'Zakládané projekty',
+  'InitPad is preparing these projects. This page refreshes on its own.':
+    'InitPad tyto projekty připravuje. Stránka se obnovuje sama.',
+  'Cleaning up a failed setup…': 'Uklízí se po nedokončeném zakládání…',
+  // components/organisms/ProjectSummary.tsx (first pipeline)
+  'The first pipeline has not started yet': 'První pipeline se zatím nespustila',
+  'The repository is ready, but its CI has not reported a run. Check that the CI runner is online and that the workflow is enabled in the repository.':
+    'Repozitář je připravený, ale CI zatím nenahlásilo žádný běh. Ověřte, že je CI runner online a že je workflow v repozitáři povolené.',
+  'Building the first version…': 'Sestavuje se první verze…',
+  'Preparing the project…': 'Projekt se připravuje…',
+  'The first pipeline is running. Environments appear here once it finishes; this page refreshes automatically.':
+    'Běží první pipeline. Prostředí se tu objeví po jejím dokončení; stránka se obnovuje automaticky.',
+  'The repository is ready and the first pipeline is starting. This usually takes a few minutes; this page refreshes automatically.':
+    'Repozitář je připravený a spouští se první pipeline. Obvykle to trvá několik minut; stránka se obnovuje automaticky.',
   'No projects yet': 'Zatím žádné projekty',
   "Create your first project from a template — you'll get a Git repository, CI/CD pipeline and a running dev environment out of the box.":
     'Vytvořte svůj první projekt ze šablony — hned získáte Git repozitář, CI/CD pipeline a běžící prostředí dev.',
