@@ -140,13 +140,13 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   1. října 2026 samostatný Linux host zachoval při rebootu stejný Agent
   kontejner, identitu i workloady, přijal dosažitelnou novou URL, nedostupnou
   URL odmítl bez změny stavu a poté se vrátil na původní endpoint.
-- [ ] Projít GitHub App E2E pro osobní i organizační instalaci: login,
+- [x] Projít GitHub App E2E pro osobní i organizační instalaci: login,
   create/import, Actions artifact, Agent deploy, rename, suspend a uninstall.
   - [x] Připravit ruční runbook registrace App a E2E průchodu v
     `deploy/SAAS_ACCEPTANCE.md` a zpracovat webhook `installation_target`,
     aby přejmenování účtu nebo organizace aktualizovalo uložený login podle
     neměnného ID. Ověřeno pouze automatizovanými testy.
-  - [ ] Provést živý průchod na veřejném stagingu se skutečnou App.
+  - [x] Provést živý průchod na veřejném stagingu se skutečnou App.
     - Dne 8. října 2026 autor na stagingu s releasem 0.2.14 potvrdil kroky
       Login a Instalace pro osobní účet i testovací organizaci. Kroky Create
       až Audit zbývají.
@@ -190,6 +190,8 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
       prošel. Staging na něm běží od téhož dne: migrace se aplikovala, oba
       kontejnery jsou zdravé a kontrola závislostí prošla. Samotné
       přejmenování naživo ověřeno není.
+    - Dne 13. listopadu 2026 autor potvrdil, že na stagingu prošly i zbývající
+      kroky: povýšení stejným digestem, Rename, Suspend, Uninstall a Audit.
 - [x] Provést finální bezpečnostní, maintainability, dependency,
   responsive a accessibility audit a odstranit potvrzené mrtvé/redundantní
   části. Dne 27. září 2026 prošel repository gate nad 895
@@ -218,7 +220,7 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
   prošly všechny ownerovi dostupné hlavní obrazovky živým průchodem ve
   viewportu 390 × 844 px bez horizontálního přetečení; každá zachovala jeden
   hlavní nadpis, popsané formulářové prvky a použitelný mobilní drawer.
-- [ ] Naživo ověřit výsledky následného bezpečnostního auditu z 9. října 2026
+- [x] Naživo ověřit výsledky následného bezpečnostního auditu z 9. října 2026
   (ADR-134 až ADR-154). Všech 21 rozhodnutí je implementováno a pokryto
   automatizovanými testy; CI nad `main` prošlo týž den a release gate prošel
   nad připravenou verzí 0.2.17. Vydání 0.2.17 z 10. října 2026 je obsahuje a
@@ -254,10 +256,13 @@ vysvětlují kontrakty a acceptance, ale nemění toto pořadí.
     výjimku do 9. listopadu 2026. Vyřešeno 28. října 2026 (PR #116,
     issue #98): Supervisor bere Docker CLI 29.9.2 s Compose 5.6.1 (Go 1.26.10),
     tři výjimky Go stdlib zmizely a sken obrazů na `main` prošel u #116 i
-    release 0.2.21. Zbývá výjimka CVE-2026-78669 jen pro Compose, dokud
-    nepřibalí `golang.org/x/net` 0.60.0 (ADR-144).
-  - Zbývá: projít podepsanou aktualizaci z 0.2.16 na self-hosted instalaci a
-    na stagingu dokončit průchod GitHub App.
+    release 0.2.21. Výjimka CVE-2026-78669 zmizela s Compose 5.7.0; od
+    13. listopadu 2026 zůstává jen CVE-2026-78661 v `x/net/html` do
+    27. listopadu 2026 (ADR-144).
+  - Dne 13. listopadu 2026 autor potvrdil oba zbývající živé kroky.
+    Podepsané aktualizace přes UI na self-hosted instalaci prošly řetězem
+    0.2.29 → 0.2.30 → 0.2.32 → 0.2.33 včetně živé obnovy šifrované zálohy
+    (ADR-151). Průchod GitHub App na stagingu je dokončený (viz výše).
 - [ ] Nechat nezávislý studentský tým projít `docs/EVALUATION.md`, změřit
   čas/kroky/chyby, SUS a rozhovor a zapsat výsledky do diplomové práce.
 - [x] Sjednotit release readiness, README, provozní dokumentaci, ADR index a
