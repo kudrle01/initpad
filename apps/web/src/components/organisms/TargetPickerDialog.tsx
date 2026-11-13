@@ -16,6 +16,7 @@ import { Spinner } from '@/components/atoms/Spinner';
 import {
   targetAcceptsNewAssignments,
   targetIsReady,
+  targetNotReadyLabel,
 } from '@/components/organisms/EnvironmentTargetFields';
 import { cn } from '@/lib/utils';
 import type {
@@ -162,15 +163,7 @@ export function TargetPickerDialog({
                       <span className="text-xs text-muted-foreground">{t('current')}</span>
                     )}
                     {!targetIsReady(option) && (
-                      <span className="text-xs text-warning">
-                        {option.scope === 'user' && option.managementState === 'retired'
-                          ? t('retired')
-                          : option.scope === 'user' && option.managementState === 'disconnected'
-                            ? t('reconnect first')
-                            : option.kind === 'docker' && option.scope === 'user'
-                              ? t('Agent not ready')
-                              : t('verify first')}
-                      </span>
+                      <span className="text-xs text-warning">{targetNotReadyLabel(option)}</span>
                     )}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -178,6 +171,16 @@ export function TargetPickerDialog({
                     {option.host ? ` · ${option.host}` : ''} ·{' '}
                     {t('runs {runtimes}', { runtimes: option.capabilities.join(', ') })}
                   </div>
+                  {option.unavailableReason && (
+                    <p className="mt-1 text-xs text-muted-foreground">{option.unavailableReason}</p>
+                  )}
+                  {!option.unavailableReason &&
+                    option.gatewayPreflight?.status === 'failed' &&
+                    option.gatewayPreflight.error && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {option.gatewayPreflight.error}
+                      </p>
+                    )}
                 </div>
                 <span
                   aria-hidden="true"

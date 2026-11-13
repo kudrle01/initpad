@@ -26,9 +26,29 @@ export function targetAcceptsNewAssignments(target: Target): boolean {
 }
 
 export function targetIsReady(target: Target): boolean {
+  if (target.unavailableReason) return false;
   if (target.scope === 'user' && (target.managementState ?? 'active') !== 'active') return false;
   if (target.scope === 'user' && target.kind === 'docker') return target.agentReady === true;
   return target.scope === 'builtin' || Boolean(target.verifiedAt);
+}
+
+/** Short label saying why a target cannot take an environment right now. */
+export function targetNotReadyLabel(target: Target): string {
+  if (target.unavailableReason) return t('not configured');
+  if (target.scope === 'user' && target.managementState === 'retired') return t('retired');
+  if (target.scope === 'user' && target.managementState === 'disconnected') {
+    return t('reconnect first');
+  }
+  if (target.kind === 'docker' && target.scope === 'user') {
+    if (target.routingMode === 'managed-gateway') {
+      const status = target.gatewayPreflight?.status ?? 'not-run';
+      if (status === 'queued' || status === 'running') return t('gateway check running');
+      if (status === 'failed') return t('gateway check failed');
+      if (status === 'not-run') return t('gateway not checked');
+    }
+    return t('Agent not ready');
+  }
+  return t('verify first');
 }
 
 export function suggestedEnvironmentTargets(

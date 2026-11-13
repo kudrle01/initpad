@@ -185,4 +185,36 @@ describe('ProjectsService provisioning recovery', () => {
     );
     expect(provisioning.compensateEffect).toHaveBeenCalledWith('op1', 'repository:create');
   });
+
+  it('never deletes a repository whose identity the provider did not confirm', async () => {
+    const operation = {
+      id: 'op1',
+      workspaceId: 'ws1',
+      projectId: null,
+      projectName: 'test',
+      kind: 'create',
+      status: 'failed',
+      requestedById: 'u1',
+      request: {},
+      retryOfId: null,
+      attempt: 1,
+      effects: [
+        {
+          ...effect('repository:create', 'repository', {
+            provider: 'gitea',
+            owner: 'alice',
+            name: 'test',
+            fullName: 'alice/test',
+            defaultBranch: 'main',
+          }),
+          status: 'failed',
+        },
+      ],
+    };
+    const { service, scm } = build(operation);
+    await expect(service.cleanupProvisioning('op1', 'u1')).rejects.toThrow(
+      "cannot prove that 'alice/test' was created by this setup",
+    );
+    expect(scm.deleteRepo).not.toHaveBeenCalled();
+  });
 });

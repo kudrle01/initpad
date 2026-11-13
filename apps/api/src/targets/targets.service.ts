@@ -24,6 +24,7 @@ import {
 } from '../domain/types';
 import type { ProviderConnection, VerifyResult } from '../deployment/deployment-provider.interface';
 import { normalizeManagedGatewayOrigin } from './managed-gateway';
+import { localDockerProbeBlockedReason } from '../deployment/providers/docker.provider';
 import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
 import { InspectTargetHostKeyDto } from './dto/inspect-target-host-key.dto';
@@ -1113,6 +1114,7 @@ export class TargetsService implements OnModuleInit {
             supportsProjectAgent(row.agent.version),
           )
         : undefined;
+    const unavailableReason = row.id === BUILTIN_DOCKER ? localDockerProbeBlockedReason() : null;
     return {
       id: row.id,
       name: row.name,
@@ -1144,6 +1146,7 @@ export class TargetsService implements OnModuleInit {
           : null,
       verifiedAt: row.verifiedAt ? row.verifiedAt.toISOString() : null,
       ...(agentReady !== undefined ? { agentReady, agentVersion: row.agent?.version ?? null } : {}),
+      ...(unavailableReason ? { unavailableReason } : {}),
       inUse,
       usage,
     };

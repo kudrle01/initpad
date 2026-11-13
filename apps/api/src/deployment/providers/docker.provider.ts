@@ -36,16 +36,30 @@ export function dockerContainerName(projectName: string, env: string, namespace?
     : `initpad-${projectName}-${env}`;
 }
 
+const LOOPBACK_HOSTS = ['127.0.0.1', '::1', 'localhost'];
+
+/**
+ * Why the built-in Docker target cannot verify a deployment, or null when it
+ * can. A workload port published on loopback is reachable only from the host
+ * itself, so a control plane that probes it through host.docker.internal (as
+ * the containerized stack does) can never see it healthy (ADR-173).
+ */
+export function localDockerProbeBlockedReason(
+  bindAddress = config.deployment.bindAddress,
+  healthHost = config.deployHealthHost,
+): string | null {
+  if (!LOOPBACK_HOSTS.includes(bindAddress) || LOOPBACK_HOSTS.includes(healthHost)) return null;
+  return `The workload port is bound to ${bindAddress}, but the containerized control plane probes ${healthHost}. For trusted-LAN direct ports set INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0 and restrict them with the host firewall, or use a managed gateway.`;
+}
+
 export function dockerHealthFailureReason(
   path: string,
   bindAddress = config.deployment.bindAddress,
   healthHost = config.deployHealthHost,
 ): string {
   const reason = `Health check at ${path} did not return 2xx within ~10s.`;
-  const loopbackBind = ['127.0.0.1', '::1', 'localhost'].includes(bindAddress);
-  const loopbackProbe = ['127.0.0.1', '::1', 'localhost'].includes(healthHost);
-  if (!loopbackBind || loopbackProbe) return reason;
-  return `${reason} The workload port is bound to ${bindAddress}, but the containerized control plane probes ${healthHost}. For trusted-LAN direct ports set INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0 and restrict them with the host firewall, or use a managed gateway.`;
+  const blocked = localDockerProbeBlockedReason(bindAddress, healthHost);
+  return blocked ? `${reason} ${blocked}` : reason;
 }
 
 /**
@@ -53,6 +67,9 @@ export function dockerHealthFailureReason(
  * (or pulls a pre-built one from the registry) and runs a container attached
  * to the per-environment network (net-<env>).
  */
+// One health probe may take at most this long before the next attempt.
+const HEALTH_PROBE_TIMEOUT_MS = 3_000;
+
 @Injectable()
 export class DockerProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'docker';
@@ -78,6 +95,17 @@ export class DockerProvider implements DeploymentProvider {
         status: 'failed',
         url: '',
         reason: 'Docker daemon is not available — start Docker and redeploy.',
+      };
+    }
+
+    // Fail before replacing anything: a deployment that cannot pass its
+    // health check would only tear down the previous container.
+    const blocked = localDockerProbeBlockedReason();
+    if (blocked) {
+      return {
+        status: 'failed',
+        url: '',
+        reason: `Built-in Docker cannot verify deployments in this configuration. ${blocked}`,
       };
     }
 
@@ -177,10 +205,14 @@ export class DockerProvider implements DeploymentProvider {
   // Polls the health endpoint until it returns 2xx or the deadline passes.
   private async waitHealthy(hostPort: string, path: string): Promise<boolean> {
     const target = `http://${config.deployHealthHost}:${hostPort}${path.startsWith('/') ? '' : '/'}${path}`;
-    const attempts = 20; // ~10 s (20 × 500 ms)
+    const attempts = 20; // ~10 s of polling (20 × 500 ms) plus bounded requests
     for (let i = 0; i < attempts; i++) {
       try {
-        const res = await fetch(target);
+        // Bound every probe: an app that accepts the connection but never
+        // answers would otherwise hold the deployment at "Verifying" for
+        // minutes per attempt.
+        const res = await fetch(target, { signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS) });
+        await res.body?.cancel().catch(() => undefined);
         if (res.ok) return true;
       } catch {
         // App still starting — retry.

@@ -54,6 +54,32 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
     expect(() => service.assertUsable(target, template)).not.toThrow();
   });
 
+  it('refuses the built-in Docker target only while its health probe cannot reach workloads', () => {
+    const mutable = config as unknown as {
+      deployHealthHost: string;
+      deployment: { bindAddress: string };
+    };
+    const saved = [mutable.deployHealthHost, mutable.deployment.bindAddress] as const;
+    const builtin: TargetRow = {
+      ...target,
+      id: 'builtin-docker',
+      name: 'Company Docker (dev/test)',
+      scope: 'builtin',
+      agent: null,
+    };
+    try {
+      mutable.deployHealthHost = 'host.docker.internal';
+      mutable.deployment.bindAddress = '127.0.0.1';
+      expect(() => service.assertUsable(builtin, template)).toThrow(
+        'INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0',
+      );
+      mutable.deployment.bindAddress = '0.0.0.0';
+      expect(() => service.assertUsable(builtin, template)).not.toThrow();
+    } finally {
+      [mutable.deployHealthHost, mutable.deployment.bindAddress] = saved;
+    }
+  });
+
   it('rejects missing durable storage, disabled enrollment and an old Agent', () => {
     Object.assign(config.artifactStore, {
       bucket: '',
