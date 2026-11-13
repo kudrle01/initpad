@@ -5,7 +5,9 @@ import {
   ArrowRight,
   ChevronRight,
   Download,
+  EyeOff,
   Layers,
+  Loader2,
   Play,
   Plus,
   RotateCcw,
@@ -163,11 +165,50 @@ export default function Dashboard() {
     }
   }
 
+  async function dismissOperation(id: string) {
+    const operation = provisioning.find((candidate) => candidate.id === id);
+    const confirmed = await confirmAction({
+      title: t('Hide failed setup of {project}?', {
+        project: operation?.projectName ?? t('incomplete project'),
+      }),
+      description: t(
+        'Use this when the failure was already resolved, or when there is nothing left to retry or clean up.',
+      ),
+      confirmLabel: t('Hide'),
+      tone: operation?.needsCleanup ? 'warning' : undefined,
+      consequences: [
+        t('The record stays in the audit log; only the overview stops showing it.'),
+        ...(operation?.needsCleanup
+          ? [t('Leftover resources from this setup will not be cleaned up automatically.')]
+          : []),
+      ],
+    });
+    if (!confirmed) return;
+    setOperationBusy(id);
+    setActionError(null);
+    try {
+      await api.dismissProvisioning(id);
+      setProvisioning((current) => current.filter((candidate) => candidate.id !== id));
+      const nextPortfolio = await api.getWorkspacePortfolio(activeWorkspace!.id).catch(() => null);
+      if (nextPortfolio) setPortfolio(nextPortfolio);
+    } catch (e) {
+      setActionError((e as Error).message);
+      setProvisioning(await api.listProvisioning().catch(() => provisioning));
+    } finally {
+      setOperationBusy(null);
+    }
+  }
+
   const recent = portfolio?.projects.slice(0, RECENT_LIMIT) ?? [];
   const operationsNeedingAttention = provisioning
-    .filter((operation) => !['succeeded', 'retried'].includes(operation.status))
+    .filter((operation) => ['failed', 'interrupted'].includes(operation.status))
+    .filter((operation) => !operation.dismissedAt)
+    .slice(0, 5);
+  const operationsInProgress = provisioning
+    .filter((operation) => ['running', 'retrying', 'cleaning'].includes(operation.status))
     .slice(0, 5);
   const canMaintain = ['owner', 'admin', 'maintainer'].includes(activeWorkspace?.role ?? '');
+  const canWrite = canMaintain || activeWorkspace?.role === 'member';
   const canExportMetrics = ['owner', 'admin'].includes(activeWorkspace?.role ?? '');
 
   const stats = portfolio?.stats;
@@ -248,6 +289,40 @@ export default function Dashboard() {
           />
         </div>
 
+        {operationsInProgress.length > 0 && (
+          <Section
+            title={t('Projects being set up')}
+            headingId="provisioning-progress-heading"
+            description={t('InitPad is preparing these projects. This page refreshes on its own.')}
+            flush
+          >
+            <List aria-labelledby="provisioning-progress-heading">
+              {operationsInProgress.map((operation) => (
+                <ListRow key={operation.id} className="items-center">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium" title={operation.projectName}>
+                      {operation.projectName}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {operation.status === 'cleaning'
+                        ? t('Cleaning up a failed setup…')
+                        : t('Current step: {step}', { step: operation.step })}
+                    </p>
+                  </div>
+                  {operation.projectId && (
+                    <Button asChild size="sm" variant="ghost">
+                      <Link to={`/projects/${operation.projectId}`}>{t('View project')}</Link>
+                    </Button>
+                  )}
+                </ListRow>
+              ))}
+            </List>
+          </Section>
+        )}
+
         {operationsNeedingAttention.length > 0 && (
           <Section
             title={t('Provisioning needs attention')}
@@ -313,6 +388,16 @@ export default function Dashboard() {
                           onClick={() => retryOperation(operation.id)}
                         >
                           <RotateCcw className="h-3.5 w-3.5" /> {t('Retry setup')}
+                        </Button>
+                      )}
+                      {(operation.needsCleanup ? canMaintain : canWrite) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={operationBusy === operation.id}
+                          onClick={() => void dismissOperation(operation.id)}
+                        >
+                          <EyeOff className="h-3.5 w-3.5" /> {t('Hide')}
                         </Button>
                       )}
                     </div>

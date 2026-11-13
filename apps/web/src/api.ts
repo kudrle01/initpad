@@ -357,6 +357,8 @@ export const api = {
   retryProvisioning: (id: string) => http<Project>(`/provisioning/${id}/retry`, { method: 'POST' }),
   cleanupProvisioning: (id: string) =>
     http<void>(`/provisioning/${id}/cleanup`, { method: 'POST' }),
+  dismissProvisioning: (id: string) =>
+    http<void>(`/provisioning/${id}/dismiss`, { method: 'POST' }),
   listTemplates: () => http<TemplateManifest[]>('/templates'),
   downloadTemplateWorkflow: (templateId: string, provider: 'gitea' | 'github') =>
     download(`/templates/${encodeURIComponent(templateId)}/workflows/${provider}`),
@@ -622,7 +624,8 @@ export const api = {
   // A self-update intentionally replaces the local API. Bound this request so
   // the UI can retry after cutover instead of retaining a request from the
   // unavailable instance for the general API timeout.
-  adminPlatformUpdateStatus: () => http<PlatformUpdateStatus>('/admin/updates', undefined, 12_000),
+  adminPlatformUpdateStatus: (refresh = false) =>
+    http<PlatformUpdateStatus>(`/admin/updates${refresh ? '?refresh=1' : ''}`, undefined, 30_000),
   adminSecurityStatus: () => http<{ builtInAppsShareSession: boolean }>('/admin/security'),
   adminInstallPlatformUpdate: (requestId: string) =>
     http<PlatformUpdateOperation>('/admin/updates', {

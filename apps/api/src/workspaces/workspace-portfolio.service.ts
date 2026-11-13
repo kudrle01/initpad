@@ -66,6 +66,7 @@ export class WorkspacePortfolioService {
         this.prisma.provisioningOperation.count({
           where: {
             workspaceId,
+            dismissedAt: null,
             effects: {
               some: { status: { in: ['compensation_failed', 'reconciliation_required'] } },
             },

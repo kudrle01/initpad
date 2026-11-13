@@ -8,7 +8,8 @@ import {
   type AgentReleaseManifest,
 } from './release-manifest';
 
-const RELEASE_LIST_BYTES = 512 * 1024;
+// Twenty full GitHub release entries already exceed 512 KiB.
+const RELEASE_LIST_BYTES = 4 * 1024 * 1024;
 const RELEASE_ASSET_BYTES = 2 * 1024 * 1024;
 const AGENT_MANIFEST = 'initpad-agent-release.json';
 const AGENT_BUNDLE = `${AGENT_MANIFEST}.sigstore.json`;

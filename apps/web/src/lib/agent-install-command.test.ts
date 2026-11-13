@@ -26,6 +26,7 @@ describe('buildAgentInstallCommand', () => {
     ).toBe(
       `curl -fsSLo initpad-agent-install.sh 'https://platform.example.org/api/agent/distribution/install.sh' && ` +
         `printf '%s  %s\\n' '${'a'.repeat(64)}' initpad-agent-install.sh | sha256sum -c - && ` +
+        'chmod 0755 initpad-agent-install.sh && ' +
         `sudo sh ./initpad-agent-install.sh --url 'https://platform.example.org' --image '${image}' --expected-target-id 't1'`,
     );
   });
@@ -89,6 +90,7 @@ describe('buildAgentUninstallCommand', () => {
     ).toBe(
       `curl -fsSLo initpad-agent-install.sh 'https://platform.example.org/api/agent/distribution/install.sh' && ` +
         `printf '%s  %s\\n' '${'a'.repeat(64)}' initpad-agent-install.sh | sha256sum -c - && ` +
+        'chmod 0755 initpad-agent-install.sh && ' +
         `sudo sh ./initpad-agent-install.sh --uninstall --expected-target-id 't1'`,
     );
   });

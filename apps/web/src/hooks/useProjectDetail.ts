@@ -8,6 +8,7 @@ import {
   IDLE_PROJECT_POLL_MS,
   mergeCommitHead,
 } from '@/lib/commit-polling';
+import { firstPipelineState } from '@/lib/project-readiness';
 import { useToast } from '@/toast';
 import type {
   Commit,
@@ -25,7 +26,13 @@ import { t } from '@/i18n';
 
 const DETAIL_COMMIT_LIMIT = 6;
 
-function isLive(project: Project | null, commits: Commit[], rerunRequested: boolean): boolean {
+function isLive(
+  project: Project | null,
+  commits: Commit[],
+  deployments: DeploymentOperation[],
+  provisioning: ProvisioningStatus | null,
+  rerunRequested: boolean,
+): boolean {
   const environmentBusy =
     project?.environments.some((environment) => environment.status === 'deploying') ?? false;
   const ciBusy = commits.some((commit) =>
@@ -37,7 +44,18 @@ function isLive(project: Project | null, commits: Commit[], rerunRequested: bool
     head.sha !== 'initial' &&
     head.pipeline.some((stage) => stage.status === 'pending') &&
     !head.pipeline.some((stage) => stage.status === 'failed');
-  return environmentBusy || ciBusy || ciQueued || rerunRequested;
+  const provisioningBusy =
+    !!provisioning && ['running', 'retrying', 'cleaning'].includes(provisioning.status);
+  const firstPipeline = firstPipelineState(project, commits, deployments);
+  const awaitingFirstPipeline = firstPipeline === 'waiting' || firstPipeline === 'running';
+  return (
+    environmentBusy ||
+    ciBusy ||
+    ciQueued ||
+    provisioningBusy ||
+    awaitingFirstPipeline ||
+    rerunRequested
+  );
 }
 
 export function useProjectDetail() {
@@ -142,14 +160,14 @@ export function useProjectDetail() {
     // During a short API restart retain the last useful view with a visible
     // warning, but retry quickly instead of waiting for the idle interval.
     const delay =
-      error || isLive(project, commits, ciRerunRequested)
+      error || isLive(project, commits, deployments, provisioning, ciRerunRequested)
         ? ACTIVE_PROJECT_POLL_MS
         : IDLE_PROJECT_POLL_MS;
     const timer = setTimeout(() => {
       if (document.visibilityState === 'visible') void load('head');
     }, delay);
     return () => clearTimeout(timer);
-  }, [project, commits, load, error, notFound, ciRerunRequested]);
+  }, [project, commits, deployments, provisioning, load, error, notFound, ciRerunRequested]);
 
   useEffect(() => {
     const refreshWhenVisible = () => {

@@ -7,13 +7,20 @@ import {
   type PlatformReleaseManifest,
 } from './platform-release-manifest';
 
-const LIST_LIMIT = 512 * 1024;
+// GitHub returns full release bodies and uploader objects for every asset;
+// twenty releases already exceed 512 KiB, so leave generous headroom.
+const LIST_LIMIT = 4 * 1024 * 1024;
 const ASSET_LIMIT = 2 * 1024 * 1024;
 const MANIFEST_NAME = 'initpad-platform-release.json';
 const BUNDLE_NAME = `${MANIFEST_NAME}.sigstore.json`;
 // Published tags remain immutable for auditability. Releases that passed the
 // distribution checks but failed runtime acceptance are explicitly revoked.
 const REVOKED_PLATFORM_RELEASES = new Set(['0.2.5']);
+// A failed check is retried sooner than a successful one is refreshed, and an
+// explicit refresh is throttled so repeated clicks cannot exhaust the
+// unauthenticated GitHub API quota.
+const FAILURE_CACHE_MS = 60_000;
+const FORCED_REFRESH_INTERVAL_MS = 15_000;
 
 interface ReleaseAsset {
   name: string;
@@ -53,6 +60,7 @@ export class PlatformReleaseCatalogService {
   private cached: { expiresAt: number; result: PlatformCatalogResult } | null = null;
   private inFlight: Promise<PlatformCatalogResult> | null = null;
   private lastGood: PlatformCatalogResult | null = null;
+  private lastAttemptAt = 0;
 
   async latest(force = false): Promise<PlatformCatalogResult> {
     if (!config.updates.enabled) {
@@ -65,15 +73,21 @@ export class PlatformReleaseCatalogService {
         error: null,
       };
     }
-    if (!force && this.cached && this.cached.expiresAt > Date.now()) return this.cached.result;
+    const now = Date.now();
+    const throttled = now - this.lastAttemptAt < FORCED_REFRESH_INTERVAL_MS;
+    if (this.cached && (force ? throttled : this.cached.expiresAt > now)) {
+      return this.cached.result;
+    }
     if (this.inFlight) return this.inFlight;
+    this.lastAttemptAt = now;
     this.inFlight = this.refresh()
       .catch((error: unknown) => this.failed(error))
       .finally(() => {
         this.inFlight = null;
       });
     const result = await this.inFlight;
-    this.cached = { expiresAt: Date.now() + config.updates.cacheSeconds * 1_000, result };
+    const ttl = result.error ? FAILURE_CACHE_MS : config.updates.cacheSeconds * 1_000;
+    this.cached = { expiresAt: Date.now() + ttl, result };
     if (!result.error) this.lastGood = result;
     return result;
   }
@@ -161,16 +175,14 @@ export class PlatformReleaseCatalogService {
   }
 
   private failed(error: unknown): PlatformCatalogResult {
-    this.logger.warn({
-      event: 'updates.platform_catalog.unavailable',
-      reason: error instanceof Error ? error.message : 'unknown failure',
-    });
+    const reason = error instanceof Error ? error.message : 'unknown failure';
+    this.logger.warn({ event: 'updates.platform_catalog.unavailable', reason });
     if (this.lastGood) {
       return {
         ...this.lastGood,
+        checkedAt: new Date().toISOString(),
         stale: true,
-        error:
-          'The platform release catalog could not be refreshed; showing the last verified result.',
+        error: `The platform release catalog could not be refreshed (${reason.slice(0, 200)}); showing the last verified result.`,
       };
     }
     return {

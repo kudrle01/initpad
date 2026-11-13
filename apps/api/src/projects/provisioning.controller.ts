@@ -32,6 +32,20 @@ export class ProvisioningController {
     return this.projects.retryProvisioning(id, userId);
   }
 
+  // Leaving pending cleanup behind is a maintenance decision; acknowledging a
+  // failure that left nothing behind only needs write access.
+  @Post(':id/dismiss')
+  @HttpCode(204)
+  async dismiss(@Param('id') id: string, @CurrentUser() userId: string) {
+    const operation = await this.provisioning.record(id);
+    await this.workspaces.require(
+      userId,
+      operation.workspaceId,
+      this.provisioning.needsCleanup(operation) ? 'maintain' : 'write',
+    );
+    await this.provisioning.dismiss(operation, userId);
+  }
+
   @Post(':id/cleanup')
   @HttpCode(204)
   cleanup(@Param('id') id: string, @CurrentUser() userId: string) {
