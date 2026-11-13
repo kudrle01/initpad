@@ -96,20 +96,24 @@ export default function Admin() {
     void loadUsers();
   }, [loadUsers]);
 
-  const loadUpdates = useCallback(async () => {
-    if (!user || user.edition !== 'self-hosted' || user.platformRole !== 'admin') {
-      setUpdatesLoading(false);
-      return;
-    }
-    try {
-      setUpdates(await api.adminPlatformUpdateStatus());
-      setUpdatesError(null);
-    } catch (cause) {
-      setUpdatesError((cause as Error).message);
-    } finally {
-      setUpdatesLoading(false);
-    }
-  }, [user]);
+  const loadUpdates = useCallback(
+    async (refresh = false) => {
+      if (!user || user.edition !== 'self-hosted' || user.platformRole !== 'admin') {
+        setUpdatesLoading(false);
+        return;
+      }
+      if (refresh) setUpdatesLoading(true);
+      try {
+        setUpdates(await api.adminPlatformUpdateStatus(refresh));
+        setUpdatesError(null);
+      } catch (cause) {
+        setUpdatesError((cause as Error).message);
+      } finally {
+        setUpdatesLoading(false);
+      }
+    },
+    [user],
+  );
 
   useEffect(() => {
     void loadUpdates();
@@ -396,7 +400,7 @@ export default function Admin() {
             loading={updatesLoading}
             error={updatesError}
             installing={installingUpdate}
-            onRefresh={() => void loadUpdates()}
+            onRefresh={() => void loadUpdates(true)}
             onInstall={() => void installPlatformUpdate()}
           />
         )}

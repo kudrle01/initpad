@@ -1,4 +1,4 @@
-import { GitBranch, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Clock, GitBranch, Loader2, MoreHorizontal, Trash2 } from 'lucide-react';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,6 +10,7 @@ import {
 import { BackLink } from '@/components/molecules/BackLink';
 import { Notice } from '@/components/molecules/Notice';
 import { scmLink } from '@/lib/utils';
+import type { FirstPipelineState } from '@/lib/project-readiness';
 import type { Project, ProvisioningStatus, TemplateManifest } from '@/types';
 import { t, formatDate } from '@/i18n';
 import { statusLabel, termLabel } from '@/i18n/labels';
@@ -18,11 +19,19 @@ interface Props {
   project: Project;
   template: TemplateManifest | null;
   provisioning: ProvisioningStatus | null;
+  firstPipeline: FirstPipelineState;
   canMaintain: boolean;
   onDelete: () => void;
 }
 
-export function ProjectSummary({ project, template, provisioning, canMaintain, onDelete }: Props) {
+export function ProjectSummary({
+  project,
+  template,
+  provisioning,
+  firstPipeline,
+  canMaintain,
+  onDelete,
+}: Props) {
   const created = formatDate(project.createdAt);
 
   return (
@@ -75,13 +84,55 @@ export function ProjectSummary({ project, template, provisioning, canMaintain, o
         </div>
       </div>
 
-      <ProvisioningNotice provisioning={provisioning} />
+      {provisioning && provisioning.status !== 'succeeded' && !provisioning.dismissedAt ? (
+        <ProvisioningNotice provisioning={provisioning} />
+      ) : (
+        <FirstPipelineNotice state={firstPipeline} />
+      )}
     </div>
   );
 }
 
+function FirstPipelineNotice({ state }: { state: FirstPipelineState }) {
+  if (state === 'none') return null;
+  if (state === 'overdue') {
+    return (
+      <Notice
+        tone="warning"
+        role="status"
+        icon={Clock}
+        className="mt-5"
+        title={t('The first pipeline has not started yet')}
+      >
+        {t(
+          'The repository is ready, but its CI has not reported a run. Check that the CI runner is online and that the workflow is enabled in the repository.',
+        )}
+      </Notice>
+    );
+  }
+  return (
+    <Notice
+      tone="info"
+      role="status"
+      aria-live="polite"
+      icon={Loader2}
+      iconClassName="animate-spin text-primary"
+      className="mt-5"
+      title={state === 'running' ? t('Building the first version…') : t('Preparing the project…')}
+    >
+      {state === 'running'
+        ? t(
+            'The first pipeline is running. Environments appear here once it finishes; this page refreshes automatically.',
+          )
+        : t(
+            'The repository is ready and the first pipeline is starting. This usually takes a few minutes; this page refreshes automatically.',
+          )}
+    </Notice>
+  );
+}
+
 function ProvisioningNotice({ provisioning }: { provisioning: ProvisioningStatus | null }) {
-  if (!provisioning || provisioning.status === 'succeeded') return null;
+  if (!provisioning || provisioning.status === 'succeeded' || provisioning.dismissedAt) return null;
   const failed = ['failed', 'interrupted'].includes(provisioning.status);
 
   return (

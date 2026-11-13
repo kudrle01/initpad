@@ -23,6 +23,7 @@ import { PipelinePresetSettings } from '@/components/organisms/PipelinePresetSet
 import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useConfirmation } from '@/confirmation';
 import { cn } from '@/lib/utils';
+import { firstPipelineState } from '@/lib/project-readiness';
 import type { EnvName, PipelinePreset } from '@/types';
 import { t } from '@/i18n';
 
@@ -369,6 +370,7 @@ export default function ProjectDetail() {
         project={project}
         template={template}
         provisioning={provisioning}
+        firstPipeline={firstPipelineState(project, commits, deployments)}
         canMaintain={canMaintain}
         onDelete={() => setConfirmOpen(true)}
       />

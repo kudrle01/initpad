@@ -28,8 +28,8 @@ usage() {
 Install, update or uninstall InitPad Agent on a Linux Docker server.
 
 Usage:
-  initpad-agent-install --url <control-plane-url> --image <image@sha256:digest> [options]
-  initpad-agent-install --uninstall [--expected-target-id ID] [--remove-workloads] [--remove-gateway] [--yes]
+  sudo sh ./initpad-agent-install.sh --url <control-plane-url> --image <image@sha256:digest> [options]
+  sudo sh ./initpad-agent-install.sh --uninstall [--expected-target-id ID] [--remove-workloads] [--remove-gateway] [--yes]
 
 Required:
   --url URL                    Public InitPad control-plane URL

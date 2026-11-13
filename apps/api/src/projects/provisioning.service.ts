@@ -62,6 +62,7 @@ export interface ProvisioningView {
   needsCleanup: boolean;
   createdAt: string;
   finishedAt: string | null;
+  dismissedAt: string | null;
   effects: ProvisioningEffectView[];
 }
 
@@ -95,6 +96,7 @@ type Row = ProvisioningRecord & {
   message: string | null;
   createdAt: Date;
   finishedAt: Date | null;
+  dismissedAt?: Date | null;
 };
 
 /**
@@ -347,7 +349,7 @@ export class ProvisioningService implements OnModuleInit {
   async listWorkspace(workspaceId: string, currentUserId: string): Promise<ProvisioningView[]> {
     await this.reconcileStale();
     const rows = await this.prisma.provisioningOperation.findMany({
-      where: { workspaceId },
+      where: { workspaceId, dismissedAt: null },
       orderBy: { createdAt: 'desc' },
       take: 20,
       include: { effects: { orderBy: { createdAt: 'asc' } } },
@@ -429,6 +431,39 @@ export class ProvisioningService implements OnModuleInit {
         leaseExpiresAt: null,
       },
     });
+  }
+
+  /**
+   * Acknowledge a finished failure so it leaves the workspace overview. The
+   * operation and its effect journal stay intact for audit and diagnostics.
+   */
+  async dismiss(operation: ProvisioningRecord, userId: string): Promise<void> {
+    const changed = await this.prisma.provisioningOperation.updateMany({
+      where: { id: operation.id, status: { in: ['failed', 'interrupted'] }, dismissedAt: null },
+      data: { dismissedAt: new Date(), dismissedById: userId },
+    });
+    if (changed.count !== 1) {
+      throw new ConflictException('Only a failed provisioning operation can be dismissed');
+    }
+    try {
+      await this.auditEvents?.record({
+        workspaceId: operation.workspaceId,
+        actorUserId: userId,
+        action: 'project.provisioning_dismissed',
+        resourceType: 'project',
+        resourceId: operation.projectId,
+        resourceName: operation.projectName,
+        details: {
+          kind: operation.kind,
+          attempt: operation.attempt,
+          cleanupPending: this.needsCleanup(operation),
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Provisioning dismissal audit failed for ${operation.id}: ${(error as Error).message}`,
+      );
+    }
   }
 
   isRetryable(operation: ProvisioningRecord, currentUserId: string): boolean {
@@ -532,6 +567,7 @@ export class ProvisioningService implements OnModuleInit {
       needsCleanup: this.needsCleanup(op),
       createdAt: op.createdAt.toISOString(),
       finishedAt: op.finishedAt ? op.finishedAt.toISOString() : null,
+      dismissedAt: op.dismissedAt ? op.dismissedAt.toISOString() : null,
       effects: op.effects.map((effect) => ({
         key: effect.key,
         kind: effect.kind,

@@ -10,7 +10,7 @@ name: initpad
 
 services:
   postgres:
-    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
     environment:
       POSTGRES_USER: initpad
       POSTGRES_PASSWORD: ${INITPAD_DB_PASSWORD:-initpad}
@@ -34,7 +34,7 @@ services:
   # variables at real S3 and can drop this service. The `minio` alias keeps
   # older .env files with INITPAD_ARTIFACT_S3_ENDPOINT=http://minio:9000 working.
   s3:
-    image: chrislusf/seaweedfs:4.50@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860
+    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
     command: server -dir=/data -s3 -s3.port=9000 -ip.bind=0.0.0.0 -volume.max=20
     environment:
       # The S3 gateway creates one admin identity from these two variables.
@@ -59,7 +59,7 @@ services:
   # One-shot: wait for the S3 gateway, create the PRIVATE artifact bucket, then exit.
   # It reuses the SeaweedFS image (`weed shell`), so no separate client image.
   s3-init:
-    image: chrislusf/seaweedfs:4.50@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860
+    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
     depends_on:
       s3: { condition: service_healthy }
     environment:
@@ -153,7 +153,7 @@ services:
       # production administrator without this installer-generated token.
       INITPAD_BOOTSTRAP_TOKEN: ${INITPAD_BOOTSTRAP_TOKEN:-}
       INITPAD_EDITION: ${INITPAD_EDITION:-self-hosted}
-      INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:-0.2.33}
+      INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:-0.2.34}
       INITPAD_UPDATE_REPOSITORY: ${INITPAD_UPDATE_REPOSITORY:-kudrle01/initpad}
       INITPAD_AGENT_UPDATE_CHANNEL: ${INITPAD_AGENT_UPDATE_CHANNEL:-stable}
       INITPAD_PLATFORM_UPDATE_CHANNEL: ${INITPAD_PLATFORM_UPDATE_CHANNEL:-stable}
@@ -300,7 +300,7 @@ services:
     container_name: initpad-supervisor
     environment:
       INITPAD_INSTALL_ROOT: ${INITPAD_INSTALL_ROOT:?run install.sh to configure the install root}
-      INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:-0.2.33}
+      INITPAD_PLATFORM_VERSION: ${INITPAD_PLATFORM_VERSION:-0.2.34}
       INITPAD_SUPERVISOR_CONTAINER_NAME: initpad-supervisor
       INITPAD_SUPERVISOR_SHARED_SECRET: ${INITPAD_SUPERVISOR_SHARED_SECRET:?run install.sh to generate secrets}
       INITPAD_UPDATE_REPOSITORY: ${INITPAD_UPDATE_REPOSITORY:-kudrle01/initpad}
@@ -336,7 +336,7 @@ services:
   # download its job image and Dockerfile base images from Docker Hub again.
   # It rejects pushes and deletes, so a job cannot place content in it.
   runner-image-cache:
-    image: registry:3.1.2@sha256:d4032d4cc323c1731c707931ecada07a53076eac38e3b61ae57533f170f2c6c3
+    image: registry:3.1.2@sha256:38907510915c3f1604c7e83d6ab602ab3020d092f73bdaed8696773693ff768c
     profiles: ['runner']
     # A directory mount, unlike a file mount, follows a configuration that a
     # platform update replaces.
@@ -542,7 +542,7 @@ services:
     restart: unless-stopped
 
   static-web:
-    image: nginx:alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606
+    image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
     depends_on: [fake-sftp]
     ports:
       - '8085:80'
@@ -563,7 +563,7 @@ services:
   # --- reverse proxy with automatic HTTPS (server installs only) -----------
 
   caddy:
-    image: caddy:2-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
+    image: caddy:2-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
     profiles: ['server']
     ports:
       - '80:80'

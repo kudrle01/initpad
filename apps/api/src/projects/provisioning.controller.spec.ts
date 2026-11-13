@@ -25,4 +25,26 @@ describe('ProvisioningController', () => {
     await controller.cleanup('op1', 'u1');
     expect(projects.cleanupProvisioning).toHaveBeenCalledWith('op1', 'u1');
   });
+
+  it('requires maintain access to dismiss a failure that still has cleanup pending', async () => {
+    const operation = { id: 'op1', workspaceId: 'ws1' };
+    const provisioning = {
+      record: jest.fn(async () => operation),
+      needsCleanup: jest.fn(() => true),
+      dismiss: jest.fn(async () => undefined),
+    };
+    const workspaces = { require: jest.fn(async () => 'maintainer') };
+    const controller = new ProvisioningController(
+      provisioning as never,
+      {} as never,
+      workspaces as never,
+    );
+    await controller.dismiss('op1', 'u1');
+    expect(workspaces.require).toHaveBeenCalledWith('u1', 'ws1', 'maintain');
+    expect(provisioning.dismiss).toHaveBeenCalledWith(operation, 'u1');
+
+    provisioning.needsCleanup.mockReturnValue(false);
+    await controller.dismiss('op1', 'u1');
+    expect(workspaces.require).toHaveBeenLastCalledWith('u1', 'ws1', 'write');
+  });
 });
