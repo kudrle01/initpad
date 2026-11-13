@@ -205,12 +205,27 @@ export function useProjectDetail() {
       .catch(() => undefined);
   }, [project]);
 
+  // Reload whenever the target picker opens, and keep polling while a gateway
+  // check is still running: readiness changes after the page was loaded, and
+  // a stale list would offer a target the server refuses (or hide a ready one).
+  const gatewayCheckRunning = targets.some(
+    (target) =>
+      target.gatewayPreflight?.status === 'queued' || target.gatewayPreflight?.status === 'running',
+  );
   useEffect(() => {
-    api
-      .listTargets()
-      .then(setTargets)
-      .catch(() => undefined);
-  }, []);
+    let cancelled = false;
+    const load = () =>
+      api
+        .listTargets()
+        .then((next) => !cancelled && setTargets(next))
+        .catch(() => undefined);
+    void load();
+    const timer = targetEnv && gatewayCheckRunning ? window.setInterval(load, 5_000) : undefined;
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [targetEnv, gatewayCheckRunning]);
 
   async function promote(target: EnvName) {
     if (!id) return;
