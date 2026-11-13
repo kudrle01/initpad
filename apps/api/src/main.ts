@@ -11,10 +11,18 @@ import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
 import { requestContextMiddleware } from './common/request-context';
 import { csrfProtection } from './common/csrf-protection';
 import { StructuredLogger } from './common/structured-logger';
+import { clearStaleWorkFiles } from './common/work-dir';
 
 async function bootstrap() {
   validateConfig();
   const logger = new StructuredLogger();
+  const staleWorkFiles = clearStaleWorkFiles();
+  if (staleWorkFiles.length > 0) {
+    logger.log(
+      { event: 'platform.stale_work_files_removed', count: staleWorkFiles.length },
+      'Bootstrap',
+    );
+  }
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
     logger,

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -160,4 +162,114 @@ test('fills every address from one network answer (ADR-161)', () => {
   // Re-runs keep the configuration; only a fresh .env or --reconfigure asks.
   assert.match(network, /elif \[ "\$FRESH_ENV" = yes \] \|\| \[ "\$RECONFIGURE" = yes \]; then/);
   assert.match(network, /if \[ -t 0 \] && \[ -t 2 \]; then\n\s*network_wizard/);
+});
+
+test('verifies the database password over the network, not trusted loopback', () => {
+  const check = installer.slice(
+    installer.indexOf('say "Waiting for PostgreSQL"'),
+    installer.indexOf('say "Waiting for Gitea"'),
+  );
+
+  assert.match(check, /psql -h postgres -U initpad/);
+  assert.doesNotMatch(check, /-h 127\.0\.0\.1/);
+});
+
+const releaseCheck = installer.slice(
+  installer.indexOf('# A signed release installed by the Supervisor pins'),
+  installer.indexOf('# A normal self-hosted installation'),
+);
+
+function runReleaseCheck(override, platformVersion) {
+  const work = mkdtempSync(join(tmpdir(), 'initpad-release-check-'));
+  const runtimeOverride = join(work, 'platform-release.override.yml');
+  writeFileSync(runtimeOverride, override);
+  const script = [
+    'set -euo pipefail',
+    'warn() { printf "%s\\n" "$*" >&2; }',
+    'fail() { printf "%s\\n" "$*" >&2; exit 1; }',
+    `runtime_override=${JSON.stringify(runtimeOverride)}`,
+    `platform_version=${platformVersion}`,
+    releaseCheck,
+  ].join('\n');
+  const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+  return { ...result, work, override: readFileSync(runtimeOverride, 'utf8') };
+}
+
+const pinnedRelease = (version) =>
+  `services:\n  api:\n    image: "ghcr.io/x/api@sha256:${'a'.repeat(64)}"\n` +
+  `    environment:\n      INITPAD_PLATFORM_VERSION: "${version}"\n`;
+
+test('sets aside a signed release older than the checkout', () => {
+  const result = runReleaseCheck(pinnedRelease('0.2.14'), '0.2.33');
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.override, 'services: {}\n');
+  assert.match(result.stderr, /0\.2\.14 is older than this checkout \(0\.2\.33\)/);
+  assert.ok(readdirSync(result.work).includes('platform-release.override.yml.superseded-0.2.14'));
+});
+
+test('refuses a checkout older than the installed signed release', () => {
+  const result = runReleaseCheck(pinnedRelease('0.10.0'), '0.9.40');
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /git switch --detach initpad-v0\.10\.0/);
+  assert.equal(result.override, pinnedRelease('0.10.0'));
+});
+
+test('keeps a signed release of the checkout version and a source install', () => {
+  for (const override of [pinnedRelease('0.2.33'), 'services: {}\n']) {
+    const result = runReleaseCheck(override, '0.2.33');
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.override, override);
+  }
+});
+
+test('discards a CI runner registration unknown to a recreated Gitea', () => {
+  const rotation = installer.slice(
+    installer.indexOf('rotate_runner_if_address_changed() {'),
+    installer.indexOf('runner_id=$(printf'),
+  );
+
+  // A recreated Gitea reuses id 1 and the runner name; only the uuid differs.
+  assert.match(rotation, /s\/\.\*\\"uuid\\"/);
+  assert.match(rotation, /WHERE uuid='\$runner_uuid'/);
+  assert.match(rotation, /\*\[!0-9a-f-\]\*\) fail/);
+  assert.ok(
+    rotation.indexOf('stop act_runner') < rotation.indexOf('rm -f /data/.runner'),
+    'the runner must stop before its registration is removed',
+  );
+});
+
+test('enables the CI action mirror only after verifying it (ADR-171)', () => {
+  const mirror = installer.slice(
+    installer.indexOf('mirror_ci_actions() {'),
+    installer.indexOf('say "Preparing CI action mirrors"'),
+  );
+
+  assert.match(mirror, /set_env INITPAD_CI_ACTIONS_MIRROR "\$runner_url"/);
+  assert.match(mirror, /set_env INITPAD_CI_ACTIONS_MIRROR ""/);
+  assert.ok(
+    mirror.indexOf('action_commit_mirrored') < mirror.indexOf('set_env INITPAD_CI_ACTIONS_MIRROR'),
+  );
+  assert.match(
+    installer,
+    /^mirror_ci_actions\n(#[^\n]*\n)*\.\/render-runner-config\.sh$/m,
+    'the runner configuration must be rendered again after the mirror check',
+  );
+  assert.ok(
+    installer.indexOf('say "Preparing CI action mirrors"') <
+      installer.indexOf('say "Starting the CI runner"'),
+  );
+});
+
+test('keeps API deployment working files on disk, not in tmpfs (ADR-172)', () => {
+  const compose = readFileSync(resolve(root, 'deploy/docker-compose.yml'), 'utf8');
+  const api = compose.slice(compose.indexOf('\n  api:\n'), compose.indexOf('\n  web:\n'));
+  const backup = readFileSync(resolve(root, 'deploy/backup.sh'), 'utf8');
+
+  assert.match(api, /^ {6}TMPDIR: \/var\/lib\/initpad-work$/m);
+  assert.match(api, /^ {6}- api-work:\/var\/lib\/initpad-work$/m);
+  assert.match(compose, /^ {2}api-work: \{\}$/m);
+  // Exported image archives are disposable and may be large.
+  assert.doesNotMatch(backup, /api-work/);
 });

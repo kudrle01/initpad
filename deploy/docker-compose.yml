@@ -222,6 +222,7 @@ services:
       INITPAD_ARTIFACT_S3_ACCESS_KEY_ID: ${INITPAD_ARTIFACT_S3_ACCESS_KEY_ID:-initpad}
       INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY: ${INITPAD_ARTIFACT_S3_SECRET_ACCESS_KEY:-initpad-artifacts}
       INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE: 'true'
+      TMPDIR: /var/lib/initpad-work
     volumes:
       # The API drives deployments through the host Docker daemon. The :ro
       # suffix protects only the socket inode; Docker API access is inherently
@@ -229,6 +230,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../templates:/templates:ro
       - api-data:/data
+      # Deployment working files (ADR-172): an exported image archive is as
+      # large as the image, often well over the /tmp tmpfs, and tmpfs pages
+      # count against mem_limit. TMPDIR points Node's os.tmpdir() here; the API
+      # clears stale initpad-* entries at startup. Not part of backups.
+      - api-work:/var/lib/initpad-work
       # Public root of the internal CA only (ADR-161): Manage Agent pins its
       # checksum in the generated installation command.
       - ./.runtime/tls:/run/initpad-tls:ro
@@ -586,6 +592,7 @@ volumes:
   runner-reset: {}
   sftp-www: {}
   api-data: {}
+  api-work: {}
   supervisor-data: {}
   caddy-data: {}
 

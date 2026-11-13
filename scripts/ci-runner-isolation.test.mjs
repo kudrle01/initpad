@@ -201,3 +201,52 @@ test('refuses a runner capacity other than one', () => {
     /^ {2}capacity: 1$/m,
   );
 });
+
+test('points act_runner at verified Gitea action mirrors only (ADR-171)', () => {
+  const work = mkdtempSync(join(tmpdir(), 'initpad-runner-mirror-'));
+  mkdirSync(join(work, 'deploy'));
+  mkdirSync(join(work, 'infra/act_runner'), { recursive: true });
+  copyFileSync(
+    resolve(root, 'deploy/render-runner-config.sh'),
+    join(work, 'deploy/render-runner-config.sh'),
+  );
+  copyFileSync(
+    resolve(root, 'infra/act_runner/config.yaml'),
+    join(work, 'infra/act_runner/config.yaml'),
+  );
+  const render = (mirror) => {
+    writeFileSync(join(work, 'deploy/.env'), `INITPAD_CI_ACTIONS_MIRROR=${mirror}\n`);
+    return spawnSync('bash', [join(work, 'deploy/render-runner-config.sh')], { encoding: 'utf8' });
+  };
+  const rendered = () => readFileSync(join(work, 'deploy/.runtime/act-runner-config.yaml'), 'utf8');
+
+  const github = render('');
+  assert.equal(github.status, 0, github.stderr);
+  assert.match(rendered(), /^ {2}github_mirror: ''$/m);
+
+  const mirrored = render('http://host.docker.internal:3001');
+  assert.equal(mirrored.status, 0, mirrored.stderr);
+  assert.match(rendered(), /^ {2}github_mirror: 'http:\/\/host\.docker\.internal:3001'$/m);
+
+  for (const invalid of ["http://x/'; rm", 'ftp://gitea', 'https://git.example/path']) {
+    const refused = render(invalid);
+    assert.notEqual(refused.status, 0, invalid);
+    assert.match(refused.stderr, /INITPAD_CI_ACTIONS_MIRROR must be an http\(s\) origin/);
+  }
+});
+
+test('mirrors every action the workflow templates use (ADR-171)', () => {
+  const listed = new Set(
+    read('deploy/runner/actions-mirror')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#')),
+  );
+  const templates = spawnSync('bash', ['-c', 'cat templates/*/files/.gitea/workflows/*.yml'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).stdout;
+  const used = [...templates.matchAll(/uses: *([\w.-]+\/[\w.-]+)@/g)].map((match) => match[1]);
+  assert.ok(used.length > 0);
+  for (const action of used) assert.ok(listed.has(action), `${action} is not mirrored`);
+});
