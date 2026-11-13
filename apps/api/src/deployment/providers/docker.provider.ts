@@ -53,6 +53,9 @@ export function dockerHealthFailureReason(
  * (or pulls a pre-built one from the registry) and runs a container attached
  * to the per-environment network (net-<env>).
  */
+// One health probe may take at most this long before the next attempt.
+const HEALTH_PROBE_TIMEOUT_MS = 3_000;
+
 @Injectable()
 export class DockerProvider implements DeploymentProvider {
   readonly kind: ProviderKind = 'docker';
@@ -177,10 +180,14 @@ export class DockerProvider implements DeploymentProvider {
   // Polls the health endpoint until it returns 2xx or the deadline passes.
   private async waitHealthy(hostPort: string, path: string): Promise<boolean> {
     const target = `http://${config.deployHealthHost}:${hostPort}${path.startsWith('/') ? '' : '/'}${path}`;
-    const attempts = 20; // ~10 s (20 × 500 ms)
+    const attempts = 20; // ~10 s of polling (20 × 500 ms) plus bounded requests
     for (let i = 0; i < attempts; i++) {
       try {
-        const res = await fetch(target);
+        // Bound every probe: an app that accepts the connection but never
+        // answers would otherwise hold the deployment at "Verifying" for
+        // minutes per attempt.
+        const res = await fetch(target, { signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS) });
+        await res.body?.cancel().catch(() => undefined);
         if (res.ok) return true;
       } catch {
         // App still starting — retry.

@@ -272,3 +272,20 @@ describe('DockerProvider registry diagnostics', () => {
     expect(removed).toEqual(['127.0.0.1:3001/acme/api:old']);
   });
 });
+
+describe('DockerProvider health verification', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('bounds every health probe so a silent app cannot stall the deployment', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response('ok', { status: 200 }));
+    const provider = new DockerProvider() as unknown as {
+      waitHealthy: (port: string, path: string) => Promise<boolean>;
+    };
+
+    await expect(provider.waitHealthy('8080', '/health')).resolves.toBe(true);
+    const init = fetchMock.mock.calls[0][1];
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+});
