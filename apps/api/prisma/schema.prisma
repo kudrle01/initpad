@@ -752,6 +752,9 @@ model ProvisioningOperation {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
   finishedAt     DateTime?
+  // Set when a member acknowledges a failure that needs no further action.
+  dismissedAt    DateTime?
+  dismissedById  String?
   effects        ProvisioningEffect[]
 
   @@index([workspaceId, createdAt])
