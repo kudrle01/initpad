@@ -181,6 +181,7 @@ export interface ProvisioningStatus {
   needsCleanup: boolean;
   createdAt: string;
   finishedAt: string | null;
+  dismissedAt?: string | null;
   effects: Array<{
     key: string;
     kind: 'repository' | 'collaborator' | 'secrets' | 'project';

@@ -224,4 +224,29 @@ describe('ProvisioningService', () => {
       data: expect.objectContaining({ status: 'retried', leaseOwner: null }),
     });
   });
+
+  it('dismisses only a finished failure and keeps the record', async () => {
+    const prisma = {
+      provisioningOperation: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    };
+    const service = new ProvisioningService(prisma as never);
+    const operation = {
+      id: 'op1',
+      workspaceId: 'ws1',
+      projectId: null,
+      projectName: 'demo',
+      kind: 'create',
+      status: 'running',
+      attempt: 1,
+      effects: [],
+    } as never;
+
+    await expect(service.dismiss(operation, 'u1')).rejects.toThrow(
+      'Only a failed provisioning operation can be dismissed',
+    );
+    expect(prisma.provisioningOperation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'op1', status: { in: ['failed', 'interrupted'] }, dismissedAt: null },
+      data: { dismissedAt: expect.any(Date), dismissedById: 'u1' },
+    });
+  });
 });

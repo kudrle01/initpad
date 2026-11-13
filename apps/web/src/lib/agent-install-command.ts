@@ -64,6 +64,9 @@ function downloadSteps(
   steps.push(
     `${installerCurl} initpad-agent-install.sh '${installerUrl}'`,
     `printf '%s  %s\\n' '${distribution.installer.sha256}' initpad-agent-install.sh | sha256sum -c -`,
+    // curl -o leaves the script non-executable; a later `sudo ./…` would
+    // then fail with "Permission denied", so mark it executable once verified.
+    'chmod 0755 initpad-agent-install.sh',
   );
   return { steps, caOption };
 }

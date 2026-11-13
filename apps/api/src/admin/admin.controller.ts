@@ -24,8 +24,8 @@ export class AdminController {
   ) {}
 
   @Get('updates')
-  updateStatus() {
-    return this.platformUpdates.status();
+  updateStatus(@Query('refresh') refresh?: string) {
+    return this.platformUpdates.status(refresh === '1');
   }
 
   @Post('updates')

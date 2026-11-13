@@ -107,6 +107,39 @@ describe('PlatformReleaseCatalogService', () => {
     );
   });
 
+  it('accepts a release list larger than 512 KiB, as GitHub now returns', async () => {
+    const large = [{ ...release('0.2.1'), body: 'x'.repeat(600 * 1024) }];
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(response(large))
+      .mockResolvedValueOnce(response(manifest('0.2.1')))
+      .mockResolvedValueOnce(response({}));
+
+    const result = await new PlatformReleaseCatalogService().latest();
+
+    expect(result.error).toBeNull();
+    expect(result.release?.manifest.version).toBe('0.2.1');
+  });
+
+  it('bypasses the cache on an explicit refresh and reports why it failed', async () => {
+    const fetch = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(response(releases()))
+      .mockResolvedValueOnce(response(manifest()))
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }));
+    const catalog = new PlatformReleaseCatalogService();
+    await catalog.latest();
+    jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 20_000);
+
+    expect((await catalog.latest()).stale).toBe(false);
+    const refreshed = await catalog.latest(true);
+
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(refreshed).toMatchObject({ stale: true, release: { manifest: { version: '0.2.0' } } });
+    expect(refreshed.error).toContain('HTTP 503');
+  });
+
   it('fails closed when the latest stable release is malformed', async () => {
     jest
       .spyOn(global, 'fetch')
