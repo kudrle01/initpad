@@ -1015,6 +1015,10 @@ export const cs = {
   Verified: 'Ověřeno',
   current: 'současný',
   'Agent not ready': 'Agent není připraven',
+  'not configured': 'není nastaveno',
+  'gateway check running': 'probíhá kontrola gateway',
+  'gateway check failed': 'kontrola gateway selhala',
+  'gateway not checked': 'gateway není zkontrolovaná',
   'runs {runtimes}': 'spouští {runtimes}',
   'Confirm target change': 'Potvrďte změnu cíle',
   '{name} will be replaced by {name2}. A live deployment is removed from the old target and must be deployed to the new one.':

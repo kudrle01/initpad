@@ -353,6 +353,7 @@ export interface Target {
   } | null;
   verifiedAt: string | null;
   agentReady?: boolean;
+  unavailableReason?: string;
   agentVersion?: string | null;
   inUse?: boolean;
   usage?: TargetUsage[];

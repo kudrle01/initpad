@@ -12,7 +12,9 @@ import {
   dockerContainerName,
   dockerHealthFailureReason,
   dockerNetworkName,
+  localDockerProbeBlockedReason,
 } from './docker.provider';
+import { config } from '../../config';
 
 type Manifest = { Config?: string; RepoTags?: string[]; Layers?: string[] };
 
@@ -196,6 +198,55 @@ describe('DockerProvider health diagnostics', () => {
     expect(dockerHealthFailureReason('/health', '0.0.0.0', 'host.docker.internal')).toBe(
       'Health check at /health did not return 2xx within ~10s.',
     );
+  });
+});
+
+describe('DockerProvider loopback probe guard', () => {
+  it('flags only a loopback bind probed from outside the host', () => {
+    expect(localDockerProbeBlockedReason('127.0.0.1', 'host.docker.internal')).toContain(
+      'INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0',
+    );
+    expect(localDockerProbeBlockedReason('0.0.0.0', 'host.docker.internal')).toBeNull();
+    expect(localDockerProbeBlockedReason('127.0.0.1', 'localhost')).toBeNull();
+  });
+
+  it('fails before replacing the previous container when it can never verify', async () => {
+    const mutable = config as unknown as {
+      deployHealthHost: string;
+      deployment: { bindAddress: string };
+    };
+    const saved = [mutable.deployHealthHost, mutable.deployment.bindAddress] as const;
+    mutable.deployHealthHost = 'host.docker.internal';
+    mutable.deployment.bindAddress = '127.0.0.1';
+    try {
+      const provider = new DockerProvider();
+      const internals = provider as unknown as {
+        isAvailable: () => Promise<boolean>;
+        ensureNetwork: jest.Mock;
+        removeContainer: jest.Mock;
+      };
+      internals.isAvailable = jest.fn(async () => true);
+      internals.ensureNetwork = jest.fn(async () => undefined);
+      internals.removeContainer = jest.fn(async () => undefined);
+
+      await expect(
+        provider.deploy({
+          projectName: 'acme-api',
+          version: 'a'.repeat(40),
+          env: 'dev',
+          repoPath: '/unused',
+          imageRef: 'registry.local/acme/api:1',
+        }),
+      ).resolves.toEqual({
+        status: 'failed',
+        url: '',
+        reason: expect.stringContaining('Built-in Docker cannot verify deployments'),
+      });
+      expect(internals.ensureNetwork).not.toHaveBeenCalled();
+      expect(internals.removeContainer).not.toHaveBeenCalled();
+    } finally {
+      [mutable.deployHealthHost, mutable.deployment.bindAddress] = saved;
+    }
   });
 });
 

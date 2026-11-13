@@ -15,6 +15,7 @@ import {
 } from '../agents/agent-version';
 import { allocationUsageDefaults } from '../targets/target-allocation-defaults';
 import { BUILTIN_DOCKER, TargetRow, TargetsService } from '../targets/targets.service';
+import { localDockerProbeBlockedReason } from '../deployment/providers/docker.provider';
 
 export interface ResolvedEnvironmentTarget {
   name: EnvName;
@@ -212,6 +213,14 @@ export class ProjectEnvironmentTargets {
   }
 
   assertUsable(target: TargetRow, template: TemplateManifest): void {
+    if (target.id === BUILTIN_DOCKER) {
+      const blocked = localDockerProbeBlockedReason();
+      if (blocked) {
+        throw new BadRequestException(
+          `Built-in Docker cannot verify deployments in this configuration. ${blocked}`,
+        );
+      }
+    }
     const managementState = target.managementState ?? 'active';
     if (target.scope === 'user' && managementState !== 'active') {
       throw new BadRequestException(

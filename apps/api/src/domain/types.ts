@@ -82,6 +82,9 @@ export interface Target {
   // Agent targets are ready when enrolled, enabled, on a compatible version,
   // and this control plane has durable artifact storage configured.
   agentReady?: boolean;
+  // Set when the target cannot take deployments in this installation's
+  // configuration; the text says what the administrator has to change.
+  unavailableReason?: string;
   agentVersion?: string | null;
   // True when at least one environment currently references this target
   // (blocks deletion). Optional — only populated by the targets listing.
