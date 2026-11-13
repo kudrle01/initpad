@@ -58,9 +58,9 @@ export class PlatformUpdatesService {
     private readonly supervisor: SupervisorClientService,
   ) {}
 
-  async status() {
+  async status(refresh = false) {
     const [catalogResult, supervisorResult] = await Promise.all([
-      this.catalog.latest(),
+      this.catalog.latest(refresh),
       this.supervisor.configured
         ? this.supervisor.status().then(
             (value) => ({ value, error: null }),
