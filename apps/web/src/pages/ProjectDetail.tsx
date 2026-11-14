@@ -518,9 +518,21 @@ export default function ProjectDetail() {
       <EnvVarsDialog
         projectId={project.id}
         env={configEnv}
-        canManage={canMaintain}
+        // The API lets every project writer manage variables (member and up).
+        canManage={!readOnly}
         onOpenChange={(o) => !o && setConfigEnv(null)}
         onChanged={refreshDetails}
+        onRedeploy={
+          configEnv &&
+          project.environments.some(
+            (environment) => environment.name === configEnv && environment.status !== 'empty',
+          )
+            ? (environment) => {
+                setConfigEnv(null);
+                void redeployWithConfirmation(environment);
+              }
+            : undefined
+        }
       />
 
       <WorkloadDiagnosticsDialog

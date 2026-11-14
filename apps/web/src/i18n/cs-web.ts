@@ -30,4 +30,12 @@ export const csWeb = {
     'Import trvá déle než obvykle. Pokračuje na pozadí — sledujte ho na přehledu.',
   'Import lists repositories that InitPad can reach and that are not connected yet. An empty repository needs a first commit. To start without a repository, <link>create a project from a template</link>.':
     'Import nabízí repozitáře, ke kterým má InitPad přístup a které ještě nejsou připojené. Prázdný repozitář potřebuje první commit. Pokud repozitář nemáte, <link>založte projekt ze šablony</link>.',
+  // components/organisms/EnvVarsDialog.tsx
+  'Could not load the variables': 'Proměnné se nepodařilo načíst',
+  'Saved — not applied yet': 'Uloženo — zatím se neprojevilo',
+  'Request redeploy of {env}': 'Požádat o znovunasazení {env}',
+  'Redeploy {env}': 'Znovu nasadit {env}',
+  'The running application uses the new values after the next deployment.':
+    'Běžící aplikace použije nové hodnoty po dalším nasazení.',
+  'Edit {key}': 'Upravit {key}',
 } satisfies Record<string, string>;

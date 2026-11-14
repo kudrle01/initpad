@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { KeyRound, Lock, Plus, Trash2 } from 'lucide-react';
+import { KeyRound, Lock, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/atoms/Spinner';
+import { LoadErrorState } from '@/components/molecules/LoadErrorState';
+import { Notice } from '@/components/molecules/Notice';
 import { api, type ConfigVar } from '@/api';
 import { useToast } from '@/toast';
 import type { EnvName } from '@/types';
@@ -22,13 +24,25 @@ interface Props {
   canManage: boolean;
   onOpenChange: (open: boolean) => void;
   onChanged: () => Promise<void> | void;
+  /** Applies saved changes; omitted when the environment has nothing deployed. */
+  onRedeploy?: (env: EnvName) => void;
 }
 
 // Per-environment application config & secrets (ADR-061). Secret values are never
 // shown (the API masks them); a secret can be replaced by entering a new value.
-export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChanged }: Props) {
+export function EnvVarsDialog({
+  projectId,
+  env,
+  canManage,
+  onOpenChange,
+  onChanged,
+  onRedeploy,
+}: Props) {
   const [vars, setVars] = useState<ConfigVar[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Changes reach the running app only after a redeploy; offer it right here.
+  const [changed, setChanged] = useState(false);
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [isSecret, setIsSecret] = useState(false);
@@ -40,16 +54,28 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
   const load = useCallback(() => {
     if (!env) return;
     setLoading(true);
+    setLoadError(null);
     api
       .listConfigVars(projectId, env)
       .then(setVars)
-      .catch((e) => toast.error((e as Error).message))
+      .catch((e) => setLoadError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [projectId, env, toast]);
+  }, [projectId, env]);
 
   useEffect(() => {
+    setChanged(false);
+    setKey('');
+    setValue('');
+    setIsSecret(false);
     if (env) load();
   }, [env, load]);
+
+  function edit(variable: ConfigVar) {
+    if (!canManage) return;
+    setKey(variable.key);
+    setIsSecret(variable.isSecret);
+    setValue(variable.isSecret ? '' : (variable.value ?? ''));
+  }
 
   async function save() {
     if (!env) return;
@@ -79,6 +105,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
       setKey('');
       setValue('');
       setIsSecret(false);
+      setChanged(true);
       load();
       await onChanged();
     } catch (e) {
@@ -107,6 +134,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
     setDeletingKey(k);
     try {
       await api.deleteConfigVar(projectId, env, k);
+      setChanged(true);
       load();
       await onChanged();
     } catch (e) {
@@ -142,8 +170,30 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
           <div className="flex justify-center py-6">
             <Spinner className="h-5 w-5 text-primary" />
           </div>
+        ) : loadError ? (
+          <LoadErrorState
+            title={t('Could not load the variables')}
+            message={loadError}
+            onRetry={load}
+          />
         ) : (
           <div className="flex min-w-0 flex-col gap-4">
+            {changed && env && onRedeploy && (
+              <Notice
+                tone="info"
+                title={t('Saved — not applied yet')}
+                actions={
+                  <Button size="sm" onClick={() => onRedeploy(env)}>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {env === 'prod'
+                      ? t('Request redeploy of {env}', { env })
+                      : t('Redeploy {env}', { env })}
+                  </Button>
+                }
+              >
+                {t('The running application uses the new values after the next deployment.')}
+              </Notice>
+            )}
             {vars.length === 0 ? (
               <p className="rounded-lg bg-muted px-3.5 py-3 text-sm text-muted-foreground">
                 {t('No variables yet.')}
@@ -156,7 +206,14 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
                       {v.isSecret ? <Lock className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
                     </span>
                     {/* Key above value: neither has to fight the other for width. */}
-                    <span className="min-w-0 flex-1">
+                    <button
+                      type="button"
+                      disabled={!canManage}
+                      onClick={() => edit(v)}
+                      title={canManage ? t('Edit {key}', { key: v.key }) : undefined}
+                      aria-label={canManage ? t('Edit {key}', { key: v.key }) : undefined}
+                      className="min-w-0 flex-1 rounded-sm text-left enabled:cursor-pointer enabled:hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
                       <span className="block break-all font-mono text-[13px] font-medium">
                         {v.key}
                       </span>
@@ -166,7 +223,7 @@ export function EnvVarsDialog({ projectId, env, canManage, onOpenChange, onChang
                       >
                         {v.isSecret ? '••••••••' : v.value}
                       </span>
-                    </span>
+                    </button>
                     {canManage && (
                       <Button
                         variant="ghost"

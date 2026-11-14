@@ -25,7 +25,7 @@ vi.mock('@/api', () => ({
 
 vi.mock('@/toast', () => ({ useToast: () => mocks.toast }));
 
-function renderDialog(onChanged = vi.fn()) {
+function renderDialog(onChanged = vi.fn(), onRedeploy?: (env: 'prod') => void) {
   render(
     <ConfirmationProvider>
       <EnvVarsDialog
@@ -34,6 +34,7 @@ function renderDialog(onChanged = vi.fn()) {
         canManage
         onOpenChange={() => undefined}
         onChanged={onChanged}
+        onRedeploy={onRedeploy}
       />
     </ConfirmationProvider>,
   );
@@ -92,5 +93,42 @@ describe('EnvVarsDialog', () => {
 
     await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
     expect(api.deleteConfigVar).toHaveBeenCalledWith('project-1', 'prod', 'REMOVE_ME');
+  });
+
+  it('shows a load error with retry instead of an empty list', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.listConfigVars)
+      .mockRejectedValueOnce(new Error('Workspace write access required'))
+      .mockResolvedValueOnce([]);
+    renderDialog();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Workspace write access required');
+    expect(screen.queryByText('No variables yet.')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('No variables yet.')).toBeInTheDocument();
+  });
+
+  it('offers a production redeploy request after a change and prefills a clicked row', async () => {
+    const user = userEvent.setup();
+    const variable = {
+      key: 'API_URL',
+      value: 'https://old.example.test',
+      isSecret: false,
+      hasValue: true,
+      updatedAt: '2026-09-25T00:00:00.000Z',
+    };
+    vi.mocked(api.listConfigVars).mockResolvedValue([variable]);
+    vi.mocked(api.upsertConfigVar).mockResolvedValue(variable);
+    const onRedeploy = vi.fn();
+    renderDialog(vi.fn(), onRedeploy);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit API_URL' }));
+    expect(screen.getByPlaceholderText('KEY')).toHaveValue('API_URL');
+    expect(screen.getByPlaceholderText('value')).toHaveValue('https://old.example.test');
+
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await user.click(await screen.findByRole('button', { name: 'Replace variable' }));
+    await user.click(await screen.findByRole('button', { name: 'Request redeploy of prod' }));
+    expect(onRedeploy).toHaveBeenCalledWith('prod');
   });
 });
