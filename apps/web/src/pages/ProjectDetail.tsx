@@ -234,13 +234,20 @@ export default function ProjectDetail() {
   }
 
   async function rejectProductionWithConfirmation() {
+    let reason = '';
     const confirmed = await confirmAction({
       title: t('Reject production request?'),
       description: t('The reviewed build will not be deployed by this request.'),
       confirmLabel: t('Reject request'),
       tone: 'warning',
+      note: {
+        label: t('Reason for the requester (optional)'),
+        placeholder: t('What should change before production?'),
+        maxLength: 300,
+        onChange: (value) => (reason = value),
+      },
     });
-    if (confirmed) await rejectProduction();
+    if (confirmed) await rejectProduction(reason.trim() || undefined);
   }
 
   async function cancelProductionWithConfirmation() {

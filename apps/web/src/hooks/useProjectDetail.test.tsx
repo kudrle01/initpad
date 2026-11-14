@@ -195,4 +195,23 @@ describe('useProjectDetail', () => {
     expect(mocks.api.rejectProductionDeployment).not.toHaveBeenCalled();
     expect(mocks.api.cancelProductionDeployment).not.toHaveBeenCalled();
   });
+
+  it('sends an optional rejection reason with the review', async () => {
+    mocks.api.getProductionRequest.mockResolvedValue({ ...productionRequest, canReject: true });
+    mocks.api.rejectProductionDeployment.mockResolvedValue({
+      ...productionRequest,
+      status: 'rejected',
+    });
+    const { result } = renderHook(() => useProjectDetail());
+    await waitFor(() => expect(result.current.productionRequest?.canReject).toBe(true));
+
+    await act(async () => {
+      await result.current.rejectProduction('Fix the migration first');
+    });
+    expect(mocks.api.rejectProductionDeployment).toHaveBeenCalledWith(
+      'project-1',
+      'request-1',
+      'Fix the migration first',
+    );
+  });
 });

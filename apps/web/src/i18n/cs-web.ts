@@ -61,4 +61,7 @@ export const csWeb = {
   Troubleshooting: 'Řešení potíží',
   // App.tsx
   'Could not load your workspaces': 'Vaše workspace se nepodařilo načíst',
+  // pages/ProjectDetail.tsx
+  'Reason for the requester (optional)': 'Důvod pro žadatele (nepovinné)',
+  'What should change before production?': 'Co je potřeba změnit před produkcí?',
 } satisfies Record<string, string>;

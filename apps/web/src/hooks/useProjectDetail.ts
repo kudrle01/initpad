@@ -361,7 +361,7 @@ export function useProjectDetail() {
     }
   }
 
-  async function reviewProduction(action: 'approve' | 'reject' | 'cancel') {
+  async function reviewProduction(action: 'approve' | 'reject' | 'cancel', note?: string) {
     if (!id || !productionRequest) return;
     if (action === 'approve' && !productionRequest.canApprove) return;
     if (action === 'reject' && !productionRequest.canReject) return;
@@ -372,7 +372,7 @@ export function useProjectDetail() {
         action === 'approve'
           ? await api.approveProductionDeployment(id, productionRequest.id)
           : action === 'reject'
-            ? await api.rejectProductionDeployment(id, productionRequest.id)
+            ? await api.rejectProductionDeployment(id, productionRequest.id, note)
             : await api.cancelProductionDeployment(id, productionRequest.id);
       setProductionRequest(updated);
       if (action === 'approve') {
@@ -560,7 +560,7 @@ export function useProjectDetail() {
     confirmRollback,
     requestProduction,
     approveProduction: () => reviewProduction('approve'),
-    rejectProduction: () => reviewProduction('reject'),
+    rejectProduction: (note?: string) => reviewProduction('reject', note),
     cancelProduction: () => reviewProduction('cancel'),
     runAgain,
     rerunFailedJobs,
