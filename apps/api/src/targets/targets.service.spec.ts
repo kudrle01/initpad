@@ -202,7 +202,12 @@ describe('Agent-backed Docker target creation', () => {
     await expect(
       service.create(
         'maintainer-1',
-        { name: 'Office Docker', kind: 'docker', capabilities: ['node'] },
+        {
+          name: 'Office Docker',
+          kind: 'docker',
+          capabilities: ['node'],
+          publicUrl: 'http://192.168.1.50',
+        },
         'workspace-1',
       ),
     ).rejects.toThrow(new ForbiddenException(AGENT_TARGET_ROLE_MESSAGE));
@@ -213,7 +218,12 @@ describe('Agent-backed Docker target creation', () => {
     await expect(
       service.create(
         'admin-1',
-        { name: 'Office Docker', kind: 'docker', capabilities: ['node'] },
+        {
+          name: 'Office Docker',
+          kind: 'docker',
+          capabilities: ['node'],
+          publicUrl: 'http://192.168.1.50',
+        },
         'workspace-1',
       ),
     ).resolves.toMatchObject({ kind: 'docker' });
