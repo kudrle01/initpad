@@ -38,6 +38,21 @@ const REAL_MESSAGES = [
   'Verifying deployment',
   'Creating isolated candidate workload',
   'Cancellation requested — cleaning up',
+  // wording introduced by the API audit branches (ADR-185 follow-up)
+  "Environment 'prod' has no server assigned (its server was removed). Choose a server for this environment before deploying.",
+  'This project is already being deleted. Wait for that deletion to finish.',
+  'A deployment is still running in dev, test. It has been cancelled; delete the project again once it has stopped.',
+  'This server still hosts deployments: shop/dev. Remove them or move these environments to another server first.',
+  "Project 'shop' is already being created. Wait for that request to finish.",
+  'The selected verified production deployment is no longer available. Review rollback again.',
+  "Environment 'dev' has nothing to redeploy. Push a commit or run CI again.",
+  'Repository activity is unavailable: GitHub API rate limit exceeded',
+  'ci: queued a1b2c3d',
+  'Only a workspace owner or admin can add a Docker Agent server, because only they can connect its Agent. A maintainer can add an SFTP server or use existing servers.',
+  'Agent offline since 2026-11-13T10:00:00.000Z; start it or disconnect the server',
+  'Agent has not connected yet; start it or disconnect the server',
+  'Agent did not finish the job after 5 attempts; each lease expired without a result. Check the Agent logs on the server, then retry.',
+  'Candidate workload failed its health check: GET http://127.0.0.1:30001/health returned HTTP 503 after 30 s; last log: boom',
 ];
 
 // Templates the catalog depends on; when the API rewords one, this fails and
@@ -73,7 +88,11 @@ afterEach(() => setLocale('en'));
 describe('API message catalog (ADR-185)', () => {
   it('keeps every real message unchanged in English', () => {
     const changed = REAL_MESSAGES.filter(
-      (message) => translateApiMessage(message) !== message && !message.includes('target named'),
+      (message) =>
+        translateApiMessage(message) !== message &&
+        // These two are reworded on purpose (server terminology, readable CI state).
+        !message.includes('target named') &&
+        !message.startsWith('ci: queued'),
     );
     expect(changed).toEqual([]);
   });

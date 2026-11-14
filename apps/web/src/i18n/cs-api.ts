@@ -309,4 +309,38 @@ export const csApi = {
   'Verifying signed Agent release manifest': 'Ověřování podepsaného manifestu verze Agenta',
   'Handing update to the local rollback supervisor': 'Předání aktualizace místnímu supervisoru',
   'Waiting to update Agent to {version}': 'Čeká se na aktualizaci Agenta na {version}',
+  // messages added by the API audit branches
+  "Environment '{env}' has no server assigned (its server was removed). Choose a server for this environment before deploying.":
+    'Prostředí {env} nemá přiřazený server (jeho server byl odebrán). Před nasazením mu vyberte server.',
+  'This project is already being deleted. Wait for that deletion to finish.':
+    'Projekt se už maže. Počkejte, až mazání skončí.',
+  'A deployment is still running in {names}. It has been cancelled; delete the project again once it has stopped.':
+    'V prostředí {names} ještě běží nasazení. Bylo zrušeno; až se zastaví, smažte projekt znovu.',
+  'This server still hosts deployments: {names}. Remove them or move these environments to another server first.':
+    'Na serveru jsou stále nasazení: {names}. Nejdřív je odeberte nebo tato prostředí přesuňte na jiný server.',
+  "Repository '{name}' is already being imported. Wait for that import to finish.":
+    'Repozitář {name} se už importuje. Počkejte, až import skončí.',
+  "Project '{name}' is already being created. Wait for that request to finish.":
+    'Projekt {name} se už zakládá. Počkejte, až zakládání skončí.',
+  'The selected verified deployment is no longer available. Review rollback again.':
+    'Vybrané ověřené nasazení už není k dispozici. Zkontrolujte návrat znovu.',
+  'The selected verified production deployment is no longer available. Review rollback again.':
+    'Vybrané ověřené nasazení produkce už není k dispozici. Zkontrolujte návrat znovu.',
+  "Environment '{env}' has nothing to redeploy. Push a commit or run CI again.":
+    'V prostředí {env} není co znovu nasadit. Nahrajte commit nebo spusťte CI znovu.',
+  'Repository activity is unavailable: {detail}': 'Aktivita repozitáře není dostupná: {detail}',
+  'CI queued for {sha}': 'CI pro {sha} čeká ve frontě',
+  'Only a workspace owner or admin can add a Docker Agent server, because only they can connect its Agent. A maintainer can add an SFTP server or use existing servers.':
+    'Docker server s Agentem přidá owner nebo admin workspace, protože jen oni mohou Agenta připojit. Maintainer může přidat SFTP server nebo používat existující servery.',
+  'Agent offline since {since}; start it or disconnect the server':
+    'Agent je offline od {since}; spusťte ho, nebo server odpojte',
+  'Agent has not connected yet; start it or disconnect the server':
+    'Agent se zatím nepřipojil; spusťte ho, nebo server odpojte',
+  'Agent did not finish the job after {attempts} attempts; each lease expired without a result. Check the Agent logs on the server, then retry.':
+    'Agent úlohu nedokončil ani po {attempts} pokusech; žádný pokus nevrátil výsledek. Zkontrolujte logy Agenta na serveru a zkuste to znovu.',
+  'Candidate workload failed its health check: {detail}':
+    'Nová verze aplikace neprošla kontrolou stavu: {detail}',
+  'Workload failed its health check after start: {detail}':
+    'Aplikace po spuštění neprošla kontrolou stavu: {detail}',
+  'Candidate workload failed its health check': 'Nová verze aplikace neprošla kontrolou stavu',
 } satisfies Record<string, string>;

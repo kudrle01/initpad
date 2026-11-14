@@ -348,6 +348,75 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
     msg('Value must be a string up to {max} characters'),
   ),
 
+  // ---------------------------- messages added by the API audit branches
+  rule(
+    String.raw`Environment ${ENV} has no server assigned \(its server was removed\)\. Choose a server for this environment before deploying\.`,
+    msg(
+      "Environment '{env}' has no server assigned (its server was removed). Choose a server for this environment before deploying.",
+    ),
+  ),
+  exact(msg('This project is already being deleted. Wait for that deletion to finish.')),
+  rule(
+    String.raw`A deployment is still running in (?<names>.+)\. It has been cancelled; delete the project again once it has stopped\.`,
+    msg(
+      'A deployment is still running in {names}. It has been cancelled; delete the project again once it has stopped.',
+    ),
+  ),
+  rule(
+    String.raw`This server still hosts deployments: (?<names>.+)\. Remove them or move these environments to another server first\.`,
+    msg(
+      'This server still hosts deployments: {names}. Remove them or move these environments to another server first.',
+    ),
+  ),
+  rule(
+    String.raw`Repository ${NAME} is already being imported\. Wait for that import to finish\.`,
+    msg("Repository '{name}' is already being imported. Wait for that import to finish."),
+  ),
+  rule(
+    String.raw`Project ${NAME} is already being created\. Wait for that request to finish\.`,
+    msg("Project '{name}' is already being created. Wait for that request to finish."),
+  ),
+  exact(msg('The selected verified deployment is no longer available. Review rollback again.')),
+  exact(
+    msg(
+      'The selected verified production deployment is no longer available. Review rollback again.',
+    ),
+  ),
+  rule(
+    String.raw`Environment ${ENV} has nothing to redeploy\. Push a commit or run CI again\.`,
+    msg("Environment '{env}' has nothing to redeploy. Push a commit or run CI again."),
+  ),
+  rule(
+    String.raw`Repository activity is unavailable: (?<detail>.+)`,
+    msg('Repository activity is unavailable: {detail}'),
+  ),
+  rule(String.raw`ci: queued (?<sha>[0-9a-f]+)`, msg('CI queued for {sha}')),
+  exact(
+    msg(
+      'Only a workspace owner or admin can add a Docker Agent server, because only they can connect its Agent. A maintainer can add an SFTP server or use existing servers.',
+    ),
+  ),
+  rule(
+    String.raw`Agent offline since (?<since>\S+); start it or disconnect the server`,
+    msg('Agent offline since {since}; start it or disconnect the server'),
+  ),
+  exact(msg('Agent has not connected yet; start it or disconnect the server')),
+  rule(
+    String.raw`Agent did not finish the job after (?<attempts>\d+) attempts; each lease expired without a result\. Check the Agent logs on the server, then retry\.`,
+    msg(
+      'Agent did not finish the job after {attempts} attempts; each lease expired without a result. Check the Agent logs on the server, then retry.',
+    ),
+  ),
+  rule(
+    String.raw`Candidate workload failed its health check: (?<detail>.+)`,
+    msg('Candidate workload failed its health check: {detail}'),
+  ),
+  rule(
+    String.raw`Workload failed its health check after start: (?<detail>.+)`,
+    msg('Workload failed its health check after start: {detail}'),
+  ),
+  exact(msg('Candidate workload failed its health check')),
+
   // ------------------------------------------- deployment and job steps
   exact(msg('Waiting for Agent')),
   exact(msg('Claimed by Agent')),
