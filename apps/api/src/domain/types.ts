@@ -196,6 +196,19 @@ export interface ActivityEvent {
   pipeline: PipelineStage[];
 }
 
+// A project whose optional SCM enrichment failed. Its events still come from
+// InitPad's own records.
+export interface ActivityWarning {
+  projectId: string;
+  projectName: string;
+  message: string;
+}
+
+export interface ActivityFeed {
+  events: ActivityEvent[];
+  warnings: ActivityWarning[];
+}
+
 export interface DeploymentOperationSummary {
   id: string;
   correlationId: string;

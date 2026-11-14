@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Get, Headers, Query, UseGuards } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -13,5 +13,15 @@ export class ActivityController {
   @Get()
   list(@CurrentUser() userId: string, @Headers('x-workspace-id') workspaceId?: string) {
     return this.projects.activity(userId, workspaceId);
+  }
+
+  // `{ events, warnings }`; `?scm=true` adds cached repository commits.
+  @Get('feed')
+  feed(
+    @CurrentUser() userId: string,
+    @Headers('x-workspace-id') workspaceId?: string,
+    @Query('scm') scm?: string,
+  ) {
+    return this.projects.activityFeed(userId, workspaceId, scm === 'true' || scm === '1');
   }
 }

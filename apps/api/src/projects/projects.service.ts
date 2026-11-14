@@ -1943,11 +1943,15 @@ export class ProjectsService {
     return this.queries.deploymentHistory(id, limit);
   }
 
-  // Cross-project activity feed: the recent commits of every owned project with
-  // their CI/deploy pipeline state, merged newest-first. A failing project
-  // (e.g. its Gitea repo is unreachable) is skipped, not fatal.
+  // Cross-project activity built from InitPad's own records (ADR-179).
   async activity(userId: string, requestedWorkspaceId?: string): Promise<ActivityEvent[]> {
-    return this.queries.activity(userId, requestedWorkspaceId, (projectId, limit) =>
+    return this.queries.activity(userId, requestedWorkspaceId);
+  }
+
+  // The same feed with optional, cached SCM commits; provider failures are
+  // returned as warnings instead of hiding the project.
+  activityFeed(userId: string, requestedWorkspaceId: string | undefined, includeScm: boolean) {
+    return this.queries.activityFeed(userId, requestedWorkspaceId, includeScm, (projectId, limit) =>
       this.getCommits(projectId, limit),
     );
   }
