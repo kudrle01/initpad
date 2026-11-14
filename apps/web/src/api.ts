@@ -35,6 +35,7 @@ import type {
   UserSessionSummary,
 } from '@/types';
 import { t } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 
 export interface EnvConfig {
   name: EnvName;
@@ -201,18 +202,31 @@ export interface GitHubStatus {
 
 const BASE = '/api';
 const REQUEST_TIMEOUT_MS = 30_000;
+// Creating and importing a project run synchronously on the API (repository,
+// CI secrets, first commit), which regularly takes longer than a normal request.
+export const PROJECT_SETUP_TIMEOUT_MS = 180_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 export const AUTH_EXPIRED_EVENT = 'initpad:auth-expired';
 
 // Error carrying the HTTP status, so callers can distinguish "gone" (404)
-// from other failures.
+// from other failures. `message` is translated when the API text is known
+// (ADR-185); `apiMessage` keeps the original English text.
 export class ApiError extends Error {
+  readonly apiMessage: string;
+
   constructor(
     message: string,
     readonly status: number,
+    apiMessage?: string,
   ) {
     super(message);
+    this.apiMessage = apiMessage ?? message;
   }
+}
+
+/** Per-call options; `signal` lets a page abandon a request it no longer needs. */
+export interface RequestOptions {
+  signal?: AbortSignal;
 }
 
 async function responseErrorMessage(response: Response): Promise<string> {
@@ -220,8 +234,28 @@ async function responseErrorMessage(response: Response): Promise<string> {
   if (body && typeof body === 'object' && !Array.isArray(body)) {
     const message = (body as Record<string, unknown>).message;
     if (typeof message === 'string' && message.trim()) return message;
+    // Validation errors arrive as a list of messages.
+    if (Array.isArray(message)) {
+      const parts = message.filter(
+        (part): part is string => typeof part === 'string' && !!part.trim(),
+      );
+      if (parts.length) return parts.join('; ');
+    }
   }
   return `HTTP ${response.status}`;
+}
+
+async function responseError(response: Response): Promise<ApiError> {
+  const raw = await responseErrorMessage(response);
+  let message = translateApiMessage(raw);
+  // A list of validation messages is translated item by item.
+  if (message === raw && raw.includes('; ')) {
+    message = raw
+      .split('; ')
+      .map((part) => translateApiMessage(part))
+      .join('; ');
+  }
+  return new ApiError(message, response.status, raw);
 }
 
 async function http<T>(
@@ -244,7 +278,7 @@ async function http<T>(
   );
   if (!res.ok) {
     if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-    throw new ApiError(await responseErrorMessage(res), res.status);
+    throw await responseError(res);
   }
   // 204 / empty body (e.g. DELETE) — nothing to parse.
   const text = await res.text();
@@ -262,7 +296,7 @@ async function download(path: string): Promise<{ blob: Blob; filename: string }>
   );
   if (!res.ok) {
     if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-    throw new ApiError(await responseErrorMessage(res), res.status);
+    throw await responseError(res);
   }
   const disposition = res.headers.get('Content-Disposition') ?? '';
   const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'initpad-metrics';
@@ -348,18 +382,21 @@ export const api = {
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
   listProjects: () => http<Project[]>('/projects'),
-  getProject: (id: string) => http<Project>(`/projects/${id}`),
-  getCommits: (id: string, limit = 20) => http<Commit[]>(`/projects/${id}/commits?limit=${limit}`),
-  getDeployments: (id: string, limit = 30) =>
-    http<DeploymentOperation[]>(`/projects/${id}/deployments?limit=${limit}`),
-  getProvisioning: (id: string) => http<ProvisioningStatus | null>(`/projects/${id}/provisioning`),
+  getProject: (id: string, options?: RequestOptions) =>
+    http<Project>(`/projects/${id}`, options),
+  getCommits: (id: string, limit = 20, options?: RequestOptions) =>
+    http<Commit[]>(`/projects/${id}/commits?limit=${limit}`, options),
+  getDeployments: (id: string, limit = 30, options?: RequestOptions) =>
+    http<DeploymentOperation[]>(`/projects/${id}/deployments?limit=${limit}`, options),
+  getProvisioning: (id: string, options?: RequestOptions) =>
+    http<ProvisioningStatus | null>(`/projects/${id}/provisioning`, options),
   listProvisioning: () => http<ProvisioningStatus[]>('/provisioning'),
   retryProvisioning: (id: string) => http<Project>(`/provisioning/${id}/retry`, { method: 'POST' }),
   cleanupProvisioning: (id: string) =>
     http<void>(`/provisioning/${id}/cleanup`, { method: 'POST' }),
   dismissProvisioning: (id: string) =>
     http<void>(`/provisioning/${id}/dismiss`, { method: 'POST' }),
-  listTemplates: () => http<TemplateManifest[]>('/templates'),
+  listTemplates: (options?: RequestOptions) => http<TemplateManifest[]>('/templates', options),
   downloadTemplateWorkflow: (templateId: string, provider: 'gitea' | 'github') =>
     download(`/templates/${encodeURIComponent(templateId)}/workflows/${provider}`),
   getActivity: () => http<ActivityEvent[]>('/activity'),
@@ -384,12 +421,13 @@ export const api = {
         pipelinePreset,
         scmInstallationId,
       }),
-    }),
+    }, PROJECT_SETUP_TIMEOUT_MS),
   listImportableRepos: () => http<ImportableRepo[]>('/projects/import/repos'),
-  importPreflight: (repositoryId: string, templateId: string) =>
+  importPreflight: (repositoryId: string, templateId: string, options?: RequestOptions) =>
     http<ImportPreflight>('/projects/import/preflight', {
       method: 'POST',
       body: JSON.stringify({ repositoryId, templateId }),
+      ...options,
     }),
   importRepo: (
     repositoryId: string,
@@ -400,7 +438,7 @@ export const api = {
     http<Project>('/projects/import', {
       method: 'POST',
       body: JSON.stringify({ repositoryId, templateId, environments, pipelinePreset }),
-    }),
+    }, PROJECT_SETUP_TIMEOUT_MS),
   updatePipelinePreset: (id: string, pipelinePreset: PipelinePreset, environments: EnvConfig[]) =>
     http<Project>(`/projects/${id}/pipeline-preset`, {
       method: 'PUT',
