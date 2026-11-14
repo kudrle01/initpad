@@ -20,7 +20,7 @@ FROM mirror.gcr.io/library/docker:29.9.3-cli@sha256:2357639ad1ea7d0194134bf32926
 FROM mirror.gcr.io/library/node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216
 LABEL org.opencontainers.image.title="InitPad Supervisor"
 LABEL org.opencontainers.image.description="Typed, signed and health-gated self-hosted updates"
-LABEL org.opencontainers.image.version="0.2.36"
+LABEL org.opencontainers.image.version="0.2.37"
 # Installed packages take the fixes Alpine published after the base image
 # (ADR-144). npm, npx, corepack and yarn are build tools with dependencies of
 # their own; the runtime never calls them, so the image does not ship them.

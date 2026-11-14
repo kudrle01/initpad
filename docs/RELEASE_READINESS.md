@@ -1,13 +1,15 @@
 # Release readiness a známá omezení
 
 Release baseline tohoto dokumentu je doporučený Agent 0.17.0, odmítnuté
-release 0.13.0 a 0.14.0 a nejnovější vydaná platforma `initpad-v0.2.35`.
-Agent 0.17.0 a platforma 0.2.35 prošly anonymním auditem, ale ne živou
-candidate acceptance; poslední živě přijatá platforma je `initpad-v0.2.24`.
-Ta 6. listopadu 2026 prošla živou candidate acceptance (aktualizace z 0.2.23
-tlačítkem **Install update** se zachováním dat a workloadů), byla bez
-přestavění povýšena na stable a znovu prošla anonymním auditem veřejného
-releasu. Recovery bootstrap z 0.2.9 byl naposledy živě ověřen na 0.2.10.
+release 0.13.0 a 0.14.0 a nejnovější vydaná platforma `initpad-v0.2.36`.
+Agent 0.17.0 a platforma 0.2.36 prošly anonymním auditem. Platforma
+`initpad-v0.2.36` 14. listopadu 2026 prošla živou candidate acceptance v
+lokálním Dockeru (aktualizace z 0.2.35 tlačítkem **Install update** za 38 s se
+zachováním dat, identit a workloadů, `after-success` i health-gated
+`fault-rollback`), byla bez přestavění povýšena na stable a znovu prošla
+anonymním auditem veřejného releasu. Na samostatném hostu naposledy prošla
+živá acceptance platforma `initpad-v0.2.24` (6. listopadu 2026). Agent 0.17.0
+byl ověřen v Docker labu, živá acceptance na hostu zatím neproběhla. Recovery bootstrap z 0.2.9 byl naposledy živě ověřen na 0.2.10.
 Dokument současně sleduje novější změny na `main`; ty nejsou automaticky
 součástí digest-pinned image 0.2.24. Proto níže výslovně odděluje vydaný a živě ověřený self-hosted
 profil od post-release mechanismů, které mají automatizované testy, ale teprve
@@ -258,7 +260,7 @@ npm run audit:public-release -- --tag initpad-v0.2.30
 npm run audit:public-release -- --tag initpad-v0.2.31
 npm run audit:public-release -- --tag initpad-v0.2.32
 npm run audit:public-release -- --tag initpad-v0.2.33
-npm run audit:public-release -- --tag initpad-v0.2.35
+npm run audit:public-release -- --tag initpad-v0.2.36
 npm run audit:public-release -- --tag agent-v0.14.2
 npm run audit:public-release -- --tag agent-v0.14.3
 npm run audit:public-release -- --tag agent-v0.17.0
