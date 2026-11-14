@@ -21,11 +21,17 @@ workloadu při odpojení jsou samostatně v
                              # výslovně nabídnout aktuální schválený Agent
 docker compose ps            # stav služeb
 docker compose logs -f api   # živé logy platformy
-docker compose stop          # zastavit vše (data zůstávají)
-docker compose up -d         # znovu nastartovat
+docker compose --profile runner --profile server stop
+                             # zastavit vše včetně CI a Caddy (data zůstávají)
+./install.sh                 # znovu nastartovat (bez změn trvá pár sekund)
 ./self-hosted-check.sh running
                              # nedestruktivní health/restart/CI kontrola
+./reset.sh                   # smazat vše včetně dat a nasazených aplikací
 ```
+
+CI runner (`runner`) a Caddy (`server`) jsou v Compose profilech, proto je
+samotné `docker compose stop` nezastaví. Výstup buildu a přípravy CI image
+z posledního `./install.sh` leží v `.runtime/logs/`.
 
 Kontejnery mají `restart: unless-stopped`, takže po restartu hosta naběhnou samy
 (pokud se startuje Docker démon při bootu: `sudo systemctl enable docker`).
@@ -36,6 +42,8 @@ Kontejnery mají `restart: unless-stopped`, takže po restartu hosta naběhnou s
 - Rychlá kontrola: `docker compose ps` — `api` musí být `healthy`.
 
 ## Zálohy
+
+Tato sekce je jediný popis zálohy a obnovy; `deploy/README.md` na ni odkazuje.
 
 Automatická záloha databáze (pg_dump) + datových volumes (Gitea repozitáře,
 artefakty v object storage, workspace a Supervisor state) včetně aktivního release
@@ -330,44 +338,9 @@ health-gated rollback. Automaticky se nevrací destruktivně změněná databáz
 release kanál proto přijímá pouze expand/contract, image-compatible migrace.
 Pro plný návrat použij explicitní `./restore.sh <záloha>`.
 
-Když source instalace hlásí, že image ID běžícího Supervisoru už
-neexistuje, nevytvářej image pomocí `docker commit`: kontejner obsahuje citlivé
-runtime prostředí. Na disposable hostu obnov přesný source image z tagu
-odpovídajícího instalované verzi a vytvoř znovu jen Supervisor:
-
-```bash
-cd ~/Projects/initpad
-git status --short                 # musí být prázdný
-git fetch --tags
-git switch --detach initpad-v0.2.0 # dosaď skutečně instalovanou verzi
-docker build -f apps/supervisor/Dockerfile -t initpad-supervisor:source .
-cd deploy
-docker compose --profile runner --profile server up -d \
-  --no-deps --no-build --force-recreate supervisor
-cd ..
-git switch main
-```
-
-Tento zásah nemění databázi, API, web ani projektové workloady. Před dalším
-drillem ověř `docker image inspect "$(docker inspect initpad-supervisor
---format '{{.Image}}')"`.
-
-Release Supervisor do verze `0.2.1` mohl release descriptor vytvořit jako
-`root:root`, ačkoli neobsahuje credentials. Poznáš to podle `Permission denied`
-z Docker Compose nebo acceptance skriptu. Vlastnictví jednorázově vrať
-operátorovi instalace a zachovej režim `0600`:
-
-```bash
-cd ~/Projects/initpad/deploy
-sudo chown "$(id -u):$(id -g)" \
-  .runtime/platform-update/platform-release.override.yml
-chmod 600 .runtime/platform-update/platform-release.override.yml
-```
-
-Novější Supervisor při atomickém zápisu automaticky přebírá vlastníka
-hostitelského runtime adresáře. Compose, acceptance, health check i backup pak
-descriptor čtou přímo pod stejným hostitelským operátorem; nepoužívají `sudo`
-a nemění jeho obsah.
+Postupy pro instalace z doby verzí `0.2.0` a `0.2.1` (chybějící source image
+Supervisoru, descriptor vlastněný rootem) jsou v
+[příloze](#příloha-historické-postupy-020-a-021).
 
 ## Bezpečnost
 
@@ -539,9 +512,10 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
 - Minimum pro self-hosted provoz včetně sestavování šablon jsou 2 CPU jádra,
   6 GiB RAM a 20 GiB volného místa na úložišti Dockeru (`DockerRootDir`).
   Doporučeno je 4 vCPU, 8 GiB RAM a 40 GiB volného místa, tedy například VM
-  s diskem 80 GB. Stejné hodnoty kontroluje `./self-hosted-check.sh
-  preflight`: pod minimem selže, pod doporučením varuje. `install.sh` sám
-  kapacitu nekontroluje, proto preflight spusť před první instalací.
+  s diskem 80 GB. `install.sh` kapacitu kontroluje sám: pod minimem varuje a
+  čerstvou instalaci odmítne jen při zjevném nedostatku (méně než 3 GiB RAM
+  nebo 8 GiB volného místa, obejde to `INITPAD_SKIP_PREFLIGHT=1`). Přísnější
+  `./self-hosted-check.sh preflight` pro acceptance pod minimem selže.
 - CI build je záměrně nejnáročnější část: runner má výchozí limit 1,5 GiB
   RAM a 1 CPU (níže). Každá aplikace nasazená na vestavěný cíl dostane
   512 MB RAM (`INITPAD_DEPLOY_MEMORY_MB`).
@@ -600,3 +574,52 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
   log `act_runner`.
 - **Špatné heslo DB po přenosu volume:** `.env` musí odpovídat volume, se kterým
   byla DB inicializovaná (viz hláška install.sh), nebo obnov ze zálohy.
+- **Instalace selhala při buildu nebo přípravě CI image:** instalátor vypsal
+  konec logu; celý je v `.runtime/logs/build.log` a
+  `.runtime/logs/runner-seed.log`. Opravu ověří nový `./install.sh`.
+- **CI job nenajde akci (`uses: owner/name@…`):** krátké názvy akcí se berou
+  jen ze zrcadel v Gitee (ADR-171). Přidej akci do `runner/actions-mirror` a
+  spusť `./install.sh`, zapiš ji plnou adresou
+  (`uses: https://github.com/owner/name@<ref>`), nebo zrcadla vypni
+  `INITPAD_CI_ACTIONS_MIRRORS=off`.
+
+## Příloha: historické postupy 0.2.0 a 0.2.1
+
+Když source instalace hlásí, že image ID běžícího Supervisoru už
+neexistuje, nevytvářej image pomocí `docker commit`: kontejner obsahuje citlivé
+runtime prostředí. Na disposable hostu obnov přesný source image z tagu
+odpovídajícího instalované verzi a vytvoř znovu jen Supervisor:
+
+```bash
+cd ~/Projects/initpad
+git status --short                 # musí být prázdný
+git fetch --tags
+git switch --detach initpad-v0.2.0 # dosaď skutečně instalovanou verzi
+docker build -f apps/supervisor/Dockerfile -t initpad-supervisor:source .
+cd deploy
+docker compose --profile runner --profile server up -d \
+  --no-deps --no-build --force-recreate supervisor
+cd ..
+git switch main
+```
+
+Tento zásah nemění databázi, API, web ani projektové workloady. Před dalším
+drillem ověř `docker image inspect "$(docker inspect initpad-supervisor
+--format '{{.Image}}')"`.
+
+Release Supervisor do verze `0.2.1` mohl release descriptor vytvořit jako
+`root:root`, ačkoli neobsahuje credentials. Poznáš to podle `Permission denied`
+z Docker Compose nebo acceptance skriptu. Vlastnictví jednorázově vrať
+operátorovi instalace a zachovej režim `0600`:
+
+```bash
+cd ~/Projects/initpad/deploy
+sudo chown "$(id -u):$(id -g)" \
+  .runtime/platform-update/platform-release.override.yml
+chmod 600 .runtime/platform-update/platform-release.override.yml
+```
+
+Novější Supervisor při atomickém zápisu automaticky přebírá vlastníka
+hostitelského runtime adresáře. Compose, acceptance, health check i backup pak
+descriptor čtou přímo pod stejným hostitelským operátorem; nepoužívají `sudo`
+a nemění jeho obsah.

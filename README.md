@@ -61,18 +61,27 @@ nelze nainstalovat Agent; obecný vzdálený SSH runtime platforma neposkytuje.
 
 ## Rychlé spuštění
 
-Jediným požadavkem je Docker s Compose pluginem:
+Potřebujete Linux s Dockerem a Compose pluginem, `git`, `curl`, `openssl` a
+přístup k internetu (GitHub, Docker Hub). Host má mít alespoň 2 CPU, 6 GiB RAM
+a 20 GiB volného místa pro Docker (doporučeno 4 CPU, 8 GiB a 40 GiB);
+instalátor kapacitu i volné porty zkontroluje sám. Na Ubuntu 24.04 nejdřív
+spusťte `sudo ./prepare-rootless-runner.sh` (instalátor na to upozorní).
+
+Instalujte z posledního podepsaného releasu:
 
 ```bash
-git clone https://github.com/kudrle01/initpad.git initpad
+git clone --branch initpad-v0.2.34 https://github.com/kudrle01/initpad.git initpad
 cd initpad/deploy
 ./install.sh
 ```
 
-Po dokončení otevřete:
+Instalátor se zeptá, jak se k InitPadu bude přistupovat: jen z tohoto
+počítače, z lokální sítě přes IP adresu (`--ip`), nebo přes doménu s HTTPS
+(`--domain`). Po dokončení vypíše adresy a další kroky, u lokální instalace:
 
 - InitPad: <http://localhost:8080>
 - Gitea: <http://gitea.localhost:3001>
+- Nápověda: <https://docs.initpad.me>
 
 Na konci instalace skript vypíše instalační token. S ním v InitPadu vytvořte
 první účet, který se stane administrátorem instance. Bez tokenu první účet
@@ -83,7 +92,7 @@ Instalátor vygeneruje lokální secrety, spustí databázi a služby, aplikuje
 migrace, nastaví SSO a zaregistruje izolovaný CI runner. Je idempotentní, takže
 slouží i pro aktualizaci existující instalace. Současně zvolí auditovaný
 Agent release; vzdálený Docker server pak správce připojí jediným příkazem
-z dialogu **Infrastructure → Manage Agent**, bez instalace Node.js, `make` nebo
+z **Servers → Add server → Agent**, bez instalace Node.js, `make` nebo
 klonování repozitáře na cílový server.
 
 Výchozí object storage je lokální kompatibilní služba určená pro vývoj a
@@ -113,21 +122,15 @@ Požadavky: Node.js 24 nebo novější (CI a image používají Node 26 LTS z `.
 
 ```bash
 npm ci
-docker compose -f infra/docker-compose.yml up -d postgres gitea
-cp apps/api/.env.example apps/api/.env
-npm run db:migrate --workspace @initpad/api
-npm run dev:api
+./infra/dev-setup.sh      # Gitea, PostgreSQL, S3, SFTP cíl a apps/api/.env
+npm run dev:api           # API na http://localhost:3000/api
+npm run dev:web           # ve druhém terminálu; web na http://localhost:5173
 ```
 
-Ve druhém terminálu:
-
-```bash
-npm run dev:web
-```
-
-Web běží na <http://localhost:5173>, API na
-<http://localhost:3000/api>. Vývojový stack v `infra/` a kompletní stack v
-`deploy/` nespouštějte současně; záměrně sdílejí Compose project name.
+`./infra/dev-setup.sh ci` přidá CI runner, `sso` přihlášení do Gitey přes
+vývojové API a `down` stack zastaví. Vývojový stack je samostatný Compose
+projekt `initpad-dev` s vlastními porty (Gitea 3002) a daty, takže může běžet
+vedle instalace z `deploy/`.
 
 ## Kontrola změn
 

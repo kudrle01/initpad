@@ -61,32 +61,32 @@ sudo ./prepare-rootless-runner.sh
 
 ## 3. Nakonfiguruj LAN instalaci
 
-Naklonuj repozitář a připrav konfiguraci:
+Naklonuj repozitář:
 
 ```bash
 git clone https://github.com/kudrle01/initpad.git
 cd initpad/deploy
+```
+
+Adresy nastaví instalátor z jedné volby: `./install.sh --ip <VM_IP>` (nebo
+volba *2) Lokální síť přes IP* v průvodci) vyplní `INITPAD_PUBLIC_URL`,
+`INITPAD_GITEA_PUBLIC_URL`, interní adresy runneru a registry a nastaví
+`INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0`. `.env` se ručně neupravuje; jedinou
+výjimkou je otevřená registrace pro test více tenantů:
+
+```bash
 cp .env.example .env
+sed -i 's/^INITPAD_REGISTRATION_MODE=.*/INITPAD_REGISTRATION_MODE=open/' .env
 ```
 
-V `deploy/.env` nastav následující LAN hodnoty (nahraď `<VM_IP>`):
-
-```ini
-INITPAD_PUBLIC_URL=http://<VM_IP>:8080
-INITPAD_GITEA_PUBLIC_URL=http://<VM_IP>:3001
-INITPAD_EDITION=self-hosted
-INITPAD_REGISTRATION_MODE=open
-INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0
-```
-
-Poslední hodnota je pro tento bridged-LAN test záměrná: zpřístupní náhodné
+Bind `0.0.0.0` je pro tento bridged-LAN test záměrný: zpřístupní náhodné
 porty vestavěných Docker deploymentů ostatním zařízením v důvěryhodné LAN.
 Instalace přes HTTP posílá session InitPadu i těmto aplikacím, proto je určená
 jen pro test s důvěryhodnými účastníky a Administrace na to upozorní.
 V produkci preferuj managed gateway se stabilními HTTPS adresami; přímé porty
 nevystavuj bez omezení zdrojové sítě hostitelským firewallem.
 
-Interní split-horizon hodnoty ponech beze změny:
+Interní split-horizon adresy, které instalátor ponechá na hostu VM:
 
 ```ini
 INITPAD_GITEA_RUNNER_URL=http://host.docker.internal:3001
@@ -138,7 +138,7 @@ sudo ufw allow 8090:8189/tcp
 ## 4. Nainstaluj a ověř platformu
 
 ```bash
-./install.sh
+./install.sh --ip <VM_IP>
 docker compose --profile runner ps
 curl -fsS http://localhost:8080/api/health/ready
 ./self-hosted-check.sh running
@@ -225,8 +225,8 @@ současně otevřít z Windows.
 
 Otevři detail projektu a ověř, že karta built-in deploymentu ukazuje
 aktuální `<VM_IP>` a přidělený port. Když VM po restartu dostane jinou IP,
-změň `INITPAD_PUBLIC_URL` i `INITPAD_GITEA_PUBLIC_URL` v `.env`, spusť
-`./install.sh` a obnov stránku. Instalátor zachová existující Gitea identity,
+spusť `./install.sh --ip <nová VM_IP>` (přepíše všechny adresy najednou)
+a obnov stránku. Instalátor zachová existující Gitea identity,
 ale znovu načte OIDC endpointy a podle potřeby přeregistruje CI runner.
 Existující karta musí ukázat novou IP bez nového deploymentu; uživatelské
 SFTP URL se změnit nesmí. Běžící konfiguraci ověř:

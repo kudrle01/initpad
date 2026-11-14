@@ -4,7 +4,8 @@
 # Server install:  set INITPAD_DOMAIN + INITPAD_GIT_DOMAIN in .env, then
 #                  ./install.sh              → https://<domain> via Caddy
 #
-# Do not run this stack and the infra/ development stack at the same time.
+# The infra/ development stack is a separate Compose project (initpad-dev)
+# with its own volumes and ports, so both can run at the same time.
 
 name: initpad
 
@@ -131,8 +132,8 @@ services:
       INITPAD_AUDIT_RETENTION_DAYS: ${INITPAD_AUDIT_RETENTION_DAYS:-400}
       # Team workspaces one account may own; 0 is unlimited (ADR-154).
       INITPAD_MAX_OWNED_TEAM_WORKSPACES: ${INITPAD_MAX_OWNED_TEAM_WORKSPACES:-0}
-      # User guide linked from the web app; empty hides help links (ADR-156).
-      INITPAD_DOCS_URL: ${INITPAD_DOCS_URL:-}
+      # User guide linked from the web app (ADR-156); it has self-hosted chapters.
+      INITPAD_DOCS_URL: ${INITPAD_DOCS_URL:-https://docs.initpad.me}
       INITPAD_JWT_SECRET: ${INITPAD_JWT_SECRET:?run install.sh to generate secrets}
       INITPAD_ENCRYPTION_KEY: ${INITPAD_ENCRYPTION_KEY:?run install.sh to generate secrets}
       # Set only while rotating INITPAD_ENCRYPTION_KEY (ADR-141, OPERATIONS.md).
@@ -188,6 +189,9 @@ services:
       INITPAD_PUBLIC_HOST: ${INITPAD_PUBLIC_HOST:-}
       INITPAD_DEPLOY_HEALTH_HOST: host.docker.internal
       INITPAD_DEPLOY_BIND_ADDRESS: ${INITPAD_DEPLOY_BIND_ADDRESS:-127.0.0.1}
+      # A loopback-bound app port is also published on the Docker host gateway,
+      # where the probe above reaches it; the LAN does not (ADR-174).
+      INITPAD_DEPLOY_PROBE_BIND_ADDRESS: ${INITPAD_DEPLOY_PROBE_BIND_ADDRESS:-host.docker.internal}
       INITPAD_DEPLOY_MEMORY_MB: ${INITPAD_DEPLOY_MEMORY_MB:-512}
       INITPAD_DEPLOY_CPU: ${INITPAD_DEPLOY_CPU:-1}
       INITPAD_DEPLOY_PIDS_LIMIT: ${INITPAD_DEPLOY_PIDS_LIMIT:-256}
@@ -204,6 +208,7 @@ services:
       INITPAD_SFTP_USER: deploy
       INITPAD_SFTP_PASSWORD: ${INITPAD_SFTP_PASSWORD:-deploy}
       INITPAD_SFTP_INTERNAL_URL: http://static-web
+      INITPAD_STATIC_WEB_PORT: ${INITPAD_STATIC_WEB_PORT:-8085}
       # SSO: Gitea (server) calls the API by service name; the browser goes
       # through the web origin (nginx proxies /api → api:3000).
       INITPAD_OIDC_ISSUER: http://api:3000/api
@@ -228,7 +233,8 @@ services:
       # suffix protects only the socket inode; Docker API access is inherently
       # host-privileged and is intentionally confined to the control plane.
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../templates:/templates:ro
+      # Templates come from the image (/templates), so they always match the
+      # running API version, also after Install update.
       - api-data:/data
       # Deployment working files (ADR-172): an exported image archive is as
       # large as the image, often well over the /tmp tmpfs, and tmpfs pages
@@ -545,7 +551,7 @@ services:
     image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
     depends_on: [fake-sftp]
     ports:
-      - '8085:80'
+      - '${INITPAD_STATIC_WEB_PORT:-8085}:80'
     volumes:
       - sftp-www:/usr/share/nginx/html:ro
       - ../infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro

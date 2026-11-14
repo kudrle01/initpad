@@ -235,6 +235,10 @@ export const config = {
     // Development binds app ports to loopback. A server installation opts in
     // to public binding explicitly (or can put an ingress in front instead).
     bindAddress: process.env.INITPAD_DEPLOY_BIND_ADDRESS || '127.0.0.1',
+    // A loopback-bound workload port is also published on this host address so
+    // a containerized API can probe it; the stack sets host.docker.internal,
+    // which resolves to the Docker host gateway, not to a LAN interface (ADR-174).
+    probeBindAddress: (process.env.INITPAD_DEPLOY_PROBE_BIND_ADDRESS || '').trim(),
     memoryBytes: Number(process.env.INITPAD_DEPLOY_MEMORY_MB || 512) * 1024 * 1024,
     nanoCpus: Number(process.env.INITPAD_DEPLOY_CPU || 1) * 1_000_000_000,
     pidsLimit: Number(process.env.INITPAD_DEPLOY_PIDS_LIMIT || 256),
@@ -253,7 +257,9 @@ export const config = {
       // Subdirectory with the static build, when the template produces one (otherwise the whole repo).
       artifactSubdir: process.env.INITPAD_SFTP_ARTIFACT_DIR || '',
       // Public address where nginx serves the published releases.
-      publicUrl: process.env.INITPAD_SFTP_PUBLIC_URL || `http://${publicHost}:8085`,
+      publicUrl:
+        process.env.INITPAD_SFTP_PUBLIC_URL ||
+        `http://${publicHost}:${process.env.INITPAD_STATIC_WEB_PORT || 8085}`,
       // Address the API uses to verify the site is being served (reachable
       // from wherever the API runs; compose points it at http://static-web).
       internalUrl:

@@ -40,16 +40,42 @@ test('fills a blank environment from the reviewed Agent release pair', () => {
   assert.match(configure(files), /Configured reviewed InitPad Agent 1\.2\.3/);
   assert.equal(
     readFileSync(files.envFile, 'utf8'),
-    `INITPAD_AGENT_IMAGE=${digest}\nINITPAD_AGENT_RELEASE_VERSION=1.2.3\nKEEP=value\n`,
+    `INITPAD_AGENT_IMAGE=${digest}\nINITPAD_AGENT_RELEASE_VERSION=1.2.3\nKEEP=value\nINITPAD_AGENT_RELEASE_SOURCE=auto\n`,
   );
   assert.equal(statSync(files.envFile).mode & 0o777, 0o600);
+});
+
+test('moves an automatically configured pair to the newer reviewed release', () => {
+  const oldDigest = `registry.example/initpad-agent@sha256:${'c'.repeat(64)}`;
+  const files = fixture(
+    `INITPAD_AGENT_IMAGE=${oldDigest}\nINITPAD_AGENT_RELEASE_VERSION=1.1.0\nINITPAD_AGENT_RELEASE_SOURCE=auto\n`,
+  );
+
+  assert.match(configure(files), /Moved the automatically configured InitPad Agent from 1\.1\.0/);
+  assert.equal(
+    readFileSync(files.envFile, 'utf8'),
+    `INITPAD_AGENT_IMAGE=${digest}\nINITPAD_AGENT_RELEASE_VERSION=1.2.3\nINITPAD_AGENT_RELEASE_SOURCE=auto\n`,
+  );
+});
+
+test('keeps a pinned pair without suggesting an update', () => {
+  const oldDigest = `registry.example/initpad-agent@sha256:${'c'.repeat(64)}`;
+  const files = fixture(
+    `INITPAD_AGENT_IMAGE=${oldDigest}\nINITPAD_AGENT_RELEASE_VERSION=1.1.0\nINITPAD_AGENT_RELEASE_SOURCE=pinned\n`,
+  );
+
+  assert.match(configure(files), /Keeping explicitly configured InitPad Agent 1\.1\.0/);
+  assert.match(readFileSync(files.envFile, 'utf8'), new RegExp(oldDigest));
 });
 
 test('preserves an explicitly configured complete Agent release pair', () => {
   const oldDigest = `registry.example/initpad-agent@sha256:${'c'.repeat(64)}`;
   const files = fixture(`INITPAD_AGENT_IMAGE=${oldDigest}\nINITPAD_AGENT_RELEASE_VERSION=1.1.0\n`);
 
-  assert.match(configure(files), /Keeping explicitly configured InitPad Agent 1\.1\.0/);
+  assert.match(
+    configure(files),
+    /Keeping configured InitPad Agent 1\.1\.0; the reviewed release is 1\.2\.3/,
+  );
   assert.match(readFileSync(files.envFile, 'utf8'), new RegExp(oldDigest));
 });
 
@@ -62,7 +88,7 @@ test('explicitly updates an existing pin to the reviewed Agent release pair', ()
   assert.match(configure(files, ['--update']), /Updated reviewed InitPad Agent release to 1\.2\.3/);
   assert.equal(
     readFileSync(files.envFile, 'utf8'),
-    `INITPAD_AGENT_IMAGE=${digest}\nKEEP=value\nINITPAD_AGENT_RELEASE_VERSION=1.2.3\n`,
+    `INITPAD_AGENT_IMAGE=${digest}\nKEEP=value\nINITPAD_AGENT_RELEASE_VERSION=1.2.3\nINITPAD_AGENT_RELEASE_SOURCE=auto\n`,
   );
   assert.equal(statSync(files.envFile).mode & 0o777, 0o600);
 });

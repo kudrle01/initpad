@@ -22,15 +22,16 @@ the Compose plugin.
 
 ```bash
 npm ci
-docker compose -f infra/docker-compose.yml up -d postgres gitea
-cp apps/api/.env.example apps/api/.env
-npm run db:migrate --workspace @initpad/api
+./infra/dev-setup.sh      # Gitea, PostgreSQL, S3, SFTP target, apps/api/.env
 npm run dev:api
 ```
 
-Run `npm run dev:web` in a second terminal. See [README.md](README.md) and
-[deploy/README.md](deploy/README.md) for the complete development and
-self-hosted flows.
+Run `npm run dev:web` in a second terminal. `./infra/dev-setup.sh ci` adds
+the CI runner, `sso` Gitea sign-in through the dev API, `down` stops the
+stack. It is a separate Compose project (`initpad-dev`), so it can run next
+to a `deploy/` installation. Use `npm run db:migrate --workspace @initpad/api`
+only to author a new migration. See [deploy/README.md](deploy/README.md) for
+the self-hosted flow.
 
 ## Required checks
 

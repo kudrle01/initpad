@@ -1,0 +1,6 @@
+# Plain Linux only (added by infra/dev-setup.sh): Docker Desktop resolves
+# host.docker.internal itself, and this mapping breaks the name on macOS.
+services:
+  gitea:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

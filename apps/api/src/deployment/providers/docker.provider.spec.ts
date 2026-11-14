@@ -13,6 +13,8 @@ import {
   dockerHealthFailureReason,
   dockerNetworkName,
   localDockerProbeBlockedReason,
+  publishedPort,
+  resolveProbeBindAddress,
 } from './docker.provider';
 import { config } from '../../config';
 
@@ -145,13 +147,13 @@ describe('DockerProvider config-var injection (ADR-061)', () => {
           project: string,
           env: string,
           vars?: Record<string, string>,
-        ) => Promise<string>;
+        ) => Promise<{ hostPort: string; probePort: string }>;
       }
     ).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev', {
       GREETING: 'ahoj',
       TOKEN: 's3cr3t',
     });
-    expect(port).toBe('12345');
+    expect(port).toEqual({ hostPort: '12345', probePort: '12345' });
     expect(created[0].Env).toEqual(['GREETING=ahoj', 'TOKEN=s3cr3t']);
     expect(created[0].Labels).toEqual(
       expect.objectContaining({
@@ -172,10 +174,45 @@ describe('DockerProvider config-var injection (ADR-061)', () => {
           p: number,
           project: string,
           env: string,
-        ) => Promise<string>;
+        ) => Promise<{ hostPort: string; probePort: string }>;
       }
     ).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev');
     expect(created[0].Env).toBeUndefined();
+  });
+
+  it('publishes a loopback port also on the probe address and probes that one (ADR-174)', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const provider = new DockerProvider();
+    (provider as unknown as { docker: unknown }).docker = {
+      createContainer: jest.fn(async (opts: Record<string, unknown>) => {
+        created.push(opts);
+        return {
+          start: jest.fn(async () => undefined),
+          inspect: jest.fn(async () => ({
+            NetworkSettings: {
+              Ports: {
+                '3000/tcp': [
+                  { HostIp: '127.0.0.1', HostPort: '32771' },
+                  { HostIp: '172.17.0.1', HostPort: '32772' },
+                ],
+              },
+            },
+          })),
+          remove: jest.fn(async () => undefined),
+        };
+      }),
+    };
+    const ports = await (
+      provider as unknown as {
+        runContainer: (...args: unknown[]) => Promise<{ hostPort: string; probePort: string }>;
+      }
+    ).runContainer('img', 'name', 'net-dev', 3000, 'acme-api', 'dev', {}, undefined, '172.17.0.1');
+    expect(ports).toEqual({ hostPort: '32771', probePort: '32772' });
+    const hostConfig = created[0].HostConfig as { PortBindings: Record<string, unknown> };
+    expect(hostConfig.PortBindings['3000/tcp']).toEqual([
+      { HostIp: config.deployment.bindAddress, HostPort: '' },
+      { HostIp: '172.17.0.1', HostPort: '' },
+    ]);
   });
 });
 
@@ -192,8 +229,8 @@ describe('DockerProvider allocation isolation (ADR-060)', () => {
 
 describe('DockerProvider health diagnostics', () => {
   it('explains the Linux loopback mismatch without weakening the safe default', () => {
-    expect(dockerHealthFailureReason('/health', '127.0.0.1', 'host.docker.internal')).toContain(
-      'INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0',
+    expect(dockerHealthFailureReason('/health', '127.0.0.1', 'host.docker.internal', '')).toContain(
+      'INITPAD_DEPLOY_PROBE_BIND_ADDRESS=host.docker.internal',
     );
     expect(dockerHealthFailureReason('/health', '0.0.0.0', 'host.docker.internal')).toBe(
       'Health check at /health did not return 2xx within ~10s.',
@@ -203,21 +240,79 @@ describe('DockerProvider health diagnostics', () => {
 
 describe('DockerProvider loopback probe guard', () => {
   it('flags only a loopback bind probed from outside the host', () => {
-    expect(localDockerProbeBlockedReason('127.0.0.1', 'host.docker.internal')).toContain(
+    expect(localDockerProbeBlockedReason('127.0.0.1', 'host.docker.internal', '')).toContain(
       'INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0',
     );
-    expect(localDockerProbeBlockedReason('0.0.0.0', 'host.docker.internal')).toBeNull();
-    expect(localDockerProbeBlockedReason('127.0.0.1', 'localhost')).toBeNull();
+    expect(localDockerProbeBlockedReason('0.0.0.0', 'host.docker.internal', '')).toBeNull();
+    expect(localDockerProbeBlockedReason('127.0.0.1', 'localhost', '')).toBeNull();
+    expect(
+      localDockerProbeBlockedReason('127.0.0.1', 'host.docker.internal', 'host.docker.internal'),
+    ).toBeNull();
+  });
+
+  it('resolves the probe bind address only for a loopback bind (ADR-174)', async () => {
+    const resolve = jest.fn(async () => '172.17.0.1');
+    await expect(
+      resolveProbeBindAddress('127.0.0.1', 'host.docker.internal', resolve),
+    ).resolves.toBe('172.17.0.1');
+    await expect(
+      resolveProbeBindAddress('0.0.0.0', 'host.docker.internal', resolve),
+    ).resolves.toBeNull();
+    await expect(resolveProbeBindAddress('127.0.0.1', '', resolve)).resolves.toBeNull();
+    await expect(resolveProbeBindAddress('127.0.0.1', '127.0.0.1', resolve)).resolves.toBeNull();
+    await expect(resolveProbeBindAddress('127.0.0.1', '0.0.0.0', resolve)).rejects.toThrow(
+      'not a wildcard',
+    );
+    await expect(
+      resolveProbeBindAddress('127.0.0.1', 'missing.invalid', async () => {
+        throw new Error('ENOTFOUND');
+      }),
+    ).rejects.toThrow('does not resolve');
+  });
+
+  it('labels the per-environment networks it creates', async () => {
+    const provider = new DockerProvider();
+    const createNetwork = jest.fn(async () => undefined);
+    (provider as unknown as { docker: unknown }).docker = {
+      getNetwork: () => ({
+        inspect: async () => {
+          throw new Error('no such network');
+        },
+      }),
+      createNetwork,
+    };
+    await (provider as unknown as { ensureNetwork: (n: string) => Promise<void> }).ensureNetwork(
+      'net-team-dev',
+    );
+    expect(createNetwork).toHaveBeenCalledWith({
+      Name: 'net-team-dev',
+      Labels: { 'com.initpad.managed': 'true' },
+    });
+  });
+
+  it('reads the port published on a given host address', () => {
+    const bindings = [
+      { HostIp: '127.0.0.1', HostPort: '1' },
+      { HostIp: '172.17.0.1', HostPort: '2' },
+    ];
+    expect(publishedPort(bindings, '172.17.0.1', '9')).toBe('2');
+    expect(publishedPort(bindings, '10.0.0.1', '9')).toBe('1');
+    expect(publishedPort([], '127.0.0.1', '9')).toBe('9');
   });
 
   it('fails before replacing the previous container when it can never verify', async () => {
     const mutable = config as unknown as {
       deployHealthHost: string;
-      deployment: { bindAddress: string };
+      deployment: { bindAddress: string; probeBindAddress: string };
     };
-    const saved = [mutable.deployHealthHost, mutable.deployment.bindAddress] as const;
+    const saved = [
+      mutable.deployHealthHost,
+      mutable.deployment.bindAddress,
+      mutable.deployment.probeBindAddress,
+    ] as const;
     mutable.deployHealthHost = 'host.docker.internal';
     mutable.deployment.bindAddress = '127.0.0.1';
+    mutable.deployment.probeBindAddress = '';
     try {
       const provider = new DockerProvider();
       const internals = provider as unknown as {
@@ -245,7 +340,11 @@ describe('DockerProvider loopback probe guard', () => {
       expect(internals.ensureNetwork).not.toHaveBeenCalled();
       expect(internals.removeContainer).not.toHaveBeenCalled();
     } finally {
-      [mutable.deployHealthHost, mutable.deployment.bindAddress] = saved;
+      [
+        mutable.deployHealthHost,
+        mutable.deployment.bindAddress,
+        mutable.deployment.probeBindAddress,
+      ] = saved;
     }
   });
 });
