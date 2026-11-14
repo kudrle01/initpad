@@ -347,6 +347,13 @@ export const api = {
     }),
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
+  leaveWorkspace: (workspaceId: string) =>
+    http<void>(`/workspaces/${workspaceId}/leave`, { method: 'POST' }),
+  transferWorkspaceOwnership: (workspaceId: string, userId: string) =>
+    http<WorkspaceMember[]>(`/workspaces/${workspaceId}/transfer-ownership`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }),
   listProjects: () => http<Project[]>('/projects'),
   getProject: (id: string) => http<Project>(`/projects/${id}`),
   getCommits: (id: string, limit = 20) => http<Commit[]>(`/projects/${id}/commits?limit=${limit}`),

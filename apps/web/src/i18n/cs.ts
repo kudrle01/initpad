@@ -860,7 +860,23 @@ export const cs = {
     'Tento účet okamžitě získá rozšířená oprávnění ve workspace.',
   'The workspace owner can later change or remove the role.':
     'Vlastník workspace může roli později změnit nebo odebrat.',
-  'Workspace member added': 'Člen workspace přidán',
+  'If an account matches {identity}, it is now a member of this workspace.':
+    'Pokud {identity} odpovídá nějakému účtu, je teď členem tohoto workspace.',
+  'Make @{username} the owner of {name}?': 'Předat vlastnictví {name} uživateli @{username}?',
+  'A workspace has one owner. You stay in the workspace as an admin.':
+    'Workspace má jednoho vlastníka. Vy ve workspace zůstanete jako administrátor.',
+  'Transfer ownership': 'Předat vlastnictví',
+  'The new owner can delete the workspace and change the production approval policy.':
+    'Nový vlastník může workspace smazat a měnit pravidla schvalování produkce.',
+  'Only the new owner can transfer ownership again.':
+    'Vlastnictví pak může znovu předat jen nový vlastník.',
+  '@{username} now owns the workspace': 'Vlastníkem workspace je teď @{username}',
+  'Leave {name}?': 'Opustit {name}?',
+  'You lose access to its projects and servers. A workspace admin can add you again.':
+    'Ztratíte přístup k jeho projektům a serverům. Administrátor workspace vás může přidat znovu.',
+  'Leave workspace': 'Opustit workspace',
+  'You left {name}': 'Opustili jste {name}',
+  'Make {username} the owner': 'Předat vlastnictví uživateli {username}',
   "Change @{username}'s role?": 'Změnit roli uživatele @{username}?',
   'Workspace role changes take effect immediately across projects and infrastructure.':
     'Změny rolí ve workspace se okamžitě projeví ve všech projektech a infrastruktuře.',
