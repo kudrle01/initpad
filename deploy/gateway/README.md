@@ -71,13 +71,28 @@ stroji, kam ho kopírujete.
 
 ### 2. Agent
 
-K příkazu z **Manage Agent** přidejte:
+Příkaz z **Manage Agent** je u serveru se spravovanou bránou připravený pro
+jednopříkazovou bránu. Pro tuto ruční variantu ho upravte ve třech bodech:
+
+1. **Odeberte** `--gateway-domain '…'`. Ta by postavila druhou bránu a
+   instalátor ji s ruční bránou odmítne zkombinovat.
+2. Pokud příkaz obsahuje `--ca-file '/etc/initpad-agent/ca.crt'`, **nahraďte**
+   ho souborem se spojenými certifikáty z předchozího kroku. Pokud ho
+   neobsahuje, přidejte ho. Instalátor bere jen jeden `--ca-file`.
+3. **Přidejte** adresu ruční brány.
+
+Konec příkazu pak vypadá takto:
 
 ```
---gateway-container initpad-gateway \
---gateway-admin-socket /var/lib/initpad-gateway-admin/admin.sock \
---ca-file /etc/initpad-agent/trust-bundle.crt
+sudo sh ./initpad-agent-install.sh --url '…' --image '…' --expected-target-id '…' \
+  --ca-file /etc/initpad-agent/trust-bundle.crt \
+  --gateway-container initpad-gateway \
+  --gateway-admin-socket /var/lib/initpad-gateway-admin/admin.sock
 ```
+
+Na serveru, kde už bránu postavil `--gateway-domain`, tuto složku
+nepoužívejte. Obě varianty používají stejné názvy kontejnerů a sítě
+`initpad-gateway-net`.
 
 ### 3. Server v InitPadu
 
