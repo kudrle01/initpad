@@ -45,6 +45,28 @@ export interface WorkspaceCapacitySnapshot {
   };
 }
 
+export interface WorkspaceCapacityPage {
+  items: WorkspaceCapacitySnapshot[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+interface CapacityRow {
+  id: string;
+  name: string;
+  maxProjects: number;
+  maxMembers: number;
+  maxTargets: number;
+  maxConcurrentOperations: number;
+  maxArtifactBytes: bigint;
+  projects: number;
+  members: number;
+  targets: number;
+  concurrentOperations: number;
+  artifactBytes: bigint;
+}
+
 export interface WorkspaceCapacityUpdate {
   maxProjects: number;
   maxMembers: number;
@@ -128,12 +150,54 @@ export class WorkspaceCapacityService {
     });
   }
 
-  async list(): Promise<WorkspaceCapacitySnapshot[]> {
-    const workspaces = await this.prisma.workspace.findMany({
-      select: { id: true },
-      orderBy: { createdAt: 'asc' },
-    });
-    return Promise.all(workspaces.map(({ id }) => this.snapshot(id)));
+  /**
+   * One page of the instance-wide overview in a single query. Per-workspace
+   * snapshots would issue seven queries per workspace and exhaust the
+   * connection pool on a large instance.
+   */
+  async list(page: { limit: number; offset: number }): Promise<WorkspaceCapacityPage> {
+    const [rows, total] = await Promise.all([
+      this.prisma.$queryRaw<CapacityRow[]>(Prisma.sql`
+        SELECT
+          w."id", w."name", w."maxProjects", w."maxMembers", w."maxTargets",
+          w."maxConcurrentOperations", w."maxArtifactBytes",
+          (SELECT COUNT(*) FROM "Project" p WHERE p."workspaceId" = w."id")::int AS "projects",
+          (SELECT COUNT(*) FROM "WorkspaceMember" m WHERE m."workspaceId" = w."id")::int AS "members",
+          (SELECT COUNT(*) FROM "TargetAllocation" t WHERE t."workspaceId" = w."id")::int AS "targets",
+          (
+            (SELECT COUNT(*) FROM "DeploymentOperation" d
+               JOIN "Environment" e ON e."id" = d."environmentId"
+               JOIN "Project" p ON p."id" = e."projectId"
+             WHERE p."workspaceId" = w."id" AND d."status" = 'running')
+            +
+            (SELECT COUNT(*) FROM "ProvisioningOperation" o
+             WHERE o."workspaceId" = w."id"
+               AND o."status" IN (${Prisma.join(ACTIVE_PROVISIONING_STATUSES)}))
+          )::int AS "concurrentOperations",
+          (SELECT COALESCE(SUM(a."sizeBytes"), 0) FROM "BuildArtifact" a
+             JOIN "Project" p ON p."id" = a."projectId"
+           WHERE p."workspaceId" = w."id"
+             AND a."status" IN (${Prisma.join(RESERVED_ARTIFACT_STATUSES)}))::bigint AS "artifactBytes"
+        FROM "Workspace" w
+        ORDER BY w."createdAt" ASC, w."id" ASC
+        LIMIT ${page.limit} OFFSET ${page.offset}
+      `),
+      this.prisma.workspace.count(),
+    ]);
+    return {
+      items: rows.map((row) =>
+        this.toSnapshot(row, {
+          projects: row.projects,
+          members: row.members,
+          targets: row.targets,
+          concurrentOperations: row.concurrentOperations,
+          artifactBytes: BigInt(row.artifactBytes),
+        }),
+      ),
+      total,
+      limit: page.limit,
+      offset: page.offset,
+    };
   }
 
   async update(workspaceId: string, values: WorkspaceCapacityUpdate) {

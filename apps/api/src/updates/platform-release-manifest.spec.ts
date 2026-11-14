@@ -54,4 +54,21 @@ describe('platform release manifest', () => {
       ),
     ).toThrow('invalid');
   });
+
+  it('accepts a restore-required contract release but no mixed database contract', () => {
+    const contract = {
+      ...manifest(),
+      database: { migrationMode: 'contract', rollback: 'restore-required', backupRequired: true },
+    };
+    expect(
+      parsePlatformReleaseManifest(contract, 'kudrle01/initpad', 'initpad-v0.2.0').database,
+    ).toEqual({ migrationMode: 'contract', rollback: 'restore-required', backupRequired: true });
+    const mixed = {
+      ...manifest(),
+      database: { migrationMode: 'contract', rollback: 'image-compatible', backupRequired: true },
+    };
+    expect(() => parsePlatformReleaseManifest(mixed, 'kudrle01/initpad', 'initpad-v0.2.0')).toThrow(
+      'invalid',
+    );
+  });
 });

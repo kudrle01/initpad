@@ -69,7 +69,12 @@ vi.mock('@/toast', () => ({ useToast: () => mocks.toast }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.api.adminListWorkspaceCapacity.mockResolvedValue([capacity]);
+  mocks.api.adminListWorkspaceCapacity.mockResolvedValue({
+    items: [capacity],
+    total: 1,
+    limit: 25,
+    offset: 0,
+  });
   mocks.api.adminUpdateWorkspaceCapacity.mockImplementation(
     (_workspaceId: string, values: WorkspaceCapacityUpdate) =>
       Promise.resolve(updatedCapacity(values)),
@@ -145,5 +150,22 @@ describe('WorkspaceCapacityCard', () => {
         tone: 'warning',
       }),
     );
+  });
+
+  it('loads further pages on demand instead of every workspace at once (audit P2)', async () => {
+    const second = { ...capacity, workspaceId: 'workspace-2', workspaceName: 'Team Beta' };
+    mocks.api.adminListWorkspaceCapacity
+      .mockResolvedValueOnce({ items: [capacity], total: 2, limit: 25, offset: 0 })
+      .mockResolvedValueOnce({ items: [second], total: 2, limit: 25, offset: 1 });
+    const user = userEvent.setup();
+    render(<WorkspaceCapacityCard />);
+
+    expect(await screen.findByText('Showing 1 of 2 workspaces')).toBeInTheDocument();
+    expect(mocks.api.adminListWorkspaceCapacity).toHaveBeenCalledWith(0, 25);
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
+
+    expect(await screen.findByText('Team Beta')).toBeInTheDocument();
+    expect(mocks.api.adminListWorkspaceCapacity).toHaveBeenLastCalledWith(1, 25);
+    expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
   });
 });

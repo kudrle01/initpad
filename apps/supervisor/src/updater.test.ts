@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -60,6 +60,9 @@ function manifest(): PlatformReleaseManifest {
 class FakeRunner implements CommandRunner {
   readonly calls: string[][] = [];
   failWeb = false;
+  failRollback = false;
+  failPull = false;
+  unhealthy = false;
   failHelperRun = false;
   supervisorImageId = `sha256:${'f'.repeat(64)}`;
   supervisorConfiguredImage = `ghcr.io/example/initpad-supervisor@sha256:${'e'.repeat(64)}`;
@@ -69,6 +72,14 @@ class FakeRunner implements CommandRunner {
     if (this.failWeb && args.includes('up') && args.at(-1) === 'web') {
       throw new Error('web failed readiness');
     }
+    if (
+      this.failRollback &&
+      args.includes('up') &&
+      args.slice(-3).join(' ') === 'api web supervisor'
+    ) {
+      throw new Error('compose could not recreate api');
+    }
+    if (this.failPull && args[0] === 'pull') throw new Error('registry unavailable');
     if (command === 'docker' && args[0] === 'run' && this.failHelperRun) {
       throw new Error('helper image unavailable');
     }
@@ -85,7 +96,7 @@ class FakeRunner implements CommandRunner {
     if (command === 'docker' && args[0] === 'ps') return { stdout: '', stderr: '' };
     if (args.includes('ps') && args.includes('-q')) return { stdout: 'a'.repeat(64), stderr: '' };
     if (command === 'docker' && args[0] === 'inspect') {
-      return { stdout: 'healthy', stderr: '' };
+      return { stdout: this.unhealthy ? 'unhealthy' : 'healthy', stderr: '' };
     }
     return { stdout: '', stderr: '' };
   }
@@ -362,6 +373,240 @@ test('keeps a signed candidate descriptor when its rollback artifact is missing'
       await readFile(override, 'utf8'),
       'services:\n  supervisor:\n    image: "candidate"\n',
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+function updater(runner: FakeRunner): PlatformUpdater {
+  return new PlatformUpdater(runner, (async () => manifest()) as never, async () => undefined);
+}
+
+async function withPreviousOverride(directory: string): Promise<string> {
+  const runtime = resolve(directory, 'state/runtime');
+  await mkdir(runtime, { recursive: true });
+  const override = resolve(runtime, 'platform-release.override.yml');
+  await writeFile(override, 'services:\n  api:\n    image: "previous"\n');
+  return override;
+}
+
+test('renames the previous descriptor back after a verified rollback', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const override = await withPreviousOverride(directory);
+    const runner = new FakeRunner();
+    runner.failWeb = true;
+    await assert.rejects(updater(runner).applyPlan(plan), /web failed readiness/);
+    assert.equal((await loadState()).operation?.status, 'rolled-back');
+    assert.equal(await readFile(override, 'utf8'), 'services:\n  api:\n    image: "previous"\n');
+    await assert.rejects(access(`${override}.previous-${operationId}`), /ENOENT/);
+    await assert.rejects(access(resolve(directory, 'state/update.lock')), /ENOENT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('records recovery-failed with guidance when the rollback itself fails', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const override = await withPreviousOverride(directory);
+    const runner = new FakeRunner();
+    runner.failWeb = true;
+    runner.failRollback = true;
+    await assert.rejects(updater(runner).applyPlan(plan), /web failed readiness/);
+    const state = await loadState();
+    assert.equal(state.operation?.status, 'failed');
+    assert.equal(state.operation?.stage, 'recovery-failed');
+    assert.match(state.operation?.message ?? '', /compose could not recreate api/);
+    assert.match(state.operation?.message ?? '', /initpad-install-release\.sh/);
+    assert.ok((state.operation?.message.length ?? 0) <= 500);
+    // The descriptor was restored before Compose failed; the lock is released.
+    assert.equal(await readFile(override, 'utf8'), 'services:\n  api:\n    image: "previous"\n');
+    await assert.rejects(access(resolve(directory, 'state/update.lock')), /ENOENT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('does not claim a rollback when restored services stay unhealthy', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const runner = new FakeRunner();
+    runner.failWeb = true;
+    const failing = updater(runner);
+    const original = runner.run.bind(runner);
+    runner.run = async (command, args) => {
+      if (args.includes('up') && args.at(-1) === 'supervisor' && args.includes('api')) {
+        runner.unhealthy = true;
+      }
+      return original(command, args);
+    };
+    await assert.rejects(failing.applyPlan(plan), /web failed readiness/);
+    const state = await loadState();
+    assert.equal(state.operation?.stage, 'recovery-failed');
+    assert.match(state.operation?.message ?? '', /became unhealthy/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('reports a failure before switching without touching the running release', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const override = await withPreviousOverride(directory);
+    const runner = new FakeRunner();
+    runner.failPull = true;
+    await assert.rejects(updater(runner).applyPlan(plan), /registry unavailable/);
+    const state = await loadState();
+    assert.equal(state.operation?.status, 'failed');
+    assert.equal(state.operation?.stage, 'failed');
+    assert.equal(await readFile(override, 'utf8'), 'services:\n  api:\n    image: "previous"\n');
+    await assert.rejects(access(`${override}.previous-${operationId}`), /ENOENT/);
+    const commands = runner.calls.map((call) => call.join(' ')).join('\n');
+    assert.doesNotMatch(commands, / up -d /);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('ignores a stale lock of another operation but refuses a second helper', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const lock = resolve(directory, 'state/update.lock');
+    await writeFile(lock, '11111111-1111-4111-8111-111111111111\n');
+    await updater(new FakeRunner()).applyPlan(plan);
+    assert.equal((await loadState()).operation?.status, 'succeeded');
+    await assert.rejects(access(lock), /ENOENT/);
+
+    const second = await fixture();
+    try {
+      await writeFile(resolve(second.directory, 'state/update.lock'), `${operationId}\n`);
+      await assert.rejects(updater(new FakeRunner()).applyPlan(second.plan), /already running/);
+      assert.equal((await loadState()).operation?.status, 'accepted');
+      assert.equal(
+        await readFile(resolve(second.directory, 'state/update.lock'), 'utf8'),
+        `${operationId}\n`,
+      );
+    } finally {
+      await rm(second.directory, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('releases the update lock when recovery fails', async () => {
+  const { directory } = await fixture();
+  try {
+    const state = await loadState();
+    if (!state.operation) throw new Error('fixture operation is missing');
+    state.operation.status = 'running';
+    state.operation.stage = 'api';
+    state.currentImages = {
+      api: `ghcr.io/example/initpad-api@sha256:${'a'.repeat(64)}`,
+      web: `ghcr.io/example/initpad-web@sha256:${'b'.repeat(64)}`,
+      supervisor: `ghcr.io/example/initpad-supervisor@sha256:${'c'.repeat(64)}`,
+    };
+    await saveState(state);
+    const lock = resolve(directory, 'state/update.lock');
+    await writeFile(lock, `${operationId}\n`);
+
+    await new PlatformUpdater(new FakeRunner()).recoverInterruptedUpdate(operationId);
+
+    const recovered = await loadState();
+    assert.equal(recovered.operation?.stage, 'recovery-failed');
+    assert.match(recovered.operation?.message ?? '', /deploy\/OPERATIONS\.md/);
+    await assert.rejects(access(lock), /ENOENT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('recovery reports recovery-failed when restored services are unhealthy', async () => {
+  const { directory } = await fixture();
+  try {
+    const state = await loadState();
+    if (!state.operation) throw new Error('fixture operation is missing');
+    state.operation.status = 'running';
+    state.operation.stage = 'web';
+    await saveState(state);
+    const runner = new FakeRunner();
+    runner.unhealthy = true;
+    await new PlatformUpdater(runner, undefined, async () => undefined).recoverInterruptedUpdate();
+    const recovered = await loadState();
+    assert.equal(recovered.operation?.stage, 'recovery-failed');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+function contractUpdater(runner: FakeRunner): PlatformUpdater {
+  const contract = {
+    ...manifest(),
+    database: {
+      migrationMode: 'contract' as const,
+      rollback: 'restore-required' as const,
+      backupRequired: true as const,
+    },
+  };
+  return new PlatformUpdater(runner, (async () => contract) as never, async () => undefined);
+}
+
+test('does not restart previous images after a contract release migrated the database', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const override = await withPreviousOverride(directory);
+    const runner = new FakeRunner();
+    runner.failWeb = true;
+    await assert.rejects(contractUpdater(runner).applyPlan(plan), /web failed readiness/);
+    const state = await loadState();
+    assert.equal(state.currentVersion, '0.2.0');
+    assert.equal(state.operation?.stage, 'recovery-failed');
+    assert.equal(state.operation?.restoreRequired, true);
+    assert.match(state.operation?.message ?? '', /incompatible database migrations/);
+    assert.match(state.operation?.message ?? '', /Database backup: .*\.dump/);
+    const rollbackCalls = runner.calls.filter(
+      (call) => call.includes('up') && call.slice(-3).join(' ') === 'api web supervisor',
+    );
+    assert.equal(rollbackCalls.length, 0);
+    // The previous descriptor stays for the manual restore.
+    assert.equal(
+      await readFile(`${override}.previous-${operationId}`, 'utf8'),
+      'services:\n  api:\n    image: "previous"\n',
+    );
+    await assert.rejects(access(resolve(directory, 'state/update.lock')), /ENOENT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a contract release still fails cleanly before switching', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const runner = new FakeRunner();
+    runner.failPull = true;
+    await assert.rejects(contractUpdater(runner).applyPlan(plan), /registry unavailable/);
+    assert.equal((await loadState()).operation?.stage, 'failed');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('recovery refuses an image rollback once a contract release reached the API stage', async () => {
+  const { directory } = await fixture();
+  try {
+    const state = await loadState();
+    if (!state.operation) throw new Error('fixture operation is missing');
+    state.operation.status = 'running';
+    state.operation.stage = 'web';
+    state.operation.restoreRequired = true;
+    await saveState(state);
+    const runner = new FakeRunner();
+    await new PlatformUpdater(runner).recoverInterruptedUpdate(operationId);
+    const recovered = await loadState();
+    assert.equal(recovered.operation?.stage, 'recovery-failed');
+    assert.match(recovered.operation?.message ?? '', /migrated the database incompatibly/);
+    assert.equal(runner.calls.filter((call) => call.includes('up')).length, 0);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

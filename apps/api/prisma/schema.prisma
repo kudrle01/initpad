@@ -25,6 +25,9 @@ model User {
   // Set once the account's repositories and clone token use scoped Gitea
   // tokens and every legacy full-scope token is revoked (ADR-134).
   giteaCredentialsScopedAt   DateTime?
+  // Set once the account's local Gitea password was replaced with an
+  // unrecoverable value; startup hardening skips accounts that have it.
+  giteaPasswordHardenedAt    DateTime?
   // Password hash (scrypt) for managed registration; null = OAuth-only (SSO) account.
   passwordHash               String?
   // Platform-wide authority is deliberately small. Workspace roles carry

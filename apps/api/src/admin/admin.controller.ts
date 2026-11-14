@@ -4,6 +4,8 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { PlatformAdminGuard } from './platform-admin.guard';
 import { AdminService } from './admin.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdatePlatformRoleDto } from './dto/update-platform-role.dto';
+import { ListWorkspaceCapacityDto } from './dto/list-workspace-capacity.dto';
 import { PlatformUpdatesService } from '../updates/platform-updates.service';
 import { RequestPlatformUpdateDto } from '../updates/dto/request-platform-update.dto';
 import { UpdateWorkspaceCapacityDto } from './dto/update-workspace-capacity.dto';
@@ -11,9 +13,10 @@ import { builtInAppsShareSessionCookie } from '../config';
 import { AuditEventsService } from '../audit/audit-events.service';
 import { ListAuditEventsDto } from '../audit/dto/list-audit-events.dto';
 
-// Platform administration API. Account provisioning and self-update are used
-// by self-hosted installations; workspace capacity policy also protects SaaS.
-// Every route requires a valid session AND the platform administrator role.
+// Instance administration API of the self-hosted edition: PlatformAdminGuard
+// refuses every route in SaaS, which enforces the configured default capacity
+// limits without an instance administrator. Every route requires a valid
+// session AND the platform administrator role.
 @Controller('admin')
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
 export class AdminController {
@@ -50,8 +53,8 @@ export class AdminController {
   }
 
   @Get('workspaces/capacity')
-  listWorkspaceCapacity() {
-    return this.admin.listWorkspaceCapacity();
+  listWorkspaceCapacity(@Query() query: ListWorkspaceCapacityDto) {
+    return this.admin.listWorkspaceCapacity({ limit: query.limit, offset: query.offset });
   }
 
   @Put('workspaces/:id/capacity')
@@ -76,6 +79,15 @@ export class AdminController {
   @Post('users/:id/activate')
   activate(@CurrentUser() actingUserId: string, @Param('id') id: string) {
     return this.admin.setActive(actingUserId, id, true);
+  }
+
+  @Put('users/:id/platform-role')
+  setPlatformRole(
+    @CurrentUser() actingUserId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdatePlatformRoleDto,
+  ) {
+    return this.admin.setPlatformRole(actingUserId, id, dto.platformRole);
   }
 
   @Post('users/:id/reset-password')

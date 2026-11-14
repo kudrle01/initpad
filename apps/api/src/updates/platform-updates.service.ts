@@ -8,9 +8,17 @@ import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { compareStableVersions } from './release-manifest';
 import { PlatformReleaseCatalogService } from './platform-release-catalog.service';
-import { SupervisorClientService, type SupervisorOperation } from './supervisor-client.service';
+import {
+  SupervisorClientService,
+  SupervisorRejectedError,
+  type SupervisorOperation,
+  type SupervisorState,
+} from './supervisor-client.service';
 
 const ACTIVE = new Set(['requesting', 'accepted', 'running']);
+// Longer than the /v1/update timeout: a request the Supervisor still verifies
+// must not be failed while it may yet be accepted.
+const REQUESTING_TIMEOUT_MS = 5 * 60_000;
 
 function uniqueViolation(error: unknown): boolean {
   return (
@@ -71,9 +79,7 @@ export class PlatformUpdatesService {
           )
         : Promise.resolve({ value: null, error: 'Platform update Supervisor is not configured' }),
     ]);
-    if (supervisorResult.value?.operation) {
-      await this.syncOperation(supervisorResult.value.operation);
-    }
+    if (supervisorResult.value) await this.reconcile(supervisorResult.value);
     const history = await this.history();
     const currentVersion = supervisorResult.value?.currentVersion ?? config.updates.platformVersion;
     const latestVersion = catalogResult.release?.manifest.version ?? null;
@@ -153,6 +159,7 @@ export class PlatformUpdatesService {
     if (state.operation && ['accepted', 'running'].includes(state.operation.status)) {
       throw new ConflictException('Another platform update is already running');
     }
+    await this.reconcile(state);
     const active = await this.prisma.platformUpdateOperation.findFirst({
       where: { status: { in: [...ACTIVE] } },
       orderBy: { createdAt: 'desc' },
@@ -190,23 +197,64 @@ export class PlatformUpdatesService {
         bundle: catalog.release.bundle,
       });
     } catch (error) {
+      if (!(error instanceof SupervisorRejectedError)) {
+        // A timeout or dropped connection does not prove the update did not
+        // start. The row stays `requesting`; status polls adopt the
+        // Supervisor's operation or fail the row after REQUESTING_TIMEOUT_MS.
+        return operationDto(
+          await this.prisma.platformUpdateOperation.update({
+            where: { id: pending.id },
+            data: {
+              message: `Waiting for the Supervisor to confirm the InitPad ${toVersion} update`,
+            },
+          }),
+        );
+      }
       await this.prisma.platformUpdateOperation.update({
         where: { id: pending.id },
         data: {
           status: 'failed',
           stage: 'request-failed',
-          message: (error instanceof Error
-            ? error.message
-            : 'Supervisor rejected the update'
-          ).slice(0, 500),
+          message: error.message.slice(0, 500),
           finishedAt: new Date(),
         },
       });
-      throw new ServiceUnavailableException(
-        error instanceof Error ? error.message : 'Supervisor rejected the update',
-      );
+      throw new ServiceUnavailableException(error.message);
     }
     return operationDto(await this.persistOperation(operation));
+  }
+
+  /**
+   * Aligns durable rows with the Supervisor, the only authority on whether an
+   * update runs. An active row the Supervisor does not know was lost (state
+   * reset, helper gone before it recorded anything) and would otherwise block
+   * every later update.
+   */
+  private async reconcile(state: SupervisorState): Promise<void> {
+    if (state.operation) await this.syncOperation(state.operation);
+    const orphaned = await this.prisma.platformUpdateOperation.findMany({
+      where: {
+        status: { in: [...ACTIVE] },
+        ...(state.operation ? { requestId: { not: state.operation.requestId } } : {}),
+      },
+      select: { id: true, status: true, createdAt: true },
+    });
+    const now = Date.now();
+    for (const row of orphaned) {
+      const requesting = row.status === 'requesting';
+      if (requesting && now - row.createdAt.getTime() < REQUESTING_TIMEOUT_MS) continue;
+      await this.prisma.platformUpdateOperation.updateMany({
+        where: { id: row.id, status: row.status },
+        data: {
+          status: 'failed',
+          stage: requesting ? 'request-timeout' : 'interrupted',
+          message: requesting
+            ? 'The Supervisor never confirmed this update request; nothing was installed'
+            : 'The Supervisor has no record of this update; it was interrupted',
+          finishedAt: new Date(now),
+        },
+      });
+    }
   }
 
   private async syncOperation(operation: SupervisorOperation): Promise<void> {

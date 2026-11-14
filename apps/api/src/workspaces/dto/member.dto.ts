@@ -17,3 +17,10 @@ export class UpdateWorkspaceMemberDto {
   @IsIn(ASSIGNABLE_ROLES)
   role!: AssignableRole;
 }
+
+export class TransferWorkspaceOwnershipDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  userId!: string;
+}

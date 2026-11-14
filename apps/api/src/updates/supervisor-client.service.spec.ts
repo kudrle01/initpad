@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 import { config } from '../config';
-import { SupervisorClientService } from './supervisor-client.service';
+import { SupervisorClientService, SupervisorRejectedError } from './supervisor-client.service';
 
 const original = { ...config.updates };
 const secret = 's'.repeat(48);
@@ -55,5 +55,19 @@ describe('SupervisorClientService', () => {
       }),
     );
     await expect(new SupervisorClientService().status()).rejects.toThrow('invalid state');
+  });
+
+  it('gives /v1/update time for Sigstore verification and marks refusals', async () => {
+    const timeout = jest.spyOn(AbortSignal, 'timeout');
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify({ error: 'Signature invalid' }), { status: 400 }),
+      );
+    const error = await new SupervisorClientService()
+      .update('3f04ebec-3299-4ce5-bd02-cf390ca413e9', {})
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SupervisorRejectedError);
+    expect(timeout).toHaveBeenCalledWith(60_000);
   });
 });

@@ -191,4 +191,7 @@ stabilní.
 | [ADR-179](./ADR-179.md) | Accepted | Údržba projektů neblokuje start a čte hlavně vlastní data |
 | [ADR-180](./ADR-180.md) | Accepted | Workload s přímými porty dostává pevný hostitelský port od Agenta |
 | [ADR-181](./ADR-181.md) | Accepted | Kdo přidá Agent server a jak dlouho práce na Agenta čeká |
+| [ADR-182](./ADR-182.md) | Accepted | Aktualizace platformy se sladí se Supervisorem a nehlásí nepravdivý rollback |
+| [ADR-183](./ADR-183.md) | Accepted | Destruktivní migrace potřebují výjimku a release s nimi nesmí slibovat rollback images |
+| [ADR-184](./ADR-184.md) | Accepted | Převod vlastnictví workspace, odchod z něj a správa platformních rolí |
 | [ADR-186](./ADR-186.md) | Accepted | Jedna Node LTS linie, deterministický PR gate a ověřené release image |

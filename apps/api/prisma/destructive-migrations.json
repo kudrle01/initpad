@@ -1,0 +1,37 @@
+{
+  "$comment": "Migrations an older API image cannot run against (DROP, RENAME, ALTER TYPE, SET NOT NULL). Each one needs an explicit exception. 'historical' is reserved for migrations shipped up to InitPad 0.2.35; a new exception names the exact release that ships it, and that release is published as a contract release that requires a database restore instead of an image rollback (ADR-183).",
+  "migrations": {
+    "20260710120000_targets": {
+      "release": "historical",
+      "reason": "Moved deployment targets out of Environment columns before signed platform updates existed."
+    },
+    "20260712210000_workspaces": {
+      "release": "historical",
+      "reason": "Backfilled workspaces before signed platform updates existed."
+    },
+    "20260713220000_remove_courses": {
+      "release": "historical",
+      "reason": "Removed the abandoned course model."
+    },
+    "20260714100000_remove_workspace_invitations": {
+      "release": "historical",
+      "reason": "Removed unused workspace invitations."
+    },
+    "20260717232000_project_scm_identity": {
+      "release": "historical",
+      "reason": "Required the backfilled SCM identity of every project."
+    },
+    "20260720250000_deployment_operation_target": {
+      "release": "historical",
+      "reason": "Required the backfilled target snapshot of every deployment operation."
+    },
+    "20260913152000_observability_correlation": {
+      "release": "historical",
+      "reason": "Required the backfilled correlation id of operations and Agent jobs."
+    },
+    "20261006100000_remove_legacy_ssh_runtime": {
+      "release": "historical",
+      "reason": "Removed the legacy SSH runtime and its port allocation column."
+    }
+  }
+}

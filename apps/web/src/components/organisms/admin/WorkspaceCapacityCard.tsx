@@ -28,22 +28,45 @@ function initialValues(capacity: WorkspaceCapacity): WorkspaceCapacityUpdate {
   };
 }
 
+const PAGE_SIZE = 25;
+
 export function WorkspaceCapacityCard() {
   const [items, setItems] = useState<WorkspaceCapacity[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setItems(await api.adminListWorkspaceCapacity());
+      const page = await api.adminListWorkspaceCapacity(0, PAGE_SIZE);
+      setItems(page.items);
+      setTotal(page.total);
     } catch (cause) {
       setError((cause as Error).message);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const page = await api.adminListWorkspaceCapacity(items.length, PAGE_SIZE);
+      setItems((rows) => {
+        const known = new Set(rows.map((row) => row.workspaceId));
+        return [...rows, ...page.items.filter((row) => !known.has(row.workspaceId))];
+      });
+      setTotal(page.total);
+    } catch (cause) {
+      toast.error((cause as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -82,6 +105,21 @@ export function WorkspaceCapacityCard() {
               }
             />
           ))}
+          {items.length < total && (
+            <li className="flex flex-col items-center gap-2 px-4 py-4 sm:flex-row sm:justify-between sm:px-6">
+              <span className="text-xs text-muted-foreground">
+                {t('Showing {shown} of {total} workspaces', { shown: items.length, total })}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore && <Spinner className="h-3.5 w-3.5" />} {t('Show more')}
+              </Button>
+            </li>
+          )}
         </List>
       )}
     </SettingsSection>

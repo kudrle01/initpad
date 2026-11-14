@@ -17,6 +17,8 @@ export const AUDIT_ACTION_LABELS: Record<string, MessageKey> = {
   'workspace.member_added': msg('Member added'),
   'workspace.member_role_changed': msg('Member role changed'),
   'workspace.member_removed': msg('Member removed'),
+  'workspace.member_left': msg('Member left'),
+  'workspace.ownership_transferred': msg('Ownership transferred'),
   'project.created': msg('Project created'),
   'project.imported': msg('Project imported'),
   'project.creation_requested': msg('Project creation requested'),
@@ -78,6 +80,7 @@ export const PLATFORM_ACTION_LABELS: Record<string, MessageKey> = {
   'user.activation_link_issued': msg('Activation link issued'),
   'user.deactivated': msg('Account deactivated'),
   'user.activated': msg('Account reactivated'),
+  'user.platform_role_changed': msg('Platform role changed'),
   'user.password_reset': msg('Password reset by an administrator'),
   'workspace.deleted': msg('Workspace deleted'),
 };
