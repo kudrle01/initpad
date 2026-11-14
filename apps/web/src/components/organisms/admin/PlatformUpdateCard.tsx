@@ -22,6 +22,9 @@ const UPDATE_STAGE_PROGRESS: Record<string, number> = {
   completed: 100,
   failed: 100,
   'request-failed': 100,
+  'request-timeout': 100,
+  interrupted: 100,
+  'recovery-failed': 100,
   'rolled-back': 100,
 };
 
