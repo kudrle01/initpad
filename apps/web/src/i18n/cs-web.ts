@@ -64,4 +64,6 @@ export const csWeb = {
   // pages/ProjectDetail.tsx
   'Reason for the requester (optional)': 'Důvod pro žadatele (nepovinné)',
   'What should change before production?': 'Co je potřeba změnit před produkcí?',
+  // pages/Activity.tsx
+  'Some repository activity is missing': 'Část aktivity repozitářů chybí',
 } satisfies Record<string, string>;

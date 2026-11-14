@@ -176,6 +176,18 @@ function auditQuery(filters: AuditEventFilters): string {
   return query.toString();
 }
 
+// Repository activity that could not be read; the feed still lists the rest.
+export interface ActivityWarning {
+  projectId: string;
+  projectName: string;
+  message: string;
+}
+
+export interface ActivityFeed {
+  events: ActivityEvent[];
+  warnings: ActivityWarning[];
+}
+
 export interface GitHubStatus {
   enabled: boolean;
   appConfigured: boolean;
@@ -399,6 +411,16 @@ export const api = {
   downloadTemplateWorkflow: (templateId: string, provider: 'gitea' | 'github') =>
     download(`/templates/${encodeURIComponent(templateId)}/workflows/${provider}`),
   getActivity: () => http<ActivityEvent[]>('/activity'),
+  /** Feed with per-project warnings; an older API without it falls back to `/activity`. */
+  getActivityFeed: async (): Promise<ActivityFeed> => {
+    try {
+      const feed = await http<Partial<ActivityFeed>>('/activity/feed?scm=true');
+      return { events: feed.events ?? [], warnings: feed.warnings ?? [] };
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+      return { events: await http<ActivityEvent[]>('/activity'), warnings: [] };
+    }
+  },
   getAuditEvents: (filters: AuditEventFilters = {}) =>
     http<AuditEventPage>(`/audit-events?${auditQuery(filters)}`),
   // Sign-in, account administration and events of deleted workspaces.
