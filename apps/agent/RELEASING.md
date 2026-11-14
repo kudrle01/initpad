@@ -1,9 +1,10 @@
 # Vydávání InitPad Agenta
 
 Release Agenta vzniká pouze z verzovacího tagu. Workflow sestaví jeden OCI index
-pro Linux `amd64` a `arm64`, připojí SBOM z BuildKitu a maximální provenance,
-podepíše immutable digest a release soubory pomocí keyless Cosign a vytvoří
-GitHub prerelease. Nikdy nepublikuje měnitelný tag image `latest`. Release se
+pro Linux `amd64` a `arm64` nativně na runnerech obou architektur (stejný
+builder jako platforma), připojí SBOM z BuildKitu a provenance (u veřejného
+repozitáře v režimu max), oskenuje digest Trivy, podepíše immutable digest a
+release soubory pomocí keyless Cosign a vytvoří GitHub prerelease. Nikdy nepublikuje měnitelný tag image `latest`. Release se
 povýší na stable teprve po živé acceptance na hostu.
 
 ## Publikace

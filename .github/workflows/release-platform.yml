@@ -17,10 +17,12 @@ jobs:
   verify:
     name: Verify release source
     runs-on: ubuntu-24.04
-    # Reads GHCR only to refuse a version tag that already exists.
+    # Reads GHCR only to refuse a version tag that already exists, and the
+    # check runs of the tagged commit for the release gate.
     permissions:
       contents: read
       packages: read
+      checks: read
     timeout-minutes: 30
     outputs:
       platform-version: ${{ steps.release.outputs.platform-version }}
@@ -39,10 +41,7 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
-      - name: Set up age for the encrypted backup test
-        uses: ./.github/actions/setup-age
-
-      - name: Verify source and release gate
+      - name: Verify release source
         id: release
         shell: bash
         run: |
@@ -66,8 +65,11 @@ jobs:
             echo "web-image=${web_image}"
             echo "supervisor-image=${supervisor_image}"
           } >> "${GITHUB_OUTPUT}"
-          npm ci
-          npm run check:release
+
+      - name: Require the repository gate
+        uses: ./.github/actions/release-gate
+        with:
+          github-token: ${{ github.token }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -212,9 +214,35 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       github-token: ${{ secrets.GITHUB_TOKEN }}
 
+  # Runs after the build because verify precedes it; nothing is signed or
+  # published until every pushed digest passed the same scan as CI images.
+  scan:
+    name: Scan release images
+    needs: [verify, build_api, build_web, build_supervisor]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 30
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Scan the pushed digests
+        uses: ./.github/actions/scan-release-images
+        with:
+          references: |
+            ${{ needs.verify.outputs.api-image }}@${{ needs.build_api.outputs.digest }}
+            ${{ needs.verify.outputs.web-image }}@${{ needs.build_web.outputs.digest }}
+            ${{ needs.verify.outputs.supervisor-image }}@${{ needs.build_supervisor.outputs.digest }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+
   release:
     name: Sign and publish platform
-    needs: [verify, build_api, build_web, build_supervisor]
+    needs: [verify, build_api, build_web, build_supervisor, scan]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
