@@ -2,6 +2,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import { dockerError, dockerHttpRequest } from './docker-http.js';
 import type { DockerHttpResponse, DockerTransport } from './docker-http.js';
+import { describeFetchFailure } from './network-errors.js';
 
 const IMAGE_REF_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,199}@sha256:[a-f0-9]{64}$/;
 const PROJECT_IMAGE_REF_PATTERN = /^[a-z0-9][a-z0-9._:/-]{0,254}:[a-z0-9_][a-z0-9._-]{0,127}$/;
@@ -10,6 +11,13 @@ const SAFE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const SAFE_NAMESPACE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const HEALTH_PATH_PATTERN = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$/;
 const MAX_LOG_BYTES = 32 * 1024;
+const DEFAULT_HEALTH_TIMEOUT_MS = 60_000;
+const DIAGNOSTIC_HEALTH_TIMEOUT_MS = 10_000;
+const CLEANUP_TIMEOUT_MS = 30_000;
+const DEFAULT_DIRECT_PORT_RANGE = { first: 30_000, last: 32_767 };
+const HOST_PORT_LABEL = 'com.initpad.host-port';
+const PORT_CONFLICT = /port is already allocated|address already in use|bind for .* failed/i;
+const MAX_PORT_ATTEMPTS = 5;
 const SAFE_RUNTIME_CAPABILITIES = [
   'CHOWN',
   'DAC_OVERRIDE',
@@ -122,6 +130,7 @@ interface ContainerListItem {
   Names?: string[];
   Image?: string;
   Labels?: Record<string, string>;
+  Ports?: Array<{ PublicPort?: number }>;
 }
 
 interface ImageInspect {
@@ -395,6 +404,34 @@ function publishedHost(dockerHost: string): string {
   return '127.0.0.1';
 }
 
+/** Candidate health budget, measured from the first probe (env, seconds). */
+export function healthTimeoutFromEnv(
+  value = process.env.INITPAD_AGENT_HEALTH_TIMEOUT_SECONDS,
+): number {
+  const seconds = Number(value?.trim() || NaN);
+  if (!Number.isFinite(seconds)) return DEFAULT_HEALTH_TIMEOUT_MS;
+  return Math.round(Math.min(600, Math.max(5, seconds)) * 1_000);
+}
+
+/** Host port range for direct-port workloads, e.g. `30000-32767`. */
+export function directPortRangeFromEnv(value = process.env.INITPAD_AGENT_DIRECT_PORT_RANGE): {
+  first: number;
+  last: number;
+} {
+  const match = /^\s*(\d{1,5})\s*-\s*(\d{1,5})\s*$/.exec(value ?? '');
+  if (!match) return DEFAULT_DIRECT_PORT_RANGE;
+  const first = Number(match[1]);
+  const last = Number(match[2]);
+  if (first < 1024 || last > 65_535 || last < first) return DEFAULT_DIRECT_PORT_RANGE;
+  return { first, last };
+}
+
+interface HealthProbe {
+  ok: boolean;
+  url?: string;
+  detail: string;
+}
+
 function responseJson<T>(response: DockerHttpResponse, action: string): T {
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw dockerError(response, action);
@@ -447,6 +484,8 @@ export class DockerLifecycle {
     private readonly transport: DockerTransport = dockerHttpRequest,
     host?: string,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly healthTimeoutMs = healthTimeoutFromEnv(),
+    private readonly directPortRange = directPortRangeFromEnv(),
   ) {
     this.host = host ?? publishedHost(dockerHost);
   }
@@ -651,63 +690,7 @@ export class DockerLifecycle {
     }
     let candidate = await this.inspectContainer(candidateName, signal);
     if (!candidate) {
-      const portKey = `${desired.containerPort}/tcp`;
-      const memoryMb = desired.memoryLimitMb!;
-      const cpu = desired.cpuLimitMillicores! / 1_000;
-      const pids = desired.pidsLimit!;
-      const created = responseJson<{ Id: string }>(
-        await this.request({
-          method: 'POST',
-          path: `/containers/create?name=${encodeURIComponent(candidateName)}`,
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            Image: desired.imageRef,
-            Labels: this.labels(desired, jobId),
-            ...(Object.keys(envVars).length
-              ? { Env: Object.entries(envVars).map(([key, value]) => `${key}=${value}`) }
-              : {}),
-            ExposedPorts: { [portKey]: {} },
-            HostConfig: {
-              NetworkMode: this.networkName(desired),
-              PortBindings: {
-                [portKey]: [
-                  {
-                    HostIp:
-                      desired.routingMode === 'managed-gateway'
-                        ? process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND?.trim() || '127.0.0.1'
-                        : '0.0.0.0',
-                    HostPort: '',
-                  },
-                ],
-              },
-              Memory: Math.round(memoryMb * 1024 * 1024),
-              MemorySwap: Math.round(memoryMb * 1024 * 1024),
-              NanoCpus: Math.round(cpu * 1_000_000_000),
-              PidsLimit: Math.round(pids),
-              CapDrop: ['ALL'],
-              CapAdd: [...SAFE_RUNTIME_CAPABILITIES],
-              SecurityOpt: ['no-new-privileges'],
-              Init: true,
-              // A broken candidate must fail once instead of entering a restart
-              // storm. The durable policy is applied only after health succeeds.
-              RestartPolicy: { Name: 'no' },
-              LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
-            },
-          }),
-          signal,
-        }),
-        'create container',
-      );
-      await this.expect(
-        [204, 304],
-        {
-          method: 'POST',
-          path: `/containers/${encodeURIComponent(created.Id)}/start`,
-          signal,
-        },
-        'start candidate',
-      );
-      candidate = await this.inspectContainer(created.Id, signal);
+      candidate = await this.createCandidate(desired, candidateName, jobId, envVars, signal);
     } else if (!candidate.State?.Running) {
       await this.expect(
         [204, 304],
@@ -720,9 +703,23 @@ export class DockerLifecycle {
       );
       candidate = await this.inspectContainer(candidate.Id, signal);
     }
-    if (!candidate || !(await this.waitHealthy(candidate, desired, signal))) {
-      if (candidate) await this.removeContainer(candidate.Id, signal).catch(() => undefined);
-      throw new Error('Candidate workload failed its health check');
+    const health: HealthProbe = candidate
+      ? await this.probeHealth(candidate, desired, signal, this.healthTimeoutMs)
+      : { ok: false, detail: 'the candidate container disappeared' };
+    if (!candidate || !health.ok) {
+      const tail = candidate ? await this.logTail(candidate.Id, signal) : '';
+      // A stale worker (signal aborted after a lost lease) must not remove a
+      // candidate a newer lease may already be verifying.
+      if (candidate && !signal.aborted) {
+        await this.removeContainer(candidate.Id, AbortSignal.timeout(CLEANUP_TIMEOUT_MS)).catch(
+          () => undefined,
+        );
+      }
+      throw new Error(
+        `Candidate workload failed its health check: ${this.healthFailure(health)}${
+          tail ? `; last log: ${tail}` : ''
+        }`,
+      );
     }
     await this.expect(
       [200],
@@ -745,7 +742,149 @@ export class DockerLifecycle {
       },
       'publish candidate',
     );
+    const replacedImage = current?.Config?.Image;
+    if (
+      desired.routingMode === 'direct-port' &&
+      replacedImage &&
+      replacedImage !== desired.imageRef &&
+      PROJECT_IMAGE_REF_PATTERN.test(replacedImage)
+    ) {
+      // Same rule as managed-gateway commit: a redeploy re-delivers its
+      // artifact, so the replaced image is only disk usage. Docker answers 409
+      // while another environment still uses the build-once image.
+      await this.removeImage(replacedImage, signal).catch(() => undefined);
+    }
     return this.status(desired, signal);
+  }
+
+  private async createCandidate(
+    desired: DockerLifecyclePayload,
+    candidateName: string,
+    jobId: string,
+    envVars: Record<string, string>,
+    signal: AbortSignal,
+  ): Promise<ContainerInspect | null> {
+    const portKey = `${desired.containerPort}/tcp`;
+    const memoryMb = desired.memoryLimitMb!;
+    const cpu = desired.cpuLimitMillicores! / 1_000;
+    const pids = desired.pidsLimit!;
+    const tried = new Set<number>();
+    for (let attempt = 1; ; attempt += 1) {
+      // Direct-port workloads get an explicit host port: Docker re-randomizes
+      // an empty HostPort on every container or host restart (ADR-180).
+      const hostPort =
+        desired.routingMode === 'direct-port'
+          ? await this.allocateDirectPort(desired, tried, signal)
+          : null;
+      const created = responseJson<{ Id: string }>(
+        await this.request({
+          method: 'POST',
+          path: `/containers/create?name=${encodeURIComponent(candidateName)}`,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            Image: desired.imageRef,
+            Labels: {
+              ...this.labels(desired, jobId),
+              ...(hostPort ? { [HOST_PORT_LABEL]: String(hostPort) } : {}),
+            },
+            ...(Object.keys(envVars).length
+              ? { Env: Object.entries(envVars).map(([key, value]) => `${key}=${value}`) }
+              : {}),
+            ExposedPorts: { [portKey]: {} },
+            HostConfig: {
+              NetworkMode: this.networkName(desired),
+              PortBindings: {
+                [portKey]: [
+                  {
+                    HostIp:
+                      desired.routingMode === 'managed-gateway'
+                        ? process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND?.trim() || '127.0.0.1'
+                        : '0.0.0.0',
+                    HostPort: hostPort ? String(hostPort) : '',
+                  },
+                ],
+              },
+              Memory: Math.round(memoryMb * 1024 * 1024),
+              MemorySwap: Math.round(memoryMb * 1024 * 1024),
+              NanoCpus: Math.round(cpu * 1_000_000_000),
+              PidsLimit: Math.round(pids),
+              CapDrop: ['ALL'],
+              CapAdd: [...SAFE_RUNTIME_CAPABILITIES],
+              SecurityOpt: ['no-new-privileges'],
+              Init: true,
+              // A broken candidate must fail once instead of entering a restart
+              // storm. The durable policy is applied only after health succeeds.
+              RestartPolicy: { Name: 'no' },
+              LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
+            },
+          }),
+          signal,
+        }),
+        'create container',
+      );
+      try {
+        await this.expect(
+          [204, 304],
+          {
+            method: 'POST',
+            path: `/containers/${encodeURIComponent(created.Id)}/start`,
+            signal,
+          },
+          'start candidate',
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (hostPort && attempt < MAX_PORT_ATTEMPTS && PORT_CONFLICT.test(message)) {
+          // A process outside Docker holds the port; try the next free one.
+          tried.add(hostPort);
+          await this.removeContainer(created.Id, signal);
+          continue;
+        }
+        throw error;
+      }
+      return this.inspectContainer(created.Id, signal);
+    }
+  }
+
+  private async allocateDirectPort(
+    desired: DockerLifecyclePayload,
+    tried: Set<number>,
+    signal: AbortSignal,
+  ): Promise<number> {
+    const containers = responseJson<ContainerListItem[]>(
+      await this.request({
+        method: 'GET',
+        path: '/containers/json?all=1',
+        maxResponseBytes: 16 * 1024 * 1024,
+        signal,
+      }),
+      'list containers for host ports',
+    );
+    const used = new Set(tried);
+    for (const container of Array.isArray(containers) ? containers : []) {
+      for (const port of container.Ports ?? []) {
+        if (Number.isInteger(port.PublicPort)) used.add(Number(port.PublicPort));
+      }
+      // Stopped containers list no ports, yet keep their binding for restart.
+      const reserved = Number(container.Labels?.[HOST_PORT_LABEL]);
+      if (Number.isInteger(reserved)) used.add(reserved);
+    }
+    const { first, last } = this.directPortRange;
+    const size = last - first + 1;
+    // A workload-stable starting point keeps a project on the same one or two
+    // ports across redeploys instead of drifting through the range.
+    const offset =
+      Number.parseInt(
+        createHash('sha256').update(this.workloadKey(desired)).digest('hex').slice(0, 8),
+        16,
+      ) % size;
+    for (let index = 0; index < size; index += 1) {
+      const port = first + ((offset + index) % size);
+      if (!used.has(port)) return port;
+    }
+    throw new Error(
+      `No free host port left in ${first}-${last}; widen INITPAD_AGENT_DIRECT_PORT_RANGE on the Agent`,
+    );
   }
 
   rollback(
@@ -786,8 +925,15 @@ export class DockerLifecycle {
         'start container',
       );
     }
-    if (!(await this.healthy(desired, signal)))
-      throw new Error('Workload failed its health check after start');
+    const started = await this.desiredContainer(desired, signal);
+    const health: HealthProbe = started
+      ? await this.probeHealth(started, desired, signal, this.healthTimeoutMs)
+      : { ok: false, detail: 'the workload container disappeared' };
+    if (!health.ok) {
+      throw new Error(
+        `Workload failed its health check after start: ${this.healthFailure(health)}`,
+      );
+    }
   }
 
   async remove(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
@@ -875,7 +1021,9 @@ export class DockerLifecycle {
     }
     return {
       ...status,
-      health: (await this.waitHealthy(container, payload, signal)) ? 'healthy' : 'unhealthy',
+      health: (await this.waitHealthy(container, payload, signal, DIAGNOSTIC_HEALTH_TIMEOUT_MS))
+        ? 'healthy'
+        : 'unhealthy',
       logs,
     };
   }
@@ -1105,24 +1253,82 @@ export class DockerLifecycle {
     container: ContainerInspect,
     payload: Pick<DockerLifecyclePayload, 'containerPort' | 'healthPath'>,
     signal: AbortSignal,
+    timeoutMs = this.healthTimeoutMs,
   ): Promise<boolean> {
-    if (!container.State?.Running) return false;
+    return (await this.probeHealth(container, payload, signal, timeoutMs)).ok;
+  }
+
+  /** Polls the health path until it answers 2xx or the budget from now runs out. */
+  private async probeHealth(
+    container: ContainerInspect,
+    payload: Pick<DockerLifecyclePayload, 'containerPort' | 'healthPath'>,
+    signal: AbortSignal,
+    timeoutMs: number,
+  ): Promise<HealthProbe> {
+    if (!container.State?.Running) {
+      return { ok: false, detail: this.exitDetail(container) };
+    }
     const mapping = container.NetworkSettings?.Ports?.[`${payload.containerPort}/tcp`];
     const hostPort = Number(mapping?.[0]?.HostPort);
-    if (!Number.isInteger(hostPort) || hostPort < 1 || hostPort > 65_535) return false;
+    if (!Number.isInteger(hostPort) || hostPort < 1 || hostPort > 65_535) {
+      return { ok: false, detail: `container port ${payload.containerPort} is not published` };
+    }
     const url = `http://${this.host}:${hostPort}${payload.healthPath}`;
-    for (let attempt = 0; attempt < 20 && !signal.aborted; attempt += 1) {
+    const deadline = Date.now() + timeoutMs;
+    let last = 'no response';
+    for (let attempt = 1; !signal.aborted; attempt += 1) {
+      const remaining = deadline - Date.now();
       try {
         const response = await this.fetchImpl(url, {
-          signal: AbortSignal.any([signal, AbortSignal.timeout(3_000)]),
+          signal: AbortSignal.any([
+            signal,
+            AbortSignal.timeout(Math.max(250, Math.min(3_000, remaining))),
+          ]),
         });
-        if (response.ok) return true;
-      } catch {
-        // Workload is still starting or the published port is not ready.
+        await response.body?.cancel().catch(() => undefined);
+        if (response.ok) return { ok: true, url, detail: `HTTP ${response.status}` };
+        last = `returned HTTP ${response.status}`;
+      } catch (error) {
+        last = describeFetchFailure(error, 'timed out');
+      }
+      if (Date.now() + 500 >= deadline) break;
+      if (attempt % 4 === 0) {
+        // A crashed process will never become healthy; stop waiting early.
+        const fresh = await this.inspectContainer(container.Id, signal).catch(() => null);
+        if (fresh && !fresh.State?.Running) {
+          return { ok: false, url, detail: this.exitDetail(fresh) };
+        }
       }
       await sleep(500, undefined, { signal }).catch(() => undefined);
     }
-    return false;
+    return {
+      ok: false,
+      url,
+      detail: signal.aborted ? 'interrupted' : `${last} after ${Math.round(timeoutMs / 1_000)} s`,
+    };
+  }
+
+  private exitDetail(container: ContainerInspect): string {
+    const code = Number(container.State?.ExitCode);
+    return Number.isInteger(code) && code > 0
+      ? `the container exited with code ${code}`
+      : 'the container is not running';
+  }
+
+  private healthFailure(health: HealthProbe): string {
+    return health.url ? `GET ${health.url} ${health.detail}` : health.detail;
+  }
+
+  private async logTail(containerId: string, signal: AbortSignal): Promise<string> {
+    if (signal.aborted) return '';
+    const logs = await this.containerLogs(containerId, signal).catch(() => '');
+    return logs
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-3)
+      .join(' | ')
+      .slice(-160);
   }
 
   private toStatus(

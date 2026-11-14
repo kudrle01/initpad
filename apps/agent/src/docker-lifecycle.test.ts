@@ -3,7 +3,9 @@ import test from 'node:test';
 import { createHash } from 'node:crypto';
 import {
   allocationDockerScope,
+  directPortRangeFromEnv,
   DockerLifecycle,
+  healthTimeoutFromEnv,
   legacyWorkloadContainerName,
   managedWorkloadContainerName,
   parseDiagnosticPayload,
@@ -56,6 +58,7 @@ function fakeEngine(initialImagePresent = false) {
   let loadedBytes = Buffer.alloc(0);
   let networkLabels: Record<string, string> = {};
   let nextId = 1;
+  const occupiedOutsideDocker = new Set<string>();
   const containers = new Map<string, FakeContainer>();
   const requests: DockerHttpRequest[] = [];
   const createdBodies: Array<Record<string, unknown>> = [];
@@ -125,6 +128,11 @@ function fakeEngine(initialImagePresent = false) {
           Names: [`/${container.name}`],
           Image: container.Config.Image,
           Labels: container.Config.Labels,
+          Ports: container.State.Running
+            ? Object.values(container.NetworkSettings.Ports).flatMap((items) =>
+                items.map((item) => ({ PublicPort: Number(item.HostPort) })),
+              )
+            : [],
         })),
       );
     }
@@ -132,8 +140,11 @@ function fakeEngine(initialImagePresent = false) {
       const name = decodeURIComponent(input.path.split('=')[1] ?? '');
       const body = JSON.parse(String(input.body)) as Record<string, unknown>;
       createdBodies.push(body);
-      const hostConfig = body.HostConfig as { PortBindings: Record<string, unknown> };
+      const hostConfig = body.HostConfig as {
+        PortBindings: Record<string, Array<{ HostPort: string }>>;
+      };
       const portKey = Object.keys(hostConfig.PortBindings)[0];
+      const requestedPort = hostConfig.PortBindings[portKey]?.[0]?.HostPort;
       const container: FakeContainer = {
         Id: `container-${nextId++}`,
         name,
@@ -142,7 +153,9 @@ function fakeEngine(initialImagePresent = false) {
           Labels: body.Labels as Record<string, string>,
         },
         State: { Running: false, ExitCode: 0 },
-        NetworkSettings: { Ports: { [portKey]: [{ HostPort: String(32_000 + nextId) }] } },
+        NetworkSettings: {
+          Ports: { [portKey]: [{ HostPort: requestedPort || String(32_000 + nextId) }] },
+        },
       };
       containers.set(container.Id, container);
       return response(201, { Id: container.Id });
@@ -156,6 +169,12 @@ function fakeEngine(initialImagePresent = false) {
       if (!container) return response(404, { message: 'not found' });
       if (input.method === 'GET' && action === '/json') return response(200, container);
       if (input.method === 'POST' && action === '/start') {
+        const port = Object.values(container.NetworkSettings.Ports)[0]?.[0]?.HostPort ?? '';
+        if (occupiedOutsideDocker.has(port)) {
+          return response(500, {
+            message: `driver failed programming external connectivity: Bind for 0.0.0.0:${port} failed: port is already allocated`,
+          });
+        }
         if (exitOnNextStart) {
           exitOnNextStart = false;
           container.State.Running = false;
@@ -199,6 +218,7 @@ function fakeEngine(initialImagePresent = false) {
     imagePresent: () => imagePresent,
     networkPresent: () => networkPresent,
     loadedBytes: () => loadedBytes,
+    occupyOutsideDocker: (port: number) => occupiedOutsideDocker.add(String(port)),
     failNextImageLoad: (message = 'no space left on device') => {
       imageLoadFailure = message;
     },
@@ -708,8 +728,15 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.equal(host.Privileged, undefined);
   assert.equal(host.Binds, undefined);
   assert.equal(host.NetworkMode, workloadNetworkName(PAYLOAD));
+  const binding = (host.PortBindings as Record<string, Array<{ HostPort: string }>>)['80/tcp'];
+  const boundPort = Number(binding[0]?.HostPort);
+  assert.ok(boundPort >= 30_000 && boundPort <= 32_767, `explicit host port, got ${boundPort}`);
+  assert.equal(
+    (first.Labels as Record<string, string>)['com.initpad.host-port'],
+    String(boundPort),
+  );
   assert.deepEqual((host.PortBindings as Record<string, unknown>)['80/tcp'], [
-    { HostIp: '0.0.0.0', HostPort: '' },
+    { HostIp: '0.0.0.0', HostPort: String(boundPort) },
   ]);
   assert.deepEqual(host.CapDrop, ['ALL']);
   assert.deepEqual(host.CapAdd, ['CHOWN', 'DAC_OVERRIDE', 'SETGID', 'SETUID', 'NET_BIND_SERVICE']);
@@ -791,4 +818,104 @@ test('full managed project removal deletes every owned revision and its network'
   assert.equal(engine.containers.size, 0);
   assert.equal(engine.networkPresent(), false);
   assert.equal(engine.imagePresent(), false);
+});
+
+test('direct-port gets a stable explicit host port that skips used ports and conflicts', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+    1_000,
+    { first: 40_000, last: 40_002 },
+  );
+  engine.seedForeign('someone-else');
+  engine.containers.get('foreign-1')!.NetworkSettings.Ports['80/tcp'] = [{ HostPort: '40000' }];
+  engine.occupyOutsideDocker(40_001);
+
+  const status = await lifecycle.deploy(PAYLOAD, 'job-1', new AbortController().signal);
+
+  // 40000 is used by a running container, 40001 by a host process: 40002 wins.
+  assert.equal(status.hostPort, 40_002);
+  const published = [...engine.containers.values()].find(
+    (item) => item.Config.Labels['com.initpad.revision'] === PAYLOAD.revision,
+  )!;
+  assert.equal(published.Config.Labels['com.initpad.host-port'], '40002');
+  // The conflicting attempt was cleaned up; only the foreign and the new container remain.
+  assert.equal(engine.containers.size, 2);
+});
+
+test('a candidate health failure names the URL, last status and the log tail', async () => {
+  const engine = fakeEngine(true);
+  let probes = 0;
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => {
+      probes += 1;
+      return new Response('starting', { status: 503 });
+    },
+    1_200,
+  );
+  const started = Date.now();
+
+  await assert.rejects(
+    lifecycle.deploy(PAYLOAD, 'job-1', new AbortController().signal),
+    (error: Error) => {
+      assert.match(
+        error.message,
+        /^Candidate workload failed its health check: GET http:\/\/docker:\d+\/ returned HTTP 503 after 1 s; last log: bounded/,
+      );
+      return true;
+    },
+  );
+  // Budget-based, not a fixed attempt count: it waited for the configured time.
+  assert.ok(Date.now() - started >= 700);
+  assert.ok(probes >= 2);
+  assert.equal(engine.containers.size, 0);
+});
+
+test('reads the health budget and port range from the Agent environment', () => {
+  assert.equal(healthTimeoutFromEnv(undefined), 60_000);
+  assert.equal(healthTimeoutFromEnv('180'), 180_000);
+  assert.equal(healthTimeoutFromEnv('1'), 5_000);
+  assert.deepEqual(directPortRangeFromEnv(undefined), { first: 30_000, last: 32_767 });
+  assert.deepEqual(directPortRangeFromEnv('20000-20100'), { first: 20_000, last: 20_100 });
+  assert.deepEqual(directPortRangeFromEnv('80-90'), { first: 30_000, last: 32_767 });
+});
+
+test('a direct-port redeploy removes the replaced project image', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+  );
+  const first = {
+    ...PAYLOAD,
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    imageRef: `registry.test/acme/api:${'a'.repeat(40)}`,
+    configFingerprint: 'b'.repeat(64),
+  };
+  const second = {
+    ...first,
+    revision: 'c'.repeat(40),
+    imageRef: `registry.test/acme/api:${'c'.repeat(40)}`,
+  };
+
+  await lifecycle.deploy(first, 'job-1', new AbortController().signal);
+  await lifecycle.deploy(second, 'job-2', new AbortController().signal);
+
+  const removed = engine.requests
+    .filter((request) => request.method === 'DELETE' && request.path.startsWith('/images/'))
+    .map((request) => decodeURIComponent(request.path));
+  assert.equal(removed.length, 1);
+  assert.ok(removed[0].startsWith(`/images/${first.imageRef}?`));
 });
