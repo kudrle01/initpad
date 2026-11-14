@@ -4,7 +4,8 @@ FROM mirror.gcr.io/library/node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/agent/package.json apps/agent/
-RUN npm ci --workspace @initpad/agent --include-workspace-root=false
+# The build stage includes the workspace root: TypeScript is declared once there.
+RUN npm ci --workspace @initpad/agent --include-workspace-root
 COPY apps/agent apps/agent
 # Tests compile next to the code they cover; the image ships only the runtime.
 RUN npm run build --workspace @initpad/agent \

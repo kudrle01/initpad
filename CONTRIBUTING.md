@@ -16,8 +16,9 @@ evidence are welcome.
 
 ## Development setup
 
-The supported local toolchain is Node.js 22.12 or newer and Docker with the
-Compose plugin.
+CI, release workflows and every platform image use the Node.js 26 LTS line
+(`.node-version`). Local development needs Node.js 24 or newer and Docker with
+the Compose plugin.
 
 ```bash
 npm ci
@@ -33,21 +34,29 @@ self-hosted flows.
 
 ## Required checks
 
-Run the same deterministic gate used by CI:
+Run the same deterministic, offline gate that CI runs on every pull request:
 
 ```bash
 npm run check
+npm run check:compose
 ```
 
-Before a release-sensitive change, also run:
+`check:compose` renders the self-hosted Compose stack with `.env.example`, the
+platform-release override and every profile, exactly as CI does, so it works
+on a clean checkout. The encrypted backup test needs
+[age](https://github.com/FiloSottile/age); without it the test is skipped with
+a warning locally and fails in CI (or with `INITPAD_REQUIRE_AGE=1`).
 
-```bash
-npm run check:release
-docker compose -f deploy/docker-compose.yml --profile runner config --quiet
-```
+`npm run audit:dependencies` compares production dependencies with the live
+advisory database. It needs network access, so CI runs it on `main` and
+nightly instead of on pull requests; `npm run check:release` runs both gates
+before a release-sensitive change.
 
-Changes to templates or container images must pass the dedicated image workflow
-or the relevant local image probes.
+Changes to templates, container images, `package.json` or `package-lock.json`
+must pass the `Container images` check. It runs on every pull request and
+finishes as a no-op when no image input changed, so it can be required in the
+`main` ruleset; Dependabot auto-merge waits for it only while it is required
+there.
 
 `main` accepts changes only through pull requests that pass the required
 checks, for maintainers too, and never a force push. A platform release is

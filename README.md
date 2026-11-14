@@ -109,7 +109,7 @@ health endpoint a CI workflow. PHP frameworky mají verzovaný skeleton i
 
 ## Lokální vývoj
 
-Požadavky: Node.js 22.12+ a Docker.
+Požadavky: Node.js 24 nebo novější (CI a image používají Node 26 LTS z `.node-version`) a Docker.
 
 ```bash
 npm ci
@@ -132,14 +132,17 @@ Web běží na <http://localhost:5173>, API na
 ## Kontrola změn
 
 ```bash
-npm run check:release
-docker compose -f deploy/docker-compose.yml --profile runner config --quiet
+npm run check
+npm run check:compose
 ```
 
-`npm run check` je offline gate pro každou změnu: hlídá nechtěné soubory,
-lokální cesty a tokeny, osiřelé produkční moduly, sestavení i testy.
-`check:release` navíc porovná produkční závislosti s aktuální databází
-zranitelností, a proto vyžaduje přístup k internetu.
+`npm run check` je deterministický offline gate pro každou změnu a totéž
+spouští CI u pull requestu: hlídá nechtěné soubory, lokální cesty a tokeny,
+osiřelé produkční moduly, sestavení i testy. `npm run check:compose` ověří
+self-hosted Compose stack stejně jako CI (`.env.example`, override vydání a
+všechny profily) a funguje i na čistém checkoutu. `npm run check:release`
+navíc porovná produkční závislosti s aktuální databází zranitelností, a proto
+vyžaduje přístup k internetu; CI ho spouští na `main` a každou noc.
 
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 

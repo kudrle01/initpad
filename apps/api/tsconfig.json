@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "module": "nodenext",
-    "target": "ES2021",
+    "target": "ES2022",
+    "useDefineForClassFields": false,
+    "types": ["node", "jest"],
     "moduleResolution": "nodenext",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,

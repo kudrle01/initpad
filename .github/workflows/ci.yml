@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   check:
+    # The job name is the required check of the main ruleset; keep it stable.
     name: Build, test and audit
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -42,27 +43,25 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.14.0
+          node-version-file: .node-version
           cache: npm
 
-      - name: Install age for the encrypted backup test
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends age
-          age-keygen --version
+      - name: Set up age for the encrypted backup test
+        uses: ./.github/actions/setup-age
 
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Run repository release gate
-        run: npm run check:release
+      # Deterministic and offline: the same gate CONTRIBUTING asks for locally.
+      - name: Run repository gate
+        run: npm run check
 
       - name: Validate self-hosted Compose configuration
-        working-directory: deploy
-        env:
-          INITPAD_INSTALL_ROOT: ${{ github.workspace }}
-          INITPAD_SUPERVISOR_SHARED_SECRET: ci-only-supervisor-secret-000000000000
-        run: |
-          mkdir -p .runtime/platform-update
-          printf 'services: {}\n' > .runtime/platform-update/platform-release.override.yml
-          docker compose --env-file .env.example config --quiet
+        run: npm run check:compose
+
+      # The advisory database changes without a change in this repository, so
+      # the audit runs on main and nightly instead of making pull requests
+      # depend on the network state of the moment.
+      - name: Audit production dependencies
+        if: github.event_name != 'pull_request'
+        run: npm run audit:dependencies

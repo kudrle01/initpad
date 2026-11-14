@@ -1,0 +1,54 @@
+name: Release gate
+description: >-
+  Requires the repository gate for the tagged commit. When the CI check of
+  this exact commit already passed, only the dependency audit runs again;
+  otherwise the full npm run check:release runs here.
+
+inputs:
+  github-token:
+    description: Token that can read the check runs of this repository.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # The tag points at a commit that normally passed "Build, test and audit"
+    # on main. Only a successful run of that GitHub Actions check on the same
+    # SHA counts; anything else (missing, still running, failed, another app)
+    # falls back to the full gate, so the gate is enforced either way.
+    - name: Find the CI result of the tagged commit
+      id: ci
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        passed="$(gh api \
+          "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?check_name=Build%2C%20test%20and%20audit&filter=latest" \
+          --jq '[.check_runs[] | select(.app.slug == "github-actions" and .status == "completed" and .conclusion == "success")] | length > 0' \
+          || echo false)"
+        echo "passed=${passed}" >> "${GITHUB_OUTPUT}"
+        if [[ "${passed}" == true ]]; then
+          echo "CI passed for ${GITHUB_SHA}; re-running only the dependency audit."
+        else
+          echo "::notice::No successful CI run for ${GITHUB_SHA}; running the full release gate."
+        fi
+
+    - name: Set up age for the encrypted backup test
+      if: steps.ci.outputs.passed != 'true'
+      uses: ./.github/actions/setup-age
+
+    - name: Install locked dependencies
+      shell: bash
+      run: npm ci
+
+    # New advisories appear after CI, so the audit always runs at release time.
+    - name: Audit production dependencies
+      if: steps.ci.outputs.passed == 'true'
+      shell: bash
+      run: npm run audit:dependencies
+
+    - name: Run the full release gate
+      if: steps.ci.outputs.passed != 'true'
+      shell: bash
+      run: npm run check:release

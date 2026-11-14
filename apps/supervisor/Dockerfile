@@ -1,14 +1,15 @@
-FROM mirror.gcr.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS build
+FROM mirror.gcr.io/library/node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/supervisor/package.json apps/supervisor/
-RUN npm ci --workspace @initpad/supervisor --include-workspace-root=false
+# The build stage includes the workspace root: TypeScript is declared once there.
+RUN npm ci --workspace @initpad/supervisor --include-workspace-root
 COPY apps/supervisor apps/supervisor
 # Tests compile next to the code they cover; the image ships only the runtime.
 RUN npm run build --workspace @initpad/supervisor \
     && find apps/supervisor/dist -name '*.test.js*' -delete
 
-FROM mirror.gcr.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS production-dependencies
+FROM mirror.gcr.io/library/node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS production-dependencies
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/supervisor/package.json apps/supervisor/
@@ -16,7 +17,7 @@ RUN npm ci --omit=dev --workspace @initpad/supervisor --include-workspace-root=f
 
 FROM mirror.gcr.io/library/docker:29.9.3-cli@sha256:2357639ad1ea7d0194134bf3292622fd4e562483966ed674e5d7c945b5f3b28d AS docker-cli
 
-FROM mirror.gcr.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202
+FROM mirror.gcr.io/library/node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216
 LABEL org.opencontainers.image.title="InitPad Supervisor"
 LABEL org.opencontainers.image.description="Typed, signed and health-gated self-hosted updates"
 LABEL org.opencontainers.image.version="0.2.35"
