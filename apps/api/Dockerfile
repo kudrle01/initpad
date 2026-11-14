@@ -21,7 +21,18 @@ WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/api/prisma apps/api/prisma
-RUN npm ci --omit=dev --workspace @initpad/api --include-workspace-root=false
+# The schema lists the musl engines of both architectures so one checkout
+# builds either image; each image keeps only the engines of its own platform
+# (~28 MB less). The amd64 engine names carry no architecture infix.
+ARG TARGETARCH
+RUN npm ci --omit=dev --workspace @initpad/api --include-workspace-root=false \
+    && case "${TARGETARCH:-$(uname -m)}" in \
+         amd64|x86_64) foreign='*-linux-musl-arm64-openssl-*' ;; \
+         arm64|aarch64) foreign='*-linux-musl-openssl-*' ;; \
+         *) echo "Unsupported image architecture ${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && find node_modules -type f -name "${foreign}" -print -delete \
+    && find node_modules/.prisma/client -name 'libquery_engine-*.so.node' | grep -q .
 
 # -------------------------------------------------------------- runtime ----
 FROM mirror.gcr.io/library/node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216

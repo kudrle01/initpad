@@ -62,3 +62,21 @@ test('declares TypeScript once, in the workspace root', () => {
   );
   assert.deepEqual(copies, ['node_modules/typescript']);
 });
+
+test('ships only the Prisma engines of the image architecture', () => {
+  const schema = readFileSync('apps/api/prisma/schema.prisma', 'utf8');
+  const targets = schema.match(/binaryTargets\s*=\s*\[([^\]]*)\]/)[1];
+  assert.match(targets, /"linux-musl-openssl-3\.0\.x"/);
+  assert.match(targets, /"linux-musl-arm64-openssl-3\.0\.x"/);
+
+  const dockerfile = readFileSync('apps/api/Dockerfile', 'utf8');
+  const stage = dockerfile
+    .split(/^FROM /m)
+    .find((part) => / AS production-dependencies/.test(part));
+  assert.match(stage, /^ARG TARGETARCH$/m);
+  assert.match(stage, /amd64\|x86_64\) foreign='\*-linux-musl-arm64-openssl-\*'/);
+  assert.match(stage, /arm64\|aarch64\) foreign='\*-linux-musl-openssl-\*'/);
+  assert.match(stage, /find node_modules -type f -name "\$\{foreign\}" -print -delete/);
+  // The runtime stage copies the pruned tree; a later rm would not shrink it.
+  assert.match(dockerfile, /COPY --from=production-dependencies \/repo \/repo/);
+});
