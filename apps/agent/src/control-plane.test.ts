@@ -180,3 +180,43 @@ test('downloads an artifact only through bearer plus lease headers', async () =>
     /invalid Agent artifact path/,
   );
 });
+
+for (const [code, expected] of [
+  ['ENOTFOUND', /DNS lookup failed \(ENOTFOUND\)/],
+  ['SELF_SIGNED_CERT_IN_CHAIN', /TLS verification failed \(SELF_SIGNED_CERT_IN_CHAIN\)/],
+  ['ECONNREFUSED', /connection refused \(ECONNREFUSED\)/],
+] as const) {
+  test(`enrollment reports ${code} with the URL instead of "fetch failed"`, async () => {
+    const fetchImpl = async () => {
+      throw new TypeError('fetch failed', { cause: Object.assign(new Error('x'), { code }) });
+    };
+    await assert.rejects(
+      enroll('https://initpad.example.test', 'token', fetchImpl as typeof fetch),
+      (error: Error) => {
+        assert.match(error.message, /https:\/\/initpad\.example\.test\/api\/agent\/enroll/);
+        assert.match(error.message, expected);
+        assert.equal(error.name, 'Error');
+        return true;
+      },
+    );
+  });
+}
+
+test('a heartbeat timeout names the timeout and stays retryable', async () => {
+  const fetchImpl = async () => {
+    throw new DOMException('aborted', 'AbortError');
+  };
+  await assert.rejects(
+    heartbeat(
+      {
+        controlPlaneUrl: 'https://initpad.example.test',
+        credential: 'secret',
+        agentId: 'a',
+        targetId: 't',
+      } as AgentConfig,
+      { available: true } as never,
+      fetchImpl as typeof fetch,
+    ),
+    /Cannot reach InitPad at https:\/\/initpad\.example\.test\/api\/agent\/heartbeat: timed out after 15 s/,
+  );
+});
