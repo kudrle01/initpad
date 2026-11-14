@@ -74,10 +74,12 @@ export async function dockerHttpRequest(
     },
   };
   const { client, options } = requestOptions(request, dockerHost);
+  if (input.signal?.aborted) throw new Error('Docker API request aborted');
   return new Promise((resolve, reject) => {
     const req = client.request(options, (response) => {
       const chunks: Buffer[] = [];
       let size = 0;
+      response.on('error', reject);
       response.on('data', (chunk: Buffer) => {
         size += chunk.length;
         if (size > (input.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES)) {
@@ -94,6 +96,9 @@ export async function dockerHttpRequest(
         }),
       );
     });
+    // The error listener must exist before anything can destroy the request,
+    // otherwise an abort becomes an uncaught exception that kills the Agent.
+    req.on('error', reject);
     const abort = () => req.destroy(new Error('Docker API request aborted'));
     input.signal?.addEventListener('abort', abort, { once: true });
     if (input.signal?.aborted) {
@@ -103,7 +108,6 @@ export async function dockerHttpRequest(
     req.setTimeout(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, () =>
       req.destroy(new Error('Docker API timed out')),
     );
-    req.on('error', reject);
     req.on('close', () => input.signal?.removeEventListener('abort', abort));
     if (body && isAsyncIterable(body)) {
       void writeRequestStream(req, body, input.signal).catch((error) =>

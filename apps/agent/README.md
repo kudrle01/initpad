@@ -475,3 +475,18 @@ změny. Kandidátní workloady dostávají limity CPU, paměti, PID a logů,
 restart policy, `unless-stopped` získá až po úspěšném health checku a nahradí
 aktuální revizi dostatečně atomicky pro jednohostový prototyp. Aplikační logy
 jsou omezeny na posledních 32 KiB.
+
+### Hostitelský port a health check kandidáta (Agent 0.17)
+
+Workload v režimu přímých portů dostane konkrétní hostitelský port z rozsahu
+`INITPAD_AGENT_DIRECT_PORT_RANGE` (výchozí `30000-32767`). Port se uloží do
+konfigurace kontejneru i do labelu `com.initpad.host-port`, takže po restartu
+kontejneru nebo celého serveru zůstane stejný a adresa v InitPadu platí dál
+(ADR-180). Pokud rozsah otevíráte ve firewallu, stačí tento rozsah. Při
+redeployi Agent smaže image nahrazené revize. Image, které ještě používá jiné
+prostředí, Docker smazat nedovolí a zůstane.
+
+Kandidát má na první úspěšnou odpověď health cesty 60 s od prvního pokusu.
+Pomalejší frameworky mohou čas prodloužit proměnnou
+`INITPAD_AGENT_HEALTH_TIMEOUT_SECONDS` (5–600). Chyba uvede volanou URL,
+poslední HTTP kód nebo síťovou chybu a poslední řádky logu aplikace.

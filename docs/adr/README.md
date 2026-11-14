@@ -189,4 +189,6 @@ stabilní.
 | [ADR-177](./ADR-177.md) | Accepted | Mazání projektu se zámkem a bez nasazení mimo cíl |
 | [ADR-178](./ADR-178.md) | Accepted | Druhý push během deploye čeká ve frontě, vyhrává nejnovější |
 | [ADR-179](./ADR-179.md) | Accepted | Údržba projektů neblokuje start a čte hlavně vlastní data |
+| [ADR-180](./ADR-180.md) | Accepted | Workload s přímými porty dostává pevný hostitelský port od Agenta |
+| [ADR-181](./ADR-181.md) | Accepted | Kdo přidá Agent server a jak dlouho práce na Agenta čeká |
 | [ADR-186](./ADR-186.md) | Accepted | Jedna Node LTS linie, deterministický PR gate a ověřené release image |

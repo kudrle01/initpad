@@ -7,10 +7,18 @@ import { AgentsService, type AuthenticatedAgent } from './agents.service';
 export const AGENT_JOB_LEASE_PREFIX = 'initpad_lease_';
 export const AGENT_JOB_NEXT_POLL_SECONDS = 2;
 const LEASE_MS = 30_000;
+/**
+ * A job whose lease expired this many times never reached a terminal state
+ * (Agent crash, hang or restart loop). Re-leasing it again would block the
+ * target's FIFO queue forever, so the next claim fails it instead.
+ */
+export const AGENT_JOB_MAX_ATTEMPTS = 3;
+export const AGENT_JOB_ATTEMPTS_EXHAUSTED = 'attempts_exhausted';
 
 export type AgentJobClaimAttempt =
   | { outcome: 'empty' }
   | { outcome: 'raced' }
+  | { outcome: 'exhausted'; jobId: string }
   | {
       outcome: 'claimed';
       row: AgentJob;
@@ -42,9 +50,35 @@ export class AgentJobLeases {
         ...this.activeCredential(agent),
       },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, status: true, leaseTokenHash: true },
+      select: { id: true, status: true, leaseTokenHash: true, attempt: true },
     });
     if (!candidate) return { outcome: 'empty' };
+
+    if (candidate.status === 'leased' && candidate.attempt >= AGENT_JOB_MAX_ATTEMPTS) {
+      const exhausted = await this.prisma.agentJob.updateMany({
+        where: {
+          id: candidate.id,
+          targetId: agent.targetId,
+          status: 'leased',
+          leaseExpiresAt: { lte: now },
+          leaseTokenHash: candidate.leaseTokenHash,
+        },
+        data: {
+          status: 'failed',
+          progressStage: 'failed',
+          message:
+            `Agent did not finish the job after ${candidate.attempt} attempts; ` +
+            'each lease expired without a result. Check the Agent logs on the server, then retry.',
+          resultCode: AGENT_JOB_ATTEMPTS_EXHAUSTED,
+          result: Prisma.DbNull,
+          leaseExpiresAt: null,
+          finishedAt: now,
+        },
+      });
+      return exhausted.count === 1
+        ? { outcome: 'exhausted', jobId: candidate.id }
+        : { outcome: 'raced' };
+    }
 
     const leaseToken = `${AGENT_JOB_LEASE_PREFIX}${generateToken()}`;
     const leaseExpiresAt = new Date(now.getTime() + LEASE_MS);

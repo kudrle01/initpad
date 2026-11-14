@@ -196,6 +196,25 @@ gateway_replace_container() {
   fi
 }
 
+# Workload networks the inner gateway is attached to. The Agent attached them
+# for active routes; replacing the container would otherwise drop them all and
+# every application would answer 502 until its next deploy.
+gateway_workload_networks() {
+  docker container inspect "$1" >/dev/null 2>&1 || return 0
+  for network in $(docker container inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' "$1"); do
+    [ "$network" = "$GATEWAY_NETWORK" ] && continue
+    [ "$(docker network inspect --format '{{ index .Labels "com.initpad.managed" }}' "$network" 2>/dev/null || true)" = true ] \
+      && printf '%s\n' "$network"
+  done
+}
+
+gateway_reconnect_networks() {
+  for network in $2; do
+    docker network connect "$network" "$1" >/dev/null 2>&1 \
+      || warn "could not reattach the gateway to workload network $network; redeploy that environment if it answers 502"
+  done
+}
+
 gateway_wait_healthy() {
   waited=0
   until [ "$(docker inspect --format '{{.State.Health.Status}}' "$1" 2>/dev/null || true)" = healthy ]; do
@@ -328,6 +347,7 @@ setup_gateway() {
 }
 INNER
   chmod 0644 "$GATEWAY_STATE_DIR/inner.json"
+  inner_workload_networks=$(gateway_workload_networks "$GATEWAY_INNER")
   gateway_replace_container "$GATEWAY_INNER"
   docker volume inspect initpad-gateway-config >/dev/null 2>&1 \
     || docker volume create --label "$GATEWAY_LABEL" initpad-gateway-config >/dev/null
@@ -344,6 +364,7 @@ INNER
     --mount "type=bind,src=$GATEWAY_ADMIN_DIR,dst=/run/initpad-gateway" \
     --entrypoint /bin/sh \
     "$CADDY_IMAGE" -ec 'rm -f /run/initpad-gateway/admin.sock; if [ -s /config/caddy/autosave.json ]; then exec caddy run --resume; fi; exec caddy run --config /etc/caddy/inner.json' >/dev/null
+  gateway_reconnect_networks "$GATEWAY_INNER" "$inner_workload_networks"
 
   # The CA validates a name by connecting to the address it resolves to, which
   # is this server. A host firewall that drops traffic from Docker networks to
@@ -438,8 +459,11 @@ EDGE
   GATEWAY_CONTAINER=$GATEWAY_INNER
   GATEWAY_ADMIN_SOCKET=$GATEWAY_ADMIN_DIR/admin.sock
 
+  # A re-run reuses the certificate stored in the edge volume; Caddy then
+  # never logs "obtained", so look for the stored file as well.
   waited=0
-  until docker logs "$GATEWAY_EDGE" 2>&1 | grep -q 'certificate obtained successfully'; do
+  until docker logs "$GATEWAY_EDGE" 2>&1 | grep -q 'certificate obtained successfully' \
+    || [ -n "$(docker exec "$GATEWAY_EDGE" find /data/caddy/certificates -name "$GATEWAY_DOMAIN.crt" 2>/dev/null)" ]; do
     waited=$((waited + 2))
     if [ "$waited" -gt 60 ]; then
       warn "the TLS edge has no certificate for $GATEWAY_DOMAIN yet. It keeps retrying. Check that $GATEWAY_DOMAIN and *.$GATEWAY_DOMAIN resolve to this server, then: docker logs $GATEWAY_EDGE"
@@ -693,6 +717,10 @@ check_capacity() {
   if [ -n "$problems" ]; then
     if [ "$SKIP_CAPACITY_CHECK" = true ]; then
       warn "this server is below the minimum size; continuing because of --skip-capacity-check:$problems"
+    elif [ "$(docker container inspect --format '{{ index .Config.Labels "com.initpad.agent" }}' "${CONTAINER_NAME:-initpad-agent}" 2>/dev/null || true)" = true ]; then
+      # An update or repair of an installed Agent must not be blocked by the
+      # space its own applications use; refusing would leave it unrepairable.
+      warn "this server is below the minimum size; continuing because an Agent is already installed here. Free space or resize soon:$problems"
     else
       fail "this server is below the minimum size:$problems
 Resize the server, or rerun with --skip-capacity-check to install anyway."

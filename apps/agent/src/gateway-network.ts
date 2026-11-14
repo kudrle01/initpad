@@ -95,6 +95,62 @@ export class GatewayDockerNetwork {
     }
   }
 
+  /**
+   * Startup repair: a replaced gateway container (installer re-run, manual
+   * recreate) loses every workload network the Agent attached. Reattach it to
+   * each managed-gateway network of this target that has a running workload,
+   * which is exactly the set an active route needs. Returns the networks joined.
+   */
+  async reattachActiveWorkloads(signal: AbortSignal): Promise<string[]> {
+    const gateway = await this.inspectGateway(signal);
+    const filters = encodeURIComponent(
+      JSON.stringify({
+        label: [
+          'com.initpad.managed=true',
+          `com.initpad.target=${this.targetId}`,
+          'com.initpad.routing.mode=managed-gateway',
+        ],
+      }),
+    );
+    const listed = responseJson<Array<{ Name?: string }>>(
+      await this.request({ method: 'GET', path: `/networks?filters=${filters}`, signal }),
+      'list managed workload networks',
+    );
+    const joined: string[] = [];
+    for (const { Name: name } of Array.isArray(listed) ? listed.slice(0, 512) : []) {
+      if (!name || !SAFE_CONTAINER_NAME.test(name)) continue;
+      const inspected = await this.request({
+        method: 'GET',
+        path: `/networks/${encodeURIComponent(name)}`,
+        signal,
+      });
+      if (inspected.statusCode === 404) continue;
+      const network = responseJson<WorkloadNetworkInspect>(inspected, 'inspect workload network');
+      const labels = network.Labels ?? {};
+      if (
+        labels['com.initpad.managed'] !== 'true' ||
+        labels['com.initpad.target'] !== this.targetId ||
+        labels['com.initpad.routing.mode'] !== 'managed-gateway' ||
+        containsContainer(network, gateway.Id) ||
+        Object.keys(network.Containers ?? {}).length === 0
+      ) {
+        continue;
+      }
+      const response = await this.request({
+        method: 'POST',
+        path: `/networks/${encodeURIComponent(name)}/connect`,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ Container: gateway.Id }),
+        signal,
+      });
+      if (response.statusCode !== 200 && response.statusCode !== 403) {
+        throw dockerError(response, 'reattach gateway to workload network');
+      }
+      joined.push(name);
+    }
+    return joined;
+  }
+
   async disconnect(payload: GatewayRoutePayload, signal: AbortSignal): Promise<void> {
     const gateway = await this.inspectGateway(signal);
     for (const { name, network } of await this.ownedNetworks(payload, signal)) {

@@ -1,6 +1,10 @@
 import { ConflictException } from '@nestjs/common';
 import { hashToken } from '../common/token';
-import { AgentJobLeases } from './agent-job-leases';
+import {
+  AGENT_JOB_ATTEMPTS_EXHAUSTED,
+  AGENT_JOB_MAX_ATTEMPTS,
+  AgentJobLeases,
+} from './agent-job-leases';
 
 const NOW = new Date('2026-08-12T09:00:00.000Z');
 const AGENT = {
@@ -108,6 +112,60 @@ describe('AgentJobLeases fencing', () => {
 
     await expect(leases.claimOnce(AGENT, NOW)).resolves.toEqual({ outcome: 'raced' });
     expect(prisma.agentJob.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('fails an expired job after the attempt cap instead of re-leasing it forever', async () => {
+    const prisma = {
+      agentJob: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'job-1',
+          status: 'leased',
+          leaseTokenHash: 'expired-hash',
+          attempt: AGENT_JOB_MAX_ATTEMPTS,
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn(),
+      },
+    };
+    const leases = new AgentJobLeases(prisma as never, {} as never);
+
+    await expect(leases.claimOnce(AGENT, NOW)).resolves.toEqual({
+      outcome: 'exhausted',
+      jobId: 'job-1',
+    });
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'job-1',
+        status: 'leased',
+        leaseExpiresAt: { lte: NOW },
+        leaseTokenHash: 'expired-hash',
+      }),
+      data: expect.objectContaining({
+        status: 'failed',
+        resultCode: AGENT_JOB_ATTEMPTS_EXHAUSTED,
+        message: expect.stringContaining(`after ${AGENT_JOB_MAX_ATTEMPTS} attempts`),
+        finishedAt: NOW,
+      }),
+    });
+    expect(prisma.agentJob.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('still re-leases an expired job below the attempt cap', async () => {
+    const prisma = {
+      agentJob: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'job-1',
+          status: 'leased',
+          leaseTokenHash: 'expired-hash',
+          attempt: AGENT_JOB_MAX_ATTEMPTS - 1,
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(leasedJob()),
+      },
+    };
+    const leases = new AgentJobLeases(prisma as never, {} as never);
+
+    await expect(leases.claimOnce(AGENT, NOW)).resolves.toMatchObject({ outcome: 'claimed' });
   });
 
   it('renews only the unexpired lease owned by the authenticated Agent', async () => {

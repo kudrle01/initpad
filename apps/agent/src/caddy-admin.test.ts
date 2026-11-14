@@ -220,3 +220,45 @@ test('removes only its owned route and refuses an identity collision', async () 
   );
   await assert.rejects(collisionClient.reconcileRoute(route, signal()), /another hostname/);
 });
+
+test('aborting an in-flight Unix socket admin request rejects without an uncaught error', async () => {
+  const { createServer } = await import('node:http');
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'initpad-caddy-'));
+  const socketPath = join(dir, 'admin.sock');
+  let markSeen!: () => void;
+  const seen = new Promise<void>((resolve) => (markSeen = resolve));
+  const server = createServer(() => markSeen());
+  await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+  const uncaught: unknown[] = [];
+  const onUncaught = (error: unknown) => uncaught.push(error);
+  process.on('uncaughtException', onUncaught);
+  try {
+    const client = new CaddyAdminClient('', privateResolver, fetch, '');
+    const fetchSocket = (
+      client as unknown as {
+        fetchSocket(s: string, p: string, i: RequestInit, a: AbortSignal): Promise<Response>;
+      }
+    ).fetchSocket.bind(client);
+    const controller = new AbortController();
+    const pending = fetchSocket(socketPath, '/config/', { method: 'GET' }, controller.signal);
+    await seen;
+    controller.abort();
+    await assert.rejects(pending, /aborted/);
+    const aborted = new AbortController();
+    aborted.abort();
+    await assert.rejects(
+      fetchSocket(socketPath, '/config/', { method: 'GET' }, aborted.signal),
+      /aborted/,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(uncaught, []);
+  } finally {
+    process.off('uncaughtException', onUncaught);
+    server.closeAllConnections();
+    server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

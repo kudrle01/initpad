@@ -15,7 +15,11 @@ import type {
 } from './types.js';
 import { GatewayPreflight, parseGatewayPreflightPayload } from './gateway-preflight.js';
 import type { GatewayPreflightProgress } from './gateway-preflight.js';
-import { GatewayRouteReconciler, parseGatewayRoutePayload } from './gateway-route.js';
+import {
+  GatewayRollbackError,
+  GatewayRouteReconciler,
+  parseGatewayRoutePayload,
+} from './gateway-route.js';
 import type { GatewayRouteProgress, GatewayRouteRunResult } from './gateway-route.js';
 import { AgentUpdateCoordinator } from './agent-update.js';
 import type { AgentUpdateHandoffRunner } from './agent-update.js';
@@ -381,6 +385,25 @@ export async function executeClaimedJob(
       });
       return;
     }
+    // Diagnostics of a hung workload can take longer than one lease (docker
+    // logs/inspect timeouts), so the lease is renewed like any other job.
+    const localController = new AbortController();
+    const combinedSignal = AbortSignal.any([signal, localController.signal]);
+    let renewalError: unknown;
+    const renewal = renewLeaseLoop(
+      job,
+      client,
+      timing,
+      combinedSignal,
+      localController,
+      () => leaseDeadline,
+      (deadline) => {
+        leaseDeadline = deadline;
+      },
+      (error) => {
+        renewalError = error;
+      },
+    );
     let result: (AgentJobResult & AgentJobDiagnostic) | undefined;
     let diagnosticError: unknown;
     try {
@@ -394,10 +417,10 @@ export async function executeClaimedJob(
             message: 'Inspecting allocation-scoped workload',
           }),
         () => leaseDeadline,
-        signal,
+        combinedSignal,
         timing,
       );
-      result = await lifecycle.diagnostics(job.payload, signal);
+      result = await lifecycle.diagnostics(job.payload, combinedSignal);
       await retryProtocolCall(
         () =>
           client.progress(job.id, {
@@ -408,13 +431,17 @@ export async function executeClaimedJob(
             message: 'Recording bounded logs and health result',
           }),
         () => leaseDeadline,
-        signal,
+        combinedSignal,
         timing,
       );
     } catch (error) {
       diagnosticError = error;
+    } finally {
+      localController.abort();
+      await renewal;
     }
     if (signal.aborted) return;
+    if (renewalError) throw asError(renewalError, 'Agent job lease renewal failed');
     if (diagnosticError instanceof ControlPlaneError) throw diagnosticError;
     if (diagnosticError || !result) {
       await complete({
@@ -520,7 +547,10 @@ export async function executeClaimedJob(
           ? routeError.message
           : 'Gateway route reconcile failed'
         ).slice(0, 240),
-        resultCode: 'gateway_route_failed',
+        resultCode:
+          routeError instanceof GatewayRollbackError
+            ? `gateway_route_rollback_${routeError.rollback}`
+            : 'gateway_route_failed',
       });
       return;
     }
