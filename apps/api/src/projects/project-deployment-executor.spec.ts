@@ -19,7 +19,7 @@ const PROJECT = {
 const ENVIRONMENT = {
   id: 'env-1',
   provider: 'docker',
-  targetId: null,
+  targetId: 'builtin-docker',
   target: null,
   allocation: null,
   buildArtifact: null,
@@ -72,6 +72,8 @@ function make(
   const targets = overrides.targets ?? {
     connection: jest.fn(() => undefined),
     allocation: jest.fn(() => undefined),
+    ensureAllocation: jest.fn(async () => ({ id: 'allocation-1', targetId: 'builtin-docker' })),
+    assertAcceptsDeploy: jest.fn(async () => undefined),
   };
   const lifecycle = overrides.lifecycle ?? {
     emptyState: jest.fn((statusReason: string | null) => ({
@@ -366,5 +368,17 @@ describe('ProjectDeploymentExecutor', () => {
       'operation-1',
       expect.objectContaining({ projectSlug: 'acme-api', imageRef: stored }),
     );
+  });
+
+  it('never deploys an environment without a server to the InitPad host', async () => {
+    const { executor, deployment, preparation } = make({
+      environment: { ...ENVIRONMENT, targetId: null, target: null },
+    });
+
+    await expect(
+      executor.execute('project-1', 'dev', VERSION, true, 'operation-1'),
+    ).rejects.toThrow("Environment 'dev' has no server assigned");
+    expect(preparation.prepare).not.toHaveBeenCalled();
+    expect(deployment.deploy).not.toHaveBeenCalled();
   });
 });

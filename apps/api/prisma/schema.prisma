@@ -562,6 +562,9 @@ model Project {
   // never changed by a rename. Null only on a row written by an older image,
   // which still derives the same value until it is stored.
   deploymentKey      String?
+  // Compare-and-set deletion lock (ADR-177). A stale value older than the
+  // lock window is reclaimable, so a crashed deletion never blocks forever.
+  deletionStartedAt  DateTime?
   createdAt          DateTime                      @default(now())
   owner              User?                         @relation(fields: [ownerId], references: [id])
   ownerId            String?

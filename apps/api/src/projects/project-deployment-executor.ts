@@ -13,7 +13,7 @@ import {
   storedArtifactImageRef,
   workloadKey,
 } from './project-deployment-identity';
-import { ProjectDeploymentOperations } from './project-deployment-operations';
+import { noServerMessage, ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectDeploymentPreparation } from './project-deployment-preparation';
 import { ProjectEnvironmentLifecycle } from './project-environment-lifecycle';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
@@ -49,6 +49,7 @@ export class ProjectDeploymentExecutor {
       where: { projectId_name: { projectId, name: envName } },
       include: { target: true, allocation: true, buildArtifact: true },
     });
+    if (!environment.targetId) throw new Error(noServerMessage(envName));
     let operation = await this.prisma.deploymentOperation.findUnique({
       where: { id: operationId },
       include: { buildArtifact: true },
@@ -143,7 +144,6 @@ export class ProjectDeploymentExecutor {
       provider: environment.provider as ProviderKind,
       template,
       repository,
-      projectRepoPath: project.repoPath,
       version,
       useRegistry,
       testedImageRef,

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, join, relative, resolve, sep } from 'path';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import * as Handlebars from 'handlebars';
 import { config } from '../config';
 import { TemplatesService } from '../templates/templates.service';
@@ -26,6 +26,29 @@ export function workspacePath(subpath: string): string {
   const path = resolve(root, ...segments);
   if (!path.startsWith(root + sep)) throw new Error(`Invalid workspace path '${subpath}'`);
   return path;
+}
+
+/**
+ * True only for an absolute path strictly below the workspace directory. A
+ * stored project path that fails this check (legacy imports stored the
+ * relative `owner/name`) must never reach a recursive delete, because a
+ * relative path resolves against the API's working directory.
+ */
+export function isWorkspaceCheckout(path: string | null | undefined): path is string {
+  if (!path || !isAbsolute(path)) return false;
+  const root = resolve(config.workspaceDir);
+  return resolve(path).startsWith(root + sep);
+}
+
+/**
+ * Reserves a fresh, unique checkout directory below `<workspace>/<owner>/`.
+ * Concurrent create requests for the same name each get their own directory,
+ * so one request's cleanup can never delete another request's checkout.
+ */
+export function uniqueWorkspaceSubpath(owner: string, name: string): string {
+  const parent = workspacePath(owner);
+  mkdirSync(parent, { recursive: true });
+  return `${owner}/${basename(mkdtempSync(join(parent, `${name}-`)))}`;
 }
 
 /**

@@ -24,7 +24,8 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { ImportProjectDto } from './dto/import-project.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
-import { GeneratorService } from '../generator/generator.service';
+import { GeneratorService, uniqueWorkspaceSubpath } from '../generator/generator.service';
+import { NO_LOCAL_CHECKOUT } from './project-deletion';
 import { DeploymentService } from '../deployment/deployment.service';
 import { ARTIFACT_STORE, ArtifactStore } from '../artifacts/artifact-store';
 import { TargetsService } from '../targets/targets.service';
@@ -651,12 +652,13 @@ export class ProjectsService {
       templateRuntime(template),
     );
 
-    // The workspace directory is namespaced by owner (.workspace/<owner>/<name>)
-    // so same-named projects of different users cannot collide.
+    // The scaffold checkout is temporary and unique per request
+    // (.workspace/<owner>/<name>-XXXXXX): a double-submitted create must not
+    // share, overwrite or delete the other request's checkout.
     const { repoPath } = this.generator.generate(
       template.id,
       dto.name,
-      `${owner.username}/${dto.name}`,
+      uniqueWorkspaceSubpath(owner.username, dto.name),
     );
     try {
       // The scaffold commit is authored by the platform's service account
@@ -785,7 +787,9 @@ export class ProjectsService {
             data: {
               name: dto.name,
               templateId: template.id,
-              repoPath,
+              // The provider is the source of truth; the scaffold checkout is
+              // removed below, so no local path is recorded.
+              repoPath: NO_LOCAL_CHECKOUT,
               repoUrl: repo.repoUrl,
               scmProvider: repo.provider,
               scmRepositoryId: repo.repositoryId,
@@ -981,7 +985,7 @@ export class ProjectsService {
             data: {
               name: repo.name,
               templateId: template.id,
-              repoPath: repo.fullName,
+              repoPath: NO_LOCAL_CHECKOUT,
               repoUrl: repo.repoUrl,
               scmProvider: repo.provider,
               scmRepositoryId: repo.repositoryId,

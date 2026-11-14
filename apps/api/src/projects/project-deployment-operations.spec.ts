@@ -69,7 +69,7 @@ describe('ProjectDeploymentOperations', () => {
       environment: {
         findUnique: jest.fn(async () => ({
           id: 'env-1',
-          targetId: null,
+          targetId: 'builtin-docker',
           target: null,
           provider: 'docker',
           status: 'running',
@@ -101,13 +101,62 @@ describe('ProjectDeploymentOperations', () => {
     expect(audit.recordOperationResult).toHaveBeenCalledWith('deployment', operationId);
   });
 
+  it('refuses to deploy an environment whose server was removed', async () => {
+    const create = jest.fn();
+    const prisma = withCapacity({
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1',
+          targetId: null,
+          target: null,
+          provider: 'docker',
+          project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
+        })),
+      },
+      deploymentOperation: { create },
+    });
+    const operations = new ProjectDeploymentOperations(prisma as never);
+
+    await expect(operations.begin('project-1', 'dev', 'redeploy', 'abc123')).rejects.toThrow(
+      "Environment 'dev' has no server assigned",
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('starts no operation while the project is being deleted', async () => {
+    const create = jest.fn();
+    const prisma = withCapacity({
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1',
+          targetId: 'builtin-docker',
+          target: null,
+          provider: 'docker',
+          project: {
+            id: 'project-1',
+            name: 'api',
+            workspaceId: 'workspace-1',
+            deletionStartedAt: new Date(),
+          },
+        })),
+      },
+      deploymentOperation: { create },
+    });
+    const operations = new ProjectDeploymentOperations(prisma as never);
+
+    await expect(operations.begin('project-1', 'dev', 'redeploy', 'abc123')).rejects.toThrow(
+      'being deleted',
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('cancels the losing operation when two requests race for one environment', async () => {
     const update = jest.fn(async () => undefined);
     const prisma = withCapacity({
       environment: {
         findUnique: jest.fn(async () => ({
           id: 'env-1',
-          targetId: null,
+          targetId: 'builtin-docker',
           target: null,
           provider: 'docker',
           project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
