@@ -2,8 +2,26 @@ import { isAbsolute, resolve } from 'path';
 import { parseSharedNetworks } from './auth/shared-networks';
 import { builtInPublicHost } from './common/public-url';
 
+// One public origin of the platform (what the browser opens). The specific
+// variables stay as optional overrides for split topologies and for .env
+// files written before INITPAD_PUBLIC_URL was read by the API.
+const DEFAULT_FRONTEND_URL = 'http://localhost:5173';
+const DEFAULT_OIDC_PUBLIC_URL = 'http://localhost:3000/api';
+
+export function resolvePublicUrls(env: NodeJS.ProcessEnv = process.env) {
+  const base = (env.INITPAD_PUBLIC_URL || env.INITPAD_FRONTEND_URL || '').replace(/\/+$/, '');
+  return {
+    frontendUrl: env.INITPAD_FRONTEND_URL || base || DEFAULT_FRONTEND_URL,
+    platformPublicUrl: env.INITPAD_PLATFORM_PUBLIC_URL || base,
+    oidcPublicUrl: env.INITPAD_OIDC_PUBLIC_URL || (base ? `${base}/api` : DEFAULT_OIDC_PUBLIC_URL),
+  };
+}
+
+const publicUrls = resolvePublicUrls();
 const configuredPublicUrl =
-  process.env.INITPAD_FRONTEND_URL || process.env.INITPAD_PLATFORM_PUBLIC_URL;
+  process.env.INITPAD_PUBLIC_URL ||
+  process.env.INITPAD_FRONTEND_URL ||
+  process.env.INITPAD_PLATFORM_PUBLIC_URL;
 
 // Built-in targets run on the InitPad host, so their browser-facing hostname
 // follows the platform's public URL. This avoids two independent LAN addresses
@@ -148,7 +166,7 @@ export const config = {
     authorEmail: process.env.INITPAD_GIT_AUTHOR_EMAIL || 'bot@initpad.local',
   },
   auth: {
-    frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
+    frontendUrl: publicUrls.frontendUrl,
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
     registrationMode: normalizeRegistrationMode(rawRegistrationMode),
     // One-time proof required to create the first (administrator) account, so
@@ -158,7 +176,7 @@ export const config = {
     secureCookie:
       process.env.INITPAD_COOKIE_SECURE === 'true' ||
       (process.env.INITPAD_COOKIE_SECURE !== 'false' &&
-        (process.env.INITPAD_FRONTEND_URL || '').startsWith('https://')),
+        publicUrls.frontendUrl.startsWith('https://')),
   },
   // Key for encrypting sensitive DB values (ADR-141). Previous keys only
   // decrypt while a rotation re-encrypts stored values with the current key.
@@ -190,7 +208,7 @@ export const config = {
     // Public browser/API origin reachable by GitHub-hosted Actions runners.
     // Kept separate from the internal Gitea callback above: localhost and
     // Docker service names are valid internally but never from github.com.
-    publicUrl: process.env.INITPAD_PLATFORM_PUBLIC_URL || process.env.INITPAD_FRONTEND_URL || '',
+    publicUrl: publicUrls.platformPublicUrl,
   },
   scm: {
     webhookUrl:
@@ -291,7 +309,7 @@ export const config = {
   // redirect).
   oidc: {
     issuer: process.env.INITPAD_OIDC_ISSUER || 'http://host.docker.internal:3000/api',
-    publicUrl: process.env.INITPAD_OIDC_PUBLIC_URL || 'http://localhost:3000/api',
+    publicUrl: publicUrls.oidcPublicUrl,
     clientId: process.env.INITPAD_OIDC_CLIENT_ID || 'gitea',
     clientSecret: process.env.INITPAD_OIDC_CLIENT_SECRET || 'gitea-oidc-secret-change-me',
     // Path to the RSA signing key (PEM). When set, the key is loaded from —
@@ -613,6 +631,17 @@ export function validateConfig(): void {
     throw new Error('Deployment resource limits are invalid');
   }
   if (process.env.NODE_ENV !== 'production') return;
+  // The built-in defaults point at the Vite dev server; in production they
+  // would put unusable links into activation e-mails and the Gitea SSO.
+  // An explicit http://localhost:8080 (local-only installation) stays valid.
+  if (
+    config.auth.frontendUrl === DEFAULT_FRONTEND_URL ||
+    (config.edition === 'self-hosted' && config.oidc.publicUrl === DEFAULT_OIDC_PUBLIC_URL)
+  ) {
+    throw new Error(
+      'Production requires the public platform URL: set INITPAD_PUBLIC_URL (for example https://initpad.example.com)',
+    );
+  }
   // The in-memory store loses every artifact on restart and grows without a
   // bound; it exists for development and tests only (ADR-146).
   if (!artifactStoreConfigured()) {
