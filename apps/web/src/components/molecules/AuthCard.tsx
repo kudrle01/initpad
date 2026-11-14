@@ -3,6 +3,7 @@ import { BrandMark } from '@/components/atoms/BrandMark';
 import { LanguageToggle } from '@/components/molecules/LanguageSwitch';
 import { ThemeToggle } from '@/components/molecules/ThemeToggle';
 import { cn } from '@/lib/utils';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 /** Shared frame of every signed-out screen: one centered card on the canvas. */
 export function AuthCard({
@@ -16,6 +17,7 @@ export function AuthCard({
   align?: 'left' | 'center';
   children?: ReactNode;
 }) {
+  usePageTitle(title);
   return (
     <div className="relative flex min-h-dvh items-center justify-center bg-background px-4 py-16 sm:p-6">
       <div className="absolute right-3 top-3 flex items-center gap-1.5 sm:right-5 sm:top-5">

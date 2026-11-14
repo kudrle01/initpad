@@ -17,4 +17,12 @@ export const csWeb = {
   'The enrollment command is shown only now. If the server has not run it yet, you will have to create a new one.':
     'Registrační příkaz se zobrazuje jen teď. Pokud ho server ještě nespustil, budete muset vytvořit nový.',
   'Close setup': 'Zavřít nastavení',
+  // pages/Infrastructure.tsx (return to form)
+  'Your form is saved': 'Formulář je uložený',
+  'Add the server here, then go back — everything you filled in is kept.':
+    'Tady server přidejte a pak se vraťte — vše, co jste vyplnili, zůstane zachované.',
+  'Back to the form': 'Zpět na formulář',
+  // pages/NewProject.tsx
+  'Setting up the project takes longer than usual. It continues in the background — follow it on the overview.':
+    'Zakládání projektu trvá déle než obvykle. Pokračuje na pozadí — sledujte ho na přehledu.',
 } satisfies Record<string, string>;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { addServerHref } from '@/lib/form-draft';
 import { Check, Cloud, Container, Network, Server, ShieldCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -68,6 +69,7 @@ export function TargetPickerDialog({
   onOpenChange,
   onPick,
 }: Props) {
+  const location = useLocation();
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
@@ -117,7 +119,10 @@ export function TargetPickerDialog({
                 'No supported and verified replacement target yet. Add or test a server in <link>Servers</link>.',
                 {
                   link: (chunk) => (
-                    <Link to="/infrastructure" className="text-link">
+                    <Link
+                      to={addServerHref(location.pathname + location.search)}
+                      className="text-link"
+                    >
                       {chunk}
                     </Link>
                   ),

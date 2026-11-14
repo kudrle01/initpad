@@ -13,6 +13,7 @@ import { scmLink } from '@/lib/utils';
 import type { FirstPipelineState } from '@/lib/project-readiness';
 import type { Project, ProvisioningStatus, TemplateManifest } from '@/types';
 import { t, formatDate } from '@/i18n';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { translateApiMessage } from '@/lib/api-messages';
 import { statusLabel, termLabel } from '@/i18n/labels';
 
@@ -34,6 +35,7 @@ export function ProjectSummary({
   onDelete,
 }: Props) {
   const created = formatDate(project.createdAt);
+  usePageTitle(project.name);
 
   return (
     <div>

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { InfoTip, type InfoTipItem } from '@/components/molecules/InfoTip';
 import { Notice } from '@/components/molecules/Notice';
@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import type { EnvName, RuntimeKind, Target, TemplateManifest } from '@/types';
 import { t, rich } from '@/i18n';
+import { addServerHref } from '@/lib/form-draft';
 
 export const ENV_NAMES: EnvName[] = ['dev', 'test', 'prod'];
 export type EnvironmentTargets = Record<EnvName, string>;
@@ -143,6 +144,7 @@ export function EnvironmentTargetFields({
   environments = ENV_NAMES,
   hideLabel = false,
 }: Props) {
+  const location = useLocation();
   const options = template
     ? targets.filter(
         (target) => targetAcceptsNewAssignments(target) && targetSupports(target, template),
@@ -195,7 +197,10 @@ export function EnvironmentTargetFields({
               template: runtimeOf(template),
               b: (chunk) => <b className="font-semibold text-foreground">{chunk}</b>,
               link: (chunk) => (
-                <Link to="/infrastructure" className="text-link font-medium">
+                <Link
+                  to={addServerHref(location.pathname + location.search)}
+                  className="text-link font-medium"
+                >
                   {chunk}
                 </Link>
               ),

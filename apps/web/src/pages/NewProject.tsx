@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Check, Rocket, DownloadCloud, Github, Settings2 } from 'lucide-react';
-import { api, type EnvConfig, type GitHubStatus } from '@/api';
+import { api, ApiError, type EnvConfig, type GitHubStatus } from '@/api';
+import { clearDraft, readDraft, writeDraft } from '@/lib/form-draft';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,16 @@ import type { EnvName, PipelinePreset, RuntimeKind, Target, TemplateManifest } f
 import { t, rich, richPlural } from '@/i18n';
 import { termLabel } from '@/i18n/labels';
 
+const DRAFT_KEY = 'new-project';
+
+interface NewProjectDraft {
+  name: string;
+  templateId: string;
+  pipelinePreset: PipelinePreset;
+  environmentTargets: EnvironmentTargets;
+  scmInstallationId: string;
+}
+
 function runtimeOf(template: TemplateManifest): RuntimeKind {
   return template.runtime ?? (template.artifact === 'static' ? 'static' : 'node');
 }
@@ -42,11 +53,15 @@ export default function NewProject() {
   const readOnly = activeWorkspace?.role === 'viewer';
   const [params] = useSearchParams();
   const requestedTemplate = params.get('template');
+  // Input survives a detour to add a server (or any other navigation in this tab).
+  const draft = useRef(readDraft<NewProjectDraft>(DRAFT_KEY));
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
-  const [name, setName] = useState('my-project');
+  const [name, setName] = useState(draft.current?.name ?? 'my-project');
   const [templateId, setTemplateId] = useState<string>('');
-  const [pipelinePreset, setPipelinePreset] = useState<PipelinePreset>(DEFAULT_PIPELINE_PRESET);
+  const [pipelinePreset, setPipelinePreset] = useState<PipelinePreset>(
+    draft.current?.pipelinePreset ?? DEFAULT_PIPELINE_PRESET,
+  );
   const [environmentTargets, setEnvironmentTargets] = useState<EnvironmentTargets>({
     dev: '',
     test: '',
@@ -113,13 +128,17 @@ export default function NewProject() {
         setTemplates(templateRows);
         setTargets(targetRows);
         setGhStatus(github);
-        const firstInstallation = github?.installations.find(
+        const usable = github?.installations.filter(
           (installation) => !installation.suspended && installation.canCreate,
         );
-        setScmInstallationId(firstInstallation?.id ?? '');
+        const draftInstallation = usable?.find(
+          (installation) => installation.id === draft.current?.scmInstallationId,
+        );
+        setScmInstallationId((draftInstallation ?? usable?.[0])?.id ?? '');
         // "Use template" on the Templates page preselects a template via ?template=id.
         const preselected =
-          requestedTemplate && templateRows.find((x) => x.id === requestedTemplate);
+          (requestedTemplate && templateRows.find((x) => x.id === requestedTemplate)) ||
+          templateRows.find((x) => x.id === draft.current?.templateId);
         if (preselected) setTemplateId(preselected.id);
         else if (templateRows[0]) setTemplateId(templateRows[0].id);
       })
@@ -138,8 +157,31 @@ export default function NewProject() {
   // to choose each real workspace target because no control-plane-local Docker
   // host exists from a public service.
   useEffect(() => {
-    setEnvironmentTargets(suggestedEnvironmentTargets(template ?? null, targets, hosted));
+    const suggested = suggestedEnvironmentTargets(template ?? null, targets, hosted);
+    const saved = draft.current;
+    if (saved?.environmentTargets && template && saved.templateId === template.id) {
+      for (const environment of Object.keys(suggested) as EnvName[]) {
+        const targetId = saved.environmentTargets[environment];
+        if (targetId && targets.some((target) => target.id === targetId)) {
+          suggested[environment] = targetId;
+        }
+      }
+    }
+    setEnvironmentTargets(suggested);
   }, [template, targets, hosted]);
+
+  useEffect(() => {
+    if (loading || loadError) return;
+    const next: NewProjectDraft = {
+      name,
+      templateId,
+      pipelinePreset,
+      environmentTargets,
+      scmInstallationId,
+    };
+    draft.current = next;
+    writeDraft(DRAFT_KEY, next);
+  }, [loading, loadError, name, templateId, pipelinePreset, environmentTargets, scmInstallationId]);
 
   function chooseTarget(environment: EnvName, targetId: string) {
     setEnvironmentTargets((current) => ({ ...current, [environment]: targetId }));
@@ -167,9 +209,22 @@ export default function NewProject() {
         pipelinePreset,
         hosted ? scmInstallationId : undefined,
       );
+      clearDraft(DRAFT_KEY);
       toast.success(t('Project created'));
       void navigate(`/projects/${project.id}`);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 408) {
+        // The API keeps setting the project up; retrying would only collide
+        // with the name it is creating. The overview lists setups in progress.
+        clearDraft(DRAFT_KEY);
+        toast.warning(
+          t(
+            'Setting up the project takes longer than usual. It continues in the background — follow it on the overview.',
+          ),
+        );
+        void navigate('/');
+        return;
+      }
       toast.error((e as Error).message);
       setBusy(false);
     }
