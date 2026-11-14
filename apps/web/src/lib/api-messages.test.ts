@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { loadLocaleMessages, setLocale } from '@/i18n';
 import { API_MESSAGE_RULES, translateApiMessage } from './api-messages';
@@ -59,19 +57,14 @@ const API_SOURCES = [
   '`Uploading ${done}/${total} files`',
 ];
 
+// Read through Vite, so the test needs no Node typings.
+const API_SOURCE_FILES = import.meta.glob<string>(
+  ['../../../api/src/**/*.ts', '!../../../api/src/**/*.spec.ts'],
+  { query: '?raw', import: 'default', eager: true },
+);
+
 function apiSourceText(): string {
-  const root = join(__dirname, '../../../api/src');
-  const parts: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir)) {
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) walk(path);
-      else if (path.endsWith('.ts') && !path.endsWith('.spec.ts'))
-        parts.push(readFileSync(path, 'utf8'));
-    }
-  };
-  walk(root);
-  return parts.join('\n');
+  return Object.values(API_SOURCE_FILES).join('\n');
 }
 
 beforeAll(() => loadLocaleMessages('cs'));
