@@ -66,4 +66,6 @@ export const csWeb = {
   'What should change before production?': 'Co je potřeba změnit před produkcí?',
   // pages/Activity.tsx
   'Some repository activity is missing': 'Část aktivity repozitářů chybí',
+  // components/organisms/RollbackDialog.tsx
+  'Version to restore': 'Verze k obnovení',
 } satisfies Record<string, string>;

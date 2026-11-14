@@ -307,15 +307,21 @@ export function useProjectDetail() {
     }
   }
 
-  async function confirmRollback() {
+  async function confirmRollback(candidateOperationId?: string) {
     if (!id || !rollbackPreview) return;
+    const chosen =
+      rollbackPreview.candidates?.find(
+        (candidate) => candidate.candidateOperationId === candidateOperationId,
+      ) ?? null;
+    const candidateId = chosen?.candidateOperationId ?? rollbackPreview.candidateOperationId;
+    const version = chosen?.version ?? rollbackPreview.rollbackVersion;
     setBusy(`rollback-${rollbackPreview.environment}`);
     try {
       if (rollbackPreview.environment === 'prod') {
         setProductionRequest(
           await api.requestProductionDeployment(id, {
             kind: 'rollback',
-            candidateOperationId: rollbackPreview.candidateOperationId,
+            candidateOperationId: candidateId,
             stateToken: rollbackPreview.stateToken,
           }),
         );
@@ -325,14 +331,14 @@ export function useProjectDetail() {
           await api.rollback(
             id,
             rollbackPreview.environment,
-            rollbackPreview.candidateOperationId,
+            candidateId,
             rollbackPreview.stateToken,
           ),
         );
         toast.success(
           t('Rolling back {environment} to {rollbackVersion} without a new CI build.', {
             environment: rollbackPreview.environment,
-            rollbackVersion: rollbackPreview.rollbackVersion.slice(0, 7),
+            rollbackVersion: version.slice(0, 7),
           }),
         );
       }

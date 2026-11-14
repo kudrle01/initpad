@@ -509,7 +509,7 @@ export default function ProjectDetail() {
         preview={rollbackPreview}
         busy={busy === `rollback-${rollbackPreview?.environment}`}
         onOpenChange={(open) => !open && setRollbackPreview(null)}
-        onConfirm={confirmRollback}
+        onConfirm={(candidateOperationId) => void confirmRollback(candidateOperationId)}
       />
 
       <TargetPickerDialog

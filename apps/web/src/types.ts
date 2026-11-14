@@ -486,6 +486,15 @@ export interface RollbackPreview {
   } | null;
   sourceDeployedAt: string;
   stateToken: string;
+  /** Older verified deployments to choose from; absent on older APIs. */
+  candidates?: RollbackCandidate[];
+}
+
+export interface RollbackCandidate {
+  candidateOperationId: string;
+  version: string;
+  artifact: { id: string; provider: string; digest: string; runId: string } | null;
+  deployedAt: string;
 }
 
 export interface ProductionDeploymentRequest {
