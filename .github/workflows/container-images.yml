@@ -1,36 +1,13 @@
 name: Verify container images
 
+# Runs on every pull request so that "Container images" can be a required
+# check of the main ruleset; the gate job passes as a no-op when no image input
+# changed (scripts/container-image-inputs.mjs).
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/*/Dockerfile'
-      - 'apps/web/nginx*.conf'
-      - 'apps/*/package.json'
-      - 'templates/**'
-      - 'deploy/*.yml'
-      - 'infra/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/test-template-images.sh'
-      - '.trivyignore.yaml'
-      - '.github/dependabot.yml'
-      - '.github/workflows/container-images.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'apps/*/Dockerfile'
-      - 'apps/web/nginx*.conf'
-      - 'apps/*/package.json'
-      - 'templates/**'
-      - 'deploy/*.yml'
-      - 'infra/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/test-template-images.sh'
-      - '.trivyignore.yaml'
-      - '.github/dependabot.yml'
-      - '.github/workflows/container-images.yml'
   # New advisories appear without a change in this repository.
   schedule:
     - cron: '17 4 * * 1'
@@ -44,8 +21,41 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect image inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      images: ${{ steps.inputs.outputs.images }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare with the base revision
+        id: inputs
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          # A schedule, a manual run or an unknown base checks everything.
+          if [[ "${GITHUB_EVENT_NAME}" != pull_request && "${GITHUB_EVENT_NAME}" != push ]] \
+            || [[ -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]] \
+            || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            images=true
+          else
+            images="$(git diff --name-only "${BASE_SHA}" "${GITHUB_SHA}" | node scripts/container-image-inputs.mjs)"
+          fi
+          echo "Image inputs changed: ${images}"
+          echo "images=${images}" >> "${GITHUB_OUTPUT}"
+
   build:
     name: Build platform and template images
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -104,3 +114,28 @@ jobs:
 
       - name: Build and probe every project template
         run: ./scripts/test-template-images.sh
+
+  gate:
+    # The required check: passes when the images were built and scanned, or
+    # when the change touched no image input at all.
+    name: Container images
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require verified images for image changes
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          IMAGES: ${{ needs.changes.outputs.images }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+          [[ "${CHANGES_RESULT}" == success ]] || { echo "Input detection ${CHANGES_RESULT}" >&2; exit 1; }
+          if [[ "${IMAGES}" == true ]]; then
+            [[ "${BUILD_RESULT}" == success ]] || { echo "Image verification ${BUILD_RESULT}" >&2; exit 1; }
+          else
+            [[ "${BUILD_RESULT}" == skipped ]] || { echo "Unexpected build ${BUILD_RESULT}" >&2; exit 1; }
+            echo 'No image input changed; nothing to verify.'
+          fi

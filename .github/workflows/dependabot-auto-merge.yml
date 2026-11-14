@@ -24,16 +24,34 @@ jobs:
         id: metadata
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
 
+      # npm updates change package.json and package-lock.json, and image
+      # updates change Dockerfiles: both reach the platform images. They merge
+      # on their own only while "Container images" is a required check of the
+      # main ruleset, so auto-merge can never skip the image build and scan.
+      - name: Check that image verification is required
+        id: images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          required="$(gh api "repos/${GITHUB_REPOSITORY}/rules/branches/main" \
+            --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | index("Container images") != null')"
+          echo "required=${required}" >> "${GITHUB_OUTPUT}"
+          if [[ "${required}" != true ]]; then
+            echo '::notice::Container images is not a required check of main; auto-merge stays off for this update.'
+          fi
+
       # Patch and minor updates merge on their own once the required checks of
-      # the main ruleset pass. Majors, a changed package maintainer, and image
-      # updates stay manual: images are verified only by the path-filtered
-      # container image workflow, which is not a required check.
+      # the main ruleset pass. Majors, a changed package maintainer and
+      # Compose service images (Gitea, PostgreSQL, the runner), which no
+      # required check starts, stay manual.
       - name: Enable auto-merge
         if: >-
           (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
            steps.metadata.outputs.update-type == 'version-update:semver-minor') &&
           steps.metadata.outputs.maintainer-changes != 'true' &&
-          !startsWith(steps.metadata.outputs.package-ecosystem, 'docker')
+          !contains(steps.metadata.outputs.package-ecosystem, 'compose') &&
+          steps.images.outputs.required == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
