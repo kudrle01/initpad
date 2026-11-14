@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 import { signRequest } from './auth.js';
 import { createSupervisorServer } from './server.js';
-import { loadState } from './state.js';
+import { loadState, saveState } from './state.js';
 import type { PlatformReleaseManifest } from './types.js';
 
 const secret = 's'.repeat(48);
@@ -135,6 +135,70 @@ test('exposes only authenticated status/update endpoints and keeps requests idem
     assert.equal(legacyOnly.status, 401);
     assert.equal(launches.length, 1);
     assert.equal((await loadState()).operation?.requestId, updateId);
+  } finally {
+    await new Promise<void>((resolveClose, reject) =>
+      server.close((error) => (error ? reject(error) : resolveClose())),
+    );
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('status starts recovery when an active operation lost its helper', async (t) => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'initpad-supervisor-server-'));
+  process.env.INITPAD_SUPERVISOR_STATE_DIR = directory;
+  process.env.INITPAD_PLATFORM_VERSION = '0.2.0';
+  const state = await loadState();
+  state.operation = {
+    id: '8617bbb8-896d-46bb-9db7-afdc081b2b91',
+    requestId: '3f04ebec-3299-4ce5-bd02-cf390ca413e9',
+    fromVersion: '0.2.0',
+    toVersion: '0.3.0',
+    status: 'running',
+    stage: 'pulling',
+    message: 'Pulling',
+    backupPath: null,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+  };
+  await saveState(state);
+  let recoveries = 0;
+  let clock = 1_000_000;
+  const server = createSupervisorServer(
+    secret,
+    {
+      launchHelper: async () => undefined,
+      launchRecoveryHelper: async () => {
+        recoveries += 1;
+      },
+    },
+    (async () => verifiedManifest()) as never,
+    () => clock,
+  );
+  try {
+    await new Promise<void>((resolveListen, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolveListen);
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+      t.skip('the execution sandbox does not permit loopback listeners');
+      await rm(directory, { recursive: true, force: true });
+      return;
+    }
+    throw error;
+  }
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const poll = (id: string) =>
+    fetch(`${base}/v1/status`, { headers: headers('GET', '/v1/status', id, Buffer.alloc(0)) });
+  try {
+    assert.equal((await poll('6e1b3a3c-6f2e-4f33-9a52-0d6b8f1c2a10')).status, 200);
+    assert.equal(recoveries, 1);
+    // Polls are throttled so the UI cannot flood Docker with `ps` calls.
+    await poll('7c2d4b4d-7a3f-4a44-8b63-1e7c9a2d3b21');
+    assert.equal(recoveries, 1);
+    clock += 10_000;
+    await poll('9d3e5c5e-8b4f-4b55-9c74-2f8d0b3e4c32');
+    assert.equal(recoveries, 2);
   } finally {
     await new Promise<void>((resolveClose, reject) =>
       server.close((error) => (error ? reject(error) : resolveClose())),

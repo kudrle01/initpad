@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { chmod, chown, copyFile, lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, chown, lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -27,6 +27,46 @@ function updateLock(): string {
 
 function runtimeOverride(): string {
   return resolve(stateDirectory(), 'runtime/platform-release.override.yml');
+}
+
+// Shown with every terminal failure that left the platform in an unknown
+// state, so the administrator knows the supported way back.
+export const MANUAL_RECOVERY_HINT =
+  'Restore manually with initpad-install-release.sh or restore.sh (deploy/OPERATIONS.md, "Source checkout a recovery").';
+
+function recoveryFailedMessage(prefix: string, error: unknown, backupPath: string | null): string {
+  const reason = (error instanceof Error ? error.message : 'unknown failure').slice(0, 220);
+  const backup = backupPath ? ` Database backup: ${backupPath}.` : '';
+  return `${prefix}: ${reason}. ${MANUAL_RECOVERY_HINT}${backup}`.slice(0, 500);
+}
+
+/**
+ * The lock names the operation that holds it. A lock left behind by a killed
+ * helper of another operation is stale: the durable state admits only one
+ * active operation, and it is the one this helper was started for.
+ */
+async function acquireUpdateLock(operationId: string): Promise<void> {
+  const lockPath = updateLock();
+  await mkdir(stateDirectory(), { recursive: true, mode: 0o700 });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await writeFile(lockPath, `${operationId}\n`, { flag: 'wx', mode: 0o600 });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const holder = (await readFile(lockPath, 'utf8').catch(() => '')).trim();
+      if (holder === operationId)
+        throw new Error('Another platform update is already running', { cause: error });
+      await rm(lockPath, { force: true });
+    }
+  }
+  throw new Error('Another platform update is already running');
+}
+
+async function releaseUpdateLock(operationId: string): Promise<void> {
+  const lockPath = updateLock();
+  const holder = (await readFile(lockPath, 'utf8').catch(() => '')).trim();
+  if (holder === operationId) await rm(lockPath, { force: true });
 }
 
 export interface CommandResult {
@@ -417,8 +457,9 @@ export class PlatformUpdater {
           // Source installations legitimately start without an override.
           await rm(overridePath, { force: true });
         }
+        const restoredCompose = composeArgs(validInstallRoot(), hadPrevious);
         await this.runner.run('docker', [
-          ...composeArgs(validInstallRoot(), hadPrevious),
+          ...restoredCompose,
           'up',
           '-d',
           '--no-deps',
@@ -426,6 +467,9 @@ export class PlatformUpdater {
           'api',
           'web',
         ]);
+        // `rolled-back` is a claim that the previous release serves again.
+        await this.waitForService(restoredCompose, 'api');
+        await this.waitForService(restoredCompose, 'web');
       }
       const recoveredOperation: UpdateOperation = {
         ...operation,
@@ -460,38 +504,36 @@ export class PlatformUpdater {
         ...operation,
         status: 'failed',
         stage: 'recovery-failed',
-        message: `Automatic recovery failed: ${
-          error instanceof Error ? error.message : 'unknown failure'
-        }`.slice(0, 500),
+        message: recoveryFailedMessage('Automatic recovery failed', error, operation.backupPath),
         finishedAt: new Date().toISOString(),
       };
       await saveState(state);
+      // The operation is terminal; a retained lock would refuse every later
+      // update although no helper runs. The previous descriptor and the plan
+      // stay for the manual recovery.
+      await rm(updateLock(), { force: true });
     }
   }
 
   async applyPlan(path: string): Promise<void> {
-    const lockPath = updateLock();
-    await mkdir(stateDirectory(), { recursive: true, mode: 0o700 });
-    await writeFile(lockPath, `${process.pid}\n`, { flag: 'wx', mode: 0o600 }).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (error.code === 'EEXIST') throw new Error('Another platform update is already running');
-        throw error;
-      },
-    );
+    let lockedOperationId: string | null = null;
     let operation: UpdateOperation | null = null;
     let previousState: SupervisorState | null = null;
     let previousOverride = '';
     let hadOverride = false;
-    let overridePrepared = false;
+    let switched = false;
     let installRoot = '';
     try {
       const plan = await readPlan(path);
+      await acquireUpdateLock(plan.operationId);
+      lockedOperationId = plan.operationId;
       const state = await loadState();
-      operation = state.operation;
-      previousState = structuredClone(state);
-      if (!operation || operation.id !== plan.operationId) {
+      // Never record an outcome on another operation's durable state.
+      if (!state.operation || state.operation.id !== plan.operationId) {
         throw new Error('Platform update operation state is missing');
       }
+      operation = state.operation;
+      previousState = structuredClone(state);
       const overridePath = runtimeOverride();
       await mkdir(dirname(overridePath), { recursive: true, mode: 0o700 });
       previousOverride = `${overridePath}.previous-${operation.id}`;
@@ -507,8 +549,11 @@ export class PlatformUpdater {
       if (sha256(override) !== manifest.compose.sha256) {
         throw new Error('Generated Compose override does not match the signed release');
       }
-      if (hadOverride) await copyFile(overridePath, previousOverride);
-      overridePrepared = true;
+      // Written as a new file instead of copyFile(2), which hardened Docker
+      // hosts reject with EPERM; the rollback later renames it back.
+      if (hadOverride) {
+        await atomicWriteHostFile(previousOverride, await readFile(overridePath, 'utf8'));
+      }
 
       const backupDirectory = resolve(stateDirectory(), 'backups');
       await mkdir(backupDirectory, { recursive: true, mode: 0o700 });
@@ -552,6 +597,7 @@ export class PlatformUpdater {
         stage: 'switching',
         message: 'Switching to the verified platform release',
       });
+      switched = true;
       await atomicWriteHostFile(overridePath, override);
       const candidateCompose = composeArgs(installRoot, true);
 
@@ -615,45 +661,76 @@ export class PlatformUpdater {
       await saveState(completed);
       await rm(previousOverride, { force: true });
     } catch (error) {
-      const overridePath = runtimeOverride();
-      if (overridePrepared) {
-        if (hadOverride && previousOverride) {
-          await copyFile(previousOverride, overridePath).catch(() => undefined);
-        } else {
-          await rm(overridePath, { force: true });
-        }
-      }
       const message = error instanceof Error ? error.message : 'Platform update failed';
       if (previousState && operation) {
-        previousState.operation = {
-          ...operation,
-          status: 'rolled-back',
-          stage: 'rolled-back',
-          message: `Update rolled back: ${message}`.slice(0, 500),
-          finishedAt: new Date().toISOString(),
-        };
+        previousState.operation = switched
+          ? await this.rollBack(operation, message, installRoot, hadOverride, previousOverride)
+          : {
+              ...operation,
+              status: 'failed',
+              stage: 'failed',
+              message: `Update failed before switching: ${message}`.slice(0, 500),
+              finishedAt: new Date().toISOString(),
+            };
         await saveState(previousState).catch(() => undefined);
-      }
-      if (installRoot) {
-        const rollbackCompose = composeArgs(installRoot, hadOverride);
-        await this.runner
-          .run('docker', [
-            ...rollbackCompose,
-            'up',
-            '-d',
-            '--no-deps',
-            '--no-build',
-            'api',
-            'web',
-            'supervisor',
-          ])
-          .catch(() => undefined);
+        if (!switched && previousOverride) await rm(previousOverride, { force: true });
       }
       throw error;
     } finally {
       await rm(path, { force: true });
-      if (previousOverride) await rm(previousOverride, { force: true });
-      await rm(lockPath, { force: true });
+      if (lockedOperationId) await releaseUpdateLock(lockedOperationId);
+    }
+  }
+
+  /**
+   * Restores the previous descriptor and images and reports `rolled-back`
+   * only when they are healthy again. Any failure is `recovery-failed` with
+   * the manual recovery path; the previous descriptor is then kept.
+   */
+  private async rollBack(
+    operation: UpdateOperation,
+    reason: string,
+    installRoot: string,
+    hadOverride: boolean,
+    previousOverride: string,
+  ): Promise<UpdateOperation> {
+    const overridePath = runtimeOverride();
+    try {
+      if (hadOverride) await rename(previousOverride, overridePath);
+      else await rm(overridePath, { force: true });
+      const rollbackCompose = composeArgs(installRoot, hadOverride);
+      await this.runner.run('docker', [
+        ...rollbackCompose,
+        'up',
+        '-d',
+        '--no-deps',
+        '--no-build',
+        'api',
+        'web',
+        'supervisor',
+      ]);
+      for (const service of ['api', 'web', 'supervisor']) {
+        await this.waitForService(rollbackCompose, service);
+      }
+      return {
+        ...operation,
+        status: 'rolled-back',
+        stage: 'rolled-back',
+        message: `Update rolled back: ${reason}`.slice(0, 500),
+        finishedAt: new Date().toISOString(),
+      };
+    } catch (rollbackError) {
+      return {
+        ...operation,
+        status: 'failed',
+        stage: 'recovery-failed',
+        message: recoveryFailedMessage(
+          `Update failed (${reason.slice(0, 120)}) and the rollback failed`,
+          rollbackError,
+          operation.backupPath,
+        ),
+        finishedAt: new Date().toISOString(),
+      };
     }
   }
 
