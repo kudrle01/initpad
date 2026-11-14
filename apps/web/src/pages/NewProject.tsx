@@ -442,10 +442,10 @@ export default function NewProject() {
             </Section>
 
             <Section
-              title={t('Deployment targets')}
+              title={t('Deployment servers')}
               description={t('Where each environment runs.')}
               help={environmentTargetHelp(hosted)}
-              helpLabel={t('About environment targets')}
+              helpLabel={t('About environment servers')}
               media={<StepBadge step={4} />}
             >
               <EnvironmentTargetFields
@@ -472,7 +472,7 @@ export default function NewProject() {
                     to="/infrastructure"
                     className="text-link inline-flex items-center gap-1 font-medium"
                   >
-                    {t('Update target capabilities')} <Settings2 className="h-3.5 w-3.5" />
+                    {t('Update server capabilities')} <Settings2 className="h-3.5 w-3.5" />
                   </Link>
                 </Notice>
               )}
@@ -508,7 +508,7 @@ export default function NewProject() {
                         )}
                         title={targetName(environment)}
                       >
-                        {targetName(environment) ?? t('No target chosen')}
+                        {targetName(environment) ?? t('No server chosen')}
                       </span>
                     </div>
                   ))}

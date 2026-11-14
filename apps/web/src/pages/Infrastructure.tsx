@@ -181,7 +181,7 @@ export default function Infrastructure() {
       if (changedSettings.length > 0) {
         const confirmed = await confirmAction({
           title: t('Save changes to {name}?', { name: editingTarget.name }),
-          description: t('Target settings control where and how future deployments are published.'),
+          description: t('Server settings control where and how future deployments are published.'),
           confirmLabel: t('Save server changes'),
           tone: 'warning',
           details: [{ label: t('Changed settings'), value: changedSettings.join(', ') }],

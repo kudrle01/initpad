@@ -128,7 +128,7 @@ export default function ProjectDetail() {
       const confirmed = await confirmAction({
         title: t('Request production deployment?'),
         description: t(
-          'The exact verified {source} build, target and production configuration revision will be locked for review.',
+          'The exact verified {source} build, server and production configuration revision will be locked for review.',
           { source: verifiedBuild?.label ?? t('source') },
         ),
         confirmLabel: t('Create request'),
@@ -148,7 +148,7 @@ export default function ProjectDetail() {
             ),
           },
           {
-            label: t('Target'),
+            label: t('Server'),
             value:
               currentProject.environments.find((environment) => environment.name === 'prod')?.target
                 ?.name ?? t('production'),
@@ -156,7 +156,7 @@ export default function ProjectDetail() {
         ],
         consequences: [
           t('No production workload changes until an authorized reviewer approves.'),
-          t('Changing the build, target or production variables invalidates this request.'),
+          t('Changing the build, server or production variables invalidates this request.'),
         ],
       });
       if (confirmed) await requestProduction('promote');
@@ -188,11 +188,11 @@ export default function ProjectDetail() {
               </span>
             ),
           },
-          { label: t('Target'), value: current?.target?.name ?? t('production') },
+          { label: t('Server'), value: current?.target?.name ?? t('production') },
         ],
         consequences: [
           t('No production workload changes until an authorized reviewer approves.'),
-          t('Changing the target or production variables invalidates this request.'),
+          t('Changing the server or production variables invalidates this request.'),
         ],
       });
       if (confirmed) await requestProduction('redeploy');
@@ -206,7 +206,7 @@ export default function ProjectDetail() {
     const confirmed = await confirmAction({
       title: t('Approve and deploy to production?'),
       description: t(
-        'Approval starts deployment of the exact reviewed build to the recorded production target.',
+        'Approval starts deployment of the exact reviewed build to the recorded production server.',
       ),
       confirmLabel: t('Approve and deploy'),
       tone: 'danger',
@@ -221,11 +221,11 @@ export default function ProjectDetail() {
             </span>
           ),
         },
-        { label: t('Target'), value: productionRequest.target.name },
+        { label: t('Server'), value: productionRequest.target.name },
       ],
       consequences: [
         t(
-          'Production is changed only if the reviewed target and configuration revision still match.',
+          'Production is changed only if the reviewed server and configuration revision still match.',
         ),
         t('The action and resulting deployment are recorded separately in the audit log.'),
       ],
@@ -271,7 +271,7 @@ export default function ProjectDetail() {
       tone: environment === 'prod' ? 'danger' : 'warning',
       details: [
         { label: t('Project'), value: currentProject.name },
-        { label: t('Target'), value: current?.target?.name ?? current?.provider ?? t('unknown') },
+        { label: t('Server'), value: current?.target?.name ?? current?.provider ?? t('unknown') },
       ],
       consequences: [
         t('The environment becomes unavailable until it is started again.'),
@@ -298,12 +298,12 @@ export default function ProjectDetail() {
         tone: 'danger',
         details: [
           { label: t('Environment'), value: environment.toUpperCase() },
-          { label: t('Target'), value: current.target.name },
+          { label: t('Server'), value: current.target.name },
         ],
         consequences: [
           t('The container may keep running on that server and must be removed there manually.'),
           t('The verified build remains in project history and can be deployed again.'),
-          t('The environment can then be pointed at another target or the project deleted.'),
+          t('The environment can then be pointed at another server or the project deleted.'),
         ],
       });
       if (released) await removeEnvironment(environment);
@@ -317,7 +317,7 @@ export default function ProjectDetail() {
           : t('Remove the {environment} deployment?', { environment: environment }),
       description: cancelling
         ? t('InitPad will cancel the active operation and clean up any managed partial workload.')
-        : t('InitPad will remove the managed workload from its assigned target.'),
+        : t('InitPad will remove the managed workload from its assigned server.'),
       confirmLabel: cancelling
         ? t('Cancel deployment')
         : cleanupPending
@@ -326,14 +326,14 @@ export default function ProjectDetail() {
       tone: 'danger',
       details: [
         { label: t('Environment'), value: environment.toUpperCase() },
-        { label: t('Target'), value: current?.target?.name ?? current?.provider ?? t('unknown') },
+        { label: t('Server'), value: current?.target?.name ?? current?.provider ?? t('unknown') },
       ],
       consequences: [
         t('The public application for this environment becomes unavailable.'),
         cancelling
           ? t('Any earlier verified builds remain in project history and can be deployed again.')
           : t('The verified build remains in project history and can be deployed again.'),
-        t('InitPad never deletes unrelated files or the physical target.'),
+        t('InitPad never deletes unrelated files or the physical server.'),
       ],
     });
     if (confirmed) await removeEnvironment(environment);

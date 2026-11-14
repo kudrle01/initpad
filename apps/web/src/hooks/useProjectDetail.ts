@@ -478,7 +478,7 @@ export function useProjectDetail() {
     setBusy(`target-${environment}`);
     try {
       setProject(await api.bindEnvTarget(id, environment, targetId));
-      toast.success(t('Updated {environment} target', { environment: environment }));
+      toast.success(t('Updated {environment} server', { environment: environment }));
       setTargetEnv(null);
     } catch (actionError) {
       toast.error((actionError as Error).message);

@@ -170,7 +170,7 @@ export function EnvironmentPipeline({
                 title={
                   canRequestVerifiedBuild
                     ? t('Request this verified build for production')
-                    : t('A verified build and available production target are required')
+                    : t('A verified build and available production server are required')
                 }
                 className={promoteButtonClass(canRequestVerifiedBuild)}
               >
@@ -360,7 +360,7 @@ export function EnvironmentPipeline({
                               ))}
                             {canTarget && (
                               <DropdownMenuItem onSelect={() => onConfigureTarget(env.name)}>
-                                <Server className="h-4 w-4" /> {t('Change target')}
+                                <Server className="h-4 w-4" /> {t('Change server')}
                               </DropdownMenuItem>
                             )}
                             {targetAcceptsManagement &&
@@ -498,8 +498,8 @@ export function EnvironmentPipeline({
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>
                       {workspaceAccessPaused
-                        ? t('Target change pending — resume workspace access before deploying.')
-                        : t('Target changed — deploy to apply it.')}
+                        ? t('Server change pending — resume workspace access before deploying.')
+                        : t('Server changed — deploy to apply it.')}
                     </span>
                   </div>
                 )}

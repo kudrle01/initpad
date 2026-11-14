@@ -62,17 +62,17 @@ export const PLURALS = {
     en: { other: '+{count} more' },
     cs: { one: '+{count} další', few: '+{count} další', other: '+{count} dalších' },
   },
-  '{names} are hidden because the target capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.':
+  '{names} are hidden because the server capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.':
     {
       en: {
-        one: '{names} is hidden because the target capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.',
+        one: '{names} is hidden because the server capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.',
         other:
-          '{names} are hidden because the target capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.',
+          '{names} are hidden because the server capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.',
       },
       cs: {
-        one: 'Cíl {names} je skrytý, protože mezi svými runtimy nemá <b>{runtime}</b>. <link>Upravit runtimy</link>.',
+        one: 'Server {names} je skrytý, protože mezi svými runtimy nemá <b>{runtime}</b>. <link>Upravit runtimy</link>.',
         other:
-          'Cíle {names} jsou skryté, protože mezi svými runtimy nemají <b>{runtime}</b>. <link>Upravit runtimy</link>.',
+          'Servery {names} jsou skryté, protože mezi svými runtimy nemají <b>{runtime}</b>. <link>Upravit runtimy</link>.',
       },
     },
   '{names} are not offered because they are marked as unable to run <b>{runtime}</b>.': {
@@ -81,9 +81,9 @@ export const PLURALS = {
       other: '{names} are not offered because they are marked as unable to run <b>{runtime}</b>.',
     },
     cs: {
-      one: 'Cíl {names} se nenabízí, protože podle nastavení neumí spustit <b>{runtime}</b>.',
+      one: 'Server {names} se nenabízí, protože podle nastavení neumí spustit <b>{runtime}</b>.',
       other:
-        'Cíle {names} se nenabízejí, protože podle nastavení neumějí spustit <b>{runtime}</b>.',
+        'Servery {names} se nenabízejí, protože podle nastavení neumějí spustit <b>{runtime}</b>.',
     },
   },
 } satisfies Record<string, { en: Forms; cs: Forms }>;

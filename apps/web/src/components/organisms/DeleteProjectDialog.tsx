@@ -93,7 +93,7 @@ export function DeleteProjectDialog({
           </DialogTitle>
           <DialogDescription>
             {t(
-              'InitPad will remove every managed deployment before deleting its project record. Cleanup must succeed on every target by default. Protected leftovers can only be detached through a separate explicit acknowledgement.',
+              'InitPad will remove every managed deployment before deleting its project record. Cleanup must succeed on every server by default. Protected leftovers can only be detached through a separate explicit acknowledgement.',
             )}{' '}
             <HelpLink topic="rename-delete" />
           </DialogDescription>
@@ -142,7 +142,7 @@ export function DeleteProjectDialog({
             </li>
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
-            {t('Deployment targets and unrelated server files are never deleted.')}
+            {t('Deployment servers and unrelated server files are never deleted.')}
           </p>
         </div>
 
@@ -181,7 +181,7 @@ export function DeleteProjectDialog({
                 {cleanupPending.length > 0 && (
                   <span className="mt-0.5 block text-xs text-muted-foreground">
                     {t(
-                      'The public application is already gone. A target administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.',
+                      'The public application is already gone. A server administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.',
                     )}
                   </span>
                 )}

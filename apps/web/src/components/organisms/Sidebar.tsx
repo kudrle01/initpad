@@ -59,7 +59,7 @@ const NAV: {
 }[] = [
   { to: '/', label: msg('Overview'), icon: LayoutDashboard, end: true },
   { to: '/projects', label: msg('Projects'), icon: Layers, badge: 'approvals' },
-  { to: '/environments', label: msg('Deployments'), icon: Server },
+  { to: '/environments', label: msg('Environments'), icon: Server },
   { to: '/infrastructure', label: msg('Servers'), icon: Network },
 ];
 

@@ -123,7 +123,7 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
           <DialogDescription>
             {t(
               'A read-only snapshot from {target}. It does not deploy, restart or execute a shell command in the workload.',
-              { target: environment?.target?.name ?? t('the Agent target') },
+              { target: environment?.target?.name ?? t('the Agent server') },
             )}
           </DialogDescription>
         </DialogHeader>

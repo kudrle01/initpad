@@ -102,7 +102,7 @@ export function TargetPickerDialog({
         <DialogHeader>
           <DialogTitle>
             <Network className="h-[18px] w-[18px]" />{' '}
-            {t('Deployment target ({env})', { env: env ?? '' })}
+            {t('Deployment server ({env})', { env: env ?? '' })}
           </DialogTitle>
           <DialogDescription>
             {rich(
@@ -116,7 +116,7 @@ export function TargetPickerDialog({
           {selectableOptions.length === 0 && (
             <p className="text-sm text-muted-foreground">
               {rich(
-                'No supported and verified replacement target yet. Add or test a server in <link>Servers</link>.',
+                'No supported and verified replacement server yet. Add or test a server in <link>Servers</link>.',
                 {
                   link: (chunk) => (
                     <Link
@@ -204,7 +204,7 @@ export function TargetPickerDialog({
           {missingCapability.length > 0 && template && (
             <p className="tint-warning rounded-lg border border-warning/30 p-3 text-xs text-muted-foreground">
               {richPlural(
-                '{names} are hidden because the target capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.',
+                '{names} are hidden because the server capability list does not include <b>{runtime}</b>. <link>Update capabilities</link>.',
                 missingCapability.length,
                 {
                   names: missingCapability.map((target) => target.name).join(', '),
@@ -221,14 +221,14 @@ export function TargetPickerDialog({
           )}
           {selectedTarget && selectedTarget.id !== current?.id && (
             <div className="tint-warning rounded-lg border border-warning/30 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">{t('Confirm target change')}</p>
+              <p className="font-medium text-foreground">{t('Confirm server change')}</p>
               <p className="mt-1">
                 {current
                   ? t(
-                      '{name} will be replaced by {name2}. A live deployment is removed from the old target and must be deployed to the new one.',
+                      '{name} will be replaced by {name2}. A live deployment is removed from the old server and must be deployed to the new one.',
                       { name: current.name, name2: selectedTarget.name },
                     )
-                  : t('{name} will become the deployment target for this environment.', {
+                  : t('{name} will become the deployment server for this environment.', {
                       name: selectedTarget.name,
                     })}
               </p>
@@ -251,7 +251,7 @@ export function TargetPickerDialog({
             onClick={() => env && selected && onPick(env, selected)}
           >
             {busy && <Spinner className="h-4 w-4" />}
-            {current ? t('Change target') : t('Use target')}
+            {current ? t('Change server') : t('Use server')}
           </Button>
         </DialogFooter>
       </DialogContent>

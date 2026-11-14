@@ -375,10 +375,10 @@ export default function ImportRepo() {
             </Section>
 
             <Section
-              title={t('Deployment targets')}
+              title={t('Deployment servers')}
               description={t('Where each environment runs.')}
               help={environmentTargetHelp(hosted)}
-              helpLabel={t('About environment targets')}
+              helpLabel={t('About environment servers')}
               media={<StepBadge step={3} />}
             >
               <EnvironmentTargetFields

@@ -58,7 +58,7 @@ export function WorkspaceAdministrationSettings() {
       requireText: workspaceName,
       consequences: [
         t('Membership and the workspace audit timeline are permanently removed.'),
-        t('Deletion succeeds only after all projects, targets and allocations have been removed.'),
+        t('Deletion succeeds only after all projects, servers and allocations have been removed.'),
         t('The workspace name and slug can then be reused.'),
       ],
     });

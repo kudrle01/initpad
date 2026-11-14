@@ -102,13 +102,13 @@ export function environmentTargetHelp(hosted: boolean): InfoTipItem[] {
         {
           title: t('Defaults'),
           description: t(
-            'Self-hosted deployment targets are selected automatically when compatible.',
+            'Self-hosted deployment servers are selected automatically when compatible.',
           ),
         },
         {
           title: t('Changes'),
           description: t(
-            'Each environment can use a different target, now or from the project detail later.',
+            'Each environment can use a different server, now or from the project detail later.',
           ),
         },
       ];
@@ -157,8 +157,8 @@ export function EnvironmentTargetFields({
     <div className="flex min-w-0 flex-col gap-3">
       {!hideLabel && (
         <div className="-mb-1 flex items-center gap-1">
-          <Label>{t('Environments & targets')}</Label>
-          <InfoTip label={t('About environment targets')} items={environmentTargetHelp(hosted)} />
+          <Label>{t('Environments & servers')}</Label>
+          <InfoTip label={t('About environment servers')} items={environmentTargetHelp(hosted)} />
         </div>
       )}
       {/* auto-fit: one field per stage side by side, stacked in a narrow column. */}
@@ -174,10 +174,10 @@ export function EnvironmentTargetFields({
             <Select
               id={`target-${environment}`}
               value={values[environment]}
-              aria-label={t('{environment} target', { environment: environment })}
+              aria-label={t('{environment} server', { environment: environment })}
               onChange={(event) => onChange(environment, event.target.value)}
             >
-              <option value="">{t('Choose target…')}</option>
+              <option value="">{t('Choose server…')}</option>
               {options.map((target) => (
                 <option key={target.id} value={target.id} disabled={!targetIsReady(target)}>
                   {target.name} · {target.kind}
@@ -192,7 +192,7 @@ export function EnvironmentTargetFields({
       {template && verifiedOptions.length === 0 && (
         <Notice tone="warning" role="alert" icon={ShieldAlert}>
           {rich(
-            'No connected and verified target can run <b>{template}</b>. <link>Add or reconnect a server</link> before creating the project.',
+            'No connected and verified server can run <b>{template}</b>. <link>Add or reconnect a server</link> before creating the project.',
             {
               template: runtimeOf(template),
               b: (chunk) => <b className="font-semibold text-foreground">{chunk}</b>,
@@ -211,7 +211,7 @@ export function EnvironmentTargetFields({
       {hasUnverified && verifiedOptions.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {rich(
-            'Some compatible targets are disabled until their connection or Agent is ready in <link>Servers</link>.',
+            'Some compatible servers are disabled until their connection or Agent is ready in <link>Servers</link>.',
             {
               link: (chunk) => (
                 <Link to="/infrastructure" className="text-link font-medium">

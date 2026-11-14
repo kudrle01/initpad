@@ -135,9 +135,9 @@ describe('EnvironmentPipeline workspace access', () => {
 
     expect(screen.getByText(/workspace access is paused/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/target change pending — resume workspace access before deploying/i),
+      screen.getByText(/server change pending — resume workspace access before deploying/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/target changed — deploy to apply it/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/server changed — deploy to apply it/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /manage access/i })).toHaveAttribute(
       'href',
       '/infrastructure',
@@ -159,7 +159,7 @@ describe('EnvironmentPipeline workspace access', () => {
 
     expect(screen.getByRole('menuitem', { name: /^stop$/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /remove deployment/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /change target/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /change server/i })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: /redeploy/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: /roll back/i })).not.toBeInTheDocument();
   });
