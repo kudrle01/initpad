@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AuditEventsService } from '../audit/audit-events.service';
 import { hashToken } from '../common/token';
 import { config } from '../config';
@@ -13,6 +14,7 @@ import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { artifactImageRef, deploymentSlug, registryImageRef } from './project-deployment-identity';
 
 // The same rule project creation and import apply to a new name.
+const RENAME_FOLLOW_BATCH = 100;
 const PROJECT_NAME = /^[a-z][a-z0-9-]{1,40}$/;
 
 type IdentityRow = ProjectScmFields & { id: string };
@@ -162,8 +164,23 @@ export class ProjectRepositoryIdentity {
    * asking the provider about each of them.
    */
   async followRenamedInstallationAccounts(): Promise<number> {
+    // Only projects whose owner differs from the installation account need
+    // work; the comparison spans two tables, so it runs in SQL.
+    const candidates = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT p."id"
+      FROM "Project" p
+      JOIN "GitHubInstallation" i ON i."id" = p."scmInstallationId"
+      WHERE p."scmProvider" = 'github'
+        AND p."scmRepositoryId" IS NOT NULL
+        AND i."deletedAt" IS NULL
+        AND i."accountLogin" <> ''
+        AND i."accountLogin" <> p."scmOwner"
+      ORDER BY p."id"
+      LIMIT ${RENAME_FOLLOW_BATCH}
+    `);
+    if (candidates.length === 0) return 0;
     const projects = await this.prisma.project.findMany({
-      where: { scmProvider: 'github', scmInstallationId: { not: null } },
+      where: { id: { in: candidates.map((candidate) => candidate.id) } },
       include: { scmInstallation: { select: { accountLogin: true, deletedAt: true } } },
     });
     let followed = 0;

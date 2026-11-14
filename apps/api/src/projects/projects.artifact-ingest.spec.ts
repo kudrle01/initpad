@@ -461,4 +461,69 @@ describe('ProjectArtifactIngestion → object storage', () => {
     expect(prisma.buildArtifact.update).not.toHaveBeenCalled();
     expect(deployVerifiedArtifact).not.toHaveBeenCalled();
   });
+
+  describe('an artifact that is already available', () => {
+    // Regression (audit P2): accept() reset an available artifact to
+    // `accepted`, orphaning its stored object and dropping a rollback point.
+    function availablePrisma() {
+      const prisma = {
+        workspace: { findUnique: jest.fn(async () => ({ maxArtifactBytes: 1024n })) },
+        buildArtifact: {
+          findUnique: jest.fn(async () => ({
+            id: 'artifact-existing',
+            projectId: 'project-1',
+            commitSha: SHA,
+            status: 'available',
+            sizeBytes: 12n,
+          })),
+          aggregate: jest.fn(async () => ({ _sum: { sizeBytes: 12n } })),
+          create: jest.fn(),
+          update: jest.fn(),
+          updateMany: jest.fn(),
+        },
+        project: { findUnique: jest.fn(async () => ({ workspaceId: 'workspace-1' })) },
+        environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
+        deploymentOperation: {
+          update: jest.fn(async () => ({})),
+          updateMany: jest.fn(async () => ({ count: 1 })),
+          findUnique: jest.fn(async () => ({ correlationId: 'correlation-1' })),
+        },
+        $transaction: jest.fn(),
+      };
+      prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+        run(prisma),
+      );
+      return prisma;
+    }
+
+    it('deploys the stored bytes without resetting or downloading them again', async () => {
+      const prisma = availablePrisma();
+      const scm = { downloadBuildArtifact: jest.fn() };
+      const { ingestion, deployVerifiedArtifact } = makeIngestion(prisma, scm, {}, {});
+
+      await ingestion.queue('project-1', repository, artifact, 'op-1');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prisma.buildArtifact.update).not.toHaveBeenCalled();
+      expect(prisma.buildArtifact.create).not.toHaveBeenCalled();
+      expect(prisma.deploymentOperation.update).toHaveBeenCalledWith({
+        where: { id: 'op-1' },
+        data: { buildArtifactId: 'artifact-existing' },
+      });
+      expect(scm.downloadBuildArtifact).not.toHaveBeenCalled();
+      expect(deployVerifiedArtifact).toHaveBeenCalledWith('project-1', SHA, 'op-1');
+    });
+
+    it('leaves it untouched when only verification was requested', async () => {
+      const prisma = availablePrisma();
+      const scm = { downloadBuildArtifact: jest.fn() };
+      const { ingestion } = makeIngestion(prisma, scm, {}, {});
+
+      await ingestion.queueVerification('project-1', repository, artifact);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prisma.buildArtifact.update).not.toHaveBeenCalled();
+      expect(scm.downloadBuildArtifact).not.toHaveBeenCalled();
+    });
+  });
 });

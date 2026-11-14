@@ -76,6 +76,23 @@ function make(projects: Row[], artifacts: Row[] = [], scm: Record<string, unknow
       ),
     },
     $transaction: jest.fn(),
+    // Emulates the SQL filter of followRenamedInstallationAccounts.
+    $queryRaw: jest.fn(async () =>
+      projects
+        .filter((row) => {
+          const installation = row.scmInstallation as
+            { accountLogin: string; deletedAt: Date | null } | undefined;
+          return (
+            row.scmProvider === 'github' &&
+            row.scmRepositoryId &&
+            installation &&
+            !installation.deletedAt &&
+            installation.accountLogin &&
+            installation.accountLogin !== row.scmOwner
+          );
+        })
+        .map((row) => ({ id: row.id })),
+    ),
   };
   prisma.$transaction.mockImplementation(async (run: (tx: typeof prisma) => unknown) =>
     run(prisma),
@@ -288,5 +305,27 @@ describe('ProjectRepositoryIdentity', () => {
     expect(removed.scmOwner).toBe('acme');
     // The signed webhook already confirmed the new login.
     expect(scm.resolveRepository).not.toHaveBeenCalled();
+  });
+
+  it('loads only projects whose owner differs from the installation account', async () => {
+    // Regression (audit P3): every GitHub project was loaded on each sweep.
+    const renamed = project({ scmInstallation: { accountLogin: 'acme-labs', deletedAt: null } });
+    const current = project({ id: 'project-2', name: 'web', scmRepositoryName: 'web' });
+    const { identity, prisma } = make([renamed, current], [], { resolveRepository: jest.fn() });
+
+    await identity.followRenamedInstallationAccounts();
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['project-1'] } } }),
+    );
+  });
+
+  it('skips loading projects when no installation account was renamed', async () => {
+    const current = project({ id: 'project-2', name: 'web', scmRepositoryName: 'web' });
+    const { identity, prisma } = make([current], [], { resolveRepository: jest.fn() });
+
+    await expect(identity.followRenamedInstallationAccounts()).resolves.toBe(0);
+    expect(prisma.project.findMany).not.toHaveBeenCalled();
   });
 });

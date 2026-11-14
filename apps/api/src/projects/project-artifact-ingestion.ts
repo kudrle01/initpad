@@ -17,6 +17,8 @@ import {
   WorkspaceCapacityService,
 } from '../workspaces/workspace-capacity.service';
 
+type AcceptedArtifact = { id: string; status: string };
+
 type DeployVerifiedArtifact = (
   projectId: string,
   version: string,
@@ -134,8 +136,9 @@ export class ProjectArtifactIngestion {
     artifact: ScmBuildArtifact,
     operationId: string,
   ): Promise<void> {
+    let accepted: AcceptedArtifact;
     try {
-      const accepted = await this.accept(projectId, artifact);
+      accepted = await this.accept(projectId, artifact);
       await this.prisma.deploymentOperation.update({
         where: { id: operationId },
         data: { buildArtifactId: accepted.id },
@@ -152,6 +155,15 @@ export class ProjectArtifactIngestion {
       await this.operations.complete(operationId, 'failed', message);
       throw error;
     }
+    if (accepted.status === 'available') {
+      // The exact bytes are already verified and stored; deploy them.
+      void this.deployVerifiedArtifact(projectId, artifact.commitSha, operationId).catch((error) =>
+        this.logger.warn(
+          `Deployment of stored artifact failed for ${repository.fullName}: ${(error as Error).message}`,
+        ),
+      );
+      return;
+    }
     void this.ingest(projectId, repository, artifact, operationId);
   }
 
@@ -161,7 +173,8 @@ export class ProjectArtifactIngestion {
     repository: ScmRepositoryRef,
     artifact: ScmBuildArtifact,
   ): Promise<void> {
-    await this.accept(projectId, artifact);
+    const accepted = await this.accept(projectId, artifact);
+    if (accepted.status === 'available') return;
     void this.ingest(projectId, repository, artifact, null);
   }
 
@@ -367,7 +380,10 @@ export class ProjectArtifactIngestion {
     return dev !== null && !isAgentBackedEnvironment(dev);
   }
 
-  private async accept(projectId: string, artifact: ScmBuildArtifact): Promise<{ id: string }> {
+  // An `available` artifact is never reset: that would orphan its stored
+  // object and drop a rollback point. Only unfinished or failed attempts start
+  // over.
+  private async accept(projectId: string, artifact: ScmBuildArtifact): Promise<AcceptedArtifact> {
     const identity = {
       sourceProvider: artifact.provider,
       providerArtifactId: artifact.providerArtifactId,
@@ -392,7 +408,8 @@ export class ProjectArtifactIngestion {
         ) {
           throw new Error('Build artifact is already bound to another deployment');
         }
-        if (!['accepted', 'ingesting', 'available'].includes(existing.status)) {
+        if (existing.status === 'available') return { id: existing.id, status: 'available' };
+        if (!['accepted', 'ingesting'].includes(existing.status)) {
           await this.capacity.assertAvailable(
             project.workspaceId,
             'artifactBytes',
@@ -410,7 +427,7 @@ export class ProjectArtifactIngestion {
             ingestionOwner: null,
             ingestionLeaseExpiresAt: null,
           },
-          select: { id: true },
+          select: { id: true, status: true },
         });
       }
 
@@ -432,7 +449,7 @@ export class ProjectArtifactIngestion {
           sizeBytes: BigInt(artifact.sizeBytes),
           expiresAt: artifact.expiresAt,
         },
-        select: { id: true },
+        select: { id: true, status: true },
       });
     });
   }

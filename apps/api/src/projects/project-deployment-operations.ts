@@ -56,6 +56,13 @@ type ExecutionContext = {
 
 type ExecutionClaim = { generation: number };
 
+/** The environment is held by another operation; nothing was recorded. */
+export class ActiveOperationConflict extends BadRequestException {
+  constructor(envName: string) {
+    super(`Environment '${envName}' already has an active operation`);
+  }
+}
+
 /**
  * Owns the durable operation lock shared by CI, deployment and environment
  * lifecycle actions. Keeping the lock transitions together prevents two
@@ -67,12 +74,28 @@ export class ProjectDeploymentOperations {
   private readonly instanceId = randomUUID();
   private readonly execution = new AsyncLocalStorage<ExecutionContext>();
   private readonly localExecutions = new Set<string>();
+  private readonly releaseListeners: Array<() => void> = [];
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
   ) {
     this.capacity = new WorkspaceCapacityService(prisma);
+  }
+
+  /** Called after an operation released its environment lock. */
+  onEnvironmentReleased(listener: () => void): void {
+    this.releaseListeners.push(listener);
+  }
+
+  private notifyReleased(): void {
+    for (const listener of this.releaseListeners) {
+      try {
+        listener();
+      } catch (error) {
+        this.logger.warn(`Release listener failed: ${(error as Error).message}`);
+      }
+    }
   }
 
   async recoverInterrupted(): Promise<void> {
@@ -257,6 +280,18 @@ export class ProjectDeploymentOperations {
         'Artifact, target, or production configuration changed. Create a new production request.',
       );
     }
+    // Reject a known conflict before creating a row, so the history does not
+    // fill with cancelled "Another operation is already active" entries.
+    if (environment.activeOperationId) {
+      this.logger.warn({
+        event: 'deployment.operation.rejected',
+        projectId,
+        environment: envName,
+        kind,
+        reason: 'active-operation-conflict',
+      });
+      throw new ActiveOperationConflict(envName);
+    }
     const { operation, claimed } = await serializableCapacityTransaction(
       this.prisma,
       async (tx) => {
@@ -389,7 +424,7 @@ export class ProjectDeploymentOperations {
       environment: envName,
       reason: 'active-operation-conflict',
     });
-    throw new BadRequestException(`Environment '${envName}' already has an active operation`);
+    throw new ActiveOperationConflict(envName);
   }
 
   async complete(
@@ -439,6 +474,7 @@ export class ProjectDeploymentOperations {
       where: { activeOperationId: operationId },
       data: { activeOperationId: null },
     });
+    this.notifyReleased();
     if (changed !== null) {
       const updated = await this.prisma.deploymentOperation
         .findUnique({ where: { id: operationId }, select: { correlationId: true } })
@@ -615,6 +651,7 @@ export class ProjectDeploymentOperations {
       where: { activeOperationId: context.operationId },
       data: { activeOperationId: null },
     });
+    this.notifyReleased();
     const updated = await this.prisma.deploymentOperation.findUnique({
       where: { id: context.operationId },
       select: { correlationId: true },

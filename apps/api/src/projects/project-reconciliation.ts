@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { config } from '../config';
 import { mapWithConcurrency } from '../common/concurrency';
 import { publicHttpsUrlIssue } from '../common/public-url';
@@ -26,6 +27,20 @@ const SCM_READ_CONCURRENCY = 4;
 // Each account costs several Gitea requests per repository; bounded batches
 // keep one maintenance pass short on large existing installations.
 const CREDENTIAL_BATCH_SIZE = 25;
+const RUNTIME_SECRET_BATCH_SIZE = 50;
+const RUNTIME_SECRET_MAX_BATCHES = 20;
+
+/**
+ * Identifies the CI runtime configuration that a provider writes as Actions
+ * secrets. It changes exactly when the written values would change.
+ */
+export function ciRuntimeSecretsFingerprint(provider: ScmKind): string {
+  const values =
+    provider === 'github'
+      ? ['github', 'ghcr.io', config.ci.publicUrl.replace(/\/+$/, '')]
+      : ['gitea', config.registry.ciHost, config.ci.platformUrl];
+  return createHash('sha256').update(JSON.stringify(values)).digest('hex');
+}
 
 type ReconciliationRow = ProjectScmFields & {
   id: string;
@@ -102,46 +117,93 @@ export class ProjectReconciliation {
     }
   }
 
-  async reconcileCiRuntimeSecrets(): Promise<void> {
+  /**
+   * Writes CI runtime secrets only to repositories whose stored fingerprint
+   * differs from the current configuration (ADR-179). A restart without a
+   * configuration change therefore costs one database query and no SCM call.
+   * The pass handles bounded batches and returns how many it rewrote.
+   */
+  async reconcileCiRuntimeSecrets(): Promise<number> {
+    let written = 0;
     try {
-      const projects = await this.prisma.project.findMany({
-        select: {
-          scmProvider: true,
-          scmRepositoryId: true,
-          scmOwner: true,
-          scmRepositoryName: true,
-          scmFullName: true,
-          scmDefaultBranch: true,
-          scmInstallationId: true,
-          repoUrl: true,
-        },
-      });
-      await mapWithConcurrency(projects, SCM_READ_CONCURRENCY, async (project) => {
-        const repository = repositoryRef(project);
-        if (repository.provider === 'github') {
+      for (const provider of ['gitea', 'github'] as const) {
+        const fingerprint = ciRuntimeSecretsFingerprint(provider);
+        if (provider === 'github') {
           const callbackIssue = publicHttpsUrlIssue(config.ci.publicUrl);
           if (callbackIssue) {
-            this.logger.warn(
-              `CI runtime-secret reconciliation skipped for github:${repository.fullName}: ${callbackIssue}`,
-            );
-            return;
+            const pending = await this.prisma.project.count({
+              where: this.staleRuntimeSecrets(provider, fingerprint),
+            });
+            if (pending > 0) {
+              this.logger.warn(
+                `CI runtime-secret reconciliation skipped for ${pending} GitHub repositories: ${callbackIssue}`,
+              );
+            }
+            continue;
           }
         }
-        try {
-          await this.workspaceScm
-            .provider(repository.provider)
-            .configureRepoRuntimeSecrets(repository);
-        } catch (error) {
-          // One externally deleted/inaccessible repository must not prevent
-          // configuration reconciliation for every healthy project.
-          this.logger.warn(
-            `CI runtime-secret reconciliation failed for ${repository.provider}:${repository.fullName}: ${(error as Error).message}`,
-          );
+        // Rows that fail keep their old fingerprint and are retried by the next
+        // pass; the cursor keeps one pass from looping over them.
+        let cursor: string | undefined;
+        for (let batch = 0; batch < RUNTIME_SECRET_MAX_BATCHES; batch += 1) {
+          const projects = await this.prisma.project.findMany({
+            where: {
+              ...this.staleRuntimeSecrets(provider, fingerprint),
+              ...(cursor ? { id: { gt: cursor } } : {}),
+            },
+            orderBy: { id: 'asc' },
+            take: RUNTIME_SECRET_BATCH_SIZE,
+            select: {
+              id: true,
+              scmProvider: true,
+              scmRepositoryId: true,
+              scmOwner: true,
+              scmRepositoryName: true,
+              scmFullName: true,
+              scmDefaultBranch: true,
+              scmInstallationId: true,
+              repoUrl: true,
+            },
+          });
+          if (projects.length === 0) break;
+          cursor = projects[projects.length - 1].id;
+          await mapWithConcurrency(projects, SCM_READ_CONCURRENCY, async (project) => {
+            const repository = repositoryRef(project);
+            try {
+              await this.workspaceScm
+                .provider(repository.provider)
+                .configureRepoRuntimeSecrets(repository);
+              await this.prisma.project.updateMany({
+                where: { id: project.id },
+                data: { ciRuntimeSecretsFingerprint: fingerprint },
+              });
+              written += 1;
+            } catch (error) {
+              // One externally deleted/inaccessible repository must not prevent
+              // configuration reconciliation for every healthy project.
+              this.logger.warn(
+                `CI runtime-secret reconciliation failed for ${repository.provider}:${repository.fullName}: ${(error as Error).message}`,
+              );
+            }
+          });
+          if (projects.length < RUNTIME_SECRET_BATCH_SIZE) break;
         }
-      });
+      }
     } catch (error) {
       this.logger.warn(`CI runtime-secret reconciliation skipped: ${(error as Error).message}`);
     }
+    if (written > 0) this.logger.log(`CI runtime secrets updated in ${written} repositories`);
+    return written;
+  }
+
+  private staleRuntimeSecrets(provider: ScmKind, fingerprint: string) {
+    return {
+      scmProvider: provider,
+      OR: [
+        { ciRuntimeSecretsFingerprint: null },
+        { ciRuntimeSecretsFingerprint: { not: fingerprint } },
+      ],
+    };
   }
 
   /**

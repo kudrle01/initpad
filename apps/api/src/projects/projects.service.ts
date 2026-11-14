@@ -199,6 +199,9 @@ export class ProjectsService {
       },
       (repo, token) => this.repositoryIdentity.findRenamedByCiToken(repo, token),
     );
+    // A queued CI build starts as soon as the operation holding dev ends; the
+    // lifecycle sweep covers releases written by Agent job replays.
+    this.operations.onEnvironmentReleased(() => this.ci.scheduleDrain());
     this.rollbackFlow = new ProjectRollback(
       prisma,
       async (projectId, environment, version, buildArtifactId, actorUserId) => {
@@ -233,12 +236,29 @@ export class ProjectsService {
     this.workloadDiagnostics = new ProjectWorkloadDiagnostics(prisma, templates);
   }
 
-  /** Internal recovery boundary invoked by ProjectsLifecycleService at startup. */
+  /**
+   * Database-only recovery invoked by ProjectsLifecycleService when it
+   * becomes leader. SCM work lives in reconcileScmConfiguration (ADR-179).
+   */
   async reconcilePersistedState(): Promise<void> {
-    await this.reconciliation.reconcileRepositoryIdentities();
-    await this.reconciliation.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedExecutions();
     await this.environmentTargets.reconcileAllocations();
+  }
+
+  /** Provider-side reconciliation run in the background by the leader. */
+  async reconcileScmConfiguration(): Promise<void> {
+    await this.reconciliation.reconcileRepositoryIdentities();
+    await this.reconciliation.reconcileCiRuntimeSecrets();
+  }
+
+  /** Returns production requests left in `approving` by a crashed process. */
+  recoverStuckProductionApprovals(): Promise<number> {
+    return this.productionApprovals.recoverStuckApprovals();
+  }
+
+  /** Deploys CI results queued while dev was busy (ADR-178). */
+  drainPendingCiDeployments(): Promise<number> {
+    return this.ci.drainPending();
   }
 
   /** Lets projects follow a renamed GitHub user or organization (ADR-155). */
@@ -1467,8 +1487,29 @@ export class ProjectsService {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
     });
-    if (!env || !env.version) {
+    if (!env) {
       throw new BadRequestException(`Environment '${envName}' has nothing to redeploy`);
+    }
+    if (!env.version) {
+      // A first deployment that failed leaves no current version. The last
+      // verified artifact this environment tried to publish is the build to
+      // retry; nothing else is guessed.
+      const attempted = await this.lastVerifiedAttempt(env.id);
+      if (!attempted) {
+        throw new BadRequestException(
+          `Environment '${envName}' has nothing to redeploy. Push a commit or run CI again.`,
+        );
+      }
+      await this.scheduleDeployment(
+        id,
+        envName,
+        attempted.version,
+        true,
+        'redeploy',
+        attempted.buildArtifactId,
+        actorUserId,
+      );
+      return this.get(id);
     }
     const useRegistry = /^[0-9a-f]{7,40}$/.test(env.version);
     await this.scheduleDeployment(
@@ -1481,6 +1522,23 @@ export class ProjectsService {
       actorUserId,
     );
     return this.get(id);
+  }
+
+  private async lastVerifiedAttempt(
+    environmentId: string,
+  ): Promise<{ version: string; buildArtifactId: string } | null> {
+    const operation = await this.prisma.deploymentOperation.findFirst({
+      where: {
+        environmentId,
+        version: { not: null },
+        buildArtifact: { status: 'available', storageKind: 'object-store' },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { version: true, buildArtifactId: true },
+    });
+    if (!operation?.version || !operation.buildArtifactId) return null;
+    if (!/^[0-9a-f]{40}$/i.test(operation.version)) return null;
+    return { version: operation.version, buildArtifactId: operation.buildArtifactId };
   }
 
   rollbackPreview(id: string, envName: EnvName): Promise<RollbackPreview | null> {
@@ -1921,11 +1979,15 @@ export class ProjectsService {
     return this.queries.deploymentHistory(id, limit);
   }
 
-  // Cross-project activity feed: the recent commits of every owned project with
-  // their CI/deploy pipeline state, merged newest-first. A failing project
-  // (e.g. its Gitea repo is unreachable) is skipped, not fatal.
+  // Cross-project activity built from InitPad's own records (ADR-179).
   async activity(userId: string, requestedWorkspaceId?: string): Promise<ActivityEvent[]> {
-    return this.queries.activity(userId, requestedWorkspaceId, (projectId, limit) =>
+    return this.queries.activity(userId, requestedWorkspaceId);
+  }
+
+  // The same feed with optional, cached SCM commits; provider failures are
+  // returned as warnings instead of hiding the project.
+  activityFeed(userId: string, requestedWorkspaceId: string | undefined, includeScm: boolean) {
+    return this.queries.activityFeed(userId, requestedWorkspaceId, includeScm, (projectId, limit) =>
       this.getCommits(projectId, limit),
     );
   }

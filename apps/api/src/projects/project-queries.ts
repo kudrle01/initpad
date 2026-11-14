@@ -1,9 +1,13 @@
 import {
   ActivityEvent,
+  ActivityFeed,
+  ActivityWarning,
   Commit,
   DeploymentOperationSummary,
   EnvName,
+  PipelineStage,
   Project,
+  TemplateManifest,
 } from '../domain/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScmActor } from '../scm/scm-provider';
@@ -15,6 +19,10 @@ import { pipelineStages, withDeploymentState } from './project-pipeline';
 
 const SCM_READ_CONCURRENCY = 4;
 const ACTIVITY_COMMITS_PER_PROJECT = 5;
+const ACTIVITY_DB_ROWS = 300;
+const ACTIVITY_CACHE_TTL_MS = 60_000;
+const ACTIVITY_CACHE_LIMIT = 1_000;
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
 
 type ProjectReader = (id: string) => Promise<Project>;
 type ActorReader = (id: string) => Promise<ScmActor>;
@@ -26,6 +34,8 @@ type CommitReader = (id: string, limit?: number) => Promise<Commit[]>;
  * SCM-enriched projections used by the UI.
  */
 export class ProjectQueries {
+  private readonly commitCache = new Map<string, { commits: Commit[]; expiresAt: number }>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly templates: TemplatesService,
@@ -126,39 +136,196 @@ export class ProjectQueries {
     }));
   }
 
+  /** Activity built from InitPad's own records only; kept as a plain list. */
   async activity(
     userId: string,
     requestedWorkspaceId: string | undefined,
-    getCommits: CommitReader,
   ): Promise<ActivityEvent[]> {
+    return (await this.activityFeed(userId, requestedWorkspaceId, false, () => Promise.resolve([])))
+      .events;
+  }
+
+  /**
+   * Workspace activity from deployment operations, build artifacts and each
+   * project's lastCommit (ADR-179). SCM commits are an optional, cached
+   * enrichment: a provider failure becomes a warning and the project keeps
+   * its database events instead of silently disappearing.
+   */
+  async activityFeed(
+    userId: string,
+    requestedWorkspaceId: string | undefined,
+    includeScm: boolean,
+    getCommits: CommitReader,
+  ): Promise<ActivityFeed> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
-    const rows = await this.prisma.project.findMany({
-      where: { workspaceId },
-      select: { id: true, name: true },
-    });
-    const perProject = await mapWithConcurrency(
-      rows,
-      SCM_READ_CONCURRENCY,
-      async (project): Promise<ActivityEvent[]> => {
+    const [projects, operations, artifacts] = await Promise.all([
+      this.prisma.project.findMany({
+        where: { workspaceId },
+        select: { id: true, name: true, templateId: true, lastCommit: true, createdAt: true },
+      }),
+      this.prisma.deploymentOperation.findMany({
+        where: { environment: { name: 'dev', project: { workspaceId } }, version: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        take: ACTIVITY_DB_ROWS,
+        select: {
+          version: true,
+          status: true,
+          createdAt: true,
+          environment: { select: { projectId: true } },
+          buildArtifact: { select: { providerRunId: true } },
+        },
+      }),
+      this.prisma.buildArtifact.findMany({
+        where: { project: { workspaceId } },
+        orderBy: { createdAt: 'desc' },
+        take: ACTIVITY_DB_ROWS,
+        select: { projectId: true, commitSha: true, status: true, createdAt: true },
+      }),
+    ]);
+
+    type Entry = {
+      sha: string;
+      date: Date;
+      operation?: (typeof operations)[number];
+      artifact?: (typeof artifacts)[number];
+    };
+    const byProject = new Map<string, Map<string, Entry>>();
+    const entry = (projectId: string, sha: string, date: Date): Entry => {
+      const entries = byProject.get(projectId) ?? new Map<string, Entry>();
+      byProject.set(projectId, entries);
+      const existing = entries.get(sha) ?? { sha, date };
+      if (date > existing.date) existing.date = date;
+      entries.set(sha, existing);
+      return existing;
+    };
+    for (const operation of operations) {
+      const sha = operation.version?.toLowerCase();
+      if (!sha || !COMMIT_SHA.test(sha)) continue;
+      const item = entry(operation.environment.projectId, sha, operation.createdAt);
+      item.operation ??= operation;
+    }
+    for (const artifact of artifacts) {
+      const sha = artifact.commitSha.toLowerCase();
+      if (!COMMIT_SHA.test(sha)) continue;
+      const item = entry(artifact.projectId, sha, artifact.createdAt);
+      item.artifact ??= artifact;
+    }
+
+    const events = new Map<string, ActivityEvent[]>();
+    for (const project of projects) {
+      let template: TemplateManifest | null = null;
+      try {
+        template = this.templates.get(project.templateId);
+      } catch {
+        template = null;
+      }
+      const entries = [...(byProject.get(project.id)?.values() ?? [])]
+        .sort((a, b) => b.date.getTime() - a.date.getTime())
+        .slice(0, ACTIVITY_COMMITS_PER_PROJECT);
+      const base = { projectId: project.id, projectName: project.name };
+      events.set(
+        project.id,
+        entries.length > 0
+          ? entries.map((item) => ({
+              ...base,
+              sha: item.sha,
+              message: project.lastCommit.includes(item.sha.slice(0, 7))
+                ? project.lastCommit
+                : `Build ${item.sha.slice(0, 7)}`,
+              author: 'CI',
+              date: item.date.toISOString(),
+              pipeline: template ? recordedPipeline(template, item) : [],
+            }))
+          : [
+              {
+                ...base,
+                sha: 'initial',
+                message: project.lastCommit,
+                author: 'InitPad',
+                date: project.createdAt.toISOString(),
+                pipeline: template ? pipelineStages(template, null) : [],
+              },
+            ],
+      );
+    }
+
+    const warnings: ActivityWarning[] = [];
+    if (includeScm) {
+      await mapWithConcurrency(projects, SCM_READ_CONCURRENCY, async (project) => {
         try {
-          const commits = await getCommits(project.id, ACTIVITY_COMMITS_PER_PROJECT);
-          return commits.map((commit) => ({
+          const commits = await this.cachedCommits(project.id, getCommits);
+          if (commits.length === 0) return;
+          events.set(
+            project.id,
+            commits.map((commit) => ({
+              projectId: project.id,
+              projectName: project.name,
+              sha: commit.sha,
+              message: commit.message,
+              author: commit.author,
+              date: commit.date,
+              pipeline: commit.pipeline,
+            })),
+          );
+        } catch (error) {
+          warnings.push({
             projectId: project.id,
             projectName: project.name,
-            sha: commit.sha,
-            message: commit.message,
-            author: commit.author,
-            date: commit.date,
-            pipeline: commit.pipeline,
-          }));
-        } catch {
-          return [];
+            message: `Repository activity is unavailable: ${(error as Error).message}`,
+          });
         }
-      },
-    );
-    return perProject
-      .flat()
-      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
-      .slice(0, 50);
+      });
+    }
+
+    return {
+      events: [...events.values()]
+        .flat()
+        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+        .slice(0, 50),
+      warnings,
+    };
   }
+
+  private async cachedCommits(projectId: string, getCommits: CommitReader): Promise<Commit[]> {
+    const now = Date.now();
+    const cached = this.commitCache.get(projectId);
+    if (cached && cached.expiresAt > now) return cached.commits;
+    const commits = await getCommits(projectId, ACTIVITY_COMMITS_PER_PROJECT);
+    if (this.commitCache.size >= ACTIVITY_CACHE_LIMIT) {
+      for (const [key, value] of this.commitCache) {
+        if (value.expiresAt <= now) this.commitCache.delete(key);
+      }
+      if (this.commitCache.size >= ACTIVITY_CACHE_LIMIT) this.commitCache.clear();
+    }
+    this.commitCache.set(projectId, { commits, expiresAt: now + ACTIVITY_CACHE_TTL_MS });
+    return commits;
+  }
+}
+
+// Without provider statuses the stages are derived from what InitPad itself
+// recorded: a deployment operation or a stored artifact proves the build.
+function recordedPipeline(
+  template: TemplateManifest,
+  item: {
+    operation?: { status: string; buildArtifact: { providerRunId: string } | null };
+    artifact?: { status: string };
+  },
+): PipelineStage[] {
+  const built =
+    item.operation || item.artifact?.status === 'available'
+      ? 'success'
+      : item.artifact?.status === 'failed'
+        ? 'failure'
+        : item.artifact
+          ? 'pending'
+          : null;
+  const stages = pipelineStages(
+    template,
+    built ? [{ context: 'build', status: built, targetUrl: null }] : null,
+  );
+  if (!item.operation) return stages;
+  return withDeploymentState(stages, null, {
+    status: item.operation.status,
+    buildArtifact: item.operation.buildArtifact ?? { providerRunId: '' },
+  });
 }

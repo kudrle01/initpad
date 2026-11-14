@@ -12,6 +12,7 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { RollbackPreview } from '../domain/types';
 import type { PipelinePreset } from '../domain/types';
 import { productionSourceStage } from './pipeline-preset';
+import { ProjectRollback } from './project-rollback';
 
 export type ProductionRequestKind = 'promote' | 'redeploy' | 'rollback';
 export type ProductionApprovalPolicy = 'self-review' | 'separate-reviewer';
@@ -64,6 +65,10 @@ type ScheduleApprovedProduction = (
   actorUserId: string,
   expected: ExpectedProductionState,
 ) => Promise<string>;
+
+// approve() claims, schedules and records within one request; anything older
+// than this was left behind by a process that stopped in between.
+const APPROVING_GRACE_MS = 5 * 60_000;
 
 type ResolveRollback = (projectId: string) => Promise<RollbackPreview | null>;
 
@@ -371,6 +376,59 @@ export class ProjectProductionApprovals {
     return this.latest(projectId, userId);
   }
 
+  /**
+   * A process that crashed between claiming a request and recording its
+   * deployment leaves it in `approving`, which blocks production changes. A
+   * request older than the grace period is linked to the operation that
+   * approval created, or returned to `pending` when none was created.
+   */
+  async recoverStuckApprovals(now: Date = new Date()): Promise<number> {
+    const stuck = await this.prisma.productionDeploymentRequest.findMany({
+      where: {
+        status: 'approving',
+        updatedAt: { lte: new Date(now.getTime() - APPROVING_GRACE_MS) },
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: 25,
+      select: {
+        id: true,
+        environmentId: true,
+        kind: true,
+        version: true,
+        reviewedAt: true,
+        updatedAt: true,
+      },
+    });
+    let recovered = 0;
+    for (const request of stuck) {
+      const operation = await this.prisma.deploymentOperation.findFirst({
+        where: {
+          environmentId: request.environmentId,
+          kind: request.kind,
+          version: request.version,
+          createdAt: { gte: request.reviewedAt ?? request.updatedAt },
+          productionRequest: null,
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      const changed = await this.prisma.productionDeploymentRequest.updateMany({
+        where: { id: request.id, status: 'approving', updatedAt: request.updatedAt },
+        data: operation
+          ? { status: 'approved', deploymentOperationId: operation.id }
+          : {
+              status: 'pending',
+              reviewedById: null,
+              reviewedByUsername: null,
+              reviewedByDisplayName: null,
+              reviewedAt: null,
+            },
+      });
+      recovered += changed.count;
+    }
+    return recovered;
+  }
+
   private async snapshot(projectId: string, input: CreateInput): Promise<ProductionSnapshot> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -464,9 +522,10 @@ export class ProjectProductionApprovals {
         throw new BadRequestException('Rollback candidate and state token are required');
       }
       const preview = await this.resolveRollback(projectId);
-      if (!preview || preview.candidateOperationId !== input.candidateOperationId) {
+      const selected = preview ? ProjectRollback.select(preview, input.candidateOperationId) : null;
+      if (!preview || !selected) {
         throw new ConflictException(
-          'The previous verified production deployment changed. Review rollback again.',
+          'The selected verified production deployment is no longer available. Review rollback again.',
         );
       }
       if (preview.stateToken !== input.stateToken) {
@@ -477,11 +536,11 @@ export class ProjectProductionApprovals {
       return {
         kind: input.kind,
         sourceEnvironment: 'history',
-        candidateOperationId: preview.candidateOperationId,
+        candidateOperationId: selected.candidateOperationId,
         candidateStateToken: preview.stateToken,
-        version: preview.rollbackVersion,
-        buildArtifactId: preview.rollbackArtifact?.id ?? null,
-        artifactDigest: preview.rollbackArtifact?.digest ?? null,
+        version: selected.version,
+        buildArtifactId: selected.artifact?.id ?? null,
+        artifactDigest: selected.artifact?.digest ?? null,
       };
     }
 

@@ -1,5 +1,8 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { ProjectDeploymentOperations } from './project-deployment-operations';
+import {
+  ActiveOperationConflict,
+  ProjectDeploymentOperations,
+} from './project-deployment-operations';
 
 const targetRevision = new Date('2026-09-07T10:00:00.000Z');
 const allocationRevision = new Date('2026-09-07T10:05:00.000Z');
@@ -181,6 +184,50 @@ describe('ProjectDeploymentOperations', () => {
         finishedAt: expect.any(Date),
       }),
     });
+  });
+
+  it('rejects a known active operation before recording a cancelled history row', async () => {
+    // Regression (audit P1.13): every conflicting request left a cancelled
+    // "Another operation is already active" row in the deployment history.
+    const create = jest.fn();
+    const prisma = withCapacity({
+      environment: {
+        findUnique: jest.fn(async () => ({
+          id: 'env-1',
+          targetId: null,
+          target: null,
+          provider: 'docker',
+          activeOperationId: 'operation-running',
+          project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
+        })),
+        updateMany: jest.fn(),
+      },
+      deploymentOperation: { create, update: jest.fn() },
+    });
+    const operations = new ProjectDeploymentOperations(prisma as never);
+
+    const begin = operations.begin('project-1', 'dev', 'ci-deploy', 'a'.repeat(40));
+    await expect(begin).rejects.toBeInstanceOf(ActiveOperationConflict);
+    await expect(begin).rejects.toBeInstanceOf(BadRequestException);
+    expect(create).not.toHaveBeenCalled();
+    expect((prisma as { $transaction?: jest.Mock }).$transaction).not.toHaveBeenCalled();
+  });
+
+  it('notifies release listeners after an operation frees its environment', async () => {
+    const prisma = {
+      deploymentOperation: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        findUnique: jest.fn(async () => ({ correlationId: 'c-1' })),
+      },
+      environment: { updateMany: jest.fn(async () => ({ count: 1 })) },
+    };
+    const operations = new ProjectDeploymentOperations(prisma as never);
+    const listener = jest.fn();
+    operations.onEnvironmentReleased(listener);
+
+    await operations.complete('operation-1', 'succeeded');
+
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('refuses an approved production snapshot after its config revision changes', async () => {

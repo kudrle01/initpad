@@ -1,5 +1,6 @@
 import { ProjectsService } from './projects.service';
-import { ProjectReconciliation } from './project-reconciliation';
+import { ciRuntimeSecretsFingerprint, ProjectReconciliation } from './project-reconciliation';
+import { config } from '../config';
 import { ProjectRepositoryIdentity } from './project-repository-identity';
 
 function serviceWith(prisma: unknown, scm: unknown) {
@@ -162,6 +163,7 @@ describe('ProjectsService SCM identity', () => {
 
   it('reconciles healthy repository secrets even when another repository is gone', async () => {
     const project = (id: string, name: string) => ({
+      id: `project-${id}`,
       scmProvider: 'gitea',
       scmRepositoryId: id,
       scmOwner: 'acme',
@@ -172,7 +174,14 @@ describe('ProjectsService SCM identity', () => {
       repoUrl: `https://git.test/acme/${name}`,
     });
     const prisma = {
-      project: { findMany: jest.fn(async () => [project('101', 'gone'), project('102', 'api')]) },
+      project: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([project('101', 'gone'), project('102', 'api')])
+          .mockResolvedValue([]),
+        count: jest.fn(async () => 0),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
     };
     const scm = {
       configureRepoRuntimeSecrets: jest
@@ -182,7 +191,56 @@ describe('ProjectsService SCM identity', () => {
     };
     const reconciliation = reconciliationWith(prisma, scm);
 
-    await expect(reconciliation.reconcileCiRuntimeSecrets()).resolves.toBeUndefined();
+    await expect(reconciliation.reconcileCiRuntimeSecrets()).resolves.toBe(1);
     expect(scm.configureRepoRuntimeSecrets).toHaveBeenCalledTimes(2);
+    // Only the repository that accepted the secrets records the fingerprint;
+    // the failed one is retried by the next pass.
+    expect(prisma.project.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.project.updateMany).toHaveBeenCalledWith({
+      where: { id: 'project-102' },
+      data: { ciRuntimeSecretsFingerprint: ciRuntimeSecretsFingerprint('gitea') },
+    });
+  });
+
+  it('writes no CI secrets when every repository already has the current configuration', async () => {
+    const prisma = {
+      project: {
+        findMany: jest.fn(async () => []),
+        count: jest.fn(async () => 0),
+        updateMany: jest.fn(),
+      },
+    };
+    const scm = { configureRepoRuntimeSecrets: jest.fn() };
+    const reconciliation = reconciliationWith(prisma, scm);
+
+    await expect(reconciliation.reconcileCiRuntimeSecrets()).resolves.toBe(0);
+
+    expect(scm.configureRepoRuntimeSecrets).not.toHaveBeenCalled();
+    const fingerprint = ciRuntimeSecretsFingerprint('gitea');
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          scmProvider: 'gitea',
+          OR: [
+            { ciRuntimeSecretsFingerprint: null },
+            { ciRuntimeSecretsFingerprint: { not: fingerprint } },
+          ],
+        },
+        take: 50,
+      }),
+    );
+  });
+
+  it('changes the fingerprint when the platform URL or registry host changes', () => {
+    const original = { ...config.ci };
+    const before = ciRuntimeSecretsFingerprint('gitea');
+    try {
+      (config.ci as { platformUrl: string }).platformUrl = 'http://10.0.0.5:3000';
+      expect(ciRuntimeSecretsFingerprint('gitea')).not.toBe(before);
+    } finally {
+      Object.assign(config.ci, original);
+    }
+    expect(ciRuntimeSecretsFingerprint('gitea')).toBe(before);
+    expect(ciRuntimeSecretsFingerprint('github')).not.toBe(before);
   });
 });
