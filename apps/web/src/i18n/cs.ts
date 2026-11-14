@@ -1447,8 +1447,10 @@ export const cs = {
   'Open {name}': 'Otevřít {name}',
   // pages/ForgotPassword.tsx
   'Reset your password': 'Obnovení hesla',
-  'If an account matches that username or e-mail, a reset link has been created. Check your inbox — or, on a self-hosted instance without e-mail, ask your administrator for the link.':
-    'Pokud tomuto uživatelskému jménu nebo e-mailu odpovídá nějaký účet, byl vytvořen odkaz pro obnovení. Podívejte se do schránky — nebo v self-hosted instanci bez e-mailu požádejte o odkaz administrátora.',
+  'This InitPad instance cannot send e-mail, so it cannot send a reset link. Ask your administrator to reset your password; you will get a temporary password to sign in with.':
+    'Tato instance InitPadu neumí odesílat e-maily, takže odkaz pro obnovení poslat nemůže. Požádejte administrátora o obnovení hesla; dostanete dočasné heslo pro přihlášení.',
+  'If an account matches that username or e-mail, we sent a reset link to its e-mail address. Check your inbox.':
+    'Pokud tomuto uživatelskému jménu nebo e-mailu odpovídá nějaký účet, poslali jsme na jeho e-mail odkaz pro obnovení. Podívejte se do schránky.',
   'Enter your username or e-mail and we’ll send a reset link.':
     'Zadejte uživatelské jméno nebo e-mail a pošleme vám odkaz pro obnovení.',
   'Send reset link': 'Odeslat odkaz pro obnovení',
