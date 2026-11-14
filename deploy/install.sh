@@ -105,6 +105,11 @@ docker info >/dev/null 2>&1 || fail "Docker daemon is not running."
 docker compose version >/dev/null 2>&1 || fail "The Docker Compose plugin is missing ('docker compose' does not work).
 Install it: https://docs.docker.com/compose/install/linux/
 (on Debian/Ubuntu with Docker's repository: sudo apt-get install docker-compose-plugin)"
+# Per-container progress lines bury the installer's own steps; errors are
+# still printed. Older Compose releases lack the option.
+if docker compose --progress quiet version >/dev/null 2>&1; then
+  COMPOSE="docker compose --progress quiet"
+fi
 [ -z "$(docker ps -q --filter label=com.initpad.platform-update)" ] || \
   fail "A signed platform update is currently running; wait for it to finish."
 
