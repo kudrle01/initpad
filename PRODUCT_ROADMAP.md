@@ -1513,9 +1513,12 @@ jen konkrétní provozní a vyhodnocovací scénář.
    - jedna Node 26 LTS linie, deterministický PR gate, `check:compose`,
      Trivy sken release images (ADR-186);
    - nápověda docs.initpad.me pro 0.2.35 s kapitolou pro self-hosted.
-   **Zbývá:** release Agenta 0.17 a platformy, živá acceptance na
-   samostatném hostu, pozvánky do workspace se souhlasem, rozdělení
-   největších souborů a major upgrady Prisma/Nest/React.
+   Vydáno 14. listopadu 2026 jako Agent 0.17.0 a platforma 0.2.36 a 0.2.37;
+   obě platformy prošly v lokálním Dockeru živou acceptance aktualizace z
+   0.2.35 tlačítkem **Install update** a byly povýšeny na stable.
+   **Zbývá:** živá acceptance na samostatném hostu (platforma i Agent 0.17),
+   pozvánky do workspace se souhlasem, rozdělení největších souborů a major
+   upgrady Prisma/Nest/React.
    **Uživatelský test:** na čistém stroji `./install.sh --local`, vytvořit
    admina, projekt a během minut otevřít dev URL bez úpravy `.env`.
 

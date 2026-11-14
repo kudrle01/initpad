@@ -21,11 +21,11 @@ srozumitelném a samostatně nasaditelném systému.
 
 ## Stav projektu
 
-| Část                  | Stav                                                                                                                                                                                                                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.36`; živou candidate acceptance aktualizace tlačítkem **Install update** (z `0.2.35` na `0.2.36`) se zachováním dat a workloadů včetně health-gated rollbacku prošel `0.2.36` v lokálním Dockeru; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10`         |
-| InitPad Agent         | Doporučený release `0.17.0` (stabilní porty aplikací, odolná fronta jobů, brána přežije přeinstalaci); ověřen lokálně v Docker labu a anonymním auditem, živá acceptance na hostu zatím neproběhla. Reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu u `0.14.3` |
-| Hosted SaaS           | Ve vývoji; nejde zatím o produkční deployment profil                                                                                                                                                                                                                                                    |
+| Část                  | Stav                                                                                                                                                                                                                                                                                                                                            |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.37`; živou candidate acceptance aktualizace tlačítkem **Install update** z `0.2.35` prošly v lokálním Dockeru `0.2.36` (zachování dat a workloadů, health-gated rollback) i `0.2.37` (vestavěný Docker funguje po aktualizaci bez úpravy `.env`); recovery bootstrap z `0.2.9` byl ověřen na `0.2.10` |
+| InitPad Agent         | Doporučený release `0.17.0` (stabilní porty aplikací, odolná fronta jobů, brána přežije přeinstalaci); ověřen lokálně v Docker labu a anonymním auditem, živá acceptance na hostu zatím neproběhla. Reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu u `0.14.3`                                         |
+| Hosted SaaS           | Ve vývoji; nejde zatím o produkční deployment profil                                                                                                                                                                                                                                                                                            |
 
 Release assets, checksumy a OCI images jsou veřejné a ověřitelné bez GitHub
 credentials. Aktuální omezení a podmínky produkčního použití jsou v
@@ -70,7 +70,7 @@ spusťte `sudo ./prepare-rootless-runner.sh` (instalátor na to upozorní).
 Instalujte z posledního podepsaného releasu:
 
 ```bash
-git clone --branch initpad-v0.2.36 https://github.com/kudrle01/initpad.git initpad
+git clone --branch initpad-v0.2.37 https://github.com/kudrle01/initpad.git initpad
 cd initpad/deploy
 ./install.sh
 ```
@@ -150,7 +150,7 @@ vyžaduje přístup k internetu; CI ho spouští na `main` a každou noc.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.36
+npm run audit:public-release -- --tag initpad-v0.2.37
 npm run audit:public-release -- --tag agent-v0.17.0
 ```
 
