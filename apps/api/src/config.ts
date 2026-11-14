@@ -77,6 +77,16 @@ function normalizeRegistrationMode(raw: string): RegistrationMode {
 // a container: the compose setup sets it to 'host.docker.internal'.
 const deployHealthHost = process.env.INITPAD_DEPLOY_HEALTH_HOST || publicHost;
 
+// A signed in-app update replaces images but keeps the installed compose file,
+// so stacks installed before ADR-174 never pass INITPAD_DEPLOY_PROBE_BIND_ADDRESS.
+// When it is unset and the API probes through host.docker.internal it runs in
+// that stack, so the same host gateway is the safe probe address. An explicit
+// empty value still turns the extra publication off.
+export function resolveProbeBindAddress(raw: string | undefined, healthHost: string): string {
+  if (raw !== undefined) return raw.trim();
+  return healthHost.trim().toLowerCase() === 'host.docker.internal' ? 'host.docker.internal' : '';
+}
+
 export const config = {
   edition,
   publicHost,
@@ -238,7 +248,10 @@ export const config = {
     // A loopback-bound workload port is also published on this host address so
     // a containerized API can probe it; the stack sets host.docker.internal,
     // which resolves to the Docker host gateway, not to a LAN interface (ADR-174).
-    probeBindAddress: (process.env.INITPAD_DEPLOY_PROBE_BIND_ADDRESS || '').trim(),
+    probeBindAddress: resolveProbeBindAddress(
+      process.env.INITPAD_DEPLOY_PROBE_BIND_ADDRESS,
+      deployHealthHost,
+    ),
     memoryBytes: Number(process.env.INITPAD_DEPLOY_MEMORY_MB || 512) * 1024 * 1024,
     nanoCpus: Number(process.env.INITPAD_DEPLOY_CPU || 1) * 1_000_000_000,
     pidsLimit: Number(process.env.INITPAD_DEPLOY_PIDS_LIMIT || 256),
