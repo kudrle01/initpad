@@ -9,6 +9,7 @@ import {
 } from './control-plane.js';
 import { inspectDocker } from './docker.js';
 import { GatewayEdgeReconciler } from './gateway-edge.js';
+import { GatewayDockerNetwork } from './gateway-network.js';
 import { executeClaimedJob } from './job-worker.js';
 import { recordJobLoop, waitForUpdateHandoff } from './job-loop-liveness.js';
 import { updatePlanPath } from './release-update.js';
@@ -110,6 +111,18 @@ export async function runAgent(
         message: error instanceof Error ? error.message : String(error),
       }),
     );
+  if (process.env.INITPAD_AGENT_GATEWAY_CONTAINER?.trim()) {
+    void new GatewayDockerNetwork(config.targetId, dockerHost || undefined)
+      .reattachActiveWorkloads(runtimeSignal)
+      .then((joined) => {
+        if (joined.length) log('warn', 'gateway.networks_reattached', { networks: joined });
+      })
+      .catch((error: unknown) =>
+        log('warn', 'gateway.networks_check_failed', {
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+  }
   try {
     await Promise.all([
       runHeartbeatLoop(config, runtimeSignal, dockerHost, configPath),

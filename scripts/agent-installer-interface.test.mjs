@@ -97,7 +97,7 @@ test('uninstalls only what the installer and Agent created for this target', () 
 
 // Runs only the capacity function of the installer against a stub Docker
 // daemon and `df`, so the thresholds are tested without a real host.
-function runCapacity({ memMiB, cpus, freeGiB, skip = false }) {
+function runCapacity({ memMiB, cpus, freeGiB, skip = false, installed = false }) {
   const source = readFileSync(installer, 'utf8');
   const block = source.slice(
     source.indexOf('# ---- capacity'),
@@ -112,6 +112,7 @@ case "$*" in
   *MemTotal*) echo ${memMiB * 1048576} ;;
   *NCPU*) echo ${cpus} ;;
   *DockerRootDir*) echo ${dir} ;;
+  *com.initpad.agent*) echo ${installed} ;;
 esac
 `,
     );
@@ -169,6 +170,68 @@ test('accepts a recommended-size server silently and lets the operator override'
   const forced = runCapacity({ memMiB: 900, cpus: 1, freeGiB: 30, skip: true });
   assert.equal(forced.status, 0);
   assert.match(forced.err, /continuing because of --skip-capacity-check/);
+});
+
+test('a re-run on a server with an installed Agent only warns about capacity', () => {
+  const rerun = runCapacity({ memMiB: 4000, cpus: 2, freeGiB: 5, installed: true });
+  assert.equal(rerun.status, 0);
+  assert.match(rerun.out, /done/);
+  assert.match(rerun.err, /continuing because an Agent is already installed here/);
+  assert.match(rerun.err, /Disk: 5 GiB free/);
+});
+
+test('a gateway re-run reattaches workload networks and accepts a stored certificate', () => {
+  const source = readFileSync(installer, 'utf8');
+  const remember = source.indexOf(
+    'inner_workload_networks=$(gateway_workload_networks "$GATEWAY_INNER")',
+  );
+  const replace = source.indexOf('gateway_replace_container "$GATEWAY_INNER"');
+  const reconnect = source.indexOf(
+    'gateway_reconnect_networks "$GATEWAY_INNER" "$inner_workload_networks"',
+  );
+  assert.ok(remember > 0 && remember < replace, 'networks must be read before the replacement');
+  assert.ok(reconnect > replace, 'networks must be reattached after the replacement');
+  assert.match(source, /index \.Labels "com\.initpad\.managed"/);
+  assert.match(source, /find \/data\/caddy\/certificates -name "\$GATEWAY_DOMAIN\.crt"/);
+});
+
+test('reattaches only InitPad workload networks of the replaced gateway', () => {
+  const source = readFileSync(installer, 'utf8');
+  const block = source.slice(
+    source.indexOf('gateway_workload_networks() {'),
+    source.indexOf('gateway_wait_healthy() {'),
+  );
+  const dir = mkdtempSync(resolve(tmpdir(), 'agent-gateway-net-'));
+  try {
+    writeFileSync(
+      resolve(dir, 'docker'),
+      `#!/bin/sh
+case "$*" in
+  "container inspect initpad-gateway") exit 0 ;;
+  *NetworkSettings.Networks*) echo "initpad-gateway-net net-team-app-dev other-net " ;;
+  *"net-team-app-dev"*com.initpad.managed*|*com.initpad.managed*net-team-app-dev*) echo true ;;
+  *com.initpad.managed*) echo "" ;;
+  "network connect net-team-app-dev initpad-gateway") echo connected >> ${dir}/log ;;
+esac
+`,
+    );
+    chmodSync(resolve(dir, 'docker'), 0o755);
+    const script = `GATEWAY_NETWORK=initpad-gateway-net
+warn() { printf 'warning: %s\\n' "$1" >&2; }
+${block}
+nets=$(gateway_workload_networks initpad-gateway)
+echo "nets=$nets"
+gateway_reconnect_networks initpad-gateway "$nets"`;
+    const result = spawnSync('sh', ['-c', script], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^nets=net-team-app-dev$/m);
+    assert.equal(readFileSync(resolve(dir, 'log'), 'utf8').trim(), 'connected');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('checks capacity after validation and never on uninstall', () => {
