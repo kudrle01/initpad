@@ -229,6 +229,30 @@ export function parseGatewayRoutePayload(value: unknown): GatewayRoutePayload {
   };
 }
 
+export type GatewayRollbackOutcome = 'serving' | 'stopped' | 'incomplete';
+
+const MAX_RESULT_MESSAGE = 240;
+
+/**
+ * Failure after a rollback attempt. `rollback` travels to the API as a
+ * resultCode (older APIs accept any bounded code); the message keeps the legacy
+ * suffix the older API parses, and the original error is shortened first so
+ * that suffix survives the 240-character protocol limit.
+ */
+export class GatewayRollbackError extends Error {
+  constructor(
+    readonly rollback: GatewayRollbackOutcome,
+    original: string,
+    suffix: string,
+    options?: ErrorOptions,
+  ) {
+    const room = Math.max(0, MAX_RESULT_MESSAGE - suffix.length - 2);
+    const head = original.length > room ? `${original.slice(0, Math.max(0, room - 1))}…` : original;
+    super(`${head}; ${suffix}`.slice(0, MAX_RESULT_MESSAGE), options);
+    this.name = 'GatewayRollbackError';
+  }
+}
+
 export class GatewayRouteReconciler {
   constructor(
     targetId: string,
@@ -352,7 +376,11 @@ export class GatewayRouteReconciler {
   ): Promise<never> {
     const original = cause instanceof Error ? cause.message : 'Gateway deactivation failed';
     if (!previous)
-      throw new Error(`${original}; rollback incomplete: previous route was not available`);
+      throw new GatewayRollbackError(
+        'incomplete',
+        original,
+        'rollback incomplete: previous route was not available',
+      );
     try {
       await this.caddy.reconcileRoute(
         {
@@ -365,9 +393,11 @@ export class GatewayRouteReconciler {
       );
     } catch (error) {
       const failure = error instanceof Error ? error.message : 'route restore failed';
-      throw new Error(`${original}; rollback incomplete: ${failure}`, { cause: error });
+      throw new GatewayRollbackError('incomplete', original, `rollback incomplete: ${failure}`, {
+        cause: error,
+      });
     }
-    throw new Error(`${original}; previous serving route restored`);
+    throw new GatewayRollbackError('serving', original, 'previous serving route restored');
   }
 
   private async rollbackActivation(
@@ -408,10 +438,14 @@ export class GatewayRouteReconciler {
     }
     const original = cause instanceof Error ? cause.message : 'Gateway activation failed';
     if (failures.length) {
-      throw new Error(`${original}; rollback incomplete: ${failures.join('; ')}`);
+      throw new GatewayRollbackError(
+        'incomplete',
+        original,
+        `rollback incomplete: ${failures.join('; ')}`.slice(0, 160),
+      );
     }
-    throw new Error(
-      `${original}; ${previous ? 'previous serving route restored' : 'previous gateway state restored'}`,
-    );
+    throw previous
+      ? new GatewayRollbackError('serving', original, 'previous serving route restored')
+      : new GatewayRollbackError('stopped', original, 'previous gateway state restored');
   }
 }

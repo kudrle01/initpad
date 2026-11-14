@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import type { CaddyRouteIntent } from './caddy-admin.js';
 import {
+  GatewayRollbackError,
   GatewayRouteReconciler,
   PublicGatewayHealth,
   parseGatewayRoutePayload,
@@ -377,3 +378,14 @@ function expectRoute(present: boolean, upstream: string): CaddyRouteIntent {
     present,
   };
 }
+
+test('a long failure keeps the rollback phrase within the protocol message limit', () => {
+  const error = new GatewayRollbackError(
+    'serving',
+    `Public HTTPS health check failed: ${'x'.repeat(400)}`,
+    'previous serving route restored',
+  );
+  assert.equal(error.rollback, 'serving');
+  assert.ok(error.message.length <= 240);
+  assert.ok(error.message.endsWith('; previous serving route restored'));
+});

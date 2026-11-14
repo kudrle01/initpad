@@ -15,7 +15,11 @@ import type {
 } from './types.js';
 import { GatewayPreflight, parseGatewayPreflightPayload } from './gateway-preflight.js';
 import type { GatewayPreflightProgress } from './gateway-preflight.js';
-import { GatewayRouteReconciler, parseGatewayRoutePayload } from './gateway-route.js';
+import {
+  GatewayRollbackError,
+  GatewayRouteReconciler,
+  parseGatewayRoutePayload,
+} from './gateway-route.js';
 import type { GatewayRouteProgress, GatewayRouteRunResult } from './gateway-route.js';
 import { AgentUpdateCoordinator } from './agent-update.js';
 import type { AgentUpdateHandoffRunner } from './agent-update.js';
@@ -543,7 +547,10 @@ export async function executeClaimedJob(
           ? routeError.message
           : 'Gateway route reconcile failed'
         ).slice(0, 240),
-        resultCode: 'gateway_route_failed',
+        resultCode:
+          routeError instanceof GatewayRollbackError
+            ? `gateway_route_rollback_${routeError.rollback}`
+            : 'gateway_route_failed',
       });
       return;
     }

@@ -21,6 +21,7 @@ const DNS_NAME =
 const IMAGE = /^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$/;
 const NETWORK = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const SETTLE_MS = 6_000;
+const RESTORE_TIMEOUT_MS = 60_000;
 
 // Must stay byte-identical to the heredoc in install.sh (checked by a test).
 export const GATEWAY_EDGE_CADDYFILE = `{
@@ -125,8 +126,15 @@ export class GatewayEdgeReconciler {
 
   async reconcile(signal: AbortSignal): Promise<GatewayEdgeResult> {
     const version = gatewayEdgeConfigVersion();
-    const edge = await this.inspect(GATEWAY_EDGE_NAME, signal);
-    if (!edge) return { status: 'absent' };
+    let edge = await this.inspect(GATEWAY_EDGE_NAME, signal);
+    if (!edge) {
+      // A crash between parking the old edge and starting its replacement
+      // leaves only the parked container. Putting it back is always safe: it
+      // is exactly the edge that served before the interrupted update.
+      if (!(await this.restoreParked(signal))) return { status: 'absent' };
+      edge = await this.inspect(GATEWAY_EDGE_NAME, signal);
+      if (!edge) return { status: 'absent' };
+    }
     const plan = this.plan(edge);
     if (!plan) return { status: 'absent' };
     if (edge.Config?.Labels?.[GATEWAY_EDGE_CONFIG_LABEL] === version) {
@@ -178,24 +186,49 @@ export class GatewayEdgeReconciler {
       await this.remove(previousName, signal);
       return { status: 'updated', version };
     } catch (error) {
-      await this.remove(GATEWAY_EDGE_NAME, signal).catch(() => undefined);
+      // The caller's signal may be the reason for this failure (shutdown,
+      // abort); restoring the serving edge must still run, bounded on its own.
+      const restoreSignal = AbortSignal.timeout(RESTORE_TIMEOUT_MS);
       if (parked) {
-        await this.writeFiles(plan.image, 'restore', signal).catch(() => undefined);
+        await this.remove(GATEWAY_EDGE_NAME, restoreSignal).catch(() => undefined);
+        await this.writeFiles(plan.image, 'restore', restoreSignal).catch(() => undefined);
         await this.post(
           `/containers/${previousName}/rename?name=${GATEWAY_EDGE_NAME}`,
           [204],
           'restore gateway edge',
-          signal,
-        ).catch(() => undefined);
-        await this.post(
-          `/containers/${GATEWAY_EDGE_NAME}/start`,
-          [204, 304],
-          'restart gateway edge',
-          signal,
+          restoreSignal,
         ).catch(() => undefined);
       }
+      await this.post(
+        `/containers/${GATEWAY_EDGE_NAME}/start`,
+        [204, 304],
+        'restart gateway edge',
+        restoreSignal,
+      ).catch(() => undefined);
       throw error;
     }
+  }
+
+  private async restoreParked(signal: AbortSignal): Promise<boolean> {
+    const previousName = `${GATEWAY_EDGE_NAME}-previous`;
+    const parked = await this.inspect(previousName, signal);
+    if (!parked) return false;
+    const plan = this.plan(parked);
+    if (!plan) return false;
+    await this.writeFiles(plan.image, 'restore', signal).catch(() => undefined);
+    await this.post(
+      `/containers/${previousName}/rename?name=${GATEWAY_EDGE_NAME}`,
+      [204],
+      'restore parked gateway edge',
+      signal,
+    );
+    await this.post(
+      `/containers/${GATEWAY_EDGE_NAME}/start`,
+      [204, 304],
+      'restart parked gateway edge',
+      signal,
+    );
+    return true;
   }
 
   private plan(edge: EdgeInspect): { image: string; network: string } | null {
@@ -274,7 +307,7 @@ export class GatewayEdgeReconciler {
       if (result.StatusCode !== 0)
         throw new Error('The gateway configuration could not be written');
     } finally {
-      await this.remove(created.Id, signal).catch(() => undefined);
+      await this.remove(created.Id, AbortSignal.timeout(RESTORE_TIMEOUT_MS)).catch(() => undefined);
     }
   }
 

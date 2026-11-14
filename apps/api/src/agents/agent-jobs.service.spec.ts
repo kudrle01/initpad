@@ -1596,6 +1596,60 @@ describe('AgentJobsService durable lease protocol', () => {
     });
   });
 
+  it('trusts the structured rollback resultCode over a truncated legacy message', async () => {
+    const { service, prisma } = setup();
+    const stableUrl = 'https://acme-api-dev-a1b2c3d4e5f6.apps.example.test';
+    const previousRevision = 'b'.repeat(40);
+    const requestedRevision = 'a'.repeat(40);
+    // The legacy phrase was cut off by the 240-character limit.
+    const truncated = `Public HTTPS health check failed: ${'x'.repeat(200)}; previous serv`;
+    const terminal = job({
+      kind: 'gateway-route',
+      operationStep: 2,
+      payload: { generation: 4, desiredState: 'active', revision: requestedRevision },
+      status: 'failed',
+      result: null,
+      message: truncated,
+      resultCode: 'gateway_route_rollback_serving',
+      gatewayRouteId: 'route-1',
+      deploymentOperationId: 'operation-1',
+      deploymentOperation: {
+        id: 'operation-1',
+        environmentId: 'environment-1',
+        buildArtifactId: 'artifact-new',
+        kind: 'redeploy',
+        status: 'running',
+        finishedAt: null,
+        version: requestedRevision,
+        environment: {
+          version: previousRevision,
+          url: stableUrl,
+          target: { publicUrl: 'https://apps.example.test', routingMode: 'managed-gateway' },
+          gatewayRoute: {
+            publicUrl: stableUrl,
+            observedState: 'active',
+            observedRevision: previousRevision,
+            observedGeneration: 3,
+          },
+        },
+      },
+    });
+    prisma.agentJob.findUnique.mockResolvedValue(terminal);
+    prisma.agentJob.findUniqueOrThrow.mockResolvedValue(terminal);
+
+    await service.complete('Bearer credential', 'job-1', {
+      leaseToken: LEASE,
+      status: 'failed',
+      message: truncated,
+      resultCode: 'gateway_route_rollback_serving',
+    });
+
+    expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'environment-1', activeOperationId: 'operation-1' },
+      data: expect.objectContaining({ status: 'running', url: stableUrl }),
+    });
+  });
+
   it('unblocks managed stop workload only after route step 1 succeeds', async () => {
     const { service, prisma } = setup();
     const terminal = job({
