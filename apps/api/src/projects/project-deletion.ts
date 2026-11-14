@@ -230,11 +230,23 @@ export class ProjectDeletion {
     ) {
       return true;
     }
+    // A succeeded remove job cleared everything deployed before it, so only
+    // deploy/start jobs after the last removal can have left a workload.
+    const removed = await this.prisma.agentJob.findFirst({
+      where: {
+        deploymentOperation: { environmentId: environment.id },
+        kind: 'remove',
+        status: 'succeeded',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
     const jobs = await this.prisma.agentJob.count({
       where: {
         deploymentOperation: { environmentId: environment.id },
         kind: { in: ['deploy', 'start'] },
         status: { in: ['leased', 'succeeded'] },
+        ...(removed ? { createdAt: { gt: removed.createdAt } } : {}),
       },
     });
     return jobs > 0;

@@ -90,6 +90,7 @@ function deletionPrisma() {
     agentJob: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       count: jest.fn().mockResolvedValue(0),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     environment: { update: jest.fn().mockResolvedValue(undefined) },
     project: {
@@ -181,6 +182,43 @@ describe('ProjectDeletion of a project that never deployed', () => {
 
     await expect(
       deletion.execute(connectedAgentProject(failedBuild) as never, { repoAction: 'detach' }),
+    ).rejects.toThrow(/Remove Agent-managed deployments first/);
+    expect(prisma.project.delete).not.toHaveBeenCalled();
+  });
+
+  // Regression: a project that once ran on an Agent stayed undeletable after
+  // its environments were removed, because old deploy jobs counted forever.
+  const tornDown = { status: 'empty', version: null, url: null, activeOperationId: null };
+
+  it('deletes a project whose Agent deployments were already removed', async () => {
+    const prisma = deletionPrisma();
+    const removedAt = new Date('2026-11-14T14:00:00Z');
+    prisma.agentJob.findFirst.mockResolvedValue({ createdAt: removedAt });
+    // Only deploy jobs newer than the removal may still hold a workload.
+    prisma.agentJob.count.mockImplementation(
+      async ({ where }: { where: { createdAt?: { gt: Date } } }) =>
+        where.createdAt?.gt === removedAt ? 0 : 3,
+    );
+    const deletion = makeDeletion(prisma);
+
+    await deletion.execute(connectedAgentProject(tornDown) as never, { repoAction: 'detach' });
+
+    expect(prisma.agentJob.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ kind: 'remove', status: 'succeeded' }),
+      }),
+    );
+    expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'project-1' } });
+  });
+
+  it('still blocks when a deploy succeeded after the last removal', async () => {
+    const prisma = deletionPrisma();
+    prisma.agentJob.findFirst.mockResolvedValue({ createdAt: new Date('2026-11-14T14:00:00Z') });
+    prisma.agentJob.count.mockResolvedValue(1);
+    const deletion = makeDeletion(prisma);
+
+    await expect(
+      deletion.execute(connectedAgentProject(tornDown) as never, { repoAction: 'detach' }),
     ).rejects.toThrow(/Remove Agent-managed deployments first/);
     expect(prisma.project.delete).not.toHaveBeenCalled();
   });
