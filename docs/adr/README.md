@@ -185,3 +185,5 @@ stabilní.
 | [ADR-171](./ADR-171.md) | Accepted | CI joby berou akce ze zrcadel v Gitee |
 | [ADR-172](./ADR-172.md) | Accepted | Pracovní soubory deploye API leží na disku |
 | [ADR-173](./ADR-173.md) | Accepted | Vestavěný Docker se nenabízí, když nemůže ověřit nasazení |
+| [ADR-176](./ADR-176.md) | Accepted | Žádná lokální kopie repozitáře a omezené čekání na vzdálené služby |
+| [ADR-177](./ADR-177.md) | Accepted | Mazání projektu se zámkem a bez nasazení mimo cíl |
