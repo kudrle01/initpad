@@ -54,4 +54,9 @@ export const csWeb = {
   'Production requests wait for approval ({count}).':
     'Žádosti o produkci čekají na schválení ({count}).',
   'Show those projects': 'Zobrazit tyto projekty',
+  // lib/request-id.ts
+  'Secure random number generation is not available in this browser':
+    'Tento prohlížeč neumí bezpečně generovat náhodná čísla',
+  // help links
+  Troubleshooting: 'Řešení potíží',
 } satisfies Record<string, string>;

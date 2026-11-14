@@ -1,3 +1,5 @@
+import { t } from '@/i18n';
+
 /**
  * Creates a cryptographically random UUIDv4 in browsers where randomUUID is
  * unavailable (notably otherwise modern browsers on a non-secure HTTP origin).
@@ -6,7 +8,7 @@ export function createRequestId(): string {
   const cryptoApi = globalThis.crypto;
   if (typeof cryptoApi?.randomUUID === 'function') return cryptoApi.randomUUID();
   if (typeof cryptoApi?.getRandomValues !== 'function') {
-    throw new Error('Secure random number generation is not available in this browser');
+    throw new Error(t('Secure random number generation is not available in this browser'));
   }
 
   const bytes = cryptoApi.getRandomValues(new Uint8Array(16));

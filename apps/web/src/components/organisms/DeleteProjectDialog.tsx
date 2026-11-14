@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/atoms/Spinner';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import type { DeleteProjectOptions } from '@/api';
 import type { Environment } from '@/types';
 import { t, rich } from '@/i18n';
@@ -93,7 +94,8 @@ export function DeleteProjectDialog({
           <DialogDescription>
             {t(
               'InitPad will remove every managed deployment before deleting its project record. Cleanup must succeed on every target by default. Protected leftovers can only be detached through a separate explicit acknowledgement.',
-            )}
+            )}{' '}
+            <HelpLink topic="rename-delete" />
           </DialogDescription>
         </DialogHeader>
 
