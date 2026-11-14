@@ -1,4 +1,4 @@
-import { BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { rmSync } from 'fs';
 import { ProviderKind } from '../domain/types';
@@ -6,9 +6,10 @@ import { DeploymentService } from '../deployment/deployment.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScmActor, repositoryRef } from '../scm/scm-provider';
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
+import { isWorkspaceCheckout } from '../generator/generator.service';
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 import { deployedImageRef, imageRepository, workloadKey } from './project-deployment-identity';
-import { ProjectDeploymentOperations } from './project-deployment-operations';
+import { DELETION_LOCK_MS, ProjectDeploymentOperations } from './project-deployment-operations';
 import { ProjectEnvironmentTargets } from './project-environment-targets';
 
 export type ProjectDeletionRow = Prisma.ProjectGetPayload<{
@@ -17,6 +18,12 @@ export type ProjectDeletionRow = Prisma.ProjectGetPayload<{
     owner: true;
   };
 }>;
+
+/**
+ * Stored as Project.repoPath when InitPad keeps no working copy: the SCM
+ * provider is the source of truth for every project.
+ */
+export const NO_LOCAL_CHECKOUT = '';
 
 export interface ProjectDeletionOptions {
   repoAction: 'delete' | 'detach' | 'gone';
@@ -42,6 +49,75 @@ export class ProjectDeletion {
   ) {}
 
   async execute(row: ProjectDeletionRow, opts: ProjectDeletionOptions): Promise<void> {
+    const lockedAt = await this.acquireLock(row.id);
+    try {
+      await this.executeLocked(row, opts);
+    } catch (error) {
+      await this.prisma.project
+        .updateMany({
+          where: { id: row.id, deletionStartedAt: lockedAt },
+          data: { deletionStartedAt: null },
+        })
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /**
+   * Compare-and-set lock: a second (double-clicked or concurrent webhook)
+   * deletion is refused instead of running a second teardown.
+   */
+  private async acquireLock(projectId: string): Promise<Date> {
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - DELETION_LOCK_MS);
+    const locked = await this.prisma.project.updateMany({
+      where: {
+        id: projectId,
+        OR: [{ deletionStartedAt: null }, { deletionStartedAt: { lt: staleBefore } }],
+      },
+      data: { deletionStartedAt: now },
+    });
+    if (locked.count === 1) return now;
+    const exists = await this.prisma.project.count({ where: { id: projectId } });
+    if (!exists) throw new NotFoundException(`Project '${projectId}' not found`);
+    throw new ConflictException(
+      'This project is already being deleted. Wait for that deletion to finish.',
+    );
+  }
+
+  /**
+   * A deployment executed by an API process holds a live execution lease. Its
+   * provider call cannot be interrupted safely, so deletion marks it cancelled
+   * (the executor tears the new workload down when it observes that) and is
+   * refused until the executor has finished. Deleting underneath it would
+   * leave the freshly deployed workload orphaned on the target.
+   */
+  private async refuseWhileExecuting(projectId: string): Promise<void> {
+    const executing = await this.prisma.deploymentOperation.findMany({
+      where: {
+        environment: { projectId },
+        finishedAt: null,
+        executionOwner: { not: null },
+        executionLeaseExpiresAt: { gt: new Date() },
+      },
+      select: { id: true, environment: { select: { name: true } } },
+    });
+    if (executing.length === 0) return;
+    await this.prisma.deploymentOperation.updateMany({
+      where: { id: { in: executing.map(({ id }) => id) }, finishedAt: null },
+      data: { status: 'cancelled', message: 'Cancelled because project deletion was requested' },
+    });
+    const names = [...new Set(executing.map(({ environment }) => environment.name))].join(', ');
+    throw new ConflictException(
+      `A deployment is still running in ${names}. It has been cancelled; delete the project again once it has stopped.`,
+    );
+  }
+
+  private async executeLocked(
+    row: ProjectDeletionRow,
+    opts: ProjectDeletionOptions,
+  ): Promise<void> {
+    await this.refuseWhileExecuting(row.id);
     // A disconnected or retired target can no longer receive management
     // commands (its credentials are revoked), so its deployments can only be
     // abandoned: the record is released while the workload may survive on that
@@ -130,7 +206,12 @@ export class ProjectDeletion {
       await scm.detachRepo(repository, this.actorForRepo(row));
     }
 
-    rmSync(row.repoPath, { recursive: true, force: true });
+    // Older releases stored a relative `owner/name` for imports. Only a path
+    // inside the workspace directory is ever removed; anything else is left
+    // alone instead of resolving against the API's working directory.
+    if (isWorkspaceCheckout(row.repoPath)) {
+      rmSync(row.repoPath, { recursive: true, force: true });
+    }
     await this.prisma.project.delete({ where: { id: row.id } });
   }
 
@@ -160,6 +241,17 @@ export class ProjectDeletion {
   }
 
   private async cancelUnfinishedOperations(projectId: string): Promise<void> {
+    // An expired execution lease belongs to a process that died; release it
+    // so the operation can be completed here rather than left unfinished.
+    await this.prisma.deploymentOperation.updateMany({
+      where: {
+        environment: { projectId },
+        finishedAt: null,
+        executionOwner: { not: null },
+        executionLeaseExpiresAt: { lte: new Date() },
+      },
+      data: { executionOwner: null, executionLeaseExpiresAt: null },
+    });
     const unfinishedOperations = await this.prisma.deploymentOperation.findMany({
       where: { environment: { projectId }, finishedAt: null },
       select: { id: true },

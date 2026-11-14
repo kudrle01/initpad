@@ -26,6 +26,7 @@ import {
   sftpUnlink,
   shellQuote,
   sshConnect,
+  withSshDeadline,
   sshEnd,
   sshExec,
   uploadDir,
@@ -167,73 +168,87 @@ export class SftpProvider implements DeploymentProvider {
     }
 
     try {
-      const sftp = await getSftp(conn);
-      // Fail before any upload when the effective root is missing or read-only,
-      // and name it: a bare SFTP "No such file" does not say which path.
-      input.onProgress?.('Checking target path');
-      try {
-        await assertSftpWritable(sftp, cfg.remoteRoot);
-      } catch (e) {
-        const reason = `Deployment path ${cfg.remoteRoot} on ${cfg.host} does not exist or is not writable (${(e as Error).message})`;
-        this.logger.warn(reason);
-        return { status: 'failed', url: '', reason };
-      }
-      if (cfg.custom) {
-        await this.uploadCustom(conn, sftp, cfg, slug, localDir, input);
-      } else {
-        // Built-in fake-sftp + nginx: atomic release switch via a symlink.
-        input.onProgress?.('Uploading files');
-        await mkdirp(sftp, release);
-        await uploadDir(sftp, localDir, release);
-        input.onProgress?.('Publishing release');
-        await this.swapLink(sftp, cfg.remoteRoot, slug, `${slug}-releases/${version}`);
-      }
-
-      input.onProgress?.('Verifying deployment');
-      const url = this.publicUrl(cfg, slug, input.webRoot, input.protectedWebLayout);
-      const internalUrl = this.internalUrl(cfg, slug, input.webRoot, input.protectedWebLayout);
-      const reachable = await this.waitReachable(internalUrl);
-      if (!reachable) {
-        return {
-          status: 'failed',
-          url,
-          reason: `Files uploaded, but ${url} is not serving them (is the web server up / the public URL correct?).`,
-        };
-      }
-      if (input.protectedWebLayout) {
-        const base = cfg.internalUrl.replace(/\/+$/, '');
-        const checks = [
-          `${internalUrl.replace(/\/+$/, '')}/.initpad-app/${PRIVATE_PROBE}`,
-          `${internalUrl.replace(/\/+$/, '')}/.initpad-app/composer.json`,
-          ...(input.writableDirs?.length ? [`${base}/.initpad-data/${slug}/.initpad-probe`] : []),
-        ];
-        const protectedResults = await Promise.all(
-          checks.map((privateUrl) => this.privateFilesProtected(privateUrl)),
-        );
-        if (protectedResults.some((protectedFile) => !protectedFile)) {
-          if (cfg.custom) {
-            await this.removeCustom(conn, sftp, cfg, slug);
-          } else {
-            await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}`);
-            await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}-releases`);
-          }
-          return {
-            status: 'failed',
-            url: '',
-            reason:
-              'Deployment was rolled back because the server exposed private application files. Enable Apache .htaccess/AllowOverride for this target.',
-          };
-        }
-        await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}/.initpad-app/${PRIVATE_PROBE}`);
-        await sftpUnlink(sftp, `${cfg.remoteRoot}/.initpad-data/${slug}/.initpad-probe`);
-      }
-      this.logger.log(`Deployed over SFTP: ${input.projectName} (${input.env}) → ${url}`);
-      return { status: 'running', url };
+      return await withSshDeadline(conn, config.timeouts.sftpDeployMs, 'SFTP deployment', () =>
+        this.deployOverConnection(conn, input, cfg, slug, version, release, localDir),
+      );
     } catch (e) {
       return { status: 'failed', url: '', reason: (e as Error).message };
     } finally {
       sshEnd(conn);
     }
+  }
+
+  private async deployOverConnection(
+    conn: Client,
+    input: DeployInput,
+    cfg: EffCfg,
+    slug: string,
+    version: string,
+    release: string,
+    localDir: string,
+  ): Promise<DeployResult> {
+    const sftp = await getSftp(conn);
+    // Fail before any upload when the effective root is missing or read-only,
+    // and name it: a bare SFTP "No such file" does not say which path.
+    input.onProgress?.('Checking target path');
+    try {
+      await assertSftpWritable(sftp, cfg.remoteRoot);
+    } catch (e) {
+      const reason = `Deployment path ${cfg.remoteRoot} on ${cfg.host} does not exist or is not writable (${(e as Error).message})`;
+      this.logger.warn(reason);
+      return { status: 'failed', url: '', reason };
+    }
+    if (cfg.custom) {
+      await this.uploadCustom(conn, sftp, cfg, slug, localDir, input);
+    } else {
+      // Built-in fake-sftp + nginx: atomic release switch via a symlink.
+      input.onProgress?.('Uploading files');
+      await mkdirp(sftp, release);
+      await uploadDir(sftp, localDir, release);
+      input.onProgress?.('Publishing release');
+      await this.swapLink(sftp, cfg.remoteRoot, slug, `${slug}-releases/${version}`);
+    }
+
+    input.onProgress?.('Verifying deployment');
+    const url = this.publicUrl(cfg, slug, input.webRoot, input.protectedWebLayout);
+    const internalUrl = this.internalUrl(cfg, slug, input.webRoot, input.protectedWebLayout);
+    const reachable = await this.waitReachable(internalUrl);
+    if (!reachable) {
+      return {
+        status: 'failed',
+        url,
+        reason: `Files uploaded, but ${url} is not serving them (is the web server up / the public URL correct?).`,
+      };
+    }
+    if (input.protectedWebLayout) {
+      const base = cfg.internalUrl.replace(/\/+$/, '');
+      const checks = [
+        `${internalUrl.replace(/\/+$/, '')}/.initpad-app/${PRIVATE_PROBE}`,
+        `${internalUrl.replace(/\/+$/, '')}/.initpad-app/composer.json`,
+        ...(input.writableDirs?.length ? [`${base}/.initpad-data/${slug}/.initpad-probe`] : []),
+      ];
+      const protectedResults = await Promise.all(
+        checks.map((privateUrl) => this.privateFilesProtected(privateUrl)),
+      );
+      if (protectedResults.some((protectedFile) => !protectedFile)) {
+        if (cfg.custom) {
+          await this.removeCustom(conn, sftp, cfg, slug);
+        } else {
+          await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}`);
+          await sftpRmrf(sftp, `${cfg.remoteRoot}/${slug}-releases`);
+        }
+        return {
+          status: 'failed',
+          url: '',
+          reason:
+            'Deployment was rolled back because the server exposed private application files. Enable Apache .htaccess/AllowOverride for this target.',
+        };
+      }
+      await sftpUnlink(sftp, `${cfg.remoteRoot}/${slug}/.initpad-app/${PRIVATE_PROBE}`);
+      await sftpUnlink(sftp, `${cfg.remoteRoot}/.initpad-data/${slug}/.initpad-probe`);
+    }
+    this.logger.log(`Deployed over SFTP: ${input.projectName} (${input.env}) → ${url}`);
+    return { status: 'running', url };
   }
 
   async teardown(input: TeardownInput): Promise<TeardownResult | void> {

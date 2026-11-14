@@ -1,3 +1,4 @@
+import { config } from '../../config';
 import { SftpProvider } from './sftp.provider';
 import { assertSftpWritable, getSftp, sshConnect, sshEnd, sshExec, uploadTar } from './ssh-utils';
 
@@ -11,6 +12,7 @@ jest.mock('./ssh-utils', () => ({
   sftpRmrf: jest.fn(),
   sftpUnlink: jest.fn(),
   uploadTar: jest.fn(),
+  withSshDeadline: jest.requireActual('./ssh-utils').withSshDeadline,
 }));
 
 describe('SftpProvider teardown', () => {
@@ -188,5 +190,40 @@ describe('SftpProvider allocation routing (ADR-060)', () => {
     expect(effective.remoteRoot).toBe('/srv/shared/team-alpha');
     expect(effective.publicUrl).toBe('https://apps.example.test/team-alpha');
     expect(effective.username).toBe('student');
+  });
+});
+
+describe('SftpProvider deploy deadline', () => {
+  const original = config.timeouts.sftpDeployMs;
+  afterEach(() => {
+    config.timeouts.sftpDeployMs = original;
+  });
+
+  it('aborts a stalled upload instead of waiting forever', async () => {
+    jest.clearAllMocks();
+    config.timeouts.sftpDeployMs = 30;
+    const conn = { destroy: jest.fn() };
+    jest.mocked(sshConnect).mockResolvedValue(conn as never);
+    jest.mocked(getSftp).mockReturnValue(new Promise(() => undefined));
+
+    const result = await new SftpProvider().deploy({
+      projectName: 'team-app',
+      env: 'prod',
+      version: 'v1',
+      repoPath: __dirname,
+      connection: {
+        host: 'sftp.example.test',
+        port: 22,
+        username: 'student',
+        password: 'test-only',
+        remoteRoot: '/home/student/www',
+        publicUrl: 'https://example.test/~student',
+      },
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.reason).toContain('SFTP deployment did not finish within');
+    expect(conn.destroy).toHaveBeenCalled();
+    expect(sshEnd).toHaveBeenCalled();
   });
 });

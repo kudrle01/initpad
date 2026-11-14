@@ -969,45 +969,50 @@ export class GitHubScmProvider implements ScmProvider {
     repository: ScmRepositoryRef,
     ref: string,
     _actor: ScmActor,
-  ): Promise<RepoArchive | null> {
+  ): Promise<RepoArchive> {
     this.assertProvider(repository);
-    if (!ref) return null;
+    const fail = (reason: string): never => {
+      const message = `Could not download the source of ${repository.fullName}@${ref.slice(0, 12)} from GitHub: ${reason}`;
+      this.logger.warn(message);
+      throw new Error(message);
+    };
+    if (!ref) fail('no commit was given');
+    let res: Response | undefined;
     try {
       const token = await this.token(repository, READ_CONTENTS);
-      const res = await this.gh(
+      res = await this.gh(
         `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/tarball/${encodeURIComponent(ref)}`,
         token,
         { operation: 'download repository archive', timeoutMs: SCM_DOWNLOAD_TIMEOUT_MS },
       );
-      if (!res.ok || !res.body) {
-        this.logger.warn(`downloadArchive ${repository.fullName}@${ref} → HTTP ${res.status}`);
-        return null;
-      }
-      const base = mkdtempSync(join(tmpdir(), 'initpad-github-archive-'));
-      const cleanup = () => rmSync(base, { recursive: true, force: true });
-      try {
-        const extractDir = join(base, 'src');
-        await pipeline(
-          Readable.fromWeb(res.body as import('stream/web').ReadableStream),
-          createGunzip(),
-          tar.extract(extractDir),
-        );
-        const entries = readdirSync(extractDir);
-        const dir =
-          entries.length === 1 && statSync(join(extractDir, entries[0])).isDirectory()
-            ? join(extractDir, entries[0])
-            : extractDir;
-        return { dir, cleanup };
-      } catch (error) {
-        cleanup();
-        this.logger.warn(`downloadArchive extract failed: ${(error as Error).message}`);
-        return null;
-      }
     } catch (error) {
-      this.logger.warn(
-        `downloadArchive ${repository.fullName}@${ref}: ${(error as Error).message}`,
+      fail((error as Error).message);
+    }
+    if (!res!.ok || !res!.body) {
+      fail(
+        res!.status === 404
+          ? 'the repository or commit no longer exists (HTTP 404)'
+          : `HTTP ${res!.status}`,
       );
-      return null;
+    }
+    const base = mkdtempSync(join(tmpdir(), 'initpad-github-archive-'));
+    const cleanup = () => rmSync(base, { recursive: true, force: true });
+    try {
+      const extractDir = join(base, 'src');
+      await pipeline(
+        Readable.fromWeb(res!.body as import('stream/web').ReadableStream),
+        createGunzip(),
+        tar.extract(extractDir),
+      );
+      const entries = readdirSync(extractDir);
+      const dir =
+        entries.length === 1 && statSync(join(extractDir, entries[0])).isDirectory()
+          ? join(extractDir, entries[0])
+          : extractDir;
+      return { dir, cleanup };
+    } catch (error) {
+      cleanup();
+      return fail(`the archive could not be extracted (${(error as Error).message})`);
     }
   }
 
@@ -1236,7 +1241,8 @@ export class GitHubScmProvider implements ScmProvider {
     this.prepareGitHubActions(dir);
     const name = author?.name || config.git.authorName;
     const email = author?.email || config.git.authorEmail;
-    const git = (args: string[]) => exec('git', args, { cwd: dir });
+    const git = (args: string[]) =>
+      exec('git', args, { cwd: dir, timeout: config.timeouts.gitMs, killSignal: 'SIGKILL' });
     try {
       await git(['init', '-b', 'main']);
       await git(['add', '-A']);
@@ -1283,7 +1289,12 @@ export class GitHubScmProvider implements ScmProvider {
     token: string,
   ): Promise<void> {
     const git = (args: string[], env?: NodeJS.ProcessEnv) =>
-      exec('git', args, { cwd: dir, env: env ? { ...process.env, ...env } : process.env });
+      exec('git', args, {
+        cwd: dir,
+        env: env ? { ...process.env, ...env } : process.env,
+        timeout: config.timeouts.gitMs,
+        killSignal: 'SIGKILL',
+      });
     const remote = `https://github.com/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}.git`;
     await git(['remote', 'remove', 'origin']).catch(() => undefined);
     await git(['remote', 'add', 'origin', remote]);

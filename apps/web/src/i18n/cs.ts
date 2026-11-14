@@ -404,8 +404,6 @@ export const cs = {
     'Odebere server z InitPadu. Na samotném serveru se nic nesmaže.',
   'Release the deployments on this server first: {list}.':
     'Nejdřív uvolněte nasazení na tomto serveru: {list}.',
-  'Used by {count} environments. Point them at another server, or disconnect or retire this one first.':
-    'Používá ho prostředí: {count}. Přesměrujte je na jiný server, nebo tento nejdřív odpojte či vyřaďte.',
   'Release deployment': 'Uvolnit nasazení',
   'Release the {environment} deployment?': 'Uvolnit nasazení {environment}?',
   'The server is disconnected, so InitPad cannot remove the workload from it. Only the InitPad record is released.':

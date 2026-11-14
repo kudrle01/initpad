@@ -12,6 +12,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 
 import { ArtifactObjectHead, ArtifactStore } from './artifact-store';
 
@@ -22,6 +23,9 @@ export interface S3ArtifactStoreOptions {
   accessKeyId: string;
   secretAccessKey: string;
   forcePathStyle: boolean;
+  // TCP connect limit and socket-inactivity limit for every request.
+  connectionTimeoutMs?: number;
+  requestTimeoutMs?: number;
 }
 
 /**
@@ -43,6 +47,12 @@ export class S3ArtifactStore implements ArtifactStore {
       endpoint: opts.endpoint || undefined,
       forcePathStyle: opts.forcePathStyle,
       credentials: { accessKeyId: opts.accessKeyId, secretAccessKey: opts.secretAccessKey },
+      // The SDK default waits forever on a silent peer, keeping a deploy (and
+      // its renewed execution lease) alive indefinitely.
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: opts.connectionTimeoutMs ?? 10_000,
+        requestTimeout: opts.requestTimeoutMs ?? 120_000,
+      }),
     });
   }
 

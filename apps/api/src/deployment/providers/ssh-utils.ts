@@ -80,9 +80,50 @@ export async function sshConnect(t: SshTarget, timeoutMs = 8000): Promise<Client
           );
         },
         readyTimeout: timeoutMs,
+        // A peer that vanishes mid-transfer otherwise leaves SFTP callbacks
+        // pending forever. Missed keepalives close the connection, which
+        // fails every outstanding request.
+        keepaliveInterval: config.timeouts.sshKeepaliveIntervalMs,
+        keepaliveCountMax: SSH_KEEPALIVE_COUNT_MAX,
       });
   });
   return conn;
+}
+
+export const SSH_KEEPALIVE_COUNT_MAX = 4;
+
+/**
+ * Bounds a whole SSH session task. On expiry the connection is destroyed,
+ * which fails every pending SFTP/exec callback, and the task rejects with a
+ * message naming the limit.
+ */
+export async function withSshDeadline<T>(
+  conn: Pick<Client, 'destroy'>,
+  timeoutMs: number,
+  label: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      try {
+        conn.destroy();
+      } catch {
+        // Already closed.
+      }
+      reject(
+        new Error(
+          `${label} did not finish within ${Math.round(timeoutMs / 1000)} s and was aborted (INITPAD_SFTP_DEPLOY_TIMEOUT_MS).`,
+        ),
+      );
+    }, timeoutMs);
+    timer.unref();
+  });
+  try {
+    return await Promise.race([task(), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function sshHostKeyFingerprint(key: Buffer): string {

@@ -143,8 +143,12 @@ describe('ProjectsService project deletion', () => {
           owner: null,
         }),
         delete: jest.fn().mockResolvedValue(undefined),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      deploymentOperation: { findMany: jest.fn().mockResolvedValue([]) },
+      deploymentOperation: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       agentJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       workloadDiagnostic: {
         findMany: jest.fn().mockResolvedValue([{ currentJobId: 'diagnostic-job-1' }]),
@@ -218,8 +222,12 @@ describe('ProjectsService project deletion', () => {
       project: {
         findUnique: jest.fn().mockResolvedValue(project),
         delete: jest.fn().mockResolvedValue(undefined),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      deploymentOperation: { findMany: jest.fn().mockResolvedValue([]) },
+      deploymentOperation: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       agentJob: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       workloadDiagnostic: {
         findMany: jest.fn().mockResolvedValue([]),

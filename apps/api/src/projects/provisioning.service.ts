@@ -20,6 +20,11 @@ export type ProvisioningStep = 'validate' | 'repository' | 'ci' | 'done';
 export type ProvisioningEffectKind = 'repository' | 'collaborator' | 'secrets' | 'project';
 
 const LEASE_MS = 5 * 60 * 1000;
+// Renewal well inside the lease, so one missed tick never expires a live
+// operation.
+export const LEASE_RENEW_MS = 60 * 1000;
+// Read paths reconcile at most this often per process.
+const RECONCILE_INTERVAL_MS = 30 * 1000;
 const MAX_ATTEMPTS = 5;
 const RETRY_SAFE_EFFECTS = new Set(['planned', 'compensated']);
 const CLEANUP_EFFECTS = new Set([
@@ -114,6 +119,10 @@ export class ProvisioningService implements OnModuleInit {
   private readonly instanceId = randomUUID();
   private readonly logger = new Logger(ProvisioningService.name);
   private readonly capacity: WorkspaceCapacityService;
+  // Operations this process is executing right now. reconcileStale never
+  // interrupts them, even if a renewal was delayed past the lease.
+  private readonly localOperations = new Set<string>();
+  private lastReconcileAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -153,11 +162,13 @@ export class ProvisioningService implements OnModuleInit {
     let operationId: string;
     if (!options?.retryOfId) {
       operationId = await serializableCapacityTransaction(this.prisma, async (tx) => {
+        await this.assertNotInProgress(tx, workspaceId, projectName, kind);
         await this.capacity.assertAvailable(workspaceId, 'concurrentOperations', 1, tx);
         return (await tx.provisioningOperation.create({ data, select: { id: true } })).id;
       });
     } else {
       operationId = await serializableCapacityTransaction(this.prisma, async (tx) => {
+        await this.assertNotInProgress(tx, workspaceId, projectName, kind);
         await this.capacity.assertAvailable(
           workspaceId,
           'concurrentOperations',
@@ -206,6 +217,68 @@ export class ProvisioningService implements OnModuleInit {
       throw error;
     }
     return operationId;
+  }
+
+  /**
+   * Idempotent name reservation: a second create of the same name (or import
+   * of the same repository) while the first one still holds a live lease is
+   * refused before it can touch the SCM or the shared checkout.
+   */
+  private async assertNotInProgress(
+    tx: Prisma.TransactionClient,
+    workspaceId: string,
+    projectName: string,
+    kind: ProvisioningKind,
+  ): Promise<void> {
+    const running = await tx.provisioningOperation.findFirst({
+      where: {
+        workspaceId,
+        kind,
+        status: 'running',
+        leaseExpiresAt: { gt: new Date() },
+        OR:
+          kind === 'import'
+            ? [{ projectName }, { request: { path: ['repositoryId'], equals: projectName } }]
+            : [{ projectName }],
+      },
+      select: { projectName: true },
+    });
+    if (!running) return;
+    throw new ConflictException(
+      kind === 'import'
+        ? `Repository '${running.projectName}' is already being imported. Wait for that import to finish.`
+        : `Project '${projectName}' is already being created. Wait for that request to finish.`,
+    );
+  }
+
+  /**
+   * Keeps the lease of a running create/import alive for its whole duration,
+   * including long SCM calls between journal steps. Returns the stop function.
+   */
+  holdLease(id: string): () => void {
+    this.localOperations.add(id);
+    const timer = setInterval(() => {
+      void this.renewLease(id).catch((error) => {
+        this.logger.warn(
+          `Provisioning lease renewal failed for ${id}: ${(error as Error).message}`,
+        );
+      });
+    }, LEASE_RENEW_MS);
+    timer.unref();
+    return () => {
+      clearInterval(timer);
+      this.localOperations.delete(id);
+    };
+  }
+
+  /** Shows the repository name instead of its opaque id once it is known. */
+  async rename(id: string, projectName: string): Promise<void> {
+    await this.prisma.provisioningOperation
+      .updateMany({
+        where: { id, status: 'running', leaseOwner: this.instanceId },
+        data: { projectName },
+      })
+      .catch(() => undefined);
   }
 
   async bindProject(id: string, projectId: string): Promise<void> {
@@ -292,10 +365,12 @@ export class ProvisioningService implements OnModuleInit {
     }
   }
 
+  // step/succeed/fail are fenced by the lease owner: once another process
+  // declared the operation interrupted, this process must not overwrite it.
   async step(id: string, step: ProvisioningStep): Promise<void> {
     await this.prisma.provisioningOperation
-      .update({
-        where: { id },
+      .updateMany({
+        where: { id, status: 'running', leaseOwner: this.instanceId },
         data: { step, leaseExpiresAt: this.leaseExpiry() },
       })
       .catch(() => undefined);
@@ -303,8 +378,8 @@ export class ProvisioningService implements OnModuleInit {
 
   async succeed(id: string, projectId?: string): Promise<void> {
     const updated = await this.prisma.provisioningOperation
-      .update({
-        where: { id },
+      .updateMany({
+        where: { id, status: 'running', leaseOwner: this.instanceId },
         data: {
           status: 'succeeded',
           step: 'done',
@@ -314,15 +389,16 @@ export class ProvisioningService implements OnModuleInit {
           ...(projectId ? { projectId } : {}),
         },
       })
-      .then(() => true)
+      .then((result) => result.count === 1)
       .catch(() => false);
     if (updated) await this.recordResultSafely(id);
+    else this.logger.warn(`Provisioning ${id} finished after its lease was lost`);
   }
 
   async fail(id: string, message: string): Promise<void> {
     const updated = await this.prisma.provisioningOperation
-      .update({
-        where: { id },
+      .updateMany({
+        where: { id, status: 'running', leaseOwner: this.instanceId },
         data: {
           status: 'failed',
           message: message.slice(0, 500),
@@ -331,13 +407,14 @@ export class ProvisioningService implements OnModuleInit {
           leaseExpiresAt: null,
         },
       })
-      .then(() => true)
+      .then((result) => result.count === 1)
       .catch(() => false);
     if (updated) await this.recordResultSafely(id);
+    else this.logger.warn(`Provisioning ${id} failed after its lease was lost: ${message}`);
   }
 
   async latestForProject(projectId: string): Promise<ProvisioningView | null> {
-    await this.reconcileStale();
+    await this.reconcileStaleThrottled();
     const op = await this.prisma.provisioningOperation.findFirst({
       where: { projectId },
       orderBy: { createdAt: 'desc' },
@@ -347,7 +424,7 @@ export class ProvisioningService implements OnModuleInit {
   }
 
   async listWorkspace(workspaceId: string, currentUserId: string): Promise<ProvisioningView[]> {
-    await this.reconcileStale();
+    await this.reconcileStaleThrottled();
     const rows = await this.prisma.provisioningOperation.findMany({
       where: { workspaceId, dismissedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -467,13 +544,34 @@ export class ProvisioningService implements OnModuleInit {
   }
 
   isRetryable(operation: ProvisioningRecord, currentUserId: string): boolean {
-    return (
-      ['failed', 'interrupted'].includes(operation.status) &&
-      operation.requestedById === currentUserId &&
-      operation.request != null &&
-      operation.attempt < MAX_ATTEMPTS &&
-      operation.effects.every((effect) => RETRY_SAFE_EFFECTS.has(effect.status))
-    );
+    return this.retryBlockedReason(operation, currentUserId) === null;
+  }
+
+  /** Why this user cannot retry the operation, or null when they can. */
+  retryBlockedReason(operation: ProvisioningRecord, currentUserId: string): string | null {
+    if (['running', 'retrying', 'cleaning'].includes(operation.status)) {
+      return 'This provisioning operation is still running. Wait for it to finish.';
+    }
+    if (operation.status === 'succeeded') return 'This provisioning operation already succeeded.';
+    if (operation.status === 'retried') {
+      return 'A newer attempt of this provisioning operation already exists. Retry that one instead.';
+    }
+    if (!['failed', 'interrupted'].includes(operation.status)) {
+      return `A provisioning operation in state '${operation.status}' cannot be retried.`;
+    }
+    if (operation.requestedById !== currentUserId) {
+      return 'Only the person who started this provisioning operation can retry it.';
+    }
+    if (operation.request == null) {
+      return 'This legacy provisioning operation has no retryable request.';
+    }
+    if (operation.attempt >= MAX_ATTEMPTS) {
+      return `This provisioning operation reached the maximum of ${MAX_ATTEMPTS} attempts.`;
+    }
+    if (!operation.effects.every((effect) => RETRY_SAFE_EFFECTS.has(effect.status))) {
+      return 'The failed attempt left changes in the repository or InitPad. Run Clean up first, then retry.';
+    }
+    return null;
   }
 
   needsCleanup(operation: Pick<ProvisioningRecord, 'status' | 'effects'>): boolean {
@@ -483,11 +581,22 @@ export class ProvisioningService implements OnModuleInit {
     );
   }
 
+  /** Read-path reconciliation, rate limited so polling never runs it per request. */
+  private async reconcileStaleThrottled(): Promise<void> {
+    if (Date.now() - this.lastReconcileAt < RECONCILE_INTERVAL_MS) return;
+    this.lastReconcileAt = Date.now();
+    await this.reconcileStale().catch((error) => {
+      this.logger.warn(`Provisioning reconciliation skipped: ${(error as Error).message}`);
+    });
+  }
+
   async reconcileStale(): Promise<number> {
     const now = new Date();
     const legacyCutoff = new Date(now.getTime() - LEASE_MS);
+    const ownLive = [...this.localOperations];
     const stale = await this.prisma.provisioningOperation.findMany({
       where: {
+        ...(ownLive.length ? { id: { notIn: ownLive } } : {}),
         status: { in: ['running', 'cleaning', 'retrying'] },
         OR: [
           { leaseExpiresAt: { lt: now } },
@@ -498,6 +607,7 @@ export class ProvisioningService implements OnModuleInit {
     });
     let recovered = 0;
     for (const operation of stale) {
+      if (this.localOperations.has(operation.id)) continue;
       const claimed = await this.prisma.provisioningOperation.updateMany({
         where: {
           id: operation.id,

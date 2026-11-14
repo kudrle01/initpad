@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, join, relative, resolve, sep } from 'path';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import * as Handlebars from 'handlebars';
 import { config } from '../config';
 import { TemplatesService } from '../templates/templates.service';
@@ -29,6 +29,29 @@ export function workspacePath(subpath: string): string {
 }
 
 /**
+ * True only for an absolute path strictly below the workspace directory. A
+ * stored project path that fails this check (legacy imports stored the
+ * relative `owner/name`) must never reach a recursive delete, because a
+ * relative path resolves against the API's working directory.
+ */
+export function isWorkspaceCheckout(path: string | null | undefined): path is string {
+  if (!path || !isAbsolute(path)) return false;
+  const root = resolve(config.workspaceDir);
+  return resolve(path).startsWith(root + sep);
+}
+
+/**
+ * Reserves a fresh, unique checkout directory below `<workspace>/<owner>/`.
+ * Concurrent create requests for the same name each get their own directory,
+ * so one request's cleanup can never delete another request's checkout.
+ */
+export function uniqueWorkspaceSubpath(owner: string, name: string): string {
+  const parent = workspacePath(owner);
+  mkdirSync(parent, { recursive: true });
+  return `${owner}/${basename(mkdtempSync(join(parent, `${name}-`)))}`;
+}
+
+/**
  * Project scaffolding. Copies the template's files tree; files with the .hbs
  * extension are rendered through Handlebars and the extension is stripped.
  */
@@ -42,6 +65,14 @@ export class GeneratorService {
    *   Namespaced by owner so two users can have same-named projects without
    *   directory collisions.
    */
+  /**
+   * Renders the template into a fresh, request-unique checkout below
+   * `<workspace>/<owner>/`. The caller owns and removes the directory.
+   */
+  generateCheckout(templateId: string, projectName: string, owner: string): GenerateResult {
+    return this.generate(templateId, projectName, uniqueWorkspaceSubpath(owner, projectName));
+  }
+
   generate(templateId: string, projectName: string, destSubpath?: string): GenerateResult {
     const srcDir = this.templates.filesDir(templateId);
     const destDir = workspacePath(destSubpath ?? projectName);

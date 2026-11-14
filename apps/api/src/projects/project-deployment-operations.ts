@@ -22,6 +22,31 @@ const EXECUTION_LEASE_MS = 90_000;
 const EXECUTION_RENEW_MS = 30_000;
 const LEGACY_EXECUTION_GRACE_MS = EXECUTION_LEASE_MS;
 
+/**
+ * A deletion lock older than this is treated as abandoned by a crashed
+ * process. It exceeds the longest bounded teardown (SFTP deploy deadline).
+ */
+export const DELETION_LOCK_MS = 30 * 60_000;
+
+/** True while another request holds a fresh deletion lock on the project. */
+export function deletionInProgress(
+  deletionStartedAt: Date | null | undefined,
+  now = new Date(),
+): boolean {
+  return !!deletionStartedAt && now.getTime() - deletionStartedAt.getTime() < DELETION_LOCK_MS;
+}
+
+// Only operations that touch nothing on a host may run without a server.
+const TARGETLESS_KINDS = new Set(['remove', 'stop']);
+
+/**
+ * An environment whose server was removed has no target. It must never fall
+ * back to the provider's local default (the InitPad host itself).
+ */
+export function noServerMessage(envName: string): string {
+  return `Environment '${envName}' has no server assigned (its server was removed). Choose a server for this environment before deploying.`;
+}
+
 type ExecutionContext = {
   operationId: string;
   generation: number;
@@ -214,10 +239,16 @@ export class ProjectDeploymentOperations {
       include: {
         target: { select: { name: true, updatedAt: true } },
         allocation: { select: { updatedAt: true } },
-        project: { select: { id: true, name: true, workspaceId: true } },
+        project: { select: { id: true, name: true, workspaceId: true, deletionStartedAt: true } },
       },
     });
     if (!environment) throw new NotFoundException(`Environment '${envName}' not found`);
+    if (deletionInProgress(environment.project.deletionStartedAt)) {
+      throw new ConflictException('This project is being deleted; no new operations can start.');
+    }
+    if (!environment.targetId && !TARGETLESS_KINDS.has(kind)) {
+      throw new BadRequestException(noServerMessage(envName));
+    }
     if (
       expectedProductionState &&
       !this.matchesExpectedState(environment, expectedProductionState)

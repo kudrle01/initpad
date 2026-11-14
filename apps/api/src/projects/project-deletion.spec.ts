@@ -1,3 +1,7 @@
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { config } from '../config';
 import { ProjectDeletion } from './project-deletion';
 
 const PROJECT = {
@@ -28,6 +32,14 @@ const PROJECT = {
     },
   ],
 };
+
+// The executing-operation probe filters on a live execution lease; every other
+// lookup sees the plain list of unfinished operations.
+function unfinishedOperations(rows: Array<{ id: string }>, executing: unknown[] = []) {
+  return jest.fn(async ({ where }: { where: { executionOwner?: unknown } }) =>
+    where.executionOwner ? executing : rows,
+  );
+}
 
 function makeDeletion(prisma: Record<string, unknown>, teardown = jest.fn()) {
   const scm = {
@@ -67,7 +79,10 @@ const RETIRED_AGENT_PROJECT = {
 
 function deletionPrisma() {
   return {
-    deploymentOperation: { findMany: jest.fn().mockResolvedValue([{ id: 'stuck-operation' }]) },
+    deploymentOperation: {
+      findMany: unfinishedOperations([{ id: 'stuck-operation' }]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     workloadDiagnostic: {
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -77,7 +92,11 @@ function deletionPrisma() {
       count: jest.fn().mockResolvedValue(0),
     },
     environment: { update: jest.fn().mockResolvedValue(undefined) },
-    project: { delete: jest.fn().mockResolvedValue(undefined) },
+    project: {
+      delete: jest.fn().mockResolvedValue(undefined),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      count: jest.fn().mockResolvedValue(1),
+    },
   };
 }
 
@@ -177,7 +196,8 @@ describe('ProjectDeletion ordering', () => {
     const deleteProject = jest.fn().mockResolvedValue(undefined);
     const prisma = {
       deploymentOperation: {
-        findMany: jest.fn().mockResolvedValue([{ id: 'operation-1' }]),
+        findMany: unfinishedOperations([{ id: 'operation-1' }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       workloadDiagnostic: {
         findMany: jest.fn().mockResolvedValue([{ currentJobId: 'diagnostic-job-1' }]),
@@ -185,7 +205,7 @@ describe('ProjectDeletion ordering', () => {
       },
       agentJob: { updateMany: fenceAgentJob },
       environment: { update: jest.fn().mockResolvedValue(undefined) },
-      project: { delete: deleteProject },
+      project: { delete: deleteProject, updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     const scm = {
       deletePackages: jest.fn().mockResolvedValue(undefined),
@@ -221,5 +241,90 @@ describe('ProjectDeletion ordering', () => {
     expect(detachRepo.mock.invocationCallOrder[0]).toBeLessThan(
       deleteProject.mock.invocationCallOrder[0],
     );
+  });
+});
+
+describe('ProjectDeletion safety', () => {
+  const originalWorkspaceDir = config.workspaceDir;
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'initpad-deletion-spec-'));
+    config.workspaceDir = join(root, 'workspace');
+    mkdirSync(config.workspaceDir);
+  });
+
+  afterEach(() => {
+    config.workspaceDir = originalWorkspaceDir;
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const projectWithPath = (repoPath: string) => ({ ...PROJECT, repoPath, environments: [] });
+
+  it('never removes a legacy relative repoPath resolved against the API directory', async () => {
+    const apiDir = join(root, 'api');
+    mkdirSync(join(apiDir, 'team', 'app'), { recursive: true });
+    const cwd = process.cwd();
+    process.chdir(apiDir);
+    try {
+      await makeDeletion(deletionPrisma()).execute(projectWithPath('team/app') as never, {
+        repoAction: 'detach',
+      });
+    } finally {
+      process.chdir(cwd);
+    }
+    expect(existsSync(join(apiDir, 'team', 'app'))).toBe(true);
+  });
+
+  it('removes only an absolute checkout inside the workspace directory', async () => {
+    const outside = join(root, 'outside');
+    const inside = join(config.workspaceDir, 'team', 'app-abc123');
+    mkdirSync(outside);
+    mkdirSync(inside, { recursive: true });
+
+    await makeDeletion(deletionPrisma()).execute(projectWithPath(outside) as never, {
+      repoAction: 'detach',
+    });
+    await makeDeletion(deletionPrisma()).execute(projectWithPath(inside) as never, {
+      repoAction: 'detach',
+    });
+
+    expect(existsSync(outside)).toBe(true);
+    expect(existsSync(inside)).toBe(false);
+  });
+
+  it('refuses a second concurrent deletion before any teardown', async () => {
+    const prisma = deletionPrisma();
+    prisma.project.updateMany.mockResolvedValue({ count: 0 });
+    const teardown = jest.fn();
+
+    await expect(
+      makeDeletion(prisma, teardown).execute(PROJECT as never, { repoAction: 'detach' }),
+    ).rejects.toThrow('already being deleted');
+    expect(teardown).not.toHaveBeenCalled();
+    expect(prisma.project.delete).not.toHaveBeenCalled();
+  });
+
+  it('cancels an executor-owned deployment and refuses deletion until it stops', async () => {
+    const prisma = deletionPrisma();
+    prisma.deploymentOperation.findMany = unfinishedOperations(
+      [{ id: 'operation-1' }],
+      [{ id: 'operation-1', environment: { name: 'dev' } }],
+    );
+    const teardown = jest.fn();
+
+    await expect(
+      makeDeletion(prisma, teardown).execute(PROJECT as never, { repoAction: 'detach' }),
+    ).rejects.toThrow('A deployment is still running in dev. It has been cancelled');
+    expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['operation-1'] }, finishedAt: null },
+      data: expect.objectContaining({ status: 'cancelled' }),
+    });
+    expect(teardown).not.toHaveBeenCalled();
+    // The lock is released so the user can retry once the executor finished.
+    expect(prisma.project.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'project-1', deletionStartedAt: expect.any(Date) },
+      data: { deletionStartedAt: null },
+    });
   });
 });
