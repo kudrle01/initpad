@@ -519,7 +519,7 @@ export function TargetFormDialog({
                         'Use an HTTPS DNS origin for stable application hostnames. Run gateway preflight before the first deployment.',
                       )
                     : t(
-                        'Use the browser-reachable address of this server. Each local or lab application receives its own published port.',
+                        'Use the browser-reachable address of this server. Each local or lab application receives its own published port from 30000–32767; open only that range in the server firewall.',
                       )}
                 </InfoTip>
               )}

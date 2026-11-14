@@ -1007,8 +1007,8 @@ export const cs = {
   'About the application address': 'O adrese aplikací',
   'Use an HTTPS DNS origin for stable application hostnames. Run gateway preflight before the first deployment.':
     'Pro stabilní adresy aplikací použijte HTTPS origin s DNS. Před prvním nasazením spusťte předběžnou kontrolu brány.',
-  'Use the browser-reachable address of this server. Each local or lab application receives its own published port.':
-    'Použijte adresu tohoto serveru dostupnou z prohlížeče. Každá lokální nebo laboratorní aplikace dostane vlastní publikovaný port.',
+  'Use the browser-reachable address of this server. Each local or lab application receives its own published port from 30000–32767; open only that range in the server firewall.':
+    'Použijte adresu tohoto serveru dostupnou z prohlížeče. Každá lokální nebo laboratorní aplikace dostane vlastní publikovaný port z rozsahu 30000–32767; ve firewallu serveru otevřete jen tento rozsah.',
   'Save connection': 'Uložit připojení',
   'Save server': 'Uložit server',
   // components/organisms/TargetPickerDialog.tsx
