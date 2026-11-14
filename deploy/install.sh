@@ -918,7 +918,9 @@ mirror_ci_actions
 source_build_hash() {
   if git -C .. rev-parse --git-dir >/dev/null 2>&1; then
     {
-      git -C .. rev-parse HEAD
+      # Tree ids of exactly what the Dockerfiles copy, so a commit that only
+      # touches deploy/ or docs does not rebuild.
+      git -C .. rev-parse HEAD:apps HEAD:templates HEAD:package.json HEAD:package-lock.json
       git -C .. status --porcelain --untracked-files=no -- apps templates package.json package-lock.json
       git -C .. diff HEAD -- apps templates package.json package-lock.json
     } | sha256sum | cut -d' ' -f1
