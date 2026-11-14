@@ -284,9 +284,23 @@ export default function Dashboard() {
           <StatCard
             label={t('Pending approvals')}
             value={figure(stats?.pendingApprovals)}
-            hint={stats ? t('Production requests') : undefined}
+            hint={
+              stats
+                ? stats.pendingApprovals > 0
+                  ? t('Review production requests')
+                  : t('Production requests')
+                : undefined
+            }
             icon={ShieldCheck}
             tone={stats && stats.pendingApprovals > 0 ? 'warning' : 'neutral'}
+            to={stats && stats.pendingApprovals > 0 ? '/projects?filter=approvals' : undefined}
+            linkLabel={
+              stats
+                ? t('Show production requests waiting for approval ({count})', {
+                    count: stats.pendingApprovals,
+                  })
+                : undefined
+            }
           />
         </div>
 
@@ -465,7 +479,7 @@ export default function Dashboard() {
                             <Badge variant="warning">{t('deploying')}</Badge>
                           )}
                           {project.pendingApprovals > 0 && (
-                            <Badge variant="warning" className="hidden sm:inline-flex">
+                            <Badge variant="warning">
                               {plural('{count} approvals', project.pendingApprovals)}
                             </Badge>
                           )}

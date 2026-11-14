@@ -38,4 +38,20 @@ export const csWeb = {
   'The running application uses the new values after the next deployment.':
     'Běžící aplikace použije nové hodnoty po dalším nasazení.',
   'Edit {key}': 'Upravit {key}',
+  // pending production approvals (Dashboard, Projects, Sidebar)
+  'Review production requests': 'Posuďte žádosti o produkci',
+  'Show production requests waiting for approval ({count})':
+    'Zobrazit žádosti o produkci čekající na schválení ({count})',
+  'Projects waiting for production approval': 'Projekty čekající na schválení produkce',
+  'Show all projects': 'Zobrazit všechny projekty',
+  'Open a project to review its production request.':
+    'Žádost o produkci posoudíte v detailu projektu.',
+  'Nothing waits for approval': 'Nic nečeká na schválení',
+  'No production request in this workspace needs a review.':
+    'V tomto workspace žádná žádost o produkci nečeká na posouzení.',
+  'production requests waiting for approval': 'žádostí o produkci čeká na schválení',
+  // pages/Projects.tsx
+  'Production requests wait for approval ({count}).':
+    'Žádosti o produkci čekají na schválení ({count}).',
+  'Show those projects': 'Zobrazit tyto projekty',
 } satisfies Record<string, string>;

@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ShieldCheck } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { plural } from '@/i18n';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { EnvironmentStatusList } from '@/components/molecules/EnvironmentStatusList';
 import { listRowClassName, listRowInteractiveClassName } from '@/components/molecules/List';
@@ -7,7 +9,15 @@ import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 
 // Molecule: project row in a list (template icon, name, environment status).
-export function ProjectRow({ project, templateName }: { project: Project; templateName: string }) {
+export function ProjectRow({
+  project,
+  templateName,
+  pendingApprovals = 0,
+}: {
+  project: Project;
+  templateName: string;
+  pendingApprovals?: number;
+}) {
   return (
     <li>
       <Link
@@ -16,8 +26,16 @@ export function ProjectRow({ project, templateName }: { project: Project; templa
       >
         <TemplateIcon templateId={project.templateId} language={templateName} size="sm" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium" title={project.name}>
-            {project.name}
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-medium" title={project.name}>
+              {project.name}
+            </span>
+            {pendingApprovals > 0 && (
+              <Badge variant="warning" className="shrink-0">
+                <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+                {plural('{count} approvals', pendingApprovals)}
+              </Badge>
+            )}
           </div>
           <div className="truncate text-xs text-muted-foreground">{templateName}</div>
           <EnvironmentStatusList environments={project.environments} className="mt-1.5 sm:hidden" />
