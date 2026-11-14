@@ -1,4 +1,25 @@
-import { builtInAppsShareSessionCookie, config, resolvePublicUrls, validateConfig } from './config';
+import {
+  builtInAppsShareSessionCookie,
+  config,
+  resolveProbeBindAddress,
+  resolvePublicUrls,
+  validateConfig,
+} from './config';
+
+describe('resolveProbeBindAddress', () => {
+  it('probes through the host gateway for stacks updated in place from before ADR-174', () => {
+    expect(resolveProbeBindAddress(undefined, 'host.docker.internal')).toBe('host.docker.internal');
+  });
+
+  it('keeps an explicit value, including an explicit opt-out', () => {
+    expect(resolveProbeBindAddress(' 172.17.0.1 ', 'host.docker.internal')).toBe('172.17.0.1');
+    expect(resolveProbeBindAddress('', 'host.docker.internal')).toBe('');
+  });
+
+  it('adds nothing when the API runs on the host itself', () => {
+    expect(resolveProbeBindAddress(undefined, 'localhost')).toBe('');
+  });
+});
 
 describe('validateConfig production secrets', () => {
   const fakePrivateKey = [

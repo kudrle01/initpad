@@ -257,7 +257,7 @@ release_channel() {
 check_running() {
   [ "$(uname -s)" = Linux ] || fail "Self-hosted acceptance requires Linux."
   [ -f .env ] || fail "deploy/.env is missing; run ./install.sh first."
-  ! grep -q '__GENERATE__' .env || fail "deploy/.env still contains ungenerated secrets."
+  ! grep -Eq '^[A-Z0-9_]+=__GENERATE__[[:space:]]*$' .env || fail "deploy/.env still contains ungenerated secrets."
   docker info >/dev/null 2>&1 || fail "Docker Engine is not running."
   "${COMPOSE[@]}" config --quiet
 
