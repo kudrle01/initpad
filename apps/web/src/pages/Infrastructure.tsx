@@ -126,6 +126,22 @@ export default function Infrastructure() {
     return () => window.clearTimeout(timeout);
   }, [agentEnrollment, agentProtocol.agent?.credentialGeneration, agentProtocol.agent?.targetId]);
 
+  async function closeAgentDialog() {
+    if (agentEnrollment) {
+      const confirmed = await confirmAction({
+        title: t('Close the Agent setup?'),
+        description: t(
+          'The enrollment command is shown only now. If the server has not run it yet, you will have to create a new one.',
+        ),
+        confirmLabel: t('Close setup'),
+        tone: 'warning',
+      });
+      if (!confirmed) return;
+    }
+    setAgentEnrollment(null);
+    setAgentTarget(null);
+  }
+
   function openNewTarget() {
     setEditingTarget(null);
     setTargetDialogOpen(true);
@@ -164,9 +180,18 @@ export default function Infrastructure() {
     if (saved) {
       setTargetDialogOpen(false);
       setEditingTarget(null);
+      if (saved.kind !== 'docker' && (saved.managementState ?? 'active') === 'active') {
+        // An unverified SFTP server cannot be chosen for an environment, so
+        // test the saved connection right away instead of leaving a hidden step.
+        void infrastructure.verifyTarget(saved);
+      }
       if (wasNew && saved.kind === 'docker' && canManageAgent) {
+        // The next step is always the enrollment command; create it at once.
         setAgentEnrollment(null);
         setAgentTarget({ ...saved, agent: null });
+        void infrastructure.issueAgentEnrollment(saved).then((result) => {
+          if (result) setAgentEnrollment(result);
+        });
       }
     }
   }
@@ -376,6 +401,7 @@ export default function Infrastructure() {
         open={targetDialogOpen}
         target={editingTarget}
         busy={infrastructure.savingTarget}
+        canAddAgentServer={canManageAgent}
         onOpenChange={(open) => {
           setTargetDialogOpen(open);
           if (!open) setEditingTarget(null);
@@ -413,10 +439,7 @@ export default function Infrastructure() {
         busy={!!agentTarget && infrastructure.busyTargetId === agentTarget.id}
         enrollment={agentEnrollment}
         onOpenChange={(open) => {
-          if (!open) {
-            setAgentEnrollment(null);
-            setAgentTarget(null);
-          }
+          if (!open) void closeAgentDialog();
         }}
         onIssueEnrollment={() => {
           if (!agentTarget) return;

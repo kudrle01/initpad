@@ -147,3 +147,25 @@ describe('TargetFormDialog SSH host trust', () => {
     expect(screen.getByLabelText('Host key fingerprint')).toHaveValue(replacementFingerprint);
   });
 });
+
+describe('TargetFormDialog roles (ADR-185)', () => {
+  it('offers a maintainer SFTP only and explains who adds a Docker server with the Agent', () => {
+    render(
+      <ConfirmationProvider>
+        <TargetFormDialog
+          open
+          target={null}
+          busy={false}
+          canAddAgentServer={false}
+          onOpenChange={() => undefined}
+          onSubmit={vi.fn()}
+        />
+      </ConfirmationProvider>,
+    );
+
+    const method = screen.getByLabelText('Connection method');
+    expect(method).toHaveValue('sftp');
+    expect(screen.queryByRole('option', { name: /InitPad Agent for Docker/ })).toBeNull();
+    expect(screen.getByText(/added by a workspace owner or admin/)).toBeInTheDocument();
+  });
+});
