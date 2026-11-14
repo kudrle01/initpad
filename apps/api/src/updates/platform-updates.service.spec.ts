@@ -161,6 +161,31 @@ describe('PlatformUpdatesService', () => {
     expect(status.canInstall).toBe(false);
   });
 
+  it('reports the starting version while the candidate API runs and the Supervisor is away', async () => {
+    // Audit finding: during the web stage this API already runs the candidate
+    // image, so its own version briefly replaced the confirmed one in the UI.
+    config.updates.platformVersion = '0.3.0';
+    const prisma = {
+      platformUpdateOperation: {
+        findUnique: jest.fn(async () => null),
+        findMany: jest.fn(async () => [row({ status: 'running', stage: 'web' })]),
+      },
+    };
+    const supervisor = {
+      configured: true,
+      status: jest.fn(async () => {
+        throw new TypeError('fetch failed');
+      }),
+    };
+    const service = new PlatformUpdatesService(
+      prisma as never,
+      { latest: jest.fn(async () => catalog()) } as never,
+      supervisor as never,
+    );
+
+    await expect(service.status()).resolves.toMatchObject({ currentVersion: '0.2.0' });
+  });
+
   it('records the requesting administrator before sending the signed payload', async () => {
     const create = jest.fn(async () => row({ supervisorOperationId: null, status: 'requesting' }));
     const update = jest.fn(async () => row());

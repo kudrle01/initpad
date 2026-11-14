@@ -81,12 +81,18 @@ export class PlatformUpdatesService {
     ]);
     if (supervisorResult.value) await this.reconcile(supervisorResult.value);
     const history = await this.history();
-    const currentVersion = supervisorResult.value?.currentVersion ?? config.updates.platformVersion;
+    const active = history.find((item) => ACTIVE.has(item.status)) ?? null;
+    // While the Supervisor swaps containers it can be briefly unreachable and
+    // this API may already run the candidate image; an active update still
+    // reports the version it started from until the Supervisor confirms.
+    const currentVersion =
+      supervisorResult.value?.currentVersion ??
+      active?.fromVersion ??
+      config.updates.platformVersion;
     const latestVersion = catalogResult.release?.manifest.version ?? null;
     const updateAvailable = Boolean(
       latestVersion && compareStableVersions(latestVersion, currentVersion) > 0,
     );
-    const active = history.find((item) => ACTIVE.has(item.status)) ?? null;
     const supervisorActive = Boolean(
       supervisorResult.value?.operation &&
       ['accepted', 'running'].includes(supervisorResult.value.operation.status),
