@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { verifyPassword } from '../auth/password';
 
@@ -118,6 +118,7 @@ describe('AdminService', () => {
           return row({ id: 'u2', username: 'bob', active: false });
         }),
       },
+      workspaceMember: { findMany: jest.fn(async () => []) },
     };
     const order: string[] = [];
     const gitea = {
@@ -187,6 +188,7 @@ describe('AdminService', () => {
     const prisma = {
       $transaction: jest.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
       user: { findUnique: jest.fn(async () => row({ id: 'u2' })), count: jest.fn() },
+      workspaceMember: { findMany: jest.fn(async () => []) },
     };
     const audit = { record: jest.fn(async () => undefined) };
     const service = new AdminService(
@@ -227,5 +229,89 @@ describe('AdminService', () => {
     const service = new AdminService(prisma as never, auth as never, {} as never);
     await expect(service.resetPassword('admin-1', 'u2')).rejects.toThrow('Gitea unavailable');
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to deactivate the owner of a team workspace and names it', async () => {
+    const gitea = { setUserActive: jest.fn() };
+    const auth = { revokeGitCredential: jest.fn() };
+    const prisma = {
+      user: { findUnique: jest.fn(async () => row({ id: 'u2', username: 'bob' })) },
+      workspaceMember: {
+        findMany: jest.fn(async () => [{ workspace: { name: 'Team Alpha' } }]),
+      },
+    };
+    const service = new AdminService(prisma as never, auth as never, gitea as never);
+    const error = await service.setActive('admin-1', 'u2', false).catch((caught) => caught);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as Error).message).toMatch(/Team Alpha.*transfer ownership/);
+    expect(prisma.workspaceMember.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'u2', role: 'owner', workspace: { type: 'team' } },
+      }),
+    );
+    expect(auth.revokeGitCredential).not.toHaveBeenCalled();
+    expect(gitea.setUserActive).not.toHaveBeenCalled();
+  });
+
+  describe('platform role (audit P1.19)', () => {
+    function harness(target: Record<string, unknown>, admins: string[]) {
+      const tx = {
+        user: {
+          findUnique: jest.fn(async () => row(target)),
+          update: jest.fn(async ({ data }: { data: Record<string, unknown> }) =>
+            row({ ...target, ...data }),
+          ),
+        },
+        $queryRaw: jest.fn(async () => admins.map((id) => ({ id }))),
+      };
+      const prisma = { $transaction: jest.fn(async (fn: (client: unknown) => unknown) => fn(tx)) };
+      const audit = { record: jest.fn(async () => undefined) };
+      const service = new AdminService(
+        prisma as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        audit,
+      );
+      return { service, tx, audit };
+    }
+
+    it('promotes an account and audits the change in the same transaction', async () => {
+      const { service, tx, audit } = harness({ id: 'u2', platformRole: 'user' }, ['admin-1']);
+      await expect(service.setPlatformRole('admin-1', 'u2', 'admin')).resolves.toMatchObject({
+        platformRole: 'admin',
+      });
+      expect(tx.$queryRaw).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'user.platform_role_changed',
+          details: { previousPlatformRole: 'user', platformRole: 'admin' },
+        }),
+        tx,
+      );
+    });
+
+    it('demotes an administrator while another active one remains', async () => {
+      const { service, tx } = harness({ id: 'u2', platformRole: 'admin' }, ['admin-1', 'u2']);
+      await expect(service.setPlatformRole('admin-1', 'u2', 'user')).resolves.toMatchObject({
+        platformRole: 'user',
+      });
+      expect(tx.user.update).toHaveBeenCalled();
+    });
+
+    it('refuses to demote the last active administrator, including oneself', async () => {
+      const { service, tx } = harness({ id: 'admin-1', platformRole: 'admin' }, ['admin-1']);
+      await expect(service.setPlatformRole('admin-1', 'admin-1', 'user')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(tx.user.update).not.toHaveBeenCalled();
+    });
+
+    it('leaves an unchanged role alone', async () => {
+      const { service, tx, audit } = harness({ id: 'u2', platformRole: 'user' }, []);
+      await service.setPlatformRole('admin-1', 'u2', 'user');
+      expect(tx.user.update).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
   });
 });
