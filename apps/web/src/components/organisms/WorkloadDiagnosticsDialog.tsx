@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import type { Environment, WorkloadDiagnostic, WorkloadHealth } from '@/types';
 import { t, msg, formatDateTime, type MessageKey } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 
 interface Props {
   projectId: string;
@@ -122,7 +123,7 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
           <DialogDescription>
             {t(
               'A read-only snapshot from {target}. It does not deploy, restart or execute a shell command in the workload.',
-              { target: environment?.target?.name ?? t('the Agent target') },
+              { target: environment?.target?.name ?? t('the Agent server') },
             )}
           </DialogDescription>
         </DialogHeader>
@@ -180,7 +181,9 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                 {active && (
                   <div className="mt-3">
                     <div className="mb-1 flex justify-between gap-3 text-xs text-muted-foreground">
-                      <span className="truncate">{snapshot.message ?? t('Waiting for Agent')}</span>
+                      <span className="truncate">
+                        {translateApiMessage(snapshot.message) ?? t('Waiting for Agent')}
+                      </span>
                       <span className="shrink-0">{progress}%</span>
                     </div>
                     <div
@@ -200,7 +203,8 @@ export function WorkloadDiagnosticsDialog({ projectId, environment, onOpenChange
                 )}
                 {snapshot.status === 'failed' && snapshot.message && (
                   <p className="mt-3 flex items-start gap-1.5 text-sm text-destructive">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {snapshot.message}
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{' '}
+                    {translateApiMessage(snapshot.message)}
                   </p>
                 )}
               </div>

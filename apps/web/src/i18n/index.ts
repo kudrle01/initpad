@@ -1,5 +1,5 @@
 import { createElement, Fragment, type ReactNode } from 'react';
-import { cs } from './cs';
+import type { cs as CzechDictionary } from './cs';
 import { PLURALS, type PluralKey } from './plurals';
 
 /**
@@ -9,7 +9,7 @@ import { PLURALS, type PluralKey } from './plurals';
  * type error rather than a blank label.
  */
 export type Locale = 'en' | 'cs';
-export type MessageKey = keyof typeof cs;
+export type MessageKey = keyof typeof CzechDictionary;
 export type { PluralKey };
 
 export const LOCALES: { value: Locale; label: string; short: string }[] = [
@@ -47,6 +47,27 @@ function detectLocale(): Locale {
 let locale: Locale = detectLocale();
 const listeners = new Set<() => void>();
 
+// The Czech dictionary is a separate chunk, so English sessions never download
+// it (ADR-185). Until it arrives, `t()` falls back to the English source.
+let czech: Record<string, string> | null = null;
+let czechLoading: Promise<void> | null = null;
+
+function loadCzech(): Promise<void> {
+  czechLoading ??= import('./cs').then((module) => {
+    czech = module.cs;
+  });
+  return czechLoading;
+}
+
+/** Loads the dictionary of the active language; resolve before the first render. */
+export function loadLocaleMessages(target: Locale = locale): Promise<void> {
+  return target === 'cs' ? loadCzech() : Promise.resolve();
+}
+
+function dictionaryText(key: string): string {
+  return locale === 'cs' && czech ? (czech[key] ?? key) : key;
+}
+
 function applyDocumentLanguage() {
   if (typeof document !== 'undefined') document.documentElement.lang = locale;
 }
@@ -56,7 +77,24 @@ export function getLocale(): Locale {
   return locale;
 }
 
-export function setLocale(next: Locale) {
+let switchRequest = 0;
+
+/**
+ * Switches the language. A dictionary that is not loaded yet is fetched first;
+ * when the user picks another language meanwhile, the later choice wins.
+ */
+export function setLocale(next: Locale): Promise<void> {
+  const request = ++switchRequest;
+  if (next === 'cs' && !czech) {
+    return loadCzech().then(() => {
+      if (request === switchRequest) applyLocale(next);
+    });
+  }
+  applyLocale(next);
+  return Promise.resolve();
+}
+
+function applyLocale(next: Locale) {
   if (next === locale) return;
   locale = next;
   try {
@@ -84,7 +122,7 @@ function interpolate(template: string, vars?: Vars): string {
 
 /** Translates a message. `{name}` placeholders are filled from `vars`. */
 export function t(key: MessageKey, vars?: Vars): string {
-  return interpolate(locale === 'cs' ? cs[key] : key, vars);
+  return interpolate(dictionaryText(key), vars);
 }
 
 /**
@@ -111,7 +149,7 @@ type RichValue = ReactNode | ((chunk: ReactNode) => ReactNode);
  *   rich('Type <b>{name}</b> to confirm:', { name, b: (c) => <strong>{c}</strong> })
  */
 export function rich(key: MessageKey, values: Record<string, RichValue>): ReactNode {
-  return renderRich(locale === 'cs' ? cs[key] : key, values);
+  return renderRich(dictionaryText(key), values);
 }
 
 /** Count-dependent sentence with markup; `{count}` is available to the message. */

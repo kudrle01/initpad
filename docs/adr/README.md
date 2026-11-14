@@ -196,4 +196,5 @@ stabilní.
 | [ADR-182](./ADR-182.md) | Accepted | Aktualizace platformy se sladí se Supervisorem a nehlásí nepravdivý rollback |
 | [ADR-183](./ADR-183.md) | Accepted | Destruktivní migrace potřebují výjimku a release s nimi nesmí slibovat rollback images |
 | [ADR-184](./ADR-184.md) | Accepted | Převod vlastnictví workspace, odchod z něj a správa platformních rolí |
+| [ADR-185](./ADR-185.md) | Accepted | Web překládá hlášky API, sjednocuje pojmy a nevede do slepých uliček |
 | [ADR-186](./ADR-186.md) | Accepted | Jedna Node LTS linie, deterministický PR gate a ověřené release image |

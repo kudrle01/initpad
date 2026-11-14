@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { AuthCard } from '@/components/molecules/AuthCard';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { isChunkLoadError, reloadForNewBuild } from '@/lib/stale-build';
@@ -54,6 +55,11 @@ export default function RouteError() {
           <ArrowLeft className="h-4 w-4" /> {t('Back to dashboard')}
         </Link>
       </Button>
+      {!is404 && (
+        <p className="mt-4 text-center text-sm">
+          <HelpLink topic="troubleshooting">{t('Troubleshooting')}</HelpLink>
+        </p>
+      )}
     </AuthCard>
   );
 }

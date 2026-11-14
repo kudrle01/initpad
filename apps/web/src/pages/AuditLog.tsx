@@ -114,7 +114,7 @@ export default function AuditLog() {
           <option value="workspace">{t('Workspace')}</option>
           <option value="member">{t('Member')}</option>
           <option value="project">{t('Project')}</option>
-          <option value="target">{t('Target')}</option>
+          <option value="target">{t('Server')}</option>
           <option value="allocation">{t('Allocation')}</option>
           <option value="agent">{t('Agent')}</option>
         </Select>

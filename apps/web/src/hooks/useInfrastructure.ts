@@ -3,6 +3,7 @@ import { api, type TargetAllocation, type TargetAllocationInput, type TargetInpu
 import { useToast } from '@/toast';
 import type { Target } from '@/types';
 import { t } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 
 /** Owns Infrastructure data and mutations independently of its presentation. */
 export function useInfrastructure(workspaceId?: string) {
@@ -167,8 +168,8 @@ export function useInfrastructure(workspaceId?: string) {
     setBusyTargetId(target.id);
     try {
       const result = await api.verifyTarget(target.id);
-      if (result.ok) toast.success(result.message);
-      else toast.error(result.message);
+      if (result.ok) toast.success(translateApiMessage(result.message));
+      else toast.error(translateApiMessage(result.message));
       await refresh();
     } catch (cause) {
       toast.error((cause as Error).message);

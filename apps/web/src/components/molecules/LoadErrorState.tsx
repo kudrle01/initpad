@@ -1,6 +1,7 @@
 import { RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/molecules/Notice';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { t } from '@/i18n';
 
 interface Props {
@@ -26,7 +27,7 @@ export function LoadErrorState({ message, onRetry, title, className }: Props) {
         )
       }
     >
-      {message}
+      {message} <HelpLink topic="troubleshooting">{t('Troubleshooting')}</HelpLink>
     </Notice>
   );
 }

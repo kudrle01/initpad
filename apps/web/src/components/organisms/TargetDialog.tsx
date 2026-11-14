@@ -39,6 +39,11 @@ interface Props {
   // The target being edited, or null when registering a new one.
   target: Target | null;
   busy: boolean;
+  /**
+   * Only workspace owners and admins may connect an Agent, so only they can
+   * add a Docker server (ADR-185). Others are offered SFTP with an explanation.
+   */
+  canAddAgentServer?: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: TargetInput) => void;
 }
@@ -83,10 +88,18 @@ function normalizeHostKeyFingerprint(value: string): string {
 
 // Register or edit one of the user's own deployment servers. Built-in servers
 // are read-only and never edited here.
-export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }: Props) {
+export function TargetFormDialog({
+  open,
+  target,
+  busy,
+  canAddAgentServer = true,
+  onOpenChange,
+  onSubmit,
+}: Props) {
   const confirmAction = useConfirmation();
   const toast = useToast();
   const editing = !!target;
+  const initialKind: ProviderKind = target?.kind ?? (canAddAgentServer ? 'docker' : 'sftp');
   const reconnectingRemote = Boolean(
     target && target.kind !== 'docker' && target.managementState !== 'active',
   );
@@ -108,9 +121,9 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
   useEffect(() => {
     if (!open) return;
     setName(target?.name ?? '');
-    setKind(target?.kind ?? 'docker');
+    setKind(initialKind);
     setRoutingMode(target?.routingMode ?? 'direct-port');
-    setCaps(target?.capabilities ?? defaultCapabilities('docker'));
+    setCaps(target?.capabilities ?? defaultCapabilities(initialKind));
     setHost(target?.host ?? '');
     setPort(String(target?.port ?? 22));
     setUsername(target?.username ?? '');
@@ -120,7 +133,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
     setRemotePath(target?.remotePath ?? '');
     setPublicUrl(target?.publicUrl ?? '');
     setInspectingHostKey(false);
-  }, [open, target]);
+  }, [open, target, initialKind]);
 
   function toggleCap(c: RuntimeKind) {
     setCaps((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]));
@@ -269,6 +282,13 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
         </DialogHeader>
 
         <div className="grid min-w-0 grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
+          {!editing && !canAddAgentServer && (
+            <Notice tone="info" title={t('Docker server with the Agent')} className="sm:col-span-2">
+              {t(
+                'A Docker server with the Agent is added by a workspace owner or admin, because only they can connect the Agent. You can add and verify an SFTP server here and deploy to every server this workspace already uses.',
+              )}
+            </Notice>
+          )}
           {requiresReconnectCredential && (
             <Notice
               tone="warning"
@@ -297,7 +317,9 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
               disabled={editing}
               onChange={(e) => changeKind(e.target.value as ProviderKind)}
             >
-              <option value="docker">{t('InitPad Agent for Docker (recommended)')}</option>
+              {(editing || canAddAgentServer) && (
+                <option value="docker">{t('InitPad Agent for Docker (recommended)')}</option>
+              )}
               <option value="sftp">{t('SFTP shared web hosting')}</option>
             </Select>
           </div>
@@ -497,7 +519,7 @@ export function TargetFormDialog({ open, target, busy, onOpenChange, onSubmit }:
                         'Use an HTTPS DNS origin for stable application hostnames. Run gateway preflight before the first deployment.',
                       )
                     : t(
-                        'Use the browser-reachable address of this server. Each local or lab application receives its own published port.',
+                        'Use the browser-reachable address of this server. Each local or lab application receives its own published port from 30000–32767; open only that range in the server firewall.',
                       )}
                 </InfoTip>
               )}

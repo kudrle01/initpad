@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Download, ShieldCheck } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { CaInstallSteps, formatFingerprint } from '@/components/molecules/CaInstallSteps';
 import { CopyField } from '@/components/molecules/CopyField';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
@@ -49,9 +50,14 @@ export function PlatformCertificateSettings() {
     <SettingsSection
       icon={ShieldCheck}
       title={t('Platform certificate')}
-      description={t(
-        'This InitPad issues its own HTTPS certificates. Install its certificate authority once on every computer, so the browser trusts InitPad and its Git server without a warning.',
-      )}
+      description={
+        <>
+          {t(
+            'This InitPad issues its own HTTPS certificates. Install its certificate authority once on every computer, so the browser trusts InitPad and its Git server without a warning.',
+          )}{' '}
+          <HelpLink topic="self-hosted" />
+        </>
+      }
       actions={
         <Button asChild variant="secondary" size="sm">
           <a href={ca.path} download={FILE_NAME}>

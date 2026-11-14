@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/auth';
+import { usePendingApprovals } from '@/hooks/usePendingApprovals';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { BrandMark } from '@/components/atoms/BrandMark';
@@ -49,10 +50,16 @@ function initials(name: string) {
     .join('');
 }
 
-const NAV: { to: string; label: MessageKey; icon: LucideIcon; end?: boolean }[] = [
+const NAV: {
+  to: string;
+  label: MessageKey;
+  icon: LucideIcon;
+  end?: boolean;
+  badge?: 'approvals';
+}[] = [
   { to: '/', label: msg('Overview'), icon: LayoutDashboard, end: true },
-  { to: '/projects', label: msg('Projects'), icon: Layers },
-  { to: '/environments', label: msg('Deployments'), icon: Server },
+  { to: '/projects', label: msg('Projects'), icon: Layers, badge: 'approvals' },
+  { to: '/environments', label: msg('Environments'), icon: Server },
   { to: '/infrastructure', label: msg('Servers'), icon: Network },
 ];
 
@@ -79,17 +86,30 @@ function Item({
   icon: Icon,
   end,
   onNavigate,
+  count = 0,
+  countLabel,
 }: {
   to: string;
   label: MessageKey;
   icon: LucideIcon;
   end?: boolean;
   onNavigate?: () => void;
+  count?: number;
+  countLabel?: string;
 }) {
   return (
     <NavLink to={to} end={end} className={itemClass} onClick={onNavigate}>
       <Icon className="h-[18px] w-[18px] shrink-0" />
-      <span className="truncate">{t(label)}</span>
+      <span className="min-w-0 flex-1 truncate">{t(label)}</span>
+      {count > 0 && (
+        <span
+          className="shrink-0 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold leading-4 text-warning"
+          title={countLabel}
+        >
+          {count}
+          <span className="sr-only"> {countLabel}</span>
+        </span>
+      )}
     </NavLink>
   );
 }
@@ -179,10 +199,18 @@ function WorkspaceMenu({ compact, onCreate }: { compact?: boolean; onCreate: () 
 }
 
 function Navigation({ user, onNavigate }: { user: User; onNavigate?: () => void }) {
+  const { activeWorkspace } = useAuth();
+  const approvals = usePendingApprovals(activeWorkspace?.id);
   return (
     <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pb-3">
-      {NAV.map((item) => (
-        <Item key={item.to} {...item} onNavigate={onNavigate} />
+      {NAV.map(({ badge, ...item }) => (
+        <Item
+          key={item.to}
+          {...item}
+          onNavigate={onNavigate}
+          count={badge === 'approvals' ? approvals.total : 0}
+          countLabel={t('production requests waiting for approval')}
+        />
       ))}
 
       <div className="px-3 pb-1 pt-5 text-xs font-medium text-muted-foreground/80">

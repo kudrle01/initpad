@@ -234,6 +234,16 @@ export function TargetRow({
               )}
             </Notice>
           )}
+          {isAgentTarget &&
+            !canManageAgent &&
+            managementState !== 'retired' &&
+            (agentState === 'not-enrolled' || managementState === 'disconnected') && (
+              <Notice icon={Bot} title={t('The Agent is not connected yet')} className="bg-card">
+                {t(
+                  'A Docker server with the Agent is added and connected by a workspace owner or admin. Ask one of them to finish the Agent setup; until then this server cannot receive deployments.',
+                )}
+              </Notice>
+            )}
           {managementState === 'disconnected' && (
             <Notice tone="warning" icon={Link2Off} title={t('Disconnected from InitPad')}>
               {t(

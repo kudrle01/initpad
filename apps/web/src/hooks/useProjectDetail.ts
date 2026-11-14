@@ -85,6 +85,11 @@ export function useProjectDetail() {
   const [diagnosticEnv, setDiagnosticEnv] = useState<EnvName | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const pollInFlight = useRef(false);
+  // Every load takes a number; only a newer answer may replace what is shown,
+  // and switching projects aborts the requests of the previous one.
+  const loadSequence = useRef(0);
+  const appliedSequence = useRef(0);
+  const loadController = useRef<AbortController | null>(null);
 
   const projectRole = workspaces.find((workspace) => workspace.id === project?.workspaceId)?.role;
   const readOnly = projectRole === 'viewer';
@@ -96,17 +101,23 @@ export function useProjectDetail() {
       if (!id) return;
       if (mode === 'head' && pollInFlight.current) return;
       if (mode === 'head') pollInFlight.current = true;
+      const request = ++loadSequence.current;
+      loadController.current ??= new AbortController();
+      const { signal } = loadController.current;
+      const current = () => !signal.aborted && request > appliedSequence.current;
       try {
         const [projectRow, commitRows, provisioningRow, deploymentRows, productionRequestRow] =
           await Promise.all([
-            api.getProject(id),
+            api.getProject(id, { signal }),
             api
-              .getCommits(id, mode === 'head' ? 1 : DETAIL_COMMIT_LIMIT)
+              .getCommits(id, mode === 'head' ? 1 : DETAIL_COMMIT_LIMIT, { signal })
               .catch(() => [] as Commit[]),
-            api.getProvisioning(id).catch(() => null),
-            api.getDeployments(id).catch(() => [] as DeploymentOperation[]),
+            api.getProvisioning(id, { signal }).catch(() => null),
+            api.getDeployments(id, 30, { signal }).catch(() => [] as DeploymentOperation[]),
             api.getProductionRequest(id).catch(() => null),
           ]);
+        if (!current()) return;
+        appliedSequence.current = request;
         setProject(projectRow);
         setCommits((current) =>
           mode === 'head' ? mergeCommitHead(current, commitRows, DETAIL_COMMIT_LIMIT) : commitRows,
@@ -118,6 +129,8 @@ export function useProjectDetail() {
         setError(null);
         setNotFound(false);
       } catch (loadError) {
+        if (!current()) return;
+        appliedSequence.current = request;
         if (loadError instanceof ApiError && loadError.status === 404) {
           // A project can disappear while this tab remains open (delete in
           // another tab or control-plane restore). Never leave stale actions
@@ -134,13 +147,16 @@ export function useProjectDetail() {
         }
       } finally {
         if (mode === 'head') pollInFlight.current = false;
-        setLoading(false);
+        if (!signal.aborted) setLoading(false);
       }
     },
     [id],
   );
 
   useEffect(() => {
+    loadController.current = new AbortController();
+    const controller = loadController.current;
+    pollInFlight.current = false;
     setProject(null);
     setTemplate(null);
     setCommits([]);
@@ -153,6 +169,10 @@ export function useProjectDetail() {
     setRollbackPreview(null);
     setLoading(true);
     void load();
+    return () => {
+      controller.abort();
+      if (loadController.current === controller) loadController.current = null;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -195,15 +215,21 @@ export function useProjectDetail() {
     return () => clearTimeout(timeout);
   }, [ciRerunRequested]);
 
+  // Polling replaces the project object every few seconds; the template only
+  // changes with its id, so fetch the catalog once per template.
+  const templateId = project?.templateId;
   useEffect(() => {
-    if (!project) return;
+    if (!templateId) return;
+    const controller = new AbortController();
     api
-      .listTemplates()
-      .then((templates) =>
-        setTemplate(templates.find((candidate) => candidate.id === project.templateId) ?? null),
-      )
+      .listTemplates({ signal: controller.signal })
+      .then((templates) => {
+        if (!controller.signal.aborted)
+          setTemplate(templates.find((candidate) => candidate.id === templateId) ?? null);
+      })
       .catch(() => undefined);
-  }, [project]);
+    return () => controller.abort();
+  }, [templateId]);
 
   // Reload whenever the target picker opens, and keep polling while a gateway
   // check is still running: readiness changes after the page was loaded, and
@@ -281,15 +307,21 @@ export function useProjectDetail() {
     }
   }
 
-  async function confirmRollback() {
+  async function confirmRollback(candidateOperationId?: string) {
     if (!id || !rollbackPreview) return;
+    const chosen =
+      rollbackPreview.candidates?.find(
+        (candidate) => candidate.candidateOperationId === candidateOperationId,
+      ) ?? null;
+    const candidateId = chosen?.candidateOperationId ?? rollbackPreview.candidateOperationId;
+    const version = chosen?.version ?? rollbackPreview.rollbackVersion;
     setBusy(`rollback-${rollbackPreview.environment}`);
     try {
       if (rollbackPreview.environment === 'prod') {
         setProductionRequest(
           await api.requestProductionDeployment(id, {
             kind: 'rollback',
-            candidateOperationId: rollbackPreview.candidateOperationId,
+            candidateOperationId: candidateId,
             stateToken: rollbackPreview.stateToken,
           }),
         );
@@ -299,14 +331,14 @@ export function useProjectDetail() {
           await api.rollback(
             id,
             rollbackPreview.environment,
-            rollbackPreview.candidateOperationId,
+            candidateId,
             rollbackPreview.stateToken,
           ),
         );
         toast.success(
           t('Rolling back {environment} to {rollbackVersion} without a new CI build.', {
             environment: rollbackPreview.environment,
-            rollbackVersion: rollbackPreview.rollbackVersion.slice(0, 7),
+            rollbackVersion: version.slice(0, 7),
           }),
         );
       }
@@ -335,7 +367,7 @@ export function useProjectDetail() {
     }
   }
 
-  async function reviewProduction(action: 'approve' | 'reject' | 'cancel') {
+  async function reviewProduction(action: 'approve' | 'reject' | 'cancel', note?: string) {
     if (!id || !productionRequest) return;
     if (action === 'approve' && !productionRequest.canApprove) return;
     if (action === 'reject' && !productionRequest.canReject) return;
@@ -346,7 +378,7 @@ export function useProjectDetail() {
         action === 'approve'
           ? await api.approveProductionDeployment(id, productionRequest.id)
           : action === 'reject'
-            ? await api.rejectProductionDeployment(id, productionRequest.id)
+            ? await api.rejectProductionDeployment(id, productionRequest.id, note)
             : await api.cancelProductionDeployment(id, productionRequest.id);
       setProductionRequest(updated);
       if (action === 'approve') {
@@ -446,7 +478,7 @@ export function useProjectDetail() {
     setBusy(`target-${environment}`);
     try {
       setProject(await api.bindEnvTarget(id, environment, targetId));
-      toast.success(t('Updated {environment} target', { environment: environment }));
+      toast.success(t('Updated {environment} server', { environment: environment }));
       setTargetEnv(null);
     } catch (actionError) {
       toast.error((actionError as Error).message);
@@ -534,7 +566,7 @@ export function useProjectDetail() {
     confirmRollback,
     requestProduction,
     approveProduction: () => reviewProduction('approve'),
-    rejectProduction: () => reviewProduction('reject'),
+    rejectProduction: (note?: string) => reviewProduction('reject', note),
     cancelProduction: () => reviewProduction('cancel'),
     runAgain,
     rerunFailedJobs,

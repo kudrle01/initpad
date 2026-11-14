@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/molecules/PageHeader';
 import { DeploymentActivity } from '@/components/organisms/DeploymentActivity';
 import type { DeploymentOperation, Project } from '@/types';
 import { t } from '@/i18n';
+import { pollDelay } from '@/lib/polling';
 
 const HISTORY_LIMIT = 100;
 
@@ -19,6 +20,7 @@ export default function ProjectDeployments() {
   const [operations, setOperations] = useState<DeploymentOperation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [failures, setFailures] = useState(0);
   const openedFromAudit =
     (location.state as { deploymentHistoryOrigin?: unknown } | null)?.deploymentHistoryOrigin ===
     'audit';
@@ -41,8 +43,10 @@ export default function ProjectDeployments() {
         setProject(projectRow);
         setOperations(operationRows);
         setError(null);
+        setFailures(0);
       } catch (e) {
         setError((e as Error).message);
+        setFailures((count) => count + 1);
       } finally {
         setLoading(false);
       }
@@ -56,12 +60,27 @@ export default function ProjectDeployments() {
     void load(true);
   }, [load]);
 
+  // Keep refreshing after an error (with backoff) and pause in a hidden tab;
+  // returning to the tab refreshes at once.
   useEffect(() => {
-    if (!project || error) return;
+    if (!project && !error) return;
     const active = operations.some((operation) => operation.status === 'running');
-    const timer = setTimeout(() => void load(), active ? 2500 : 10_000);
+    const timer = setTimeout(
+      () => {
+        if (document.visibilityState === 'visible') void load();
+      },
+      pollDelay(active, failures),
+    );
     return () => clearTimeout(timer);
-  }, [project, operations, error, load]);
+  }, [project, operations, error, failures, load]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => document.removeEventListener('visibilitychange', refreshWhenVisible);
+  }, [load]);
 
   return (
     <div>

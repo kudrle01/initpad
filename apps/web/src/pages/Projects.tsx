@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Layers, Plus, Search } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Layers, Plus, Search, ShieldCheck, X } from 'lucide-react';
+import { usePendingApprovals } from '@/hooks/usePendingApprovals';
+import { Notice } from '@/components/molecules/Notice';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +22,9 @@ export default function Projects() {
   const [query, setQuery] = useState('');
   const { activeWorkspace } = useAuth();
   const workspaceId = activeWorkspace?.id;
+  const approvals = usePendingApprovals(workspaceId);
+  const [params, setParams] = useSearchParams();
+  const approvalsOnly = params.get('filter') === 'approvals';
   const loadProjects = useCallback(async () => {
     if (!workspaceId) return { projects: [], templates: {} };
     const [projects, templateRows] = await Promise.all([api.listProjects(), api.listTemplates()]);
@@ -40,12 +45,15 @@ export default function Projects() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((p) => {
+    const scoped = approvalsOnly
+      ? projects.filter((p) => (approvals.byProject[p.id] ?? 0) > 0)
+      : projects;
+    if (!q) return scoped;
+    return scoped.filter((p) => {
       const templateName = templates[p.templateId]?.name ?? p.templateId;
       return p.name.toLowerCase().includes(q) || templateName.toLowerCase().includes(q);
     });
-  }, [projects, templates, query]);
+  }, [projects, templates, query, approvalsOnly, approvals.byProject]);
 
   return (
     <div>
@@ -59,6 +67,43 @@ export default function Projects() {
           </Button>
         }
       />
+
+      {approvalsOnly && (
+        <Notice
+          icon={ShieldCheck}
+          className="mb-4"
+          title={t('Projects waiting for production approval')}
+          actions={
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setParams(
+                  (current) => {
+                    const next = new URLSearchParams(current);
+                    next.delete('filter');
+                    return next;
+                  },
+                  { replace: true },
+                )
+              }
+            >
+              <X className="h-3.5 w-3.5" /> {t('Show all projects')}
+            </Button>
+          }
+        >
+          {t('Open a project to review its production request.')}
+        </Notice>
+      )}
+
+      {!approvalsOnly && approvals.total > 0 && (
+        <Notice icon={ShieldCheck} tone="warning" className="mb-4">
+          {t('Production requests wait for approval ({count}).', { count: approvals.total })}{' '}
+          <Link to="/projects?filter=approvals" className="text-link font-medium">
+            {t('Show those projects')}
+          </Link>
+        </Notice>
+      )}
 
       {!loading && projects.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -100,11 +145,19 @@ export default function Projects() {
           }
         />
       ) : filtered.length === 0 && projects.length > 0 ? (
-        <EmptyState
-          icon={Search}
-          title={t('No matches')}
-          description={t('No projects match “{query}”.', { query: query.trim() })}
-        />
+        approvalsOnly && !query.trim() ? (
+          <EmptyState
+            icon={ShieldCheck}
+            title={t('Nothing waits for approval')}
+            description={t('No production request in this workspace needs a review.')}
+          />
+        ) : (
+          <EmptyState
+            icon={Search}
+            title={t('No matches')}
+            description={t('No projects match “{query}”.', { query: query.trim() })}
+          />
+        )
       ) : projects.length > 0 ? (
         <Card className="overflow-hidden">
           <List>
@@ -113,6 +166,7 @@ export default function Projects() {
                 key={p.id}
                 project={p}
                 templateName={templates[p.templateId]?.name ?? p.templateId}
+                pendingApprovals={approvals.byProject[p.id]}
               />
             ))}
           </List>

@@ -9,8 +9,10 @@ interface AuthState {
   logout: () => Promise<void>;
   workspaces: Workspace[];
   activeWorkspace: Workspace | null;
-  switchWorkspace: (workspaceId: string) => void;
+  switchWorkspace: (workspaceId: string, destination?: string) => void;
   refreshWorkspaces: () => Promise<void>;
+  /** Why the workspace list could not be loaded; pages cannot work without it. */
+  workspacesError: string | null;
 }
 
 const AuthContext = createContext<AuthState>({
@@ -22,6 +24,7 @@ const AuthContext = createContext<AuthState>({
   activeWorkspace: null,
   switchWorkspace: () => {},
   refreshWorkspaces: async () => {},
+  workspacesError: null,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -29,9 +32,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
+  const [workspacesError, setWorkspacesError] = useState<string | null>(null);
 
   const refreshWorkspaces = useCallback(async () => {
-    const rows = await api.listWorkspaces();
+    let rows: Workspace[];
+    try {
+      rows = await api.listWorkspaces();
+    } catch (cause) {
+      setWorkspacesError((cause as Error).message);
+      throw cause;
+    }
+    setWorkspacesError(null);
     const stored = localStorage.getItem('initpad.workspace');
     const selected =
       rows.find((w) => w.id === stored) ??
@@ -78,15 +89,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(next);
     // Skip while a password change is forced (workspace endpoints are blocked
     // until it is done); the change-password gate handles the next step.
-    if (!next.mustChangePassword) void refreshWorkspaces();
+    if (!next.mustChangePassword) void refreshWorkspaces().catch(() => undefined);
   }
 
-  function switchWorkspace(workspaceId: string) {
+  function switchWorkspace(workspaceId: string, destination = '/') {
     if (!workspaceId || workspaceId === activeWorkspace?.id) return;
     localStorage.setItem('initpad.workspace', workspaceId);
     // Route data is page-local today; a reload guarantees every view is
     // refetched under the new tenant header and prevents mixed-workspace UI.
-    window.location.assign('/');
+    window.location.assign(destination);
   }
 
   async function logout() {
@@ -108,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         activeWorkspace,
         switchWorkspace,
         refreshWorkspaces,
+        workspacesError,
       }}
     >
       {children}

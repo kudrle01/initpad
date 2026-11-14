@@ -40,6 +40,7 @@ import type { ProvisioningStatus, TemplateManifest } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { WorkspaceMetricsDialog } from '@/components/organisms/WorkspaceMetricsDialog';
 import { t, plural } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 import { statusLabel, termLabel } from '@/i18n/labels';
 
 const RECENT_LIMIT = 6;
@@ -283,9 +284,23 @@ export default function Dashboard() {
           <StatCard
             label={t('Pending approvals')}
             value={figure(stats?.pendingApprovals)}
-            hint={stats ? t('Production requests') : undefined}
+            hint={
+              stats
+                ? stats.pendingApprovals > 0
+                  ? t('Review production requests')
+                  : t('Production requests')
+                : undefined
+            }
             icon={ShieldCheck}
             tone={stats && stats.pendingApprovals > 0 ? 'warning' : 'neutral'}
+            to={stats && stats.pendingApprovals > 0 ? '/projects?filter=approvals' : undefined}
+            linkLabel={
+              stats
+                ? t('Show production requests waiting for approval ({count})', {
+                    count: stats.pendingApprovals,
+                  })
+                : undefined
+            }
           />
         </div>
 
@@ -309,7 +324,7 @@ export default function Dashboard() {
                     <p className="text-xs text-muted-foreground">
                       {operation.status === 'cleaning'
                         ? t('Cleaning up a failed setup…')
-                        : t('Current step: {step}', { step: operation.step })}
+                        : t('Current step: {step}', { step: translateApiMessage(operation.step) })}
                     </p>
                   </div>
                   {operation.projectId && (
@@ -337,7 +352,8 @@ export default function Dashboard() {
                 const detail =
                   operation.status === 'interrupted'
                     ? t('Interrupted — external state must be reconciled.')
-                    : operation.message || t('Current step: {step}', { step: operation.step });
+                    : translateApiMessage(operation.message) ||
+                      t('Current step: {step}', { step: translateApiMessage(operation.step) });
                 return (
                   <ListRow
                     key={operation.id}
@@ -463,7 +479,7 @@ export default function Dashboard() {
                             <Badge variant="warning">{t('deploying')}</Badge>
                           )}
                           {project.pendingApprovals > 0 && (
-                            <Badge variant="warning" className="hidden sm:inline-flex">
+                            <Badge variant="warning">
                               {plural('{count} approvals', project.pendingApprovals)}
                             </Badge>
                           )}

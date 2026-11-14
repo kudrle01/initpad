@@ -3,6 +3,7 @@ import { StatusDot } from '@/components/atoms/StatusDot';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import type { DeploymentOperation } from '@/types';
 import { t, plural } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 import { statusLabel, termLabel } from '@/i18n/labels';
 
 function phaseVariant(phase: string): BadgeProps['variant'] {
@@ -91,11 +92,11 @@ export function DeploymentActivity({ operations, repoUrl, scmProvider, limit }: 
                   </div>
                   <p
                     className="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground"
-                    title={operation.message ?? undefined}
+                    title={translateApiMessage(operation.message) ?? undefined}
                   >
                     <span className="text-foreground/80">→ {operation.target}</span>
                     {' · '}
-                    {operation.message ??
+                    {translateApiMessage(operation.message) ??
                       (operation.status === 'succeeded'
                         ? t('Deployment completed')
                         : statusLabel(operation.status))}

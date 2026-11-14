@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { AuthCard } from '@/components/molecules/AuthCard';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { FormField } from '@/components/molecules/FormField';
 import { Notice } from '@/components/molecules/Notice';
 import { Button } from '@/components/ui/button';
@@ -48,7 +49,8 @@ export default function ChangePassword() {
               })}{' '}
             </>
           ) : null}
-          {t('Your account uses a temporary password. Set a new one to continue.')}
+          {t('Your account uses a temporary password. Set a new one to continue.')}{' '}
+          <HelpLink topic="sign-in" />
         </>
       }
     >

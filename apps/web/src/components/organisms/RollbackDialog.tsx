@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { History, ShieldCheck } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/atoms/Spinner';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,7 +18,8 @@ interface Props {
   preview: RollbackPreview | null;
   busy: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
+  /** Receives the chosen candidate; the preview's default unless the user picks another. */
+  onConfirm: (candidateOperationId: string) => void;
 }
 
 function short(value: string | null): string {
@@ -24,6 +27,15 @@ function short(value: string | null): string {
 }
 
 export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => setSelectedId(preview?.candidateOperationId ?? null), [preview]);
+
+  const candidates = preview?.candidates ?? [];
+  const selected = candidates.find((candidate) => candidate.candidateOperationId === selectedId);
+  const rollbackVersion = selected?.version ?? preview?.rollbackVersion ?? null;
+  const rollbackArtifact = selected ? selected.artifact : (preview?.rollbackArtifact ?? null);
+  const deployedAt = selected?.deployedAt ?? preview?.sourceDeployedAt;
+
   return (
     <Dialog
       open={preview !== null}
@@ -47,29 +59,62 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
                       'Create a reviewable request for the previous verified version. Nothing is published until an authorized reviewer approves the unchanged request.',
                     )
                   : t(
-                      'Publish the previous verified version to the currently assigned target. InitPad will not run CI or build new application code.',
+                      'Publish the previous verified version to the currently assigned server. InitPad will not run CI or build new application code.',
                     )}
               </DialogDescription>
             </DialogHeader>
+
+            {candidates.length > 1 && (
+              <fieldset className="flex min-w-0 flex-col gap-1.5">
+                <legend className="mb-1.5 text-sm font-medium">{t('Version to restore')}</legend>
+                <div className="flex max-h-48 flex-col gap-1.5 overflow-y-auto">
+                  {candidates.map((candidate) => {
+                    const checked = candidate.candidateOperationId === selectedId;
+                    return (
+                      <label
+                        key={candidate.candidateOperationId}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm',
+                          checked ? 'border-primary/60 bg-secondary/60' : 'border-border',
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="rollback-candidate"
+                          className="accent-primary"
+                          checked={checked}
+                          disabled={busy}
+                          onChange={() => setSelectedId(candidate.candidateOperationId)}
+                        />
+                        <span className="font-mono">{short(candidate.version)}</span>
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {formatDateTime(candidate.deployedAt)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            )}
 
             <div className="rounded-lg bg-muted p-3.5 text-sm">
               <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
                 <span className="text-muted-foreground">{t('Environment')}</span>
                 <span className="text-right font-medium uppercase">{preview.environment}</span>
-                <span className="text-muted-foreground">{t('Target')}</span>
+                <span className="text-muted-foreground">{t('Server')}</span>
                 <span className="break-words text-right font-medium">{preview.target}</span>
                 <span className="text-muted-foreground">{t('Current version')}</span>
                 <span className="text-right font-mono">{short(preview.currentVersion)}</span>
                 <span className="text-muted-foreground">{t('Rollback version')}</span>
                 <span className="text-right font-mono font-semibold text-primary">
-                  {short(preview.rollbackVersion)}
+                  {short(rollbackVersion)}
                 </span>
                 <span className="text-muted-foreground">{t('Verified output')}</span>
                 <span className="break-all text-right font-mono text-xs">
-                  {preview.rollbackArtifact
-                    ? preview.rollbackArtifact.digest
+                  {rollbackArtifact
+                    ? rollbackArtifact.digest
                     : t('OCI tag {rollbackVersion}', {
-                        rollbackVersion: short(preview.rollbackVersion),
+                        rollbackVersion: short(rollbackVersion),
                       })}
                 </span>
               </div>
@@ -85,9 +130,9 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
               <p className="font-medium">{t('Impact')}</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {rich(
-                  'The selected target will replace its current workload with version <span>{rollbackVersion}</span>. Publication still has to pass the target health check. Stable-routing targets keep their URL and a managed gateway keeps the last healthy revision online until that succeeds; a direct-port target may allocate a new port. Current environment variables and secrets stay in place; rollback changes application code, not configuration.',
+                  'The selected server will replace its current workload with version <span>{rollbackVersion}</span>. Publication still has to pass the server health check. Stable-routing servers keep their URL and a managed gateway keeps the last healthy revision online until that succeeds; a direct-port server may allocate a new port. Current environment variables and secrets stay in place; rollback changes application code, not configuration.',
                   {
-                    rollbackVersion: short(preview.rollbackVersion),
+                    rollbackVersion: short(rollbackVersion),
                     span: (chunk) => <span className="font-mono">{chunk}</span>,
                   },
                 )}
@@ -98,8 +143,8 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
               <span>
                 {t(
-                  'Source deployment succeeded on {date}. Any target or environment or configuration change after this dialog opened will cancel the request for review.',
-                  { date: formatDateTime(preview.sourceDeployedAt) },
+                  'Source deployment succeeded on {date}. Any server or environment or configuration change after this dialog opened will cancel the request for review.',
+                  { date: formatDateTime(deployedAt ?? preview.sourceDeployedAt) },
                 )}
               </span>
             </div>
@@ -111,7 +156,7 @@ export function RollbackDialog({ preview, busy, onOpenChange, onConfirm }: Props
               <Button
                 variant={preview.environment === 'prod' ? 'danger' : 'default'}
                 disabled={busy}
-                onClick={onConfirm}
+                onClick={() => onConfirm(selectedId ?? preview.candidateOperationId)}
               >
                 {busy ? <Spinner className="h-4 w-4" /> : <History className="h-4 w-4" />}
                 {preview.environment === 'prod'

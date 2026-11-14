@@ -7,6 +7,7 @@ import type { ProductionDeploymentRequest, Project } from '@/types';
 import { useProjectDetail } from './useProjectDetail';
 
 const mocks = vi.hoisted(() => ({
+  params: { id: 'project-1' },
   navigate: vi.fn(),
   toast: {
     success: vi.fn(),
@@ -29,7 +30,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('react-router-dom', () => ({
-  useParams: () => ({ id: 'project-1' }),
+  useParams: () => mocks.params,
   useNavigate: () => mocks.navigate,
 }));
 
@@ -105,7 +106,44 @@ function arrangeSuccessfulLoad() {
 describe('useProjectDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.params = { id: 'project-1' };
     arrangeSuccessfulLoad();
+  });
+
+  it('fetches templates once per template id, not on every poll', async () => {
+    const { result } = renderHook(() => useProjectDetail());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(mocks.api.listTemplates).toHaveBeenCalledTimes(1));
+
+    mocks.api.getProject.mockResolvedValue({ ...project });
+    act(() => result.current.retryLoad());
+    await waitFor(() => expect(result.current.project).not.toBe(project));
+    expect(mocks.api.listTemplates).toHaveBeenCalledTimes(1);
+  });
+
+  it('never shows data of the previous project after switching', async () => {
+    let finishFirst!: (value: Project) => void;
+    mocks.api.getProject.mockImplementation((id: string) =>
+      id === 'project-1'
+        ? new Promise<Project>((resolve) => {
+            finishFirst = resolve;
+          })
+        : Promise.resolve({ ...project, id: 'project-2', name: 'second' }),
+    );
+    const { result, rerender } = renderHook(() => useProjectDetail());
+
+    mocks.params = { id: 'project-2' };
+    rerender();
+    await waitFor(() => expect(result.current.project?.id).toBe('project-2'));
+
+    const firstCall = mocks.api.getProject.mock.calls[0] as unknown[];
+    const firstSignal = (firstCall[1] as { signal: AbortSignal }).signal;
+    expect(firstSignal.aborted).toBe(true);
+    await act(async () => {
+      finishFirst(project);
+      await Promise.resolve();
+    });
+    expect(result.current.project?.name).toBe('second');
   });
 
   it('loads the authoritative project and completes a confirmed deletion', async () => {
@@ -157,5 +195,24 @@ describe('useProjectDetail', () => {
     expect(mocks.api.approveProductionDeployment).not.toHaveBeenCalled();
     expect(mocks.api.rejectProductionDeployment).not.toHaveBeenCalled();
     expect(mocks.api.cancelProductionDeployment).not.toHaveBeenCalled();
+  });
+
+  it('sends an optional rejection reason with the review', async () => {
+    mocks.api.getProductionRequest.mockResolvedValue({ ...productionRequest, canReject: true });
+    mocks.api.rejectProductionDeployment.mockResolvedValue({
+      ...productionRequest,
+      status: 'rejected',
+    });
+    const { result } = renderHook(() => useProjectDetail());
+    await waitFor(() => expect(result.current.productionRequest?.canReject).toBe(true));
+
+    await act(async () => {
+      await result.current.rejectProduction('Fix the migration first');
+    });
+    expect(mocks.api.rejectProductionDeployment).toHaveBeenCalledWith(
+      'project-1',
+      'request-1',
+      'Fix the migration first',
+    );
   });
 });
