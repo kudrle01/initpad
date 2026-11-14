@@ -56,6 +56,15 @@ test('declares TypeScript once, in the workspace root', () => {
     assert.equal(manifest.devDependencies?.typescript, undefined, app);
     assert.equal(manifest.dependencies?.typescript, undefined, app);
   }
+  // Image build stages install the root too, or tsc is missing there.
+  for (const app of apps) {
+    const dockerfile = readFileSync(`apps/${app}/Dockerfile`, 'utf8');
+    assert.match(
+      dockerfile,
+      new RegExp(`^RUN npm ci --workspace @initpad/${app} --include-workspace-root$`, 'm'),
+      app,
+    );
+  }
   const lock = readJson('package-lock.json');
   const copies = Object.keys(lock.packages).filter((path) =>
     path.endsWith('node_modules/typescript'),
@@ -79,4 +88,25 @@ test('ships only the Prisma engines of the image architecture', () => {
   assert.match(stage, /find node_modules -type f -name "\$\{foreign\}" -print -delete/);
   // The runtime stage copies the pruned tree; a later rm would not shrink it.
   assert.match(dockerfile, /COPY --from=production-dependencies \/repo \/repo/);
+});
+
+test('tests of the Agent and Supervisor never run stale compiled files', () => {
+  for (const app of ['agent', 'supervisor']) {
+    const { build, test: run } = readJson(`apps/${app}/package.json`).scripts;
+    assert.match(
+      build,
+      /^node -e "require\('node:fs'\)\.rmSync\('dist',\{recursive:true,force:true\}\)" && tsc /,
+      app,
+    );
+    assert.match(run, /dist\//, app);
+  }
+});
+
+test('keeps local and secret files out of Git and image build contexts', () => {
+  assert.match(readFileSync('.gitignore', 'utf8'), /^\/tmp\/$/m);
+  const ignored = readFileSync('.dockerignore', 'utf8').split('\n');
+  for (const entry of ['tmp', '**/.env', 'docs', '**/*.md', '!templates/**/*.md', '.git']) {
+    assert.ok(ignored.includes(entry), entry);
+  }
+  assert.ok(ignored.indexOf('!templates/**/*.md') > ignored.indexOf('**/*.md'));
 });

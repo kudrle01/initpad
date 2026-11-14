@@ -6,7 +6,7 @@
   "type": "module",
   "description": "Minimal release supervisor for self-hosted InitPad",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "test": "node --test dist/*.test.js"
   },
   "dependencies": {

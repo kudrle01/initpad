@@ -10,7 +10,8 @@ WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/api/prisma apps/api/prisma
-RUN npm ci --workspace @initpad/api --include-workspace-root=false
+# The build stage includes the workspace root: TypeScript is declared once there.
+RUN npm ci --workspace @initpad/api --include-workspace-root
 COPY apps/api apps/api
 RUN npm run build --workspace @initpad/api
 

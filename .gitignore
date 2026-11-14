@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .workspace/
+/tmp/
 .claude/
 *.log
 *.tsbuildinfo
