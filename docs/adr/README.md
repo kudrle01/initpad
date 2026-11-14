@@ -187,3 +187,4 @@ stabilní.
 | [ADR-173](./ADR-173.md) | Accepted | Vestavěný Docker se nenabízí, když nemůže ověřit nasazení |
 | [ADR-182](./ADR-182.md) | Accepted | Aktualizace platformy se sladí se Supervisorem a nehlásí nepravdivý rollback |
 | [ADR-183](./ADR-183.md) | Accepted | Destruktivní migrace potřebují výjimku a release s nimi nesmí slibovat rollback images |
+| [ADR-184](./ADR-184.md) | Accepted | Převod vlastnictví workspace, odchod z něj a správa platformních rolí |
