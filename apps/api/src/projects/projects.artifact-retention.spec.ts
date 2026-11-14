@@ -1,36 +1,61 @@
 import { ProjectArtifactLifecycle } from './project-artifact-lifecycle';
 
-function make(prisma: Record<string, unknown>, artifactStore: Record<string, unknown>) {
-  return new ProjectArtifactLifecycle(
-    {
-      productionDeploymentRequest: { count: jest.fn(async () => 0) },
-      ...prisma,
-    } as never,
+type Refs = {
+  environments?: string[];
+  requests?: string[];
+  unfinished?: string[];
+  publishedTo?: string[];
+  rollbackPoints?: string[];
+};
+
+// One mock per reference query. Each query receives the whole batch of ids.
+function make(
+  stale: Array<{ id: string; storageRef: string | null }> | jest.Mock,
+  refs: Refs,
+  artifactStore: Record<string, unknown>,
+) {
+  const rows = (ids: string[] = []) => ids.map((buildArtifactId) => ({ buildArtifactId }));
+  const prisma = {
+    buildArtifact: {
+      findMany:
+        typeof stale === 'function'
+          ? stale
+          : jest.fn().mockResolvedValueOnce(stale).mockResolvedValue([]),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
+    environment: { findMany: jest.fn(async () => rows(refs.environments)) },
+    productionDeploymentRequest: { findMany: jest.fn(async () => rows(refs.requests)) },
+    deploymentOperation: {
+      findMany: jest
+        .fn()
+        .mockImplementation(async ({ where }: { where: { finishedAt?: null } }) =>
+          'finishedAt' in where
+            ? rows(refs.unfinished)
+            : (refs.publishedTo ?? []).map((environmentId) => ({ environmentId })),
+        ),
+    },
+    $queryRaw: jest.fn(async () => rows(refs.rollbackPoints)),
+  };
+  const service = new ProjectArtifactLifecycle(
+    prisma as never,
     artifactStore as never,
     {} as never,
   );
+  return { service, prisma };
 }
 
 describe('ProjectArtifactLifecycle.runRetention', () => {
   it('deletes the object and demotes the row for an unreferenced expired artifact', async () => {
-    const updateMany = jest.fn(async () => ({ count: 1 }));
-    const prisma = {
-      buildArtifact: {
-        findMany: jest.fn(async () => [{ id: 'a1', storageRef: 'artifacts/ws/pr/a1/d.tar' }]),
-        updateMany,
-      },
-      environment: { count: jest.fn(async () => 0) },
-      deploymentOperation: {
-        count: jest.fn(async () => 0),
-        findMany: jest.fn(async () => []),
-      },
-    };
     const del = jest.fn(async () => undefined);
-    const service = make(prisma, { delete: del });
+    const { service, prisma } = make(
+      [{ id: 'a1', storageRef: 'artifacts/ws/pr/a1/d.tar' }],
+      {},
+      { delete: del },
+    );
 
     await expect(service.runRetention()).resolves.toEqual({ removed: 1, kept: 0 });
     expect(del).toHaveBeenCalledWith('artifacts/ws/pr/a1/d.tar');
-    expect(updateMany).toHaveBeenCalledWith(
+    expect(prisma.buildArtifact.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'a1' },
         data: expect.objectContaining({ status: 'failed', storageKind: null, storageRef: null }),
@@ -38,153 +63,118 @@ describe('ProjectArtifactLifecycle.runRetention', () => {
     );
   });
 
-  it('protects an artifact still referenced by an environment', async () => {
-    const prisma = {
-      buildArtifact: {
-        findMany: jest.fn(async () => [{ id: 'a1', storageRef: 'k' }]),
-        updateMany: jest.fn(),
-      },
-      environment: { count: jest.fn(async () => 1) },
-      deploymentOperation: { count: jest.fn(async () => 0) },
-    };
+  it.each([
+    ['an environment', { environments: ['a1'] }],
+    ['an unfinished deployment operation', { unfinished: ['a1'] }],
+    ['a pending production request', { requests: ['a1'] }],
+  ])('protects an artifact still referenced by %s', async (_label, refs) => {
     const del = jest.fn();
-    const service = make(prisma, { delete: del });
+    const { service, prisma } = make([{ id: 'a1', storageRef: 'k' }], refs, { delete: del });
 
     await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
     expect(del).not.toHaveBeenCalled();
     expect(prisma.buildArtifact.updateMany).not.toHaveBeenCalled();
   });
 
-  it('protects an artifact still needed by an unfinished deployment operation', async () => {
-    const prisma = {
-      buildArtifact: {
-        findMany: jest.fn(async () => [{ id: 'a1', storageRef: 'k' }]),
-        updateMany: jest.fn(),
+  it('counts only pending and approving production requests as references', async () => {
+    const { service, prisma } = make(
+      [{ id: 'a1', storageRef: 'k' }],
+      { requests: ['a1'] },
+      {
+        delete: jest.fn(),
       },
-      environment: { count: jest.fn(async () => 0) },
-      deploymentOperation: { count: jest.fn(async () => 1) },
-    };
-    const del = jest.fn();
-    const service = make(prisma, { delete: del });
+    );
 
-    await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
-    expect(del).not.toHaveBeenCalled();
-  });
+    await service.runRetention();
 
-  it('protects an artifact referenced by a pending production request', async () => {
-    const requestCount = jest.fn(async () => 1);
-    const prisma = {
-      buildArtifact: {
-        findMany: jest.fn(async () => [{ id: 'a1', storageRef: 'k' }]),
-        updateMany: jest.fn(),
-      },
-      environment: { count: jest.fn(async () => 0) },
-      productionDeploymentRequest: { count: requestCount },
-      deploymentOperation: { count: jest.fn(async () => 0) },
-    };
-    const del = jest.fn();
-    const service = make(prisma, { delete: del });
-
-    await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
-    expect(requestCount).toHaveBeenCalledWith({
-      where: { buildArtifactId: 'a1', status: { in: ['pending', 'approving'] } },
+    expect(prisma.productionDeploymentRequest.findMany).toHaveBeenCalledWith({
+      where: { buildArtifactId: { in: ['a1'] }, status: { in: ['pending', 'approving'] } },
+      select: { buildArtifactId: true },
     });
-    expect(del).not.toHaveBeenCalled();
   });
 
   it('keeps the row when the object delete fails (no false success)', async () => {
-    const prisma = {
-      buildArtifact: {
-        findMany: jest.fn(async () => [{ id: 'a1', storageRef: 'k' }]),
-        updateMany: jest.fn(),
-      },
-      environment: { count: jest.fn(async () => 0) },
-      deploymentOperation: {
-        count: jest.fn(async () => 0),
-        findMany: jest.fn(async () => []),
-      },
-    };
     const del = jest.fn(async () => {
       throw new Error('storage offline');
     });
-    const service = make(prisma, { delete: del });
+    const { service, prisma } = make([{ id: 'a1', storageRef: 'k' }], {}, { delete: del });
 
     await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
     expect(prisma.buildArtifact.updateMany).not.toHaveBeenCalled();
   });
 
-  it('scopes the query to expired object-store artifacts only', async () => {
+  it('scopes the query to expired object-store artifacts in bounded batches', async () => {
     const findMany = jest.fn(async () => []);
-    const prisma = {
-      buildArtifact: { findMany, updateMany: jest.fn() },
-      environment: { count: jest.fn() },
-      deploymentOperation: { count: jest.fn() },
-    };
-    const service = make(prisma, { delete: jest.fn() });
+    const { service } = make(findMany, {}, { delete: jest.fn() });
     const now = new Date('2026-07-20T00:00:00Z');
 
     await service.runRetention(now);
 
-    const arg = (findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }])[0];
+    const arg = (
+      findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown>; take: number }]
+    )[0];
     expect(arg.where).toMatchObject({ storageKind: 'object-store' });
     expect(arg.where).toHaveProperty('createdAt');
+    expect(arg.take).toBe(100);
+  });
+
+  it('checks references once per batch instead of once per artifact', async () => {
+    // Regression (audit P2): every expired artifact cost up to 5 + N queries.
+    const firstBatch = Array.from({ length: 100 }, (_, index) => ({
+      id: `a${String(index).padStart(3, '0')}`,
+      storageRef: `k${index}`,
+    }));
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce(firstBatch)
+      .mockResolvedValueOnce([{ id: 'z1', storageRef: 'z1' }])
+      .mockResolvedValue([]);
+    const { service, prisma } = make(
+      findMany,
+      { publishedTo: ['dev'], rollbackPoints: ['a001'] },
+      { delete: jest.fn(async () => undefined) },
+    );
+
+    await expect(service.runRetention()).resolves.toEqual({ removed: 100, kept: 1 });
+
+    expect(findMany).toHaveBeenCalledTimes(2);
+    // The second batch continues after the last id of the first one.
+    expect(findMany.mock.calls[1][0].where.id).toEqual({ gt: 'a099' });
+    expect(prisma.environment.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
   });
 
   it('protects exactly the newest previous successful artifact for rollback', async () => {
-    const prisma = {
-      buildArtifact: {
-        findMany: jest.fn(async () => [{ id: 'previous', storageRef: 'previous.tar' }]),
-        updateMany: jest.fn(),
-      },
-      environment: {
-        count: jest.fn(async () => 0),
-        findUnique: jest.fn(async () => ({ buildArtifactId: 'current' })),
-      },
-      deploymentOperation: {
-        count: jest.fn(async () => 0),
-        findMany: jest.fn(async () => [{ environmentId: 'dev' }]),
-        findFirst: jest.fn(async () => ({ buildArtifactId: 'previous' })),
-      },
-    };
-    const del = jest.fn();
-    const service = make(prisma, { delete: del });
+    const del = jest.fn(async () => undefined);
+    const { service, prisma } = make(
+      [
+        { id: 'previous', storageRef: 'previous.tar' },
+        { id: 'older', storageRef: 'older.tar' },
+      ],
+      { publishedTo: ['dev'], rollbackPoints: ['previous'] },
+      { delete: del },
+    );
 
-    await expect(service.runRetention()).resolves.toEqual({ removed: 0, kept: 1 });
-    expect(del).not.toHaveBeenCalled();
-    expect(prisma.deploymentOperation.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          environmentId: 'dev',
-          NOT: { buildArtifactId: 'current' },
-        }),
-        orderBy: { createdAt: 'desc' },
-      }),
+    await expect(service.runRetention()).resolves.toEqual({ removed: 1, kept: 1 });
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith('older.tar');
+    expect(prisma.buildArtifact.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'older' } }),
     );
   });
 
-  it('expires older successful artifacts beyond the single rollback point', async () => {
-    const updateMany = jest.fn(async () => ({ count: 1 }));
-    const prisma = {
-      buildArtifact: {
-        findMany: jest.fn(async () => [{ id: 'older', storageRef: 'older.tar' }]),
-        updateMany,
+  it('skips the rollback-point query when no artifact in the batch was published', async () => {
+    const { service, prisma } = make(
+      [{ id: 'a1', storageRef: 'k' }],
+      {},
+      {
+        delete: jest.fn(async () => undefined),
       },
-      environment: {
-        count: jest.fn(async () => 0),
-        findUnique: jest.fn(async () => ({ buildArtifactId: 'current' })),
-      },
-      deploymentOperation: {
-        count: jest.fn(async () => 0),
-        findMany: jest.fn(async () => [{ environmentId: 'dev' }]),
-        findFirst: jest.fn(async () => ({ buildArtifactId: 'previous' })),
-      },
-    };
-    const del = jest.fn(async () => undefined);
-    const service = make(prisma, { delete: del });
+    );
 
-    await expect(service.runRetention()).resolves.toEqual({ removed: 1, kept: 0 });
-    expect(del).toHaveBeenCalledWith('older.tar');
-    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'older' } }));
+    await service.runRetention();
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
   it('purges every durable object belonging to a deleted project', async () => {
@@ -197,7 +187,11 @@ describe('ProjectArtifactLifecycle.runRetention', () => {
       },
     };
     const del = jest.fn(async () => undefined);
-    const service = make(prisma, { delete: del });
+    const service = new ProjectArtifactLifecycle(
+      prisma as never,
+      { delete: del } as never,
+      {} as never,
+    );
 
     await expect(service.purgeProjectObjects('project')).resolves.toEqual([]);
     expect(del).toHaveBeenCalledTimes(2);
@@ -218,7 +212,11 @@ describe('ProjectArtifactLifecycle.runRetention', () => {
     const del = jest.fn(async (key: string) => {
       if (key.endsWith('blocked.tar')) throw new Error('access denied');
     });
-    const service = make(prisma, { delete: del });
+    const service = new ProjectArtifactLifecycle(
+      prisma as never,
+      { delete: del } as never,
+      {} as never,
+    );
 
     await expect(service.purgeProjectObjects('project')).resolves.toEqual([
       'artifacts/ws/project/blocked.tar: access denied',
