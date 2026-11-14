@@ -65,6 +65,10 @@ type ScheduleApprovedProduction = (
   expected: ExpectedProductionState,
 ) => Promise<string>;
 
+// approve() claims, schedules and records within one request; anything older
+// than this was left behind by a process that stopped in between.
+const APPROVING_GRACE_MS = 5 * 60_000;
+
 type ResolveRollback = (projectId: string) => Promise<RollbackPreview | null>;
 
 const REQUEST_INCLUDE = {
@@ -369,6 +373,59 @@ export class ProjectProductionApprovals {
       throw error;
     }
     return this.latest(projectId, userId);
+  }
+
+  /**
+   * A process that crashed between claiming a request and recording its
+   * deployment leaves it in `approving`, which blocks production changes. A
+   * request older than the grace period is linked to the operation that
+   * approval created, or returned to `pending` when none was created.
+   */
+  async recoverStuckApprovals(now: Date = new Date()): Promise<number> {
+    const stuck = await this.prisma.productionDeploymentRequest.findMany({
+      where: {
+        status: 'approving',
+        updatedAt: { lte: new Date(now.getTime() - APPROVING_GRACE_MS) },
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: 25,
+      select: {
+        id: true,
+        environmentId: true,
+        kind: true,
+        version: true,
+        reviewedAt: true,
+        updatedAt: true,
+      },
+    });
+    let recovered = 0;
+    for (const request of stuck) {
+      const operation = await this.prisma.deploymentOperation.findFirst({
+        where: {
+          environmentId: request.environmentId,
+          kind: request.kind,
+          version: request.version,
+          createdAt: { gte: request.reviewedAt ?? request.updatedAt },
+          productionRequest: null,
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      const changed = await this.prisma.productionDeploymentRequest.updateMany({
+        where: { id: request.id, status: 'approving', updatedAt: request.updatedAt },
+        data: operation
+          ? { status: 'approved', deploymentOperationId: operation.id }
+          : {
+              status: 'pending',
+              reviewedById: null,
+              reviewedByUsername: null,
+              reviewedByDisplayName: null,
+              reviewedAt: null,
+            },
+      });
+      recovered += changed.count;
+    }
+    return recovered;
   }
 
   private async snapshot(projectId: string, input: CreateInput): Promise<ProductionSnapshot> {

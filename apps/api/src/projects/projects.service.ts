@@ -235,12 +235,24 @@ export class ProjectsService {
     this.workloadDiagnostics = new ProjectWorkloadDiagnostics(prisma, templates);
   }
 
-  /** Internal recovery boundary invoked by ProjectsLifecycleService at startup. */
+  /**
+   * Database-only recovery invoked by ProjectsLifecycleService when it
+   * becomes leader. SCM work lives in reconcileScmConfiguration (ADR-179).
+   */
   async reconcilePersistedState(): Promise<void> {
-    await this.reconciliation.reconcileRepositoryIdentities();
-    await this.reconciliation.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedExecutions();
     await this.environmentTargets.reconcileAllocations();
+  }
+
+  /** Provider-side reconciliation run in the background by the leader. */
+  async reconcileScmConfiguration(): Promise<void> {
+    await this.reconciliation.reconcileRepositoryIdentities();
+    await this.reconciliation.reconcileCiRuntimeSecrets();
+  }
+
+  /** Returns production requests left in `approving` by a crashed process. */
+  recoverStuckProductionApprovals(): Promise<number> {
+    return this.productionApprovals.recoverStuckApprovals();
   }
 
   /** Deploys CI results queued while dev was busy (ADR-178). */
