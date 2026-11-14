@@ -1489,8 +1489,29 @@ export class ProjectsService {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
     });
-    if (!env || !env.version) {
+    if (!env) {
       throw new BadRequestException(`Environment '${envName}' has nothing to redeploy`);
+    }
+    if (!env.version) {
+      // A first deployment that failed leaves no current version. The last
+      // verified artifact this environment tried to publish is the build to
+      // retry; nothing else is guessed.
+      const attempted = await this.lastVerifiedAttempt(env.id);
+      if (!attempted) {
+        throw new BadRequestException(
+          `Environment '${envName}' has nothing to redeploy. Push a commit or run CI again.`,
+        );
+      }
+      await this.scheduleDeployment(
+        id,
+        envName,
+        attempted.version,
+        true,
+        'redeploy',
+        attempted.buildArtifactId,
+        actorUserId,
+      );
+      return this.get(id);
     }
     const useRegistry = /^[0-9a-f]{7,40}$/.test(env.version);
     await this.scheduleDeployment(
@@ -1503,6 +1524,23 @@ export class ProjectsService {
       actorUserId,
     );
     return this.get(id);
+  }
+
+  private async lastVerifiedAttempt(
+    environmentId: string,
+  ): Promise<{ version: string; buildArtifactId: string } | null> {
+    const operation = await this.prisma.deploymentOperation.findFirst({
+      where: {
+        environmentId,
+        version: { not: null },
+        buildArtifact: { status: 'available', storageKind: 'object-store' },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { version: true, buildArtifactId: true },
+    });
+    if (!operation?.version || !operation.buildArtifactId) return null;
+    if (!/^[0-9a-f]{40}$/i.test(operation.version)) return null;
+    return { version: operation.version, buildArtifactId: operation.buildArtifactId };
   }
 
   rollbackPreview(id: string, envName: EnvName): Promise<RollbackPreview | null> {
