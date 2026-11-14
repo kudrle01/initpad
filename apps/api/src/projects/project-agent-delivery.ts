@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { agentConfigFingerprint } from '../agents/agent-config-fingerprint';
+import { agentHeartbeatIsFresh } from '../agents/agents.service';
 import {
   agentVersionAtLeast,
   MIN_GATEWAY_ROUTE_AGENT_VERSION,
@@ -19,6 +20,23 @@ export interface AgentDeploymentIntent {
 
 export type AgentProjectAction = 'start' | 'stop' | 'remove';
 
+/**
+ * A short gap (Agent restart or self-update) only warns: the job waits in the
+ * queue. A longer outage, and any removal, is refused at once so the
+ * operation cannot sit in "Waiting for Agent" forever.
+ */
+export const AGENT_LONG_OFFLINE_MS = 10 * 60_000;
+
+export function agentOfflineReason(
+  lastSeenAt: Date | null | undefined,
+  now = Date.now(),
+): string | null {
+  if (agentHeartbeatIsFresh(lastSeenAt, now)) return null;
+  return lastSeenAt
+    ? `Agent offline since ${lastSeenAt.toISOString()}; start it or disconnect the server`
+    : 'Agent has not connected yet; start it or disconnect the server';
+}
+
 /** Creates the durable, non-secret handoff for one project deployment. */
 export class ProjectAgentDelivery {
   constructor(
@@ -34,7 +52,10 @@ export class ProjectAgentDelivery {
       );
     }
     const operation = await this.loadOperation(operationId);
-    const { environment, target, allocation } = this.assertAgentBinding(operation);
+    const { environment, target, allocation, offlineReason } = this.assertAgentBinding(
+      operation,
+      'deploy',
+    );
     const artifact = operation.buildArtifact;
     if (
       !artifact ||
@@ -81,7 +102,7 @@ export class ProjectAgentDelivery {
       },
     });
     if (!['queued', 'leased'].includes(row.status)) return;
-    await this.publishQueued(operation.id, environment.id, allocation.id, false);
+    await this.publishQueued(operation.id, environment.id, allocation.id, false, offlineReason);
   }
 
   async queueLifecycle(
@@ -90,7 +111,10 @@ export class ProjectAgentDelivery {
     intent: AgentDeploymentIntent,
   ): Promise<void> {
     const operation = await this.loadOperation(operationId);
-    const { environment, target, allocation } = this.assertAgentBinding(operation);
+    const { environment, target, allocation, offlineReason } = this.assertAgentBinding(
+      operation,
+      kind,
+    );
     const managedGateway = target.routingMode === 'managed-gateway';
     const workloadStep = managedGateway && ['stop', 'remove'].includes(kind) ? 2 : 1;
     const initialStatus = workloadStep === 2 ? 'blocked' : 'queued';
@@ -157,7 +181,13 @@ export class ProjectAgentDelivery {
     } else if (!['queued', 'leased'].includes(row.status)) {
       return;
     }
-    await this.publishQueued(operation.id, environment.id, allocation.id, kind === 'remove');
+    await this.publishQueued(
+      operation.id,
+      environment.id,
+      allocation.id,
+      kind === 'remove',
+      offlineReason,
+    );
   }
 
   private async publishQueued(
@@ -165,17 +195,19 @@ export class ProjectAgentDelivery {
     environmentId: string,
     allocationId: string,
     removing: boolean,
+    offlineReason: string | null = null,
   ): Promise<void> {
+    const waiting = offlineReason ?? 'Waiting for Agent';
     await this.prisma.$transaction([
       this.prisma.deploymentOperation.updateMany({
         where: { id: operationId, status: 'running' },
-        data: { message: 'Waiting for Agent' },
+        data: { message: waiting },
       }),
       this.prisma.environment.updateMany({
         where: { id: environmentId, activeOperationId: operationId },
         data: {
           status: 'deploying',
-          statusReason: 'Waiting for Agent',
+          statusReason: waiting,
           allocationId,
           ...(removing ? { deploymentRequired: false } : {}),
         },
@@ -209,6 +241,7 @@ export class ProjectAgentDelivery {
 
   private assertAgentBinding(
     operation: Awaited<ReturnType<ProjectAgentDelivery['loadOperation']>>,
+    kind: 'deploy' | AgentProjectAction,
   ) {
     const environment = operation.environment;
     const target = environment.target;
@@ -226,6 +259,15 @@ export class ProjectAgentDelivery {
     }
     if (!target.agent?.credentialHash || target.agent.disabledAt) {
       throw new BadRequestException('Enroll the target Agent before deploying to it');
+    }
+    const offlineReason = agentOfflineReason(target.agent.lastSeenAt);
+    if (
+      offlineReason &&
+      (kind === 'remove' ||
+        !target.agent.lastSeenAt ||
+        Date.now() - target.agent.lastSeenAt.getTime() > AGENT_LONG_OFFLINE_MS)
+    ) {
+      throw new BadRequestException(offlineReason);
     }
     if (!supportsProjectAgent(target.agent.version)) {
       throw new BadRequestException(
@@ -248,6 +290,6 @@ export class ProjectAgentDelivery {
         );
       }
     }
-    return { environment, target, allocation };
+    return { environment, target, allocation, offlineReason };
   }
 }

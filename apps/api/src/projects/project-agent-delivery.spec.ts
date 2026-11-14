@@ -30,6 +30,7 @@ function operation(overrides: Record<string, unknown> = {}) {
         routingMode: 'direct-port',
         agent: {
           credentialHash: 'hash',
+          lastSeenAt: new Date(),
           disabledAt: null,
           version: '0.4.0',
         },
@@ -136,7 +137,12 @@ describe('ProjectAgentDelivery', () => {
           ...operation().environment,
           target: {
             ...operation().environment.target,
-            agent: { credentialHash: 'hash', disabledAt: null, version: '0.3.0' },
+            agent: {
+              credentialHash: 'hash',
+              disabledAt: null,
+              lastSeenAt: new Date(),
+              version: '0.3.0',
+            },
           },
         },
       }),
@@ -184,7 +190,12 @@ describe('ProjectAgentDelivery', () => {
           gatewayAdapter: 'caddy',
           gatewayPreflightStatus: 'passed',
           publicUrl: 'https://apps.example.test',
-          agent: { credentialHash: 'hash', disabledAt: null, version: '0.8.0' },
+          agent: {
+            credentialHash: 'hash',
+            disabledAt: null,
+            lastSeenAt: new Date(),
+            version: '0.8.0',
+          },
         },
       },
     });
@@ -249,5 +260,56 @@ describe('ProjectAgentDelivery', () => {
       /workspace Agent allocation/,
     );
     expect(prisma.agentJob.upsert).not.toHaveBeenCalled();
+  });
+  describe('offline Agent', () => {
+    function withLastSeen(lastSeenAt: Date | null) {
+      const row = operation();
+      (row.environment.target.agent as Record<string, unknown>).lastSeenAt = lastSeenAt;
+      return row;
+    }
+
+    it('queues a deploy with an actionable warning during a short outage', async () => {
+      const lastSeenAt = new Date(Date.now() - 3 * 60_000);
+      const { service, prisma } = setup(withLastSeen(lastSeenAt));
+
+      await service.queueDeployment('operation-1', intent);
+
+      const reason = `Agent offline since ${lastSeenAt.toISOString()}; start it or disconnect the server`;
+      expect(prisma.agentJob.upsert).toHaveBeenCalled();
+      expect(prisma.environment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'environment-1', activeOperationId: 'operation-1' },
+        data: expect.objectContaining({ statusReason: reason }),
+      });
+      expect(prisma.deploymentOperation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'operation-1', status: 'running' },
+        data: { message: reason },
+      });
+    });
+
+    it('refuses a deploy when the Agent has been offline for long', async () => {
+      const lastSeenAt = new Date(Date.now() - 2 * 60 * 60_000);
+      const { service, prisma } = setup(withLastSeen(lastSeenAt));
+
+      await expect(service.queueDeployment('operation-1', intent)).rejects.toThrow(
+        `Agent offline since ${lastSeenAt.toISOString()}; start it or disconnect the server`,
+      );
+      expect(prisma.agentJob.upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses a removal on an offline target instead of waiting forever', async () => {
+      const { service, prisma } = setup(withLastSeen(new Date(Date.now() - 2 * 60_000)));
+
+      await expect(service.queueLifecycle('operation-1', 'remove', intent)).rejects.toThrow(
+        /^Agent offline since .*; start it or disconnect the server$/,
+      );
+      expect(prisma.agentJob.upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses work for an Agent that never sent a heartbeat', async () => {
+      const { service } = setup(withLastSeen(null));
+      await expect(service.queueLifecycle('operation-1', 'start', intent)).rejects.toThrow(
+        'Agent has not connected yet; start it or disconnect the server',
+      );
+    });
   });
 });
