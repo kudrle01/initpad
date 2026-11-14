@@ -16,8 +16,9 @@ evidence are welcome.
 
 ## Development setup
 
-The supported local toolchain is Node.js 22.12 or newer and Docker with the
-Compose plugin.
+The supported local toolchain is the Node.js 26 LTS line (`.node-version`; CI,
+release workflows and every platform image use the same line) and Docker with
+the Compose plugin.
 
 ```bash
 npm ci

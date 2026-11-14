@@ -13,13 +13,19 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # The 0.x and 2.x packages share one release line, so skipping only the
-      # majors would mix two SDK generations in the API.
-      - dependency-name: "@opentelemetry/*"
+      # Node and its types move with the LTS line (.node-version, ADR-186).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
+      # The 0.x and 2.x OpenTelemetry packages share one release line, so they
+      # move together in one pull request instead of mixing SDK generations.
+      opentelemetry:
+        applies-to: version-updates
+        patterns: ["@opentelemetry/*"]
       npm-dependencies:
         applies-to: version-updates
         patterns: ["*"]
+        exclude-patterns: ["@opentelemetry/*"]
       # Security updates arrive as soon as an advisory is published and are
       # reviewed in one pull request instead of one per package.
       npm-security:
@@ -78,10 +84,13 @@ updates:
       time: "05:30"
       timezone: Europe/Prague
     # The test and dependency stages follow the PHP of the FrankenPHP runtime
-    # (ADR-152), so the two move together.
+    # (ADR-152), so the two move together. The platform stays on one Node LTS
+    # line (.node-version, ADR-186); a new major is moved by hand everywhere.
     ignore:
       - dependency-name: "php"
         versions: [">=8.4"]
+      - dependency-name: "*node"
+        update-types: ["version-update:semver-major"]
     groups:
       dockerfile-images:
         patterns: ["*"]
@@ -89,7 +98,8 @@ updates:
     commit-message:
       prefix: chore(images)
 
-  # The Supervisor applies platform updates, so its Node line moves on its own.
+  # The Supervisor applies platform updates, so its images arrive in a pull
+  # request of their own; its Node line is the platform line.
   - package-ecosystem: docker
     directory: /apps/supervisor
     schedule:
@@ -99,7 +109,7 @@ updates:
       timezone: Europe/Prague
     ignore:
       - dependency-name: "*node"
-        versions: [">=23"]
+        update-types: ["version-update:semver-major"]
     groups:
       supervisor-images:
         patterns: ["*"]

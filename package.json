@@ -26,7 +26,7 @@
     "check:release": "npm run check && npm run audit:dependencies"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=26.0.0 <27"
   },
   "overrides": {
     "@nestjs/platform-express": {
@@ -39,7 +39,10 @@
       "minimatch": "11.0.4"
     },
     "glob@>=9.0.0 <14.0.2": "14.0.4",
-    "minimatch@>=7.0.0 <11.0.1": "11.0.5"
+    "minimatch@>=7.0.0 <11.0.1": "11.0.5",
+    "@nestjs/cli": {
+      "typescript": "$typescript"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -47,6 +50,8 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.14.0",
     "prettier": "^3.9.10",
-    "typescript-eslint": "^8.72.1"
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "yaml": "^2.9.1"
   }
 }
