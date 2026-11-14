@@ -185,3 +185,5 @@ stabilní.
 | [ADR-171](./ADR-171.md) | Accepted | CI joby berou akce ze zrcadel v Gitee |
 | [ADR-172](./ADR-172.md) | Accepted | Pracovní soubory deploye API leží na disku |
 | [ADR-173](./ADR-173.md) | Accepted | Vestavěný Docker se nenabízí, když nemůže ověřit nasazení |
+| [ADR-182](./ADR-182.md) | Accepted | Aktualizace platformy se sladí se Supervisorem a nehlásí nepravdivý rollback |
+| [ADR-183](./ADR-183.md) | Accepted | Destruktivní migrace potřebují výjimku a release s nimi nesmí slibovat rollback images |

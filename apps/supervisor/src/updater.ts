@@ -437,6 +437,11 @@ export class PlatformUpdater {
     const changed = ['switching', 'api', 'web', 'supervisor'].includes(operation.stage);
     const restoreSupervisor = operation.stage === 'supervisor';
     try {
+      if (operation.restoreRequired && ['api', 'web', 'supervisor'].includes(operation.stage)) {
+        throw new Error(
+          'the release migrated the database incompatibly, so the previous images were not restarted',
+        );
+      }
       if (changed) {
         const hadPrevious = await fileExists(previousOverride);
         if (hadPrevious) {
@@ -522,6 +527,7 @@ export class PlatformUpdater {
     let previousOverride = '';
     let hadOverride = false;
     let switched = false;
+    let migrated = false;
     let installRoot = '';
     try {
       const plan = await readPlan(path);
@@ -548,6 +554,9 @@ export class PlatformUpdater {
       const override = renderOverride(manifest);
       if (sha256(override) !== manifest.compose.sha256) {
         throw new Error('Generated Compose override does not match the signed release');
+      }
+      if (manifest.database.rollback === 'restore-required') {
+        await updateOperation(operation, { restoreRequired: true });
       }
       // Written as a new file instead of copyFile(2), which hardened Docker
       // hosts reject with EPERM; the rollback later renames it back.
@@ -605,6 +614,7 @@ export class PlatformUpdater {
         stage: 'api',
         message: 'Applying compatible migrations and checking the API',
       });
+      migrated = true;
       await this.runner.run('docker', [
         ...candidateCompose,
         'up',
@@ -663,15 +673,29 @@ export class PlatformUpdater {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Platform update failed';
       if (previousState && operation) {
-        previousState.operation = switched
-          ? await this.rollBack(operation, message, installRoot, hadOverride, previousOverride)
-          : {
+        previousState.operation = !switched
+          ? {
               ...operation,
               status: 'failed',
               stage: 'failed',
               message: `Update failed before switching: ${message}`.slice(0, 500),
               finishedAt: new Date().toISOString(),
-            };
+            }
+          : migrated && operation.restoreRequired
+            ? {
+                // The previous API cannot run against the migrated database;
+                // restarting it would fail or corrupt data.
+                ...operation,
+                status: 'failed',
+                stage: 'recovery-failed',
+                message: recoveryFailedMessage(
+                  'Update failed after incompatible database migrations, so the previous images were not restarted',
+                  error,
+                  operation.backupPath,
+                ),
+                finishedAt: new Date().toISOString(),
+              }
+            : await this.rollBack(operation, message, installRoot, hadOverride, previousOverride);
         await saveState(previousState).catch(() => undefined);
         if (!switched && previousOverride) await rm(previousOverride, { force: true });
       }

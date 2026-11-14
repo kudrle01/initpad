@@ -18,11 +18,9 @@ export interface PlatformReleaseManifest {
   source: { repository: string; tag: string; commit: string };
   images: Record<'api' | 'web' | 'supervisor', PlatformReleaseImage>;
   compose: { file: 'initpad-release.override.yml'; sha256: string };
-  database: {
-    migrationMode: 'expand-contract';
-    rollback: 'image-compatible';
-    backupRequired: true;
-  };
+  database:
+    | { migrationMode: 'expand-contract'; rollback: 'image-compatible'; backupRequired: true }
+    | { migrationMode: 'contract'; rollback: 'restore-required'; backupRequired: true };
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -119,8 +117,10 @@ export function parsePlatformReleaseManifest(
     !SHA256.test(compose.sha256) ||
     !database ||
     !exactKeys(database, ['migrationMode', 'rollback', 'backupRequired']) ||
-    database.migrationMode !== 'expand-contract' ||
-    database.rollback !== 'image-compatible' ||
+    !(
+      (database.migrationMode === 'expand-contract' && database.rollback === 'image-compatible') ||
+      (database.migrationMode === 'contract' && database.rollback === 'restore-required')
+    ) ||
     database.backupRequired !== true
   ) {
     throw new Error('Platform release manifest is invalid');
@@ -136,10 +136,9 @@ export function parsePlatformReleaseManifest(
     },
     images: { api, web, supervisor },
     compose: { file: 'initpad-release.override.yml', sha256: compose.sha256 },
-    database: {
-      migrationMode: 'expand-contract',
-      rollback: 'image-compatible',
-      backupRequired: true,
-    },
+    database:
+      database.migrationMode === 'contract'
+        ? { migrationMode: 'contract', rollback: 'restore-required', backupRequired: true }
+        : { migrationMode: 'expand-contract', rollback: 'image-compatible', backupRequired: true },
   };
 }

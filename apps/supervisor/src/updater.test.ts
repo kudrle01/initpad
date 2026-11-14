@@ -539,3 +539,75 @@ test('recovery reports recovery-failed when restored services are unhealthy', as
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+function contractUpdater(runner: FakeRunner): PlatformUpdater {
+  const contract = {
+    ...manifest(),
+    database: {
+      migrationMode: 'contract' as const,
+      rollback: 'restore-required' as const,
+      backupRequired: true as const,
+    },
+  };
+  return new PlatformUpdater(runner, (async () => contract) as never, async () => undefined);
+}
+
+test('does not restart previous images after a contract release migrated the database', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const override = await withPreviousOverride(directory);
+    const runner = new FakeRunner();
+    runner.failWeb = true;
+    await assert.rejects(contractUpdater(runner).applyPlan(plan), /web failed readiness/);
+    const state = await loadState();
+    assert.equal(state.currentVersion, '0.2.0');
+    assert.equal(state.operation?.stage, 'recovery-failed');
+    assert.equal(state.operation?.restoreRequired, true);
+    assert.match(state.operation?.message ?? '', /incompatible database migrations/);
+    assert.match(state.operation?.message ?? '', /Database backup: .*\.dump/);
+    const rollbackCalls = runner.calls.filter(
+      (call) => call.includes('up') && call.slice(-3).join(' ') === 'api web supervisor',
+    );
+    assert.equal(rollbackCalls.length, 0);
+    // The previous descriptor stays for the manual restore.
+    assert.equal(
+      await readFile(`${override}.previous-${operationId}`, 'utf8'),
+      'services:\n  api:\n    image: "previous"\n',
+    );
+    await assert.rejects(access(resolve(directory, 'state/update.lock')), /ENOENT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a contract release still fails cleanly before switching', async () => {
+  const { directory, plan } = await fixture();
+  try {
+    const runner = new FakeRunner();
+    runner.failPull = true;
+    await assert.rejects(contractUpdater(runner).applyPlan(plan), /registry unavailable/);
+    assert.equal((await loadState()).operation?.stage, 'failed');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('recovery refuses an image rollback once a contract release reached the API stage', async () => {
+  const { directory } = await fixture();
+  try {
+    const state = await loadState();
+    if (!state.operation) throw new Error('fixture operation is missing');
+    state.operation.status = 'running';
+    state.operation.stage = 'web';
+    state.operation.restoreRequired = true;
+    await saveState(state);
+    const runner = new FakeRunner();
+    await new PlatformUpdater(runner).recoverInterruptedUpdate(operationId);
+    const recovered = await loadState();
+    assert.equal(recovered.operation?.stage, 'recovery-failed');
+    assert.match(recovered.operation?.message ?? '', /migrated the database incompatibly/);
+    assert.equal(runner.calls.filter((call) => call.includes('up')).length, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

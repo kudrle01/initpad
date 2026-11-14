@@ -110,8 +110,10 @@ export function parsePlatformReleaseManifest(
     compose.file !== 'initpad-release.override.yml' ||
     typeof compose.sha256 !== 'string' ||
     !SHA256.test(compose.sha256) ||
-    database.migrationMode !== 'expand-contract' ||
-    database.rollback !== 'image-compatible' ||
+    !(
+      (database.migrationMode === 'expand-contract' && database.rollback === 'image-compatible') ||
+      (database.migrationMode === 'contract' && database.rollback === 'restore-required')
+    ) ||
     database.backupRequired !== true
   ) {
     throw new Error('Platform release manifest is invalid');
@@ -134,11 +136,10 @@ export function parsePlatformReleaseManifest(
       file: 'initpad-release.override.yml',
       sha256: String(compose.sha256),
     },
-    database: {
-      migrationMode: 'expand-contract',
-      rollback: 'image-compatible',
-      backupRequired: true,
-    },
+    database:
+      database.migrationMode === 'contract'
+        ? { migrationMode: 'contract', rollback: 'restore-required', backupRequired: true }
+        : { migrationMode: 'expand-contract', rollback: 'image-compatible', backupRequired: true },
   };
 }
 

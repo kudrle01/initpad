@@ -11,6 +11,9 @@ export interface UpdateOperation {
   stage: string;
   message: string;
   backupPath: string | null;
+  // Set once a contract release was verified; recovery then refuses an
+  // image-only rollback after the API stage.
+  restoreRequired?: boolean;
   startedAt: string;
   finishedAt: string | null;
 }
@@ -36,11 +39,12 @@ export interface PlatformReleaseManifest {
   source: { repository: string; tag: string; commit: string };
   images: Record<'api' | 'web' | 'supervisor', PlatformImage>;
   compose: { file: 'initpad-release.override.yml'; sha256: string };
-  database: {
-    migrationMode: 'expand-contract';
-    rollback: 'image-compatible';
-    backupRequired: true;
-  };
+  // A contract release ships migrations an older API cannot run against;
+  // after its API started, only a database restore returns to the previous
+  // release (ADR-183).
+  database:
+    | { migrationMode: 'expand-contract'; rollback: 'image-compatible'; backupRequired: true }
+    | { migrationMode: 'contract'; rollback: 'restore-required'; backupRequired: true };
 }
 
 export interface SignedPlatformRelease {

@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +16,80 @@ const IMAGE_NAME = /^[a-z0-9]+(?:[._/-][a-z0-9]+)*$/;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const COMMIT = /^[a-f0-9]{40}$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+// Statements after which the previous API image may no longer work against
+// the migrated database, so an image-only rollback is unsafe. DROP INDEX and
+// DROP CONSTRAINT only relax the schema and stay compatible.
+const DESTRUCTIVE_STATEMENTS = [
+  ['DROP', /\bDROP\s+(?:TABLE|COLUMN|TYPE|SCHEMA|VIEW)\b/i],
+  ['RENAME', /\bRENAME\b/i],
+  ['ALTER TYPE', /\bALTER\s+TYPE\b/i],
+  ['ALTER COLUMN TYPE', /\bALTER\s+COLUMN\s+"?\w+"?\s+(?:SET\s+DATA\s+)?TYPE\b/i],
+  ['SET NOT NULL', /\bSET\s+NOT\s+NULL\b/i],
+];
+// The newest migration that existed when the policy was introduced; only
+// migrations up to it may use the 'historical' exception.
+const HISTORICAL_CUTOFF = '20261113120000';
+
+export function destructiveStatements(sql) {
+  const code = sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
+  return DESTRUCTIVE_STATEMENTS.filter(([, pattern]) => pattern.test(code)).map(([label]) => label);
+}
+
+/**
+ * Enforces that every destructive migration has an explicit exception and
+ * returns the database contract of the given release. A release that ships
+ * a destructive migration must not claim image-compatible rollback.
+ */
+export function migrationPolicy(root, version) {
+  const migrationsDirectory = resolve(root, 'apps/api/prisma/migrations');
+  const exceptions =
+    JSON.parse(readFileSync(resolve(root, 'apps/api/prisma/destructive-migrations.json'), 'utf8'))
+      .migrations ?? {};
+  const names = readdirSync(migrationsDirectory)
+    .filter((name) => existsSync(resolve(migrationsDirectory, name, 'migration.sql')))
+    .sort();
+  const problems = [];
+  const shipped = [];
+  for (const [name, exception] of Object.entries(exceptions)) {
+    if (!names.includes(name)) problems.push(`${name}: exception names no migration`);
+    const release = exception?.release;
+    if (release === 'historical') {
+      if (name.slice(0, 14) > HISTORICAL_CUTOFF) {
+        problems.push(`${name}: only migrations shipped up to 0.2.35 may be 'historical'`);
+      }
+    } else if (typeof release !== 'string' || !VERSION.test(release)) {
+      problems.push(`${name}: exception release must be 'historical' or x.y.z`);
+    }
+    if (typeof exception?.reason !== 'string' || !exception.reason.trim()) {
+      problems.push(`${name}: exception needs a reason`);
+    }
+  }
+  for (const name of names) {
+    const found = destructiveStatements(
+      readFileSync(resolve(migrationsDirectory, name, 'migration.sql'), 'utf8'),
+    );
+    if (found.length === 0) continue;
+    const exception = exceptions[name];
+    if (!exception) {
+      problems.push(
+        `${name}: destructive migration (${found.join(', ')}) without an exception in apps/api/prisma/destructive-migrations.json`,
+      );
+    } else if (exception.release === version) {
+      shipped.push(name);
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(`Database migration policy violated:\n- ${problems.join('\n- ')}`);
+  }
+  return {
+    destructiveMigrations: shipped,
+    database:
+      shipped.length > 0
+        ? { migrationMode: 'contract', rollback: 'restore-required', backupRequired: true }
+        : { migrationMode: 'expand-contract', rollback: 'image-compatible', backupRequired: true },
+  };
+}
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -47,6 +129,8 @@ export function preparePlatformRelease(options) {
     throw new Error('source repository must be the official InitPad repository');
   }
 
+  const { database } = migrationPolicy(options.root, version);
+
   const images = {
     api: imageRecord(options.images.api.name, options.images.api.digest),
     web: imageRecord(options.images.web.name, options.images.web.digest),
@@ -81,11 +165,7 @@ export function preparePlatformRelease(options) {
       file: 'initpad-release.override.yml',
       sha256: sha256(overrideBytes),
     },
-    database: {
-      migrationMode: 'expand-contract',
-      rollback: 'image-compatible',
-      backupRequired: true,
-    },
+    database,
   };
 
   mkdirSync(options.outputDirectory, { recursive: true });
