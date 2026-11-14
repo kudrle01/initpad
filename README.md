@@ -23,7 +23,7 @@ srozumitelném a samostatně nasaditelném systému.
 
 | Část                  | Stav                                                                                                                                                                                                                                                                                     |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.34`; živou candidate acceptance aktualizace tlačítkem **Install update** (z `0.2.23` na `0.2.24`) se zachováním dat a workloadů prošel `0.2.24`, u `0.2.34` ji nikdo neprovedl; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10`            |
+| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.35`; živou candidate acceptance aktualizace tlačítkem **Install update** (z `0.2.23` na `0.2.24`) se zachováním dat a workloadů prošel `0.2.24`, u `0.2.35` ji nikdo neprovedl; recovery bootstrap z `0.2.9` byl ověřen na `0.2.10`            |
 | InitPad Agent         | Doporučený release `0.16.0` (spravovaná brána jedním příkazem, kontrola velikosti serveru); ověřen lokálně v Dockeru a anonymním auditem, živá acceptance na hostu zatím neproběhla. Reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu u `0.14.3` |
 | Hosted SaaS           | Ve vývoji; nejde zatím o produkční deployment profil                                                                                                                                                                                                                                     |
 
@@ -70,7 +70,7 @@ spusťte `sudo ./prepare-rootless-runner.sh` (instalátor na to upozorní).
 Instalujte z posledního podepsaného releasu:
 
 ```bash
-git clone --branch initpad-v0.2.34 https://github.com/kudrle01/initpad.git initpad
+git clone --branch initpad-v0.2.35 https://github.com/kudrle01/initpad.git initpad
 cd initpad/deploy
 ./install.sh
 ```
@@ -150,7 +150,7 @@ vyžaduje přístup k internetu; CI ho spouští na `main` a každou noc.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.34
+npm run audit:public-release -- --tag initpad-v0.2.35
 npm run audit:public-release -- --tag agent-v0.16.0
 ```
 
