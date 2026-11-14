@@ -25,4 +25,9 @@ export const csWeb = {
   // pages/NewProject.tsx
   'Setting up the project takes longer than usual. It continues in the background — follow it on the overview.':
     'Zakládání projektu trvá déle než obvykle. Pokračuje na pozadí — sledujte ho na přehledu.',
+  // pages/ImportRepo.tsx
+  'The import takes longer than usual. It continues in the background — follow it on the overview.':
+    'Import trvá déle než obvykle. Pokračuje na pozadí — sledujte ho na přehledu.',
+  'Import lists repositories that InitPad can reach and that are not connected yet. An empty repository needs a first commit. To start without a repository, <link>create a project from a template</link>.':
+    'Import nabízí repozitáře, ke kterým má InitPad přístup a které ještě nejsou připojené. Prázdný repozitář potřebuje první commit. Pokud repozitář nemáte, <link>založte projekt ze šablony</link>.',
 } satisfies Record<string, string>;

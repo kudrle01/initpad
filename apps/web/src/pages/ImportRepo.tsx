@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AlertTriangle, Check, DownloadCloud, Github, LayoutTemplate } from 'lucide-react';
-import { api, type GitHubStatus } from '@/api';
+import { api, ApiError, type GitHubStatus } from '@/api';
+import { useImportPreflight } from '@/hooks/useImportPreflight';
+import { clearDraft, readDraft, writeDraft } from '@/lib/form-draft';
+import { translateApiMessage } from '@/lib/api-messages';
+import { HelpLink } from '@/components/molecules/HelpLink';
 import { useToast } from '@/toast';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
@@ -24,15 +28,17 @@ import {
   suggestedEnvironmentTargets,
   type EnvironmentTargets,
 } from '@/components/organisms/EnvironmentTargetFields';
-import type {
-  EnvName,
-  ImportableRepo,
-  ImportPreflight,
-  PipelinePreset,
-  Target,
-  TemplateManifest,
-} from '@/types';
+import type { EnvName, ImportableRepo, PipelinePreset, Target, TemplateManifest } from '@/types';
 import { t, rich } from '@/i18n';
+
+const DRAFT_KEY = 'import';
+
+interface ImportDraft {
+  repositoryId: string;
+  templateId: string;
+  pipelinePreset: PipelinePreset;
+  environmentTargets: EnvironmentTargets;
+}
 
 // Import an existing repository: pick a repo + template, run a preflight against
 // the runtime contract, then record the project without touching the code.
@@ -43,14 +49,21 @@ export default function ImportRepo() {
   const readOnly = activeWorkspace?.role === 'viewer';
   const hosted = user?.edition === 'saas';
 
+  const draft = useRef(readDraft<ImportDraft>(DRAFT_KEY));
   const [repos, setRepos] = useState<ImportableRepo[]>([]);
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
   const [repositoryId, setRepositoryId] = useState('');
   const [templateId, setTemplateId] = useState('');
-  const [pipelinePreset, setPipelinePreset] = useState<PipelinePreset>(DEFAULT_PIPELINE_PRESET);
-  const [preflight, setPreflight] = useState<ImportPreflight | null>(null);
-  const [checking, setChecking] = useState(false);
+  const [pipelinePreset, setPipelinePreset] = useState<PipelinePreset>(
+    draft.current?.pipelinePreset ?? DEFAULT_PIPELINE_PRESET,
+  );
+  const {
+    preflight,
+    checking,
+    error: preflightError,
+    rerun: runPreflight,
+  } = useImportPreflight(repositoryId, templateId);
   const [downloadingWorkflow, setDownloadingWorkflow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -73,7 +86,6 @@ export default function ImportRepo() {
     setTargets([]);
     setRepositoryId('');
     setTemplateId('');
-    setPreflight(null);
     setGhStatus(null);
     Promise.all([
       api.listImportableRepos(),
@@ -87,9 +99,12 @@ export default function ImportRepo() {
         setTemplates(templateRows);
         setTargets(targetRows);
         setGhStatus(github);
-        if (templateRows[0]) setTemplateId(templateRows[0].id);
-        const firstImportable = repoRows.find((x) => !x.alreadyImported && !x.empty);
-        if (firstImportable) setRepositoryId(firstImportable.repositoryId);
+        const savedTemplate = templateRows.find((x) => x.id === draft.current?.templateId);
+        if (savedTemplate ?? templateRows[0]) setTemplateId((savedTemplate ?? templateRows[0]).id);
+        const importable = repoRows.filter((x) => !x.alreadyImported && !x.empty);
+        const savedRepo = importable.find((x) => x.repositoryId === draft.current?.repositoryId);
+        const chosen = savedRepo ?? importable[0];
+        if (chosen) setRepositoryId(chosen.repositoryId);
       })
       .catch((e) => {
         if (current) setLoadError((e as Error).message);
@@ -102,9 +117,6 @@ export default function ImportRepo() {
     };
   }, [hosted, activeWorkspace?.id, reloadKey]);
 
-  // A fresh choice invalidates the previous preflight.
-  useEffect(() => setPreflight(null), [repositoryId, templateId]);
-
   const selectedRepo = useMemo(
     () => repos.find((repo) => repo.repositoryId === repositoryId) ?? null,
     [repos, repositoryId],
@@ -115,23 +127,28 @@ export default function ImportRepo() {
   );
 
   useEffect(() => {
-    setEnvironmentTargets(suggestedEnvironmentTargets(template, targets, hosted));
+    const suggested = suggestedEnvironmentTargets(template, targets, hosted);
+    const saved = draft.current;
+    if (saved?.environmentTargets && template && saved.templateId === template.id) {
+      for (const environment of Object.keys(suggested) as EnvName[]) {
+        const targetId = saved.environmentTargets[environment];
+        if (targetId && targets.some((target) => target.id === targetId)) {
+          suggested[environment] = targetId;
+        }
+      }
+    }
+    setEnvironmentTargets(suggested);
   }, [template, targets, hosted]);
+
+  useEffect(() => {
+    if (loading || loadError) return;
+    const next: ImportDraft = { repositoryId, templateId, pipelinePreset, environmentTargets };
+    draft.current = next;
+    writeDraft(DRAFT_KEY, next);
+  }, [loading, loadError, repositoryId, templateId, pipelinePreset, environmentTargets]);
 
   function chooseTarget(environment: EnvName, targetId: string) {
     setEnvironmentTargets((current) => ({ ...current, [environment]: targetId }));
-  }
-
-  async function runPreflight() {
-    if (!repositoryId || !templateId) return;
-    setChecking(true);
-    try {
-      setPreflight(await api.importPreflight(repositoryId, templateId));
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setChecking(false);
-    }
   }
 
   async function doImport() {
@@ -152,9 +169,20 @@ export default function ImportRepo() {
         })),
         pipelinePreset,
       );
+      clearDraft(DRAFT_KEY);
       toast.success(t('Repository imported'));
       void navigate(`/projects/${project.id}`);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 408) {
+        clearDraft(DRAFT_KEY);
+        toast.warning(
+          t(
+            'The import takes longer than usual. It continues in the background — follow it on the overview.',
+          ),
+        );
+        void navigate('/');
+        return;
+      }
       toast.error((e as Error).message);
       setBusy(false);
     }
@@ -322,9 +350,19 @@ export default function ImportRepo() {
                     )}
                   </Notice>
                 ) : (
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    {t('No repositories available to import.')}
-                  </p>
+                  <Notice className="mt-3" title={t('No repositories available to import.')}>
+                    {rich(
+                      'Import lists repositories that InitPad can reach and that are not connected yet. An empty repository needs a first commit. To start without a repository, <link>create a project from a template</link>.',
+                      {
+                        link: (chunk) => (
+                          <Link to="/new" className="text-link font-medium">
+                            {chunk}
+                          </Link>
+                        ),
+                      },
+                    )}{' '}
+                    <HelpLink topic="import" />
+                  </Notice>
                 ))}
             </Section>
 
@@ -370,18 +408,19 @@ export default function ImportRepo() {
             </div>
 
             <Button
-              variant={preflight ? 'secondary' : 'default'}
+              variant="secondary"
               className="mt-5 w-full"
-              onClick={runPreflight}
+              onClick={() => void runPreflight()}
               disabled={!repositoryId || !templateId || checking}
             >
               {checking ? <Spinner className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-              {checking
-                ? t('Checking…')
-                : preflight
-                  ? t('Run preflight again')
-                  : t('Run preflight check')}
+              {checking ? t('Checking…') : t('Run preflight again')}
             </Button>
+            {preflightError && (
+              <Notice tone="danger" role="alert" className="mt-4">
+                {preflightError}
+              </Notice>
+            )}
 
             {preflight && (
               <div className="mt-5 border-t border-border/70 pt-5" aria-live="polite">
@@ -407,7 +446,9 @@ export default function ImportRepo() {
                     {preflight.warnings.map((w, i) => (
                       <li key={i} className="flex items-start gap-2 text-xs leading-relaxed">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-                        <span className="min-w-0 break-words text-muted-foreground">{w}</span>
+                        <span className="min-w-0 break-words text-muted-foreground">
+                          {translateApiMessage(w)}
+                        </span>
                       </li>
                     ))}
                   </ul>
