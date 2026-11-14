@@ -1230,7 +1230,8 @@ export class GiteaService implements OnModuleInit, ScmProvider {
   async initLocal(dir: string, author?: { name: string; email: string }): Promise<void> {
     const name = author?.name || config.git.authorName;
     const email = author?.email || config.git.authorEmail;
-    const git = (args: string[]) => exec('git', args, { cwd: dir });
+    const git = (args: string[]) =>
+      exec('git', args, { cwd: dir, timeout: config.timeouts.gitMs, killSignal: 'SIGKILL' });
     try {
       await git(['init', '-b', 'main']);
       await git(['add', '-A']);
@@ -1249,7 +1250,8 @@ export class GiteaService implements OnModuleInit, ScmProvider {
   }
 
   private async pushScaffold(name: string, dir: string, actor: GiteaActor): Promise<void> {
-    const git = (args: string[]) => exec('git', args, { cwd: dir });
+    const git = (args: string[]) =>
+      exec('git', args, { cwd: dir, timeout: config.timeouts.gitMs, killSignal: 'SIGKILL' });
     await git(['remote', 'remove', 'origin']).catch(() => undefined);
     await git(['remote', 'add', 'origin', this.authedRemote(name, actor)]);
     await git(['push', '-u', 'origin', 'main']);

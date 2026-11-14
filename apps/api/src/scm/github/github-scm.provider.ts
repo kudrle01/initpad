@@ -1241,7 +1241,8 @@ export class GitHubScmProvider implements ScmProvider {
     this.prepareGitHubActions(dir);
     const name = author?.name || config.git.authorName;
     const email = author?.email || config.git.authorEmail;
-    const git = (args: string[]) => exec('git', args, { cwd: dir });
+    const git = (args: string[]) =>
+      exec('git', args, { cwd: dir, timeout: config.timeouts.gitMs, killSignal: 'SIGKILL' });
     try {
       await git(['init', '-b', 'main']);
       await git(['add', '-A']);
@@ -1288,7 +1289,12 @@ export class GitHubScmProvider implements ScmProvider {
     token: string,
   ): Promise<void> {
     const git = (args: string[], env?: NodeJS.ProcessEnv) =>
-      exec('git', args, { cwd: dir, env: env ? { ...process.env, ...env } : process.env });
+      exec('git', args, {
+        cwd: dir,
+        env: env ? { ...process.env, ...env } : process.env,
+        timeout: config.timeouts.gitMs,
+        killSignal: 'SIGKILL',
+      });
     const remote = `https://github.com/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}.git`;
     await git(['remote', 'remove', 'origin']).catch(() => undefined);
     await git(['remote', 'add', 'origin', remote]);

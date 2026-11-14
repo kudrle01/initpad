@@ -1,11 +1,15 @@
-import type { SFTPWrapper } from 'ssh2';
+import { Client, type SFTPWrapper } from 'ssh2';
+import { config } from '../../config';
 import {
   assertSftpWritable,
   normalizeHostKeyFingerprint,
   sftpRmrf,
   shellQuote,
   sshHostKeyAlgorithm,
+  sshConnect,
   sshHostKeyFingerprint,
+  SSH_KEEPALIVE_COUNT_MAX,
+  withSshDeadline,
 } from './ssh-utils';
 
 describe('SSH host identity', () => {
@@ -84,5 +88,44 @@ describe('assertSftpWritable', () => {
     } as unknown as SFTPWrapper;
 
     await expect(assertSftpWritable(sftp, '/www')).rejects.toThrow('mkdir /www/.initpad-write-');
+  });
+});
+
+describe('SSH session bounds', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('enables keepalive so a vanished peer fails pending SFTP requests', async () => {
+    let options: Record<string, unknown> = {};
+    jest.spyOn(Client.prototype, 'connect').mockImplementation(function (this: Client, cfg) {
+      options = cfg as Record<string, unknown>;
+      process.nextTick(() => this.emit('ready'));
+      return this;
+    });
+
+    const conn = await sshConnect({ host: '192.0.2.10', port: 22, username: 'deploy' });
+    conn.destroy();
+
+    expect(options).toEqual(
+      expect.objectContaining({
+        keepaliveInterval: config.timeouts.sshKeepaliveIntervalMs,
+        keepaliveCountMax: SSH_KEEPALIVE_COUNT_MAX,
+      }),
+    );
+  });
+
+  it('destroys the connection and names the limit when a session task hangs', async () => {
+    const conn = { destroy: jest.fn() };
+    await expect(
+      withSshDeadline(conn, 20, 'SFTP deployment', () => new Promise<never>(() => undefined)),
+    ).rejects.toThrow('SFTP deployment did not finish within 0 s');
+    expect(conn.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the task result and leaves a finished connection alone', async () => {
+    const conn = { destroy: jest.fn() };
+    await expect(withSshDeadline(conn, 1_000, 'SFTP deployment', async () => 'ok')).resolves.toBe(
+      'ok',
+    );
+    expect(conn.destroy).not.toHaveBeenCalled();
   });
 });

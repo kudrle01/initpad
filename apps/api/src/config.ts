@@ -284,6 +284,21 @@ export const config = {
     presignTtlSeconds: Number(process.env.INITPAD_ARTIFACT_PRESIGN_TTL_SECONDS || 300),
     // Verified artifacts older than this are eligible for GC unless still referenced.
     retentionDays: Number(process.env.INITPAD_ARTIFACT_RETENTION_DAYS || 30),
+    // TCP connect and socket-inactivity limits. Without them a silent object
+    // store keeps a deploy waiting while its execution lease is still renewed.
+    connectionTimeoutMs: Number(process.env.INITPAD_ARTIFACT_S3_CONNECTION_TIMEOUT_MS || 10_000),
+    requestTimeoutMs: Number(process.env.INITPAD_ARTIFACT_S3_REQUEST_TIMEOUT_MS || 120_000),
+  },
+  // Bounds for outbound work that would otherwise wait forever on a silent
+  // peer (ADR-176). All values are milliseconds.
+  timeouts: {
+    // Each local git command (scaffold commit and push).
+    gitMs: Number(process.env.INITPAD_GIT_TIMEOUT_MS || 120_000),
+    // SSH keepalive probes; the connection is dropped after 4 missed answers.
+    sshKeepaliveIntervalMs: Number(process.env.INITPAD_SSH_KEEPALIVE_INTERVAL_MS || 15_000),
+    // Whole SFTP deploy after the connection is established (upload, extract,
+    // publish, verification).
+    sftpDeployMs: Number(process.env.INITPAD_SFTP_DEPLOY_TIMEOUT_MS || 15 * 60_000),
   },
   // The platform as an OIDC provider (SSO into Gitea); Gitea registers as a
   // client. issuer = address the Gitea SERVER calls (from its container via
@@ -502,6 +517,28 @@ export function validateConfig(): void {
   }
   if (!Number.isFinite(retentionDays) || retentionDays < 1) {
     throw new Error('INITPAD_ARTIFACT_RETENTION_DAYS must be a positive number of days');
+  }
+  const bounded: Array<[string, number, number, number]> = [
+    [
+      'INITPAD_ARTIFACT_S3_CONNECTION_TIMEOUT_MS',
+      config.artifactStore.connectionTimeoutMs,
+      1_000,
+      120_000,
+    ],
+    [
+      'INITPAD_ARTIFACT_S3_REQUEST_TIMEOUT_MS',
+      config.artifactStore.requestTimeoutMs,
+      5_000,
+      3_600_000,
+    ],
+    ['INITPAD_GIT_TIMEOUT_MS', config.timeouts.gitMs, 5_000, 3_600_000],
+    ['INITPAD_SSH_KEEPALIVE_INTERVAL_MS', config.timeouts.sshKeepaliveIntervalMs, 1_000, 300_000],
+    ['INITPAD_SFTP_DEPLOY_TIMEOUT_MS', config.timeouts.sftpDeployMs, 60_000, 6 * 3_600_000],
+  ];
+  for (const [name, value, min, max] of bounded) {
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new Error(`${name} must be an integer between ${min} and ${max}`);
+    }
   }
   // The SaaS control plane has no single-host Docker daemon to fall back on, so a
   // durable artifact store is mandatory there — fail loudly rather than silently
