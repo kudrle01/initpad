@@ -29,6 +29,7 @@ command -v docker >/dev/null || fail "Docker is not installed (https://docs.dock
 docker compose version >/dev/null 2>&1 || fail "The Docker Compose plugin is missing: https://docs.docker.com/compose/install/"
 
 COMPOSE=(docker compose -f "$INFRA/docker-compose.yml")
+docker compose --progress quiet version >/dev/null 2>&1 && COMPOSE=(docker compose --progress quiet -f "$INFRA/docker-compose.yml")
 # Docker Desktop resolves host.docker.internal itself; plain Linux needs the
 # host-gateway mapping so Gitea reaches the dev API for SSO and webhooks.
 if [ "$(uname -s)" = Linux ] && ! docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -q 'Docker Desktop'; then
@@ -79,7 +80,8 @@ up() {
     set_kv "$DEV_ENV" INITPAD_DEV_S3_SECRET_ACCESS_KEY "$(random_secret)"
 
   say "Starting the development stack (project initpad-dev)"
-  "${COMPOSE[@]}" up -d postgres gitea s3 s3-init fake-sftp static-web
+  "${COMPOSE[@]}" up -d --wait postgres gitea s3 fake-sftp static-web >/dev/null
+  "${COMPOSE[@]}" up -d s3-init >/dev/null
   wait_healthy gitea
 
   if gitea_cli admin user list 2>/dev/null | awk '{print $2}' | grep -qx "$BOT_USER"; then
@@ -122,8 +124,10 @@ up() {
   set_kv "$API_ENV" INITPAD_ARTIFACT_S3_FORCE_PATH_STYLE true
 
   say "Applying database migrations"
-  (cd "$ROOT" && npm run --silent db:migrate --workspace @initpad/api >/dev/null) ||
-    fail "Database migration failed: run 'npm ci' first, then npm run db:migrate --workspace @initpad/api."
+  # `migrate deploy` applies the committed migrations without prompting;
+  # `npm run db:migrate` (migrate dev) is for authoring a new migration.
+  (cd "$ROOT/apps/api" && PRISMA_HIDE_UPDATE_MESSAGE=1 "$ROOT/node_modules/.bin/prisma" migrate deploy >/dev/null 2>&1) ||
+    fail "Database migration failed. Run 'npm ci' first, then ./infra/dev-setup.sh again."
 
   cat <<EOF
 
@@ -158,9 +162,12 @@ sso() {
   secret=$(get_kv "$API_ENV" INITPAD_OIDC_CLIENT_SECRET)
   [ -n "$secret" ] || fail "Run ./infra/dev-setup.sh first."
   # Gitea validates the discovery URL immediately, so the dev API must run.
-  "${COMPOSE[@]}" exec -T gitea curl -fsS -o /dev/null \
+  "${COMPOSE[@]}" exec -T gitea curl -fsS -m 10 -o /dev/null \
     http://host.docker.internal:3000/api/.well-known/openid-configuration ||
-    fail "Gitea cannot reach the dev API at host.docker.internal:3000. Start npm run dev:api first."
+    fail "Gitea cannot reach the dev API at host.docker.internal:3000.
+Start npm run dev:api first. If it runs, a host firewall drops traffic from Docker
+networks to the host; with ufw allow just this network:
+  sudo ufw allow in on br-\$(docker network inspect initpad-dev_platform -f '{{printf \"%.12s\" .Id}}') to any port 3000 proto tcp"
   id=$(gitea_cli admin auth list 2>/dev/null | awk '$2=="initpad-sso" {print $1; exit}')
   if [ -n "$id" ]; then
     gitea_cli admin auth update-oauth --id "$id" --name initpad-sso --provider openidConnect \
