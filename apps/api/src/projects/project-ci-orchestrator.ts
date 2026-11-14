@@ -10,7 +10,10 @@ import { repositoryRef, ScmActor, ScmBuildArtifact, ScmRepositoryRef } from '../
 import { WorkspaceScmService } from '../scm/workspace-scm.service';
 import { CI_RUNNING_REASON } from './ci-state';
 import { ProjectArtifactIngestion } from './project-artifact-ingestion';
-import { ProjectDeploymentOperations } from './project-deployment-operations';
+import {
+  ActiveOperationConflict,
+  ProjectDeploymentOperations,
+} from './project-deployment-operations';
 
 export interface CiArtifactInput {
   ciStatus?: string;
@@ -31,6 +34,10 @@ type VerifyRegistryArtifact = (
   version: string,
 ) => Promise<void>;
 
+type CiProject = NonNullable<Awaited<ReturnType<PrismaService['project']['findUnique']>>>;
+
+const PENDING_DRAIN_BATCH = 25;
+
 type FindRenamedProject = (
   repo: string,
   token: string,
@@ -43,6 +50,8 @@ type FindRenamedProject = (
  */
 export class ProjectCiOrchestrator {
   private readonly logger = new Logger('ProjectCiOrchestrator');
+  private draining?: Promise<void>;
+  private drainAgain = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -214,18 +223,165 @@ export class ProjectCiOrchestrator {
       return;
     }
 
+    if (dev.activeOperationId) {
+      await this.queuePending(project.id, dev.id, sha, artifactInput);
+      return;
+    }
+    try {
+      await this.startDeploy(project, repository, sha, buildArtifact);
+    } catch (error) {
+      // Another request claimed dev between the read above and begin().
+      if (!(error instanceof ActiveOperationConflict)) throw error;
+      await this.queuePending(project.id, dev.id, sha, artifactInput);
+    }
+  }
+
+  private async startDeploy(
+    project: CiProject,
+    repository: ScmRepositoryRef,
+    sha: string,
+    buildArtifact: ScmBuildArtifact | null,
+  ): Promise<void> {
     const version = sha || '0.1.0';
-    await this.prisma.project.update({
-      where: { id: project.id },
-      data: { lastCommit: `ci: deploy ${version.slice(0, 7)}` },
-    });
     if (buildArtifact) {
       const operationId = await this.operations.begin(project.id, 'dev', 'ci-deploy', version);
+      await this.setLastCommit(project.id, `ci: deploy ${version.slice(0, 7)}`);
       await this.ingestion.queue(project.id, repository, buildArtifact, operationId);
     } else {
       await this.scheduleDeployment(project.id, version, 'ci-deploy');
+      await this.setLastCommit(project.id, `ci: deploy ${version.slice(0, 7)}`);
     }
-    this.logger.log(`CI deploy: ${repo} → dev (${version})`);
+    this.logger.log(`CI deploy: ${repository.fullName} → dev (${version})`);
+  }
+
+  /**
+   * Latest wins (ADR-178): a successful build that arrives while dev is busy
+   * replaces any older queued build and deploys once dev is free. Nothing is
+   * written to the operation history until it actually starts.
+   */
+  private async queuePending(
+    projectId: string,
+    environmentId: string,
+    sha: string,
+    input: CiArtifactInput,
+  ): Promise<void> {
+    await this.prisma.environment.update({
+      where: { id: environmentId },
+      data: {
+        pendingCiVersion: sha.toLowerCase(),
+        pendingCiArtifactId: input.artifactId ?? null,
+        pendingCiArtifactDigest: input.artifactDigest ?? null,
+        pendingCiQueuedAt: new Date(),
+      },
+    });
+    await this.setLastCommit(projectId, `ci: queued ${sha.slice(0, 7)}`);
+    this.logger.log(`CI deploy queued behind the active dev operation (${sha.slice(0, 7)})`);
+    // The active operation may have finished between the read and this write.
+    this.scheduleDrain();
+  }
+
+  /** Starts a drain unless one is running; a running drain makes one more pass. */
+  scheduleDrain(): void {
+    if (this.draining) {
+      this.drainAgain = true;
+      return;
+    }
+    const run = async () => {
+      do {
+        this.drainAgain = false;
+        await this.drainPending().catch((error) =>
+          this.logger.warn(`Queued CI deployment drain failed: ${(error as Error).message}`),
+        );
+      } while (this.drainAgain);
+    };
+    this.draining = run().finally(() => {
+      this.draining = undefined;
+    });
+  }
+
+  /** Deploys queued CI builds whose dev environment is free again. */
+  async drainPending(): Promise<number> {
+    const environments = await this.prisma.environment.findMany({
+      where: { name: 'dev', pendingCiQueuedAt: { not: null }, activeOperationId: null },
+      orderBy: { pendingCiQueuedAt: 'asc' },
+      take: PENDING_DRAIN_BATCH,
+      select: {
+        id: true,
+        projectId: true,
+        status: true,
+        version: true,
+        deploymentRequired: true,
+        pendingCiVersion: true,
+        pendingCiArtifactId: true,
+        pendingCiArtifactDigest: true,
+        pendingCiQueuedAt: true,
+      },
+    });
+    let started = 0;
+    for (const environment of environments) {
+      const claimed = await this.prisma.environment.updateMany({
+        where: {
+          id: environment.id,
+          activeOperationId: null,
+          pendingCiQueuedAt: environment.pendingCiQueuedAt,
+          pendingCiVersion: environment.pendingCiVersion,
+        },
+        data: {
+          pendingCiVersion: null,
+          pendingCiArtifactId: null,
+          pendingCiArtifactDigest: null,
+          pendingCiQueuedAt: null,
+        },
+      });
+      const sha = environment.pendingCiVersion;
+      if (claimed.count !== 1 || !sha) continue;
+      // A user who cancelled or removed dev does not want the queued build.
+      if (environment.status === 'empty') continue;
+      if (
+        environment.status === 'running' &&
+        !environment.deploymentRequired &&
+        environment.version?.toLowerCase() === sha
+      ) {
+        continue;
+      }
+      const input: CiArtifactInput = {
+        artifactId: environment.pendingCiArtifactId ?? undefined,
+        artifactDigest: environment.pendingCiArtifactDigest ?? undefined,
+      };
+      try {
+        const project = await this.prisma.project.findUnique({
+          where: { id: environment.projectId },
+        });
+        if (!project) continue;
+        const repository = repositoryRef(project);
+        const buildArtifact = await this.resolveArtifact(project.id, repository, sha, input);
+        if (buildArtifact === 'duplicate') continue;
+        await this.startDeploy(project, repository, sha, buildArtifact);
+        started += 1;
+      } catch (error) {
+        if (error instanceof ActiveOperationConflict) {
+          // Put it back unless a newer build was queued meanwhile.
+          await this.prisma.environment.updateMany({
+            where: { id: environment.id, pendingCiQueuedAt: null },
+            data: {
+              pendingCiVersion: sha,
+              pendingCiArtifactId: environment.pendingCiArtifactId,
+              pendingCiArtifactDigest: environment.pendingCiArtifactDigest,
+              pendingCiQueuedAt: environment.pendingCiQueuedAt,
+            },
+          });
+          continue;
+        }
+        this.logger.warn(
+          `Queued CI deployment of ${sha.slice(0, 7)} failed to start: ${(error as Error).message}`,
+        );
+      }
+    }
+    return started;
+  }
+
+  private async setLastCommit(projectId: string, lastCommit: string): Promise<void> {
+    await this.prisma.project.update({ where: { id: projectId }, data: { lastCommit } });
   }
 
   private async publishCiFailure(
@@ -301,12 +457,27 @@ export class ProjectCiOrchestrator {
         );
         return;
       }
-      const operationId = await this.operations.begin(
-        project.id,
-        'dev',
-        'ci-deploy',
-        sha.toLowerCase(),
-      );
+      if (dev.activeOperationId) {
+        // The active operation keeps dev; a queued older build stays queued.
+        await this.setLastCommit(project.id, `ci: failed ${sha.slice(0, 7)}`);
+        this.logger.warn(
+          `CI failed while dev was busy: ${repository.fullName} (${ciStatus}); nothing recorded`,
+        );
+        return;
+      }
+      let operationId: string;
+      try {
+        operationId = await this.operations.begin(
+          project.id,
+          'dev',
+          'ci-deploy',
+          sha.toLowerCase(),
+        );
+      } catch (error) {
+        if (!(error instanceof ActiveOperationConflict)) throw error;
+        await this.setLastCommit(project.id, `ci: failed ${sha.slice(0, 7)}`);
+        return;
+      }
       const finalStatus = ['running', 'stopped'].includes(dev.status) ? dev.status : 'failed';
       await this.prisma.environment.updateMany({
         where: { id: dev.id, activeOperationId: operationId },

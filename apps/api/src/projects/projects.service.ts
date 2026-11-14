@@ -198,6 +198,9 @@ export class ProjectsService {
       },
       (repo, token) => this.repositoryIdentity.findRenamedByCiToken(repo, token),
     );
+    // A queued CI build starts as soon as the operation holding dev ends; the
+    // lifecycle sweep covers releases written by Agent job replays.
+    this.operations.onEnvironmentReleased(() => this.ci.scheduleDrain());
     this.rollbackFlow = new ProjectRollback(
       prisma,
       async (projectId, environment, version, buildArtifactId, actorUserId) => {
@@ -238,6 +241,11 @@ export class ProjectsService {
     await this.reconciliation.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedExecutions();
     await this.environmentTargets.reconcileAllocations();
+  }
+
+  /** Deploys CI results queued while dev was busy (ADR-178). */
+  drainPendingCiDeployments(): Promise<number> {
+    return this.ci.drainPending();
   }
 
   /** Lets projects follow a renamed GitHub user or organization (ADR-155). */
