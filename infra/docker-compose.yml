@@ -55,7 +55,7 @@ services:
   # S3-compatible object storage for verified build artifacts (ADR-059,
   # ADR-163), the same SeaweedFS gateway as the deploy/ stack.
   s3:
-    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
+    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
     command: server -dir=/data -s3 -s3.port=9000 -ip.bind=0.0.0.0 -volume.max=5
     environment:
       AWS_ACCESS_KEY_ID: ${INITPAD_DEV_S3_ACCESS_KEY_ID:-initpad}
@@ -72,7 +72,7 @@ services:
     networks: [platform]
 
   s3-init:
-    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
+    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
     depends_on:
       s3: { condition: service_healthy }
     entrypoint:
@@ -147,7 +147,7 @@ services:
   # here over SFTP; the content (per-project symlinks) is served by the nginx
   # service below. The volume is shared with nginx.
   sftp-volume-init:
-    image: alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+    image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     command:
       - /bin/sh
       - -ec
