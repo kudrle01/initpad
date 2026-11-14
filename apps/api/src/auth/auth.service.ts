@@ -5,7 +5,9 @@ import {
   Inject,
   Injectable,
   Logger,
+  OnModuleDestroy,
   OnModuleInit,
+  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -25,10 +27,14 @@ import { MailDeliveryService, type MailKind } from '../mail/mail-delivery.servic
 import { AuditEventsService, type RecordAuditEvent } from '../audit/audit-events.service';
 import { SessionsService, type SessionClient } from './sessions.service';
 import { repositoryRef } from '../scm/scm-provider';
+import { ControlPlaneLeaseService } from '../common/control-plane-lease.service';
 
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 const ACTIVATION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const GITEA_HARDENING_LEASE = 'gitea-password-hardening';
+const GITEA_HARDENING_LEASE_TTL_MS = 2 * 60_000;
+const GITEA_HARDENING_RETRY_MS = 10 * 60_000;
 // A valid, precomputed scrypt record used only to make an unknown-account
 // sign-in spend the same kind of work as a known account. The plaintext is
 // irrelevant: callers always receive the same generic authentication error.
@@ -62,9 +68,12 @@ export interface SessionUser {
  * so there is no reverse "sign in with Gitea" path (ADR-016).
  */
 @Injectable()
-export class AuthService implements OnModuleInit {
+export class AuthService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('AuthService');
   private registrationLock: Promise<void> = Promise.resolve();
+  private hardeningTimer?: NodeJS.Timeout;
+  // Exposed for tests and shutdown; never awaited during startup.
+  giteaPasswordHardening?: Promise<void>;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -82,6 +91,9 @@ export class AuthService implements OnModuleInit {
       prisma,
       jwt,
     ),
+    @Optional()
+    @Inject(ControlPlaneLeaseService)
+    private readonly leases?: Pick<ControlPlaneLeaseService, 'acquire'>,
   ) {}
 
   /** Platform-level account event (ADR-142); `tx` keeps it with its change. */
@@ -136,30 +148,78 @@ export class AuthService implements OnModuleInit {
   }
 
   /**
-   * Managed Gitea accounts are authenticated through InitPad OIDC. Rotate any
-   * legacy/local Gitea passwords on startup so a platform password (including
-   * an old password after reset) can never be used to bypass InitPad account
-   * lifecycle checks by signing in to Gitea directly.
+   * Managed Gitea accounts are authenticated through InitPad OIDC. Legacy
+   * local Gitea passwords are rotated so a platform password (including an
+   * old one after reset) can never bypass InitPad account lifecycle checks by
+   * signing in to Gitea directly. The rotation calls Gitea once per account,
+   * so it runs in the background under a control-plane lease and only for
+   * accounts not yet marked as hardened; it never delays API readiness.
    */
-  async onModuleInit(): Promise<void> {
+  onModuleInit(): void {
     if (config.edition !== 'self-hosted') return;
-    try {
-      const users = await this.prisma.user.findMany({
-        where: { giteaId: { not: null } },
-        select: { username: true },
-      });
-      for (const user of users) {
-        await this.gitea
-          .randomizeUserPassword(user.username)
-          .catch((error) =>
-            this.logger.warn(
-              `Could not harden the local Gitea password for ${user.username}: ${(error as Error).message}`,
-            ),
-          );
-      }
-    } catch (error) {
-      this.logger.warn(`Managed Gitea password hardening skipped: ${(error as Error).message}`);
+    this.scheduleGiteaPasswordHardening(0);
+  }
+
+  onModuleDestroy(): void {
+    if (this.hardeningTimer) clearTimeout(this.hardeningTimer);
+    this.hardeningTimer = undefined;
+  }
+
+  private scheduleGiteaPasswordHardening(delayMs: number): void {
+    if (this.hardeningTimer) clearTimeout(this.hardeningTimer);
+    this.hardeningTimer = setTimeout(() => {
+      this.hardeningTimer = undefined;
+      this.giteaPasswordHardening = this.hardenGiteaPasswords()
+        .then((done) => {
+          if (!done) this.scheduleGiteaPasswordHardening(GITEA_HARDENING_RETRY_MS);
+        })
+        .catch((error) => {
+          this.logger.warn(`Managed Gitea password hardening skipped: ${(error as Error).message}`);
+          this.scheduleGiteaPasswordHardening(GITEA_HARDENING_RETRY_MS);
+        })
+        .finally(() => {
+          this.giteaPasswordHardening = undefined;
+        });
+    }, delayMs);
+    this.hardeningTimer.unref?.();
+  }
+
+  /**
+   * Hardens pending accounts while holding the lease. Returns true when no
+   * account is left, false when another replica holds the lease or an account
+   * failed and a later retry is needed.
+   */
+  async hardenGiteaPasswords(): Promise<boolean> {
+    if (!this.leases) return true;
+    if (!(await this.leases.acquire(GITEA_HARDENING_LEASE, GITEA_HARDENING_LEASE_TTL_MS))) {
+      return false;
     }
+    const pending = await this.prisma.user.findMany({
+      where: { giteaId: { not: null }, giteaPasswordHardenedAt: null },
+      select: { id: true, username: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    let failed = 0;
+    for (const user of pending) {
+      // Renewing before every call keeps a slow Gitea from letting a second
+      // replica start the same sweep.
+      if (!(await this.leases.acquire(GITEA_HARDENING_LEASE, GITEA_HARDENING_LEASE_TTL_MS))) {
+        return false;
+      }
+      try {
+        await this.gitea.randomizeUserPassword(user.username);
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { giteaPasswordHardenedAt: new Date() },
+        });
+      } catch (error) {
+        failed += 1;
+        this.logger.warn(
+          `Could not harden the local Gitea password for ${user.username}: ${(error as Error).message}`,
+        );
+      }
+    }
+    return failed === 0;
   }
 
   /**
@@ -314,6 +374,7 @@ export class AuthService implements OnModuleInit {
           passwordHash: await hashPassword(input.password),
           accessToken: encryptSecret(accessToken),
           giteaCredentialsScopedAt: new Date(),
+          giteaPasswordHardenedAt: new Date(),
           memberships: {
             create: {
               role: 'owner',

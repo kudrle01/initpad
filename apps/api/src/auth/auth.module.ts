@@ -10,6 +10,7 @@ import { RateLimitService } from './rate-limit.service';
 import { MailModule } from '../mail/mail.module';
 import { AuditEventsService } from '../audit/audit-events.service';
 import { SessionsService } from './sessions.service';
+import { ControlPlaneLeaseService } from '../common/control-plane-lease.service';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SessionsService } from './sessions.service';
     RateLimitService,
     RateLimitGuard,
     AuditEventsService,
+    ControlPlaneLeaseService,
   ],
   controllers: [AuthController],
   // Consumers using @RateLimited() resolve the guard in their own module
