@@ -65,6 +65,14 @@ export class GeneratorService {
    *   Namespaced by owner so two users can have same-named projects without
    *   directory collisions.
    */
+  /**
+   * Renders the template into a fresh, request-unique checkout below
+   * `<workspace>/<owner>/`. The caller owns and removes the directory.
+   */
+  generateCheckout(templateId: string, projectName: string, owner: string): GenerateResult {
+    return this.generate(templateId, projectName, uniqueWorkspaceSubpath(owner, projectName));
+  }
+
   generate(templateId: string, projectName: string, destSubpath?: string): GenerateResult {
     const srcDir = this.templates.filesDir(templateId);
     const destDir = workspacePath(destSubpath ?? projectName);

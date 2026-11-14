@@ -39,6 +39,7 @@ function build(operation: Record<string, unknown>, scmOverrides: Record<string, 
   const provisioning = {
     record: jest.fn(async () => operation),
     isRetryable: jest.fn(() => true),
+    retryBlockedReason: jest.fn(() => null),
     needsCleanup: jest.fn(() => true),
     claimRetry: jest.fn(async () => undefined),
     releaseRetry: jest.fn(async () => undefined),

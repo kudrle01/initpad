@@ -24,7 +24,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { ImportProjectDto } from './dto/import-project.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
-import { GeneratorService, uniqueWorkspaceSubpath } from '../generator/generator.service';
+import { GeneratorService } from '../generator/generator.service';
 import { NO_LOCAL_CHECKOUT } from './project-deletion';
 import { DeploymentService } from '../deployment/deployment.service';
 import { ARTIFACT_STORE, ArtifactStore } from '../artifacts/artifact-store';
@@ -602,6 +602,7 @@ export class ProjectsService {
       retryOfId: retry?.retryOfId,
       attempt: retry?.attempt,
     });
+    const releaseLease = this.provisioning.holdLease(op);
     try {
       const project = await this.createInternal(dto, ownerId, workspaceId, op);
       await this.provisioning.succeed(op, project.id);
@@ -609,6 +610,8 @@ export class ProjectsService {
     } catch (e) {
       await this.provisioning.fail(op, (e as Error).message);
       throw e;
+    } finally {
+      releaseLease();
     }
   }
 
@@ -655,11 +658,7 @@ export class ProjectsService {
     // The scaffold checkout is temporary and unique per request
     // (.workspace/<owner>/<name>-XXXXXX): a double-submitted create must not
     // share, overwrite or delete the other request's checkout.
-    const { repoPath } = this.generator.generate(
-      template.id,
-      dto.name,
-      uniqueWorkspaceSubpath(owner.username, dto.name),
-    );
+    const { repoPath } = this.generator.generateCheckout(template.id, dto.name, owner.username);
     try {
       // The scaffold commit is authored by the platform's service account
       // (bot); the developer's own commits carry their identity.
@@ -899,6 +898,7 @@ export class ProjectsService {
       retryOfId: retry?.retryOfId,
       attempt: retry?.attempt,
     });
+    const releaseLease = this.provisioning.holdLease(op);
     try {
       const template = this.templates.get(dto.templateId);
 
@@ -908,6 +908,7 @@ export class ProjectsService {
         workspaceId,
         dto.repositoryId,
       );
+      await this.provisioning.rename(op, repo.fullName);
       const scm = this.workspaceScm.provider(repo.provider);
       if (repo.empty) {
         throw new BadRequestException('Cannot import an empty repository — push code first.');
@@ -1128,24 +1129,17 @@ export class ProjectsService {
     } catch (e) {
       await this.provisioning.fail(op, (e as Error).message);
       throw e;
+    } finally {
+      releaseLease();
     }
   }
 
   async retryProvisioning(operationId: string, userId: string): Promise<Project> {
     const operation = await this.provisioning.record(operationId);
     await this.workspaces.require(userId, operation.workspaceId, 'write');
-    if (!this.provisioning.isRetryable(operation, userId)) {
-      throw new BadRequestException(
-        operation.attempt >= 5
-          ? 'This provisioning operation reached the maximum of five attempts'
-          : 'Finish the required cleanup before retrying this provisioning operation',
-      );
-    }
-    if (
-      !operation.request ||
-      typeof operation.request !== 'object' ||
-      Array.isArray(operation.request)
-    ) {
+    const blocked = this.provisioning.retryBlockedReason(operation, userId);
+    if (blocked) throw new BadRequestException(blocked);
+    if (typeof operation.request !== 'object' || Array.isArray(operation.request)) {
       throw new BadRequestException('This legacy provisioning operation has no retryable request');
     }
     await this.provisioning.claimRetry(operation.id);
