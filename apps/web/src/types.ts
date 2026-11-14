@@ -93,6 +93,13 @@ export interface WorkspaceCapacity {
   remaining: WorkspaceCapacityValues;
 }
 
+export interface WorkspaceCapacityPage {
+  items: WorkspaceCapacity[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface WorkspaceCapacityValues {
   projects: number;
   members: number;

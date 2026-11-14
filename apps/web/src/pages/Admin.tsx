@@ -6,6 +6,7 @@ import {
   MoreHorizontal,
   Plus,
   ShieldCheck,
+  ShieldOff,
   UserCheck,
   UserPlus,
   Users,
@@ -41,6 +42,7 @@ import { createRequestId } from '@/lib/request-id';
 import { WorkspaceCapacityCard } from '@/components/organisms/admin/WorkspaceCapacityCard';
 import { PlatformAuditCard } from '@/components/organisms/admin/PlatformAuditCard';
 import { SessionExposureNotice } from '@/components/organisms/admin/SessionExposureNotice';
+import { Notice } from '@/components/molecules/Notice';
 import { cn } from '@/lib/utils';
 import { t, rich } from '@/i18n';
 
@@ -52,6 +54,8 @@ interface OneTime {
   password?: string;
   activationUrl?: string;
   activationEmailed?: boolean;
+  // The account exists but no activation link could be issued.
+  activationError?: string;
 }
 
 export default function Admin() {
@@ -169,9 +173,14 @@ export default function Admin() {
       return;
     }
     toast.error(
-      t('The update to InitPad {version} did not complete. The previous version is running.', {
-        version: operation.toVersion,
-      }),
+      operation.stage === 'recovery-failed'
+        ? t(
+            'The update to InitPad {version} failed and the previous version could not be restored automatically. Follow the recovery steps in the update history.',
+            { version: operation.toVersion },
+          )
+        : t('The update to InitPad {version} did not complete. The previous version is running.', {
+            version: operation.toVersion,
+          }),
     );
   }, [updates?.operation, toast]);
 
@@ -208,6 +217,7 @@ export default function Admin() {
         temporaryPassword,
         activationUrl,
         activationDelivery,
+        activationError,
       } = await api.adminCreateUser({
         username: username.trim(),
         email: email.trim(),
@@ -219,6 +229,7 @@ export default function Admin() {
         password: temporaryPassword,
         activationUrl,
         activationEmailed: activationDelivery === 'email',
+        activationError,
       });
       setUsername('');
       setEmail('');
@@ -259,6 +270,40 @@ export default function Admin() {
         active
           ? t('Activated @{username}', { username: target.username })
           : t('Deactivated @{username}', { username: target.username }),
+      );
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  async function setPlatformRole(target: AdminUser, platformRole: 'admin' | 'user') {
+    const promote = platformRole === 'admin';
+    const confirmed = await confirmAction({
+      title: promote
+        ? t('Make @{username} a platform administrator?', { username: target.username })
+        : t('Remove the administrator role from @{username}?', { username: target.username }),
+      description: promote
+        ? t('Platform administrators manage every account in this self-hosted InitPad instance.')
+        : t('The account keeps its workspaces and projects but loses instance administration.'),
+      confirmLabel: promote ? t('Make administrator') : t('Remove administrator role'),
+      tone: 'warning',
+      consequences: promote
+        ? [t('The account receives instance-wide user administration permissions.')]
+        : [t('At least one active administrator always remains.')],
+    });
+    if (!confirmed) return;
+    setBusyUserId(target.id);
+    try {
+      const updated = await api.adminSetPlatformRole(target.id, platformRole);
+      setUsers((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
+      toast.success(
+        promote
+          ? t('@{username} is now a platform administrator', { username: target.username })
+          : t('@{username} is no longer a platform administrator', {
+              username: target.username,
+            }),
       );
     } catch (err) {
       toast.error((err as Error).message);
@@ -425,6 +470,7 @@ export default function Admin() {
               </div>
             </div>
             <div className="mt-4 space-y-4">
+              {oneTime.activationError && <Notice tone="warning">{oneTime.activationError}</Notice>}
               {oneTime.activationUrl && (
                 <div>
                   <p className="mb-1.5 text-sm font-medium">
@@ -593,6 +639,17 @@ export default function Admin() {
                         </DropdownMenuItem>
                         {u.id !== user?.id && (
                           <>
+                            {u.platformRole === 'admin' ? (
+                              <DropdownMenuItem onSelect={() => void setPlatformRole(u, 'user')}>
+                                <ShieldOff className="h-4 w-4 text-muted-foreground" />{' '}
+                                {t('Remove administrator role')}
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem onSelect={() => void setPlatformRole(u, 'admin')}>
+                                <ShieldCheck className="h-4 w-4 text-muted-foreground" />{' '}
+                                {t('Make administrator')}
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             {u.active ? (
                               <DropdownMenuItem

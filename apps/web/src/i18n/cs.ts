@@ -62,6 +62,8 @@ export const cs = {
   'Recent update history': 'Historie posledních aktualizací',
   // components/organisms/admin/WorkspaceCapacityCard.tsx
   'Workspace limits': 'Limity workspace',
+  'Showing {shown} of {total} workspaces': 'Zobrazeno {shown} z {total} workspace',
+  'Show more': 'Zobrazit další',
   'Tenant-wide limits for control-plane work and artifact storage.':
     'Limity pro celý workspace: práce řídicí roviny a úložiště artefaktů.',
   'Loading workspace limits': 'Načítání limitů workspace',
@@ -1178,6 +1180,22 @@ export const cs = {
   'Commits and CI runs across your projects will show up here.':
     'Zobrazí se tu commity a běhy CI ze všech vašich projektů.',
   // pages/Admin.tsx
+  'The update to InitPad {version} failed and the previous version could not be restored automatically. Follow the recovery steps in the update history.':
+    'Aktualizace na InitPad {version} selhala a předchozí verzi se nepodařilo automaticky obnovit. Postupujte podle kroků obnovy v historii aktualizací.',
+  'Make @{username} a platform administrator?': 'Udělat z @{username} administrátora platformy?',
+  'Remove the administrator role from @{username}?':
+    'Odebrat uživateli @{username} roli administrátora?',
+  'The account keeps its workspaces and projects but loses instance administration.':
+    'Účet si ponechá své workspace a projekty, ale přijde o správu instance.',
+  'Make administrator': 'Udělat administrátorem',
+  'Remove administrator role': 'Odebrat roli administrátora',
+  'The account receives instance-wide user administration permissions.':
+    'Účet získá oprávnění spravovat uživatele celé instance.',
+  'At least one active administrator always remains.':
+    'Vždy zůstane alespoň jeden aktivní administrátor.',
+  '@{username} is now a platform administrator': '@{username} je teď administrátorem platformy',
+  '@{username} is no longer a platform administrator':
+    '@{username} už není administrátorem platformy',
   'Deployed applications can read sessions': 'Nasazené aplikace mohou číst relace',
   'Applications on the built-in Docker server use this InitPad host name over HTTP, so browsers send them the InitPad session of anyone who opens them. Serve InitPad over HTTPS (server profile) or set INITPAD_DEPLOY_PUBLIC_HOST to a different host name before other people deploy here.':
     'Aplikace na vestavěném Docker serveru používají přes HTTP stejný název hostu jako InitPad, takže jim prohlížeč posílá relaci InitPadu každého, kdo je otevře. Než sem začnou nasazovat další lidé, provozujte InitPad přes HTTPS (serverový profil) nebo nastavte INITPAD_DEPLOY_PUBLIC_HOST na jiný název hostu.',
@@ -1289,6 +1307,7 @@ export const cs = {
   'Account created': 'Účet založen',
   'Activation link issued': 'Aktivační odkaz vydán',
   'Account deactivated': 'Účet deaktivován',
+  'Platform role changed': 'Změněna role na platformě',
   'Account reactivated': 'Účet znovu aktivován',
   'Password reset by an administrator': 'Heslo obnovil administrátor',
   'Other sessions signed out': 'Ostatní relace odhlášeny',
@@ -1307,6 +1326,8 @@ export const cs = {
   'Member added': 'Člen přidán',
   'Member role changed': 'Změna role člena',
   'Member removed': 'Člen odebrán',
+  'Member left': 'Člen odešel',
+  'Ownership transferred': 'Vlastnictví předáno',
   'Project created': 'Projekt vytvořen',
   'Project imported': 'Projekt importován',
   'Project creation requested': 'Žádost o vytvoření projektu',

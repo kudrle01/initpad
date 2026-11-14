@@ -31,6 +31,7 @@ import type {
   DeployStatus,
   PipelinePreset,
   WorkspaceCapacity,
+  WorkspaceCapacityPage,
   WorkspaceCapacityUpdate,
   UserSessionSummary,
 } from '@/types';
@@ -622,7 +623,8 @@ export const api = {
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).
   adminListUsers: () => http<AdminUser[]>('/admin/users'),
-  adminListWorkspaceCapacity: () => http<WorkspaceCapacity[]>('/admin/workspaces/capacity'),
+  adminListWorkspaceCapacity: (offset = 0, limit = 25) =>
+    http<WorkspaceCapacityPage>(`/admin/workspaces/capacity?limit=${limit}&offset=${offset}`),
   adminUpdateWorkspaceCapacity: (workspaceId: string, body: WorkspaceCapacityUpdate) =>
     http<WorkspaceCapacity>(`/admin/workspaces/${workspaceId}/capacity`, {
       method: 'PUT',
@@ -650,7 +652,13 @@ export const api = {
       temporaryPassword: string;
       activationUrl?: string;
       activationDelivery: 'email' | 'manual';
+      activationError?: string;
     }>('/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+  adminSetPlatformRole: (id: string, platformRole: 'admin' | 'user') =>
+    http<AdminUser>(`/admin/users/${id}/platform-role`, {
+      method: 'PUT',
+      body: JSON.stringify({ platformRole }),
+    }),
   adminCreateActivationLink: (id: string) =>
     http<{ activationUrl?: string; delivery: 'email' | 'manual' }>(
       `/admin/users/${id}/activation-link`,
