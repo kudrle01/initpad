@@ -2,8 +2,8 @@
 
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setLocale } from '@/i18n';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { loadLocaleMessages, setLocale } from '@/i18n';
 import { helpUrl } from '@/lib/help';
 import { HelpLink } from './HelpLink';
 
@@ -13,9 +13,11 @@ vi.mock('@/auth', () => ({
   useAuth: () => ({ user: { docsUrl: auth.docsUrl } }),
 }));
 
+beforeAll(() => loadLocaleMessages('cs'));
+
 afterEach(() => {
   cleanup();
-  setLocale('en');
+  void setLocale('en');
   auth.docsUrl = null;
 });
 

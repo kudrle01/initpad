@@ -3,19 +3,21 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { LanguageMenuItems, LanguageToggle } from '@/components/molecules/LanguageSwitch';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { setLocale, t } from '@/i18n';
+import { loadLocaleMessages, setLocale, t } from '@/i18n';
 import { I18nProvider } from './provider';
+
+beforeAll(() => loadLocaleMessages('cs'));
 
 afterEach(() => {
   cleanup();
-  setLocale('en');
+  void setLocale('en');
 });
 
 // A component, as in the app: text is produced when the subtree renders.
