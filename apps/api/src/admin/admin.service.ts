@@ -160,6 +160,7 @@ export class AdminService {
     temporaryPassword: string;
     activationUrl?: string;
     activationDelivery: 'email' | 'manual';
+    activationError?: string;
   }> {
     const temporaryPassword = generateTemporaryPassword();
     const user = await this.auth.provisionManagedUser({
@@ -174,8 +175,21 @@ export class AdminService {
       platformRole: user.platformRole,
     });
     // Two ways to onboard: read out the temporary password, or send the
-    // activation link where the user sets their own password.
-    const activation = await this.auth.createActivationLink(user.id);
+    // activation link where the user sets their own password. The account
+    // already exists; a failed link must not lose its one-time password.
+    let activation: { delivery: 'email' | 'manual'; activationUrl?: string };
+    try {
+      activation = await this.auth.createActivationLink(user.id);
+    } catch (error) {
+      return {
+        user: toAdminUser(user),
+        temporaryPassword,
+        activationDelivery: 'manual',
+        activationError: `The account was created, but no activation link could be issued: ${
+          error instanceof Error ? error.message : 'unknown failure'
+        }. Share the temporary password or issue a new link later.`.slice(0, 500),
+      };
+    }
     await this.accountEvent('user.activation_link_issued', actingUserId, user, {
       delivery: activation.delivery,
     });
@@ -193,6 +207,9 @@ export class AdminService {
   ): Promise<{ activationUrl?: string; delivery: 'email' | 'manual' }> {
     const target = await this.prisma.user.findUnique({ where: { id: targetId } });
     if (!target) throw new NotFoundException('User not found');
+    if (!target.active) {
+      throw new BadRequestException('Reactivate the account before issuing an activation link');
+    }
     const activation = await this.auth.createActivationLink(targetId);
     await this.accountEvent('user.activation_link_issued', actingUserId, target, {
       delivery: activation.delivery,

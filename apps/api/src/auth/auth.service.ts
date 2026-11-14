@@ -703,7 +703,20 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     newPassword: string,
     client: SessionClient = {},
   ): Promise<{ token: string; user: SessionUser }> {
-    const record = await this.consumeAuthToken(token, 'activation');
+    const usable = await this.findUsableAuthToken(token, 'activation');
+    const account = await this.prisma.user.findUnique({
+      where: { id: usable.userId },
+      select: { active: true },
+    });
+    // Checked before the link is claimed, so it still works once an
+    // administrator reactivates the account.
+    if (account && !account.active) {
+      throw new ForbiddenException(
+        'This account is deactivated. Ask the platform administrator to reactivate it before activating it.',
+      );
+    }
+    await this.claimAuthToken(usable);
+    const record = { userId: usable.userId };
     const passwordHash = await hashPassword(newPassword);
     const updated = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.update({

@@ -314,4 +314,33 @@ describe('AdminService', () => {
       expect(audit.record).not.toHaveBeenCalled();
     });
   });
+
+  it('returns the created account and its password when the activation link fails (audit P3)', async () => {
+    const auth = {
+      provisionManagedUser: jest.fn(async () =>
+        row({ username: 'alice', mustChangePassword: true }),
+      ),
+      createActivationLink: jest.fn(async () => {
+        throw new Error('database unavailable');
+      }),
+    };
+    const service = new AdminService({} as never, auth as never, {} as never);
+    const result = await service.createUser('admin-1', {
+      username: 'alice',
+      email: 'a@example.test',
+    });
+    expect(result.user.username).toBe('alice');
+    expect(result.temporaryPassword.length).toBeGreaterThanOrEqual(12);
+    expect(result.activationDelivery).toBe('manual');
+    expect(result.activationError).toMatch(/account was created.*database unavailable/);
+    expect(result).not.toHaveProperty('activationUrl');
+  });
+
+  it('refuses an activation link for a deactivated account', async () => {
+    const auth = { createActivationLink: jest.fn() };
+    const prisma = { user: { findUnique: jest.fn(async () => row({ active: false })) } };
+    const service = new AdminService(prisma as never, auth as never, {} as never);
+    await expect(service.createActivationLink('admin-1', 'u2')).rejects.toThrow('Reactivate');
+    expect(auth.createActivationLink).not.toHaveBeenCalled();
+  });
 });

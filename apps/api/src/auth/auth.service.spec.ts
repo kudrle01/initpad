@@ -878,6 +878,7 @@ describe('AuthService', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       user: {
+        findUnique: jest.fn(async () => ({ active: true })),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
           userUpdate = data;
           return {
@@ -936,12 +937,33 @@ describe('AuthService', () => {
         findUnique: jest.fn(async () => record),
         updateMany: jest.fn(async () => ({ count: 0 })),
       },
-      user: { update: jest.fn() },
+      user: { findUnique: jest.fn(async () => ({ active: true })), update: jest.fn() },
     };
     const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.activate('tok', 'a-brand-new-password')).rejects.toThrow(
       'invalid or has expired',
     );
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to activate a deactivated account and keeps the link usable (audit P3)', async () => {
+    const record = {
+      id: 't6',
+      userId: 'u1',
+      kind: 'activation',
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const prisma = {
+      authToken: { findUnique: jest.fn(async () => record), updateMany: jest.fn() },
+      user: { findUnique: jest.fn(async () => ({ active: false })), update: jest.fn() },
+    };
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
+    await expect(service.activate('tok', 'a-brand-new-password')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(service.activate('tok', 'a-brand-new-password')).rejects.toThrow('deactivated');
+    expect(prisma.authToken.updateMany).not.toHaveBeenCalled();
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });
