@@ -59,4 +59,6 @@ export const csWeb = {
     'Tento prohlížeč neumí bezpečně generovat náhodná čísla',
   // help links
   Troubleshooting: 'Řešení potíží',
+  // App.tsx
+  'Could not load your workspaces': 'Vaše workspace se nepodařilo načíst',
 } satisfies Record<string, string>;

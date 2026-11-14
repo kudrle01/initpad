@@ -64,7 +64,8 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
     try {
       const created = await api.createWorkspace(name.trim(), slug);
       onOpenChange(false);
-      switchWorkspace(created.id);
+      // A team workspace is created to work with others; continue with members.
+      switchWorkspace(created.id, '/settings/workspace');
     } catch (error) {
       toast.error((error as Error).message);
       setBusy(false);
