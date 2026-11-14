@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/api';
 import { ConfirmationProvider } from '@/confirmation';
 import { EnvVarsDialog } from './EnvVarsDialog';
+import type { EnvName } from '@/types';
 
 const mocks = vi.hoisted(() => ({
   toast: {
@@ -25,7 +26,7 @@ vi.mock('@/api', () => ({
 
 vi.mock('@/toast', () => ({ useToast: () => mocks.toast }));
 
-function renderDialog(onChanged = vi.fn(), onRedeploy?: (env: 'prod') => void) {
+function renderDialog(onChanged = vi.fn(), onRedeploy?: (env: EnvName) => void) {
   render(
     <ConfirmationProvider>
       <EnvVarsDialog
