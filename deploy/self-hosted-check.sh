@@ -227,12 +227,18 @@ check_preflight() {
 }
 
 assert_service() {
-  local service=$1 id state running health restart
+  local service=$1 id state running health restart attempt
   id=$(container_id "$service")
-  state=$(docker inspect --format \
-    '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.HostConfig.RestartPolicy.Name}}' \
-    "$id")
-  IFS='|' read -r running health restart <<< "$state"
+  # The CI daemon erases and restarts itself after every job, so a service can
+  # briefly report 'starting'; give it a bounded grace period instead of failing.
+  for attempt in $(seq 1 30); do
+    state=$(docker inspect --format \
+      '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.HostConfig.RestartPolicy.Name}}' \
+      "$id")
+    IFS='|' read -r running health restart <<< "$state"
+    [ "$running" = true ] && [ "$health" = starting ] || break
+    [ "$attempt" -lt 30 ] && sleep 2
+  done
   [ "$running" = true ] || fail "Service '$service' is not running."
   case "$health" in healthy|none) ;; *) fail "Service '$service' health is '$health'.";; esac
   [ "$restart" = unless-stopped ] || \
