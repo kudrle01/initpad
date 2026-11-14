@@ -5,6 +5,7 @@ import { PlatformAdminGuard } from './platform-admin.guard';
 import { AdminService } from './admin.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdatePlatformRoleDto } from './dto/update-platform-role.dto';
+import { ListWorkspaceCapacityDto } from './dto/list-workspace-capacity.dto';
 import { PlatformUpdatesService } from '../updates/platform-updates.service';
 import { RequestPlatformUpdateDto } from '../updates/dto/request-platform-update.dto';
 import { UpdateWorkspaceCapacityDto } from './dto/update-workspace-capacity.dto';
@@ -52,8 +53,8 @@ export class AdminController {
   }
 
   @Get('workspaces/capacity')
-  listWorkspaceCapacity() {
-    return this.admin.listWorkspaceCapacity();
+  listWorkspaceCapacity(@Query() query: ListWorkspaceCapacityDto) {
+    return this.admin.listWorkspaceCapacity({ limit: query.limit, offset: query.offset });
   }
 
   @Put('workspaces/:id/capacity')

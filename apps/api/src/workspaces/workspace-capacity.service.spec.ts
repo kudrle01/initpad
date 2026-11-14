@@ -96,4 +96,42 @@ describe('WorkspaceCapacityService', () => {
       data: expect.objectContaining({ maxArtifactBytes: 20n * 1024n * 1024n * 1024n }),
     });
   });
+
+  describe('instance overview (audit P2)', () => {
+    it('reads one page in a single aggregated query instead of per-workspace snapshots', async () => {
+      const prisma = {
+        $queryRaw: jest.fn(async () => [
+          {
+            ...workspace(),
+            projects: 2,
+            members: 1,
+            targets: 0,
+            concurrentOperations: 3,
+            artifactBytes: 1500n,
+          },
+        ]),
+        workspace: { count: jest.fn(async () => 41), findUnique: jest.fn() },
+        project: { count: jest.fn() },
+      };
+      const service = new WorkspaceCapacityService(prisma as never);
+
+      const page = await service.list({ limit: 25, offset: 25 });
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(prisma.workspace.findUnique).not.toHaveBeenCalled();
+      expect(prisma.project.count).not.toHaveBeenCalled();
+      const sql = (prisma.$queryRaw.mock.calls[0] as unknown[])[0] as {
+        sql: string;
+        values: unknown[];
+      };
+      expect(sql.sql).toMatch(/LIMIT \? OFFSET \?/);
+      expect(sql.values.slice(-2)).toEqual([25, 25]);
+      expect(page).toMatchObject({ total: 41, limit: 25, offset: 25 });
+      expect(page.items[0]).toMatchObject({
+        workspaceId: 'workspace-1',
+        usage: { projects: 2, concurrentOperations: 3, artifactBytes: '1500' },
+        remaining: { projects: 0, members: 2, concurrentOperations: 0, artifactBytes: '0' },
+      });
+    });
+  });
 });

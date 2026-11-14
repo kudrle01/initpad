@@ -88,8 +88,8 @@ export class AdminService {
     },
   ) {}
 
-  listWorkspaceCapacity() {
-    return this.workspaceCapacity.list();
+  listWorkspaceCapacity(page: { limit: number; offset: number }) {
+    return this.workspaceCapacity.list(page);
   }
 
   async updateWorkspaceCapacity(
