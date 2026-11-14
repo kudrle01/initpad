@@ -8,6 +8,8 @@ jest.mock('../common/secret', () => ({
 
 const provisioning = {
   start: jest.fn(async () => 'op1'),
+  holdLease: jest.fn(() => () => undefined),
+  rename: jest.fn(async () => undefined),
   step: jest.fn(async () => undefined),
   bindProject: jest.fn(async () => undefined),
   unbindProject: jest.fn(async () => undefined),
@@ -175,11 +177,17 @@ describe('ProjectsService.importExisting guards', () => {
 
     const input = create.mock.calls[0]?.[0] as {
       data: {
+        repoPath: string;
         pipelinePreset: string;
         environments: { create: Array<{ name: string; status: string }> };
       };
     };
     expect(input.data.pipelinePreset).toBe(pipelinePreset);
+    // No local path is recorded: a relative owner/name once reached rmSync.
+    expect(input.data.repoPath).toBe('');
+    // The provisioning record names the repository, not its opaque id.
+    expect(provisioning.rename).toHaveBeenCalledWith('op1', 'kudrla/api');
+    expect(provisioning.holdLease).toHaveBeenCalledWith('op1');
     // CI receives its own scoped credential; the importer's Git token stays out
     // of repository secrets (ADR-134).
     expect(scm.configureRepoSecrets).toHaveBeenCalledWith(

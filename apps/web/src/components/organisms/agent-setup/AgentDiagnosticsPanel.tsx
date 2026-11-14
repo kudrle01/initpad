@@ -5,6 +5,7 @@ import { InfoTip } from '@/components/molecules/InfoTip';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { t, formatDateTime } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 
 interface Props {
   jobs: AgentJobSummary[];
@@ -38,7 +39,7 @@ function agentJobMessage(job: AgentJobSummary, leaseExpired: boolean): string {
       'The diagnostic image pull timed out. Docker may have cached partial layers; verify registry access and run Test Docker again.',
     );
   }
-  return job.message ?? job.progressStage;
+  return translateApiMessage(job.message ?? job.progressStage);
 }
 
 export function AgentDiagnosticsPanel({

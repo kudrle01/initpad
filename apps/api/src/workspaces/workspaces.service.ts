@@ -348,11 +348,14 @@ export class WorkspacesService {
         ],
       },
     });
-    if (!member) throw new NotFoundException(`User '${identity}' not found`);
+    // An unknown account and an existing member get the same answer as a
+    // successful add, so the endpoint cannot be used to probe which
+    // usernames or e-mail addresses have an account.
+    if (!member) return this.members(userId, workspaceId);
     const existing = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId: member.id } },
     });
-    if (existing) throw new ConflictException('User is already a workspace member');
+    if (existing) return this.members(userId, workspaceId);
     await this.attachMember(workspaceId, member.id, dto.role);
     await this.auditEvents.record({
       workspaceId,
@@ -457,6 +460,113 @@ export class WorkspacesService {
       details: { previousRole: member.role },
     });
     if (member.role !== 'viewer') await this.rotateRegistryCredentials(workspaceId);
+  }
+
+  /**
+   * Lets a non-owner end their own membership. The owner hands the workspace
+   * over first, so a team workspace never loses its owner.
+   */
+  async leave(userId: string, workspaceId: string): Promise<void> {
+    const role = await this.roleFor(userId, workspaceId);
+    if (!role) throw new NotFoundException('Workspace not found');
+    if (role === 'owner') {
+      throw new BadRequestException(
+        'Transfer ownership to a workspace admin before leaving the workspace',
+      );
+    }
+    const member = await this.memberOrThrow(workspaceId, userId);
+    try {
+      await this.revokeRepositoryAccess(workspaceId, userId);
+      await this.prisma.workspaceMember.delete({
+        where: { workspaceId_userId: { workspaceId, userId } },
+      });
+    } catch (error) {
+      await this.syncRepositoryAccess(workspaceId, userId, member.role).catch(() => undefined);
+      throw error;
+    }
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'workspace.member_left',
+      resourceType: 'member',
+      resourceId: userId,
+      resourceName: member.user.username,
+      details: { previousRole: member.role },
+    });
+    if (member.role !== 'viewer') await this.rotateRegistryCredentials(workspaceId);
+  }
+
+  /**
+   * Hands a team workspace to one of its admins; the previous owner stays as
+   * admin. Both roles map to the same repository permission, so the SCM
+   * access does not change.
+   */
+  async transferOwnership(userId: string, workspaceId: string, newOwnerId: string) {
+    const role = await this.require(userId, workspaceId, 'read');
+    if (role !== 'owner') {
+      throw new ForbiddenException('Only the workspace owner can transfer ownership');
+    }
+    if (newOwnerId === userId) throw new BadRequestException('You already own this workspace');
+    const limit = config.workspaces.maxOwnedTeamWorkspaces;
+    await this.prisma.$transaction(async (tx) => {
+      const current = await tx.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { type: true },
+      });
+      if (!current) throw new NotFoundException('Workspace not found');
+      if (current.type === 'personal') {
+        throw new BadRequestException('Personal workspaces cannot change owner');
+      }
+      const [account] = await tx.$queryRaw<Array<{ platformRole: string; active: boolean }>>(
+        Prisma.sql`SELECT "platformRole", "active" FROM "User" WHERE "id" = ${newOwnerId} FOR UPDATE`,
+      );
+      const target = await tx.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId, userId: newOwnerId } },
+        include: { user: { select: { username: true } } },
+      });
+      if (!target || !account) throw new NotFoundException('Workspace member not found');
+      if (target.role !== 'admin') {
+        throw new BadRequestException('Ownership can only be transferred to a workspace admin');
+      }
+      if (!account.active) {
+        throw new BadRequestException('Ownership cannot be transferred to a deactivated account');
+      }
+      if (limit > 0 && account.platformRole !== 'admin') {
+        const owned = await tx.workspaceMember.count({
+          where: { userId: newOwnerId, role: 'owner', workspace: { type: 'team' } },
+        });
+        if (owned >= limit) {
+          throw new ForbiddenException(
+            `${target.user.username} already owns the maximum of ${limit} team workspaces`,
+          );
+        }
+      }
+      // Demote first: the previous owner row is the one this caller holds.
+      const demoted = await tx.workspaceMember.updateMany({
+        where: { workspaceId, userId, role: 'owner' },
+        data: { role: 'admin' },
+      });
+      if (demoted.count !== 1) {
+        throw new ConflictException('Workspace ownership changed concurrently');
+      }
+      await tx.workspaceMember.update({
+        where: { workspaceId_userId: { workspaceId, userId: newOwnerId } },
+        data: { role: 'owner' },
+      });
+      await this.auditEvents.record(
+        {
+          workspaceId,
+          actorUserId: userId,
+          action: 'workspace.ownership_transferred',
+          resourceType: 'member',
+          resourceId: newOwnerId,
+          resourceName: target.user.username,
+          details: { previousOwnerId: userId },
+        },
+        tx,
+      );
+    });
+    return this.members(userId, workspaceId);
   }
 
   // A member with write access could push a workflow that reads the

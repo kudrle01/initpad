@@ -451,6 +451,58 @@ test('collects project diagnostics through the fixed bounded Agent interface', a
   ]);
 });
 
+test('renews the lease while slow workload diagnostics outlive a single lease', async () => {
+  let now = START;
+  const timing: JobTiming = {
+    now: () => now,
+    sleep: async (ms, signal) => {
+      if (signal.aborted) return;
+      now += ms;
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+    renewEveryMs: 10_000,
+    progressEveryMs: 5_000,
+  };
+  let renewals = 0;
+  const completions: string[] = [];
+  const client: AgentJobClient = {
+    renew: async () => {
+      renewals += 1;
+      return { leaseExpiresAt: new Date(now + 30_000).toISOString() };
+    },
+    progress: async (_jobId, input) => summary({ sequence: input.sequence }),
+    complete: async (_jobId, input) => {
+      completions.push(`${input.status}:${input.resultCode}`);
+      return summary({ status: input.status });
+    },
+  };
+  const payload = {
+    allocationId: '123e4567-e89b-42d3-a456-426614174000',
+    namespace: 'team-alpha',
+    projectSlug: 'alice-api',
+    environment: 'dev',
+    revision: 'a'.repeat(40),
+    containerPort: 3000,
+    healthPath: '/health',
+    routingMode: 'direct-port' as const,
+  };
+
+  await executeClaimedJob(claim({ kind: 'logs', payload }), new AbortController().signal, client, {
+    timing,
+    lifecycle: {
+      acceptance: async () => undefined,
+      diagnostics: async () => {
+        // About 70 s of simulated docker inspect/logs time: past one 30 s lease.
+        while (now - START < 70_000) await new Promise((resolve) => setImmediate(resolve));
+        return { state: 'running', health: 'unhealthy', logs: 'tail' };
+      },
+    },
+  });
+
+  assert.ok(renewals >= 6, `expected periodic renewals, got ${renewals}`);
+  assert.deepEqual(completions, ['succeeded:ok']);
+});
+
 test('downloads and runs a project artifact without exposing config to progress or completion', async () => {
   const bytes = Buffer.from('archive');
   const digest = 'd'.repeat(64);

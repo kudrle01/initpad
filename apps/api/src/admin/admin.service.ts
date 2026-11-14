@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
@@ -60,8 +66,10 @@ const USER_SELECT = {
 } as const;
 
 /**
- * Platform-wide administration. Workspace capacity applies to both editions;
- * self-hosted additionally exposes managed user lifecycle (ADR-040). Creation
+ * Instance administration of the self-hosted edition (PlatformAdminGuard
+ * refuses SaaS): managed user lifecycle (ADR-040) and workspace capacity.
+ * Capacity limits are enforced in both editions; SaaS keeps the configured
+ * defaults because it has no instance administrator. Creation
  * and reset return a random one-time password shown once; only its hash is
  * stored and the account must change it before doing anything else.
  */
@@ -80,8 +88,8 @@ export class AdminService {
     },
   ) {}
 
-  listWorkspaceCapacity() {
-    return this.workspaceCapacity.list();
+  listWorkspaceCapacity(page: { limit: number; offset: number }) {
+    return this.workspaceCapacity.list(page);
   }
 
   async updateWorkspaceCapacity(
@@ -152,6 +160,7 @@ export class AdminService {
     temporaryPassword: string;
     activationUrl?: string;
     activationDelivery: 'email' | 'manual';
+    activationError?: string;
   }> {
     const temporaryPassword = generateTemporaryPassword();
     const user = await this.auth.provisionManagedUser({
@@ -166,8 +175,21 @@ export class AdminService {
       platformRole: user.platformRole,
     });
     // Two ways to onboard: read out the temporary password, or send the
-    // activation link where the user sets their own password.
-    const activation = await this.auth.createActivationLink(user.id);
+    // activation link where the user sets their own password. The account
+    // already exists; a failed link must not lose its one-time password.
+    let activation: { delivery: 'email' | 'manual'; activationUrl?: string };
+    try {
+      activation = await this.auth.createActivationLink(user.id);
+    } catch (error) {
+      return {
+        user: toAdminUser(user),
+        temporaryPassword,
+        activationDelivery: 'manual',
+        activationError: `The account was created, but no activation link could be issued: ${
+          error instanceof Error ? error.message : 'unknown failure'
+        }. Share the temporary password or issue a new link later.`.slice(0, 500),
+      };
+    }
     await this.accountEvent('user.activation_link_issued', actingUserId, user, {
       delivery: activation.delivery,
     });
@@ -185,6 +207,9 @@ export class AdminService {
   ): Promise<{ activationUrl?: string; delivery: 'email' | 'manual' }> {
     const target = await this.prisma.user.findUnique({ where: { id: targetId } });
     if (!target) throw new NotFoundException('User not found');
+    if (!target.active) {
+      throw new BadRequestException('Reactivate the account before issuing an activation link');
+    }
     const activation = await this.auth.createActivationLink(targetId);
     await this.accountEvent('user.activation_link_issued', actingUserId, target, {
       delivery: activation.delivery,
@@ -209,6 +234,21 @@ export class AdminService {
         throw new BadRequestException('At least one active administrator must remain');
       }
     }
+    if (!active) {
+      // Each team workspace has exactly one owner; a deactivated owner would
+      // leave it without anyone who can manage it.
+      const owned = await this.prisma.workspaceMember.findMany({
+        where: { userId: targetId, role: 'owner', workspace: { type: 'team' } },
+        select: { workspace: { select: { name: true } } },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (owned.length > 0) {
+        const names = owned.map(({ workspace }) => workspace.name).join(', ');
+        throw new ConflictException(
+          `${target.username} owns team workspaces (${names}). Ask them to transfer ownership to a workspace admin, or delete those workspaces, before deactivating the account.`,
+        );
+      }
+    }
     // A deactivated account's Git token would start working again on
     // reactivation, so revoke it while Gitea still accepts the account.
     if (!active) await this.auth.revokeGitCredential(targetId);
@@ -227,6 +267,45 @@ export class AdminService {
         actingUserId,
         user,
         undefined,
+        tx,
+      );
+      return user;
+    });
+    return toAdminUser(updated);
+  }
+
+  /**
+   * Grants or removes the platform administrator role. The last active
+   * administrator cannot be demoted, so the instance never loses its
+   * administration; the admin rows are locked to serialize concurrent changes.
+   */
+  async setPlatformRole(
+    actingUserId: string,
+    targetId: string,
+    platformRole: 'admin' | 'user',
+  ): Promise<AdminUser> {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const target = await tx.user.findUnique({ where: { id: targetId }, select: USER_SELECT });
+      if (!target) throw new NotFoundException('User not found');
+      if (target.platformRole === platformRole) return target;
+      if (platformRole === 'user') {
+        const admins = await tx.$queryRaw<Array<{ id: string }>>(
+          Prisma.sql`SELECT "id" FROM "User" WHERE "platformRole" = 'admin' AND "active" = true FOR UPDATE`,
+        );
+        if (!admins.some(({ id }) => id !== targetId)) {
+          throw new ConflictException('At least one active administrator must remain');
+        }
+      }
+      const user = await tx.user.update({
+        where: { id: targetId },
+        data: { platformRole },
+        select: USER_SELECT,
+      });
+      await this.accountEvent(
+        'user.platform_role_changed',
+        actingUserId,
+        user,
+        { previousPlatformRole: target.platformRole, platformRole },
         tx,
       );
       return user;

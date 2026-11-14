@@ -41,7 +41,7 @@ export function AgentUninstallSection({ targetId, distribution }: Props) {
         <div className="mt-3 flex min-w-0 flex-col gap-3">
           <p className="text-xs text-muted-foreground">
             {t(
-              'Run this command on the Docker server. It verifies the installer checksum, refuses a server enrolled for another target, lists what it removes and asks you to confirm. It removes the Agent container, its saved identity and the InitPad CA installed for it.',
+              'Run this command on the Docker server. It verifies the installer checksum, refuses a server enrolled for another server, lists what it removes and asks you to confirm. It removes the Agent container, its saved identity and the InitPad CA installed for it.',
             )}
           </p>
           <label className="flex cursor-pointer items-start gap-3 tint-warning rounded-lg border border-warning/30 p-3">

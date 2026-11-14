@@ -25,6 +25,7 @@ import { ImportProjectDto } from './dto/import-project.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from '../templates/templates.service';
 import { GeneratorService } from '../generator/generator.service';
+import { NO_LOCAL_CHECKOUT } from './project-deletion';
 import { DeploymentService } from '../deployment/deployment.service';
 import { ARTIFACT_STORE, ArtifactStore } from '../artifacts/artifact-store';
 import { TargetsService } from '../targets/targets.service';
@@ -198,6 +199,9 @@ export class ProjectsService {
       },
       (repo, token) => this.repositoryIdentity.findRenamedByCiToken(repo, token),
     );
+    // A queued CI build starts as soon as the operation holding dev ends; the
+    // lifecycle sweep covers releases written by Agent job replays.
+    this.operations.onEnvironmentReleased(() => this.ci.scheduleDrain());
     this.rollbackFlow = new ProjectRollback(
       prisma,
       async (projectId, environment, version, buildArtifactId, actorUserId) => {
@@ -232,12 +236,29 @@ export class ProjectsService {
     this.workloadDiagnostics = new ProjectWorkloadDiagnostics(prisma, templates);
   }
 
-  /** Internal recovery boundary invoked by ProjectsLifecycleService at startup. */
+  /**
+   * Database-only recovery invoked by ProjectsLifecycleService when it
+   * becomes leader. SCM work lives in reconcileScmConfiguration (ADR-179).
+   */
   async reconcilePersistedState(): Promise<void> {
-    await this.reconciliation.reconcileRepositoryIdentities();
-    await this.reconciliation.reconcileCiRuntimeSecrets();
     await this.recoverInterruptedExecutions();
     await this.environmentTargets.reconcileAllocations();
+  }
+
+  /** Provider-side reconciliation run in the background by the leader. */
+  async reconcileScmConfiguration(): Promise<void> {
+    await this.reconciliation.reconcileRepositoryIdentities();
+    await this.reconciliation.reconcileCiRuntimeSecrets();
+  }
+
+  /** Returns production requests left in `approving` by a crashed process. */
+  recoverStuckProductionApprovals(): Promise<number> {
+    return this.productionApprovals.recoverStuckApprovals();
+  }
+
+  /** Deploys CI results queued while dev was busy (ADR-178). */
+  drainPendingCiDeployments(): Promise<number> {
+    return this.ci.drainPending();
   }
 
   /** Lets projects follow a renamed GitHub user or organization (ADR-155). */
@@ -601,6 +622,7 @@ export class ProjectsService {
       retryOfId: retry?.retryOfId,
       attempt: retry?.attempt,
     });
+    const releaseLease = this.provisioning.holdLease(op);
     try {
       const project = await this.createInternal(dto, ownerId, workspaceId, op);
       await this.provisioning.succeed(op, project.id);
@@ -608,6 +630,8 @@ export class ProjectsService {
     } catch (e) {
       await this.provisioning.fail(op, (e as Error).message);
       throw e;
+    } finally {
+      releaseLease();
     }
   }
 
@@ -651,13 +675,10 @@ export class ProjectsService {
       templateRuntime(template),
     );
 
-    // The workspace directory is namespaced by owner (.workspace/<owner>/<name>)
-    // so same-named projects of different users cannot collide.
-    const { repoPath } = this.generator.generate(
-      template.id,
-      dto.name,
-      `${owner.username}/${dto.name}`,
-    );
+    // The scaffold checkout is temporary and unique per request
+    // (.workspace/<owner>/<name>-XXXXXX): a double-submitted create must not
+    // share, overwrite or delete the other request's checkout.
+    const { repoPath } = this.generator.generateCheckout(template.id, dto.name, owner.username);
     try {
       // The scaffold commit is authored by the platform's service account
       // (bot); the developer's own commits carry their identity.
@@ -785,7 +806,9 @@ export class ProjectsService {
             data: {
               name: dto.name,
               templateId: template.id,
-              repoPath,
+              // The provider is the source of truth; the scaffold checkout is
+              // removed below, so no local path is recorded.
+              repoPath: NO_LOCAL_CHECKOUT,
               repoUrl: repo.repoUrl,
               scmProvider: repo.provider,
               scmRepositoryId: repo.repositoryId,
@@ -895,6 +918,7 @@ export class ProjectsService {
       retryOfId: retry?.retryOfId,
       attempt: retry?.attempt,
     });
+    const releaseLease = this.provisioning.holdLease(op);
     try {
       const template = this.templates.get(dto.templateId);
 
@@ -904,6 +928,7 @@ export class ProjectsService {
         workspaceId,
         dto.repositoryId,
       );
+      await this.provisioning.rename(op, repo.fullName);
       const scm = this.workspaceScm.provider(repo.provider);
       if (repo.empty) {
         throw new BadRequestException('Cannot import an empty repository — push code first.');
@@ -981,7 +1006,7 @@ export class ProjectsService {
             data: {
               name: repo.name,
               templateId: template.id,
-              repoPath: repo.fullName,
+              repoPath: NO_LOCAL_CHECKOUT,
               repoUrl: repo.repoUrl,
               scmProvider: repo.provider,
               scmRepositoryId: repo.repositoryId,
@@ -1124,24 +1149,17 @@ export class ProjectsService {
     } catch (e) {
       await this.provisioning.fail(op, (e as Error).message);
       throw e;
+    } finally {
+      releaseLease();
     }
   }
 
   async retryProvisioning(operationId: string, userId: string): Promise<Project> {
     const operation = await this.provisioning.record(operationId);
     await this.workspaces.require(userId, operation.workspaceId, 'write');
-    if (!this.provisioning.isRetryable(operation, userId)) {
-      throw new BadRequestException(
-        operation.attempt >= 5
-          ? 'This provisioning operation reached the maximum of five attempts'
-          : 'Finish the required cleanup before retrying this provisioning operation',
-      );
-    }
-    if (
-      !operation.request ||
-      typeof operation.request !== 'object' ||
-      Array.isArray(operation.request)
-    ) {
+    const blocked = this.provisioning.retryBlockedReason(operation, userId);
+    if (blocked) throw new BadRequestException(blocked);
+    if (typeof operation.request !== 'object' || Array.isArray(operation.request)) {
       throw new BadRequestException('This legacy provisioning operation has no retryable request');
     }
     await this.provisioning.claimRetry(operation.id);
@@ -1469,8 +1487,29 @@ export class ProjectsService {
     const env = await this.prisma.environment.findUnique({
       where: { projectId_name: { projectId: id, name: envName } },
     });
-    if (!env || !env.version) {
+    if (!env) {
       throw new BadRequestException(`Environment '${envName}' has nothing to redeploy`);
+    }
+    if (!env.version) {
+      // A first deployment that failed leaves no current version. The last
+      // verified artifact this environment tried to publish is the build to
+      // retry; nothing else is guessed.
+      const attempted = await this.lastVerifiedAttempt(env.id);
+      if (!attempted) {
+        throw new BadRequestException(
+          `Environment '${envName}' has nothing to redeploy. Push a commit or run CI again.`,
+        );
+      }
+      await this.scheduleDeployment(
+        id,
+        envName,
+        attempted.version,
+        true,
+        'redeploy',
+        attempted.buildArtifactId,
+        actorUserId,
+      );
+      return this.get(id);
     }
     const useRegistry = /^[0-9a-f]{7,40}$/.test(env.version);
     await this.scheduleDeployment(
@@ -1483,6 +1522,23 @@ export class ProjectsService {
       actorUserId,
     );
     return this.get(id);
+  }
+
+  private async lastVerifiedAttempt(
+    environmentId: string,
+  ): Promise<{ version: string; buildArtifactId: string } | null> {
+    const operation = await this.prisma.deploymentOperation.findFirst({
+      where: {
+        environmentId,
+        version: { not: null },
+        buildArtifact: { status: 'available', storageKind: 'object-store' },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { version: true, buildArtifactId: true },
+    });
+    if (!operation?.version || !operation.buildArtifactId) return null;
+    if (!/^[0-9a-f]{40}$/i.test(operation.version)) return null;
+    return { version: operation.version, buildArtifactId: operation.buildArtifactId };
   }
 
   rollbackPreview(id: string, envName: EnvName): Promise<RollbackPreview | null> {
@@ -1923,11 +1979,15 @@ export class ProjectsService {
     return this.queries.deploymentHistory(id, limit);
   }
 
-  // Cross-project activity feed: the recent commits of every owned project with
-  // their CI/deploy pipeline state, merged newest-first. A failing project
-  // (e.g. its Gitea repo is unreachable) is skipped, not fatal.
+  // Cross-project activity built from InitPad's own records (ADR-179).
   async activity(userId: string, requestedWorkspaceId?: string): Promise<ActivityEvent[]> {
-    return this.queries.activity(userId, requestedWorkspaceId, (projectId, limit) =>
+    return this.queries.activity(userId, requestedWorkspaceId);
+  }
+
+  // The same feed with optional, cached SCM commits; provider failures are
+  // returned as warnings instead of hiding the project.
+  activityFeed(userId: string, requestedWorkspaceId: string | undefined, includeScm: boolean) {
+    return this.queries.activityFeed(userId, requestedWorkspaceId, includeScm, (projectId, limit) =>
       this.getCommits(projectId, limit),
     );
   }

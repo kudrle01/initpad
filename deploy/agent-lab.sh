@@ -143,9 +143,11 @@ Usage: ./agent-lab.sh <command>
 
 Create a Docker (InitPad Agent) target in Infrastructure and generate its
 one-time enrollment before running `./agent-lab.sh enroll`.
-For local browser links, set the target public URL to http://127.0.0.1. The
-lab publishes only its dedicated workload range on host loopback; it never
-publishes the nested Docker API.
+InitPad refuses loopback public URLs, so for browser links set the target
+public URL to this computer's LAN address (http://<address>) and start the lab
+with INITPAD_AGENT_LAB_BIND_ADDRESS=<address>. The lab publishes only its
+dedicated workload range (INITPAD_AGENT_LAB_PORT_START-END, default
+42000-42031) on that address, never the nested Docker API.
 USAGE
     ;;
 esac

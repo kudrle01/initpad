@@ -18,6 +18,10 @@ export function requiredMentions({ platform, agent }) {
   return {
     'README.md': [
       `Nejnovější veřejný podepsaný release \`${platform}\``,
+      // Rychlé spuštění installs the newest signed tag, not main. The tag only
+      // exists after publishing, so this check (not release:platform:prepare)
+      // keeps the command current.
+      `git clone --branch initpad-v${platform} `,
       `--tag initpad-v${platform}`,
       `Doporučený release \`${agent}\``,
       `--tag agent-v${agent}`,

@@ -34,6 +34,13 @@ export interface ConfirmationOptions {
   details?: ConfirmationDetail[];
   consequences?: ReactNode[];
   requireText?: string;
+  /** Optional free-text field (e.g. a rejection reason) reported through `onChange`. */
+  note?: {
+    label: string;
+    placeholder?: string;
+    maxLength?: number;
+    onChange: (value: string) => void;
+  };
 }
 
 type RequestConfirmation = (options: ConfirmationOptions) => Promise<boolean>;
@@ -121,6 +128,22 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
                       <li key={index}>{consequence}</li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {options.note && (
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <label htmlFor="confirmation-note" className="text-sm">
+                    {options.note.label}
+                  </label>
+                  <textarea
+                    id="confirmation-note"
+                    rows={3}
+                    maxLength={options.note.maxLength}
+                    placeholder={options.note.placeholder}
+                    onChange={(event) => options.note?.onChange(event.target.value)}
+                    className="min-h-[72px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  />
                 </div>
               )}
 

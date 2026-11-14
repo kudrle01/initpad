@@ -1151,20 +1151,26 @@ export class GiteaService implements OnModuleInit, ScmProvider {
   // Downloads the source tree of an exact commit into a temporary directory.
   // Gitea is the source of truth for code — deployments fetch from it on
   // demand, so the platform keeps no persistent working copies (stateless
-  // with respect to repository content). Returns null on any failure; the
-  // caller decides on a fallback.
+  // with respect to repository content). Every failure is reported with its
+  // cause; there is no local fallback.
   async downloadArchive(
     repository: ScmRepositoryRef,
     ref: string,
     actor: GiteaActor,
-  ): Promise<RepoArchive | null> {
+  ): Promise<RepoArchive> {
     this.assertProvider(repository);
     const url = config.gitea.internalUrl;
     const { adminToken } = config.gitea;
     const token = adminToken || actor.token;
-    if (!url || !token || !ref) return null;
+    const fail = (reason: string): never => {
+      const message = `Could not download the source of ${repository.fullName}@${ref.slice(0, 12)} from Gitea: ${reason}`;
+      this.logger.warn(message);
+      throw new Error(message);
+    };
+    if (!ref) fail('no commit was given');
+    if (!url || !token) fail('Gitea is not configured on this InitPad server');
 
-    let res: Response;
+    let res: Response | undefined;
     try {
       res = await this.request(
         `${url}/api/v1/repos/${repository.owner}/${repository.name}/archive/${encodeURIComponent(ref)}.tar.gz`,
@@ -1172,12 +1178,14 @@ export class GiteaService implements OnModuleInit, ScmProvider {
         SCM_DOWNLOAD_TIMEOUT_MS,
       );
     } catch (e) {
-      this.logger.warn(`downloadArchive ${repository.fullName}@${ref}: ${(e as Error).message}`);
-      return null;
+      fail((e as Error).message);
     }
-    if (!res.ok || !res.body) {
-      this.logger.warn(`downloadArchive ${repository.fullName}@${ref} → HTTP ${res.status}`);
-      return null;
+    if (!res!.ok || !res!.body) {
+      fail(
+        res!.status === 404
+          ? 'the repository or commit no longer exists (HTTP 404)'
+          : `HTTP ${res!.status}`,
+      );
     }
 
     const base = mkdtempSync(join(tmpdir(), 'initpad-archive-'));
@@ -1185,7 +1193,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
     try {
       const extractDir = join(base, 'src');
       await pipeline(
-        Readable.fromWeb(res.body as import('stream/web').ReadableStream),
+        Readable.fromWeb(res!.body as import('stream/web').ReadableStream),
         createGunzip(),
         tar.extract(extractDir),
       );
@@ -1198,8 +1206,7 @@ export class GiteaService implements OnModuleInit, ScmProvider {
       return { dir, cleanup };
     } catch (e) {
       cleanup();
-      this.logger.warn(`downloadArchive extract failed: ${(e as Error).message}`);
-      return null;
+      return fail(`the archive could not be extracted (${(e as Error).message})`);
     }
   }
 
@@ -1223,7 +1230,8 @@ export class GiteaService implements OnModuleInit, ScmProvider {
   async initLocal(dir: string, author?: { name: string; email: string }): Promise<void> {
     const name = author?.name || config.git.authorName;
     const email = author?.email || config.git.authorEmail;
-    const git = (args: string[]) => exec('git', args, { cwd: dir });
+    const git = (args: string[]) =>
+      exec('git', args, { cwd: dir, timeout: config.timeouts.gitMs, killSignal: 'SIGKILL' });
     try {
       await git(['init', '-b', 'main']);
       await git(['add', '-A']);
@@ -1242,7 +1250,8 @@ export class GiteaService implements OnModuleInit, ScmProvider {
   }
 
   private async pushScaffold(name: string, dir: string, actor: GiteaActor): Promise<void> {
-    const git = (args: string[]) => exec('git', args, { cwd: dir });
+    const git = (args: string[]) =>
+      exec('git', args, { cwd: dir, timeout: config.timeouts.gitMs, killSignal: 'SIGKILL' });
     await git(['remote', 'remove', 'origin']).catch(() => undefined);
     await git(['remote', 'add', 'origin', this.authedRemote(name, actor)]);
     await git(['push', '-u', 'origin', 'main']);

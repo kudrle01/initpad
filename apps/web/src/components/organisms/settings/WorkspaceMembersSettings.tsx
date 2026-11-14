@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Users } from 'lucide-react';
+import { Crown, LogOut, Plus, Trash2, Users } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth } from '@/auth';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
@@ -25,7 +25,7 @@ const ASSIGNABLE_ROLES: Array<{ value: AssignableRole; label: MessageKey }> = [
 ];
 
 export function WorkspaceMembersSettings() {
-  const { activeWorkspace } = useAuth();
+  const { activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
   const confirmAction = useConfirmation();
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
@@ -37,7 +37,10 @@ export function WorkspaceMembersSettings() {
   const [adding, setAdding] = useState(false);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
-  const canManage = canAdmin && activeWorkspace?.type !== 'personal';
+  const isTeam = activeWorkspace?.type === 'team';
+  const canManage = canAdmin && isTeam;
+  const isOwner = activeWorkspace?.role === 'owner';
+  const [leaving, setLeaving] = useState(false);
   const activeWorkspaceId = activeWorkspace?.id;
 
   useEffect(() => {
@@ -81,9 +84,15 @@ export function WorkspaceMembersSettings() {
     }
     setAdding(true);
     try {
+      // The API answers the same whether or not the account exists, so the
+      // message cannot confirm that someone was added.
       setMembers(await api.addWorkspaceMember(activeWorkspace.id, identity.trim(), role));
+      toast.success(
+        t('If an account matches {identity}, it is now a member of this workspace.', {
+          identity: identity.trim(),
+        }),
+      );
       setIdentity('');
-      toast.success(t('Workspace member added'));
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -159,12 +168,75 @@ export function WorkspaceMembersSettings() {
     }
   }
 
+  async function transferOwnership(member: WorkspaceMember) {
+    if (!activeWorkspace) return;
+    const confirmed = await confirmAction({
+      title: t('Make @{username} the owner of {name}?', {
+        username: member.username,
+        name: activeWorkspace.name,
+      }),
+      description: t('A workspace has one owner. You stay in the workspace as an admin.'),
+      confirmLabel: t('Transfer ownership'),
+      tone: 'warning',
+      consequences: [
+        t('The new owner can delete the workspace and change the production approval policy.'),
+        t('Only the new owner can transfer ownership again.'),
+      ],
+    });
+    if (!confirmed) return;
+    setBusyMemberId(member.userId);
+    try {
+      setMembers(await api.transferWorkspaceOwnership(activeWorkspace.id, member.userId));
+      await refreshWorkspaces();
+      toast.success(t('@{username} now owns the workspace', { username: member.username }));
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusyMemberId(null);
+    }
+  }
+
+  async function leaveWorkspace() {
+    if (!activeWorkspace) return;
+    const confirmed = await confirmAction({
+      title: t('Leave {name}?', { name: activeWorkspace.name }),
+      description: t(
+        'You lose access to its projects and servers. A workspace admin can add you again.',
+      ),
+      confirmLabel: t('Leave workspace'),
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+    setLeaving(true);
+    try {
+      await api.leaveWorkspace(activeWorkspace.id);
+      toast.success(t('You left {name}', { name: activeWorkspace.name }));
+      await refreshWorkspaces();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   return (
     <SettingsSection
       icon={Users}
       title={t('Workspace members')}
       description={t("People who can see and work on this workspace's projects.")}
       flush
+      actions={
+        isTeam && !isOwner ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={leaving}
+            onClick={() => void leaveWorkspace()}
+          >
+            <LogOut className="h-3.5 w-3.5" /> {t('Leave workspace')}
+          </Button>
+        ) : undefined
+      }
     >
       {canManage && (
         <div className="border-b border-border/70 bg-muted/50 px-4 py-4 sm:px-6">
@@ -244,6 +316,19 @@ export function WorkspaceMembersSettings() {
               </span>
               {canManage && member.role !== 'owner' ? (
                 <>
+                  {isOwner && member.role === 'admin' && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="rounded-full"
+                      aria-label={t('Make {username} the owner', { username: member.username })}
+                      title={t('Make {username} the owner', { username: member.username })}
+                      disabled={busyMemberId === member.userId}
+                      onClick={() => void transferOwnership(member)}
+                    >
+                      <Crown className="h-4 w-4" />
+                    </Button>
+                  )}
                   <Select
                     className="w-32 shrink-0"
                     aria-label={t('Role for {username}', { username: member.username })}

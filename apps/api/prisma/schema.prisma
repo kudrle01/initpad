@@ -25,6 +25,9 @@ model User {
   // Set once the account's repositories and clone token use scoped Gitea
   // tokens and every legacy full-scope token is revoked (ADR-134).
   giteaCredentialsScopedAt   DateTime?
+  // Set once the account's local Gitea password was replaced with an
+  // unrecoverable value; startup hardening skips accounts that have it.
+  giteaPasswordHardenedAt    DateTime?
   // Password hash (scrypt) for managed registration; null = OAuth-only (SSO) account.
   passwordHash               String?
   // Platform-wide authority is deliberately small. Workspace roles carry
@@ -557,11 +560,18 @@ model Project {
   // SHA-256 hash of the repository-specific CI webhook token. The plaintext
   // exists only as a Gitea Actions secret and is never persisted by InitPad.
   ciDeployTokenHash  String?
+  // Fingerprint of the CI runtime configuration (registry host, platform URL)
+  // last written to the repository's Actions secrets. Background
+  // reconciliation rewrites only repositories whose fingerprint differs.
+  ciRuntimeSecretsFingerprint String?
   // Workload identity on every target (ADR-155): container names, SFTP paths
   // and Agent workloads. Derived from the repository coordinates once and
   // never changed by a rename. Null only on a row written by an older image,
   // which still derives the same value until it is stored.
   deploymentKey      String?
+  // Compare-and-set deletion lock (ADR-177). A stale value older than the
+  // lock window is reclaimable, so a crashed deletion never blocks forever.
+  deletionStartedAt  DateTime?
   createdAt          DateTime                      @default(now())
   owner              User?                         @relation(fields: [ownerId], references: [id])
   ownerId            String?
@@ -665,6 +675,13 @@ model Environment {
   // no background task ever expires production.
   expiresAt          DateTime?
   expiryWarningAt    DateTime?
+  // Latest successful CI callback that arrived while another operation held
+  // this environment (dev only, ADR-178). A newer callback replaces it; it is
+  // deployed once the environment is free again.
+  pendingCiVersion        String?
+  pendingCiArtifactId     String?
+  pendingCiArtifactDigest String?
+  pendingCiQueuedAt       DateTime?
 
   configVars         AppConfigVar[]
   gatewayRoute       GatewayRoute?
@@ -675,6 +692,8 @@ model Environment {
   @@index([buildArtifactId])
   @@index([allocationId])
   @@index([expiresAt])
+  @@index([targetId])
+  @@index([pendingCiQueuedAt])
 }
 
 // Stable, control-plane-owned route reservation for managed-gateway targets

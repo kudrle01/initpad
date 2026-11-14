@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Plus } from 'lucide-react';
 import type { TargetAllocation, TargetAllocationInput, TargetInput } from '@/api';
 import { useAuth } from '@/auth';
 import { ContentLoading } from '@/components/molecules/ContentLoading';
@@ -15,6 +16,8 @@ import { useAgentProtocol } from '@/hooks/useAgentProtocol';
 import { useConfirmation } from '@/confirmation';
 import type { AgentEnrollment, Target } from '@/types';
 import { t } from '@/i18n';
+import { safeReturnPath } from '@/lib/form-draft';
+import { Notice } from '@/components/molecules/Notice';
 
 function sameCapabilities(left: string[], right: string[]): boolean {
   return [...left].sort().join(',') === [...right].sort().join(',');
@@ -73,6 +76,10 @@ export default function Infrastructure() {
   const [agentEnrollment, setAgentEnrollment] = useState<AgentEnrollment | null>(null);
   const agentProtocol = useAgentProtocol(agentTarget);
   const lastGatewayRefreshJob = useRef<string | null>(null);
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  // Set when the new-project or import form sent the user here to add a server.
+  const returnTo = safeReturnPath(params.get('returnTo'));
 
   const readOnly =
     !activeWorkspace || !['owner', 'admin', 'maintainer'].includes(activeWorkspace.role);
@@ -86,6 +93,20 @@ export default function Infrastructure() {
     (target) =>
       !allocatedTargetIds.has(target.id) && (target.managementState ?? 'active') === 'active',
   );
+
+  useEffect(() => {
+    if (params.get('add') !== '1' || readOnly) return;
+    setEditingTarget(null);
+    setTargetDialogOpen(true);
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete('add');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [params, readOnly, setParams]);
 
   useEffect(() => {
     if (!agentTarget) return;
@@ -126,6 +147,22 @@ export default function Infrastructure() {
     return () => window.clearTimeout(timeout);
   }, [agentEnrollment, agentProtocol.agent?.credentialGeneration, agentProtocol.agent?.targetId]);
 
+  async function closeAgentDialog() {
+    if (agentEnrollment) {
+      const confirmed = await confirmAction({
+        title: t('Close the Agent setup?'),
+        description: t(
+          'The enrollment command is shown only now. If the server has not run it yet, you will have to create a new one.',
+        ),
+        confirmLabel: t('Close setup'),
+        tone: 'warning',
+      });
+      if (!confirmed) return;
+    }
+    setAgentEnrollment(null);
+    setAgentTarget(null);
+  }
+
   function openNewTarget() {
     setEditingTarget(null);
     setTargetDialogOpen(true);
@@ -144,7 +181,7 @@ export default function Infrastructure() {
       if (changedSettings.length > 0) {
         const confirmed = await confirmAction({
           title: t('Save changes to {name}?', { name: editingTarget.name }),
-          description: t('Target settings control where and how future deployments are published.'),
+          description: t('Server settings control where and how future deployments are published.'),
           confirmLabel: t('Save server changes'),
           tone: 'warning',
           details: [{ label: t('Changed settings'), value: changedSettings.join(', ') }],
@@ -164,9 +201,20 @@ export default function Infrastructure() {
     if (saved) {
       setTargetDialogOpen(false);
       setEditingTarget(null);
+      if (saved.kind !== 'docker' && (saved.managementState ?? 'active') === 'active') {
+        // An unverified SFTP server cannot be chosen for an environment, so
+        // test the saved connection right away instead of leaving a hidden step.
+        void infrastructure.verifyTarget(saved).then(() => {
+          if (wasNew && returnTo) void navigate(returnTo);
+        });
+      }
       if (wasNew && saved.kind === 'docker' && canManageAgent) {
+        // The next step is always the enrollment command; create it at once.
         setAgentEnrollment(null);
         setAgentTarget({ ...saved, agent: null });
+        void infrastructure.issueAgentEnrollment(saved).then((result) => {
+          if (result) setAgentEnrollment(result);
+        });
       }
     }
   }
@@ -332,6 +380,15 @@ export default function Infrastructure() {
         }
       />
 
+      {returnTo && (
+        <Notice className="mb-4" title={t('Your form is saved')}>
+          {t('Add the server here, then go back — everything you filled in is kept.')}{' '}
+          <Link to={returnTo} className="text-link inline-flex items-center gap-1 font-medium">
+            <ArrowLeft className="h-3.5 w-3.5" /> {t('Back to the form')}
+          </Link>
+        </Notice>
+      )}
+
       {infrastructure.error ? (
         <LoadErrorState message={infrastructure.error} onRetry={infrastructure.reload} />
       ) : infrastructure.loading ? (
@@ -376,6 +433,7 @@ export default function Infrastructure() {
         open={targetDialogOpen}
         target={editingTarget}
         busy={infrastructure.savingTarget}
+        canAddAgentServer={canManageAgent}
         onOpenChange={(open) => {
           setTargetDialogOpen(open);
           if (!open) setEditingTarget(null);
@@ -413,10 +471,7 @@ export default function Infrastructure() {
         busy={!!agentTarget && infrastructure.busyTargetId === agentTarget.id}
         enrollment={agentEnrollment}
         onOpenChange={(open) => {
-          if (!open) {
-            setAgentEnrollment(null);
-            setAgentTarget(null);
-          }
+          if (!open) void closeAgentDialog();
         }}
         onIssueEnrollment={() => {
           if (!agentTarget) return;

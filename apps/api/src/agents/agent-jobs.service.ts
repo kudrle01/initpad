@@ -403,6 +403,10 @@ export class AgentJobsService implements OnModuleInit {
         return { job: null, nextPollSeconds: AGENT_JOB_NEXT_POLL_SECONDS };
       }
       if (claim.outcome === 'raced') continue;
+      if (claim.outcome === 'exhausted') {
+        await this.reconcileExhaustedJob(claim.jobId);
+        continue;
+      }
       const { row, leaseToken, leaseExpiresAt } = claim;
       if (row.kind === 'logs') {
         await this.prisma.workloadDiagnostic.updateMany({
@@ -960,6 +964,7 @@ export class AgentJobsService implements OnModuleInit {
       status: string;
       operationStep: number | null;
       message: string | null;
+      resultCode?: string | null;
       payload: unknown;
       result: unknown;
     },
@@ -988,11 +993,7 @@ export class AgentJobsService implements OnModuleInit {
       const reason = job.message || 'Agent operation failed';
       const routeRollback =
         job.kind === 'gateway-route'
-          ? reason.includes('previous serving route restored')
-            ? 'serving'
-            : reason.includes('previous gateway state restored')
-              ? 'stopped'
-              : 'unknown'
+          ? this.gatewayRollbackOutcome(job.resultCode ?? null, reason)
           : undefined;
       await this.failManagedOperation(operation, reason, routeRollback);
       return;
@@ -1487,6 +1488,50 @@ export class AgentJobsService implements OnModuleInit {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
+  }
+
+  /**
+   * Agents from 0.17 report the rollback outcome as a structured resultCode;
+   * older Agents only append a fixed phrase to the (possibly truncated) message.
+   */
+  private gatewayRollbackOutcome(
+    resultCode: string | null,
+    reason: string,
+  ): 'serving' | 'stopped' | 'unknown' {
+    if (resultCode === 'gateway_route_rollback_serving') return 'serving';
+    if (resultCode === 'gateway_route_rollback_stopped') return 'stopped';
+    if (resultCode === 'gateway_route_rollback_incomplete') return 'unknown';
+    if (reason.includes('previous serving route restored')) return 'serving';
+    if (reason.includes('previous gateway state restored')) return 'stopped';
+    return 'unknown';
+  }
+
+  private async reconcileExhaustedJob(jobId: string): Promise<void> {
+    const job = await this.prisma.agentJob.findUnique({
+      where: { id: jobId },
+      select: { kind: true, message: true, correlationId: true, targetId: true, attempt: true },
+    });
+    if (!job) return;
+    this.logger.warn({
+      event: 'agent.job.attempts_exhausted',
+      correlationId: job.correlationId,
+      agentJobId: jobId,
+      targetId: job.targetId,
+      kind: job.kind,
+      attempt: job.attempt,
+    });
+    if (job.kind === 'logs') {
+      await this.prisma.workloadDiagnostic.updateMany({
+        where: { currentJobId: jobId, status: { in: ['queued', 'running'] } },
+        data: { status: 'failed', message: job.message, finishedAt: new Date() },
+      });
+    }
+    await this.reconcileGatewayPreflight(jobId);
+    await this.reconcileGatewayRoute(jobId);
+    await this.reconcileTerminalJob(jobId);
+    if (job.kind === 'agent-update') {
+      await this.auditEvents?.recordOperationResult('agent-job', jobId);
+    }
   }
 
   private async failInvalidDelivery(

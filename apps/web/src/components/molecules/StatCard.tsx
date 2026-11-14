@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -20,15 +21,25 @@ export function StatCard({
   hint,
   icon: I,
   tone = 'neutral',
+  to,
+  linkLabel,
 }: {
   label: string;
   value: number | string;
   hint?: ReactNode;
   icon?: LucideIcon;
   tone?: Tone;
+  /** Makes the whole card a link to the list behind the figure. */
+  to?: string;
+  linkLabel?: string;
 }) {
-  return (
-    <Card className="p-4 sm:p-5">
+  const card = (
+    <Card
+      className={cn(
+        'p-4 sm:p-5',
+        to && 'h-full transition-colors group-hover:border-input group-hover:bg-muted/40',
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 text-sm leading-5 text-muted-foreground">{label}</span>
         {I && (
@@ -45,5 +56,15 @@ export function StatCard({
       <div className="mt-1 text-3xl font-bold leading-9 tracking-tight tabular-nums">{value}</div>
       {hint && <div className="mt-1 truncate text-xs text-muted-foreground">{hint}</div>}
     </Card>
+  );
+  if (!to) return card;
+  return (
+    <Link
+      to={to}
+      aria-label={linkLabel}
+      className="group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+    >
+      {card}
+    </Link>
   );
 }

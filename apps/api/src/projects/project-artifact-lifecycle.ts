@@ -1,4 +1,5 @@
 import { Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { BuildArtifact } from '@prisma/client';
 import { createHash } from 'crypto';
 import { createReadStream, mkdtempSync, rmSync } from 'fs';
@@ -12,6 +13,9 @@ import { ScmRepositoryRef } from '../scm/scm-provider';
 import { DEPLOYMENT_PUBLICATION_KINDS } from './deployment-publications';
 import { storedArtifactImageRef } from './project-deployment-identity';
 import { ProjectRegistryArtifactCapture } from './project-registry-artifact-capture';
+
+const RETENTION_BATCH_SIZE = 100;
+const RETENTION_MAX_BATCHES = 20;
 
 /**
  * Durable artifact lifecycle owned by the project domain. CI ingestion stays
@@ -135,44 +139,56 @@ export class ProjectArtifactLifecycle {
 
   // ADR-059 §7, ADR-075 and ADR-082: remove expired durable objects only
   // when no live environment, pending production request, unfinished operation
-  // or bounded rollback point still refers to the immutable artifact.
+  // or bounded rollback point still refers to the immutable artifact. Expired
+  // artifacts are read in bounded batches and every reference check covers a
+  // whole batch, so one pass costs a fixed number of queries per batch.
   async runRetention(now: Date = new Date()): Promise<{ removed: number; kept: number }> {
     const cutoff = new Date(now.getTime() - config.artifactStore.retentionDays * 86_400_000);
-    const stale = await this.prisma.buildArtifact.findMany({
-      where: {
-        storageKind: 'object-store',
-        storageRef: { not: null },
-        createdAt: { lt: cutoff },
-      },
-      select: { id: true, storageRef: true },
-    });
     let removed = 0;
     let kept = 0;
-    for (const artifact of stale) {
-      if (!artifact.storageRef) continue;
-      if (await this.isReferenced(artifact.id)) {
-        kept += 1;
-        continue;
-      }
-      try {
-        await this.store.delete(artifact.storageRef);
-      } catch (error) {
-        this.logger.warn(
-          `Retention: could not delete object ${artifact.storageRef}: ${(error as Error).message}`,
-        );
-        kept += 1;
-        continue;
-      }
-      await this.prisma.buildArtifact.updateMany({
-        where: { id: artifact.id },
-        data: {
-          status: 'failed',
-          error: 'Expired by retention policy',
-          storageKind: null,
-          storageRef: null,
+    let cursor: string | undefined;
+    for (let batch = 0; batch < RETENTION_MAX_BATCHES; batch += 1) {
+      const stale = await this.prisma.buildArtifact.findMany({
+        where: {
+          storageKind: 'object-store',
+          storageRef: { not: null },
+          createdAt: { lt: cutoff },
+          ...(cursor ? { id: { gt: cursor } } : {}),
         },
+        orderBy: { id: 'asc' },
+        take: RETENTION_BATCH_SIZE,
+        select: { id: true, storageRef: true },
       });
-      removed += 1;
+      if (stale.length === 0) break;
+      cursor = stale[stale.length - 1].id;
+      const referenced = await this.referencedArtifacts(stale.map((artifact) => artifact.id));
+      for (const artifact of stale) {
+        if (!artifact.storageRef) continue;
+        if (referenced.has(artifact.id)) {
+          kept += 1;
+          continue;
+        }
+        try {
+          await this.store.delete(artifact.storageRef);
+        } catch (error) {
+          this.logger.warn(
+            `Retention: could not delete object ${artifact.storageRef}: ${(error as Error).message}`,
+          );
+          kept += 1;
+          continue;
+        }
+        await this.prisma.buildArtifact.updateMany({
+          where: { id: artifact.id },
+          data: {
+            status: 'failed',
+            error: 'Expired by retention policy',
+            storageKind: null,
+            storageRef: null,
+          },
+        });
+        removed += 1;
+      }
+      if (stale.length < RETENTION_BATCH_SIZE) break;
     }
     if (removed) this.logger.log(`Retention GC removed ${removed} expired artifact object(s)`);
     return { removed, kept };
@@ -200,19 +216,24 @@ export class ProjectArtifactLifecycle {
     return { url, expiresInSeconds };
   }
 
-  private async isReferenced(buildArtifactId: string): Promise<boolean> {
-    const environmentReferences = await this.prisma.environment.count({
-      where: { buildArtifactId },
+  private async referencedArtifacts(ids: string[]): Promise<Set<string>> {
+    const inBatch = { buildArtifactId: { in: ids } };
+    const environments = await this.prisma.environment.findMany({
+      where: inBatch,
+      select: { buildArtifactId: true },
     });
-    if (environmentReferences > 0) return true;
-    const productionRequestReferences = await this.prisma.productionDeploymentRequest.count({
-      where: { buildArtifactId, status: { in: ['pending', 'approving'] } },
+    const requests = await this.prisma.productionDeploymentRequest.findMany({
+      where: { ...inBatch, status: { in: ['pending', 'approving'] } },
+      select: { buildArtifactId: true },
     });
-    if (productionRequestReferences > 0) return true;
-    const unfinishedOperations = await this.prisma.deploymentOperation.count({
-      where: { buildArtifactId, finishedAt: null },
+    const unfinished = await this.prisma.deploymentOperation.findMany({
+      where: { ...inBatch, finishedAt: null },
+      select: { buildArtifactId: true },
     });
-    if (unfinishedOperations > 0) return true;
+    const referenced = new Set<string>();
+    for (const row of [...environments, ...requests, ...unfinished]) {
+      if (row.buildArtifactId) referenced.add(row.buildArtifactId);
+    }
 
     // Preserve only the newest successful publication artifact which differs
     // from each environment's current artifact. This makes manual rollback
@@ -221,35 +242,29 @@ export class ProjectArtifactLifecycle {
     // it can still be restored without another CI build.
     const publishedTo = await this.prisma.deploymentOperation.findMany({
       where: {
-        buildArtifactId,
+        ...inBatch,
         status: 'succeeded',
         kind: { in: [...DEPLOYMENT_PUBLICATION_KINDS] },
       },
       select: { environmentId: true },
       distinct: ['environmentId'],
     });
-    for (const publication of publishedTo) {
-      const environment = await this.prisma.environment.findUnique({
-        where: { id: publication.environmentId },
-        select: { buildArtifactId: true },
-      });
-      if (!environment) continue;
-      const newestRollbackPoint = await this.prisma.deploymentOperation.findFirst({
-        where: {
-          environmentId: publication.environmentId,
-          status: 'succeeded',
-          kind: { in: [...DEPLOYMENT_PUBLICATION_KINDS] },
-          buildArtifactId: { not: null },
-          ...(environment.buildArtifactId
-            ? { NOT: { buildArtifactId: environment.buildArtifactId } }
-            : {}),
-        },
-        orderBy: { createdAt: 'desc' },
-        select: { buildArtifactId: true },
-      });
-      if (newestRollbackPoint?.buildArtifactId === buildArtifactId) return true;
-    }
-    return false;
+    if (publishedTo.length === 0) return referenced;
+    const rollbackPoints = await this.prisma.$queryRaw<Array<{ buildArtifactId: string }>>(
+      Prisma.sql`
+        SELECT DISTINCT ON (o."environmentId") o."buildArtifactId"
+        FROM "DeploymentOperation" o
+        JOIN "Environment" e ON e."id" = o."environmentId"
+        WHERE o."environmentId" IN (${Prisma.join(publishedTo.map((row) => row.environmentId))})
+          AND o."status" = 'succeeded'
+          AND o."kind" IN (${Prisma.join([...DEPLOYMENT_PUBLICATION_KINDS])})
+          AND o."buildArtifactId" IS NOT NULL
+          AND (e."buildArtifactId" IS NULL OR o."buildArtifactId" <> e."buildArtifactId")
+        ORDER BY o."environmentId", o."createdAt" DESC
+      `,
+    );
+    for (const point of rollbackPoints) referenced.add(point.buildArtifactId);
+    return referenced;
   }
 
   private fileSha256(filePath: string): Promise<string> {

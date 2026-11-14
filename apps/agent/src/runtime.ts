@@ -9,7 +9,10 @@ import {
 } from './control-plane.js';
 import { inspectDocker } from './docker.js';
 import { GatewayEdgeReconciler } from './gateway-edge.js';
+import { GatewayDockerNetwork } from './gateway-network.js';
 import { executeClaimedJob } from './job-worker.js';
+import { recordJobLoop, waitForUpdateHandoff } from './job-loop-liveness.js';
+import { updatePlanPath } from './release-update.js';
 import { saveConfig } from './config.js';
 import { reconcileCredentialRotation } from './credential-rotation.js';
 import type { AgentConfig, DockerCapabilities, HeartbeatResponse } from './types.js';
@@ -108,6 +111,18 @@ export async function runAgent(
         message: error instanceof Error ? error.message : String(error),
       }),
     );
+  if (process.env.INITPAD_AGENT_GATEWAY_CONTAINER?.trim()) {
+    void new GatewayDockerNetwork(config.targetId, dockerHost || undefined)
+      .reattachActiveWorkloads(runtimeSignal)
+      .then((joined) => {
+        if (joined.length) log('warn', 'gateway.networks_reattached', { networks: joined });
+      })
+      .catch((error: unknown) =>
+        log('warn', 'gateway.networks_check_failed', {
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+  }
   try {
     await Promise.all([
       runHeartbeatLoop(config, runtimeSignal, dockerHost, configPath),
@@ -161,6 +176,7 @@ async function runHeartbeatLoop(
 async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<void> {
   let retrySeconds = 2;
   while (!signal.aborted) {
+    await recordJobLoop('polling');
     try {
       const response = await claimJob(config);
       retrySeconds = 2;
@@ -179,6 +195,7 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
         kind: response.job.kind,
         attempt: response.job.attempt,
       });
+      await recordJobLoop('job');
       try {
         const outcome = await executeClaimedJob(
           response.job,
@@ -198,8 +215,20 @@ async function runJobLoop(config: AgentConfig, signal: AbortSignal): Promise<voi
             jobId: response.job.id,
             correlationId: response.job.correlationId,
           });
-          while (!signal.aborted) await delay(60_000, signal);
-          return;
+          // A successful helper stops this container. Still being here after
+          // the helper removed its plan means the update was not applied.
+          const handoff = await waitForUpdateHandoff(
+            updatePlanPath(response.job.id, response.job.attempt),
+            signal,
+          );
+          if (handoff === 'aborted') return;
+          log('warn', 'agent.update_not_applied', {
+            targetId: config.targetId,
+            jobId: response.job.id,
+            correlationId: response.job.correlationId,
+            reason: handoff,
+          });
+          continue;
         }
         if (!signal.aborted) {
           log('info', 'job.completed', {

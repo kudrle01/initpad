@@ -7,6 +7,7 @@ import type { SignedPlatformRelease, UpdateOperation } from './types.js';
 import { PlatformUpdater, writePlan } from './updater.js';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const HELPER_CHECK_INTERVAL_MS = 10_000;
 
 function json(response: http.ServerResponse, status: number, value: unknown): void {
   const body = Buffer.from(JSON.stringify(value));
@@ -37,10 +38,32 @@ function header(request: http.IncomingMessage, name: string): string | undefined
 
 export function createSupervisorServer(
   secret = process.env.INITPAD_SUPERVISOR_SHARED_SECRET || '',
-  updater: Pick<PlatformUpdater, 'launchHelper'> = new PlatformUpdater(),
+  updater: Pick<PlatformUpdater, 'launchHelper'> &
+    Partial<Pick<PlatformUpdater, 'launchRecoveryHelper'>> = new PlatformUpdater(),
   verifyRelease: typeof verifyPlatformRelease = verifyPlatformRelease,
+  now: () => number = Date.now,
 ): http.Server {
   let accepting = false;
+  let lastHelperCheck = 0;
+  // An active operation whose helper container died (OOM, `docker rm`, host
+  // restart without a Supervisor restart) would otherwise stay active
+  // forever. Status polls start the one-shot recovery helper, which is a
+  // no-op while the update or recovery helper still runs.
+  const ensureHelper = async (): Promise<void> => {
+    if (accepting || !updater.launchRecoveryHelper) return;
+    if (now() - lastHelperCheck < HELPER_CHECK_INTERVAL_MS) return;
+    lastHelperCheck = now();
+    await updater.launchRecoveryHelper().catch((error: unknown) => {
+      console.error(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'warn',
+          event: 'supervisor.recovery_launch_failed',
+          message: error instanceof Error ? error.message : 'Recovery helper could not start',
+        }),
+      );
+    });
+  };
   const handle = async (request: http.IncomingMessage, response: http.ServerResponse) => {
     let ownsAcceptingLock = false;
     try {
@@ -65,7 +88,13 @@ export function createSupervisorServer(
         body,
       });
       if (request.method === 'GET' && url.pathname === '/v1/status') {
-        json(response, 200, await loadState());
+        const current = await loadState();
+        if (current.operation && ['accepted', 'running'].includes(current.operation.status)) {
+          await ensureHelper();
+          json(response, 200, await loadState());
+          return;
+        }
+        json(response, 200, current);
         return;
       }
       if (request.method !== 'POST' || url.pathname !== '/v1/update') {

@@ -185,3 +185,16 @@ stabilní.
 | [ADR-171](./ADR-171.md) | Accepted | CI joby berou akce ze zrcadel v Gitee |
 | [ADR-172](./ADR-172.md) | Accepted | Pracovní soubory deploye API leží na disku |
 | [ADR-173](./ADR-173.md) | Accepted | Vestavěný Docker se nenabízí, když nemůže ověřit nasazení |
+| [ADR-174](./ADR-174.md) | Accepted | Lokální instalace publikuje porty aplikací i na host-gateway |
+| [ADR-175](./ADR-175.md) | Accepted | Režimy sítě instalátoru, předběžné kontroly a oddělený dev stack |
+| [ADR-176](./ADR-176.md) | Accepted | Žádná lokální kopie repozitáře a omezené čekání na vzdálené služby |
+| [ADR-177](./ADR-177.md) | Accepted | Mazání projektu se zámkem a bez nasazení mimo cíl |
+| [ADR-178](./ADR-178.md) | Accepted | Druhý push během deploye čeká ve frontě, vyhrává nejnovější |
+| [ADR-179](./ADR-179.md) | Accepted | Údržba projektů neblokuje start a čte hlavně vlastní data |
+| [ADR-180](./ADR-180.md) | Accepted | Workload s přímými porty dostává pevný hostitelský port od Agenta |
+| [ADR-181](./ADR-181.md) | Accepted | Kdo přidá Agent server a jak dlouho práce na Agenta čeká |
+| [ADR-182](./ADR-182.md) | Accepted | Aktualizace platformy se sladí se Supervisorem a nehlásí nepravdivý rollback |
+| [ADR-183](./ADR-183.md) | Accepted | Destruktivní migrace potřebují výjimku a release s nimi nesmí slibovat rollback images |
+| [ADR-184](./ADR-184.md) | Accepted | Převod vlastnictví workspace, odchod z něj a správa platformních rolí |
+| [ADR-185](./ADR-185.md) | Accepted | Web překládá hlášky API, sjednocuje pojmy a nevede do slepých uliček |
+| [ADR-186](./ADR-186.md) | Accepted | Jedna Node LTS linie, deterministický PR gate a ověřené release image |

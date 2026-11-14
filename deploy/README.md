@@ -1,8 +1,9 @@
 # Nasazení InitPadu
 
 Celou platformu lze nainstalovat jedním příkazem. Zahrnuje web, API, PostgreSQL,
-Giteu, CI runner a simulované cíle nasazení. Jediným požadavkem je Docker
-s pluginem Compose.
+Giteu, CI runner a simulované cíle nasazení. Potřebujete Linux s Dockerem a
+pluginem Compose, `git`, `curl` a `openssl`, přístup k internetu (GitHub,
+Docker Hub, ghcr.io) a host podle [požadavků](#požadavky-na-server).
 
 ## Lokální instalace
 
@@ -15,8 +16,18 @@ cd initpad/deploy
 Otevřete <http://localhost:8080>, vytvořte první účet s instalačním tokenem,
 který skript vypíše na konci instalace, a následně projekt. První účet se stane
 administrátorem; další účty ve výchozím režimu `admin-provisioned` zakládá on.
-Skript je idempotentní: lze jej kdykoliv spustit znovu a doplní pouze chybějící
-části.
+Dev prostředí projektu běží na vestavěném Docker serveru tohoto počítače a jeho
+URL funguje hned po prvním buildu (porty aplikací zůstávají na `127.0.0.1`,
+API je ověřuje přes Docker host-gateway, ADR-174).
+
+Skript je idempotentní: lze jej kdykoliv spustit znovu a změní jen to, co chybí
+nebo neodpovídá konfiguraci. Bez změn trvá opakovaný běh několik sekund,
+image znovu nesestavuje a Giteu nerestartuje, takže nepřeruší běžící CI.
+Výstup buildu a přípravy CI image ukládá do `deploy/.runtime/logs/` a při
+chybě vypíše jeho konec. Před spuštěním čehokoli zkontroluje volné porty a
+kapacitu hostu. Obsazený port ohlásí i s volnou náhradou; porty mění proměnné
+`INITPAD_WEB_PORT`, `INITPAD_GITEA_HTTP_PORT` a `INITPAD_STATIC_WEB_PORT`
+v `deploy/.env` a další `./install.sh` podle nich přepočítá všechny adresy.
 
 Ubuntu 24.04 a novější ve výchozím nastavení omezuje neprivilegované user
 namespaces. Před první instalací na takovém hostu spusťte
@@ -25,9 +36,11 @@ konkrétní cestu pro rootless CI daemon, aniž by vypnul omezení na celém hos
 Pokud tato podmínka chybí, instalátor se zastaví a zobrazí stejný pokyn.
 
 Instalátor rovněž vybere zkontrolovaný release Agenta ze souboru
-`agent-release.env`. Pro připojení Docker serveru vytvořte jeho target v části
-**Infrastructure**, vygenerujte enrollment a na daném serveru spusťte zobrazený
-instalační příkaz ověřující checksum. Na hostu záměrně není vyžadován příkaz
+`agent-release.env`. Pro připojení Docker serveru zvolte **Servers → Add
+server → Agent**, vygenerujte enrollment a na daném serveru spusťte zobrazený
+instalační příkaz ověřující checksum. Agent na jiném serveru se musí k
+InitPadu dostat, proto instalace *Jen tento počítač* (`http://localhost`)
+Agenta nepřipojí; použijte `--ip` nebo doménu. Na hostu záměrně není vyžadován příkaz
 `initpad-agent`, Makefile ani checkout repozitáře. Instalátor potřebuje pouze
 Docker a identitu Agenta ukládá mimo jeho nahraditelný kontejner.
 
@@ -53,10 +66,13 @@ verzované databázové migrace a sestavení kontejnerů.
 | Volné místo pro Docker | 20 GiB | 40 GiB (disk VM 80 GB) |
 
 Grafické prostředí server nepotřebuje, InitPad se otevírá z prohlížeče na
-jiném počítači. Výjimkou je jen volba *Jen tento počítač*. Před první
-instalací spusťte `./self-hosted-check.sh preflight`: ověří čistý host,
-Docker Compose a kapacitu, pod minimem selže a pod doporučením varuje.
-Samotný `install.sh` kapacitu nekontroluje. Nároky rostou hlavně s CI buildy
+jiném počítači. Výjimkou je jen volba *Jen tento počítač*. `install.sh`
+kapacitu zkontroluje sám: pod minimem varuje a čerstvou instalaci odmítne jen
+při zjevném nedostatku (méně než 3 GiB RAM nebo 8 GiB volného místa; obejde to
+`INITPAD_SKIP_PREFLIGHT=1`). Přísnější `./self-hosted-check.sh preflight` pro
+acceptance navíc vyžaduje čistý host a pod minimem selže. Na Ubuntu 24.04 a
+novějším je před první instalací potřeba `sudo ./prepare-rootless-runner.sh`
+(viz výše). Nároky rostou hlavně s CI buildy
 a s aplikacemi nasazenými přímo na tento host (viz
 [Kapacita a škálování](./OPERATIONS.md#kapacita-a-škálování)).
 
@@ -73,10 +89,16 @@ a s aplikacemi nasazenými přímo na tento host (viz
    | Volba | Kdy | HTTPS |
    |---|---|---|
    | 1) Jen tento počítač | lokální vyzkoušení | ne, `http://localhost:8080` |
-   | 2) Interní síť s DNS | škola nebo firma, jména na řadiči domény | vlastní certifikační autorita InitPadu |
-   | 3) Veřejná doména | server dostupný z internetu na portech 80 a 443 | Let's Encrypt |
+   | 2) Lokální síť přes IP | učebna, laboratoř nebo VM bez DNS, důvěryhodná síť | ne, `http://<IP>:8080` |
+   | 3) Interní síť s DNS | škola nebo firma, jména na řadiči domény | vlastní certifikační autorita InitPadu |
+   | 4) Veřejná doména | server dostupný z internetu na portech 80 a 443 | Let's Encrypt |
 
-   U voleb 2 a 3 zadáte jméno platformy a jméno Gitu (nabídne se
+   Volba 2 nepotřebuje DNS záznamy (krok 1 přeskočte): instalátor nabídne IP
+   adresu serveru a vyplní z ní všechny adresy. Aplikace nasazené na vestavěný
+   Docker dostanou přímé porty dostupné z LAN (`INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0`);
+   provoz běží přes HTTP, proto jen v důvěryhodné síti a s firewallem.
+
+   U voleb 3 a 4 zadáte jméno platformy a jméno Gitu (nabídne se
    `git.<nadřazená doména>`). Instalátor podle odpovědi vyplní všechny
    adresy v `deploy/.env` (`INITPAD_PUBLIC_URL`, `INITPAD_GITEA_PUBLIC_URL`,
    `INITPAD_DOMAIN`, `INITPAD_GIT_DOMAIN`, `INITPAD_TLS_DIRECTIVE`, registry
@@ -86,13 +108,16 @@ a s aplikacemi nasazenými přímo na tento host (viz
    ```bash
    ./install.sh --domain initpad.lab.example --tls internal   # interní síť
    ./install.sh --domain platform.example.org --tls public    # internet
+   ./install.sh --ip 192.168.1.20                             # LAN bez DNS
    ./install.sh --local                                       # jen tento počítač
    ```
 
    `--git-domain` jméno Gitu přepíše. Bez `--tls` se použije `internal` pro
    domény `.local`, `.internal`, `.lan`, `.home.arpa`, `.test`, `.intranet`
-   a `.corp`, jinak `public`. Další spuštění `./install.sh` konfiguraci sítě
-   nemění. Pro změnu domény nebo režimu spusťte `./install.sh --reconfigure`.
+   a `.corp`, jinak `public`. Další spuštění `./install.sh` režim sítě
+   (`INITPAD_NETWORK_MODE`) zachová a jen podle něj a aktuálních portů znovu
+   vyplní adresy. Pro změnu domény, IP adresy nebo režimu spusťte
+   `./install.sh --reconfigure` nebo instalátor s novým parametrem.
 
    Doména `.local` koliduje s mDNS (Bonjour, Avahi). Klienti s Windows v doméně
    ji přeloží přes DNS, Linux a macOS mohou potřebovat úpravu konfigurace.
@@ -130,8 +155,10 @@ a s aplikacemi nasazenými přímo na tento host (viz
    cílovém serveru se nemění.
 
 4. Ve firewallu otevřete porty 80 a 443 pro platformu, Git a managed gateway.
-   Porty 8080, 3001 a 8085 Docker publikuje mimo `ufw`; na veřejném rozhraní
-   je zablokujte podle [provozního runbooku](./OPERATIONS.md#bezpečnost).
+   Porty webu, Gitey a statického webu (výchozí 8080, 3001 a 8085) Docker
+   publikuje mimo `ufw`; na veřejném rozhraní je zablokujte podle
+   [provozního runbooku](./OPERATIONS.md#bezpečnost). S aktivním `ufw`
+   instalátor v režimu domény povolí síti CI runneru porty 80 a 443.
 
 Caddy ukončuje HTTPS pro obě jména, posílá hlavičku HSTS a požadavky na
 `/api/*` předává přímo API, `INITPAD_TRUST_PROXY_HOPS` proto zůstává `1`.
@@ -139,12 +166,13 @@ Vestavěné odkazy na aplikace používají hostname z `INITPAD_PUBLIC_URL`.
 Proměnnou `INITPAD_DEPLOY_PUBLIC_HOST` nastavujte pouze u dělené topologie,
 ve které aplikace záměrně používají jiný hostname.
 
-Nasazení s přímými porty se ve výchozím stavu vážou na `127.0.0.1`. Pro
-stabilní HTTPS adresy aplikací upřednostněte managed gateway. Pokud musí
-důvěryhodní klienti v LAN přistupovat k náhodným přímým portům, nastavte
-explicitně `INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0` a ve firewallu omezte jejich
-rozsah pouze na tuto LAN. Samotná změna bind adresy není access-control
-pravidlem.
+Nasazení s přímými porty se ve výchozím stavu vážou na `127.0.0.1` (a pro
+health sondu API na Docker host-gateway, ADR-174). Pro stabilní HTTPS adresy
+aplikací upřednostněte managed gateway. Pokud musí důvěryhodní klienti v LAN
+přistupovat k náhodným přímým portům, nastavte explicitně
+`INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0` (instalace `--ip` to dělá sama) a ve
+firewallu omezte jejich rozsah pouze na tuto LAN. Samotná změna bind adresy
+není access-control pravidlem.
 
 Pro reprodukovatelné self-hosted ověření na Windows a VirtualBoxu postupujte
 podle [SELF_HOSTED_ACCEPTANCE.md](./SELF_HOSTED_ACCEPTANCE.md). Dokument pokrývá
@@ -206,18 +234,9 @@ alerty a incident acceptance popsané v
 
 ## Provoz
 
-- **Záloha:** spusťte `./backup.sh /secure/path/initpad-backup`. Skript krátce
-  zastaví procesy provádějící zápis, vytvoří dump PostgreSQL, archivuje Giteu,
-  artefakty v object storage, data API a Supervisoru, aktivní podepsaný release descriptor,
-  publikované statické soubory, volitelná data Caddy a registraci runneru a
-  zkopíruje `.env`. Dříve běžící služby znovu spustí i při selhání zálohy.
-  Záloha obsahuje přihlašovací údaje; zašifrujte ji a uchovávejte kopii mimo
-  host.
-- **Cvičná obnova:** na disposable instalaci spusťte
-  `./restore.sh <backup-directory>`. Skript ověří checksumy, zastaví všechny
-  profily, obnoví zálohované `.env`, databázi a neaktivní volumes a následně
-  spustí základní stack, runner a nakonfigurovaný HTTPS profil. Funkčnost zálohy
-  vždy nejprve ověřte na disposable hostu.
+- **Záloha a obnova:** `./backup.sh <adresář>` a `./restore.sh <adresář>`.
+  Co záloha obsahuje, jak ji šifrovat a jak obnovu nejdřív vyzkoušet popisuje
+  jediné místo, [provozní runbook](./OPERATIONS.md#zálohy).
 - **Aktualizace platformy:** správce použije **Instance administration →
   Platform updates**. InitPad přijme pouze nejnovější manifest podepsaný přesně
   určeným workflow označeného releasu, zazálohuje a ověří PostgreSQL, postupně
@@ -236,8 +255,11 @@ alerty a incident acceptance popsané v
 /absolute/path/to/initpad`. Tato explicitní záložní cesta navíc vyžaduje
   Cosign a vytvoří úplnou zálohu před aktualizací.
 - **Release Agenta:** `./install.sh` doplní prázdnou dvojici údajů o releasu ze
-  souboru `agent-release.env`. Úplnou explicitní dvojici zachová, takže lokální
-  pin ani rollback nikdy skrytě nenahradí. Příkaz
+  souboru `agent-release.env` a označí ji `INITPAD_AGENT_RELEASE_SOURCE=auto`.
+  Takto doplněnou dvojici každý další běh (po `git pull` nebo po aktualizaci
+  platformy) posune na nový zkontrolovaný release. Ručně nastavenou dvojici
+  s `INITPAD_AGENT_RELEASE_SOURCE=pinned` i dvojici ze starších instalací bez
+  značky zachová, takže lokální pin ani rollback nikdy skrytě nenahradí. Příkaz
   `./install.sh --update-agent-release` explicitně převezme aktuální
   zkontrolovaný release a restartuje platformu s přesnou verzí a immutable
   digestem. Neúplná nebo mutable dvojice způsobí bezpečné selhání před startem
@@ -247,8 +269,13 @@ alerty a incident acceptance popsané v
   `candidate` nastavujte pouze na disposable acceptance instalaci a po testu jej
   vraťte na `stable`.
 - **Logy:** použijte `docker compose logs -f api`, případně název jiné služby.
-- Tento stack a vývojový stack v `infra/` nespouštějte současně; záměrně
-  používají stejný Compose project name.
+  Výstup buildu a přípravy CI image z posledního `./install.sh` je v
+  `deploy/.runtime/logs/`.
+- **Úplné odstranění:** `./reset.sh` smaže stack, data, `.env`, `.runtime` a
+  také aplikace nasazené na vestavěný Docker server (kontejnery
+  `com.initpad.managed=true`, jejich sítě a image). Agent servery nemění.
+- Vývojový stack v `infra/` je samostatný Compose projekt `initpad-dev`
+  s vlastními volumy a porty, takže může běžet současně s tímto stackem.
 
 ## Řešení problémů
 
@@ -280,6 +307,16 @@ alerty a incident acceptance popsané v
   vytvořit nebo ověřit zrcadla akcí ze `runner/actions-mirror` (ADR-171). CI
   funguje dál, jen každý job stahuje akce z GitHubu. Spusťte `./install.sh`
   znovu, až bude github.com dostupný.
+- **Workflow importovaného repozitáře padá na `uses: owner/name@…`:** CI joby
+  berou krátce zapsané akce jen ze zrcadel v Gitee a act_runner nemá pro
+  nezrcadlenou akci záložní cestu na github.com. Přidejte ji do
+  `runner/actions-mirror` a spusťte `./install.sh`, nebo ji ve workflow zapište
+  plnou adresou (`uses: https://github.com/owner/name@<ref>`), případně
+  zrcadla vypněte `INITPAD_CI_ACTIONS_MIRRORS=off` v `.env` (všechny akce pak
+  jdou z github.com). Seznam už obsahuje běžné `actions/*` a `docker/*` akce.
+- **`Some ports InitPad needs are taken`:** port používá jiný program nebo
+  kontejner. Uvolněte ho, nebo v `.env` nastavte navrhovaný port a spusťte
+  `./install.sh` znovu; adresy se přepočítají.
 - **Registrace SSO selže s `no such host: api`:** kontejner API neběží. Spusťte
   znovu `./install.sh`; SSO se registruje až po dosažení healthy stavu API.
 - **Varování platformy fake-sftp na Apple Silicon:** image existuje pouze pro

@@ -5,7 +5,7 @@ import { verifyPlatformRelease } from './release.js';
 
 const repository = 'example/initpad';
 
-function release(version = '0.3.0') {
+function release(version = '0.3.0', database: Record<string, unknown> | null = null) {
   const image = (component: string, letter: string) => ({
     name: `ghcr.io/example/initpad-${component}`,
     digest: `sha256:${letter.repeat(64)}`,
@@ -27,7 +27,7 @@ function release(version = '0.3.0') {
       supervisor: image('supervisor', 'c'),
     },
     compose: { file: 'initpad-release.override.yml', sha256: 'e'.repeat(64) },
-    database: {
+    database: database ?? {
       migrationMode: 'expand-contract',
       rollback: 'image-compatible',
       backupRequired: true,
@@ -82,6 +82,31 @@ test('rejects downgrade, executable fields and a foreign tag before installation
   wrongTag.manifestBase64 = Buffer.from(JSON.stringify(manifest)).toString('base64');
   await assert.rejects(
     verifyPlatformRelease(wrongTag, '0.2.0', repository, (async () => ({})) as never),
+    /manifest is invalid/,
+  );
+});
+
+test('accepts a restore-required contract release but no mixed database contract', async () => {
+  const verifier = (async () => ({})) as never;
+  const contract = {
+    migrationMode: 'contract',
+    rollback: 'restore-required',
+    backupRequired: true,
+  };
+  const manifest = await verifyPlatformRelease(
+    release('0.3.0', contract),
+    '0.2.0',
+    repository,
+    verifier,
+  );
+  assert.deepEqual(manifest.database, contract);
+  await assert.rejects(
+    verifyPlatformRelease(
+      release('0.3.0', { ...contract, rollback: 'image-compatible' }),
+      '0.2.0',
+      repository,
+      verifier,
+    ),
     /manifest is invalid/,
   );
 });

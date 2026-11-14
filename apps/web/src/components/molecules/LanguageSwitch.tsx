@@ -11,7 +11,7 @@ export function LanguageMenuItems() {
     <>
       <DropdownMenuLabel>{t('Language')}</DropdownMenuLabel>
       {LOCALES.map(({ value, label }) => (
-        <DropdownMenuItem key={value} lang={value} onSelect={() => setLocale(value)}>
+        <DropdownMenuItem key={value} lang={value} onSelect={() => void setLocale(value)}>
           <Languages className="h-4 w-4 text-muted-foreground" />
           <span className="flex-1">{label}</span>
           {locale === value && <Check className="h-4 w-4 text-primary" />}
@@ -42,7 +42,7 @@ export function LanguageToggle({ className }: { className?: string }) {
             aria-label={`${label} (${short})`}
             aria-pressed={active}
             data-language-control={active ? '' : undefined}
-            onClick={() => setLocale(value)}
+            onClick={() => void setLocale(value)}
             className={cn(
               'h-9 min-w-10 rounded-full px-2.5 text-xs font-semibold transition-colors sm:h-7',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',

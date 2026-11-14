@@ -1,8 +1,26 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkspacesService } from './workspaces.service';
 
 type PortfolioHealth = 'attention' | 'deploying' | 'healthy' | 'idle';
+
+interface LastDeploymentRow {
+  projectId: string;
+  environment: string;
+  kind: string;
+  status: string;
+  phase: string;
+  createdAt: Date;
+}
+
+interface LastBuildRow {
+  projectId: string;
+  status: string;
+  providerRunId: string;
+  commitSha: string;
+  createdAt: Date;
+}
 
 @Injectable()
 export class WorkspacePortfolioService {
@@ -15,64 +33,84 @@ export class WorkspacePortfolioService {
     const role = await this.workspaces.roleFor(userId, workspaceId);
     if (!role) throw new NotFoundException('Workspace not found');
 
-    const [projects, activeAllocations, pendingApprovals, cleanupEnvironments, cleanupSetups] =
-      await this.prisma.$transaction([
-        this.prisma.project.findMany({
-          where: { workspaceId },
-          orderBy: { createdAt: 'desc' },
-          select: {
-            id: true,
-            name: true,
-            templateId: true,
-            createdAt: true,
-            environments: {
-              orderBy: { order: 'asc' },
-              select: {
-                name: true,
-                status: true,
-                version: true,
-                statusReason: true,
-                activeOperationId: true,
-                expiresAt: true,
-                target: { select: { managementState: true } },
-                operations: {
-                  orderBy: { createdAt: 'desc' },
-                  take: 1,
-                  select: { kind: true, status: true, phase: true, createdAt: true },
-                },
-              },
-            },
-            buildArtifacts: {
-              orderBy: { createdAt: 'desc' },
-              take: 1,
-              select: { status: true, providerRunId: true, commitSha: true, createdAt: true },
-            },
-            productionRequests: {
-              where: { status: { in: ['pending', 'approving'] } },
-              select: { id: true },
+    // The latest operation and build per project come from DISTINCT ON
+    // queries: a nested `take: 1` makes Prisma load every operation and build
+    // of the workspace and trim them in memory.
+    const [
+      projects,
+      activeAllocations,
+      pendingApprovals,
+      cleanupEnvironments,
+      cleanupSetups,
+      lastDeployments,
+      lastBuilds,
+    ] = await this.prisma.$transaction([
+      this.prisma.project.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          templateId: true,
+          createdAt: true,
+          environments: {
+            orderBy: { order: 'asc' },
+            select: {
+              name: true,
+              status: true,
+              version: true,
+              statusReason: true,
+              activeOperationId: true,
+              expiresAt: true,
+              target: { select: { managementState: true } },
             },
           },
-        }),
-        this.prisma.targetAllocation.count({ where: { workspaceId, status: 'active' } }),
-        this.prisma.productionDeploymentRequest.count({
-          where: { workspaceId, status: { in: ['pending', 'approving'] } },
-        }),
-        this.prisma.environment.count({
-          where: {
-            project: { workspaceId },
-            statusReason: { startsWith: 'Cleanup pending:' },
+          productionRequests: {
+            where: { status: { in: ['pending', 'approving'] } },
+            select: { id: true },
           },
-        }),
-        this.prisma.provisioningOperation.count({
-          where: {
-            workspaceId,
-            dismissedAt: null,
-            effects: {
-              some: { status: { in: ['compensation_failed', 'reconciliation_required'] } },
-            },
+        },
+      }),
+      this.prisma.targetAllocation.count({ where: { workspaceId, status: 'active' } }),
+      this.prisma.productionDeploymentRequest.count({
+        where: { workspaceId, status: { in: ['pending', 'approving'] } },
+      }),
+      this.prisma.environment.count({
+        where: {
+          project: { workspaceId },
+          statusReason: { startsWith: 'Cleanup pending:' },
+        },
+      }),
+      this.prisma.provisioningOperation.count({
+        where: {
+          workspaceId,
+          dismissedAt: null,
+          effects: {
+            some: { status: { in: ['compensation_failed', 'reconciliation_required'] } },
           },
-        }),
-      ]);
+        },
+      }),
+      this.prisma.$queryRaw<LastDeploymentRow[]>(Prisma.sql`
+          SELECT DISTINCT ON (e."projectId")
+            e."projectId", e."name" AS "environment",
+            o."kind", o."status", o."phase", o."createdAt"
+          FROM "DeploymentOperation" o
+          JOIN "Environment" e ON e."id" = o."environmentId"
+          JOIN "Project" p ON p."id" = e."projectId"
+          WHERE p."workspaceId" = ${workspaceId}
+          ORDER BY e."projectId", o."createdAt" DESC
+        `),
+      this.prisma.$queryRaw<LastBuildRow[]>(Prisma.sql`
+          SELECT DISTINCT ON (a."projectId")
+            a."projectId", a."status", a."providerRunId", a."commitSha", a."createdAt"
+          FROM "BuildArtifact" a
+          JOIN "Project" p ON p."id" = a."projectId"
+          WHERE p."workspaceId" = ${workspaceId}
+          ORDER BY a."projectId", a."createdAt" DESC
+        `),
+    ]);
+    const lastDeploymentByProject = new Map(lastDeployments.map((row) => [row.projectId, row]));
+    const lastBuildByProject = new Map(lastBuilds.map((row) => [row.projectId, row]));
 
     const items = projects.map((project) => {
       const cleanupDebt = project.environments.filter((environment) =>
@@ -97,15 +135,8 @@ export class WorkspacePortfolioService {
             : running > 0
               ? 'healthy'
               : 'idle';
-      const lastBuild = project.buildArtifacts[0];
-      const lastDeployment = project.environments
-        .flatMap((environment) =>
-          environment.operations.map((operation) => ({
-            ...operation,
-            environment: environment.name,
-          })),
-        )
-        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
+      const lastBuild = lastBuildByProject.get(project.id);
+      const lastDeployment = lastDeploymentByProject.get(project.id);
       return {
         id: project.id,
         name: project.name,

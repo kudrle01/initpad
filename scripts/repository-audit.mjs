@@ -380,7 +380,7 @@ for (const [releaseWorkflowPath, contracts] of [
     [
       'platforms: linux/amd64,linux/arm64',
       'sbom: true',
-      'provenance: mode=max',
+      'docker/github-builder/.github/workflows/build.yml@',
       'cosign sign --yes',
       'subject-checksums:',
       'Refuse an existing version tag',

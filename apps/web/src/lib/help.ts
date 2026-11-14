@@ -17,7 +17,8 @@ export type HelpTopic =
   | 'team'
   | 'rename-delete'
   | 'troubleshooting'
-  | 'limitations';
+  | 'limitations'
+  | 'self-hosted';
 
 /** The guide is published per language at <base>/<locale>/ (ADR-156). */
 export function helpUrl(base: string, locale: Locale, topic?: HelpTopic): string {

@@ -104,10 +104,20 @@ wait_healthy() {
   fail "$service did not become healthy in time."
 }
 
+# A contract release migrates the database incompatibly (ADR-183): once its
+# API started, the previous images must not be restarted against it.
+restore_required=no
+grep -q '"rollback": *"restore-required"' initpad-platform-release.json && restore_required=yes
 applied=no
+migrated=no
 rollback() {
   local status=$?
   trap - EXIT
+  if [ "$status" -ne 0 ] && [ "$applied" = yes ] && [ "$restore_required" = yes ] && [ "$migrated" = yes ]; then
+    printf '\033[1;31m✖\033[0m The release changed the database incompatibly; the previous images were not restarted.\n' >&2
+    printf '  Restore the pre-update backup with ./restore.sh <backup> (deploy/OPERATIONS.md).\n' >&2
+    exit "$status"
+  fi
   if [ "$status" -ne 0 ] && [ "$applied" = yes ]; then
     printf '\033[1;33m›\033[0m Restoring the previous platform images...\n' >&2
     if [ "$had_previous" = yes ]; then cp "$PREVIOUS" "$OVERRIDE"; else rm -f "$OVERRIDE"; fi
@@ -128,6 +138,7 @@ say "Pulling immutable release images"
 compose_candidate pull api web supervisor
 
 say "Updating API and applying compatible migrations"
+migrated=yes
 compose_candidate up -d --no-deps --no-build api
 wait_healthy api
 say "Updating web UI"

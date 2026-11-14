@@ -13,6 +13,8 @@ import { scmLink } from '@/lib/utils';
 import type { FirstPipelineState } from '@/lib/project-readiness';
 import type { Project, ProvisioningStatus, TemplateManifest } from '@/types';
 import { t, formatDate } from '@/i18n';
+import { usePageTitle } from '@/hooks/usePageTitle';
+import { translateApiMessage } from '@/lib/api-messages';
 import { statusLabel, termLabel } from '@/i18n/labels';
 
 interface Props {
@@ -33,6 +35,7 @@ export function ProjectSummary({
   onDelete,
 }: Props) {
   const created = formatDate(project.createdAt);
+  usePageTitle(project.name);
 
   return (
     <div>
@@ -144,14 +147,14 @@ function ProvisioningNotice({ provisioning }: { provisioning: ProvisioningStatus
         failed
           ? t('Setup ({kind}) failed at the {step} step', {
               kind: termLabel(provisioning.kind),
-              step: provisioning.step,
+              step: translateApiMessage(provisioning.step),
             })
           : t('Setting up ({kind})…', { kind: termLabel(provisioning.kind) })
       }
     >
       {failed
-        ? (provisioning.message ?? t('No further detail was recorded.'))
-        : t('Current step: {step}.', { step: provisioning.step })}
+        ? (translateApiMessage(provisioning.message) ?? t('No further detail was recorded.'))
+        : t('Current step: {step}.', { step: translateApiMessage(provisioning.step) })}
       {provisioning.effects.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-current/15 pt-2">
           {provisioning.effects.map((effect) => (

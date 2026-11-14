@@ -1,0 +1,10 @@
+# Kept out of the build context: repository metadata, CI definitions and
+# local dependency or build output that the image creates itself.
+.git
+.gitea
+.dockerignore
+__pycache__
+*.pyc
+.venv
+venv
+.pytest_cache

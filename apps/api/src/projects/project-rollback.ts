@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { EnvName, RollbackPreview } from '../domain/types';
+import { EnvName, RollbackCandidate, RollbackPreview } from '../domain/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEPLOYMENT_PUBLICATION_KINDS } from './deployment-publications';
 
 const IMMUTABLE_VERSION = /^[a-f0-9]{40}$/i;
+const ROLLBACK_CANDIDATES = 5;
 
 type ScheduleRollback = (
   projectId: string,
@@ -53,7 +54,7 @@ export class ProjectRollback {
         ...excludeCurrentPublication,
       },
       orderBy: { createdAt: 'desc' },
-      take: 20,
+      take: 50,
       include: {
         buildArtifact: {
           select: {
@@ -71,7 +72,7 @@ export class ProjectRollback {
     const durableArtifactRequired =
       environment.project.scmProvider === 'github' ||
       (environment.provider === 'docker' && environment.target?.scope === 'user');
-    const candidate = publications.find((operation) => {
+    const eligible = publications.filter((operation) => {
       if (!operation.version || !IMMUTABLE_VERSION.test(operation.version)) return false;
       const sameAsCurrent = environment.buildArtifactId
         ? operation.buildArtifactId === environment.buildArtifactId
@@ -85,11 +86,35 @@ export class ProjectRollback {
         operation.buildArtifact.storageRef,
       );
     });
-    if (!candidate?.version) return null;
+    // One entry per distinct build: redeploying the same artifact twice is
+    // not a separate rollback point.
+    const seen = new Set<string>();
+    const candidates: RollbackCandidate[] = [];
+    for (const operation of eligible) {
+      const key = operation.buildArtifactId ?? `version:${operation.version}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const artifact = operation.buildArtifact;
+      candidates.push({
+        candidateOperationId: operation.id,
+        version: operation.version as string,
+        artifact: artifact
+          ? {
+              id: artifact.id,
+              provider: artifact.sourceProvider,
+              digest: artifact.digest,
+              runId: artifact.providerRunId,
+            }
+          : null,
+        deployedAt: (operation.finishedAt ?? operation.createdAt).toISOString(),
+      });
+      if (candidates.length === ROLLBACK_CANDIDATES) break;
+    }
+    const [candidate] = candidates;
+    if (!candidate) return null;
 
-    const artifact = candidate.buildArtifact;
     return {
-      candidateOperationId: candidate.id,
+      candidateOperationId: candidate.candidateOperationId,
       environment: environmentName,
       target: environment.target?.name ?? environment.provider,
       currentVersion: environment.version,
@@ -102,17 +127,20 @@ export class ProjectRollback {
             runId: environment.buildArtifact.providerRunId,
           }
         : null,
-      rollbackArtifact: artifact
-        ? {
-            id: artifact.id,
-            provider: artifact.sourceProvider,
-            digest: artifact.digest,
-            runId: artifact.providerRunId,
-          }
-        : null,
-      sourceDeployedAt: (candidate.finishedAt ?? candidate.createdAt).toISOString(),
+      rollbackArtifact: candidate.artifact,
+      sourceDeployedAt: candidate.deployedAt,
       stateToken: this.stateToken(environment),
+      candidates,
     };
+  }
+
+  /** The chosen rollback point, or null when it is no longer offered. */
+  static select(preview: RollbackPreview, candidateOperationId: string): RollbackCandidate | null {
+    return (
+      preview.candidates.find(
+        (candidate) => candidate.candidateOperationId === candidateOperationId,
+      ) ?? null
+    );
   }
 
   async execute(
@@ -133,16 +161,17 @@ export class ProjectRollback {
         'Environment, target, or configuration changed after rollback confirmation was opened. Review it again.',
       );
     }
-    if (preview.candidateOperationId !== candidateOperationId) {
+    const candidate = ProjectRollback.select(preview, candidateOperationId);
+    if (!candidate) {
       throw new ConflictException(
-        'The previous verified deployment changed. Review rollback again.',
+        'The selected verified deployment is no longer available. Review rollback again.',
       );
     }
     await this.schedule(
       projectId,
       environmentName,
-      preview.rollbackVersion,
-      preview.rollbackArtifact?.id ?? null,
+      candidate.version,
+      candidate.artifact?.id ?? null,
       actorUserId,
     );
   }

@@ -3,6 +3,17 @@ node_modules
 **/node_modules
 **/dist
 .git
+.github
+.claude
 .workspace
-deploy/.env
+tmp
+**/.env
+deploy/.env*
+deploy/.runtime
+deploy/backups
+docs
 *.log
+# Documentation never reaches an image, except what generated projects
+# receive from the templates.
+**/*.md
+!templates/**/*.md

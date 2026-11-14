@@ -2,8 +2,8 @@
 
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setLocale } from '@/i18n';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { loadLocaleMessages, setLocale } from '@/i18n';
 import { helpUrl } from '@/lib/help';
 import { HelpLink } from './HelpLink';
 
@@ -13,9 +13,11 @@ vi.mock('@/auth', () => ({
   useAuth: () => ({ user: { docsUrl: auth.docsUrl } }),
 }));
 
+beforeAll(() => loadLocaleMessages('cs'));
+
 afterEach(() => {
   cleanup();
-  setLocale('en');
+  void setLocale('en');
   auth.docsUrl = null;
 });
 
@@ -27,9 +29,9 @@ describe('user guide links (ADR-156)', () => {
     expect(helpUrl('https://example.test/help/', 'en')).toBe('https://example.test/help/en/');
   });
 
-  it('opens the chapter in the active language in a new tab', () => {
+  it('opens the chapter in the active language in a new tab', async () => {
     auth.docsUrl = 'https://docs.example.test';
-    setLocale('cs');
+    await setLocale('cs');
     render(<HelpLink topic="import" />);
 
     const link = screen.getByRole('link', { name: /Více v nápovědě/ });

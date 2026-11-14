@@ -203,26 +203,93 @@ describe('AuthService', () => {
     expect(prisma.user.findFirst).not.toHaveBeenCalled();
   });
 
-  it('hardens every legacy managed Gitea account when self-hosted starts', async () => {
-    config.edition = 'self-hosted';
-    const prisma = {
-      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
-      user: {
-        findMany: jest.fn(async () => [{ username: 'alice' }, { username: 'bob' }]),
-      },
-    };
-    const gitea = { randomizeUserPassword: jest.fn(async () => undefined) };
-    const service = new AuthService(withSessions(prisma) as never, {} as never, gitea as never);
+  describe('managed Gitea password hardening (audit P0.3)', () => {
+    function hardening(options: { lease?: boolean; failFor?: string } = {}) {
+      const prisma = {
+        user: {
+          findMany: jest.fn(async () => [
+            { id: 'u1', username: 'alice' },
+            { id: 'u2', username: 'bob' },
+          ]),
+          update: jest.fn(async () => ({})),
+        },
+      };
+      const gitea = {
+        randomizeUserPassword: jest.fn(async (username: string) => {
+          if (username === options.failFor) throw new Error('gitea down');
+        }),
+      };
+      const leases = {
+        acquire: jest.fn(async () =>
+          options.lease === false ? null : { generation: 1, expiresAt: new Date() },
+        ),
+      };
+      const service = new AuthService(
+        withSessions(prisma) as never,
+        {} as never,
+        gitea as never,
+        undefined,
+        undefined,
+        undefined,
+        leases,
+      );
+      return { service, prisma, gitea, leases };
+    }
 
-    await service.onModuleInit();
+    it('does not block startup and hardens only unmarked accounts in the background', async () => {
+      config.edition = 'self-hosted';
+      jest.useFakeTimers();
+      try {
+        let release!: () => void;
+        const { service, prisma, gitea } = hardening();
+        gitea.randomizeUserPassword.mockImplementationOnce(
+          () => new Promise<void>((resolve) => (release = resolve)),
+        );
 
-    expect(prisma.user.findMany).toHaveBeenCalledWith({
-      where: { giteaId: { not: null } },
-      select: { username: true },
+        expect(service.onModuleInit()).toBeUndefined();
+        expect(prisma.user.findMany).not.toHaveBeenCalled();
+
+        await jest.advanceTimersByTimeAsync(0);
+        expect(prisma.user.findMany).toHaveBeenCalledWith({
+          where: { giteaId: { not: null }, giteaPasswordHardenedAt: null },
+          select: { id: true, username: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        release();
+        await service.giteaPasswordHardening;
+        expect(gitea.randomizeUserPassword).toHaveBeenCalledTimes(2);
+        expect(prisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'u1' },
+          data: { giteaPasswordHardenedAt: expect.any(Date) },
+        });
+        service.onModuleDestroy();
+      } finally {
+        jest.useRealTimers();
+      }
     });
-    expect(gitea.randomizeUserPassword).toHaveBeenCalledTimes(2);
-    expect(gitea.randomizeUserPassword).toHaveBeenNthCalledWith(1, 'alice');
-    expect(gitea.randomizeUserPassword).toHaveBeenNthCalledWith(2, 'bob');
+
+    it('skips the sweep while another replica holds the lease', async () => {
+      const { service, prisma, gitea } = hardening({ lease: false });
+      await expect(service.hardenGiteaPasswords()).resolves.toBe(false);
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+      expect(gitea.randomizeUserPassword).not.toHaveBeenCalled();
+    });
+
+    it('leaves a failed account unmarked so a later sweep retries it', async () => {
+      const { service, prisma } = hardening({ failFor: 'alice' });
+      await expect(service.hardenGiteaPasswords()).resolves.toBe(false);
+      expect(prisma.user.update).toHaveBeenCalledTimes(1);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'u2' } }),
+      );
+    });
+
+    it('does nothing in the SaaS edition', () => {
+      config.edition = 'saas';
+      const { service, prisma } = hardening();
+      service.onModuleInit();
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+    });
   });
 
   it('only allows the bootstrap admin under a non-open policy', async () => {
@@ -811,6 +878,7 @@ describe('AuthService', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       user: {
+        findUnique: jest.fn(async () => ({ active: true })),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
           userUpdate = data;
           return {
@@ -869,12 +937,33 @@ describe('AuthService', () => {
         findUnique: jest.fn(async () => record),
         updateMany: jest.fn(async () => ({ count: 0 })),
       },
-      user: { update: jest.fn() },
+      user: { findUnique: jest.fn(async () => ({ active: true })), update: jest.fn() },
     };
     const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.activate('tok', 'a-brand-new-password')).rejects.toThrow(
       'invalid or has expired',
     );
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to activate a deactivated account and keeps the link usable (audit P3)', async () => {
+    const record = {
+      id: 't6',
+      userId: 'u1',
+      kind: 'activation',
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const prisma = {
+      authToken: { findUnique: jest.fn(async () => record), updateMany: jest.fn() },
+      user: { findUnique: jest.fn(async () => ({ active: false })), update: jest.fn() },
+    };
+    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
+    await expect(service.activate('tok', 'a-brand-new-password')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(service.activate('tok', 'a-brand-new-password')).rejects.toThrow('deactivated');
+    expect(prisma.authToken.updateMany).not.toHaveBeenCalled();
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

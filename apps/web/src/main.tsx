@@ -11,6 +11,7 @@ import RouteError from '@/pages/RouteError';
 import LegacyLinkRedirect from '@/pages/LegacyLinkRedirect';
 import { RouteLoading } from '@/components/molecules/RouteLoading';
 import { installStaleBuildRecovery } from '@/lib/stale-build';
+import { loadLocaleMessages } from '@/i18n';
 import '@/index.css';
 
 installStaleBuildRecovery();
@@ -86,19 +87,24 @@ const router = createBrowserRouter([
   },
 ]);
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <ThemeProvider>
-      <ToastProvider>
-        <AuthProvider>
-          {/* Everything that renders text sits inside the language boundary. */}
-          <I18nProvider>
-            <ConfirmationProvider>
-              <RouterProvider router={router} />
-            </ConfirmationProvider>
-          </I18nProvider>
-        </AuthProvider>
-      </ToastProvider>
-    </ThemeProvider>
-  </React.StrictMode>,
-);
+function renderApp() {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <ThemeProvider>
+        <ToastProvider>
+          <AuthProvider>
+            {/* Everything that renders text sits inside the language boundary. */}
+            <I18nProvider>
+              <ConfirmationProvider>
+                <RouterProvider router={router} />
+              </ConfirmationProvider>
+            </I18nProvider>
+          </AuthProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </React.StrictMode>,
+  );
+}
+
+// Rendering waits for the dictionary so a Czech page never flashes English.
+void loadLocaleMessages().finally(renderApp);

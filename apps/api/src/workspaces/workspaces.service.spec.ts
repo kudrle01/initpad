@@ -527,4 +527,131 @@ describe('WorkspacesService tenant isolation', () => {
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
   });
+
+  describe('membership lifecycle (audit P1.19, P3)', () => {
+    function harness(
+      roles: Record<string, string>,
+      options: { type?: string; active?: boolean } = {},
+    ) {
+      const updateMany = jest.fn(async () => ({ count: 1 }));
+      const update = jest.fn(async () => ({}));
+      const prisma = {
+        user: { findFirst: jest.fn(async () => null) },
+        workspace: {
+          findUnique: jest.fn(async () => ({ type: options.type ?? 'team' })),
+        },
+        workspaceMember: {
+          findUnique: jest.fn(
+            async ({ where }: { where: { workspaceId_userId: { userId: string } } }) => {
+              const userId = where.workspaceId_userId.userId;
+              return roles[userId]
+                ? { workspaceId: 'w1', userId, role: roles[userId], user: { username: userId } }
+                : null;
+            },
+          ),
+          updateMany,
+          update,
+          delete: jest.fn(async () => ({})),
+          count: jest.fn(async () => 0),
+          create: jest.fn(async () => ({})),
+          findMany: jest.fn(async () => []),
+        },
+        project: { findMany: jest.fn(async () => []) },
+        $queryRaw: jest.fn(async () => [{ platformRole: 'user', active: options.active ?? true }]),
+        $transaction: jest.fn(),
+      };
+      prisma.$transaction.mockImplementation(async (run: (client: typeof prisma) => unknown) =>
+        run(prisma),
+      );
+      const audit = { record: jest.fn(async () => undefined) };
+      const workspaceScm = {
+        provider: jest.fn(() => ({
+          removeCollaborator: jest.fn(async () => undefined),
+          setCollaborator: jest.fn(async () => undefined),
+        })),
+        collaboratorUsername: jest.fn(async (id: string) => id),
+      };
+      const service = new WorkspacesService(prisma as never, workspaceScm as never, audit);
+      jest.spyOn(service, 'members').mockResolvedValue([{ userId: 'listed' }] as never);
+      return { service, prisma, audit, updateMany, update };
+    }
+
+    it('answers an unknown account exactly like an added one', async () => {
+      const { service, prisma } = harness({ admin: 'admin' });
+      jest.spyOn(service, 'require').mockResolvedValue('admin');
+      await expect(
+        service.addMember('admin', 'w1', { identity: 'ghost@example.test', role: 'member' }),
+      ).resolves.toEqual([{ userId: 'listed' }]);
+      expect(prisma.workspaceMember.create).not.toHaveBeenCalled();
+    });
+
+    it('answers an existing member without a conflict', async () => {
+      const { service, prisma } = harness({ admin: 'admin', bob: 'member' });
+      prisma.user.findFirst.mockResolvedValueOnce({ id: 'bob', username: 'bob' } as never);
+      jest.spyOn(service, 'require').mockResolvedValue('admin');
+      await expect(
+        service.addMember('admin', 'w1', { identity: 'bob', role: 'viewer' }),
+      ).resolves.toEqual([{ userId: 'listed' }]);
+      expect(prisma.workspaceMember.create).not.toHaveBeenCalled();
+    });
+
+    it('lets an added member leave and audits it', async () => {
+      const { service, prisma, audit } = harness({ owner: 'owner', bob: 'member' });
+      await service.leave('bob', 'w1');
+      expect(prisma.workspaceMember.delete).toHaveBeenCalledWith({
+        where: { workspaceId_userId: { workspaceId: 'w1', userId: 'bob' } },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'workspace.member_left', actorUserId: 'bob' }),
+      );
+    });
+
+    it('requires the owner to hand over the workspace before leaving', async () => {
+      const { service, prisma } = harness({ owner: 'owner' });
+      await expect(service.leave('owner', 'w1')).rejects.toThrow('Transfer ownership');
+      expect(prisma.workspaceMember.delete).not.toHaveBeenCalled();
+      await expect(service.leave('stranger', 'w1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('transfers ownership to an admin and keeps the previous owner as admin', async () => {
+      const { service, updateMany, update, audit } = harness({ owner: 'owner', alice: 'admin' });
+      await service.transferOwnership('owner', 'w1', 'alice');
+      expect(updateMany).toHaveBeenCalledWith({
+        where: { workspaceId: 'w1', userId: 'owner', role: 'owner' },
+        data: { role: 'admin' },
+      });
+      expect(update).toHaveBeenCalledWith({
+        where: { workspaceId_userId: { workspaceId: 'w1', userId: 'alice' } },
+        data: { role: 'owner' },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'workspace.ownership_transferred', resourceId: 'alice' }),
+        expect.anything(),
+      );
+    });
+
+    it('refuses a transfer by a non-owner, to a non-admin or in a personal workspace', async () => {
+      const team = harness({ owner: 'owner', alice: 'admin', bob: 'maintainer' });
+      await expect(team.service.transferOwnership('alice', 'w1', 'bob')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(team.service.transferOwnership('owner', 'w1', 'bob')).rejects.toThrow(
+        'workspace admin',
+      );
+      await expect(team.service.transferOwnership('owner', 'w1', 'nobody')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(team.updateMany).not.toHaveBeenCalled();
+
+      const personal = harness({ owner: 'owner', alice: 'admin' }, { type: 'personal' });
+      await expect(personal.service.transferOwnership('owner', 'w1', 'alice')).rejects.toThrow(
+        'Personal workspaces',
+      );
+
+      const inactive = harness({ owner: 'owner', alice: 'admin' }, { active: false });
+      await expect(inactive.service.transferOwnership('owner', 'w1', 'alice')).rejects.toThrow(
+        'deactivated',
+      );
+    });
+  });
 });

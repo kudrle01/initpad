@@ -273,3 +273,126 @@ test('keeps API deployment working files on disk, not in tmpfs (ADR-172)', () =>
   // Exported image archives are disposable and may be large.
   assert.doesNotMatch(backup, /api-work/);
 });
+
+function runNetworkFunctions(envText, script) {
+  const dir = mkdtempSync(join(tmpdir(), 'initpad-network-'));
+  writeFileSync(join(dir, '.env'), envText);
+  const helpers = installer.slice(
+    installer.indexOf('get_env() {'),
+    installer.indexOf('# This stack bundles Gitea'),
+  );
+  const network = installer.slice(
+    installer.indexOf('valid_ipv4() {'),
+    installer.indexOf('check_domain_pair() {'),
+  );
+  const result = spawnSync(
+    'bash',
+    ['-c', `say() { :; }; warn() { :; }; ${helpers}\n${network}\n${script}`],
+    { cwd: dir, encoding: 'utf8' },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return { env: readFileSync(join(dir, '.env'), 'utf8'), stdout: result.stdout };
+}
+
+test('--ip fills every address consistently and opens app ports to the LAN (ADR-175)', () => {
+  const { env } = runNetworkFunctions(
+    'INITPAD_WEB_PORT=8090\nINITPAD_GITEA_HTTP_PORT=3005\nINITPAD_DOMAIN=old.example\n',
+    'apply_ip_network 192.168.1.20',
+  );
+  assert.match(env, /^INITPAD_NETWORK_MODE=ip$/m);
+  assert.match(env, /^INITPAD_PUBLIC_URL=http:\/\/192\.168\.1\.20:8090$/m);
+  assert.match(env, /^INITPAD_GITEA_PUBLIC_URL=http:\/\/192\.168\.1\.20:3005$/m);
+  assert.match(env, /^INITPAD_REGISTRY_HOST=127\.0\.0\.1:3005$/m);
+  assert.match(env, /^INITPAD_CI_REGISTRY_HOST=host\.docker\.internal:3005$/m);
+  assert.match(env, /^INITPAD_GITEA_RUNNER_URL=http:\/\/host\.docker\.internal:3005$/m);
+  assert.match(env, /^INITPAD_DOMAIN=$/m);
+  assert.match(env, /^INITPAD_DEPLOY_BIND_ADDRESS=0\.0\.0\.0$/m);
+});
+
+test('a quiet re-apply follows changed ports but keeps the bind address (ADR-175)', () => {
+  const { env } = runNetworkFunctions(
+    'INITPAD_WEB_PORT=8181\nINITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0\n',
+    'apply_local_network quiet',
+  );
+  assert.match(env, /^INITPAD_PUBLIC_URL=http:\/\/localhost:8181$/m);
+  assert.match(env, /^INITPAD_DEPLOY_BIND_ADDRESS=0\.0\.0\.0$/m);
+  const explicit = runNetworkFunctions('', 'apply_local_network').env;
+  assert.match(explicit, /^INITPAD_DEPLOY_BIND_ADDRESS=127\.0\.0\.1$/m);
+});
+
+test('accepts only usable IPv4 addresses for --ip', () => {
+  const { stdout } = runNetworkFunctions(
+    '',
+    'for a in 192.168.1.20 10.0.0.5 127.0.0.1 0.0.0.0 256.1.1.1 1.2.3 01.2.3.4 a.b.c.d 224.0.0.1; do valid_ipv4 "$a" && echo "$a"; done; true',
+  );
+  assert.deepEqual(stdout.trim().split('\n'), ['192.168.1.20', '10.0.0.5']);
+});
+
+test('recomputes addresses from the stored network mode on every run', () => {
+  const dispatch = installer.slice(
+    installer.indexOf('if [ "$ARG_LOCAL" = yes ]; then'),
+    installer.indexOf('# Installations configured by hand for the internal CA'),
+  );
+  assert.match(dispatch, /network_mode=\$\(get_env INITPAD_NETWORK_MODE/);
+  assert.match(dispatch, /local\) apply_local_network quiet ;;/);
+  assert.match(dispatch, /apply_ip_network "\$current_host" quiet/);
+});
+
+test('checks free ports and capacity before starting any service', () => {
+  const preflight = installer.indexOf('\ncheck_capacity\ncheck_ports\n');
+  assert.ok(preflight > 0);
+  assert.ok(preflight < installer.indexOf('$COMPOSE up -d postgres gitea fake-sftp static-web'));
+  assert.match(installer, /"INITPAD_STATIC_WEB_PORT=\$static_port"/);
+  const compose = readFileSync(resolve(root, 'deploy/docker-compose.yml'), 'utf8');
+  assert.match(compose, /- '\$\{INITPAD_STATIC_WEB_PORT:-8085\}:80'/);
+});
+
+test('re-runs neither rebuild unchanged images nor restart Gitea without an SSO change', () => {
+  assert.match(installer, /build_marker=\.runtime\/source-build\.hash/);
+  assert.match(installer, /\$COMPOSE up -d --no-build supervisor api web/);
+  assert.doesNotMatch(installer, /up -d --build supervisor api web/);
+  const reload = installer.slice(installer.indexOf('sso_marker='), installer.indexOf('# ---- 6.'));
+  assert.match(
+    reload,
+    /if \[ "\$\(cat "\$sso_marker" 2>\/dev\/null\)" != "\$sso_hash" \]; then\n\s+say "Reloading/,
+  );
+});
+
+test('never passes the Gitea token as a command-line argument', () => {
+  const api = installer.slice(
+    installer.indexOf('gitea_api() {'),
+    installer.indexOf('ensure_action_mirror() {'),
+  );
+  assert.doesNotMatch(api, /-H "Authorization: token/);
+  assert.match(api, /-K \/dev\/fd\/3/);
+});
+
+test('touches ufw only for a domain install', () => {
+  assert.match(installer, /if \[ -n "\$\{DOMAIN:-\}" \] && systemctl is-active --quiet ufw/);
+});
+
+test('serves templates from the API image, not from the checkout', () => {
+  const compose = readFileSync(resolve(root, 'deploy/docker-compose.yml'), 'utf8');
+  assert.doesNotMatch(compose, /\.\.\/templates:\/templates/);
+  assert.match(
+    readFileSync(resolve(root, 'apps/api/Dockerfile'), 'utf8'),
+    /^COPY templates \/templates$/m,
+  );
+});
+
+test('reset.sh removes deployed apps, their networks and images', () => {
+  const reset = readFileSync(resolve(root, 'deploy/reset.sh'), 'utf8');
+  assert.match(reset, /docker ps -aq --filter label=com\.initpad\.managed=true/);
+  assert.match(reset, /docker network ls -q --filter label=com\.initpad\.managed=true/);
+  assert.match(reset, /\^net-\(\[a-z0-9-\]\+-\)\?\(dev\|test\|prod\)\$/);
+  assert.match(reset, /docker image rm -f/);
+});
+
+test('the dev stack is a separate Compose project (ADR-175)', () => {
+  const dev = readFileSync(resolve(root, 'infra/docker-compose.yml'), 'utf8');
+  const deploy = readFileSync(resolve(root, 'deploy/docker-compose.yml'), 'utf8');
+  assert.match(dev, /^name: initpad-dev$/m);
+  assert.match(deploy, /^name: initpad$/m);
+  assert.match(dev, /GITEA__security__INSTALL_LOCK: "true"/);
+  assert.doesNotMatch(dev, /"3001:3000"|"8085:80"/);
+});

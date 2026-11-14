@@ -7,9 +7,18 @@ jest.mock('../config', () => ({
     },
     registry: { ciHost: 'host.docker.internal:3001' },
     ci: { platformUrl: 'http://platform.internal' },
+    timeouts: { gitMs: 4321 },
   },
 }));
 
+jest.mock('child_process', () => ({
+  execFile: jest.fn(
+    (_file: string, _args: string[], _options: unknown, callback: (...args: unknown[]) => void) =>
+      callback(null, '', ''),
+  ),
+}));
+
+import { execFile } from 'child_process';
 import { BadRequestException } from '@nestjs/common';
 import { GiteaService } from './gitea.service';
 import { ScmHttpStatusError } from './scm-http';
@@ -562,5 +571,33 @@ describe('GiteaService repository provisioning', () => {
     ).rejects.toMatchObject({ name: 'ScmRepositoryExistsError', fullName: 'alice/test' });
     expect(calls.some((call) => call.includes('/actions/secrets'))).toBe(false);
     expect(calls).not.toContain('PATCH /api/v1/repos/alice/test');
+  });
+});
+
+describe('GiteaService outbound bounds', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('runs every local git command with a configured timeout', async () => {
+    jest.mocked(execFile).mockClear();
+    await new GiteaService().initLocal('/tmp/initpad-scaffold', {
+      name: 'InitPad',
+      email: 'bot@initpad.test',
+    });
+    expect(jest.mocked(execFile).mock.calls.length).toBeGreaterThan(0);
+    for (const call of jest.mocked(execFile).mock.calls) {
+      expect(call[2]).toEqual(expect.objectContaining({ timeout: 4321, killSignal: 'SIGKILL' }));
+    }
+  });
+
+  it('reports why a source archive could not be downloaded', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(new Response('missing', { status: 404 }));
+    await expect(
+      new GiteaService().downloadArchive(repository(), 'a'.repeat(40), {
+        username: 'kudrla',
+        token: 'owner-token',
+      }),
+    ).rejects.toThrow(
+      'Could not download the source of kudrla/nette@aaaaaaaaaaaa from Gitea: the repository or commit no longer exists (HTTP 404)',
+    );
   });
 });

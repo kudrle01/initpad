@@ -16,14 +16,6 @@ describe('WorkspacePortfolioService', () => {
         activeOperationId: null,
         expiresAt: null,
         target: { managementState: 'active' },
-        operations: [
-          {
-            kind: 'deploy',
-            status: 'succeeded',
-            phase: 'succeeded',
-            createdAt: new Date('2026-09-03T00:00:00Z'),
-          },
-        ],
       },
       {
         name: 'test',
@@ -33,7 +25,6 @@ describe('WorkspacePortfolioService', () => {
         activeOperationId: null,
         expiresAt: null,
         target: { managementState: 'active' },
-        operations: [],
       },
       {
         name: 'prod',
@@ -43,24 +34,32 @@ describe('WorkspacePortfolioService', () => {
         activeOperationId: null,
         expiresAt: null,
         target: { managementState: 'active' },
-        operations: [],
-      },
-    ],
-    buildArtifacts: [
-      {
-        status: 'available',
-        providerRunId: '42',
-        commitSha: 'a'.repeat(40),
-        createdAt: new Date('2026-09-02T00:00:00Z'),
       },
     ],
     productionRequests: [{ id: 'request-1' }],
   };
 
   it('returns one DB-only workspace projection without SCM or Docker reads', async () => {
-    const transaction = jest.fn(async () => [[project], 2, 1, 0, 1]);
+    const lastDeployment = {
+      projectId: 'project-1',
+      environment: 'dev',
+      kind: 'deploy',
+      status: 'succeeded',
+      phase: 'succeeded',
+      createdAt: new Date('2026-09-03T00:00:00Z'),
+    };
+    const lastBuild = {
+      projectId: 'project-1',
+      status: 'available',
+      providerRunId: '42',
+      commitSha: 'a'.repeat(40),
+      createdAt: new Date('2026-09-02T00:00:00Z'),
+    };
+    const transaction = jest.fn(async () => [[project], 2, 1, 0, 1, [lastDeployment], [lastBuild]]);
+    const queryRaw = jest.fn((query: { sql: string }) => query.sql);
     const prisma = {
       $transaction: transaction,
+      $queryRaw: queryRaw,
       project: { findMany: jest.fn(() => 'projects') },
       targetAllocation: { count: jest.fn(() => 'allocations') },
       productionDeploymentRequest: { count: jest.fn(() => 'approvals') },
@@ -88,7 +87,39 @@ describe('WorkspacePortfolioService', () => {
       failedEnvironments: 1,
       pendingApprovals: 1,
       lastDeployment: { environment: 'dev', kind: 'deploy', status: 'succeeded' },
+      lastBuild: { status: 'available', runId: '42' },
     });
+  });
+
+  it('reads only the latest operation and build per project (audit P2)', async () => {
+    const queryRaw = jest.fn((query: { sql: string }) => query.sql);
+    const findMany = jest.fn(() => 'projects');
+    const prisma = {
+      $transaction: jest.fn(async () => [[], 0, 0, 0, 0, [], []]),
+      $queryRaw: queryRaw,
+      project: { findMany },
+      targetAllocation: { count: jest.fn() },
+      productionDeploymentRequest: { count: jest.fn() },
+      environment: { count: jest.fn() },
+      provisioningOperation: { count: jest.fn() },
+    };
+    const service = new WorkspacePortfolioService(
+      prisma as never,
+      {
+        roleFor: jest.fn(async () => 'viewer'),
+      } as never,
+    );
+
+    await service.get('user-1', 'workspace-1');
+
+    const select = (findMany.mock.calls[0] as unknown as [{ select: Record<string, unknown> }])[0]
+      .select;
+    expect(select).not.toHaveProperty('buildArtifacts');
+    expect(JSON.stringify(select)).not.toContain('operations');
+    const statements = queryRaw.mock.results.map((result) => String(result.value));
+    expect(statements).toHaveLength(2);
+    expect(statements[0]).toMatch(/DISTINCT ON \(e\."projectId"\)[\s\S]*"DeploymentOperation"/);
+    expect(statements[1]).toMatch(/DISTINCT ON \(a\."projectId"\)[\s\S]*"BuildArtifact"/);
   });
 
   it('hides another workspace as 404', async () => {

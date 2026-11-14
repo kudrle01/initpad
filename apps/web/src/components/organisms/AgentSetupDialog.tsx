@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog';
 import { useConfirmation } from '@/confirmation';
 import { t, msg, rich, formatDateTime, formatNumber, formatTime, type MessageKey } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 import { externalHref } from '@/lib/utils';
 import { buildAgentInstallCommand, gatewayDomainOf } from '@/lib/agent-install-command';
 
@@ -205,7 +206,7 @@ export function AgentSetupDialog({
     if (enrollment || agent?.enrollmentPending) {
       const confirmed = await confirmAction({
         title: t('Replace the pending enrollment token?'),
-        description: t('Only one unused enrollment token can be valid for this target.'),
+        description: t('Only one unused enrollment token can be valid for this server.'),
         confirmLabel: t('Generate a new token'),
         tone: 'warning',
         consequences: [
@@ -404,7 +405,9 @@ export function AgentSetupDialog({
                       </Button>
                     ))}
                   {installingUpdate && updateJob?.message && (
-                    <span className="basis-full text-muted-foreground">{updateJob.message}</span>
+                    <span className="basis-full text-muted-foreground">
+                      {translateApiMessage(updateJob.message)}
+                    </span>
                   )}
                   {externalHref(updateStatus.releaseUrl) && (
                     <a
@@ -481,7 +484,7 @@ export function AgentSetupDialog({
                     )}
                     <p className="mt-1.5 text-xs text-muted-foreground">
                       {t(
-                        'It verifies the checksum and immutable Agent {version} image, verifies that any saved identity belongs to this target, then starts and health-checks the Agent. A new server requests the token through a hidden prompt, so it never enters shell history.',
+                        'It verifies the checksum and immutable Agent {version} image, verifies that any saved identity belongs to this server, then starts and health-checks the Agent. A new server requests the token through a hidden prompt, so it never enters shell history.',
                         { version: distribution?.version ?? '' },
                       )}
                     </p>
@@ -492,7 +495,7 @@ export function AgentSetupDialog({
                         </summary>
                         <p className="mb-2 mt-1.5 text-muted-foreground">
                           {t(
-                            'Use this only if verification says the saved credential was rejected, or when reconnecting a server from a deleted or restored target. It replaces the old identity using the enrollment token above.',
+                            'Use this only if verification says the saved credential was rejected, or when reconnecting a server from a deleted or restored server. It replaces the old identity using the enrollment token above.',
                           )}
                         </p>
                         <CopyField command={reEnrollCommand} />
@@ -561,7 +564,7 @@ export function AgentSetupDialog({
                 {t('Agent {version} is current', { version: agent?.version ?? '' })}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('Connected to this target and ready to receive jobs. No action is required.')}
+                {t('Connected to this server and ready to receive jobs. No action is required.')}
               </p>
             </div>
           ) : hasRemoteUpdateOnline ? null : showManualInstaller ? (
@@ -617,7 +620,7 @@ export function AgentSetupDialog({
                   )}
                   <p className="text-xs text-muted-foreground">
                     {t(
-                      'The installer verifies the checksum, immutable image, target binding and saved credential before replacing the running container. If the new Agent cannot heartbeat, it restores the previous container.',
+                      'The installer verifies the checksum, immutable image, server binding and saved credential before replacing the running container. If the new Agent cannot heartbeat, it restores the previous container.',
                     )}
                   </p>
                   {window.location.protocol === 'http:' && (

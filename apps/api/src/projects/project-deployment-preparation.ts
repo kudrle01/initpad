@@ -4,7 +4,6 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { AppConfigService } from './app-config.service';
 import { DeploymentService } from '../deployment/deployment.service';
-import { exportVersion } from '../deployment/providers/source-export';
 import { prepareProtectedWebLayout, PRIVATE_APP_DIR } from '../deployment/providers/sftp-layout';
 import { ProviderKind, TemplateManifest } from '../domain/types';
 import { RepoArchive, ScmActor, ScmRepositoryRef } from '../scm/scm-provider';
@@ -25,7 +24,6 @@ interface PrepareDeploymentInput {
   provider: ProviderKind;
   template: TemplateManifest;
   repository: ScmRepositoryRef;
-  projectRepoPath: string;
   version: string;
   useRegistry: boolean;
   testedImageRef?: string;
@@ -48,7 +46,10 @@ export class ProjectDeploymentPreparation {
     const needsSource = !useBuildExtract && (input.provider !== 'docker' || !input.useRegistry);
     let source: RepoArchive | null = null;
     let extractedDir: string | null = null;
-    let repoPath = input.projectRepoPath;
+    // Registry-based Docker deploys need no source tree. Every other path
+    // fetches the exact commit from the SCM provider; a stored project path is
+    // never used as a source (ADR-176).
+    let repoPath = '';
     let artifactDir = input.template.artifactDir;
     let writableDirs = input.template.writableDirs;
     let protectedWebLayout = false;
@@ -76,10 +77,8 @@ export class ProjectDeploymentPreparation {
       } else if (needsSource) {
         const actor = await input.resolveActor();
         const scm = this.workspaceScm.provider(input.repository.provider);
-        source =
-          (await scm.downloadArchive(input.repository, input.version, actor)) ??
-          (await exportVersion(input.projectRepoPath, input.version));
-        repoPath = source?.dir ?? input.projectRepoPath;
+        source = await scm.downloadArchive(input.repository, input.version, actor);
+        repoPath = source.dir;
       }
 
       const envVars = await this.appConfig.configVarsForDeploy(input.environmentId);

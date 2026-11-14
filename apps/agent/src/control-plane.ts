@@ -1,3 +1,4 @@
+import { describeFetchFailure } from './network-errors.js';
 import { AGENT_VERSION, PROTOCOL_VERSION } from './types.js';
 import type {
   AgentConfig,
@@ -32,15 +33,27 @@ async function postJson<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetchImpl(`${controlPlaneUrl}${path}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(credential ? { authorization: `Bearer ${credential}` } : {}),
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    let response: Response;
+    try {
+      response = await fetchImpl(`${controlPlaneUrl}${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(credential ? { authorization: `Bearer ${credential}` } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      // Not a ControlPlaneError: transport failures stay retryable for callers.
+      throw new Error(
+        `Cannot reach InitPad at ${controlPlaneUrl}${path}: ${describeFetchFailure(
+          error,
+          `timed out after ${REQUEST_TIMEOUT_MS / 1_000} s`,
+        )}`,
+        { cause: error },
+      );
+    }
     const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     if (!response.ok) {
       const apiMessage = typeof payload?.message === 'string' ? payload.message : undefined;

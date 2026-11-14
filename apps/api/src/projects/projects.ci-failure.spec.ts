@@ -24,6 +24,7 @@ describe('ProjectsService failed CI handoff', () => {
       projectId: project.id,
       name: 'dev',
       provider: 'docker',
+      targetId: 'builtin-docker',
       status: 'deploying',
       activeOperationId: null,
       target: { name: 'Built-in Docker' },

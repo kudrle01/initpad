@@ -242,6 +242,7 @@ export class CaddyAdminClient {
       throw new Error('Caddy adapter Unix request body is invalid');
     }
     const headers = Object.fromEntries(new Headers(init.headers).entries());
+    if (signal.aborted) return Promise.reject(new Error('Caddy adapter request aborted'));
     return new Promise((resolve, reject) => {
       const request = http.request(
         {
@@ -253,6 +254,7 @@ export class CaddyAdminClient {
         (response) => {
           const chunks: Buffer[] = [];
           let size = 0;
+          response.on('error', reject);
           response.on('data', (chunk: Buffer) => {
             size += chunk.length;
             if (size > MAX_ADMIN_RESPONSE_BYTES) {
@@ -276,6 +278,9 @@ export class CaddyAdminClient {
           });
         },
       );
+      // Registered before any destroy path so an abort rejects instead of
+      // surfacing as an uncaught exception.
+      request.on('error', reject);
       const abort = () => request.destroy(new Error('Caddy adapter request aborted'));
       signal.addEventListener('abort', abort, { once: true });
       if (signal.aborted) {
@@ -285,7 +290,6 @@ export class CaddyAdminClient {
       request.setTimeout(10_000, () =>
         request.destroy(new Error('Caddy adapter request timed out')),
       );
-      request.on('error', reject);
       request.on('close', () => signal.removeEventListener('abort', abort));
       if (typeof init.body === 'string') request.write(init.body);
       request.end();

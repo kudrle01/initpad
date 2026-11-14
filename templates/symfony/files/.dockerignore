@@ -1,0 +1,9 @@
+# Kept out of the build context: repository metadata, CI definitions and
+# local dependency or build output that the image creates itself.
+.git
+.gitea
+.dockerignore
+vendor
+node_modules
+.phpunit.cache
+.phpunit.result.cache

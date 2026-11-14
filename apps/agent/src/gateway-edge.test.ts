@@ -153,3 +153,70 @@ test('restores the previous edge and Caddyfile when the new edge does not stay u
     .filter((body) => body.Cmd?.[0]?.startsWith('mv -f'));
   assert.equal(restore.length, 1);
 });
+
+test('restores the previous edge even when the update was aborted mid-switch', async () => {
+  const controller = new AbortController();
+  const calls: DockerHttpRequest[] = [];
+  const transport: DockerTransport = (request) => {
+    calls.push(request);
+    if (request.signal?.aborted) return Promise.reject(new Error('Docker API request aborted'));
+    const { method, path } = request;
+    if (method === 'GET' && path === '/containers/initpad-gateway-edge/json')
+      return Promise.resolve(reply(200, edge()));
+    if (path.startsWith('/containers/create')) {
+      const body = JSON.parse(String(request.body)) as { Cmd?: string[] };
+      // Abort right after the new edge container is created (Agent shutdown).
+      if (!body.Cmd) controller.abort();
+      return Promise.resolve(reply(201, { Id: 'b'.repeat(64) }));
+    }
+    if (path.endsWith('/wait?condition=not-running'))
+      return Promise.resolve(reply(200, { StatusCode: 0 }));
+    if (method === 'GET') return Promise.resolve(reply(404, { message: 'no such container' }));
+    return Promise.resolve(reply(204));
+  };
+  await assert.rejects(
+    new GatewayEdgeReconciler('unix:///x', transport, 0).reconcile(controller.signal),
+  );
+  const restored = calls.find(
+    (call) =>
+      call.path === '/containers/initpad-gateway-edge-previous/rename?name=initpad-gateway-edge',
+  );
+  assert.ok(restored, 'parked edge must be renamed back');
+  assert.equal(restored.signal?.aborted, false);
+  assert.ok(
+    calls.some(
+      (call) => call.path === '/containers/initpad-gateway-edge/start' && !call.signal?.aborted,
+    ),
+  );
+});
+
+test('puts back a parked edge left behind by a crash during an update', async () => {
+  const calls: DockerHttpRequest[] = [];
+  let restored = false;
+  const version = gatewayEdgeConfigVersion();
+  const transport: DockerTransport = (request) => {
+    calls.push(request);
+    const { method, path } = request;
+    if (method === 'GET' && path === '/containers/initpad-gateway-edge/json')
+      return Promise.resolve(
+        restored
+          ? reply(200, edge({}, { [GATEWAY_EDGE_CONFIG_LABEL]: version }))
+          : reply(404, { message: 'no such container' }),
+      );
+    if (method === 'GET' && path === '/containers/initpad-gateway-edge-previous/json')
+      return Promise.resolve(reply(200, edge()));
+    if (path === '/containers/initpad-gateway-edge-previous/rename?name=initpad-gateway-edge') {
+      restored = true;
+      return Promise.resolve(reply(204));
+    }
+    if (path.startsWith('/containers/create'))
+      return Promise.resolve(reply(201, { Id: 'b'.repeat(64) }));
+    if (path.endsWith('/wait?condition=not-running'))
+      return Promise.resolve(reply(200, { StatusCode: 0 }));
+    if (method === 'GET') return Promise.resolve(reply(404, { message: 'no such container' }));
+    return Promise.resolve(reply(204));
+  };
+  const result = await new GatewayEdgeReconciler('unix:///x', transport, 0).reconcile(signal);
+  assert.deepEqual(result, { status: 'current', version });
+  assert.ok(calls.some((call) => call.path === '/containers/initpad-gateway-edge/start'));
+});

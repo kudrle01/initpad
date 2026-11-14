@@ -1,4 +1,4 @@
-import { TargetsService, TargetRow } from './targets.service';
+import { AGENT_TARGET_ROLE_MESSAGE, TargetsService, TargetRow } from './targets.service';
 import { encryptSecret } from '../common/secret';
 import { ForbiddenException } from '@nestjs/common';
 import { config } from '../config';
@@ -191,8 +191,43 @@ describe('Agent-backed Docker target creation', () => {
       ),
       create,
       audit,
+      workspaces,
     };
   }
+
+  it('lets only a workspace owner or admin add a Docker Agent server', async () => {
+    const { service, create, workspaces } = setup();
+    workspaces.require.mockResolvedValueOnce('maintainer');
+
+    await expect(
+      service.create(
+        'maintainer-1',
+        {
+          name: 'Office Docker',
+          kind: 'docker',
+          capabilities: ['node'],
+          publicUrl: 'http://192.168.1.50',
+        },
+        'workspace-1',
+      ),
+    ).rejects.toThrow(new ForbiddenException(AGENT_TARGET_ROLE_MESSAGE));
+    expect(workspaces.require).toHaveBeenCalledWith('maintainer-1', 'workspace-1', 'maintain');
+    expect(create).not.toHaveBeenCalled();
+
+    workspaces.require.mockResolvedValueOnce('admin');
+    await expect(
+      service.create(
+        'admin-1',
+        {
+          name: 'Office Docker',
+          kind: 'docker',
+          capabilities: ['node'],
+          publicUrl: 'http://192.168.1.50',
+        },
+        'workspace-1',
+      ),
+    ).resolves.toMatchObject({ kind: 'docker' });
+  });
 
   it('creates an outbound-only Docker target without inbound credentials', async () => {
     const { service, create, audit } = setup();
@@ -796,28 +831,40 @@ describe('target management lifecycle', () => {
     );
   });
 
+  function withBindings(
+    prisma: Record<string, any>,
+    environments: Array<Record<string, unknown>>,
+    remaining = 0,
+  ) {
+    prisma.environment.count = jest
+      .fn()
+      .mockResolvedValueOnce(environments.length)
+      .mockResolvedValue(remaining);
+    prisma.environment.findMany = jest.fn(async () => environments);
+    prisma.environment.updateMany = jest.fn(async () => ({ count: environments.length }));
+    prisma.gatewayRoute = { deleteMany: jest.fn(async () => ({ count: 1 })) };
+    prisma.target.delete = jest.fn(async () => remote);
+    prisma.$transaction = jest.fn(async (run: (client: unknown) => unknown) => run(prisma));
+  }
+
+  const emptyEnvironment = {
+    name: 'dev',
+    status: 'empty',
+    version: null,
+    activeOperationId: null,
+    project: { name: 'app' },
+  };
+
   it('deletes a retired server after unbinding its empty environments', async () => {
     const retired = { ...remote, managementState: 'retired', secret: null } as TargetRow;
     const { service, prisma } = setup(0, retired);
-    prisma.environment.count = jest.fn(async () => 2);
-    prisma.environment.findMany = jest.fn(async () => [
-      {
-        name: 'dev',
-        status: 'empty',
-        version: null,
-        activeOperationId: null,
-        project: { name: 'app' },
-      },
-    ]);
-    prisma.environment.updateMany = jest.fn(async () => ({ count: 2 }));
-    prisma.gatewayRoute = { deleteMany: jest.fn(async () => ({ count: 1 })) };
-    prisma.target.delete = jest.fn(async () => retired);
+    withBindings(prisma, [emptyEnvironment]);
 
     await service.remove(remote.id, 'owner-1');
 
     expect(prisma.gatewayRoute.deleteMany).toHaveBeenCalledWith({ where: { targetId: remote.id } });
     expect(prisma.environment.updateMany).toHaveBeenCalledWith({
-      where: { targetId: remote.id },
+      where: { targetId: remote.id, status: 'empty', version: null, activeOperationId: null },
       data: { targetId: null, allocationId: null },
     });
     expect(prisma.target.delete).toHaveBeenCalledWith({ where: { id: remote.id } });
@@ -826,8 +873,7 @@ describe('target management lifecycle', () => {
   it('refuses to delete a retired server that still records a deployment', async () => {
     const retired = { ...remote, managementState: 'retired', secret: null } as TargetRow;
     const { service, prisma } = setup(0, retired);
-    prisma.environment.count = jest.fn(async () => 1);
-    prisma.environment.findMany = jest.fn(async () => [
+    withBindings(prisma, [
       {
         name: 'prod',
         status: 'running',
@@ -836,7 +882,6 @@ describe('target management lifecycle', () => {
         project: { name: 'shop' },
       },
     ]);
-    prisma.target.delete = jest.fn();
 
     await expect(service.remove(remote.id, 'owner-1')).rejects.toThrow(
       'Release the deployments still recorded on this server first: shop/prod.',
@@ -844,13 +889,42 @@ describe('target management lifecycle', () => {
     expect(prisma.target.delete).not.toHaveBeenCalled();
   });
 
-  it('still refuses to delete an active server that environments use', async () => {
+  it('names the deployments that block deleting an active server', async () => {
     const { service, prisma } = setup(0);
-    prisma.environment.count = jest.fn(async () => 1);
-    prisma.target.delete = jest.fn();
+    withBindings(prisma, [
+      emptyEnvironment,
+      {
+        name: 'prod',
+        status: 'running',
+        version: 'a'.repeat(40),
+        activeOperationId: null,
+        project: { name: 'shop' },
+      },
+    ]);
 
     await expect(service.remove(remote.id, 'owner-1')).rejects.toThrow(
-      'Point them at another target first',
+      'This server still hosts deployments: shop/prod. Remove them or move these environments to another server first.',
+    );
+    expect(prisma.environment.updateMany).not.toHaveBeenCalled();
+    expect(prisma.target.delete).not.toHaveBeenCalled();
+  });
+
+  it('unbinds empty environments of an active server automatically', async () => {
+    const { service, prisma } = setup(0);
+    withBindings(prisma, [emptyEnvironment]);
+
+    await service.remove(remote.id, 'owner-1');
+
+    expect(prisma.environment.updateMany).toHaveBeenCalled();
+    expect(prisma.target.delete).toHaveBeenCalledWith({ where: { id: remote.id } });
+  });
+
+  it('keeps the server when a deployment starts during deletion', async () => {
+    const { service, prisma } = setup(0);
+    withBindings(prisma, [emptyEnvironment], 1);
+
+    await expect(service.remove(remote.id, 'owner-1')).rejects.toThrow(
+      'A deployment started on this server while it was being deleted',
     );
     expect(prisma.target.delete).not.toHaveBeenCalled();
   });

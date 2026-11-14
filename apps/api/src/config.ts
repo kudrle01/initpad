@@ -2,8 +2,26 @@ import { isAbsolute, resolve } from 'path';
 import { parseSharedNetworks } from './auth/shared-networks';
 import { builtInPublicHost } from './common/public-url';
 
+// One public origin of the platform (what the browser opens). The specific
+// variables stay as optional overrides for split topologies and for .env
+// files written before INITPAD_PUBLIC_URL was read by the API.
+const DEFAULT_FRONTEND_URL = 'http://localhost:5173';
+const DEFAULT_OIDC_PUBLIC_URL = 'http://localhost:3000/api';
+
+export function resolvePublicUrls(env: NodeJS.ProcessEnv = process.env) {
+  const base = (env.INITPAD_PUBLIC_URL || env.INITPAD_FRONTEND_URL || '').replace(/\/+$/, '');
+  return {
+    frontendUrl: env.INITPAD_FRONTEND_URL || base || DEFAULT_FRONTEND_URL,
+    platformPublicUrl: env.INITPAD_PLATFORM_PUBLIC_URL || base,
+    oidcPublicUrl: env.INITPAD_OIDC_PUBLIC_URL || (base ? `${base}/api` : DEFAULT_OIDC_PUBLIC_URL),
+  };
+}
+
+const publicUrls = resolvePublicUrls();
 const configuredPublicUrl =
-  process.env.INITPAD_FRONTEND_URL || process.env.INITPAD_PLATFORM_PUBLIC_URL;
+  process.env.INITPAD_PUBLIC_URL ||
+  process.env.INITPAD_FRONTEND_URL ||
+  process.env.INITPAD_PLATFORM_PUBLIC_URL;
 
 // Built-in targets run on the InitPad host, so their browser-facing hostname
 // follows the platform's public URL. This avoids two independent LAN addresses
@@ -148,7 +166,7 @@ export const config = {
     authorEmail: process.env.INITPAD_GIT_AUTHOR_EMAIL || 'bot@initpad.local',
   },
   auth: {
-    frontendUrl: process.env.INITPAD_FRONTEND_URL || 'http://localhost:5173',
+    frontendUrl: publicUrls.frontendUrl,
     jwtSecret: process.env.INITPAD_JWT_SECRET || 'dev-secret-zmen-me',
     registrationMode: normalizeRegistrationMode(rawRegistrationMode),
     // One-time proof required to create the first (administrator) account, so
@@ -158,7 +176,7 @@ export const config = {
     secureCookie:
       process.env.INITPAD_COOKIE_SECURE === 'true' ||
       (process.env.INITPAD_COOKIE_SECURE !== 'false' &&
-        (process.env.INITPAD_FRONTEND_URL || '').startsWith('https://')),
+        publicUrls.frontendUrl.startsWith('https://')),
   },
   // Key for encrypting sensitive DB values (ADR-141). Previous keys only
   // decrypt while a rotation re-encrypts stored values with the current key.
@@ -190,7 +208,7 @@ export const config = {
     // Public browser/API origin reachable by GitHub-hosted Actions runners.
     // Kept separate from the internal Gitea callback above: localhost and
     // Docker service names are valid internally but never from github.com.
-    publicUrl: process.env.INITPAD_PLATFORM_PUBLIC_URL || process.env.INITPAD_FRONTEND_URL || '',
+    publicUrl: publicUrls.platformPublicUrl,
   },
   scm: {
     webhookUrl:
@@ -217,6 +235,10 @@ export const config = {
     // Development binds app ports to loopback. A server installation opts in
     // to public binding explicitly (or can put an ingress in front instead).
     bindAddress: process.env.INITPAD_DEPLOY_BIND_ADDRESS || '127.0.0.1',
+    // A loopback-bound workload port is also published on this host address so
+    // a containerized API can probe it; the stack sets host.docker.internal,
+    // which resolves to the Docker host gateway, not to a LAN interface (ADR-174).
+    probeBindAddress: (process.env.INITPAD_DEPLOY_PROBE_BIND_ADDRESS || '').trim(),
     memoryBytes: Number(process.env.INITPAD_DEPLOY_MEMORY_MB || 512) * 1024 * 1024,
     nanoCpus: Number(process.env.INITPAD_DEPLOY_CPU || 1) * 1_000_000_000,
     pidsLimit: Number(process.env.INITPAD_DEPLOY_PIDS_LIMIT || 256),
@@ -235,7 +257,9 @@ export const config = {
       // Subdirectory with the static build, when the template produces one (otherwise the whole repo).
       artifactSubdir: process.env.INITPAD_SFTP_ARTIFACT_DIR || '',
       // Public address where nginx serves the published releases.
-      publicUrl: process.env.INITPAD_SFTP_PUBLIC_URL || `http://${publicHost}:8085`,
+      publicUrl:
+        process.env.INITPAD_SFTP_PUBLIC_URL ||
+        `http://${publicHost}:${process.env.INITPAD_STATIC_WEB_PORT || 8085}`,
       // Address the API uses to verify the site is being served (reachable
       // from wherever the API runs; compose points it at http://static-web).
       internalUrl:
@@ -284,6 +308,21 @@ export const config = {
     presignTtlSeconds: Number(process.env.INITPAD_ARTIFACT_PRESIGN_TTL_SECONDS || 300),
     // Verified artifacts older than this are eligible for GC unless still referenced.
     retentionDays: Number(process.env.INITPAD_ARTIFACT_RETENTION_DAYS || 30),
+    // TCP connect and socket-inactivity limits. Without them a silent object
+    // store keeps a deploy waiting while its execution lease is still renewed.
+    connectionTimeoutMs: Number(process.env.INITPAD_ARTIFACT_S3_CONNECTION_TIMEOUT_MS || 10_000),
+    requestTimeoutMs: Number(process.env.INITPAD_ARTIFACT_S3_REQUEST_TIMEOUT_MS || 120_000),
+  },
+  // Bounds for outbound work that would otherwise wait forever on a silent
+  // peer (ADR-176). All values are milliseconds.
+  timeouts: {
+    // Each local git command (scaffold commit and push).
+    gitMs: Number(process.env.INITPAD_GIT_TIMEOUT_MS || 120_000),
+    // SSH keepalive probes; the connection is dropped after 4 missed answers.
+    sshKeepaliveIntervalMs: Number(process.env.INITPAD_SSH_KEEPALIVE_INTERVAL_MS || 15_000),
+    // Whole SFTP deploy after the connection is established (upload, extract,
+    // publish, verification).
+    sftpDeployMs: Number(process.env.INITPAD_SFTP_DEPLOY_TIMEOUT_MS || 15 * 60_000),
   },
   // The platform as an OIDC provider (SSO into Gitea); Gitea registers as a
   // client. issuer = address the Gitea SERVER calls (from its container via
@@ -291,7 +330,7 @@ export const config = {
   // redirect).
   oidc: {
     issuer: process.env.INITPAD_OIDC_ISSUER || 'http://host.docker.internal:3000/api',
-    publicUrl: process.env.INITPAD_OIDC_PUBLIC_URL || 'http://localhost:3000/api',
+    publicUrl: publicUrls.oidcPublicUrl,
     clientId: process.env.INITPAD_OIDC_CLIENT_ID || 'gitea',
     clientSecret: process.env.INITPAD_OIDC_CLIENT_SECRET || 'gitea-oidc-secret-change-me',
     // Path to the RSA signing key (PEM). When set, the key is loaded from —
@@ -503,6 +542,28 @@ export function validateConfig(): void {
   if (!Number.isFinite(retentionDays) || retentionDays < 1) {
     throw new Error('INITPAD_ARTIFACT_RETENTION_DAYS must be a positive number of days');
   }
+  const bounded: Array<[string, number, number, number]> = [
+    [
+      'INITPAD_ARTIFACT_S3_CONNECTION_TIMEOUT_MS',
+      config.artifactStore.connectionTimeoutMs,
+      1_000,
+      120_000,
+    ],
+    [
+      'INITPAD_ARTIFACT_S3_REQUEST_TIMEOUT_MS',
+      config.artifactStore.requestTimeoutMs,
+      5_000,
+      3_600_000,
+    ],
+    ['INITPAD_GIT_TIMEOUT_MS', config.timeouts.gitMs, 5_000, 3_600_000],
+    ['INITPAD_SSH_KEEPALIVE_INTERVAL_MS', config.timeouts.sshKeepaliveIntervalMs, 1_000, 300_000],
+    ['INITPAD_SFTP_DEPLOY_TIMEOUT_MS', config.timeouts.sftpDeployMs, 60_000, 6 * 3_600_000],
+  ];
+  for (const [name, value, min, max] of bounded) {
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new Error(`${name} must be an integer between ${min} and ${max}`);
+    }
+  }
   // The SaaS control plane has no single-host Docker daemon to fall back on, so a
   // durable artifact store is mandatory there — fail loudly rather than silently
   // losing builds on restart.
@@ -613,6 +674,17 @@ export function validateConfig(): void {
     throw new Error('Deployment resource limits are invalid');
   }
   if (process.env.NODE_ENV !== 'production') return;
+  // The built-in defaults point at the Vite dev server; in production they
+  // would put unusable links into activation e-mails and the Gitea SSO.
+  // An explicit http://localhost:8080 (local-only installation) stays valid.
+  if (
+    config.auth.frontendUrl === DEFAULT_FRONTEND_URL ||
+    (config.edition === 'self-hosted' && config.oidc.publicUrl === DEFAULT_OIDC_PUBLIC_URL)
+  ) {
+    throw new Error(
+      'Production requires the public platform URL: set INITPAD_PUBLIC_URL (for example https://initpad.example.com)',
+    );
+  }
   // The in-memory store loses every artifact on restart and grows without a
   // bound; it exists for development and tests only (ADR-146).
   if (!artifactStoreConfigured()) {

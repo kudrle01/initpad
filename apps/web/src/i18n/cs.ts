@@ -6,7 +6,13 @@
  * `{name}` placeholders and `<tag>…</tag>` markers must be kept; their order may
  * change freely. Grouped by the file where a message is first used.
  */
+import { csApi } from './cs-api';
+import { csWeb } from './cs-web';
+
 export const cs = {
+  // Sections kept in their own files (ADR-185).
+  ...csApi,
+  ...csWeb,
   // components/molecules/CopyField.tsx
   'Copy to clipboard': 'Zkopírovat do schránky',
   copied: 'zkopírováno',
@@ -62,6 +68,8 @@ export const cs = {
   'Recent update history': 'Historie posledních aktualizací',
   // components/organisms/admin/WorkspaceCapacityCard.tsx
   'Workspace limits': 'Limity workspace',
+  'Showing {shown} of {total} workspaces': 'Zobrazeno {shown} z {total} workspace',
+  'Show more': 'Zobrazit další',
   'Tenant-wide limits for control-plane work and artifact storage.':
     'Limity pro celý workspace: práce řídicí roviny a úložiště artefaktů.',
   'Loading workspace limits': 'Načítání limitů workspace',
@@ -165,8 +173,8 @@ export const cs = {
   disabled: 'vypnuto',
   'Agent release information is unavailable': 'Informace o vydání Agenta nejsou dostupné',
   'Replace the pending enrollment token?': 'Nahradit čekající registrační token?',
-  'Only one unused enrollment token can be valid for this target.':
-    'Pro tento cíl může být platný jen jeden nepoužitý registrační token.',
+  'Only one unused enrollment token can be valid for this server.':
+    'Pro tento server může být platný jen jeden nepoužitý registrační token.',
   'Generate a new token': 'Vygenerovat nový token',
   'The previously generated token stops working immediately.':
     'Dříve vygenerovaný token okamžitě přestane fungovat.',
@@ -235,8 +243,8 @@ export const cs = {
   'This InitPad uses its own certificate authority. The command first downloads its certificate, checks the fingerprint and lets Docker on the server trust it for {registry} only.':
     'Tento InitPad používá vlastní certifikační autoritu. Příkaz nejdřív stáhne její certifikát, ověří otisk a nastaví, aby mu Docker na serveru důvěřoval jen pro {registry}.',
   'Uninstall from the server': 'Odinstalovat ze serveru',
-  'Run this command on the Docker server. It verifies the installer checksum, refuses a server enrolled for another target, lists what it removes and asks you to confirm. It removes the Agent container, its saved identity and the InitPad CA installed for it.':
-    'Spusťte tento příkaz na Docker serveru. Ověří kontrolní součet instalátoru, odmítne server zaregistrovaný pro jiný cíl, vypíše, co odstraní, a vyžádá potvrzení. Odstraní kontejner Agenta, jeho uloženou identitu a certifikát InitPadu, který pro něj byl nainstalován.',
+  'Run this command on the Docker server. It verifies the installer checksum, refuses a server enrolled for another server, lists what it removes and asks you to confirm. It removes the Agent container, its saved identity and the InitPad CA installed for it.':
+    'Spusťte tento příkaz na Docker serveru. Ověří kontrolní součet instalátoru, odmítne server zaregistrovaný pro jiný server, vypíše, co odstraní, a vyžádá potvrzení. Odstraní kontejner Agenta, jeho uloženou identitu a certifikát InitPadu, který pro něj byl nainstalován.',
   'Also remove applications InitPad deployed on this server':
     'Odstranit i aplikace, které InitPad na tento server nasadil',
   'Deletes their containers and networks directly on the server. InitPad keeps showing them as deployed, so prefer removing environments in InitPad while the Agent is connected.':
@@ -245,8 +253,8 @@ export const cs = {
     'Potom Agenta zde odpojte nebo server smažte, aby na něj InitPad už nečekal.',
   'Copy and run this command in an interactive terminal on the Docker server.':
     'Zkopírujte tento příkaz a spusťte ho v interaktivním terminálu na Docker serveru.',
-  'It verifies the checksum and immutable Agent {version} image, verifies that any saved identity belongs to this target, then starts and health-checks the Agent. A new server requests the token through a hidden prompt, so it never enters shell history.':
-    'Ověří kontrolní součet a neměnný image Agenta {version}, zkontroluje, že případná uložená identita patří k tomuto cíli, a pak Agenta spustí a ověří jeho stav. Nový server si token vyžádá skrytou výzvou, takže se nedostane do historie shellu.',
+  'It verifies the checksum and immutable Agent {version} image, verifies that any saved identity belongs to this server, then starts and health-checks the Agent. A new server requests the token through a hidden prompt, so it never enters shell history.':
+    'Ověří kontrolní součet a neměnný image Agenta {version}, zkontroluje, že případná uložená identita patří k tomuto serveru, a pak Agenta spustí a ověří jeho stav. Nový server si token vyžádá skrytou výzvou, takže se nedostane do historie shellu.',
   'Replace an invalid existing identity': 'Nahradit neplatnou stávající identitu',
   'Refresh the gateway on the server': 'Obnovit bránu na serveru',
   'Application gateway': 'Brána aplikací',
@@ -255,8 +263,8 @@ export const cs = {
     'Nový token nahradí uloženou identitu serveru. Použijte ho jen pro obnovu serveru, jehož přihlašovací údaje byly odmítnuty.',
   'Agent 0.16 and newer refresh the gateway themselves after an update. Run this on the Docker server only for an older Agent or if that did not happen. The saved identity is kept, so no enrollment token is needed.':
     'Agent 0.16 a novější obnoví bránu po aktualizaci sám. Spusťte to na Docker serveru jen u staršího Agenta nebo když se obnova nestala. Uložená identita zůstane zachována, registrační token není potřeba.',
-  'Use this only if verification says the saved credential was rejected, or when reconnecting a server from a deleted or restored target. It replaces the old identity using the enrollment token above.':
-    'Použijte jen tehdy, když ověření hlásí odmítnutí uložených údajů, nebo při opětovném připojení serveru ze smazaného či obnoveného cíle. Starou identitu nahradí pomocí registračního tokenu výše.',
+  'Use this only if verification says the saved credential was rejected, or when reconnecting a server from a deleted or restored server. It replaces the old identity using the enrollment token above.':
+    'Použijte jen tehdy, když ověření hlásí odmítnutí uložených údajů, nebo při opětovném připojení serveru ze smazaného či obnoveného záznamu. Starou identitu nahradí pomocí registračního tokenu výše.',
   'HTTP enrollment is for a trusted local test only. Use HTTPS before exposing InitPad or this Agent connection outside an isolated network.':
     'Registrace přes HTTP je určená jen pro důvěryhodný místní test. Než InitPad nebo toto spojení Agenta zpřístupníte mimo izolovanou síť, použijte HTTPS.',
   'Agent installer is not configured': 'Instalátor Agenta není nastavený',
@@ -266,8 +274,8 @@ export const cs = {
   'This command also sets up the managed gateway for {domain}: a private CA, a TLS edge and the gateway. Point {domain} and *.{domain} in DNS at this server first, and install the CA root certificate the installer prints on the computers that open the applications.':
     'Tento příkaz zároveň nastaví spravovanou bránu pro {domain}: soukromou CA, TLS vstup a bránu. Nejdřív v DNS nasměrujte {domain} a *.{domain} na tento server a na počítače, ze kterých se aplikace otevírají, nainstalujte kořenový certifikát CA, který instalátor vypíše.',
   'Agent {version} is current': 'Agent {version} je aktuální',
-  'Connected to this target and ready to receive jobs. No action is required.':
-    'Je připojený k tomuto cíli a připravený přijímat úlohy. Není potřeba nic dělat.',
+  'Connected to this server and ready to receive jobs. No action is required.':
+    'Je připojený k tomuto serveru a připravený přijímat úlohy. Není potřeba nic dělat.',
   'Reconnect Agent {version}': 'Znovu připojit Agenta {version}',
   'Reconnect Agent': 'Znovu připojit Agenta',
   'Update Agent to {version}': 'Aktualizovat Agenta na {version}',
@@ -276,8 +284,8 @@ export const cs = {
     'Spusťte na Docker serveru ověřený instalátor. Spojení se obnoví a identita zůstane zachována.',
   'The existing server identity is verified and preserved. No new enrollment token is required.':
     'Stávající identita serveru je ověřená a zůstane zachována. Nový registrační token není potřeba.',
-  'The installer verifies the checksum, immutable image, target binding and saved credential before replacing the running container. If the new Agent cannot heartbeat, it restores the previous container.':
-    'Instalátor před výměnou běžícího kontejneru ověří kontrolní součet, neměnný image, vazbu na cíl a uložené údaje. Pokud nový Agent neodešle heartbeat, obnoví předchozí kontejner.',
+  'The installer verifies the checksum, immutable image, server binding and saved credential before replacing the running container. If the new Agent cannot heartbeat, it restores the previous container.':
+    'Instalátor před výměnou běžícího kontejneru ověří kontrolní součet, neměnný image, vazbu na server a uložené údaje. Pokud nový Agent neodešle heartbeat, obnoví předchozí kontejner.',
   'HTTP is suitable only for a trusted local test network. Use HTTPS in production.':
     'HTTP je vhodné jen pro důvěryhodnou místní testovací síť. V produkci použijte HTTPS.',
   'A safe reconnect image is not available':
@@ -376,8 +384,8 @@ export const cs = {
   'Create workspace': 'Vytvořit workspace',
   // components/organisms/DeleteProjectDialog.tsx
   'Delete project': 'Smazat projekt',
-  'InitPad will remove every managed deployment before deleting its project record. Cleanup must succeed on every target by default. Protected leftovers can only be detached through a separate explicit acknowledgement.':
-    'InitPad před smazáním záznamu projektu odstraní všechna spravovaná nasazení. Úklid musí ve výchozím stavu uspět na každém cíli. Chráněné pozůstatky lze odpojit jen samostatným výslovným potvrzením.',
+  'InitPad will remove every managed deployment before deleting its project record. Cleanup must succeed on every server by default. Protected leftovers can only be detached through a separate explicit acknowledgement.':
+    'InitPad před smazáním záznamu projektu odstraní všechna spravovaná nasazení. Úklid musí ve výchozím stavu uspět na každém serveru. Chráněné pozůstatky lze odpojit jen samostatným výslovným potvrzením.',
   'Cleanup plan': 'Plán úklidu',
   '{name} deployment': 'Nasazení {name}',
   'No active deployments': 'Žádná aktivní nasazení',
@@ -386,15 +394,15 @@ export const cs = {
   remove: 'odstranit',
   'InitPad project record': 'Záznam projektu v InitPadu',
   'remove · release workspace name': 'odstranit · uvolnit název ve workspace',
-  'Deployment targets and unrelated server files are never deleted.':
-    'Cíle nasazení ani nesouvisející soubory na serveru se nikdy nemažou.',
+  'Deployment servers and unrelated server files are never deleted.':
+    'Servery ani nesouvisející soubory na nich se nikdy nemažou.',
   'Remove the production deployment': 'Odstranit produkční nasazení',
   'Production will become unavailable and its deployed files will be deleted.':
     'Produkce přestane být dostupná a její nasazené soubory se smažou.',
   'Delete the InitPad record with protected cleanup still pending':
     'Smazat záznam v InitPadu, i když chráněný úklid ještě čeká',
-  'The public application is already gone. A target administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.':
-    'Veřejná aplikace už je pryč. Správce cíle musí uvedené cesty v karanténě ještě smazat ručně. Po smazání záznamu projektu už InitPad tento úklid zopakovat nemůže.',
+  'The public application is already gone. A server administrator must still delete the listed quarantined paths. InitPad cannot retry that cleanup after this project record is deleted.':
+    'Veřejná aplikace už je pryč. Správce serveru musí uvedené cesty v karanténě ještě smazat ručně. Po smazání záznamu projektu už InitPad tento úklid zopakovat nemůže.',
   'Disconnect and delete': 'Odpojení a smazání',
   'InitPad stops managing this server and revokes its access. Running applications stay online.':
     'InitPad přestane server spravovat a zneplatní jeho přístup. Běžící aplikace zůstanou online.',
@@ -404,16 +412,14 @@ export const cs = {
     'Odebere server z InitPadu. Na samotném serveru se nic nesmaže.',
   'Release the deployments on this server first: {list}.':
     'Nejdřív uvolněte nasazení na tomto serveru: {list}.',
-  'Used by {count} environments. Point them at another server, or disconnect or retire this one first.':
-    'Používá ho prostředí: {count}. Přesměrujte je na jiný server, nebo tento nejdřív odpojte či vyřaďte.',
   'Release deployment': 'Uvolnit nasazení',
   'Release the {environment} deployment?': 'Uvolnit nasazení {environment}?',
   'The server is disconnected, so InitPad cannot remove the workload from it. Only the InitPad record is released.':
     'Server je odpojený, takže z něj InitPad nemůže aplikaci odstranit. Uvolní se jen záznam v InitPadu.',
   'The container may keep running on that server and must be removed there manually.':
     'Kontejner může na serveru dál běžet a je potřeba ho tam odstranit ručně.',
-  'The environment can then be pointed at another target or the project deleted.':
-    'Prostředí pak lze přesměrovat na jiný cíl nebo projekt smazat.',
+  'The environment can then be pointed at another server or the project deleted.':
+    'Prostředí pak lze přesměrovat na jiný server nebo projekt smazat.',
   'server disconnected · left on the server': 'server odpojen · zůstane na serveru',
   'Some deployments run on a disconnected or retired server. InitPad can no longer reach it, so their containers may keep running there and must be removed on that server manually.':
     'Některá nasazení běží na odpojeném nebo vyřazeném serveru. InitPad se k němu už nepřipojí, takže kontejnery tam mohou dál běžet a je potřeba je na serveru odstranit ručně.',
@@ -436,8 +442,8 @@ export const cs = {
   'Request verified build for production': 'Požádat o nasazení ověřeného buildu do produkce',
   'Request this verified build for production':
     'Požádat o nasazení tohoto ověřeného buildu do produkce',
-  'A verified build and available production target are required':
-    'Je potřeba ověřený build a dostupný produkční cíl',
+  'A verified build and available production server are required':
+    'Je potřeba ověřený build a dostupný produkční server',
   'Request prod': 'Žádost o prod',
   'View InitPad deployment history': 'Zobrazit historii nasazení InitPadu',
   queued: 've frontě',
@@ -452,7 +458,7 @@ export const cs = {
   'Workload diagnostics…': 'Diagnostika workloadu…',
   Start: 'Spustit',
   Stop: 'Zastavit',
-  'Change target': 'Změnit cíl',
+  'Change server': 'Změnit server',
   'Cancel deploy': 'Zrušit nasazení',
   'Retry cleanup': 'Zopakovat úklid',
   'Remove deployment': 'Odstranit nasazení',
@@ -462,9 +468,9 @@ export const cs = {
     'Server je ve stavu „{state}“. URL může zůstat dostupná, ale správa přes InitPad nefunguje. <link>Znovu připojit server</link>.',
   'Workspace access is paused. Existing workloads remain manageable, but deploy, redeploy and rollback are unavailable. <link>Manage access</link>.':
     'Přístup workspace je pozastavený. Stávající workloady lze dál spravovat, ale nasazení, opětovné nasazení a rollback nejsou dostupné. <link>Spravovat přístup</link>.',
-  'Target change pending — resume workspace access before deploying.':
-    'Změna cíle čeká — před nasazením obnovte přístup workspace.',
-  'Target changed — deploy to apply it.': 'Cíl se změnil — nasaďte, aby se změna projevila.',
+  'Server change pending — resume workspace access before deploying.':
+    'Změna serveru čeká — před nasazením obnovte přístup workspace.',
+  'Server changed — deploy to apply it.': 'Server se změnil — nasaďte, aby se změna projevila.',
   'Deploying…': 'Nasazuje se…',
   '{name} deployment progress': 'Průběh nasazení {name}',
   Deploying: 'Nasazuje se',
@@ -491,24 +497,24 @@ export const cs = {
   'Local or private Docker servers connect outbound through InitPad Agent.':
     'Místní nebo soukromé Docker servery se připojují odchozím spojením přes InitPad Agenta.',
   Defaults: 'Výchozí hodnoty',
-  'Self-hosted deployment targets are selected automatically when compatible.':
-    'Cíle nasazení v self-hosted instalaci se vyberou automaticky, pokud jsou kompatibilní.',
+  'Self-hosted deployment servers are selected automatically when compatible.':
+    'Servery pro nasazení se v self-hosted instalaci vyberou automaticky, pokud jsou kompatibilní.',
   Changes: 'Změny',
-  'Each environment can use a different target, now or from the project detail later.':
-    'Každé prostředí může používat jiný cíl — hned, nebo později z detailu projektu.',
+  'Each environment can use a different server, now or from the project detail later.':
+    'Každé prostředí může používat jiný server — hned, nebo později z detailu projektu.',
   retired: 'vyřazeno',
   'reconnect first': 'nejdřív znovu připojte',
   'update or enable Agent': 'aktualizujte nebo povolte Agenta',
   'enroll Agent': 'zaregistrujte Agenta',
   'verify first': 'nejdřív ověřte',
-  'Environments & targets': 'Prostředí a cíle',
-  'About environment targets': 'O cílech prostředí',
-  '{environment} target': 'Cíl pro {environment}',
-  'Choose target…': 'Vyberte cíl…',
-  'No connected and verified target can run <b>{template}</b>. <link>Add or reconnect a server</link> before creating the project.':
-    'Žádný připojený a ověřený cíl neumí spustit <b>{template}</b>. Před vytvořením projektu <link>přidejte nebo znovu připojte server</link>.',
-  'Some compatible targets are disabled until their connection or Agent is ready in <link>Servers</link>.':
-    'Některé kompatibilní cíle jsou vypnuté, dokud v sekci <link>Servery</link> nebude připravené jejich připojení nebo Agent.',
+  'Environments & servers': 'Prostředí a servery',
+  'About environment servers': 'O serverech prostředí',
+  '{environment} server': 'Server pro {environment}',
+  'Choose server…': 'Vyberte server…',
+  'No connected and verified server can run <b>{template}</b>. <link>Add or reconnect a server</link> before creating the project.':
+    'Žádný připojený a ověřený server neumí spustit <b>{template}</b>. Před vytvořením projektu <link>přidejte nebo znovu připojte server</link>.',
+  'Some compatible servers are disabled until their connection or Agent is ready in <link>Servers</link>.':
+    'Některé kompatibilní servery jsou vypnuté, dokud v sekci <link>Servery</link> nebude připravené jejich připojení nebo Agent.',
   // components/organisms/EnvVarsDialog.tsx
   'Replace {normalizedKey} in {env}?': 'Nahradit {normalizedKey} v {env}?',
   'The current value cannot be recovered from InitPad after it is overwritten.':
@@ -644,7 +650,6 @@ export const cs = {
   Reject: 'Zamítnout',
   'Cancel request': 'Zrušit žádost',
   Source: 'Zdroj',
-  Target: 'Cíl',
   'Artifact digest': 'Digest artefaktu',
   'Not available for this legacy build': 'U tohoto staršího buildu není k dispozici',
   'Owners, admins and maintainers can review production requests.':
@@ -686,16 +691,16 @@ export const cs = {
   'Roll back {environment}': 'Rollback prostředí {environment}',
   'Create a reviewable request for the previous verified version. Nothing is published until an authorized reviewer approves the unchanged request.':
     'Vytvoří se žádost o předchozí ověřenou verzi k posouzení. Nic se nepublikuje, dokud nezměněnou žádost neschválí oprávněný posuzovatel.',
-  'Publish the previous verified version to the currently assigned target. InitPad will not run CI or build new application code.':
-    'Na aktuálně přiřazený cíl se publikuje předchozí ověřená verze. InitPad nespustí CI ani nesestaví nový kód aplikace.',
+  'Publish the previous verified version to the currently assigned server. InitPad will not run CI or build new application code.':
+    'Na aktuálně přiřazený server se publikuje předchozí ověřená verze. InitPad nespustí CI ani nesestaví nový kód aplikace.',
   'Current version': 'Aktuální verze',
   'Rollback version': 'Verze pro rollback',
   'Verified output': 'Ověřený výstup',
   'OCI tag {rollbackVersion}': 'OCI tag {rollbackVersion}',
-  'The selected target will replace its current workload with version <span>{rollbackVersion}</span>. Publication still has to pass the target health check. Stable-routing targets keep their URL and a managed gateway keeps the last healthy revision online until that succeeds; a direct-port target may allocate a new port. Current environment variables and secrets stay in place; rollback changes application code, not configuration.':
-    'Vybraný cíl nahradí svůj současný workload verzí <span>{rollbackVersion}</span>. Publikace musí i tak projít kontrolou stavu na cíli. Cíle se stabilním routováním si ponechají URL a spravovaná brána drží poslední zdravou revizi online, dokud kontrola neuspěje; cíl s přímým portem může dostat nový port. Stávající proměnné prostředí a tajemství zůstávají; rollback mění kód aplikace, ne konfiguraci.',
-  'Source deployment succeeded on {date}. Any target or environment or configuration change after this dialog opened will cancel the request for review.':
-    'Zdrojové nasazení uspělo {date}. Jakákoli změna cíle, prostředí nebo konfigurace po otevření tohoto dialogu žádost o posouzení zruší.',
+  'The selected server will replace its current workload with version <span>{rollbackVersion}</span>. Publication still has to pass the server health check. Stable-routing servers keep their URL and a managed gateway keeps the last healthy revision online until that succeeds; a direct-port server may allocate a new port. Current environment variables and secrets stay in place; rollback changes application code, not configuration.':
+    'Vybraný server nahradí svůj současný workload verzí <span>{rollbackVersion}</span>. Publikace musí i tak projít kontrolou stavu na serveru. Servery se stabilním routováním si ponechají URL a spravovaná brána drží poslední zdravou revizi online, dokud kontrola neuspěje; server s přímým portem může dostat nový port. Stávající proměnné prostředí a tajemství zůstávají; rollback mění kód aplikace, ne konfiguraci.',
+  'Source deployment succeeded on {date}. Any server or environment or configuration change after this dialog opened will cancel the request for review.':
+    'Zdrojové nasazení uspělo {date}. Jakákoli změna serveru, prostředí nebo konfigurace po otevření tohoto dialogu žádost o posouzení zruší.',
   'Submit rollback request': 'Odeslat žádost o rollback',
   // components/organisms/settings/EmailVerificationSettings.tsx
   'Verification e-mail queued': 'Ověřovací e-mail zařazen k odeslání',
@@ -805,8 +810,8 @@ export const cs = {
   'Delete workspace': 'Smazat workspace',
   'Membership and the workspace audit timeline are permanently removed.':
     'Členství a auditní historie workspace se trvale odstraní.',
-  'Deletion succeeds only after all projects, targets and allocations have been removed.':
-    'Smazání uspěje až po odebrání všech projektů, cílů a přidělení.',
+  'Deletion succeeds only after all projects, servers and allocations have been removed.':
+    'Smazání uspěje až po odebrání všech projektů, serverů a přidělení.',
   'The workspace name and slug can then be reused.': 'Název a slug workspace pak lze použít znovu.',
   'Workspace deleted': 'Workspace smazán',
   'Allow production self-approval?': 'Povolit schvalování vlastních žádostí o produkci?',
@@ -860,7 +865,23 @@ export const cs = {
     'Tento účet okamžitě získá rozšířená oprávnění ve workspace.',
   'The workspace owner can later change or remove the role.':
     'Vlastník workspace může roli později změnit nebo odebrat.',
-  'Workspace member added': 'Člen workspace přidán',
+  'If an account matches {identity}, it is now a member of this workspace.':
+    'Pokud {identity} odpovídá nějakému účtu, je teď členem tohoto workspace.',
+  'Make @{username} the owner of {name}?': 'Předat vlastnictví {name} uživateli @{username}?',
+  'A workspace has one owner. You stay in the workspace as an admin.':
+    'Workspace má jednoho vlastníka. Vy ve workspace zůstanete jako administrátor.',
+  'Transfer ownership': 'Předat vlastnictví',
+  'The new owner can delete the workspace and change the production approval policy.':
+    'Nový vlastník může workspace smazat a měnit pravidla schvalování produkce.',
+  'Only the new owner can transfer ownership again.':
+    'Vlastnictví pak může znovu předat jen nový vlastník.',
+  '@{username} now owns the workspace': 'Vlastníkem workspace je teď @{username}',
+  'Leave {name}?': 'Opustit {name}?',
+  'You lose access to its projects and servers. A workspace admin can add you again.':
+    'Ztratíte přístup k jeho projektům a serverům. Administrátor workspace vás může přidat znovu.',
+  'Leave workspace': 'Opustit workspace',
+  'You left {name}': 'Opustili jste {name}',
+  'Make {username} the owner': 'Předat vlastnictví uživateli {username}',
   "Change @{username}'s role?": 'Změnit roli uživatele @{username}?',
   'Workspace role changes take effect immediately across projects and infrastructure.':
     'Změny rolí ve workspace se okamžitě projeví ve všech projektech a infrastruktuře.',
@@ -1001,16 +1022,16 @@ export const cs = {
   'About the application address': 'O adrese aplikací',
   'Use an HTTPS DNS origin for stable application hostnames. Run gateway preflight before the first deployment.':
     'Pro stabilní adresy aplikací použijte HTTPS origin s DNS. Před prvním nasazením spusťte předběžnou kontrolu brány.',
-  'Use the browser-reachable address of this server. Each local or lab application receives its own published port.':
-    'Použijte adresu tohoto serveru dostupnou z prohlížeče. Každá lokální nebo laboratorní aplikace dostane vlastní publikovaný port.',
+  'Use the browser-reachable address of this server. Each local or lab application receives its own published port from 30000–32767; open only that range in the server firewall.':
+    'Použijte adresu tohoto serveru dostupnou z prohlížeče. Každá lokální nebo laboratorní aplikace dostane vlastní publikovaný port z rozsahu 30000–32767; ve firewallu serveru otevřete jen tento rozsah.',
   'Save connection': 'Uložit připojení',
   'Save server': 'Uložit server',
   // components/organisms/TargetPickerDialog.tsx
-  'Deployment target ({env})': 'Cíl nasazení ({env})',
+  'Deployment server ({env})': 'Server nasazení ({env})',
   'Choose where <b>{env}</b> deploys. Changing it on a live environment tears down the old deployment first.':
     'Zvolte, kam se nasazuje <b>{env}</b>. Změna u běžícího prostředí nejdřív zruší staré nasazení.',
-  'No supported and verified replacement target yet. Add or test a server in <link>Servers</link>.':
-    'Zatím není k dispozici žádný podporovaný a ověřený náhradní cíl. Přidejte nebo otestujte server v sekci <link>Servery</link>.',
+  'No supported and verified replacement server yet. Add or test a server in <link>Servers</link>.':
+    'Zatím není k dispozici žádný podporovaný a ověřený náhradní server. Přidejte nebo otestujte server v sekci <link>Servery</link>.',
   'built-in': 'vestavěný',
   Verified: 'Ověřeno',
   current: 'současný',
@@ -1020,13 +1041,13 @@ export const cs = {
   'gateway check failed': 'kontrola gateway selhala',
   'gateway not checked': 'gateway není zkontrolovaná',
   'runs {runtimes}': 'spouští {runtimes}',
-  'Confirm target change': 'Potvrďte změnu cíle',
-  '{name} will be replaced by {name2}. A live deployment is removed from the old target and must be deployed to the new one.':
-    '{name} bude nahrazen cílem {name2}. Běžící nasazení se ze starého cíle odstraní a je nutné ho nasadit na nový.',
-  '{name} will become the deployment target for this environment.':
-    '{name} se stane cílem nasazení pro toto prostředí.',
+  'Confirm server change': 'Potvrďte změnu serveru',
+  '{name} will be replaced by {name2}. A live deployment is removed from the old server and must be deployed to the new one.':
+    '{name} bude nahrazen serverem {name2}. Běžící nasazení se ze starého serveru odstraní a je nutné ho nasadit na nový.',
+  '{name} will become the deployment server for this environment.':
+    '{name} se stane serverem nasazení pro toto prostředí.',
   'Manage servers': 'Spravovat servery',
-  'Use target': 'Použít cíl',
+  'Use server': 'Použít server',
   // components/organisms/WorkloadDiagnosticsDialog.tsx
   healthy: 'v pořádku',
   unhealthy: 'není v pořádku',
@@ -1034,8 +1055,8 @@ export const cs = {
   missing: 'chybí',
   'Workload diagnostics — {environment}': 'Diagnostika workloadu — {environment}',
   'A read-only snapshot from {target}. It does not deploy, restart or execute a shell command in the workload.':
-    'Snímek pouze pro čtení z cíle {target}. Nic nenasazuje, nerestartuje ani ve workloadu nespouští shellový příkaz.',
-  'the Agent target': 'cíl Agenta',
+    'Snímek pouze pro čtení z serveru {target}. Nic nenasazuje, nerestartuje ani ve workloadu nespouští shellový příkaz.',
+  'the Agent server': 'server Agenta',
   'Loading diagnostics': 'Načítání diagnostiky',
   'This request is safely queued and will continue when the Agent reconnects.':
     'Tento požadavek bezpečně čeká ve frontě a bude pokračovat, až se Agent znovu připojí.',
@@ -1120,7 +1141,7 @@ export const cs = {
   'GitHub is re-running failed jobs from run {runId}.':
     'GitHub znovu spouští neúspěšné úlohy z běhu {runId}.',
   'Removed {environment} deployment': 'Nasazení {environment} odstraněno',
-  'Updated {environment} target': 'Cíl pro {environment} upraven',
+  'Updated {environment} server': 'Server pro {environment} upraven',
   'Pipeline updated': 'Pipeline upravena',
   'Deleted {name}': '{name} smazán',
   // i18n/index.ts
@@ -1162,6 +1183,22 @@ export const cs = {
   'Commits and CI runs across your projects will show up here.':
     'Zobrazí se tu commity a běhy CI ze všech vašich projektů.',
   // pages/Admin.tsx
+  'The update to InitPad {version} failed and the previous version could not be restored automatically. Follow the recovery steps in the update history.':
+    'Aktualizace na InitPad {version} selhala a předchozí verzi se nepodařilo automaticky obnovit. Postupujte podle kroků obnovy v historii aktualizací.',
+  'Make @{username} a platform administrator?': 'Udělat z @{username} administrátora platformy?',
+  'Remove the administrator role from @{username}?':
+    'Odebrat uživateli @{username} roli administrátora?',
+  'The account keeps its workspaces and projects but loses instance administration.':
+    'Účet si ponechá své workspace a projekty, ale přijde o správu instance.',
+  'Make administrator': 'Udělat administrátorem',
+  'Remove administrator role': 'Odebrat roli administrátora',
+  'The account receives instance-wide user administration permissions.':
+    'Účet získá oprávnění spravovat uživatele celé instance.',
+  'At least one active administrator always remains.':
+    'Vždy zůstane alespoň jeden aktivní administrátor.',
+  '@{username} is now a platform administrator': '@{username} je teď administrátorem platformy',
+  '@{username} is no longer a platform administrator':
+    '@{username} už není administrátorem platformy',
   'Deployed applications can read sessions': 'Nasazené aplikace mohou číst relace',
   'Applications on the built-in Docker server use this InitPad host name over HTTP, so browsers send them the InitPad session of anyone who opens them. Serve InitPad over HTTPS (server profile) or set INITPAD_DEPLOY_PUBLIC_HOST to a different host name before other people deploy here.':
     'Aplikace na vestavěném Docker serveru používají přes HTTP stejný název hostu jako InitPad, takže jim prohlížeč posílá relaci InitPadu každého, kdo je otevře. Než sem začnou nasazovat další lidé, provozujte InitPad přes HTTPS (serverový profil) nebo nastavte INITPAD_DEPLOY_PUBLIC_HOST na jiný název hostu.',
@@ -1273,6 +1310,7 @@ export const cs = {
   'Account created': 'Účet založen',
   'Activation link issued': 'Aktivační odkaz vydán',
   'Account deactivated': 'Účet deaktivován',
+  'Platform role changed': 'Změněna role na platformě',
   'Account reactivated': 'Účet znovu aktivován',
   'Password reset by an administrator': 'Heslo obnovil administrátor',
   'Other sessions signed out': 'Ostatní relace odhlášeny',
@@ -1291,6 +1329,8 @@ export const cs = {
   'Member added': 'Člen přidán',
   'Member role changed': 'Změna role člena',
   'Member removed': 'Člen odebrán',
+  'Member left': 'Člen odešel',
+  'Ownership transferred': 'Vlastnictví předáno',
   'Project created': 'Projekt vytvořen',
   'Project imported': 'Projekt importován',
   'Project creation requested': 'Žádost o vytvoření projektu',
@@ -1298,7 +1338,7 @@ export const cs = {
   'Project import requested': 'Žádost o import projektu',
   'Project import completed': 'Import projektu dokončen',
   'Project deleted': 'Projekt smazán',
-  'Environment target changed': 'Změna cíle prostředí',
+  'Environment server changed': 'Změna serveru prostředí',
   'Promotion requested': 'Žádost o povýšení',
   'Promotion completed': 'Povýšení dokončeno',
   'Rollback requested': 'Žádost o rollback',
@@ -1317,13 +1357,13 @@ export const cs = {
   'Production approval accepted': 'Schválení produkce přijato',
   'Production approval failed': 'Schválení produkce selhalo',
   'Production request became stale': 'Žádost o produkci zastarala',
-  'Target created': 'Cíl vytvořen',
-  'Target updated': 'Cíl upraven',
-  'Target connected': 'Cíl připojen',
-  'Target disconnected': 'Cíl odpojen',
-  'Target retired': 'Cíl vyřazen',
-  'Target restored': 'Cíl obnoven',
-  'Target deleted': 'Cíl smazán',
+  'Server created': 'Server vytvořen',
+  'Server updated': 'Server upraven',
+  'Server connected': 'Server připojen',
+  'Server disconnected': 'Server odpojen',
+  'Server retired': 'Server vyřazen',
+  'Server restored': 'Server obnoven',
+  'Server deleted': 'Server smazán',
   'Allocation created': 'Přidělení vytvořeno',
   'Allocation updated': 'Přidělení upraveno',
   'Allocation deleted': 'Přidělení smazáno',
@@ -1447,8 +1487,10 @@ export const cs = {
   'Open {name}': 'Otevřít {name}',
   // pages/ForgotPassword.tsx
   'Reset your password': 'Obnovení hesla',
-  'If an account matches that username or e-mail, a reset link has been created. Check your inbox — or, on a self-hosted instance without e-mail, ask your administrator for the link.':
-    'Pokud tomuto uživatelskému jménu nebo e-mailu odpovídá nějaký účet, byl vytvořen odkaz pro obnovení. Podívejte se do schránky — nebo v self-hosted instanci bez e-mailu požádejte o odkaz administrátora.',
+  'This InitPad instance cannot send e-mail, so it cannot send a reset link. Ask your administrator to reset your password; you will get a temporary password to sign in with.':
+    'Tato instance InitPadu neumí odesílat e-maily, takže odkaz pro obnovení poslat nemůže. Požádejte administrátora o obnovení hesla; dostanete dočasné heslo pro přihlášení.',
+  'If an account matches that username or e-mail, we sent a reset link to its e-mail address. Check your inbox.':
+    'Pokud tomuto uživatelskému jménu nebo e-mailu odpovídá nějaký účet, poslali jsme na jeho e-mail odkaz pro obnovení. Podívejte se do schránky.',
   'Enter your username or e-mail and we’ll send a reset link.':
     'Zadejte uživatelské jméno nebo e-mail a pošleme vám odkaz pro obnovení.',
   'Send reset link': 'Odeslat odkaz pro obnovení',
@@ -1486,7 +1528,6 @@ export const cs = {
     'Pro tento workspace není autorizována žádná instalace GitHubu. <link>Otevřít nastavení účtu</link>',
   'No repositories available to import.': 'K importu nejsou k dispozici žádné repozitáře.',
   'The stages a verified build moves through.': 'Stupně, kterými ověřený build prochází.',
-  'Deployment targets': 'Cíle nasazení',
   'Where each environment runs.': 'Kde jednotlivá prostředí běží.',
   'Check and import': 'Kontrola a import',
   'Preflight inspects the repository before anything is changed.':
@@ -1528,8 +1569,8 @@ export const cs = {
   'dev lifetime': 'životnost dev',
   'test lifetime': 'životnost test',
   'Save changes to {name}?': 'Uložit změny serveru {name}?',
-  'Target settings control where and how future deployments are published.':
-    'Nastavení cíle určuje, kam a jak se budou publikovat budoucí nasazení.',
+  'Server settings control where and how future deployments are published.':
+    'Nastavení serveru určuje, kam a jak se budou publikovat budoucí nasazení.',
   'Save server changes': 'Uložit změny serveru',
   'Changed settings': 'Změněná nastavení',
   'Existing running deployments are not moved automatically.':
@@ -1661,10 +1702,10 @@ export const cs = {
   '{issue} Configure a public HTTPS <code>INITPAD_PUBLIC_URL</code> and restart InitPad.':
     '{issue} Nastavte veřejnou HTTPS adresu <code>INITPAD_PUBLIC_URL</code> a restartujte InitPad.',
   'The language and runtime to start from.': 'Jazyk a runtime, ze kterých projekt vyjde.',
-  'Update target capabilities': 'Upravit runtimy cíle',
+  'Update server capabilities': 'Upravit runtimy serveru',
   Summary: 'Souhrn',
   Environments: 'Prostředí',
-  'No target chosen': 'Cíl není vybrán',
+  'No server chosen': 'Server není vybrán',
   'The project moves through <b>{stages}</b>.': 'Projekt prochází stupni <b>{stages}</b>.',
   'CI verifies the build without publishing it; request production from the project detail.':
     'CI build ověří, ale nepublikuje; o produkci požádáte z detailu projektu.',
@@ -1707,8 +1748,8 @@ export const cs = {
   'Back to projects': 'Zpět na projekty',
   'Loading project': 'Načítání projektu',
   'Request production deployment?': 'Požádat o nasazení do produkce?',
-  'The exact verified {source} build, target and production configuration revision will be locked for review.':
-    'Přesný ověřený build ({source}), cíl a revize produkční konfigurace se uzamknou pro posouzení.',
+  'The exact verified {source} build, server and production configuration revision will be locked for review.':
+    'Přesný ověřený build ({source}), server a revize produkční konfigurace se uzamknou pro posouzení.',
   source: 'zdroj',
   'Create request': 'Vytvořit žádost',
   Version: 'Verze',
@@ -1716,18 +1757,18 @@ export const cs = {
   production: 'produkce',
   'No production workload changes until an authorized reviewer approves.':
     'Produkční workload se nezmění, dokud žádost neschválí oprávněný posuzovatel.',
-  'Changing the build, target or production variables invalidates this request.':
-    'Změna buildu, cíle nebo produkčních proměnných tuto žádost zneplatní.',
+  'Changing the build, server or production variables invalidates this request.':
+    'Změna buildu, serveru nebo produkčních proměnných tuto žádost zneplatní.',
   'Request production redeploy?': 'Požádat o opětovné nasazení produkce?',
   'The current verified production build and configuration revision will be submitted for review.':
     'Současný ověřený produkční build a revize konfigurace se odešlou k posouzení.',
-  'Changing the target or production variables invalidates this request.':
-    'Změna cíle nebo produkčních proměnných tuto žádost zneplatní.',
+  'Changing the server or production variables invalidates this request.':
+    'Změna serveru nebo produkčních proměnných tuto žádost zneplatní.',
   'Approve and deploy to production?': 'Schválit a nasadit do produkce?',
-  'Approval starts deployment of the exact reviewed build to the recorded production target.':
-    'Schválením se spustí nasazení přesně toho posouzeného buildu na zaznamenaný produkční cíl.',
-  'Production is changed only if the reviewed target and configuration revision still match.':
-    'Produkce se změní jen tehdy, pokud posouzený cíl a revize konfigurace stále odpovídají.',
+  'Approval starts deployment of the exact reviewed build to the recorded production server.':
+    'Schválením se spustí nasazení přesně toho posouzeného buildu na zaznamenaný produkční server.',
+  'Production is changed only if the reviewed server and configuration revision still match.':
+    'Produkce se změní jen tehdy, pokud posouzený server a revize konfigurace stále odpovídají.',
   'The action and resulting deployment are recorded separately in the audit log.':
     'Akce i výsledné nasazení se v auditním logu zaznamenají zvlášť.',
   'Reject production request?': 'Zamítnout žádost o produkci?',
@@ -1750,8 +1791,8 @@ export const cs = {
   'Remove the {environment} deployment?': 'Odstranit nasazení {environment}?',
   'InitPad will cancel the active operation and clean up any managed partial workload.':
     'InitPad zruší probíhající operaci a uklidí případný spravovaný částečný workload.',
-  'InitPad will remove the managed workload from its assigned target.':
-    'InitPad odstraní spravovaný workload z přiřazeného cíle.',
+  'InitPad will remove the managed workload from its assigned server.':
+    'InitPad odstraní spravovaný workload z přiřazeného serveru.',
   'Cancel deployment': 'Zrušit nasazení',
   'The public application for this environment becomes unavailable.':
     'Veřejná aplikace tohoto prostředí přestane být dostupná.',
@@ -1759,8 +1800,8 @@ export const cs = {
     'Dřívější ověřené buildy zůstávají v historii projektu a lze je nasadit znovu.',
   'The verified build remains in project history and can be deployed again.':
     'Ověřený build zůstává v historii projektu a lze ho nasadit znovu.',
-  'InitPad never deletes unrelated files or the physical target.':
-    'InitPad nikdy nemaže nesouvisející soubory ani fyzický cíl.',
+  'InitPad never deletes unrelated files or the physical server.':
+    'InitPad nikdy nemaže nesouvisející soubory ani fyzický server.',
   'Change project pipeline?': 'Změnit pipeline projektu?',
   'The configured deployment stages will change for future operations.':
     'Nastavené stupně nasazení se změní pro budoucí operace.',

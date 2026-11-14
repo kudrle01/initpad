@@ -25,7 +25,6 @@ function input(overrides: Record<string, unknown> = {}) {
       description: 'Node service',
     },
     repository: REPOSITORY,
-    projectRepoPath: '/workspace/acme-api',
     version: 'a'.repeat(40),
     useRegistry: true,
     testedImageRef: 'registry.test/acme/api:' + 'a'.repeat(40),
@@ -60,7 +59,7 @@ describe('ProjectDeploymentPreparation', () => {
 
     const prepared = await preparation.prepare(prepareInput);
 
-    expect(prepared.repoPath).toBe('/workspace/acme-api');
+    expect(prepared.repoPath).toBe('');
     expect(prepared.envVars).toEqual({ DATABASE_URL: 'secret' });
     expect(prepareInput.resolveActor).not.toHaveBeenCalled();
     expect(scm.downloadArchive).not.toHaveBeenCalled();
@@ -156,6 +155,44 @@ describe('ProjectDeploymentPreparation', () => {
         }),
       ),
     ).rejects.toThrow('secret unavailable');
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates the concrete source download error instead of using a local checkout', async () => {
+    const scm = {
+      downloadArchive: jest.fn(async () => {
+        throw new Error(
+          'Could not download the source of acme/api@aaaaaaaaaaaa from Gitea: HTTP 502',
+        );
+      }),
+    };
+    const preparation = make({}, scm);
+
+    await expect(
+      preparation.prepare(
+        input({
+          provider: 'sftp',
+          useRegistry: false,
+          template: {
+            id: 'static',
+            name: 'Static',
+            language: 'HTML',
+            artifact: 'static',
+            compatibleProviders: ['sftp'],
+            description: 'Static site',
+          },
+        }),
+      ),
+    ).rejects.toThrow('from Gitea: HTTP 502');
+    expect(scm.downloadArchive).toHaveBeenCalledTimes(1);
+  });
+
+  it('deploys exactly the downloaded source tree', async () => {
+    const cleanup = jest.fn();
+    const scm = { downloadArchive: jest.fn(async () => ({ dir: '/tmp/source', cleanup })) };
+    const prepared = await make({}, scm).prepare(input({ provider: 'sftp', useRegistry: false }));
+    expect(prepared.repoPath).toBe('/tmp/source');
+    prepared.cleanup();
     expect(cleanup).toHaveBeenCalledTimes(1);
   });
 });

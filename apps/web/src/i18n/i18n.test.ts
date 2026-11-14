@@ -1,7 +1,16 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
-import { getLocale, plural, relativeTime, resolveLocale, rich, setLocale, t } from '@/i18n';
+import {
+  getLocale,
+  loadLocaleMessages,
+  plural,
+  relativeTime,
+  resolveLocale,
+  rich,
+  setLocale,
+  t,
+} from '@/i18n';
 import { cs } from './cs';
 import { statusLabel } from './labels';
 import { PLURALS } from './plurals';
@@ -9,6 +18,7 @@ import { PLURALS } from './plurals';
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 const tags = (text: string) => [...text.matchAll(/<\/?(\w+)>/g)].map((m) => m[1]).sort();
 
+beforeAll(() => loadLocaleMessages('cs'));
 afterEach(() => setLocale('en'));
 
 describe('Czech dictionary', () => {

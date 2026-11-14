@@ -288,3 +288,61 @@ test('discards only the failed candidate during route rollback', async () => {
   assert.equal(deletes.length, 1);
   assert.match(deletes[0].path, new RegExp('d'.repeat(64)));
 });
+
+test('reattaches a replaced gateway only to owned networks with a running workload', async () => {
+  const gatewayId = 'new-gateway-id';
+  const owned = {
+    'com.initpad.managed': 'true',
+    'com.initpad.target': 'target-1',
+    'com.initpad.routing.mode': 'managed-gateway',
+  };
+  const networks: Record<
+    string,
+    { Containers: Record<string, unknown>; Labels: Record<string, string> }
+  > = {
+    'net-active': { Containers: { ['w'.repeat(64)]: {} }, Labels: owned },
+    'net-stopped': { Containers: {}, Labels: owned },
+    'net-attached': { Containers: { ['w'.repeat(64)]: {}, [gatewayId]: {} }, Labels: owned },
+    'net-foreign': {
+      Containers: { ['x'.repeat(64)]: {} },
+      Labels: { ...owned, 'com.initpad.target': 'other' },
+    },
+  };
+  const connects: string[] = [];
+  const transport: DockerTransport = async (request) => {
+    const path = decodeURIComponent(request.path);
+    if (path === '/containers/initpad-gateway/json') {
+      return response(200, {
+        Id: gatewayId,
+        Config: { Labels: { 'com.initpad.gateway': 'true' } },
+        State: { Running: true },
+      });
+    }
+    if (path.startsWith('/networks?filters=')) {
+      assert.match(path, /com\.initpad\.target=target-1/);
+      return response(
+        200,
+        Object.keys(networks).map((Name) => ({ Name })),
+      );
+    }
+    const connect = /^\/networks\/([^/]+)\/connect$/.exec(path);
+    if (connect && request.method === 'POST') {
+      connects.push(connect[1]);
+      return response(200);
+    }
+    const inspect = /^\/networks\/([^/]+)$/.exec(path);
+    if (inspect) return response(200, networks[inspect[1]]);
+    return response(500, { message: `unexpected ${request.method} ${path}` });
+  };
+  const network = new GatewayDockerNetwork(
+    'target-1',
+    'unix:///var/run/docker.sock',
+    transport,
+    'initpad-gateway',
+  );
+
+  assert.deepEqual(await network.reattachActiveWorkloads(new AbortController().signal), [
+    'net-active',
+  ]);
+  assert.deepEqual(connects, ['net-active']);
+});

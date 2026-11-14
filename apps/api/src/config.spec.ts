@@ -1,4 +1,4 @@
-import { builtInAppsShareSessionCookie, config, validateConfig } from './config';
+import { builtInAppsShareSessionCookie, config, resolvePublicUrls, validateConfig } from './config';
 
 describe('validateConfig production secrets', () => {
   const fakePrivateKey = [
@@ -13,6 +13,7 @@ describe('validateConfig production secrets', () => {
   const originalCi = { ...config.ci };
   const originalMail = { ...config.mail };
   const originalEdition = config.edition;
+  const originalPublicUrls = { frontend: config.auth.frontendUrl, oidc: config.oidc.publicUrl };
   const originalSecrets = {
     jwtSecret: config.auth.jwtSecret,
     encryptionKey: config.security.encryptionKey,
@@ -23,6 +24,8 @@ describe('validateConfig production secrets', () => {
 
   beforeEach(() => {
     process.env.NODE_ENV = 'production';
+    config.auth.frontendUrl = 'https://initpad.example.test';
+    config.oidc.publicUrl = 'https://initpad.example.test/api';
     config.auth.jwtSecret = 'test-jwt-secret-0123456789abcdef0123';
     config.security.encryptionKey = 'test-encryption-key-0123456789abcdef';
     config.security.previousEncryptionKeys = [];
@@ -52,6 +55,19 @@ describe('validateConfig production secrets', () => {
     Object.assign(config.ci, originalCi);
     Object.assign(config.mail, originalMail);
     config.edition = originalEdition;
+    config.auth.frontendUrl = originalPublicUrls.frontend;
+    config.oidc.publicUrl = originalPublicUrls.oidc;
+  });
+
+  it('refuses the built-in localhost defaults but accepts an explicit local URL (audit P3)', () => {
+    config.auth.frontendUrl = 'http://localhost:5173';
+    expect(() => validateConfig()).toThrow('set INITPAD_PUBLIC_URL');
+    config.auth.frontendUrl = 'https://initpad.example.test';
+    config.oidc.publicUrl = 'http://localhost:3000/api';
+    expect(() => validateConfig()).toThrow('set INITPAD_PUBLIC_URL');
+    config.auth.frontendUrl = 'http://localhost:8080';
+    config.oidc.publicUrl = 'http://localhost:8080/api';
+    expect(() => validateConfig()).not.toThrow('INITPAD_PUBLIC_URL');
   });
 
   it('requires an explicit encryption key separate from the JWT secret (ADR-141)', () => {
@@ -347,5 +363,44 @@ describe('validateConfig production secrets', () => {
       config.auth.frontendUrl = original.frontendUrl;
       config.publicHost = original.publicHost;
     }
+  });
+});
+
+describe('public platform URL (audit P3)', () => {
+  it('derives every public URL from INITPAD_PUBLIC_URL', () => {
+    expect(resolvePublicUrls({ INITPAD_PUBLIC_URL: 'https://initpad.example/' })).toEqual({
+      frontendUrl: 'https://initpad.example',
+      platformPublicUrl: 'https://initpad.example',
+      oidcPublicUrl: 'https://initpad.example/api',
+    });
+  });
+
+  it('keeps the specific variables of existing .env files as overrides', () => {
+    expect(
+      resolvePublicUrls({
+        INITPAD_PUBLIC_URL: 'https://initpad.example',
+        INITPAD_FRONTEND_URL: 'https://app.example',
+        INITPAD_PLATFORM_PUBLIC_URL: 'https://api.example',
+        INITPAD_OIDC_PUBLIC_URL: 'https://sso.example/api',
+      }),
+    ).toEqual({
+      frontendUrl: 'https://app.example',
+      platformPublicUrl: 'https://api.example',
+      oidcPublicUrl: 'https://sso.example/api',
+    });
+    // An older .env with only INITPAD_FRONTEND_URL keeps working.
+    expect(resolvePublicUrls({ INITPAD_FRONTEND_URL: 'https://app.example' })).toEqual({
+      frontendUrl: 'https://app.example',
+      platformPublicUrl: 'https://app.example',
+      oidcPublicUrl: 'https://app.example/api',
+    });
+  });
+
+  it('falls back to the development defaults without any public URL', () => {
+    expect(resolvePublicUrls({})).toEqual({
+      frontendUrl: 'http://localhost:5173',
+      platformPublicUrl: '',
+      oidcPublicUrl: 'http://localhost:3000/api',
+    });
   });
 });

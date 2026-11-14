@@ -9,6 +9,7 @@ import {
 } from './config.js';
 import { enroll } from './control-plane.js';
 import { inspectDocker } from './docker.js';
+import { checkJobLoop } from './job-loop-liveness.js';
 import { heartbeatOnce, runAgent } from './runtime.js';
 import { readSecret } from './secret-prompt.js';
 import { AGENT_VERSION, PROTOCOL_VERSION } from './types.js';
@@ -124,7 +125,9 @@ async function main(): Promise<void> {
   }
   if (cli.command === 'health') {
     const docker = await inspectDocker();
-    console.log(`ok: Docker ${docker.engineVersion}, target ${config.targetId}`);
+    const loop = await checkJobLoop();
+    if (!loop.ok) throw new Error(`unhealthy: ${loop.message}`);
+    console.log(`ok: Docker ${docker.engineVersion}, target ${config.targetId}, ${loop.message}`);
     return;
   }
   if (cli.command === 'once') {

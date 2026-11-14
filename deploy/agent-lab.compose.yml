@@ -195,6 +195,9 @@ services:
       # The diagnostic port exists only inside the private outer lab network;
       # the browser-facing endpoint is the fixed gateway listener above.
       INITPAD_AGENT_MANAGED_HEALTH_BIND: 0.0.0.0
+      # Direct-port workloads must land in the range agent-lab-ports forwards;
+      # the Agent's default range would leave every app link unreachable.
+      INITPAD_AGENT_DIRECT_PORT_RANGE: "${INITPAD_AGENT_LAB_PORT_START:-42000}-${INITPAD_AGENT_LAB_PORT_END:-42031}"
       # Node reads this CA at process start. The dependency below guarantees
       # Caddy has generated it before either Agent identity starts.
       NODE_EXTRA_CA_CERTS: /var/lib/initpad-edge/caddy/pki/authorities/local/root.crt

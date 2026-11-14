@@ -1,7 +1,9 @@
 import { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Activity as ActivityIcon, GitCommit } from 'lucide-react';
-import { api } from '@/api';
+import { api, type ActivityFeed } from '@/api';
+import { Notice } from '@/components/molecules/Notice';
+import { translateApiMessage } from '@/lib/api-messages';
 import { Card } from '@/components/ui/card';
 import { List, ListRow } from '@/components/molecules/List';
 import { PageHeader } from '@/components/molecules/PageHeader';
@@ -11,18 +13,23 @@ import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { StatusDot } from '@/components/atoms/StatusDot';
 import { useAuth } from '@/auth';
 import { useLoadable } from '@/hooks/useLoadable';
-import type { ActivityEvent } from '@/types';
 import { t, relativeTime } from '@/i18n';
 import { externalHref } from '@/lib/utils';
 
 export default function Activity() {
   const { activeWorkspace } = useAuth();
   const workspaceId = activeWorkspace?.id;
-  const loadEvents = useCallback(
-    () => (workspaceId ? api.getActivity() : Promise.resolve([])),
+  const loadFeed = useCallback(
+    (): Promise<ActivityFeed> =>
+      workspaceId ? api.getActivityFeed() : Promise.resolve({ events: [], warnings: [] }),
     [workspaceId],
   );
-  const { data: events, loading, error, reload } = useLoadable<ActivityEvent[]>(loadEvents, []);
+  const {
+    data: { events, warnings },
+    loading,
+    error,
+    reload,
+  } = useLoadable<ActivityFeed>(loadFeed, { events: [], warnings: [] });
 
   return (
     <div>
@@ -30,6 +37,22 @@ export default function Activity() {
         title={t('Development activity')}
         description={t('Recent commits and their pipeline runs across this workspace.')}
       />
+
+      {!error && !loading && warnings.length > 0 && (
+        <Notice tone="warning" className="mb-4" title={t('Some repository activity is missing')}>
+          <ul className="space-y-1">
+            {warnings.map((warning) => (
+              <li key={warning.projectId} className="break-words">
+                <Link to={`/projects/${warning.projectId}`} className="text-link font-medium">
+                  {warning.projectName}
+                </Link>
+                {': '}
+                {translateApiMessage(warning.message)}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      )}
 
       {error ? (
         <LoadErrorState message={error} onRetry={reload} />

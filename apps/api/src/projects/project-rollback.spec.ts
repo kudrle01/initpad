@@ -83,6 +83,19 @@ describe('ProjectRollback', () => {
       },
       sourceDeployedAt: NOW.toISOString(),
       stateToken: expect.stringMatching(/^[a-f0-9]{64}$/),
+      candidates: [
+        {
+          candidateOperationId: 'previous-operation',
+          version: PREVIOUS,
+          artifact: {
+            id: 'artifact-previous',
+            provider: 'github-actions',
+            digest: 'd'.repeat(64),
+            runId: '77',
+          },
+          deployedAt: NOW.toISOString(),
+        },
+      ],
     });
     expect(prisma.deploymentOperation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -160,5 +173,59 @@ describe('ProjectRollback', () => {
       rollback.execute('project-1', 'test', 'previous-operation', '0'.repeat(64)),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(schedule).toHaveBeenCalledTimes(1);
+  });
+
+  describe('several rollback points', () => {
+    // Regression (audit P3): rollback offered only the single previous build.
+    const OLDER = 'c'.repeat(40);
+    const OLDEST = 'e'.repeat(40);
+
+    function withHistory() {
+      const prisma = {
+        environment: { findUnique: jest.fn(async () => environment()) },
+        deploymentOperation: {
+          findMany: jest.fn(async () => [
+            publication('previous-operation', PREVIOUS, artifact('artifact-previous')),
+            // A redeploy of the same build is not another rollback point.
+            publication('previous-redeploy', PREVIOUS, artifact('artifact-previous')),
+            publication('older-operation', OLDER, artifact('artifact-older')),
+            publication('expired-operation', OLDEST, artifact('artifact-expired', 'failed')),
+          ]),
+        },
+      };
+      const schedule = jest.fn(async () => undefined);
+      return { rollback: new ProjectRollback(prisma as never, schedule), schedule };
+    }
+
+    it('lists distinct verified builds newest first, without expired ones', async () => {
+      const { rollback } = withHistory();
+
+      const preview = await rollback.preview('project-1', 'dev');
+
+      expect(preview?.candidateOperationId).toBe('previous-operation');
+      expect(preview?.candidates.map((candidate) => candidate.candidateOperationId)).toEqual([
+        'previous-operation',
+        'older-operation',
+      ]);
+    });
+
+    it('rolls back to an older candidate chosen by the user', async () => {
+      const { rollback, schedule } = withHistory();
+      const preview = await rollback.preview('project-1', 'dev');
+
+      await rollback.execute('project-1', 'dev', 'older-operation', preview!.stateToken, 'user-1');
+
+      expect(schedule).toHaveBeenCalledWith('project-1', 'dev', OLDER, 'artifact-older', 'user-1');
+    });
+
+    it('refuses a candidate that is no longer offered', async () => {
+      const { rollback, schedule } = withHistory();
+      const preview = await rollback.preview('project-1', 'dev');
+
+      await expect(
+        rollback.execute('project-1', 'dev', 'expired-operation', preview!.stateToken),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(schedule).not.toHaveBeenCalled();
+    });
   });
 });

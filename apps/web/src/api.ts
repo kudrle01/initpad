@@ -31,10 +31,12 @@ import type {
   DeployStatus,
   PipelinePreset,
   WorkspaceCapacity,
+  WorkspaceCapacityPage,
   WorkspaceCapacityUpdate,
   UserSessionSummary,
 } from '@/types';
 import { t } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 
 export interface EnvConfig {
   name: EnvName;
@@ -175,6 +177,18 @@ function auditQuery(filters: AuditEventFilters): string {
   return query.toString();
 }
 
+// Repository activity that could not be read; the feed still lists the rest.
+export interface ActivityWarning {
+  projectId: string;
+  projectName: string;
+  message: string;
+}
+
+export interface ActivityFeed {
+  events: ActivityEvent[];
+  warnings: ActivityWarning[];
+}
+
 export interface GitHubStatus {
   enabled: boolean;
   appConfigured: boolean;
@@ -201,18 +215,31 @@ export interface GitHubStatus {
 
 const BASE = '/api';
 const REQUEST_TIMEOUT_MS = 30_000;
+// Creating and importing a project run synchronously on the API (repository,
+// CI secrets, first commit), which regularly takes longer than a normal request.
+export const PROJECT_SETUP_TIMEOUT_MS = 180_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 export const AUTH_EXPIRED_EVENT = 'initpad:auth-expired';
 
 // Error carrying the HTTP status, so callers can distinguish "gone" (404)
-// from other failures.
+// from other failures. `message` is translated when the API text is known
+// (ADR-185); `apiMessage` keeps the original English text.
 export class ApiError extends Error {
+  readonly apiMessage: string;
+
   constructor(
     message: string,
     readonly status: number,
+    apiMessage?: string,
   ) {
     super(message);
+    this.apiMessage = apiMessage ?? message;
   }
+}
+
+/** Per-call options; `signal` lets a page abandon a request it no longer needs. */
+export interface RequestOptions {
+  signal?: AbortSignal;
 }
 
 async function responseErrorMessage(response: Response): Promise<string> {
@@ -220,8 +247,28 @@ async function responseErrorMessage(response: Response): Promise<string> {
   if (body && typeof body === 'object' && !Array.isArray(body)) {
     const message = (body as Record<string, unknown>).message;
     if (typeof message === 'string' && message.trim()) return message;
+    // Validation errors arrive as a list of messages.
+    if (Array.isArray(message)) {
+      const parts = message.filter(
+        (part): part is string => typeof part === 'string' && !!part.trim(),
+      );
+      if (parts.length) return parts.join('; ');
+    }
   }
   return `HTTP ${response.status}`;
+}
+
+async function responseError(response: Response): Promise<ApiError> {
+  const raw = await responseErrorMessage(response);
+  let message = translateApiMessage(raw);
+  // A list of validation messages is translated item by item.
+  if (message === raw && raw.includes('; ')) {
+    message = raw
+      .split('; ')
+      .map((part) => translateApiMessage(part))
+      .join('; ');
+  }
+  return new ApiError(message, response.status, raw);
 }
 
 async function http<T>(
@@ -244,7 +291,7 @@ async function http<T>(
   );
   if (!res.ok) {
     if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-    throw new ApiError(await responseErrorMessage(res), res.status);
+    throw await responseError(res);
   }
   // 204 / empty body (e.g. DELETE) — nothing to parse.
   const text = await res.text();
@@ -262,7 +309,7 @@ async function download(path: string): Promise<{ blob: Blob; filename: string }>
   );
   if (!res.ok) {
     if (res.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-    throw new ApiError(await responseErrorMessage(res), res.status);
+    throw await responseError(res);
   }
   const disposition = res.headers.get('Content-Disposition') ?? '';
   const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'initpad-metrics';
@@ -347,22 +394,41 @@ export const api = {
     }),
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
+  leaveWorkspace: (workspaceId: string) =>
+    http<void>(`/workspaces/${workspaceId}/leave`, { method: 'POST' }),
+  transferWorkspaceOwnership: (workspaceId: string, userId: string) =>
+    http<WorkspaceMember[]>(`/workspaces/${workspaceId}/transfer-ownership`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }),
   listProjects: () => http<Project[]>('/projects'),
-  getProject: (id: string) => http<Project>(`/projects/${id}`),
-  getCommits: (id: string, limit = 20) => http<Commit[]>(`/projects/${id}/commits?limit=${limit}`),
-  getDeployments: (id: string, limit = 30) =>
-    http<DeploymentOperation[]>(`/projects/${id}/deployments?limit=${limit}`),
-  getProvisioning: (id: string) => http<ProvisioningStatus | null>(`/projects/${id}/provisioning`),
+  getProject: (id: string, options?: RequestOptions) => http<Project>(`/projects/${id}`, options),
+  getCommits: (id: string, limit = 20, options?: RequestOptions) =>
+    http<Commit[]>(`/projects/${id}/commits?limit=${limit}`, options),
+  getDeployments: (id: string, limit = 30, options?: RequestOptions) =>
+    http<DeploymentOperation[]>(`/projects/${id}/deployments?limit=${limit}`, options),
+  getProvisioning: (id: string, options?: RequestOptions) =>
+    http<ProvisioningStatus | null>(`/projects/${id}/provisioning`, options),
   listProvisioning: () => http<ProvisioningStatus[]>('/provisioning'),
   retryProvisioning: (id: string) => http<Project>(`/provisioning/${id}/retry`, { method: 'POST' }),
   cleanupProvisioning: (id: string) =>
     http<void>(`/provisioning/${id}/cleanup`, { method: 'POST' }),
   dismissProvisioning: (id: string) =>
     http<void>(`/provisioning/${id}/dismiss`, { method: 'POST' }),
-  listTemplates: () => http<TemplateManifest[]>('/templates'),
+  listTemplates: (options?: RequestOptions) => http<TemplateManifest[]>('/templates', options),
   downloadTemplateWorkflow: (templateId: string, provider: 'gitea' | 'github') =>
     download(`/templates/${encodeURIComponent(templateId)}/workflows/${provider}`),
   getActivity: () => http<ActivityEvent[]>('/activity'),
+  /** Feed with per-project warnings; an older API without it falls back to `/activity`. */
+  getActivityFeed: async (): Promise<ActivityFeed> => {
+    try {
+      const feed = await http<Partial<ActivityFeed>>('/activity/feed?scm=true');
+      return { events: feed.events ?? [], warnings: feed.warnings ?? [] };
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+      return { events: await http<ActivityEvent[]>('/activity'), warnings: [] };
+    }
+  },
   getAuditEvents: (filters: AuditEventFilters = {}) =>
     http<AuditEventPage>(`/audit-events?${auditQuery(filters)}`),
   // Sign-in, account administration and events of deleted workspaces.
@@ -375,21 +441,26 @@ export const api = {
     pipelinePreset: PipelinePreset,
     scmInstallationId?: string,
   ) =>
-    http<Project>('/projects', {
-      method: 'POST',
-      body: JSON.stringify({
-        name,
-        templateId,
-        environments,
-        pipelinePreset,
-        scmInstallationId,
-      }),
-    }),
+    http<Project>(
+      '/projects',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          templateId,
+          environments,
+          pipelinePreset,
+          scmInstallationId,
+        }),
+      },
+      PROJECT_SETUP_TIMEOUT_MS,
+    ),
   listImportableRepos: () => http<ImportableRepo[]>('/projects/import/repos'),
-  importPreflight: (repositoryId: string, templateId: string) =>
+  importPreflight: (repositoryId: string, templateId: string, options?: RequestOptions) =>
     http<ImportPreflight>('/projects/import/preflight', {
       method: 'POST',
       body: JSON.stringify({ repositoryId, templateId }),
+      ...options,
     }),
   importRepo: (
     repositoryId: string,
@@ -397,10 +468,14 @@ export const api = {
     environments: EnvConfig[],
     pipelinePreset: PipelinePreset,
   ) =>
-    http<Project>('/projects/import', {
-      method: 'POST',
-      body: JSON.stringify({ repositoryId, templateId, environments, pipelinePreset }),
-    }),
+    http<Project>(
+      '/projects/import',
+      {
+        method: 'POST',
+        body: JSON.stringify({ repositoryId, templateId, environments, pipelinePreset }),
+      },
+      PROJECT_SETUP_TIMEOUT_MS,
+    ),
   updatePipelinePreset: (id: string, pipelinePreset: PipelinePreset, environments: EnvConfig[]) =>
     http<Project>(`/projects/${id}/pipeline-preset`, {
       method: 'PUT',
@@ -615,7 +690,8 @@ export const api = {
     http<{ username: string; token: string | null; giteaUrl: string }>('/me/git-access'),
   // Instance administration (platform admin only).
   adminListUsers: () => http<AdminUser[]>('/admin/users'),
-  adminListWorkspaceCapacity: () => http<WorkspaceCapacity[]>('/admin/workspaces/capacity'),
+  adminListWorkspaceCapacity: (offset = 0, limit = 25) =>
+    http<WorkspaceCapacityPage>(`/admin/workspaces/capacity?limit=${limit}&offset=${offset}`),
   adminUpdateWorkspaceCapacity: (workspaceId: string, body: WorkspaceCapacityUpdate) =>
     http<WorkspaceCapacity>(`/admin/workspaces/${workspaceId}/capacity`, {
       method: 'PUT',
@@ -643,7 +719,13 @@ export const api = {
       temporaryPassword: string;
       activationUrl?: string;
       activationDelivery: 'email' | 'manual';
+      activationError?: string;
     }>('/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+  adminSetPlatformRole: (id: string, platformRole: 'admin' | 'user') =>
+    http<AdminUser>(`/admin/users/${id}/platform-role`, {
+      method: 'PUT',
+      body: JSON.stringify({ platformRole }),
+    }),
   adminCreateActivationLink: (id: string) =>
     http<{ activationUrl?: string; delivery: 'email' | 'manual' }>(
       `/admin/users/${id}/activation-link`,

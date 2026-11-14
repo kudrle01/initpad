@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { PlatformUpdatesService } from './platform-updates.service';
+import { SupervisorRejectedError } from './supervisor-client.service';
 
 const requestId = '3f04ebec-3299-4ce5-bd02-cf390ca413e9';
 const operationId = '8617bbb8-896d-46bb-9db7-afdc081b2b91';
@@ -167,6 +168,7 @@ describe('PlatformUpdatesService', () => {
       platformUpdateOperation: {
         findUnique: jest.fn(async () => null),
         findFirst: jest.fn(async () => null),
+        findMany: jest.fn(async () => []),
         create,
         update,
       },
@@ -211,5 +213,135 @@ describe('PlatformUpdatesService', () => {
         data: expect.objectContaining({ supervisorOperationId: operationId, status: 'accepted' }),
       }),
     );
+  });
+
+  describe('reconciliation with the Supervisor (audit P0.4)', () => {
+    function setup(rows: Array<Record<string, unknown>>, supervisorOperationValue: unknown = null) {
+      const updateMany = jest.fn(async () => ({ count: 1 }));
+      const prisma = {
+        platformUpdateOperation: {
+          findUnique: jest.fn(async () => null),
+          findMany: jest.fn(async (query: { select?: unknown }) =>
+            query.select ? rows : rows.map((item) => row(item)),
+          ),
+          updateMany,
+        },
+      };
+      const supervisor = {
+        configured: true,
+        status: jest.fn(async () => ({
+          schemaVersion: 1,
+          currentVersion: '0.2.0',
+          currentImages: null,
+          operation: supervisorOperationValue,
+        })),
+      };
+      const service = new PlatformUpdatesService(
+        prisma as never,
+        { latest: jest.fn(async () => catalog()) } as never,
+        supervisor as never,
+      );
+      return { service, prisma, updateMany };
+    }
+
+    it('marks an active row the Supervisor does not know as interrupted', async () => {
+      const { service, prisma, updateMany } = setup([
+        { id: 'row-1', status: 'running', createdAt: new Date() },
+      ]);
+      await service.status();
+      expect(prisma.platformUpdateOperation.findMany).toHaveBeenCalledWith({
+        where: { status: { in: ['requesting', 'accepted', 'running'] } },
+        select: { id: true, status: true, createdAt: true },
+      });
+      expect(updateMany).toHaveBeenCalledWith({
+        where: { id: 'row-1', status: 'running' },
+        data: expect.objectContaining({ status: 'failed', stage: 'interrupted' }),
+      });
+    });
+
+    it('waits for a fresh request but fails one the Supervisor never confirmed', async () => {
+      const fresh = setup([{ id: 'row-1', status: 'requesting', createdAt: new Date() }]);
+      await fresh.service.status();
+      expect(fresh.updateMany).not.toHaveBeenCalled();
+
+      const old = setup([
+        { id: 'row-2', status: 'requesting', createdAt: new Date(Date.now() - 6 * 60_000) },
+      ]);
+      await old.service.status();
+      expect(old.updateMany).toHaveBeenCalledWith({
+        where: { id: 'row-2', status: 'requesting' },
+        data: expect.objectContaining({ status: 'failed', stage: 'request-timeout' }),
+      });
+    });
+
+    it("excludes the Supervisor's own operation from reconciliation", async () => {
+      const { service, prisma } = setup([], supervisorOperation('running'));
+      await service.status();
+      expect(prisma.platformUpdateOperation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: { in: expect.any(Array) }, requestId: { not: requestId } },
+        }),
+      );
+    });
+  });
+
+  describe('update request without a Supervisor answer (audit P0.4)', () => {
+    function setup(failure: Error) {
+      const update = jest.fn(async ({ data }: { data: Record<string, unknown> }) =>
+        row({ supervisorOperationId: null, status: 'requesting', ...data }),
+      );
+      const prisma = {
+        platformUpdateOperation: {
+          findUnique: jest.fn(async () => null),
+          findFirst: jest.fn(async () => null),
+          findMany: jest.fn(async () => []),
+          create: jest.fn(async () => row({ supervisorOperationId: null, status: 'requesting' })),
+          update,
+        },
+        user: { findUnique: jest.fn(async () => ({ username: 'admin', name: null })) },
+      };
+      const supervisor = {
+        configured: true,
+        status: jest.fn(async () => ({
+          schemaVersion: 1,
+          currentVersion: '0.2.0',
+          currentImages: null,
+          operation: null,
+        })),
+        update: jest.fn(async () => {
+          throw failure;
+        }),
+      };
+      const service = new PlatformUpdatesService(
+        prisma as never,
+        { latest: jest.fn(async () => catalog()) } as never,
+        supervisor as never,
+      );
+      return { service, update };
+    }
+
+    it('keeps the request pending when the Supervisor times out', async () => {
+      const { service, update } = setup(
+        new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+      );
+      await expect(service.request('admin-id', requestId)).resolves.toMatchObject({
+        status: 'requesting',
+      });
+      expect(update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+      );
+    });
+
+    it('fails the request when the Supervisor refuses it', async () => {
+      const { service, update } = setup(new SupervisorRejectedError('Release signature invalid'));
+      await expect(service.request('admin-id', requestId)).rejects.toThrow(
+        'Release signature invalid',
+      );
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'failed', stage: 'request-failed' }),
+        }),
+      );
+    });
   });
 });

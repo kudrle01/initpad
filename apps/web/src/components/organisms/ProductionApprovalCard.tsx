@@ -120,7 +120,7 @@ export function ProductionApprovalCard({
           <dd className="mt-0.5 font-medium">{request.sourceEnvironment}</dd>
         </div>
         <div className="min-w-0">
-          <dt className="eyebrow">{t('Target')}</dt>
+          <dt className="eyebrow">{t('Server')}</dt>
           <dd className="mt-0.5 truncate font-medium" title={request.target.name}>
             {request.target.name}
           </dd>

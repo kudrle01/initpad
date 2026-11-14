@@ -184,6 +184,10 @@ export interface TargetRow {
  * edit, delete, test connection). Built-in targets carry only display metadata;
  * their live connection comes from config, so deployments to them are unchanged.
  */
+
+export const AGENT_TARGET_ROLE_MESSAGE =
+  'Only a workspace owner or admin can add a Docker Agent server, because only they can connect its Agent. A maintainer can add an SFTP server or use existing servers.';
+
 @Injectable()
 export class TargetsService implements OnModuleInit {
   private readonly logger = new Logger('TargetsService');
@@ -352,8 +356,13 @@ export class TargetsService implements OnModuleInit {
     requestedWorkspaceId?: string,
   ): Promise<Target> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
-    await this.workspaces.require(userId, workspaceId, 'maintain');
     const agentBacked = dto.kind === 'docker';
+    const role = await this.workspaces.require(userId, workspaceId, 'maintain');
+    // An Agent server is useful only once someone enrolls its Agent, which
+    // needs workspace admin; a maintainer would create a dead end (ADR-181).
+    if (agentBacked && role !== 'owner' && role !== 'admin') {
+      throw new ForbiddenException(AGENT_TARGET_ROLE_MESSAGE);
+    }
     const routingMode = agentBacked ? (dto.routingMode ?? 'direct-port') : 'direct-port';
     let publicUrl = dto.publicUrl;
     if (agentBacked) {
@@ -654,13 +663,8 @@ export class TargetsService implements OnModuleInit {
   async remove(id: string, ownerId: string): Promise<void> {
     const row = await this.getUserTarget(id, ownerId, 'maintain');
     const inUse = await this.prisma.environment.count({ where: { targetId: row.id } });
-    if (inUse > 0 && this.managementState(row) === 'active') {
-      throw new BadRequestException(
-        `This target is used by ${inUse} environment(s). Point them at another target first.`,
-      );
-    }
     if (inUse > 0) {
-      await this.removeUnmanaged(row);
+      await this.removeWithBindings(row);
     } else {
       await this.prisma.target.delete({ where: { id: row.id } });
     }
@@ -676,13 +680,14 @@ export class TargetsService implements OnModuleInit {
   }
 
   /**
-   * A disconnected or retired server accepts no commands, so its environment
-   * bindings can only be released in InitPad. Empty environments are unbound
-   * together with their gateway route records; an environment that still
-   * records a deployment must be released (or its project deleted) first, so
-   * deleting a server never silently forgets a workload.
+   * Deleting a server never silently forgets a workload. Environments that
+   * still record a deployment (or have an operation running) are listed and
+   * block the deletion. Empty environments are unbound automatically together
+   * with their gateway route records; they then have no server and must get a
+   * new one before their next deploy. The re-check inside the transaction
+   * keeps a deploy that starts concurrently from being detached.
    */
-  private async removeUnmanaged(row: TargetRow): Promise<void> {
+  private async removeWithBindings(row: TargetRow): Promise<void> {
     const bound = await this.prisma.environment.findMany({
       where: { targetId: row.id },
       select: {
@@ -700,20 +705,29 @@ export class TargetsService implements OnModuleInit {
         environment.activeOperationId !== null,
     );
     if (deployed.length > 0) {
+      const names = deployed
+        .map((environment) => `${environment.project.name}/${environment.name}`)
+        .join(', ');
       throw new BadRequestException(
-        `Release the deployments still recorded on this server first: ${deployed
-          .map((environment) => `${environment.project.name}/${environment.name}`)
-          .join(', ')}.`,
+        this.managementState(row) === 'active'
+          ? `This server still hosts deployments: ${names}. Remove them or move these environments to another server first.`
+          : `Release the deployments still recorded on this server first: ${names}.`,
       );
     }
-    await this.prisma.$transaction([
-      this.prisma.gatewayRoute.deleteMany({ where: { targetId: row.id } }),
-      this.prisma.environment.updateMany({
-        where: { targetId: row.id },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.gatewayRoute.deleteMany({ where: { targetId: row.id } });
+      await tx.environment.updateMany({
+        where: { targetId: row.id, status: 'empty', version: null, activeOperationId: null },
         data: { targetId: null, allocationId: null },
-      }),
-      this.prisma.target.delete({ where: { id: row.id } }),
-    ]);
+      });
+      const remaining = await tx.environment.count({ where: { targetId: row.id } });
+      if (remaining > 0) {
+        throw new BadRequestException(
+          'A deployment started on this server while it was being deleted. Try again once it has finished.',
+        );
+      }
+      await tx.target.delete({ where: { id: row.id } });
+    });
   }
 
   async disconnect(id: string, userId: string): Promise<void> {

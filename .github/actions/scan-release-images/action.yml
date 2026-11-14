@@ -1,0 +1,46 @@
+name: Scan release images
+description: >-
+  Fails on a fixed HIGH or CRITICAL vulnerability (ADR-144) in every platform
+  of the pushed, digest-pinned release images before they are signed.
+
+inputs:
+  references:
+    description: Newline-separated image@sha256 references.
+    required: true
+  platforms:
+    description: Space-separated platforms of each manifest list.
+    default: linux/amd64 linux/arm64
+  registry-username:
+    required: true
+  registry-password:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Scan each digest on each platform
+      shell: bash
+      env:
+        TRIVY_IMAGE: mirror.gcr.io/aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+        TRIVY_USERNAME: ${{ inputs.registry-username }}
+        TRIVY_PASSWORD: ${{ inputs.registry-password }}
+        REFERENCES: ${{ inputs.references }}
+        PLATFORMS: ${{ inputs.platforms }}
+      run: |
+        set -euo pipefail
+        while IFS= read -r reference; do
+          [[ -n "${reference}" ]] || continue
+          [[ "${reference}" =~ @sha256:[0-9a-f]{64}$ ]] || {
+            echo "Refusing to scan a mutable reference: ${reference}" >&2; exit 1;
+          }
+          for platform in ${PLATFORMS}; do
+            echo "Scanning ${reference} (${platform})"
+            docker run --rm \
+              -e TRIVY_USERNAME -e TRIVY_PASSWORD \
+              -v initpad-trivy-cache:/root/.cache \
+              -v "${GITHUB_WORKSPACE}:/src:ro" \
+              "${TRIVY_IMAGE}" image --image-src remote --platform "${platform}" "${reference}" \
+              --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile /src/.trivyignore.yaml --exit-code 1 --no-progress
+          done
+        done <<< "${REFERENCES}"

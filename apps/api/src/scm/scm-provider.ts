@@ -176,11 +176,9 @@ export interface ScmProvider {
   // move every repository secret off them first (ADR-134).
   revokeLegacyCredentials?(username: string): Promise<void>;
   configureRepoRuntimeSecrets(repository: ScmRepositoryRef): Promise<void>;
-  downloadArchive(
-    repository: ScmRepositoryRef,
-    ref: string,
-    actor: ScmActor,
-  ): Promise<RepoArchive | null>;
+  // Throws a provider-specific error when the exact commit cannot be fetched;
+  // a deployment never falls back to any local copy.
+  downloadArchive(repository: ScmRepositoryRef, ref: string, actor: ScmActor): Promise<RepoArchive>;
   // Initialise a local git repository in `dir` (first-commit scaffold).
   initLocal(dir: string, author?: { name: string; email: string }): Promise<void>;
   // Remove the project's OCI packages/images from the provider's registry.

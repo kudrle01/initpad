@@ -22,6 +22,31 @@ const EXECUTION_LEASE_MS = 90_000;
 const EXECUTION_RENEW_MS = 30_000;
 const LEGACY_EXECUTION_GRACE_MS = EXECUTION_LEASE_MS;
 
+/**
+ * A deletion lock older than this is treated as abandoned by a crashed
+ * process. It exceeds the longest bounded teardown (SFTP deploy deadline).
+ */
+export const DELETION_LOCK_MS = 30 * 60_000;
+
+/** True while another request holds a fresh deletion lock on the project. */
+export function deletionInProgress(
+  deletionStartedAt: Date | null | undefined,
+  now = new Date(),
+): boolean {
+  return !!deletionStartedAt && now.getTime() - deletionStartedAt.getTime() < DELETION_LOCK_MS;
+}
+
+// Only operations that touch nothing on a host may run without a server.
+const TARGETLESS_KINDS = new Set(['remove', 'stop']);
+
+/**
+ * An environment whose server was removed has no target. It must never fall
+ * back to the provider's local default (the InitPad host itself).
+ */
+export function noServerMessage(envName: string): string {
+  return `Environment '${envName}' has no server assigned (its server was removed). Choose a server for this environment before deploying.`;
+}
+
 type ExecutionContext = {
   operationId: string;
   generation: number;
@@ -30,6 +55,13 @@ type ExecutionContext = {
 };
 
 type ExecutionClaim = { generation: number };
+
+/** The environment is held by another operation; nothing was recorded. */
+export class ActiveOperationConflict extends BadRequestException {
+  constructor(envName: string) {
+    super(`Environment '${envName}' already has an active operation`);
+  }
+}
 
 /**
  * Owns the durable operation lock shared by CI, deployment and environment
@@ -42,12 +74,28 @@ export class ProjectDeploymentOperations {
   private readonly instanceId = randomUUID();
   private readonly execution = new AsyncLocalStorage<ExecutionContext>();
   private readonly localExecutions = new Set<string>();
+  private readonly releaseListeners: Array<() => void> = [];
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditEvents?: Pick<AuditEventsService, 'record' | 'recordOperationResult'>,
   ) {
     this.capacity = new WorkspaceCapacityService(prisma);
+  }
+
+  /** Called after an operation released its environment lock. */
+  onEnvironmentReleased(listener: () => void): void {
+    this.releaseListeners.push(listener);
+  }
+
+  private notifyReleased(): void {
+    for (const listener of this.releaseListeners) {
+      try {
+        listener();
+      } catch (error) {
+        this.logger.warn(`Release listener failed: ${(error as Error).message}`);
+      }
+    }
   }
 
   async recoverInterrupted(): Promise<void> {
@@ -214,10 +262,16 @@ export class ProjectDeploymentOperations {
       include: {
         target: { select: { name: true, updatedAt: true } },
         allocation: { select: { updatedAt: true } },
-        project: { select: { id: true, name: true, workspaceId: true } },
+        project: { select: { id: true, name: true, workspaceId: true, deletionStartedAt: true } },
       },
     });
     if (!environment) throw new NotFoundException(`Environment '${envName}' not found`);
+    if (deletionInProgress(environment.project.deletionStartedAt)) {
+      throw new ConflictException('This project is being deleted; no new operations can start.');
+    }
+    if (!environment.targetId && !TARGETLESS_KINDS.has(kind)) {
+      throw new BadRequestException(noServerMessage(envName));
+    }
     if (
       expectedProductionState &&
       !this.matchesExpectedState(environment, expectedProductionState)
@@ -225,6 +279,18 @@ export class ProjectDeploymentOperations {
       throw new ConflictException(
         'Artifact, target, or production configuration changed. Create a new production request.',
       );
+    }
+    // Reject a known conflict before creating a row, so the history does not
+    // fill with cancelled "Another operation is already active" entries.
+    if (environment.activeOperationId) {
+      this.logger.warn({
+        event: 'deployment.operation.rejected',
+        projectId,
+        environment: envName,
+        kind,
+        reason: 'active-operation-conflict',
+      });
+      throw new ActiveOperationConflict(envName);
     }
     const { operation, claimed } = await serializableCapacityTransaction(
       this.prisma,
@@ -358,7 +424,7 @@ export class ProjectDeploymentOperations {
       environment: envName,
       reason: 'active-operation-conflict',
     });
-    throw new BadRequestException(`Environment '${envName}' already has an active operation`);
+    throw new ActiveOperationConflict(envName);
   }
 
   async complete(
@@ -408,6 +474,7 @@ export class ProjectDeploymentOperations {
       where: { activeOperationId: operationId },
       data: { activeOperationId: null },
     });
+    this.notifyReleased();
     if (changed !== null) {
       const updated = await this.prisma.deploymentOperation
         .findUnique({ where: { id: operationId }, select: { correlationId: true } })
@@ -584,6 +651,7 @@ export class ProjectDeploymentOperations {
       where: { activeOperationId: context.operationId },
       data: { activeOperationId: null },
     });
+    this.notifyReleased();
     const updated = await this.prisma.deploymentOperation.findUnique({
       where: { id: context.operationId },
       select: { correlationId: true },

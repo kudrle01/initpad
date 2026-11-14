@@ -93,6 +93,13 @@ export interface WorkspaceCapacity {
   remaining: WorkspaceCapacityValues;
 }
 
+export interface WorkspaceCapacityPage {
+  items: WorkspaceCapacity[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface WorkspaceCapacityValues {
   projects: number;
   members: number;
@@ -486,6 +493,15 @@ export interface RollbackPreview {
   } | null;
   sourceDeployedAt: string;
   stateToken: string;
+  /** Older verified deployments to choose from; absent on older APIs. */
+  candidates?: RollbackCandidate[];
+}
+
+export interface RollbackCandidate {
+  candidateOperationId: string;
+  version: string;
+  artifact: { id: string; provider: string; digest: string; runId: string } | null;
+  deployedAt: string;
 }
 
 export interface ProductionDeploymentRequest {

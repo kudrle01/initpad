@@ -19,7 +19,11 @@ import {
   UpdateProductionApprovalPolicyDto,
   UpdateWorkspaceDto,
 } from './dto/create-workspace.dto';
-import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto } from './dto/member.dto';
+import {
+  AddWorkspaceMemberDto,
+  TransferWorkspaceOwnershipDto,
+  UpdateWorkspaceMemberDto,
+} from './dto/member.dto';
 import { WorkspacesService } from './workspaces.service';
 import { WorkspacePortfolioService } from './workspace-portfolio.service';
 import { WorkspaceMetricsService } from './workspace-metrics.service';
@@ -127,5 +131,20 @@ export class WorkspacesController {
     @Param('memberId') memberId: string,
   ) {
     return this.workspaces.removeMember(userId, id, memberId);
+  }
+
+  @Post(':id/leave')
+  @HttpCode(204)
+  leave(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.workspaces.leave(userId, id);
+  }
+
+  @Post(':id/transfer-ownership')
+  transferOwnership(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() dto: TransferWorkspaceOwnershipDto,
+  ) {
+    return this.workspaces.transferOwnership(userId, id, dto.userId);
   }
 }

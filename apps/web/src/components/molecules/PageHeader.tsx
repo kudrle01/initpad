@@ -4,6 +4,7 @@ import { HelpLink } from '@/components/molecules/HelpLink';
 import { InfoTip, type InfoTipItem } from '@/components/molecules/InfoTip';
 import { t } from '@/i18n';
 import type { HelpTopic } from '@/lib/help';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 export function PageHeader({
   title,
@@ -22,6 +23,7 @@ export function PageHeader({
   helpTopic?: HelpTopic;
 }) {
   const { user } = useAuth();
+  usePageTitle(title);
   const helpShown = Boolean(helpTopic && user?.docsUrl);
   return (
     <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">

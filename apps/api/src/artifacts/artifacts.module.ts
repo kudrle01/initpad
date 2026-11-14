@@ -31,6 +31,8 @@ import { S3ArtifactStore } from './s3-artifact-store';
             accessKeyId: s.accessKeyId,
             secretAccessKey: s.secretAccessKey,
             forcePathStyle: s.forcePathStyle,
+            connectionTimeoutMs: s.connectionTimeoutMs,
+            requestTimeoutMs: s.requestTimeoutMs,
           });
         }
         log.warn(

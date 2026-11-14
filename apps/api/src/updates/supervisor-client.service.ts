@@ -5,6 +5,15 @@ import { config } from '../config';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const MAX_RESPONSE = 512 * 1024;
+// The Supervisor verifies the Sigstore bundle before it answers /v1/update,
+// which can take longer than a status read on a slow or cold host.
+const MIN_UPDATE_TIMEOUT_MS = 60_000;
+
+/**
+ * The Supervisor answered and refused the request. Any other failure
+ * (timeout, connection reset) leaves it unknown whether the update started.
+ */
+export class SupervisorRejectedError extends Error {}
 
 export interface SupervisorOperation {
   id: string;
@@ -98,14 +107,21 @@ export class SupervisorClientService {
 
   update(requestId: string, release: unknown): Promise<SupervisorOperation> {
     if (!UUID.test(requestId)) throw new Error('Platform update request id is invalid');
-    return this.request('POST', '/v1/update', release, requestId).then((value) => {
+    const timeoutMs = Math.max(config.updates.requestTimeoutMs, MIN_UPDATE_TIMEOUT_MS);
+    return this.request('POST', '/v1/update', release, requestId, timeoutMs).then((value) => {
       const parsed = operation(value);
       if (!parsed) throw new Error('Supervisor returned no update operation');
       return parsed;
     });
   }
 
-  private async request(method: 'GET' | 'POST', path: string, value: unknown, requestId: string) {
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    value: unknown,
+    requestId: string,
+    timeoutMs = config.updates.requestTimeoutMs,
+  ) {
     if (!this.configured) throw new Error('Platform update Supervisor is not configured');
     const body = value === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(value));
     const timestamp = String(Date.now());
@@ -128,7 +144,7 @@ export class SupervisorClientService {
       },
       body: method === 'POST' ? body : undefined,
       redirect: 'error',
-      signal: AbortSignal.timeout(config.updates.requestTimeoutMs),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const declared = Number(response.headers.get('content-length') || 0);
     if (declared > MAX_RESPONSE) throw new Error('Supervisor response is too large');
@@ -142,7 +158,7 @@ export class SupervisorClientService {
     }
     if (!response.ok) {
       const error = record(result)?.error;
-      throw new Error(
+      throw new SupervisorRejectedError(
         typeof error === 'string' && error.length <= 500
           ? error
           : `Supervisor returned HTTP ${response.status}`,

@@ -105,6 +105,8 @@ function build(
   };
   const provisioning = {
     start: jest.fn(async () => 'op1'),
+    holdLease: jest.fn(() => () => undefined),
+    rename: jest.fn(async () => undefined),
     planEffect: jest.fn(async () => undefined),
     beginEffect: jest.fn(async () => undefined),
     completeEffect,
@@ -119,7 +121,9 @@ function build(
   const service = new ProjectsService(
     prisma as never,
     { get: jest.fn(() => options?.selectedTemplate ?? template) } as never,
-    { generate: jest.fn(() => ({ repoPath: '/tmp/initpad-create-journal-test' })) } as never,
+    {
+      generateCheckout: jest.fn(() => ({ repoPath: '/tmp/initpad-create-journal-test' })),
+    } as never,
     {} as never,
     {
       listEntities: jest.fn(async () => options?.targets ?? [dockerTarget]),

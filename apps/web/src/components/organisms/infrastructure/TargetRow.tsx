@@ -176,20 +176,15 @@ export function TargetRow({
 
   // Delete is offered for every workspace server; the rest depend on the role.
   const hasLifecycleActions = isUserTarget;
-  // An unmanaged server can be deleted once no environment on it still
-  // records a deployment; its empty bindings are released by the API.
+  // A server can be deleted once no environment on it still records a
+  // deployment; the API unbinds its empty environments automatically.
   const deployedUsage = usage.filter((item) => item.status !== 'empty');
-  const canDelete = unavailable ? deployedUsage.length === 0 : usage.length === 0;
+  const canDelete = deployedUsage.length === 0;
   const deleteHint = canDelete
     ? t('Removes the server from InitPad. Nothing on the server itself is deleted.')
-    : unavailable
-      ? t('Release the deployments on this server first: {list}.', {
-          list: deployedUsage.map((item) => `${item.projectName}/${item.environment}`).join(', '),
-        })
-      : t(
-          'Used by {count} environments. Point them at another server, or disconnect or retire this one first.',
-          { count: formatNumber(usage.length) },
-        );
+    : t('Release the deployments on this server first: {list}.', {
+        list: deployedUsage.map((item) => `${item.projectName}/${item.environment}`).join(', '),
+      });
 
   return (
     <li>
@@ -239,6 +234,16 @@ export function TargetRow({
               )}
             </Notice>
           )}
+          {isAgentTarget &&
+            !canManageAgent &&
+            managementState !== 'retired' &&
+            (agentState === 'not-enrolled' || managementState === 'disconnected') && (
+              <Notice icon={Bot} title={t('The Agent is not connected yet')} className="bg-card">
+                {t(
+                  'A Docker server with the Agent is added and connected by a workspace owner or admin. Ask one of them to finish the Agent setup; until then this server cannot receive deployments.',
+                )}
+              </Notice>
+            )}
           {managementState === 'disconnected' && (
             <Notice tone="warning" icon={Link2Off} title={t('Disconnected from InitPad')}>
               {t(
