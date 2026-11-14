@@ -23,6 +23,7 @@
     "release:platform:prepare": "node scripts/platform-release.mjs prepare",
     "release:platform:tag": "node scripts/platform-release.mjs tag",
     "check": "npm run audit:repo && npm run lint && npm run format:check && npm run build && npm run test",
+    "check:compose": "node scripts/check-compose.mjs",
     "check:release": "npm run check && npm run audit:dependencies"
   },
   "engines": {

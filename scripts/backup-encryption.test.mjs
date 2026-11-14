@@ -11,6 +11,15 @@ const crypt = resolve(root, 'deploy/backup-crypt.sh');
 const backup = readFileSync(resolve(root, 'deploy/backup.sh'), 'utf8');
 const restore = readFileSync(resolve(root, 'deploy/restore.sh'), 'utf8');
 const haveAge = spawnSync('age-keygen', ['--version']).status === 0;
+// CI installs age (.github/actions/setup-age), so a missing binary there is a
+// broken gate, not an optional test. Locally the skip is announced loudly.
+const requireAge = process.env.CI === 'true' || process.env.INITPAD_REQUIRE_AGE === '1';
+if (!haveAge && !requireAge) {
+  process.emitWarning(
+    'age is not installed: the encrypted backup round trip (ADR-151) is skipped. ' +
+      'Install age or set INITPAD_REQUIRE_AGE=1 to make this a failure.',
+  );
+}
 
 const run = (args) => spawnSync('bash', [crypt, ...args], { encoding: 'utf8' });
 
@@ -25,8 +34,12 @@ function keyPair(directory, name) {
 
 test(
   'encrypts a checkpoint for public recipients and restores it byte for byte (ADR-151)',
-  { skip: !haveAge && 'age is not installed' },
+  { skip: !haveAge && !requireAge && 'age is not installed' },
   () => {
+    assert.ok(
+      haveAge,
+      'age is required here (CI or INITPAD_REQUIRE_AGE=1) but age-keygen is missing',
+    );
     const work = mkdtempSync(join(tmpdir(), 'initpad-backup-'));
     const checkpoint = join(work, '20261009T020000Z');
     mkdirSync(checkpoint);
