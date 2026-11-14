@@ -35,6 +35,7 @@ import { cleanupNotice } from '@/lib/deployment';
 import { deploymentProgress } from '@/lib/deployment-progress';
 import type { Commit, EnvName, Project, ProviderKind } from '@/types';
 import { t, rich, formatDateTime } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 import { statusLabel } from '@/i18n/labels';
 import { AppUrlLink } from '@/components/molecules/AppUrlLink';
 
@@ -512,7 +513,7 @@ export function EnvironmentPipeline({
                         <Spinner className="h-3 w-3 shrink-0" />
                       )}
                       <span className="truncate">
-                        {env.statusReason ?? t('Deploying…')}
+                        {translateApiMessage(env.statusReason) ?? t('Deploying…')}
                         {pct !== null ? ` · ${pct}%` : ''}
                       </span>
                     </div>
@@ -530,7 +531,7 @@ export function EnvironmentPipeline({
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={pct ?? undefined}
-                        aria-valuetext={env.statusReason ?? t('Deploying')}
+                        aria-valuetext={translateApiMessage(env.statusReason) ?? t('Deploying')}
                         className="relative h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.08]"
                       >
                         {pct === null ? (
@@ -564,7 +565,9 @@ export function EnvironmentPipeline({
                       className="mt-3 flex min-w-0 items-start gap-1.5 rounded-sm text-left text-xs text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span className="min-w-0 break-words">{env.statusReason}</span>
+                      <span className="min-w-0 break-words">
+                        {translateApiMessage(env.statusReason)}
+                      </span>
                       <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     </Link>
                   )}

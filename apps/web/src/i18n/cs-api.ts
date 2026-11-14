@@ -74,7 +74,8 @@ export const csApi = {
     'Identifikátor: malá písmena, číslice a pomlčky (2–40 znaků); personal-* je vyhrazené',
   "A repository named '{name}' already exists in {provider}. Choose a different project name, or import the existing repository.":
     'Repozitář {name} už v {provider} existuje. Zvolte jiný název projektu, nebo existující repozitář importujte.',
-  "Repository '{name}' is already connected to InitPad": 'Repozitář {name} už je k InitPadu připojený',
+  "Repository '{name}' is already connected to InitPad":
+    'Repozitář {name} už je k InitPadu připojený',
   'Repository name is not a valid project name (lowercase letters, digits and hyphens).':
     'Název repozitáře není platný název projektu (malá písmena, číslice a pomlčky).',
   'Cannot import an empty repository — push code first.':
@@ -118,7 +119,8 @@ export const csApi = {
   "Environment '{env}' has an active operation": 'V prostředí {env} už probíhá operace',
   "Environment '{env}' still has pending cleanup. Finish it before changing target.":
     'Prostředí {env} ještě čeká na úklid. Před změnou serveru ho dokončete.',
-  "Source environment '{env}' has nothing to promote": 'Ze zdrojového prostředí {env} není co povýšit',
+  "Source environment '{env}' has nothing to promote":
+    'Ze zdrojového prostředí {env} není co povýšit',
   "Cannot promote to '{env}'": 'Do prostředí {env} nelze povýšit',
   'Environment must be dev, test or prod': 'Prostředí musí být dev, test nebo prod',
   'Dev can only run again after it was cancelled or failed':
@@ -237,9 +239,12 @@ export const csApi = {
   // Agent
   'Invalid Agent credential': 'Neplatné přihlašovací údaje Agenta',
   'Invalid or expired Agent enrollment token': 'Registrační token Agenta je neplatný nebo vypršel',
-  'Target is no longer available for Agent enrollment': 'Server už nelze použít k registraci Agenta',
-  'InitPad Agent can only be bound to a Docker target': 'InitPad Agent lze připojit jen k Docker serveru',
-  'Enroll the target Agent before deploying to it': 'Před nasazením zaregistrujte Agenta na serveru',
+  'Target is no longer available for Agent enrollment':
+    'Server už nelze použít k registraci Agenta',
+  'InitPad Agent can only be bound to a Docker target':
+    'InitPad Agent lze připojit jen k Docker serveru',
+  'Enroll the target Agent before deploying to it':
+    'Před nasazením zaregistrujte Agenta na serveru',
   'Enroll the target Agent before requesting diagnostics':
     'Před diagnostikou zaregistrujte Agenta na serveru',
   "Enroll and enable the Agent for target '{name}' before using it.":

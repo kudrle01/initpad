@@ -382,8 +382,7 @@ export const api = {
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
   listProjects: () => http<Project[]>('/projects'),
-  getProject: (id: string, options?: RequestOptions) =>
-    http<Project>(`/projects/${id}`, options),
+  getProject: (id: string, options?: RequestOptions) => http<Project>(`/projects/${id}`, options),
   getCommits: (id: string, limit = 20, options?: RequestOptions) =>
     http<Commit[]>(`/projects/${id}/commits?limit=${limit}`, options),
   getDeployments: (id: string, limit = 30, options?: RequestOptions) =>
@@ -412,16 +411,20 @@ export const api = {
     pipelinePreset: PipelinePreset,
     scmInstallationId?: string,
   ) =>
-    http<Project>('/projects', {
-      method: 'POST',
-      body: JSON.stringify({
-        name,
-        templateId,
-        environments,
-        pipelinePreset,
-        scmInstallationId,
-      }),
-    }, PROJECT_SETUP_TIMEOUT_MS),
+    http<Project>(
+      '/projects',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          templateId,
+          environments,
+          pipelinePreset,
+          scmInstallationId,
+        }),
+      },
+      PROJECT_SETUP_TIMEOUT_MS,
+    ),
   listImportableRepos: () => http<ImportableRepo[]>('/projects/import/repos'),
   importPreflight: (repositoryId: string, templateId: string, options?: RequestOptions) =>
     http<ImportPreflight>('/projects/import/preflight', {
@@ -435,10 +438,14 @@ export const api = {
     environments: EnvConfig[],
     pipelinePreset: PipelinePreset,
   ) =>
-    http<Project>('/projects/import', {
-      method: 'POST',
-      body: JSON.stringify({ repositoryId, templateId, environments, pipelinePreset }),
-    }, PROJECT_SETUP_TIMEOUT_MS),
+    http<Project>(
+      '/projects/import',
+      {
+        method: 'POST',
+        body: JSON.stringify({ repositoryId, templateId, environments, pipelinePreset }),
+      },
+      PROJECT_SETUP_TIMEOUT_MS,
+    ),
   updatePipelinePreset: (id: string, pipelinePreset: PipelinePreset, environments: EnvConfig[]) =>
     http<Project>(`/projects/${id}/pipeline-preset`, {
       method: 'PUT',

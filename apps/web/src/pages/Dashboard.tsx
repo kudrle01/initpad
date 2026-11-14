@@ -40,6 +40,7 @@ import type { ProvisioningStatus, TemplateManifest } from '@/types';
 import { useConfirmation } from '@/confirmation';
 import { WorkspaceMetricsDialog } from '@/components/organisms/WorkspaceMetricsDialog';
 import { t, plural } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 import { statusLabel, termLabel } from '@/i18n/labels';
 
 const RECENT_LIMIT = 6;
@@ -309,7 +310,7 @@ export default function Dashboard() {
                     <p className="text-xs text-muted-foreground">
                       {operation.status === 'cleaning'
                         ? t('Cleaning up a failed setup…')
-                        : t('Current step: {step}', { step: operation.step })}
+                        : t('Current step: {step}', { step: translateApiMessage(operation.step) })}
                     </p>
                   </div>
                   {operation.projectId && (
@@ -337,7 +338,8 @@ export default function Dashboard() {
                 const detail =
                   operation.status === 'interrupted'
                     ? t('Interrupted — external state must be reconciled.')
-                    : operation.message || t('Current step: {step}', { step: operation.step });
+                    : translateApiMessage(operation.message) ||
+                      t('Current step: {step}', { step: translateApiMessage(operation.step) });
                 return (
                   <ListRow
                     key={operation.id}

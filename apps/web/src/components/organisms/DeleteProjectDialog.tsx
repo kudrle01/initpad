@@ -14,6 +14,7 @@ import { Spinner } from '@/components/atoms/Spinner';
 import type { DeleteProjectOptions } from '@/api';
 import type { Environment } from '@/types';
 import { t, rich } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 import { statusLabel } from '@/i18n/labels';
 
 interface Props {
@@ -124,7 +125,9 @@ export function DeleteProjectDialog({
                 <span className="capitalize">
                   {t('{name} cleanup pending', { name: env.name })}
                 </span>
-                <span className="mt-0.5 block break-all text-xs">{env.statusReason}</span>
+                <span className="mt-0.5 block break-all text-xs">
+                  {translateApiMessage(env.statusReason)}
+                </span>
               </li>
             ))}
             <li className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">

@@ -35,7 +35,10 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
   rule(`Target ${NAME} not found`, msg("Target '{name}' not found")),
   rule(`Environment ${ENV} not found`, msg("Environment '{env}' not found")),
   rule(`Allocation ${NAME} not found`, msg("Allocation '{name}' not found")),
-  rule(`Provisioning operation ${NAME} not found`, msg("Provisioning operation '{name}' not found")),
+  rule(
+    `Provisioning operation ${NAME} not found`,
+    msg("Provisioning operation '{name}' not found"),
+  ),
   rule(`User ${NAME} not found`, msg("User '{name}' not found")),
   exact(msg('User not found')),
   exact(msg('Workspace member not found')),
@@ -108,7 +111,9 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
     `Repository ${NAME} is already connected to InitPad`,
     msg("Repository '{name}' is already connected to InitPad"),
   ),
-  exact(msg('Repository name is not a valid project name (lowercase letters, digits and hyphens).')),
+  exact(
+    msg('Repository name is not a valid project name (lowercase letters, digits and hyphens).'),
+  ),
   exact(msg('Cannot import an empty repository — push code first.')),
   rule(
     String.raw`Cannot import '(?<name>[^']+)': no Dockerfile exists on '(?<branch>[^']+)' for the selected runtime\.`,
@@ -124,9 +129,7 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
   exact(msg('The pipeline preset changed concurrently; reload and retry')),
   exact(msg('The pipeline preset cannot change while a project operation is running')),
   exact(
-    msg(
-      'Resolve or cancel the pending production request before changing the pipeline preset',
-    ),
+    msg('Resolve or cancel the pending production request before changing the pipeline preset'),
   ),
   rule(
     String.raw`Environment '(?<env>[^']+)' is not empty\. Remove its deployment and finish any pending cleanup before changing the pipeline preset\.`,
@@ -143,9 +146,7 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
   exact(msg('Provisioning cleanup is running')),
   exact(msg('Cleanup completed; this operation is safe to retry')),
   exact(msg('A newer attempt has been started')),
-  exact(
-    msg('The API process stopped before provisioning completed; reconciliation is required'),
-  ),
+  exact(msg('The API process stopped before provisioning completed; reconciliation is required')),
   exact(msg('Project deletion requested')),
 
   // ------------------------------------------------- environments, deploys

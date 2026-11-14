@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog';
 import { useConfirmation } from '@/confirmation';
 import { t, msg, rich, formatDateTime, formatNumber, formatTime, type MessageKey } from '@/i18n';
+import { translateApiMessage } from '@/lib/api-messages';
 import { externalHref } from '@/lib/utils';
 import { buildAgentInstallCommand, gatewayDomainOf } from '@/lib/agent-install-command';
 
@@ -404,7 +405,9 @@ export function AgentSetupDialog({
                       </Button>
                     ))}
                   {installingUpdate && updateJob?.message && (
-                    <span className="basis-full text-muted-foreground">{updateJob.message}</span>
+                    <span className="basis-full text-muted-foreground">
+                      {translateApiMessage(updateJob.message)}
+                    </span>
                   )}
                   {externalHref(updateStatus.releaseUrl) && (
                     <a

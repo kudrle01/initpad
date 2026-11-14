@@ -51,12 +51,12 @@ const API_SOURCES = [
   "`This workspace already has a project named '${dto.name}'`",
   "`Environment '${envName}' is busy. Cancel or wait for its current operation first.`",
   "'Production deployments must be requested and approved'",
-  "`Workspace access quota reached (max ${allocation.maxEnvironments} environments).`",
+  '`Workspace access quota reached (max ${allocation.maxEnvironments} environments).`',
   "'Invalid or expired Agent enrollment token'",
   "`'${normalizedKey}' is a reserved platform variable`",
   "'Waiting for Agent'",
   "'Verifying deployment'",
-  "`Uploading ${done}/${total} files`",
+  '`Uploading ${done}/${total} files`',
 ];
 
 function apiSourceText(): string {
@@ -80,8 +80,7 @@ afterEach(() => setLocale('en'));
 describe('API message catalog (ADR-185)', () => {
   it('keeps every real message unchanged in English', () => {
     const changed = REAL_MESSAGES.filter(
-      (message) =>
-        translateApiMessage(message) !== message && !message.includes('target named'),
+      (message) => translateApiMessage(message) !== message && !message.includes('target named'),
     );
     expect(changed).toEqual([]);
   });
@@ -97,7 +96,9 @@ describe('API message catalog (ADR-185)', () => {
 
   it('fills placeholders and translates nested messages', async () => {
     await setLocale('cs');
-    expect(translateApiMessage("Project 'billing' not found")).toBe('Projekt billing nebyl nalezen');
+    expect(translateApiMessage("Project 'billing' not found")).toBe(
+      'Projekt billing nebyl nalezen',
+    );
     expect(translateApiMessage('Cleanup failed: Target is no longer connected')).toBe(
       'Úklid selhal: Server už není připojený',
     );
