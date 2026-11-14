@@ -1487,6 +1487,38 @@ jen konkrétní provozní a vyhodnocovací scénář.
        multi-user acceptance prokázal vytvoření trvalého Gitea OCI artefaktu
        a promotion stejného digestu přes dev, test a schválený prod.
 
+6. ◐ **8f — celkový audit a opravy (13.–14. listopadu 2026).** Sedm
+   nezávislých auditů (instalace naživo, API, web, Agent a šablony,
+   dokumentace, repo a CI) našlo zhruba 120 nálezů. Opravy jsou sloučené
+   v jedné integrační změně (ADR-174 až ADR-186):
+   - čistá lokální instalace sama nasadí dev prostředí (sonda přes
+     host-gateway), instalace v LAN přes IP, kontrola portů a kapacity
+     předem, tichý a idempotentní re-run, `reset.sh` uklidí i workloady,
+     oddělený dev stack s `infra/dev-setup.sh` (ADR-174, ADR-175);
+   - start API nečeká na Giteu ani na reconciliaci repozitářů, timeouty
+     SSH, gitu a S3, zámek mazání projektu, žádný deploy bez serveru,
+     fronta nejnovějšího CI buildu, retence po dávkách, rollback z více
+     ověřených verzí (ADR-176 až ADR-179);
+   - Agent: strop pokusů jobu, stabilní porty direct-port, brána přežije
+     re-run instalátoru, pád na abortu, obnova po neúspěšné self-update;
+     Agent server přidává jen owner/admin (ADR-180, ADR-181). Agentní část
+     vyžaduje release Agenta 0.17;
+   - update platformy se nezasekne a rollback hlásí pravdivý výsledek,
+     release odmítne neoznačenou destruktivní migraci, převod vlastnictví
+     workspace, odchod z workspace a správa platformních rolí
+     (ADR-182 až ADR-184);
+   - web překládá hlášky API, sjednocená terminologie (server, prostředí),
+     dohledatelná schválení, přístupné toasty, menší vstupní bundle
+     (ADR-185);
+   - jedna Node 26 LTS linie, deterministický PR gate, `check:compose`,
+     Trivy sken release images (ADR-186);
+   - nápověda docs.initpad.me pro 0.2.35 s kapitolou pro self-hosted.
+   **Zbývá:** release Agenta 0.17 a platformy, živá acceptance na
+   samostatném hostu, pozvánky do workspace se souhlasem, rozdělení
+   největších souborů a major upgrady Prisma/Nest/React.
+   **Uživatelský test:** na čistém stroji `./install.sh --local`, vytvořit
+   admina, projekt a během minut otevřít dev URL bez úpravy `.env`.
+
 ## Akceptační kritéria
 
 - Nový tým dosáhne zdravého dev URL do deseti minut bez administrátorského SSH.
