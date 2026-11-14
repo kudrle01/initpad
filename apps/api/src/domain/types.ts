@@ -244,6 +244,22 @@ export interface RollbackPreview {
   } | null;
   sourceDeployedAt: string;
   stateToken: string;
+  // Newest first, at most five distinct verified publications still within
+  // artifact retention. The first one equals the top-level candidate; any of
+  // them may be passed as candidateOperationId (ADR-179).
+  candidates: RollbackCandidate[];
+}
+
+export interface RollbackCandidate {
+  candidateOperationId: string;
+  version: string;
+  artifact: {
+    id: string;
+    provider: string;
+    digest: string;
+    runId: string;
+  } | null;
+  deployedAt: string;
 }
 
 export type WorkloadDiagnosticStatus = 'idle' | 'queued' | 'running' | 'succeeded' | 'failed';

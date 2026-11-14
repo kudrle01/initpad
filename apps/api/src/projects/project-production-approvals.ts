@@ -12,6 +12,7 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { RollbackPreview } from '../domain/types';
 import type { PipelinePreset } from '../domain/types';
 import { productionSourceStage } from './pipeline-preset';
+import { ProjectRollback } from './project-rollback';
 
 export type ProductionRequestKind = 'promote' | 'redeploy' | 'rollback';
 export type ProductionApprovalPolicy = 'self-review' | 'separate-reviewer';
@@ -521,9 +522,10 @@ export class ProjectProductionApprovals {
         throw new BadRequestException('Rollback candidate and state token are required');
       }
       const preview = await this.resolveRollback(projectId);
-      if (!preview || preview.candidateOperationId !== input.candidateOperationId) {
+      const selected = preview ? ProjectRollback.select(preview, input.candidateOperationId) : null;
+      if (!preview || !selected) {
         throw new ConflictException(
-          'The previous verified production deployment changed. Review rollback again.',
+          'The selected verified production deployment is no longer available. Review rollback again.',
         );
       }
       if (preview.stateToken !== input.stateToken) {
@@ -534,11 +536,11 @@ export class ProjectProductionApprovals {
       return {
         kind: input.kind,
         sourceEnvironment: 'history',
-        candidateOperationId: preview.candidateOperationId,
+        candidateOperationId: selected.candidateOperationId,
         candidateStateToken: preview.stateToken,
-        version: preview.rollbackVersion,
-        buildArtifactId: preview.rollbackArtifact?.id ?? null,
-        artifactDigest: preview.rollbackArtifact?.digest ?? null,
+        version: selected.version,
+        buildArtifactId: selected.artifact?.id ?? null,
+        artifactDigest: selected.artifact?.digest ?? null,
       };
     }
 

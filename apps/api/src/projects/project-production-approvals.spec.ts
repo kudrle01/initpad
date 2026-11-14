@@ -9,6 +9,7 @@ type TestPermission = 'read' | 'write' | 'maintain' | 'admin';
 function harness(
   initialPolicy: 'self-review' | 'separate-reviewer' = 'separate-reviewer',
   pipelinePreset: 'dev-test-prod' | 'dev-prod' | 'prod-only' = 'dev-test-prod',
+  resolveRollback: jest.Mock = jest.fn(async () => null),
 ) {
   let policy = initialPolicy;
   let request: Record<string, any> | null = null;
@@ -183,7 +184,7 @@ function harness(
     workspaces as never,
     audit,
     schedule,
-    jest.fn(async () => null),
+    resolveRollback,
   );
   return {
     service,
@@ -391,5 +392,66 @@ describe('ProjectProductionApprovals', () => {
         details: expect.objectContaining({ reviewerRole: 'maintainer' }),
       }),
     );
+  });
+
+  it('requests a production rollback to an older verified build', async () => {
+    // Regression (audit P3): only the newest previous build could be chosen.
+    const older = {
+      id: 'artifact-older',
+      provider: 'github-actions',
+      digest: 'digest-older',
+      runId: '5',
+    };
+    const preview = {
+      candidateOperationId: 'operation-previous',
+      stateToken: 's'.repeat(64),
+      rollbackVersion: 'b'.repeat(40),
+      rollbackArtifact: null,
+      candidates: [
+        {
+          candidateOperationId: 'operation-previous',
+          version: 'b'.repeat(40),
+          artifact: null,
+          deployedAt: '2026-09-06T10:00:00.000Z',
+        },
+        {
+          candidateOperationId: 'operation-older',
+          version: 'e'.repeat(40),
+          artifact: older,
+          deployedAt: '2026-09-05T10:00:00.000Z',
+        },
+      ],
+    };
+    const h = harness(
+      'separate-reviewer',
+      'dev-test-prod',
+      jest.fn(async () => preview),
+    );
+
+    await h.service.create('project-1', 'reviewer', {
+      kind: 'rollback',
+      candidateOperationId: 'operation-older',
+      stateToken: preview.stateToken,
+    });
+
+    expect(h.prisma.productionDeploymentRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          kind: 'rollback',
+          candidateOperationId: 'operation-older',
+          version: 'e'.repeat(40),
+          buildArtifactId: 'artifact-older',
+          artifactDigest: 'digest-older',
+        }),
+      }),
+    );
+    const fresh = harness('separate-reviewer', 'dev-test-prod', jest.fn(async () => preview));
+    await expect(
+      fresh.service.create('project-1', 'reviewer', {
+        kind: 'rollback',
+        candidateOperationId: 'operation-unknown',
+        stateToken: preview.stateToken,
+      }),
+    ).rejects.toThrow('The selected verified production deployment is no longer available');
   });
 });
