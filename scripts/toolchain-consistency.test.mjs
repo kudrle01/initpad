@@ -42,7 +42,9 @@ test('runs every workflow on the Node line from .node-version', () => {
 
 test('types and engines follow the Node line', () => {
   const root = readJson('package.json');
-  assert.match(root.engines.node, new RegExp(`^>=${nodeLine}\\.0\\.0 <${Number(nodeLine) + 1}$`));
+  // Local development also accepts the previous LTS line; CI and images pin `.node-version`.
+  const minimum = Number(root.engines.node.match(/^>=(\d+)\.0\.0$/)?.[1]);
+  assert.ok(minimum >= Number(nodeLine) - 2 && minimum <= Number(nodeLine), root.engines.node);
   for (const app of apps) {
     const types = readJson(`apps/${app}/package.json`).devDependencies?.['@types/node'];
     if (types) assert.match(types, new RegExp(`^\\^${nodeLine}\\.`), app);

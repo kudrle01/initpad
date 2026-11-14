@@ -109,7 +109,7 @@ health endpoint a CI workflow. PHP frameworky mají verzovaný skeleton i
 
 ## Lokální vývoj
 
-Požadavky: Node.js 26 (Active LTS, viz `.node-version`) a Docker.
+Požadavky: Node.js 24 nebo novější (CI a image používají Node 26 LTS z `.node-version`) a Docker.
 
 ```bash
 npm ci

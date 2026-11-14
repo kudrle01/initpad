@@ -27,7 +27,7 @@
     "check:release": "npm run check && npm run audit:dependencies"
   },
   "engines": {
-    "node": ">=26.0.0 <27"
+    "node": ">=24.0.0"
   },
   "overrides": {
     "@nestjs/platform-express": {
