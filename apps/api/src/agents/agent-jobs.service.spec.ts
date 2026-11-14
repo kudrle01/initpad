@@ -714,6 +714,36 @@ describe('AgentJobsService durable lease protocol', () => {
     );
   });
 
+  it('fails an exhausted job, finishes its operation and claims the next queued job', async () => {
+    const { service, prisma } = setup();
+    prisma.agentJob.findFirst
+      .mockResolvedValueOnce({
+        id: 'stuck-job',
+        status: 'leased',
+        leaseTokenHash: 'expired-hash',
+        attempt: 3,
+      })
+      .mockResolvedValueOnce(null);
+    prisma.agentJob.findUnique.mockResolvedValue(
+      job({ id: 'stuck-job', kind: 'logs', status: 'failed', message: 'exhausted', attempt: 3 }),
+    );
+
+    await expect(service.claim('Bearer credential')).resolves.toEqual({
+      job: null,
+      nextPollSeconds: 2,
+    });
+    expect(prisma.agentJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'stuck-job', leaseTokenHash: 'expired-hash' }),
+        data: expect.objectContaining({ status: 'failed', resultCode: 'attempts_exhausted' }),
+      }),
+    );
+    expect(prisma.workloadDiagnostic.updateMany).toHaveBeenCalledWith({
+      where: { currentJobId: 'stuck-job', status: { in: ['queued', 'running'] } },
+      data: expect.objectContaining({ status: 'failed', message: 'exhausted' }),
+    });
+  });
+
   it('recovers an expired attempt and commits exactly one terminal result', async () => {
     const { service, prisma } = setup();
     const row = job({

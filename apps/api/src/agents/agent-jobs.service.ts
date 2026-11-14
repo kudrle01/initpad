@@ -403,6 +403,10 @@ export class AgentJobsService implements OnModuleInit {
         return { job: null, nextPollSeconds: AGENT_JOB_NEXT_POLL_SECONDS };
       }
       if (claim.outcome === 'raced') continue;
+      if (claim.outcome === 'exhausted') {
+        await this.reconcileExhaustedJob(claim.jobId);
+        continue;
+      }
       const { row, leaseToken, leaseExpiresAt } = claim;
       if (row.kind === 'logs') {
         await this.prisma.workloadDiagnostic.updateMany({
@@ -1487,6 +1491,34 @@ export class AgentJobsService implements OnModuleInit {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
+  }
+
+  private async reconcileExhaustedJob(jobId: string): Promise<void> {
+    const job = await this.prisma.agentJob.findUnique({
+      where: { id: jobId },
+      select: { kind: true, message: true, correlationId: true, targetId: true, attempt: true },
+    });
+    if (!job) return;
+    this.logger.warn({
+      event: 'agent.job.attempts_exhausted',
+      correlationId: job.correlationId,
+      agentJobId: jobId,
+      targetId: job.targetId,
+      kind: job.kind,
+      attempt: job.attempt,
+    });
+    if (job.kind === 'logs') {
+      await this.prisma.workloadDiagnostic.updateMany({
+        where: { currentJobId: jobId, status: { in: ['queued', 'running'] } },
+        data: { status: 'failed', message: job.message, finishedAt: new Date() },
+      });
+    }
+    await this.reconcileGatewayPreflight(jobId);
+    await this.reconcileGatewayRoute(jobId);
+    await this.reconcileTerminalJob(jobId);
+    if (job.kind === 'agent-update') {
+      await this.auditEvents?.recordOperationResult('agent-job', jobId);
+    }
   }
 
   private async failInvalidDelivery(
