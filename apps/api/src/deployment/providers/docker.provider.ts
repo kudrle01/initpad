@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Docker from 'dockerode';
+import { lookup } from 'dns/promises';
+import { isIP } from 'net';
 import { createReadStream, createWriteStream } from 'fs';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
@@ -37,29 +39,80 @@ export function dockerContainerName(projectName: string, env: string, namespace?
 }
 
 const LOOPBACK_HOSTS = ['127.0.0.1', '::1', 'localhost'];
+const WILDCARD_HOSTS = ['0.0.0.0', '::'];
+
+function isLoopback(host: string): boolean {
+  return LOOPBACK_HOSTS.includes(host) || host.startsWith('127.');
+}
 
 /**
  * Why the built-in Docker target cannot verify a deployment, or null when it
  * can. A workload port published on loopback is reachable only from the host
  * itself, so a control plane that probes it through host.docker.internal (as
- * the containerized stack does) can never see it healthy (ADR-173).
+ * the containerized stack does) cannot see it healthy (ADR-173) unless the
+ * port is also published on the probe address (ADR-174).
  */
 export function localDockerProbeBlockedReason(
   bindAddress = config.deployment.bindAddress,
   healthHost = config.deployHealthHost,
+  probeBindAddress = config.deployment.probeBindAddress,
 ): string | null {
-  if (!LOOPBACK_HOSTS.includes(bindAddress) || LOOPBACK_HOSTS.includes(healthHost)) return null;
-  return `The workload port is bound to ${bindAddress}, but the containerized control plane probes ${healthHost}. For trusted-LAN direct ports set INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0 and restrict them with the host firewall, or use a managed gateway.`;
+  if (!isLoopback(bindAddress) || isLoopback(healthHost) || probeBindAddress) return null;
+  return `The workload port is bound to ${bindAddress}, but the containerized control plane probes ${healthHost}. Set INITPAD_DEPLOY_PROBE_BIND_ADDRESS=host.docker.internal to also publish it on the Docker host gateway, or for trusted-LAN direct ports set INITPAD_DEPLOY_BIND_ADDRESS=0.0.0.0 and restrict them with the host firewall.`;
 }
 
 export function dockerHealthFailureReason(
   path: string,
   bindAddress = config.deployment.bindAddress,
   healthHost = config.deployHealthHost,
+  probeBindAddress = config.deployment.probeBindAddress,
 ): string {
   const reason = `Health check at ${path} did not return 2xx within ~10s.`;
-  const blocked = localDockerProbeBlockedReason(bindAddress, healthHost);
+  const blocked = localDockerProbeBlockedReason(bindAddress, healthHost, probeBindAddress);
   return blocked ? `${reason} ${blocked}` : reason;
+}
+
+/**
+ * The extra host address a loopback-bound workload port is published on so
+ * the containerized API can probe it (ADR-174). Inside the API container
+ * host.docker.internal resolves to Docker's host-gateway address (the docker0
+ * bridge), which browsers on the LAN cannot reach. Null when no extra binding
+ * is needed.
+ */
+export async function resolveProbeBindAddress(
+  bindAddress = config.deployment.bindAddress,
+  probeBindAddress = config.deployment.probeBindAddress,
+  resolve: (host: string) => Promise<string> = async (host) =>
+    (await lookup(host, { family: 4 })).address,
+): Promise<string | null> {
+  if (!probeBindAddress || !isLoopback(bindAddress)) return null;
+  let address: string;
+  try {
+    address = isIP(probeBindAddress) ? probeBindAddress : await resolve(probeBindAddress);
+  } catch (error) {
+    throw new Error(
+      `INITPAD_DEPLOY_PROBE_BIND_ADDRESS '${probeBindAddress}' does not resolve: ${(error as Error).message}`,
+    );
+  }
+  if (WILDCARD_HOSTS.includes(address)) {
+    throw new Error(
+      'INITPAD_DEPLOY_PROBE_BIND_ADDRESS must name one host address, not a wildcard; use INITPAD_DEPLOY_BIND_ADDRESS for LAN access.',
+    );
+  }
+  return isLoopback(address) || address === bindAddress ? null : address;
+}
+
+type PortBinding = { HostIp?: string; HostPort?: string };
+
+/** Host port Docker published on `hostIp`, falling back to the first binding. */
+export function publishedPort(
+  bindings: PortBinding[] | null | undefined,
+  hostIp: string | null,
+  fallback: string,
+): string {
+  const list = bindings ?? [];
+  const match = hostIp ? list.find((binding) => binding.HostIp === hostIp) : undefined;
+  return (match ?? list[0])?.HostPort || fallback;
 }
 
 /**
@@ -165,7 +218,13 @@ export class DockerProvider implements DeploymentProvider {
     // cannot accumulate hidden instances with obsolete names.
     await this.removeManagedContainers(input.projectName, input.env);
     input.onProgress?.('Starting container');
-    const hostPort = await this.runContainer(
+    let probeAddress: string | null;
+    try {
+      probeAddress = await resolveProbeBindAddress();
+    } catch (error) {
+      return { status: 'failed', url: '', reason: (error as Error).message };
+    }
+    const { hostPort, probePort } = await this.runContainer(
       image,
       containerName,
       network,
@@ -174,6 +233,7 @@ export class DockerProvider implements DeploymentProvider {
       input.env,
       input.envVars,
       input.allocation,
+      probeAddress,
     );
 
     // Post-deploy verification: the same artifact may come up in one
@@ -183,7 +243,7 @@ export class DockerProvider implements DeploymentProvider {
     // host (deployHealthHost) when the API itself runs in a container.
     const url = `http://${config.publicHost}:${hostPort}`;
     input.onProgress?.('Verifying deployment');
-    const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
+    const healthy = await this.waitHealthy(probePort, input.healthPath ?? '/health');
     if (!healthy) {
       this.logger.warn(`${containerName} failed its health check`);
       await this.removeContainer(containerName);
@@ -311,9 +371,16 @@ export class DockerProvider implements DeploymentProvider {
       return { status: 'failed', url: '', reason: 'Container could not be started.' };
     }
     const mapping = info.NetworkSettings.Ports?.[`${port}/tcp`];
-    const hostPort = mapping && mapping[0] ? mapping[0].HostPort : String(port);
+    const hostPort = publishedPort(mapping, config.deployment.bindAddress, String(port));
+    let probeAddress: string | null = null;
+    try {
+      probeAddress = await resolveProbeBindAddress();
+    } catch {
+      // A container created before the probe binding existed is probed as before.
+    }
+    const probePort = probeAddress ? publishedPort(mapping, probeAddress, hostPort) : hostPort;
     const url = `http://${config.publicHost}:${hostPort}`;
-    const healthy = await this.waitHealthy(hostPort, input.healthPath ?? '/health');
+    const healthy = await this.waitHealthy(probePort, input.healthPath ?? '/health');
     if (!healthy) {
       return { status: 'failed', url, reason: 'Health check did not pass after start.' };
     }
@@ -483,7 +550,8 @@ export class DockerProvider implements DeploymentProvider {
     try {
       await this.docker.getNetwork(name).inspect();
     } catch {
-      await this.docker.createNetwork({ Name: name });
+      // The label lets deploy/reset.sh find the networks it must remove.
+      await this.docker.createNetwork({ Name: name, Labels: { 'com.initpad.managed': 'true' } });
     }
   }
 
@@ -599,8 +667,13 @@ export class DockerProvider implements DeploymentProvider {
     environment: string,
     envVars?: Record<string, string>,
     allocation?: DeploymentAllocation,
-  ): Promise<string> {
+    probeAddress: string | null = null,
+  ): Promise<{ hostPort: string; probePort: string }> {
     const portKey = `${port}/tcp`;
+    // Browsers use the first binding; the API probes the second one when the
+    // first is loopback-only (ADR-174). Docker picks each free port itself.
+    const bindings: PortBinding[] = [{ HostIp: config.deployment.bindAddress, HostPort: '' }];
+    if (probeAddress) bindings.push({ HostIp: probeAddress, HostPort: '' });
     // Application config & secrets (ADR-061), injected into the container's
     // environment. Never logged. Reserved keys are filtered upstream.
     const env = Object.entries(envVars ?? {}).map(([key, value]) => `${key}=${value}`);
@@ -622,9 +695,7 @@ export class DockerProvider implements DeploymentProvider {
       ExposedPorts: { [portKey]: {} },
       HostConfig: {
         NetworkMode: network,
-        PortBindings: {
-          [portKey]: [{ HostIp: config.deployment.bindAddress, HostPort: '' }],
-        },
+        PortBindings: { [portKey]: bindings },
         Memory: allocation ? allocation.memoryLimitMb * 1024 * 1024 : config.deployment.memoryBytes,
         MemorySwap: allocation
           ? allocation.memoryLimitMb * 1024 * 1024
@@ -645,7 +716,9 @@ export class DockerProvider implements DeploymentProvider {
       await container.start();
       const info = await container.inspect();
       const mapping = info.NetworkSettings.Ports?.[portKey];
-      return mapping && mapping[0] ? mapping[0].HostPort : String(port);
+      const hostPort = publishedPort(mapping, config.deployment.bindAddress, String(port));
+      const probePort = probeAddress ? publishedPort(mapping, probeAddress, hostPort) : hostPort;
+      return { hostPort, probePort };
     } catch (error) {
       await container.remove({ force: true }).catch(() => undefined);
       throw error;
