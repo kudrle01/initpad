@@ -72,7 +72,10 @@ test('preserves an explicitly configured complete Agent release pair', () => {
   const oldDigest = `registry.example/initpad-agent@sha256:${'c'.repeat(64)}`;
   const files = fixture(`INITPAD_AGENT_IMAGE=${oldDigest}\nINITPAD_AGENT_RELEASE_VERSION=1.1.0\n`);
 
-  assert.match(configure(files), /Keeping configured InitPad Agent 1\.1\.0; the reviewed release is 1\.2\.3/);
+  assert.match(
+    configure(files),
+    /Keeping configured InitPad Agent 1\.1\.0; the reviewed release is 1\.2\.3/,
+  );
   assert.match(readFileSync(files.envFile, 'utf8'), new RegExp(oldDigest));
 });
 

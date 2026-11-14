@@ -86,13 +86,18 @@ export async function resolveProbeBindAddress(
     (await lookup(host, { family: 4 })).address,
 ): Promise<string | null> {
   if (!probeBindAddress || !isLoopback(bindAddress)) return null;
-  let address: string;
-  try {
-    address = isIP(probeBindAddress) ? probeBindAddress : await resolve(probeBindAddress);
-  } catch (error) {
-    throw new Error(
-      `INITPAD_DEPLOY_PROBE_BIND_ADDRESS '${probeBindAddress}' does not resolve: ${(error as Error).message}`,
+  let address = probeBindAddress;
+  if (!isIP(probeBindAddress)) {
+    const resolved = await resolve(probeBindAddress).then(
+      (value) => ({ value, error: null }),
+      (error: unknown) => ({ value: '', error: (error as Error).message }),
     );
+    if (resolved.error !== null) {
+      throw new Error(
+        `INITPAD_DEPLOY_PROBE_BIND_ADDRESS '${probeBindAddress}' does not resolve: ${resolved.error}`,
+      );
+    }
+    address = resolved.value;
   }
   if (WILDCARD_HOSTS.includes(address)) {
     throw new Error(
