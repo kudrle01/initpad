@@ -1,4 +1,4 @@
-import { TargetsService, TargetRow } from './targets.service';
+import { AGENT_TARGET_ROLE_MESSAGE, TargetsService, TargetRow } from './targets.service';
 import { encryptSecret } from '../common/secret';
 import { ForbiddenException } from '@nestjs/common';
 import { config } from '../config';
@@ -191,8 +191,33 @@ describe('Agent-backed Docker target creation', () => {
       ),
       create,
       audit,
+      workspaces,
     };
   }
+
+  it('lets only a workspace owner or admin add a Docker Agent server', async () => {
+    const { service, create, workspaces } = setup();
+    workspaces.require.mockResolvedValueOnce('maintainer');
+
+    await expect(
+      service.create(
+        'maintainer-1',
+        { name: 'Office Docker', kind: 'docker', capabilities: ['node'] },
+        'workspace-1',
+      ),
+    ).rejects.toThrow(new ForbiddenException(AGENT_TARGET_ROLE_MESSAGE));
+    expect(workspaces.require).toHaveBeenCalledWith('maintainer-1', 'workspace-1', 'maintain');
+    expect(create).not.toHaveBeenCalled();
+
+    workspaces.require.mockResolvedValueOnce('admin');
+    await expect(
+      service.create(
+        'admin-1',
+        { name: 'Office Docker', kind: 'docker', capabilities: ['node'] },
+        'workspace-1',
+      ),
+    ).resolves.toMatchObject({ kind: 'docker' });
+  });
 
   it('creates an outbound-only Docker target without inbound credentials', async () => {
     const { service, create, audit } = setup();

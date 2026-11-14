@@ -184,6 +184,10 @@ export interface TargetRow {
  * edit, delete, test connection). Built-in targets carry only display metadata;
  * their live connection comes from config, so deployments to them are unchanged.
  */
+
+export const AGENT_TARGET_ROLE_MESSAGE =
+  'Only a workspace owner or admin can add a Docker Agent server, because only they can connect its Agent. A maintainer can add an SFTP server or use existing servers.';
+
 @Injectable()
 export class TargetsService implements OnModuleInit {
   private readonly logger = new Logger('TargetsService');
@@ -352,8 +356,13 @@ export class TargetsService implements OnModuleInit {
     requestedWorkspaceId?: string,
   ): Promise<Target> {
     const { id: workspaceId } = await this.workspaces.resolve(userId, requestedWorkspaceId);
-    await this.workspaces.require(userId, workspaceId, 'maintain');
     const agentBacked = dto.kind === 'docker';
+    const role = await this.workspaces.require(userId, workspaceId, 'maintain');
+    // An Agent server is useful only once someone enrolls its Agent, which
+    // needs workspace admin; a maintainer would create a dead end (ADR-181).
+    if (agentBacked && role !== 'owner' && role !== 'admin') {
+      throw new ForbiddenException(AGENT_TARGET_ROLE_MESSAGE);
+    }
     const routingMode = agentBacked ? (dto.routingMode ?? 'direct-port') : 'direct-port';
     let publicUrl = dto.publicUrl;
     if (agentBacked) {
