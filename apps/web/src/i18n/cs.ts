@@ -6,7 +6,13 @@
  * `{name}` placeholders and `<tag>…</tag>` markers must be kept; their order may
  * change freely. Grouped by the file where a message is first used.
  */
+import { csApi } from './cs-api';
+import { csWeb } from './cs-web';
+
 export const cs = {
+  // Sections kept in their own files (ADR-185).
+  ...csApi,
+  ...csWeb,
   // components/molecules/CopyField.tsx
   'Copy to clipboard': 'Zkopírovat do schránky',
   copied: 'zkopírováno',
