@@ -445,7 +445,11 @@ describe('ProjectProductionApprovals', () => {
         }),
       }),
     );
-    const fresh = harness('separate-reviewer', 'dev-test-prod', jest.fn(async () => preview));
+    const fresh = harness(
+      'separate-reviewer',
+      'dev-test-prod',
+      jest.fn(async () => preview),
+    );
     await expect(
       fresh.service.create('project-1', 'reviewer', {
         kind: 'rollback',

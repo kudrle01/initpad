@@ -141,7 +141,8 @@ export class ProjectQueries {
     userId: string,
     requestedWorkspaceId: string | undefined,
   ): Promise<ActivityEvent[]> {
-    return (await this.activityFeed(userId, requestedWorkspaceId, false, async () => [])).events;
+    return (await this.activityFeed(userId, requestedWorkspaceId, false, () => Promise.resolve([])))
+      .events;
   }
 
   /**
