@@ -29,9 +29,9 @@ describe('user guide links (ADR-156)', () => {
     expect(helpUrl('https://example.test/help/', 'en')).toBe('https://example.test/help/en/');
   });
 
-  it('opens the chapter in the active language in a new tab', () => {
+  it('opens the chapter in the active language in a new tab', async () => {
     auth.docsUrl = 'https://docs.example.test';
-    setLocale('cs');
+    await setLocale('cs');
     render(<HelpLink topic="import" />);
 
     const link = screen.getByRole('link', { name: /Více v nápovědě/ });

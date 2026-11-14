@@ -36,7 +36,9 @@ describe('toasts (P1.22)', () => {
     expect(alert).toHaveTextContent('Deploy failed');
     expect(alert.parentElement).toHaveAttribute('aria-live', 'polite');
 
-    act(() => vi.advanceTimersByTime(TOAST_DURATION_MS * 5));
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS * 5);
+    });
     expect(screen.getByRole('alert')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
@@ -46,22 +48,32 @@ describe('toasts (P1.22)', () => {
   it('hides a success message after its duration', () => {
     renderToasts('success', 'Saved');
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
-    act(() => vi.advanceTimersByTime(TOAST_DURATION_MS + 10));
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS + 10);
+    });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('pauses the countdown while the pointer is over the toast', () => {
     renderToasts('warning', 'Careful');
     const toast = screen.getByRole('status');
-    act(() => vi.advanceTimersByTime(TOAST_DURATION_MS - 1000));
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS - 1000);
+    });
     fireEvent.mouseEnter(toast);
-    act(() => vi.advanceTimersByTime(TOAST_DURATION_MS * 3));
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS * 3);
+    });
     expect(screen.getByRole('status')).toBeInTheDocument();
 
     fireEvent.mouseLeave(toast);
-    act(() => vi.advanceTimersByTime(500));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(screen.getByRole('status')).toBeInTheDocument();
-    act(() => vi.advanceTimersByTime(600));
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 

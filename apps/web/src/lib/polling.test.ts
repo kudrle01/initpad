@@ -12,6 +12,6 @@ describe('deployment history polling', () => {
     for (let index = 1; index < delays.length; index++) {
       expect(delays[index]).toBeGreaterThanOrEqual(delays[index - 1]);
     }
-    expect(delays.at(-1)).toBe(MAX_POLL_BACKOFF_MS);
+    expect(delays[delays.length - 1]).toBe(MAX_POLL_BACKOFF_MS);
   });
 });

@@ -9,12 +9,12 @@ import { loginPath } from '@/lib/login-path';
 
 const auth = vi.hoisted(() => ({
   state: {
-    user: null as unknown,
+    user: null as { mustChangePassword: boolean } | null,
     loading: false,
     logout: () => undefined,
     activeWorkspace: null,
     workspacesError: null as string | null,
-    refreshWorkspaces: (() => Promise.resolve()) as () => Promise<void>,
+    refreshWorkspaces: () => Promise.resolve(),
   },
 }));
 

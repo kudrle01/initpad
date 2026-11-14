@@ -8,7 +8,7 @@ export function readDraft<T>(key: string): Partial<T> | null {
   try {
     const raw = sessionStorage.getItem(PREFIX + key);
     const value: unknown = raw ? JSON.parse(raw) : null;
-    return value && typeof value === 'object' ? (value as Partial<T>) : null;
+    return value && typeof value === 'object' ? value : null;
   } catch {
     return null;
   }

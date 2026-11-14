@@ -136,7 +136,8 @@ describe('useProjectDetail', () => {
     rerender();
     await waitFor(() => expect(result.current.project?.id).toBe('project-2'));
 
-    const firstSignal = mocks.api.getProject.mock.calls[0]?.[1]?.signal as AbortSignal;
+    const firstCall = mocks.api.getProject.mock.calls[0] as unknown[];
+    const firstSignal = (firstCall[1] as { signal: AbortSignal }).signal;
     expect(firstSignal.aborted).toBe(true);
     await act(async () => {
       finishFirst(project);
