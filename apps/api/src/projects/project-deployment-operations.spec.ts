@@ -194,8 +194,8 @@ describe('ProjectDeploymentOperations', () => {
       environment: {
         findUnique: jest.fn(async () => ({
           id: 'env-1',
-          targetId: null,
-          target: null,
+          targetId: 'target-1',
+          target: { name: 'server', updatedAt: new Date() },
           provider: 'docker',
           activeOperationId: 'operation-running',
           project: { id: 'project-1', name: 'api', workspaceId: 'workspace-1' },
