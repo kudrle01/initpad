@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from 'path';
 import { parseSharedNetworks } from './auth/shared-networks';
-import { builtInPublicHost } from './common/public-url';
+import { builtInAppAddress, builtInPublicHost, hstsPlatformHostname } from './common/public-url';
 
 // One public origin of the platform (what the browser opens). The specific
 // variables stay as optional overrides for split topologies and for .env
@@ -34,6 +34,8 @@ const publicHost = builtInPublicHost(
   process.env.INITPAD_DEPLOY_PUBLIC_HOST,
   process.env.INITPAD_PUBLIC_HOST,
 );
+// Static-host default derived from publicHost; recomputed together with it.
+const staticWebPort = process.env.INITPAD_STATIC_WEB_PORT || 8085;
 
 // Product edition (ADR-039). The self-hosted edition ships the embedded Gitea
 // and the instance administrator chooses the registration policy below. The
@@ -270,9 +272,7 @@ export const config = {
       // Subdirectory with the static build, when the template produces one (otherwise the whole repo).
       artifactSubdir: process.env.INITPAD_SFTP_ARTIFACT_DIR || '',
       // Public address where nginx serves the published releases.
-      publicUrl:
-        process.env.INITPAD_SFTP_PUBLIC_URL ||
-        `http://${publicHost}:${process.env.INITPAD_STATIC_WEB_PORT || 8085}`,
+      publicUrl: process.env.INITPAD_SFTP_PUBLIC_URL || `http://${publicHost}:${staticWebPort}`,
       // Address the API uses to verify the site is being served (reachable
       // from wherever the API runs; compose points it at http://static-web).
       internalUrl:
@@ -376,6 +376,31 @@ export function builtInAppsShareSessionCookie(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Moves built-in app links off an HSTS-protected platform hostname (see
+ * `hstsPlatformHostname`) onto the address that name resolves to. Runs once
+ * before the targets are seeded, so the built-in static host and every rendered
+ * built-in environment URL use the same address. Returns the hostname that is
+ * still in use when no usable address was found, so bootstrap can warn.
+ */
+export async function adoptBuiltInAppAddress(
+  resolve?: (host: string) => Promise<string>,
+): Promise<{ address: string } | { unresolved: string } | null> {
+  if (config.edition !== 'self-hosted') return null;
+  const hostname = hstsPlatformHostname(
+    configuredPublicUrl,
+    process.env.INITPAD_DEPLOY_PUBLIC_HOST,
+  );
+  if (!hostname || hostname !== config.publicHost.toLowerCase()) return null;
+  const address = await builtInAppAddress(hostname, resolve);
+  if (!address) return { unresolved: hostname };
+  config.publicHost = address;
+  if (!process.env.INITPAD_SFTP_PUBLIC_URL) {
+    config.providers.sftp.publicUrl = `http://${address}:${staticWebPort}`;
+  }
+  return { address };
 }
 
 export function mailDeliveryConfigured(): boolean {

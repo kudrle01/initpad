@@ -219,7 +219,7 @@ export class TargetsService implements OnModuleInit {
     const builtins: Array<Omit<TargetRow, 'verifiedAt' | 'createdAt' | 'agent'>> = [
       {
         id: BUILTIN_DOCKER,
-        name: 'Company Docker (dev/test)',
+        name: 'Test environment (Docker)',
         kind: 'docker',
         scope: 'builtin',
         capabilities: 'static,node,php,python',
@@ -237,7 +237,7 @@ export class TargetsService implements OnModuleInit {
       },
       {
         id: BUILTIN_SFTP,
-        name: 'Company static host (SFTP)',
+        name: 'Test static hosting (SFTP)',
         kind: 'sftp',
         scope: 'builtin',
         capabilities: 'static',

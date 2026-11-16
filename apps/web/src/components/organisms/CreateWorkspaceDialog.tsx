@@ -94,7 +94,7 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: Props) {
                 id="workspace-name"
                 autoFocus
                 maxLength={80}
-                placeholder={t('Platform team')}
+                placeholder={t('e.g. Platform team')}
                 value={name}
                 onChange={(event) => changeName(event.target.value)}
               />

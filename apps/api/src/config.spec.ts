@@ -425,3 +425,59 @@ describe('public platform URL (audit P3)', () => {
     });
   });
 });
+
+describe('adoptBuiltInAppAddress', () => {
+  const keys = [
+    'INITPAD_PUBLIC_URL',
+    'INITPAD_DEPLOY_PUBLIC_HOST',
+    'INITPAD_SFTP_PUBLIC_URL',
+    'INITPAD_EDITION',
+  ] as const;
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  afterEach(() => {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  function load(env: Partial<Record<(typeof keys)[number], string>>): typeof import('./config') {
+    for (const key of keys) delete process.env[key];
+    Object.assign(process.env, env);
+    let loaded!: typeof import('./config');
+    jest.isolateModules(() => {
+      loaded = jest.requireActual<typeof import('./config')>('./config');
+    });
+    return loaded;
+  }
+
+  it('links built-in apps on the address of an HSTS-protected platform name', async () => {
+    const module = load({ INITPAD_PUBLIC_URL: 'https://initpad.corp.lan' });
+    await expect(
+      module.adoptBuiltInAppAddress(() => Promise.resolve('192.0.2.10')),
+    ).resolves.toEqual({ address: '192.0.2.10' });
+    expect(module.config.publicHost).toBe('192.0.2.10');
+    expect(module.config.providers.sftp.publicUrl).toBe('http://192.0.2.10:8085');
+  });
+
+  it('keeps the hostname and reports it when the name does not resolve', async () => {
+    const module = load({ INITPAD_PUBLIC_URL: 'https://initpad.corp.lan' });
+    await expect(
+      module.adoptBuiltInAppAddress(() => Promise.reject(new Error('ENOTFOUND'))),
+    ).resolves.toEqual({ unresolved: 'initpad.corp.lan' });
+    expect(module.config.publicHost).toBe('initpad.corp.lan');
+  });
+
+  it('respects an explicit deployment host and plain-HTTP installs', async () => {
+    const resolve = jest.fn(() => Promise.resolve('192.0.2.10'));
+    const split = load({
+      INITPAD_PUBLIC_URL: 'https://initpad.corp.lan',
+      INITPAD_DEPLOY_PUBLIC_HOST: 'apps.corp.lan',
+    });
+    await expect(split.adoptBuiltInAppAddress(resolve)).resolves.toBeNull();
+    expect(split.config.publicHost).toBe('apps.corp.lan');
+    const lan = load({ INITPAD_PUBLIC_URL: 'http://192.0.2.10:8080' });
+    await expect(lan.adoptBuiltInAppAddress(resolve)).resolves.toBeNull();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+});

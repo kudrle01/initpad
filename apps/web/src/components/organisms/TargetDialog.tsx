@@ -49,7 +49,7 @@ interface Props {
 }
 
 function defaultCapabilities(kind: ProviderKind): RuntimeKind[] {
-  // The primary SFTP use case is shared PHP hosting (ESO included). Keeping
+  // The primary SFTP use case is shared PHP hosting (shared hosting included). Keeping
   // both choices visible below still lets the user opt into static-only.
   if (kind === 'docker') return ['static', 'node', 'php', 'python'];
   return ['static', 'php'];
@@ -305,7 +305,7 @@ export function TargetFormDialog({
             <Input
               id="t-name"
               value={name}
-              placeholder={t('ESO school server')}
+              placeholder={t('e.g. Production web server')}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
@@ -388,7 +388,7 @@ export function TargetFormDialog({
                 <Input
                   id="t-host"
                   value={host}
-                  placeholder="eso.example.edu"
+                  placeholder="deploy.example.com"
                   onChange={(e) => changeHost(e.target.value)}
                 />
               </div>
@@ -497,7 +497,7 @@ export function TargetFormDialog({
                 <Input
                   id="t-path"
                   value={remotePath}
-                  placeholder="/www/myapp"
+                  placeholder="/var/www/app"
                   onChange={(e) => setRemotePath(e.target.value)}
                 />
               </div>
@@ -530,9 +530,9 @@ export function TargetFormDialog({
               placeholder={
                 kind === 'docker'
                   ? routingMode === 'managed-gateway'
-                    ? 'https://apps.example.cz'
-                    : 'http://192.168.1.50'
-                  : 'https://eso.example.edu/~user'
+                    ? 'https://apps.example.com'
+                    : 'http://192.0.2.50'
+                  : 'https://app.example.com'
               }
               onChange={(e) => setPublicUrl(e.target.value)}
               aria-invalid={

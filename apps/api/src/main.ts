@@ -6,7 +6,12 @@ import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import { AppModule } from './app.module';
-import { builtInAppsShareSessionCookie, config, validateConfig } from './config';
+import {
+  adoptBuiltInAppAddress,
+  builtInAppsShareSessionCookie,
+  config,
+  validateConfig,
+} from './config';
 import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
 import { requestContextMiddleware } from './common/request-context';
 import { csrfProtection } from './common/csrf-protection';
@@ -20,6 +25,24 @@ async function bootstrap() {
   if (staleWorkFiles.length > 0) {
     logger.log(
       { event: 'platform.stale_work_files_removed', count: staleWorkFiles.length },
+      'Bootstrap',
+    );
+  }
+  // Before the module seeds the built-in targets (their static-host URL).
+  const builtInAppHost = await adoptBuiltInAppAddress();
+  if (builtInAppHost && 'address' in builtInAppHost) {
+    logger.log(
+      { event: 'platform.built_in_app_address', address: builtInAppHost.address },
+      'Bootstrap',
+    );
+  } else if (builtInAppHost) {
+    logger.warn(
+      {
+        event: 'deployment.built_in_app_host_hsts',
+        host: builtInAppHost.unresolved,
+        remedy:
+          'Browsers force HTTPS on every port of the HTTPS platform host, so built-in app links on it fail. Set INITPAD_DEPLOY_PUBLIC_HOST to the server IP address.',
+      },
       'Bootstrap',
     );
   }
