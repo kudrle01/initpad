@@ -1,4 +1,4 @@
-FROM php:8.3-cli-alpine@sha256:66e726c387bd539888c3d05f4e2c8b03c85566805a02476fdfb7ca8d3592c2db AS base
+FROM php:8.3-cli-alpine@sha256:e7699f91d3b46283a49bde02379266dd98d87844e08aed1ff7ea6a7d1f031268 AS base
 RUN apk add --no-cache oniguruma-dev \
  && docker-php-ext-install mbstring
 COPY --from=composer:2@sha256:d8f6343d3fae98107426bc49163ccad46ef85aabd4a27d80a74401fab4aba332 /usr/bin/composer /usr/bin/composer
@@ -15,7 +15,7 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-progress --optimize-autoloader
 
 # FrankenPHP is a production web server; `php -S` is a development tool.
-FROM dunglas/frankenphp:1.13.5-php8.3-alpine@sha256:8a84f4e33f207cc63a1b829a828bfdc1f0d665d503597d038e56118ffa4e364f AS runtime
+FROM dunglas/frankenphp:1.13.5-php8.3-alpine@sha256:c7362b955772ba5e02a0caee2afba29d42b494f0db4fc626dcdce7e08985ed8e AS runtime
 ENV APP_ENV=production \
     APP_DEBUG=false \
     CACHE_STORE=file \
