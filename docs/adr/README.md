@@ -198,3 +198,4 @@ stabilní.
 | [ADR-184](./ADR-184.md) | Accepted | Převod vlastnictví workspace, odchod z něj a správa platformních rolí |
 | [ADR-185](./ADR-185.md) | Accepted | Web překládá hlášky API, sjednocuje pojmy a nevede do slepých uliček |
 | [ADR-186](./ADR-186.md) | Accepted | Jedna Node LTS linie, deterministický PR gate a ověřené release image |
+| [ADR-187](./ADR-187.md) | Accepted | Odkazy vestavěného testovacího prostředí mimo HTTPS doménu platformy |

@@ -63,7 +63,7 @@ describe('ProjectEnvironmentTargets Agent readiness', () => {
     const builtin: TargetRow = {
       ...target,
       id: 'builtin-docker',
-      name: 'Company Docker (dev/test)',
+      name: 'Test environment (Docker)',
       scope: 'builtin',
       agent: null,
     };

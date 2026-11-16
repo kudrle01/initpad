@@ -163,8 +163,12 @@ a s aplikacemi nasazenými přímo na tento host (viz
 Caddy ukončuje HTTPS pro obě jména, posílá hlavičku HSTS a požadavky na
 `/api/*` předává přímo API, `INITPAD_TRUST_PROXY_HOPS` proto zůstává `1`.
 Vestavěné odkazy na aplikace používají hostname z `INITPAD_PUBLIC_URL`.
-Proměnnou `INITPAD_DEPLOY_PUBLIC_HOST` nastavujte pouze u dělené topologie,
-ve které aplikace záměrně používají jiný hostname.
+Výjimkou je HTTPS jméno platformy: HSTS by prohlížeč donutilo otevírat přes
+HTTPS i přímé porty, proto API odkazy testovacího prostředí směruje na IPv4,
+na kterou se jméno platformy překládá (ADR-187). Proměnnou
+`INITPAD_DEPLOY_PUBLIC_HOST` nastavujte pouze u dělené topologie, ve které
+aplikace záměrně používají jiný hostname, nebo když se jméno z kontejneru
+API nepřeloží.
 
 Nasazení s přímými porty se ve výchozím stavu vážou na `127.0.0.1` (a pro
 health sondu API na Docker host-gateway, ADR-174). Pro stabilní HTTPS adresy

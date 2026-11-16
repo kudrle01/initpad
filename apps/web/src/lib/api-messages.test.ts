@@ -24,7 +24,7 @@ const REAL_MESSAGES = [
   "You already have a target named 'lab'",
   "This workspace already has a target named 'lab'",
   'This target is used by 2 environment(s). Point them at another target first.',
-  "Target 'eso' must pass Test connection before it can host an environment.",
+  "Target 'staging' must pass Test connection before it can host an environment.",
   'Workspace access quota reached (max 5 environments).',
   'Invalid or expired Agent enrollment token',
   "'PORT' is a reserved platform variable",

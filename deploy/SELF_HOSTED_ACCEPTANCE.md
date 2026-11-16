@@ -202,7 +202,7 @@ ruční kontrolu navigace a skrytých tlačítek popsanou níže.
 
 V každém workspace otevři **Infrastructure → Allocations → Add allocation**:
 
-1. vyber `Company Docker (dev/test)`;
+1. vyber `Test environment (Docker)`;
 2. ponech všechny capabilities;
 3. nastav kvótu `6`;
 4. Public URL override nech prázdný.

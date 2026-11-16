@@ -252,7 +252,14 @@ apply_domain_network() { # <platform domain> <git domain> <internal|public> [qui
     # Checkout jobs clone over the private same-host port, so the throwaway
     # job images never need the CA (the nested daemon gets it for the registry).
     set_env INITPAD_GITEA_RUNNER_URL "http://host.docker.internal:$gitea_port"
-    [ -n "$quiet" ] || say "Network: https://$domain and https://$git with certificates from InitPad's own CA"
+    if [ -z "$quiet" ]; then
+      # An internal network with its own DNS is trusted like the IP mode: the
+      # built-in test environment links apps on the server IP and a direct
+      # port (the platform name is HTTPS-only through HSTS, ADR-187).
+      set_env INITPAD_DEPLOY_BIND_ADDRESS 0.0.0.0
+      say "Network: https://$domain and https://$git with certificates from InitPad's own CA"
+      warn "Built-in test environment apps get plain-HTTP direct ports on the server IP, reachable from the whole internal network. Restrict the ports with the host firewall where needed, or deploy through an Agent with the managed gateway for HTTPS app URLs."
+    fi
   else
     set_env INITPAD_TLS_DIRECTIVE ""
     set_env INITPAD_GITEA_RUNNER_URL "https://$git"

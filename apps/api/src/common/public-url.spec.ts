@@ -1,5 +1,7 @@
 import {
+  builtInAppAddress,
   builtInPublicHost,
+  hstsPlatformHostname,
   publicHostname,
   publicHttpsUrlIssue,
   withCurrentPublicHost,
@@ -70,5 +72,43 @@ describe('withCurrentPublicHost', () => {
     expect(withCurrentPublicHost('http://old.test:8085', '[2001:db8::10]')).toBe(
       'http://[2001:db8::10]:8085',
     );
+  });
+});
+
+describe('hstsPlatformHostname', () => {
+  it('names an HTTPS platform hostname, which HSTS makes HTTPS-only on every port', () => {
+    expect(hstsPlatformHostname('https://InitPad.corp.lan', undefined)).toBe('initpad.corp.lan');
+  });
+
+  it.each([
+    ['http://initpad.corp.lan:8080', undefined],
+    ['https://192.0.2.10', undefined],
+    ['https://[2001:db8::10]', undefined],
+    ['https://localhost', undefined],
+    ['https://initpad.corp.lan', 'apps.corp.lan'],
+    [undefined, undefined],
+    ['not a url', undefined],
+  ])('leaves %s (override %s) alone', (url, override) => {
+    expect(hstsPlatformHostname(url, override)).toBeNull();
+  });
+});
+
+describe('builtInAppAddress', () => {
+  it('uses the IPv4 address the platform name resolves to', async () => {
+    await expect(
+      builtInAppAddress('initpad.corp.lan', () => Promise.resolve('192.0.2.10')),
+    ).resolves.toBe('192.0.2.10');
+  });
+
+  it.each(['127.0.1.1', '0.0.0.0', 'not-an-ip'])('rejects %s', async (address) => {
+    await expect(
+      builtInAppAddress('initpad.corp.lan', () => Promise.resolve(address)),
+    ).resolves.toBeNull();
+  });
+
+  it('gives null when the name does not resolve', async () => {
+    await expect(
+      builtInAppAddress('initpad.corp.lan', () => Promise.reject(new Error('ENOTFOUND'))),
+    ).resolves.toBeNull();
   });
 });

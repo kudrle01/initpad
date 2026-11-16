@@ -373,7 +373,7 @@ export const cs = {
   'Create a shared space for a team. You will become its owner and can invite members afterwards.':
     'Vytvořte sdílený prostor pro tým. Stanete se jeho vlastníkem a poté můžete pozvat členy.',
   'Workspace name': 'Název workspace',
-  'Platform team': 'Platformní tým',
+  'e.g. Platform team': 'např. Platformní tým',
   'Workspace slug': 'Slug workspace',
   'About the workspace slug': 'O slugu workspace',
   'A stable identifier used in namespaces and URLs. Use lowercase letters, numbers and hyphens.':
@@ -976,7 +976,7 @@ export const cs = {
   'The previous credential was permanently removed. Save a replacement, then run Test connection to resume InitPad management.':
     'Předchozí údaje byly trvale odstraněny. Uložte náhradní a pak spusťte Otestovat připojení, aby se správa přes InitPad obnovila.',
   Name: 'Název',
-  'ESO school server': 'Školní server ESO',
+  'e.g. Production web server': 'např. Produkční webový server',
   'Connection method': 'Způsob připojení',
   'InitPad Agent for Docker (recommended)': 'InitPad Agent pro Docker (doporučeno)',
   'SFTP shared web hosting': 'Sdílený webhosting přes SFTP',

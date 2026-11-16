@@ -60,8 +60,8 @@ interface EffCfg {
  *
  * Two kinds of target:
  *  - demo (no connection): the fake-sftp container served by nginx;
- *  - custom (input.connection): the user's own SFTP host (e.g. a school server
- *    such as ESO that also runs PHP), configured via a form in the UI.
+ *  - custom (input.connection): the user's own SFTP host (e.g. shared web
+ *    hosting that also runs PHP), configured via a form in the UI.
  *
  * Layout is namespaced per project+environment so deployments never overwrite
  * each other: <root>/<slug>-releases/<version> plus a <root>/<slug> symlink to
