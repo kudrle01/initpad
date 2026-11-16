@@ -1,10 +1,11 @@
 # Release readiness a známá omezení
 
 Release baseline tohoto dokumentu je doporučený Agent 0.17.0, odmítnuté
-release 0.13.0 a 0.14.0 a nejnovější vydaná platforma `initpad-v0.2.38`.
-Agent 0.17.0 a platformy 0.2.36, 0.2.37 a 0.2.38 prošly anonymním auditem.
-Platforma 0.2.38 (ADR-187) byla 16. listopadu 2026 povýšena na stable bez
-živé acceptance aktualizace. Dne 14. listopadu 2026 prošly v lokálním Dockeru živou candidate acceptance
+release 0.13.0 a 0.14.0 a nejnovější vydaná platforma `initpad-v0.2.40`.
+Agent 0.17.0 a platformy 0.2.36, 0.2.37, 0.2.38 a 0.2.40 prošly anonymním
+auditem. Platformy 0.2.38 (ADR-187) a 0.2.40 (ADR-188 a aktualizace
+závislostí) byly 16. listopadu 2026 povýšeny na stable bez živé acceptance
+aktualizace; kandidát 0.2.39 nebyl povýšen a nahrazuje ho 0.2.40. Dne 14. listopadu 2026 prošly v lokálním Dockeru živou candidate acceptance
 aktualizace z 0.2.35 tlačítkem **Install update**: `initpad-v0.2.36` za 38 s se
 zachováním dat, identit a workloadů (`after-success` i health-gated
 `fault-rollback`) a `initpad-v0.2.37` za 37 s, po které vestavěný Docker nasadí
@@ -265,6 +266,7 @@ npm run audit:public-release -- --tag initpad-v0.2.32
 npm run audit:public-release -- --tag initpad-v0.2.33
 npm run audit:public-release -- --tag initpad-v0.2.37
 npm run audit:public-release -- --tag initpad-v0.2.38
+npm run audit:public-release -- --tag initpad-v0.2.40
 npm run audit:public-release -- --tag agent-v0.14.2
 npm run audit:public-release -- --tag agent-v0.14.3
 npm run audit:public-release -- --tag agent-v0.17.0
