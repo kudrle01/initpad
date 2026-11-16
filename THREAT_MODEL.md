@@ -38,6 +38,12 @@ konfiguraci v paměti.
   instance si volí otevřenou registraci, nebo účty zakládané administrátorem,
   které jsou výchozí. První účet (administrátor) vyžaduje instalační token, takže
   čerstvou instanci nezabere ten, kdo se zaregistruje první (ADR-136).
+- Veřejný SaaS dovoluje registraci e-mailem a heslem, ale účet je použitelný
+  až po potvrzení e-mailu a přihlášení neověřeného účtu selže až po správném
+  hesle. Nepotvrzený účet starší než platnost odkazu cizí adresu neblokuje.
+  Do týmového workspace se v SaaS vstupuje jen přijetím jednorázové pozvánky
+  s platností 7 dní; token je uložený jako hash a odkaz je credential, proto je
+  jeho vytvoření, přijetí i zrušení v auditu (ADR-188).
   Autentizace, GitHub OAuth a setup i enrollment Agenta mají explicitní limity
   specifické pro danou operaci. Atomické čítače PostgreSQL sdílí každá replika
   API a kombinují důvěryhodnou IP klienta s HMAC subjektu účtu nebo tokenu.

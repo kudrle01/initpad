@@ -557,9 +557,10 @@ se na čistý SFTP hosting nenabízejí; target matching to odmítne před deplo
 ### Fáze 2 — identity a workspace onboarding — dokončeno
 
 - Jediný organizační model tvoří workspaces a role; žádný zvláštní `Course` login.
-- Public SaaS vytváří účet při prvním přihlášení přes GitHub; vlastní heslo ani
-  vestavěnou Giteu nenabízí.
-- Workspace owner/admin přidává existující účet podle username/e-mailu a přidělí roli.
+- Public SaaS vytváří účet při prvním přihlášení přes GitHub, nebo registrací
+  e-mailem a heslem s potvrzovacím e-mailem (ADR-188); vestavěnou Giteu nenabízí.
+- Workspace owner/admin pozve e-mail s rolí a pozvaný se připojí přijetím
+  pozvánky (ADR-188). Self-hosted dál umí přidat existující účet přímo.
 - Self-hosted správce volí `open` nebo `admin-provisioned`, spravuje uživatele a
   vydává aktivační odkaz nebo jednorázové dočasné přihlašovací údaje s vynucenou
   změnou hesla.
@@ -582,6 +583,15 @@ aktivační/verifikační odkaz; reset hesla zůstane neenumerující a správce
 použije administrátorský reset. SaaS vyžaduje SMTP konfiguraci i file-backed
 heslo. Konkrétní provider, deliverability a rotace secretu se ještě musí ověřit
 ve stagingu.
+
+Registrace e-mailem v SaaS a pozvánky se souhlasem jsou implementované
+(ADR-188, issue #239): heslo se zadává dvakrát, účet vznikne bez session a
+osobního workspace a použitelný je až po potvrzení e-mailu; potvrzení lze
+poslat znovu bez prozrazení účtu a prošlý nepotvrzený účet adresu neblokuje.
+Owner/admin týmového workspace posílá jednorázové pozvánky s platností 7 dní,
+vidí čekající a může je zrušit; bez SMTP dostane odkaz ke zkopírování. V SaaS
+se člen přidává jen přijetím pozvánky. Živé ověření doručení přes Brevo na
+stagingu je součástí uživatelského testu milníku 4.
 
 ### Fáze 3 — existující repozitáře a cloudové SCM — rozpracováno
 
@@ -1517,7 +1527,7 @@ jen konkrétní provozní a vyhodnocovací scénář.
    obě platformy prošly v lokálním Dockeru živou acceptance aktualizace z
    0.2.35 tlačítkem **Install update** a byly povýšeny na stable.
    **Zbývá:** živá acceptance na samostatném hostu (platforma i Agent 0.17),
-   pozvánky do workspace se souhlasem, rozdělení největších souborů a major
+   rozdělení největších souborů a major
    upgrady Prisma/Nest/React.
    **Uživatelský test:** na čistém stroji `./install.sh --local`, vytvořit
    admina, projekt a během minut otevřít dev URL bez úpravy `.env`.
@@ -1543,7 +1553,7 @@ se výsledek (screenshot/HTTP výsledek, datum a případná odchylka):
 | 1 — bezpečný baseline | ano | Přihlášení, vytvoření projektu, viditelné CI a responzivní UI; build/test/health jsou zelené. |
 | 2 — architektura | nepřímo | Uživatel nic nového neovládá; školní scénář a scope schválí vyučující proti ADR/roadmapě. |
 | 3 — workspaces/RBAC | ano | Dva účty, tým, viewer, sdílený projekt, přepnutí workspace; viewer čte, nezapisuje, cizí ID vrací 404 a nedostatečná role ve vlastním workspace 403. |
-| 4 — identity/onboarding | ano | Self-hosted `open`: samoobslužná registrace. Self-hosted soukromě: admin vytvoří účet a předá aktivační odkaz nebo dočasné heslo s vynucenou změnou. SaaS: pouze GitHub login. Majitel přidá do týmu existující účet podle e-mailu; role platí i v SCM. |
+| 4 — identity/onboarding | ano | Self-hosted `open`: samoobslužná registrace. Self-hosted soukromě: admin vytvoří účet a předá aktivační odkaz nebo dočasné heslo s vynucenou změnou. SaaS: GitHub login, nebo registrace e-mailem se dvěma hesly, potvrzovací e-mail a přihlášení až po potvrzení. Majitel pozve e-mail do týmu; pozvaný se přihlásí nebo zaregistruje, přijme pozvánku a má zvolenou roli; použitý nebo zrušený odkaz už nefunguje. Self-hosted přidá existující účet i přímo; role platí i v SCM. |
 | 5 — import repa/SCM | částečně | Self-hosted: stávající Gitea projekty beze změny URL projdou detail/import/deploy/delete. SaaS se živou App: New project nabídne osobní/organizační instalace aktivního workspace, založí soukromé GitHub repo a import vypíše repa všech grantů; cizí workspace installation ID musí vrátit 400. Import bez Dockerfile nebo nového artifact callbacku je zablokovaný. Ověřit commity/check runs, artifact ID/digest, dev deploy stejného SHA, retry a delete/detach. Durable object-store ingestion je hotová; plný cloudový workload provoz čeká na Agenta. |
 | 6 — target allocations | ano | Podle `deploy/SELF_HOSTED_ACCEPTANCE.md` dva workspace nasadí na jeden Docker target; sítě/jména se nepřekrývají, role/cizí data jsou izolované a disabled/quota policy je vynucená. |
 | 7 — agent | ano | Instalace/enrollment, online heartbeat, **Test protocol** a **Test Docker**; lifecycle ověří digest-pinned image, health, bounded logy, replace/rollback/stop/start a úplný cleanup. Potom vytvořit skutečný projekt s Agent targetem pro dev, ověřit stejný artifact digest, Deploy → Stop → Start → Remove a prázdný cleanup. Po vypnutí Agent přejde offline a nový deploy zůstane ve frontě; po reconnectu se dokončí právě jednou. Druhý workspace nesmí vidět ani měnit první workload. U Agentu 0.10+ se po dosažení rotačního intervalu zvýší credential generation právě o jedna, pending upozornění po potvrzení zmizí, heartbeat i rozpracovaný job pokračují a starý credential je odmítnut. Produkční routing navíc ověří dvě současně alokované stabilní HTTPS URL, zachování URL při redeploy/rename/stop-start, rollback při výpadku gateway a nepřístupný gateway admin endpoint i Docker API. |
