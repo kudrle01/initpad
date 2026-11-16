@@ -41,6 +41,13 @@ const GITEA_HARDENING_RETRY_MS = 10 * 60_000;
 const DUMMY_PASSWORD_HASH =
   '42424242424242424242424242424242:7b1eed877afda522cc3d7931c595e1286685d07309088a38f59e89fcc7a6757d6007f55ec667d4a21cb6c989d838fffa305bb45467b6f388333ecf7d528cef12';
 
+/**
+ * A self-hosted registration signs the user in. A SaaS registration only
+ * sends the confirmation e-mail; the account is usable after it (ADR-188).
+ */
+export type RegistrationResult =
+  { token: string; user: SessionUser } | { verificationRequired: true; email: string };
+
 export interface SessionUser {
   id: string;
   username: string;
@@ -229,9 +236,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
    * accounts are provisioned explicitly by that administrator.
    */
   async registrationAvailable(): Promise<boolean> {
-    // Public SaaS identity is GitHub-only. Native password registration is a
-    // self-hosted feature and must never silently fall back to managed Gitea.
-    if (config.edition === 'saas') return false;
+    // SaaS registration needs no Gitea account and is confirmed by e-mail
+    // (ADR-188); SaaS refuses to start without SMTP delivery.
+    if (config.edition === 'saas') return true;
     if (config.auth.registrationMode === 'open') return true;
     return (await this.prisma.user.count()) === 0;
   }
@@ -277,11 +284,20 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return this.mail?.isEnabled() ?? false;
   }
 
-  /** Managed registration: provisions a Gitea account + token, persists the user. */
-  async register(
-    dto: RegisterDto,
-    client: SessionClient = {},
-  ): Promise<{ token: string; user: SessionUser }> {
+  /** Password sign-in is offered in self-hosted and, with SMTP, in SaaS. */
+  passwordAuthEnabled(): boolean {
+    return config.edition === 'self-hosted' || this.emailDeliveryEnabled();
+  }
+
+  /**
+   * Self-hosted: managed registration provisions a Gitea account and signs in.
+   * SaaS: creates an unconfirmed account and sends the confirmation e-mail.
+   */
+  async register(dto: RegisterDto, client: SessionClient = {}): Promise<RegistrationResult> {
+    if (dto.passwordConfirmation !== undefined && dto.passwordConfirmation !== dto.password) {
+      throw new BadRequestException('Passwords do not match');
+    }
+    if (config.edition === 'saas') return this.registerSaasAccount(dto);
     let release!: () => void;
     const previous = this.registrationLock;
     this.registrationLock = new Promise<void>((resolve) => {
@@ -320,6 +336,110 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       details: { administrator: userCount === 0 },
     });
     return { token: await this.sessions.issue(user, client), user: this.toSession(user) };
+  }
+
+  /**
+   * SaaS registration (ADR-188). The account has no Gitea identity, no
+   * workspace and no session until its e-mail is confirmed, so an address
+   * nobody controls never becomes a usable account.
+   */
+  private async registerSaasAccount(
+    dto: RegisterDto,
+  ): Promise<{ verificationRequired: true; email: string }> {
+    if (!this.mail?.isEnabled()) {
+      throw new ServiceUnavailableException(
+        'E-mail delivery is not configured, so a new account cannot be confirmed.',
+      );
+    }
+    const username = normalizeAccountIdentifier(dto.username);
+    const email = normalizeAccountIdentifier(dto.email);
+    if (isReservedUsername(username)) {
+      throw new BadRequestException(RESERVED_USERNAME_MESSAGE);
+    }
+    await this.removeStaleUnconfirmedAccounts(username, email);
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: accountIdentifierEquals(username) },
+          { email: accountIdentifierEquals(email) },
+        ],
+      },
+    });
+    if (existing) throw new BadRequestException('Username or e-mail is already taken');
+    const passwordHash = await hashPassword(dto.password);
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          username,
+          email,
+          platformRole: 'user',
+          passwordHash,
+          accessToken: '',
+          giteaId: null,
+          emailVerifiedAt: null,
+        },
+      });
+    } catch (error) {
+      // A concurrent registration won the unique username or e-mail.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new BadRequestException('Username or e-mail is already taken');
+      }
+      throw error;
+    }
+    await this.issueAuthLink(user, 'email_verify', EMAIL_VERIFY_TTL_MS, 'verify-email');
+    await this.accountEvent('auth.registered', user, {
+      actorUserId: user.id,
+      details: { administrator: false, confirmation: 'email' },
+    });
+    return { verificationRequired: true, email };
+  }
+
+  /**
+   * An unconfirmed SaaS account whose confirmation link already expired must
+   * not hold a username or someone else's e-mail address forever. Such an
+   * account never had a session, workspace or linked identity.
+   */
+  private async removeStaleUnconfirmedAccounts(username: string, email: string): Promise<void> {
+    const stale = await this.prisma.user.findMany({
+      where: {
+        OR: [
+          { username: accountIdentifierEquals(username) },
+          { email: accountIdentifierEquals(email) },
+        ],
+        emailVerifiedAt: null,
+        passwordHash: { not: null },
+        giteaId: null,
+        externalIdentities: { none: {} },
+        memberships: { none: {} },
+        createdAt: { lt: new Date(Date.now() - EMAIL_VERIFY_TTL_MS) },
+      },
+      select: { id: true, username: true },
+    });
+    if (stale.length === 0) return;
+    await this.prisma.user.deleteMany({ where: { id: { in: stale.map((user) => user.id) } } });
+    for (const user of stale) {
+      await this.accountEvent('auth.unconfirmed_account_removed', user, { anonymous: true });
+    }
+  }
+
+  /**
+   * Sends the registration confirmation again. Answers the same way whether
+   * or not an unconfirmed account exists, so it cannot enumerate addresses.
+   */
+  async resendRegistrationConfirmation(identity: string): Promise<void> {
+    const id = normalizeAccountIdentifier(identity);
+    if (!id || !this.mail?.isEnabled()) return;
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ username: accountIdentifierEquals(id) }, { email: accountIdentifierEquals(id) }],
+        emailVerifiedAt: null,
+        passwordHash: { not: null },
+      },
+    });
+    if (!user || !user.email || user.active === false) return;
+    await this.issueAuthLink(user, 'email_verify', EMAIL_VERIFY_TTL_MS, 'verify-email');
+    this.logger.log({ event: 'auth.registration_confirmation.queued', userId: user.id });
   }
 
   /**
@@ -487,8 +607,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     dto: LoginDto,
     client: SessionClient = {},
   ): Promise<{ token: string; user: SessionUser }> {
-    if (config.edition === 'saas') {
-      throw new ForbiddenException('Password sign-in is disabled in the SaaS edition');
+    if (!this.passwordAuthEnabled()) {
+      throw new ForbiddenException('Password sign-in is not available on this instance');
     }
     const identity = normalizeAccountIdentifier(dto.username);
     const user = await this.prisma.user.findFirst({
@@ -519,6 +639,18 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         details: { reason: 'deactivated' },
       });
       throw new UnauthorizedException('This account has been deactivated');
+    }
+    // Checked only after the password matched, so it reveals nothing about
+    // which addresses have an account (ADR-188).
+    if (config.edition === 'saas' && !user.emailVerifiedAt) {
+      await this.accountEvent('auth.sign_in_failed', user, {
+        anonymous: true,
+        outcome: 'failed',
+        details: { reason: 'email_unconfirmed' },
+      });
+      throw new ForbiddenException(
+        'Confirm your e-mail address before signing in. Open the link we sent you or send it again.',
+      );
     }
     await this.accountEvent('auth.signed_in', user, {
       actorUserId: user.id,
@@ -596,6 +728,21 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         where: { id: record.userId },
         data: { emailVerifiedAt: new Date() },
       });
+      // A SaaS registration gets its personal workspace only once confirmed.
+      if (
+        config.edition === 'saas' &&
+        (await tx.workspaceMember.count({ where: { userId: user.id } })) === 0
+      ) {
+        await tx.workspace.create({
+          data: {
+            slug: `personal-${user.username.toLowerCase()}`,
+            name: `${user.username}'s workspace`,
+            type: 'personal',
+            productionApprovalPolicy: 'self-review',
+            members: { create: { userId: user.id, role: 'owner' } },
+          },
+        });
+      }
       await this.accountEvent('auth.email_verified', user, { actorUserId: user.id }, tx);
     });
   }

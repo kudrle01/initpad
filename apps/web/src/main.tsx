@@ -21,6 +21,7 @@ const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 const VerifyEmail = lazy(() => import('@/pages/VerifyEmail'));
 const Activate = lazy(() => import('@/pages/Activate'));
+const Invite = lazy(() => import('@/pages/Invite'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Projects = lazy(() => import('@/pages/Projects'));
 const Templates = lazy(() => import('@/pages/Templates'));
@@ -55,6 +56,7 @@ const router = createBrowserRouter([
       { path: '/reset-password', element: page(ResetPassword) },
       { path: '/verify-email', element: page(VerifyEmail) },
       { path: '/activate', element: page(Activate) },
+      { path: '/invite', element: page(Invite) },
       // Links issued before ADR-143 carried the token in the path.
       { path: '/reset-password/:token', element: <LegacyLinkRedirect to="/reset-password" /> },
       { path: '/verify-email/:token', element: <LegacyLinkRedirect to="/verify-email" /> },

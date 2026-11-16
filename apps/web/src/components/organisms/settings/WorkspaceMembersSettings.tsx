@@ -25,7 +25,7 @@ const ASSIGNABLE_ROLES: Array<{ value: AssignableRole; label: MessageKey }> = [
 ];
 
 export function WorkspaceMembersSettings() {
-  const { activeWorkspace, refreshWorkspaces } = useAuth();
+  const { user, activeWorkspace, refreshWorkspaces } = useAuth();
   const toast = useToast();
   const confirmAction = useConfirmation();
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
@@ -39,6 +39,8 @@ export function WorkspaceMembersSettings() {
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
   const isTeam = activeWorkspace?.type === 'team';
   const canManage = canAdmin && isTeam;
+  // SaaS members join only by accepting an invitation (ADR-188).
+  const canAddDirectly = canManage && user?.edition !== 'saas';
   const isOwner = activeWorkspace?.role === 'owner';
   const [leaving, setLeaving] = useState(false);
   const activeWorkspaceId = activeWorkspace?.id;
@@ -238,7 +240,7 @@ export function WorkspaceMembersSettings() {
         ) : undefined
       }
     >
-      {canManage && (
+      {canAddDirectly && (
         <div className="border-b border-border/70 bg-muted/50 px-4 py-4 sm:px-6">
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
             <Input

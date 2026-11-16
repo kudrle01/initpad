@@ -51,6 +51,7 @@ model User {
   emailOutbox                EmailOutbox[]
   oidcGrants                 OidcGrant[]
   externalIdentities         ExternalIdentity[]
+  sentWorkspaceInvitations   WorkspaceInvitation[]         @relation("WorkspaceInvitationInviter")
   githubInstallationAccesses GitHubInstallationAccess[]    @relation("GitHubInstallationAuthorizedBy")
   githubInstallationSetups   GitHubInstallationSetup[]
   auditEvents                AuditEvent[]                  @relation("AuditEventActor")
@@ -178,7 +179,7 @@ model EmailOutbox {
   id               String    @id @default(uuid())
   user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   userId           String?
-  kind             String // email_verify | password_reset | activation
+  kind             String // email_verify | password_reset | activation | workspace_invite
   recipient        String
   payloadEncrypted String
   status           String    @default("pending") // pending | sending | sent | failed
@@ -330,6 +331,7 @@ model Workspace {
   githubInstallationAccesses GitHubInstallationAccess[]
   githubInstallationSetups   GitHubInstallationSetup[]
   auditEvents                AuditEvent[]
+  invitations                WorkspaceInvitation[]
   // Every production publication requires a review. Personal workspaces allow
   // the requester to review their own request; team workspaces default to a
   // distinct reviewer (ADR-082).
@@ -355,6 +357,28 @@ model WorkspaceMember {
 
   @@id([workspaceId, userId])
   @@index([userId])
+}
+
+// Consent-based entry to a team workspace (ADR-188). The link token is stored
+// only as a SHA-256 hash. A row is pending while it is neither accepted nor
+// revoked and has not expired; a new invitation to the same e-mail revokes the
+// previous pending one.
+model WorkspaceInvitation {
+  id           String    @id @default(uuid())
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId  String
+  email        String
+  role         String // admin | maintainer | member | viewer
+  tokenHash    String    @unique
+  invitedBy    User?     @relation("WorkspaceInvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedById  String?
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([workspaceId, email])
 }
 
 // Immutable workspace activity used for security review and organizational

@@ -85,6 +85,36 @@ export interface WorkspaceMember {
   createdAt: string;
 }
 
+// A SaaS registration waits for the e-mail confirmation (ADR-188).
+export interface RegistrationPending {
+  verificationRequired: true;
+  email: string;
+}
+
+export interface WorkspaceInvitation {
+  id: string;
+  email: string;
+  role: Exclude<WorkspaceRole, 'owner'>;
+  invitedBy: string | null;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface CreatedWorkspaceInvitation {
+  invitation: WorkspaceInvitation;
+  delivery: 'email' | 'manual';
+  // Only without SMTP: the administrator passes the link on.
+  inviteUrl?: string;
+}
+
+export interface InvitationPreview {
+  workspaceName: string;
+  role: Exclude<WorkspaceRole, 'owner'>;
+  invitedBy: string | null;
+  email: string;
+  expiresAt: string;
+}
+
 export interface WorkspaceCapacity {
   workspaceId: string;
   workspaceName: string;

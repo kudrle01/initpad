@@ -331,6 +331,10 @@ export class WorkspacesService {
 
   async addMember(userId: string, workspaceId: string, dto: AddWorkspaceMemberDto) {
     await this.require(userId, workspaceId, 'admin');
+    // Public SaaS accounts join only by accepting an invitation (ADR-188).
+    if (config.edition === 'saas') {
+      throw new ForbiddenException('Invite people by e-mail; they join when they accept');
+    }
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
       select: { type: true },

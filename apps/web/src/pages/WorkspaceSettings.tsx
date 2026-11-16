@@ -2,6 +2,7 @@ import { useAuth } from '@/auth';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { WorkspaceAdministrationSettings } from '@/components/organisms/settings/WorkspaceAdministrationSettings';
 import { WorkspaceMembersSettings } from '@/components/organisms/settings/WorkspaceMembersSettings';
+import { WorkspaceInvitationsSettings } from '@/components/organisms/settings/WorkspaceInvitationsSettings';
 import { WorkspaceCapacitySettings } from '@/components/organisms/settings/WorkspaceCapacitySettings';
 import { t } from '@/i18n';
 
@@ -22,6 +23,7 @@ export default function WorkspaceSettings() {
       <div className="grid items-start gap-4 lg:gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
           <WorkspaceMembersSettings />
+          <WorkspaceInvitationsSettings />
           <WorkspaceAdministrationSettings />
         </div>
         <WorkspaceCapacitySettings />

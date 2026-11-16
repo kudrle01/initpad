@@ -10,7 +10,7 @@ hranice v [`RELEASE_READINESS.md`](./RELEASE_READINESS.md).
 | Oblast | Self-hosted | Veřejný SaaS |
 |---|---|---|
 | Zdrojový kód a CI | vestavěná Gitea + Actions | GitHub + GitHub App |
-| Přihlášení | heslo, InitPad SSO do Gitey | GitHub OAuth |
+| Přihlášení | heslo, InitPad SSO do Gitey | GitHub OAuth nebo e-mail a heslo s potvrzením e-mailu (ADR-188) |
 | Docker target | InitPad Agent; vestavěný Docker jen v této edici | InitPad Agent |
 | Sdílený PHP/static hosting | SFTP compatibility target | pouze veřejně dosažitelný SFTP target; server jen za školní VPN obslouží jen self-hosted edice (ADR-157) |
 | Artifact storage | vestavěný store pro důvěryhodný single-node provoz nebo externí S3 | externí S3-compatible služba |

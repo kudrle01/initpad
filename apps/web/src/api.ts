@@ -10,6 +10,10 @@ import type {
   Workspace,
   WorkspaceMember,
   WorkspaceRole,
+  WorkspaceInvitation,
+  CreatedWorkspaceInvitation,
+  InvitationPreview,
+  RegistrationPending,
   AdminUser,
   PlatformUpdateOperation,
   PlatformUpdateStatus,
@@ -392,6 +396,30 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ role }),
     }),
+  listWorkspaceInvitations: (workspaceId: string) =>
+    http<WorkspaceInvitation[]>(`/workspaces/${workspaceId}/invitations`),
+  inviteWorkspaceMember: (
+    workspaceId: string,
+    email: string,
+    role: Exclude<WorkspaceRole, 'owner'>,
+  ) =>
+    http<CreatedWorkspaceInvitation>(`/workspaces/${workspaceId}/invitations`, {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    }),
+  revokeWorkspaceInvitation: (workspaceId: string, invitationId: string) =>
+    http<void>(`/workspaces/${workspaceId}/invitations/${invitationId}`, { method: 'DELETE' }),
+  // The token travels in the body, never in a URL (ADR-143, ADR-188).
+  previewInvitation: (token: string) =>
+    http<InvitationPreview>('/invitations/preview', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  acceptInvitation: (token: string) =>
+    http<{ workspaceId: string; workspaceName: string; role: WorkspaceRole }>(
+      '/invitations/accept',
+      { method: 'POST', body: JSON.stringify({ token }) },
+    ),
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     http<void>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
   leaveWorkspace: (workspaceId: string) =>
@@ -635,6 +663,8 @@ export const api = {
       docsUrl: string | null;
       passwordAuthEnabled: boolean;
       emailDeliveryEnabled: boolean;
+      // Absent from an API older than ADR-188.
+      emailConfirmationRequired?: boolean;
     }>('/auth/config'),
   listIdentities: () => http<LinkedIdentity[]>('/me/identities'),
   unlinkIdentity: (provider: string) =>
@@ -645,10 +675,22 @@ export const api = {
     http<{ recovered: boolean; accountLogin: string | null }>('/scm/github/setup/recover', {
       method: 'POST',
     }),
-  register: (username: string, email: string, password: string, bootstrapToken?: string) =>
-    http<User>('/auth/register', {
+  // A SaaS registration answers with a pending confirmation instead of a user.
+  register: (
+    username: string,
+    email: string,
+    password: string,
+    bootstrapToken?: string,
+    passwordConfirmation?: string,
+  ) =>
+    http<User | RegistrationPending>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, email, password, bootstrapToken }),
+      body: JSON.stringify({ username, email, password, bootstrapToken, passwordConfirmation }),
+    }),
+  resendRegistrationConfirmation: (identity: string) =>
+    http<{ ok: boolean }>('/auth/register/resend-confirmation', {
+      method: 'POST',
+      body: JSON.stringify({ identity }),
     }),
   signin: (username: string, password: string) =>
     http<User>('/auth/signin', {

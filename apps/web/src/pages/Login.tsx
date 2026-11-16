@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
-import { api } from '@/api';
+import { api, ApiError } from '@/api';
 import { useAuth } from '@/auth';
 import { AuthCard } from '@/components/molecules/AuthCard';
 import { FormField } from '@/components/molecules/FormField';
@@ -22,6 +22,11 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
+  // Set after a SaaS registration: the account waits for its e-mail (ADR-188).
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [bootstrapToken, setBootstrapToken] = useState('');
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,22 +67,53 @@ export default function Login() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setError(null);
+    setUnconfirmed(false);
+    if (mode === 'register' && password !== passwordConfirmation) {
+      setError(t('Passwords do not match'));
+      return;
+    }
+    setBusy(true);
     try {
-      const u =
-        mode !== 'signin'
-          ? await api.register(
-              username.trim(),
-              email.trim(),
-              password,
-              bootstrapRequired ? bootstrapToken.trim() : undefined,
-            )
-          : await api.signin(username.trim(), password);
-      signIn(u);
+      if (mode === 'register') {
+        const result = await api.register(
+          username.trim(),
+          email.trim(),
+          password,
+          bootstrapRequired ? bootstrapToken.trim() : undefined,
+          passwordConfirmation,
+        );
+        if ('verificationRequired' in result) {
+          setPendingEmail(result.email);
+          setResendState('idle');
+          setPassword('');
+          setPasswordConfirmation('');
+          setBusy(false);
+          return;
+        }
+        signIn(result);
+      } else {
+        signIn(await api.signin(username.trim(), password));
+      }
     } catch (err) {
       setError((err as Error).message);
+      setUnconfirmed(
+        err instanceof ApiError &&
+          err.status === 403 &&
+          err.apiMessage.startsWith('Confirm your e-mail address'),
+      );
       setBusy(false);
+    }
+  }
+
+  async function resendConfirmation(identity: string) {
+    setResendState('sending');
+    try {
+      await api.resendRegistrationConfirmation(identity);
+      setResendState('sent');
+    } catch (err) {
+      setError((err as Error).message);
+      setResendState('idle');
     }
   }
 
@@ -89,6 +125,39 @@ export default function Login() {
         <Notice tone="danger" role="alert" className="mt-6 text-left">
           {oauthError}
         </Notice>
+      )}
+
+      {pendingEmail && (
+        <div className="mt-6 flex flex-col gap-4 text-left">
+          <Notice tone="success" role="status">
+            {t(
+              'We sent a confirmation link to {email}. Open it to finish creating your account, then sign in.',
+              { email: pendingEmail },
+            )}
+          </Notice>
+          {resendState === 'sent' && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t('If the account still waits for confirmation, a new link is on its way.')}
+            </p>
+          )}
+          <Button
+            variant="secondary"
+            disabled={resendState === 'sending'}
+            onClick={() => void resendConfirmation(pendingEmail)}
+          >
+            {t('Send the link again')}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setPendingEmail(null);
+              setMode('signin');
+              setUsername(pendingEmail);
+            }}
+          >
+            {t('Back to sign in')}
+          </Button>
+        </div>
       )}
 
       {configLoading && (
@@ -119,7 +188,7 @@ export default function Login() {
         </div>
       )}
 
-      {!configLoading && passwordAuthEnabled && (
+      {!configLoading && passwordAuthEnabled && !pendingEmail && (
         <>
           {registrationAvailable && (
             <SegmentedControl
@@ -177,6 +246,18 @@ export default function Login() {
               minLength={registering ? 12 : undefined}
               hint={registering ? t('Use at least 12 characters.') : undefined}
             />
+            {registering && (
+              <FormField
+                id="login-password-confirmation"
+                label={t('Confirm password')}
+                type="password"
+                autoComplete="new-password"
+                value={passwordConfirmation}
+                onChange={(e) => setPasswordConfirmation(e.target.value)}
+                required
+                minLength={12}
+              />
+            )}
             {registering && bootstrapRequired && (
               <FormField
                 id="login-bootstrap-token"
@@ -197,6 +278,25 @@ export default function Login() {
               <Notice tone="danger" role="alert">
                 {error}
               </Notice>
+            )}
+            {unconfirmed && (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={resendState === 'sending'}
+                onClick={() => void resendConfirmation(username.trim())}
+              >
+                {resendState === 'sent'
+                  ? t('If the account still waits for confirmation, a new link is on its way.')
+                  : t('Send the confirmation link again')}
+              </Button>
+            )}
+            {registering && edition === 'saas' && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t(
+                  'We send you a confirmation link. Repositories are connected later through GitHub in Settings.',
+                )}
+              </p>
             )}
             <Button type="submit" disabled={busy} className="w-full">
               {busy ? t('Please wait…') : registering ? t('Create account') : t('Sign in')}
@@ -224,17 +324,13 @@ export default function Login() {
         </p>
       )}
 
-      {!configLoading &&
-        !passwordAuthEnabled &&
-        edition === 'saas' &&
-        githubEnabled &&
-        !configError && (
-          <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
-            {t(
-              'Your GitHub account creates or opens your InitPad account. Repository access is granted separately through the GitHub App.',
-            )}
-          </p>
-        )}
+      {!configLoading && !pendingEmail && edition === 'saas' && githubEnabled && !configError && (
+        <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
+          {t(
+            'Your GitHub account creates or opens your InitPad account. Repository access is granted separately through the GitHub App.',
+          )}
+        </p>
+      )}
 
       {!configLoading && !passwordAuthEnabled && !githubEnabled && !configError && (
         <Notice tone="danger" role="alert" className="mt-5 text-left">

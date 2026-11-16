@@ -42,12 +42,9 @@ export class ExternalIdentityService {
         where: { userId },
         orderBy: { createdAt: 'asc' },
       }),
-      this.prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: PASSWORD_SELECT }),
     ]);
-    // A stored password only remains a usable sign-in method in the
-    // self-hosted edition. Treating it as a fallback in SaaS would let a
-    // migrated account unlink GitHub and permanently lock itself out.
-    const hasUsablePassword = config.edition === 'self-hosted' && user?.passwordHash != null;
+    const hasUsablePassword = passwordSignInUsable(user);
     const canUnlink = hasUsablePassword || rows.length > 1;
     return rows.map((r) => ({
       provider: r.provider,
@@ -96,11 +93,11 @@ export class ExternalIdentityService {
       this.prisma.externalIdentity.findUnique({
         where: { provider_userId: { provider, userId } },
       }),
-      this.prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: PASSWORD_SELECT }),
       this.prisma.externalIdentity.count({ where: { userId } }),
     ]);
     if (!identity) return;
-    const hasUsablePassword = config.edition === 'self-hosted' && user?.passwordHash != null;
+    const hasUsablePassword = passwordSignInUsable(user);
     if (!hasUsablePassword && identityCount <= 1) {
       throw new BadRequestException(
         `You cannot unlink your only sign-in method. Add another identity first.`,
@@ -108,4 +105,18 @@ export class ExternalIdentityService {
     }
     await this.prisma.externalIdentity.deleteMany({ where: { userId, provider } });
   }
+}
+
+const PASSWORD_SELECT = { passwordHash: true, emailVerifiedAt: true } as const;
+
+/**
+ * Whether a stored password still signs the account in. SaaS accepts a
+ * password only with a confirmed e-mail (ADR-188), so an unconfirmed password
+ * must never count as a fallback that would let GitHub be unlinked.
+ */
+function passwordSignInUsable(
+  user: { passwordHash: string | null; emailVerifiedAt: Date | null } | null,
+): boolean {
+  if (!user?.passwordHash) return false;
+  return config.edition === 'self-hosted' || user.emailVerifiedAt != null;
 }

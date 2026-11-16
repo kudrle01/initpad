@@ -70,3 +70,23 @@ describe('workspace list errors', () => {
     expect(refresh).toHaveBeenCalled();
   });
 });
+
+describe('invitation opened before sign-in (ADR-188)', () => {
+  it('returns the signed-in user to the pending invitation', () => {
+    auth.state.user = { mustChangePassword: false };
+    sessionStorage.setItem('initpad.pendingInvitation', 'invitation-token');
+    try {
+      render(
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/invite" element={<p>invitation page</p>} />
+            <Route path="*" element={<App />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      expect(screen.getByText('invitation page')).toBeInTheDocument();
+    } finally {
+      sessionStorage.clear();
+    }
+  });
+});

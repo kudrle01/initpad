@@ -184,21 +184,262 @@ describe('AuthService', () => {
     expect(prisma.user.count).not.toHaveBeenCalled();
   });
 
-  it('never exposes managed password registration in the SaaS edition', async () => {
-    config.edition = 'saas';
-    config.auth.registrationMode = 'open';
-    const prisma = { user: { count: jest.fn() } };
-    const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
-    expect(await service.registrationAvailable()).toBe(false);
-    expect(prisma.user.count).not.toHaveBeenCalled();
+  describe('SaaS registration confirmed by e-mail (ADR-188)', () => {
+    function saas(options: { users?: Array<Record<string, unknown>>; mail?: boolean } = {}) {
+      config.edition = 'saas';
+      const users = options.users ?? [];
+      const workspaces: Array<Record<string, unknown>> = [];
+      const authTokens: Array<Record<string, unknown>> = [];
+      const prisma = {
+        $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
+        $queryRaw: jest.fn(async () => []),
+        user: {
+          count: jest.fn(async () => users.length),
+          findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
+            const or = (where.OR as Array<Record<string, { equals: string }>>) ?? [];
+            return (
+              users.find((user) =>
+                or.some((clause) =>
+                  Object.entries(clause).some(
+                    ([field, match]) => String(user[field]).toLowerCase() === match.equals,
+                  ),
+                ),
+              ) ?? null
+            );
+          }),
+          findMany: jest.fn(async () =>
+            users.filter(
+              (user) =>
+                user.emailVerifiedAt == null &&
+                (user.createdAt as Date).getTime() < Date.now() - 24 * 60 * 60 * 1000,
+            ),
+          ),
+          deleteMany: jest.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
+            for (const id of where.id.in) {
+              users.splice(
+                users.findIndex((user) => user.id === id),
+                1,
+              );
+            }
+            return { count: where.id.in.length };
+          }),
+          create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+            const user = {
+              id: `u${users.length + 1}`,
+              name: null,
+              avatarUrl: null,
+              active: true,
+              createdAt: new Date(),
+              ...data,
+            };
+            users.push(user);
+            return user;
+          }),
+          update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+            Object.assign(users[0], data);
+            return users[0];
+          }),
+        },
+        authToken: {
+          // Superseding earlier links touches none; claiming one succeeds.
+          updateMany: jest.fn(async ({ where }: { where: Record<string, unknown> }) => ({
+            count: where.id ? 1 : 0,
+          })),
+          create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+            authTokens.push(data);
+            return data;
+          }),
+          findUnique: jest.fn(async () => ({
+            id: 't1',
+            kind: 'email_verify',
+            userId: 'u1',
+            usedAt: null,
+            expiresAt: new Date(Date.now() + 60_000),
+          })),
+        },
+        workspaceMember: { count: jest.fn(async () => workspaces.length) },
+        workspace: {
+          create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+            workspaces.push(data);
+            return data;
+          }),
+        },
+      };
+      const mail = {
+        isEnabled: () => options.mail ?? true,
+        enqueueAuthMail: jest.fn(async () => undefined),
+        scheduleDelivery: jest.fn(),
+      };
+      const sessions = { issue: jest.fn(async () => 'jwt'), revoke: jest.fn() };
+      const gitea = { createUser: jest.fn() };
+      const service = new AuthService(
+        prisma as never,
+        {} as never,
+        gitea as never,
+        mail as never,
+        undefined,
+        sessions as never,
+      );
+      return { service, prisma, mail, sessions, gitea, users, workspaces, authTokens };
+    }
+
+    const signup = {
+      username: 'Alice',
+      email: 'Alice@Example.test',
+      password: 'long-password-1',
+      passwordConfirmation: 'long-password-1',
+    };
+
+    it('offers registration and password sign-in when SMTP delivers', async () => {
+      const { service } = saas();
+      await expect(service.registrationAvailable()).resolves.toBe(true);
+      expect(service.passwordAuthEnabled()).toBe(true);
+    });
+
+    it('creates an unconfirmed account, queues the e-mail and issues no session', async () => {
+      const { service, mail, sessions, gitea, users, workspaces } = saas();
+
+      await expect(service.register(signup)).resolves.toEqual({
+        verificationRequired: true,
+        email: 'alice@example.test',
+      });
+
+      expect(users[0]).toMatchObject({
+        username: 'alice',
+        email: 'alice@example.test',
+        emailVerifiedAt: null,
+        giteaId: null,
+        platformRole: 'user',
+      });
+      expect(users[0].passwordHash).toEqual(expect.any(String));
+      expect(mail.enqueueAuthMail).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          kind: 'email_verify',
+          recipient: 'alice@example.test',
+          url: expect.stringMatching(/\/verify-email#.+/),
+        }),
+      );
+      expect(sessions.issue).not.toHaveBeenCalled();
+      expect(gitea.createUser).not.toHaveBeenCalled();
+      // The personal workspace waits for the confirmation.
+      expect(workspaces).toHaveLength(0);
+    });
+
+    it('rejects a confirmation that differs from the password', async () => {
+      const { service, users } = saas();
+      await expect(
+        service.register({ ...signup, passwordConfirmation: 'other-password-1' }),
+      ).rejects.toThrow('Passwords do not match');
+      expect(users).toHaveLength(0);
+    });
+
+    it('refuses registration without e-mail delivery', async () => {
+      const { service, users } = saas({ mail: false });
+      await expect(service.register(signup)).rejects.toThrow('cannot be confirmed');
+      expect(users).toHaveLength(0);
+    });
+
+    it('frees a username held by an expired unconfirmed account', async () => {
+      const stale = {
+        id: 'old',
+        username: 'alice',
+        email: 'someone@example.test',
+        emailVerifiedAt: null,
+        passwordHash: 'x',
+        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      };
+      const { service, users } = saas({ users: [stale] });
+
+      await service.register(signup);
+
+      expect(users.map((user) => user.id)).toEqual(['u1']);
+    });
+
+    it('keeps a recent unconfirmed account and reports the conflict', async () => {
+      const recent = {
+        id: 'new',
+        username: 'alice',
+        email: 'alice@example.test',
+        emailVerifiedAt: null,
+        passwordHash: 'x',
+        createdAt: new Date(),
+      };
+      const { service, users } = saas({ users: [recent] });
+      await expect(service.register(signup)).rejects.toThrow('already taken');
+      expect(users).toHaveLength(1);
+    });
+
+    it('refuses sign-in to an unconfirmed account only after the password matched', async () => {
+      const passwordHash = await hashPassword('long-password-1');
+      const account = {
+        id: 'u1',
+        username: 'alice',
+        email: 'alice@example.test',
+        passwordHash,
+        active: true,
+        emailVerifiedAt: null,
+      };
+      const { service, sessions } = saas({ users: [account] });
+
+      await expect(
+        service.login({ username: 'alice', password: 'wrong-password-1' }),
+      ).rejects.toThrow('Invalid username or password');
+      await expect(
+        service.login({ username: 'alice', password: 'long-password-1' }),
+      ).rejects.toThrow('Confirm your e-mail address');
+      expect(sessions.issue).not.toHaveBeenCalled();
+
+      account.emailVerifiedAt = new Date() as never;
+      await expect(
+        service.login({ username: 'alice', password: 'long-password-1' }),
+      ).resolves.toMatchObject({ token: 'jwt' });
+    });
+
+    it('creates the personal workspace when the e-mail is confirmed', async () => {
+      const { service, workspaces, users } = saas({
+        users: [{ id: 'u1', username: 'alice', emailVerifiedAt: null }],
+      });
+
+      await service.verifyEmail('t'.repeat(43));
+
+      expect(users[0].emailVerifiedAt).toEqual(expect.any(Date));
+      expect(workspaces[0]).toMatchObject({
+        slug: 'personal-alice',
+        type: 'personal',
+        members: { create: { userId: 'u1', role: 'owner' } },
+      });
+    });
+
+    it('resends the confirmation without revealing whether an account exists', async () => {
+      const account = {
+        id: 'u1',
+        username: 'alice',
+        email: 'alice@example.test',
+        passwordHash: 'x',
+        active: true,
+        emailVerifiedAt: null,
+      };
+      const { service, mail } = saas({ users: [account] });
+
+      await expect(service.resendRegistrationConfirmation('nobody@example.test')).resolves.toBe(
+        undefined,
+      );
+      expect(mail.enqueueAuthMail).not.toHaveBeenCalled();
+
+      await expect(service.resendRegistrationConfirmation('alice@example.test')).resolves.toBe(
+        undefined,
+      );
+      expect(mail.enqueueAuthMail).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('never accepts password sign-in in the SaaS edition', async () => {
+  it('keeps SaaS password sign-in closed without e-mail delivery', async () => {
     config.edition = 'saas';
     const prisma = { user: { findFirst: jest.fn() } };
     const service = new AuthService(withSessions(prisma) as never, {} as never, {} as never);
     await expect(service.login({ username: 'alice', password: 'long-password' })).rejects.toThrow(
-      'disabled in the SaaS edition',
+      'not available on this instance',
     );
     expect(prisma.user.findFirst).not.toHaveBeenCalled();
   });

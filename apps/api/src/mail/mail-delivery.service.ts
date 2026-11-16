@@ -6,14 +6,19 @@ import { config, mailDeliveryConfigured } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type MailKind = 'email_verify' | 'password_reset' | 'activation';
+export type MailKind = 'email_verify' | 'password_reset' | 'activation' | 'workspace_invite';
 
 export interface QueueAuthMailInput {
-  userId: string;
+  // Null for a workspace invitation to an address without an account.
+  userId: string | null;
   kind: MailKind;
   recipient: string;
   displayName: string | null;
   url: string;
+  // Workspace invitation context (ADR-188).
+  workspaceName?: string;
+  inviterName?: string;
+  role?: string;
 }
 
 type OutboxDatabase = Prisma.TransactionClient | PrismaService;
@@ -21,6 +26,9 @@ type OutboxDatabase = Prisma.TransactionClient | PrismaService;
 interface AuthMailPayload {
   displayName: string | null;
   url: string;
+  workspaceName?: string | null;
+  inviterName?: string | null;
+  role?: string | null;
 }
 
 const POLL_INTERVAL_MS = 10_000;
@@ -79,7 +87,17 @@ export class MailDeliveryService implements OnModuleInit, OnModuleDestroy {
     if (!this.transporter) {
       throw new Error('E-mail delivery is not configured');
     }
-    const payload: AuthMailPayload = { displayName: input.displayName, url: input.url };
+    const payload: AuthMailPayload = {
+      displayName: input.displayName,
+      url: input.url,
+      ...(input.kind === 'workspace_invite'
+        ? {
+            workspaceName: input.workspaceName ?? null,
+            inviterName: input.inviterName ?? null,
+            role: input.role ?? null,
+          }
+        : {}),
+    };
     await db.emailOutbox.create({
       data: {
         userId: input.userId,
@@ -210,14 +228,19 @@ export class MailDeliveryService implements OnModuleInit, OnModuleDestroy {
     if (typeof payload.url !== 'string' || !/^https?:\/\//.test(payload.url)) {
       throw new Error('Outbox payload is invalid');
     }
+    const text = (value: unknown) => (typeof value === 'string' ? value : null);
     return {
-      displayName: typeof payload.displayName === 'string' ? payload.displayName : null,
+      displayName: text(payload.displayName),
       url: payload.url,
+      workspaceName: text(payload.workspaceName),
+      inviterName: text(payload.inviterName),
+      role: text(payload.role),
     };
   }
 }
 
 function renderAuthMail(kind: MailKind, payload: AuthMailPayload) {
+  if (kind === 'workspace_invite') return renderInvitationMail(payload);
   const heading = {
     email_verify: 'Verify your InitPad e-mail',
     password_reset: 'Reset your InitPad password',
@@ -239,6 +262,31 @@ function renderAuthMail(kind: MailKind, payload: AuthMailPayload) {
       `<p><a href="${escapedUrl}">${escapeHtml(action)}</a></p>` +
       '<p>If you did not request this, you can ignore this message.</p>',
   };
+}
+
+function renderInvitationMail(payload: AuthMailPayload) {
+  // Names are user-chosen; a line break must never reach a mail header.
+  const workspace = oneLine(payload.workspaceName) || 'a team workspace';
+  const inviter = oneLine(payload.inviterName) || 'A workspace administrator';
+  const role = payload.role || 'member';
+  const subject = `You are invited to ${workspace} on InitPad`;
+  const sentence = `${inviter} invited you to join ${workspace} on InitPad as ${role}.`;
+  const text =
+    `Hello,\n\n${sentence} Open this link to accept the invitation:\n${payload.url}\n\n` +
+    'The invitation expires in 7 days and works once. If you did not expect it, ignore this message.';
+  const escapedUrl = escapeHtml(payload.url);
+  return {
+    subject,
+    text,
+    html:
+      `<p>Hello,</p><p>${escapeHtml(sentence)}</p>` +
+      `<p><a href="${escapedUrl}">Accept invitation</a></p>` +
+      '<p>The invitation expires in 7 days and works once. If you did not expect it, ignore this message.</p>',
+  };
+}
+
+function oneLine(value: string | null | undefined): string {
+  return (value ?? '').replace(/[\r\n\0]+/g, ' ').trim();
 }
 
 function escapeHtml(value: string): string {

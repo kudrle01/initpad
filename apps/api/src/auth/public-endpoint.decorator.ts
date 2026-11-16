@@ -7,6 +7,7 @@ export type PublicEndpointReason =
   | 'authentication'
   | 'ci-token'
   | 'health-check'
+  | 'invitation-token'
   | 'oidc-protocol'
   | 'public-catalog'
   | 'scm-signature';

@@ -14,6 +14,13 @@ export class RegisterDto {
   @MaxLength(128, { message: 'Password must be at most 128 characters' })
   password!: string;
 
+  // The second entry of the registration form (ADR-188). Optional so older
+  // clients keep working; when present it must equal the password.
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  passwordConfirmation?: string;
+
   // Required only for the first account, which becomes the administrator.
   @IsOptional()
   @IsString()

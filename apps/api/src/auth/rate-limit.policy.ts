@@ -34,6 +34,13 @@ export const RATE_LIMITS = {
     subjectLimit: 10,
     subject: { source: 'body', field: 'username', normalization: 'identity' },
   },
+  resendRegistrationConfirmation: {
+    name: 'auth.register.resend-confirmation',
+    windowMs: 15 * minute,
+    ipLimit: 10,
+    subjectLimit: 3,
+    subject: { source: 'body', field: 'identity', normalization: 'identity' },
+  },
   changePassword: {
     name: 'auth.change-password',
     windowMs: 15 * minute,
@@ -113,6 +120,27 @@ export const RATE_LIMITS = {
     name: 'scm.github.setup.callback',
     windowMs: 5 * minute,
     ipLimit: 30,
+  },
+  invitationPreview: {
+    name: 'workspaces.invitation.preview',
+    windowMs: 15 * minute,
+    ipLimit: 60,
+    subjectLimit: 20,
+    subject: { source: 'body', field: 'token', normalization: 'opaque' },
+  },
+  invitationAccept: {
+    name: 'workspaces.invitation.accept',
+    windowMs: 15 * minute,
+    ipLimit: 30,
+    subjectLimit: 10,
+    subject: { source: 'body', field: 'token', normalization: 'opaque' },
+  },
+  invitationCreate: {
+    name: 'workspaces.invitation.create',
+    windowMs: 60 * minute,
+    ipLimit: 60,
+    subjectLimit: 30,
+    subject: { source: 'user', normalization: 'opaque' },
   },
   targetHostKeyInspect: {
     name: 'targets.host-key.inspect',
