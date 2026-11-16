@@ -343,4 +343,19 @@ export const csApi = {
   'Workload failed its health check after start: {detail}':
     'Aplikace po spuštění neprošla kontrolou stavu: {detail}',
   'Candidate workload failed its health check': 'Nová verze aplikace neprošla kontrolou stavu',
+  // SaaS registration and workspace invitations (ADR-188)
+  'Passwords do not match': 'Hesla se neshodují',
+  'E-mail delivery is not configured, so a new account cannot be confirmed.':
+    'Odesílání e-mailů není nastavené, proto nový účet nelze potvrdit.',
+  'Confirm your e-mail address before signing in. Open the link we sent you or send it again.':
+    'Před přihlášením potvrďte e-mailovou adresu. Otevřete odkaz, který jsme vám poslali, nebo si ho pošlete znovu.',
+  'Password sign-in is not available on this instance':
+    'Přihlášení heslem není na této instanci dostupné',
+  'Create a team workspace before inviting other members':
+    'Před pozváním dalších členů vytvořte týmový workspace',
+  'This invitation is invalid, expired or already used':
+    'Tato pozvánka je neplatná, vypršela nebo už byla použita',
+  'Invitation not found': 'Pozvánka nebyla nalezena',
+  'Invite people by e-mail; they join when they accept':
+    'Pozvěte lidi e-mailem; připojí se, až pozvánku přijmou',
 } satisfies Record<string, string>;

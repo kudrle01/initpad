@@ -3,6 +3,7 @@ import { useAuth } from '@/auth';
 import { Sidebar } from '@/components/organisms/Sidebar';
 import ChangePassword from '@/pages/ChangePassword';
 import { loginPath } from '@/lib/login-path';
+import { pendingInvitation } from '@/lib/pending-invitation';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { t } from '@/i18n';
 
@@ -17,6 +18,8 @@ export default function App() {
   // A forced password change blocks the whole app until it is resolved, exactly
   // as the API blocks every other endpoint.
   if (user.mustChangePassword) return <ChangePassword />;
+  // An invitation opened before sign-in (ADR-188) continues after it.
+  if (pendingInvitation()) return <Navigate to="/invite" replace />;
 
   return (
     <div className="min-h-dvh bg-background">

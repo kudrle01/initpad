@@ -1860,4 +1860,52 @@ export const cs = {
     'projekty {projects} · členové {members} · servery {servers}',
   value: 'hodnota',
   'The server did not respond in time. Try again.': 'Server neodpověděl včas. Zkuste to znovu.',
+  // SaaS registration and workspace invitations (ADR-188)
+  'Passwords do not match': 'Hesla se neshodují',
+  'We sent a confirmation link to {email}. Open it to finish creating your account, then sign in.':
+    'Na adresu {email} jsme poslali potvrzovací odkaz. Otevřete ho, tím dokončíte registraci, a pak se přihlaste.',
+  'If the account still waits for confirmation, a new link is on its way.':
+    'Pokud účet ještě čeká na potvrzení, nový odkaz je na cestě.',
+  'Send the link again': 'Poslat odkaz znovu',
+  'Send the confirmation link again': 'Poslat potvrzovací odkaz znovu',
+  'We send you a confirmation link. Repositories are connected later through GitHub in Settings.':
+    'Pošleme vám potvrzovací odkaz. Repozitáře propojíte později přes GitHub v Nastavení.',
+  'Invitation not available': 'Pozvánka není k dispozici',
+  'Opening the invitation…': 'Otevírám pozvánku…',
+  '{inviter} invited you to {workspace} as {role}.':
+    '{inviter} vás zve do workspace {workspace} s rolí {role}.',
+  'You are invited to {workspace} as {role}.':
+    'Jste pozváni do workspace {workspace} s rolí {role}.',
+  'Join {workspace}': 'Připojit se k {workspace}',
+  'Sent to {email} · valid until {date}': 'Posláno na {email} · platí do {date}',
+  'You will join as @{username}.': 'Připojíte se jako @{username}.',
+  'Accept invitation': 'Přijmout pozvánku',
+  'Not now': 'Teď ne',
+  'Sign in to accept': 'Přihlásit se a přijmout',
+  'No account yet? Create one on the sign-in page, confirm your e-mail, then open this invitation link again.':
+    'Ještě nemáte účet? Vytvořte si ho na přihlašovací stránce, potvrďte e-mail a pak znovu otevřete odkaz z pozvánky.',
+  'Invite {identity} as workspace admin?': 'Pozvat {identity} jako admina workspace?',
+  'Send admin invitation': 'Poslat pozvánku pro admina',
+  'Invitation sent to {email}': 'Pozvánka odeslána na {email}',
+  'Cancel the invitation for {email}?': 'Zrušit pozvánku pro {email}?',
+  'The link in the e-mail stops working immediately.':
+    'Odkaz v e-mailu okamžitě přestane fungovat.',
+  'Cancel invitation': 'Zrušit pozvánku',
+  'Invitation for {email} cancelled': 'Pozvánka pro {email} zrušena',
+  Invitations: 'Pozvánky',
+  'Invite people by e-mail. They join after accepting the link, which works once and expires in 7 days.':
+    'Pozvěte lidi e-mailem. Připojí se až přijetím odkazu, který funguje jednou a platí 7 dní.',
+  'E-mail address to invite': 'E-mailová adresa k pozvání',
+  'Role for the invitation': 'Role v pozvánce',
+  'Send invitation': 'Poslat pozvánku',
+  'E-mail delivery is not configured. Send this link to {email} yourself; it works once.':
+    'Odesílání e-mailů není nastavené. Pošlete tento odkaz na {email} sami; funguje jednou.',
+  'Loading invitations…': 'Načítám pozvánky…',
+  'No pending invitations.': 'Žádné čekající pozvánky.',
+  'Valid until {date}': 'Platí do {date}',
+  'Cancel the invitation for {email}': 'Zrušit pozvánku pro {email}',
+  'Invitation created': 'Pozvánka vytvořena',
+  'Invitation accepted': 'Pozvánka přijata',
+  'Invitation cancelled': 'Pozvánka zrušena',
+  'Unconfirmed account removed': 'Nepotvrzený účet odstraněn',
 } satisfies Record<string, string>;
