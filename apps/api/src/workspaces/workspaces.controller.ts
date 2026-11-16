@@ -21,6 +21,7 @@ import {
 } from './dto/create-workspace.dto';
 import {
   AddWorkspaceMemberDto,
+  CreateWorkspaceInvitationDto,
   TransferWorkspaceOwnershipDto,
   UpdateWorkspaceMemberDto,
 } from './dto/member.dto';
@@ -29,6 +30,9 @@ import { WorkspacePortfolioService } from './workspace-portfolio.service';
 import { WorkspaceMetricsService } from './workspace-metrics.service';
 import { WorkspaceMetricsQueryDto } from './dto/workspace-metrics-query.dto';
 import { WorkspaceCapacityService } from './workspace-capacity.service';
+import { WorkspaceInvitationsService } from './workspace-invitations.service';
+import { RateLimited } from '../auth/rate-limited.decorator';
+import { RATE_LIMITS } from '../auth/rate-limit.policy';
 
 @Controller('workspaces')
 @UseGuards(JwtAuthGuard)
@@ -38,6 +42,7 @@ export class WorkspacesController {
     private readonly portfolio: WorkspacePortfolioService,
     private readonly metrics: WorkspaceMetricsService,
     private readonly capacity: WorkspaceCapacityService,
+    private readonly invitations: WorkspaceInvitationsService,
   ) {}
 
   @Get()
@@ -111,6 +116,31 @@ export class WorkspacesController {
     @Body() dto: AddWorkspaceMemberDto,
   ) {
     return this.workspaces.addMember(userId, id, dto);
+  }
+
+  @Get(':id/invitations')
+  listInvitations(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.invitations.list(userId, id);
+  }
+
+  @Post(':id/invitations')
+  @RateLimited(RATE_LIMITS.invitationCreate)
+  createInvitation(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() dto: CreateWorkspaceInvitationDto,
+  ) {
+    return this.invitations.create(userId, id, dto);
+  }
+
+  @Delete(':id/invitations/:invitationId')
+  @HttpCode(204)
+  revokeInvitation(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Param('invitationId') invitationId: string,
+  ) {
+    return this.invitations.revoke(userId, id, invitationId);
   }
 
   @Put(':id/members/:memberId')

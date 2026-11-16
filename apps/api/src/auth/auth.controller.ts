@@ -52,8 +52,10 @@ export class AuthController {
       edition: config.edition,
       // The sign-in screen links the user guide before anyone has a session.
       docsUrl: config.docs.url || null,
-      passwordAuthEnabled: config.edition === 'self-hosted',
+      passwordAuthEnabled: this.auth.passwordAuthEnabled(),
       emailDeliveryEnabled: this.auth.emailDeliveryEnabled(),
+      // SaaS accounts are usable only after the e-mail is confirmed (ADR-188).
+      emailConfirmationRequired: config.edition === 'saas',
       // Whether "Sign in with GitHub" / account linking is available.
       githubEnabled: Boolean(
         config.github.clientId && config.github.clientSecret && config.github.callbackUrl,
@@ -69,9 +71,19 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { token, user } = await this.auth.register(dto, client(req));
-    this.setSession(res, token);
-    return user;
+    const result = await this.auth.register(dto, client(req));
+    if ('verificationRequired' in result) return result;
+    this.setSession(res, result.token);
+    return result.user;
+  }
+
+  // Sends the registration confirmation again; always answers the same way.
+  @Post('register/resend-confirmation')
+  @PublicEndpoint('authentication')
+  @RateLimited(RATE_LIMITS.resendRegistrationConfirmation)
+  async resendRegistrationConfirmation(@Body() dto: RequestPasswordResetDto) {
+    await this.auth.resendRegistrationConfirmation(dto.identity);
+    return { ok: true };
   }
 
   // Sign-in with a platform-native account.

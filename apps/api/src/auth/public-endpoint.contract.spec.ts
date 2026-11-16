@@ -10,6 +10,8 @@ import { GitHubWebhookController } from '../scm/github/github-webhook.controller
 import { TemplatesController } from '../templates/templates.controller';
 import { TargetsController } from '../targets/targets.controller';
 import { AuthController } from './auth.controller';
+import { InvitationsController } from '../workspaces/invitations.controller';
+import { WorkspacesController } from '../workspaces/workspaces.controller';
 import { PUBLIC_ENDPOINT, type PublicEndpointReason } from './public-endpoint.decorator';
 import { RATE_LIMIT_POLICY, RATE_LIMITS } from './rate-limit.policy';
 
@@ -46,6 +48,7 @@ describe('public HTTP boundary contract', () => {
   it.each([
     ['authConfig'],
     ['register'],
+    ['resendRegistrationConfirmation'],
     ['signin'],
     ['verifyEmail'],
     ['requestPasswordReset'],
@@ -64,6 +67,14 @@ describe('public HTTP boundary contract', () => {
 
   it.each([
     [AuthController.prototype, 'register', RATE_LIMITS.register.name],
+    [
+      AuthController.prototype,
+      'resendRegistrationConfirmation',
+      RATE_LIMITS.resendRegistrationConfirmation.name,
+    ],
+    [InvitationsController.prototype, 'preview', RATE_LIMITS.invitationPreview.name],
+    [InvitationsController.prototype, 'accept', RATE_LIMITS.invitationAccept.name],
+    [WorkspacesController.prototype, 'createInvitation', RATE_LIMITS.invitationCreate.name],
     [AuthController.prototype, 'signin', RATE_LIMITS.signIn.name],
     [AuthController.prototype, 'changePassword', RATE_LIMITS.changePassword.name],
     [
@@ -84,6 +95,12 @@ describe('public HTTP boundary contract', () => {
     [TargetsController.prototype, 'inspectHostKey', RATE_LIMITS.targetHostKeyInspect.name],
   ] as const)('rate-limits %s.%s as %s', (controller, method, policyName) => {
     expect(methodRateLimit(controller, method)?.name).toBe(policyName);
+  });
+
+  it('exposes only the invitation preview; accepting needs a session (ADR-188)', () => {
+    expect(classReason(InvitationsController)).toBeUndefined();
+    expect(methodReason(InvitationsController.prototype, 'preview')).toBe('invitation-token');
+    expect(methodReason(InvitationsController.prototype, 'accept')).toBeUndefined();
   });
 
   it('keeps automatic setup recovery out of the manual setup budget', () => {

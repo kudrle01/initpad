@@ -168,4 +168,21 @@ describe('ExternalIdentityService', () => {
     await expect(service.unlink('u1', 'github')).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.externalIdentity.deleteMany).not.toHaveBeenCalled();
   });
+
+  it('accepts a confirmed SaaS password as the remaining sign-in method (ADR-188)', async () => {
+    config.edition = 'saas';
+    const prisma = {
+      externalIdentity: {
+        findUnique: jest.fn(async () => ({ id: 'e1', userId: 'u1' })),
+        count: jest.fn(async () => 1),
+        deleteMany: jest.fn(async () => ({ count: 1 })),
+      },
+      user: {
+        findUnique: jest.fn(async () => ({ passwordHash: 'hash', emailVerifiedAt: new Date() })),
+      },
+    };
+    const service = new ExternalIdentityService(prisma as never);
+    await expect(service.unlink('u1', 'github')).resolves.toBeUndefined();
+    expect(prisma.externalIdentity.deleteMany).toHaveBeenCalled();
+  });
 });

@@ -260,6 +260,23 @@ describe('WorkspacesService tenant isolation', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('adds members only by accepted invitation in SaaS (ADR-188)', async () => {
+    const original = config.edition;
+    config.edition = 'saas';
+    try {
+      const prisma = { workspace: { findUnique: jest.fn() }, user: { findFirst: jest.fn() } };
+      const service = new WorkspacesService(prisma as never, {} as never);
+      jest.spyOn(service, 'require').mockResolvedValue('owner');
+
+      await expect(
+        service.addMember('owner', 'team', { identity: 'bob', role: 'member' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.user.findFirst).not.toHaveBeenCalled();
+    } finally {
+      config.edition = original;
+    }
+  });
+
   it('lets the team owner change production review policy and audits only the policy names', async () => {
     const previous = {
       id: 'team',

@@ -108,6 +108,63 @@ describe('MailDeliveryService', () => {
     expect(row.sentAt).toBeInstanceOf(Date);
   });
 
+  it('renders a workspace invitation without line breaks in the subject (ADR-188)', async () => {
+    const sendMail = jest.fn(async () => ({ messageId: 'accepted' }));
+    jest
+      .spyOn(nodemailer, 'createTransport')
+      .mockReturnValue({ sendMail, close: jest.fn() } as never);
+    let row = {
+      id: 'mail-2',
+      userId: null,
+      kind: 'workspace_invite',
+      recipient: 'bob@example.test',
+      payloadEncrypted: encryptSecret(
+        JSON.stringify({
+          displayName: null,
+          url: 'https://initpad.example/invite#private-token',
+          workspaceName: 'Team\r\nBcc: victim@example.test',
+          inviterName: 'Alice <Admin>',
+          role: 'maintainer',
+        }),
+      ),
+      status: 'pending',
+      attempts: 0,
+      availableAt: new Date(0),
+      lockedAt: null as Date | null,
+      lockOwner: null as string | null,
+      sentAt: null as Date | null,
+      lastError: null as string | null,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    };
+    const prisma = {
+      emailOutbox: {
+        findFirst: jest.fn(async () => (row.status === 'pending' ? { ...row } : null)),
+        findUnique: jest.fn(async () => ({ ...row })),
+        updateMany: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const { attempts, ...rest } = data;
+          if (typeof attempts === 'object') row.attempts += 1;
+          row = { ...row, ...rest } as typeof row;
+          return { count: 1 };
+        }),
+      },
+    };
+    const service = new MailDeliveryService(prisma as never);
+
+    await service.flushPending();
+
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'bob@example.test',
+        subject: 'You are invited to Team Bcc: victim@example.test on InitPad',
+        text: expect.stringContaining('as maintainer'),
+        html: expect.stringContaining('Alice &lt;Admin&gt;'),
+      }),
+    );
+    expect(row.status).toBe('sent');
+    expect(row.payloadEncrypted).toBe('');
+  });
+
   it('returns a failed send to the queue without storing the secret in the error', async () => {
     const sendMail = jest.fn(async () => {
       throw new Error('temporary SMTP outage');
