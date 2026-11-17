@@ -1880,6 +1880,51 @@ export class ProjectsService {
     return { runId };
   }
 
+  /**
+   * Re-runs the failed jobs of the CI run of any commit, not only the build
+   * bound to dev. A green re-run reports to InitPad like the original run.
+   */
+  async rerunCommitFailedJobs(id: string, sha: string): Promise<{ runId: string }> {
+    if (!/^[0-9a-f]{40}$/i.test(sha)) {
+      throw new BadRequestException('A full 40-character commit SHA is required');
+    }
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const repository = repositoryRef(project);
+    if (repository.provider !== 'github') {
+      throw new BadRequestException(
+        'Failed-job re-run is currently available only for GitHub projects',
+      );
+    }
+    const callbackIssue = publicHttpsUrlIssue(config.ci.publicUrl);
+    if (callbackIssue) {
+      throw new BadRequestException(
+        `${callbackIssue} Configure the public InitPad URL before re-running the GitHub callback job.`,
+      );
+    }
+    const scm = this.workspaceScm.provider('github');
+    if (!scm.rerunFailedJobs || !scm.ciRunForCommit) {
+      throw new BadRequestException('The configured GitHub provider cannot re-run failed jobs');
+    }
+    const runId = await scm.ciRunForCommit(repository, sha);
+    if (!runId) {
+      throw new BadRequestException('This commit has no GitHub Actions run to re-run');
+    }
+    const actor = await this.actorForProject(id);
+    const statuses = await scm.listCommitStatuses(repository, sha, actor, runId);
+    if (!statuses?.some((status) => ['failure', 'error'].includes(status.status))) {
+      throw new BadRequestException(
+        'The latest attempt of this GitHub Actions run has no failed jobs',
+      );
+    }
+    try {
+      await scm.configureRepoRuntimeSecrets(repository);
+      await scm.rerunFailedJobs(repository, runId);
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+    return { runId };
+  }
+
   // Suspends a running environment (stops the container/process). The version
   // is kept so it remains visible what is deployed; Start resumes it.
   async stopEnv(id: string, envName: EnvName, actorUserId?: string): Promise<Project> {

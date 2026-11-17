@@ -63,6 +63,8 @@ const READ_CONTENTS = { metadata: 'read', contents: 'read' };
 const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
 const READ_CHECKS = { metadata: 'read', contents: 'read', checks: 'read' };
 const READ_ACTIONS = { metadata: 'read', actions: 'read' };
+// Waits before asking again for an artifact GitHub does not show yet.
+export const ARTIFACT_VISIBILITY_RETRY_MS = [1000, 2000, 4000];
 const WRITE_ACTIONS = { metadata: 'read', actions: 'write' };
 const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
 const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
@@ -105,7 +107,7 @@ export class GitHubScmProvider implements ScmProvider {
     ETAG_CACHE_ENTRIES,
     ETAG_CACHE_TTL_MS,
   );
-  // Job statuses of runs whose jobs have all completed; they no longer change.
+  // Job statuses of runs whose jobs have all succeeded; they no longer change.
   private readonly terminalStatuses = new ReadCache<ScmCommitStatus[]>(
     TERMINAL_CACHE_ENTRIES,
     TERMINAL_CACHE_TTL_MS,
@@ -395,6 +397,17 @@ export class GitHubScmProvider implements ScmProvider {
     }
   }
 
+  async ciRunForCommit(repository: ScmRepositoryRef, sha: string): Promise<string | null> {
+    this.assertProvider(repository);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const token = await this.token(repository, READ_ACTIONS);
+    const runs = await this.ghJson<{ workflow_runs?: Array<{ id: number }> }>(
+      `/repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${encodeURIComponent(sha)}&event=push&per_page=1`,
+      token,
+    );
+    return runs?.workflow_runs?.[0]?.id?.toString() ?? null;
+  }
+
   async listCommitStatuses(
     repository: ScmRepositoryRef,
     sha: string,
@@ -403,7 +416,7 @@ export class GitHubScmProvider implements ScmProvider {
   ): Promise<ScmCommitStatus[] | null> {
     this.assertProvider(repository);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
-    // Completed runs never change, so their jobs are served without GitHub.
+    // Successful runs never change, so their jobs are served without GitHub.
     const terminalKey = `${repo}|${sha}|${preferredRunId ?? ''}`;
     const terminal = this.terminalStatuses.get(terminalKey);
     if (terminal) return terminal.map((status) => ({ ...status }));
@@ -435,7 +448,10 @@ export class GitHubScmProvider implements ScmProvider {
         const jobs = data?.jobs ?? [];
         if (jobs.length > 0) {
           const statuses = jobs.map((job) => this.actionJobStatus(job));
-          if (jobs.every((job) => job.status === 'completed')) {
+          // A failed or cancelled run can be re-run on GitHub under the same
+          // run ID, so only a fully successful one is final. The others are
+          // read again with an ETag, which costs no rate limit while unchanged.
+          if (jobs.every((job) => job.status === 'completed' && job.conclusion === 'success')) {
             this.terminalStatuses.set(terminalKey, statuses);
           }
           return statuses;
@@ -1139,10 +1155,15 @@ export class GitHubScmProvider implements ScmProvider {
     const callbackDigest = this.normalizeArtifactDigest(locator.digest);
     const token = await this.token(repository, READ_ACTIONS);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
-    const response = await this.gh(
-      `/repos/${repo}/actions/artifacts/${encodeURIComponent(locator.providerArtifactId)}`,
-      token,
-    );
+    // The callback runs in the job that has just uploaded the artifact, and
+    // GitHub can answer 404 for a few seconds before the artifact is visible.
+    const path = `/repos/${repo}/actions/artifacts/${encodeURIComponent(locator.providerArtifactId)}`;
+    let response = await this.gh(path, token);
+    for (const delayMs of ARTIFACT_VISIBILITY_RETRY_MS) {
+      if (response.status !== 404) break;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      response = await this.gh(path, token);
+    }
     if (!response.ok) {
       throw scmStatusError(
         'GitHub',

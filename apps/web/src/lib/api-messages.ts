@@ -489,6 +489,8 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
   exact(msg('Build artifact accepted')),
   exact(msg('Preparing deployment')),
   exact(msg('Removing deployment')),
+  exact(msg('A full 40-character commit SHA is required')),
+  exact(msg('This commit has no GitHub Actions run to re-run')),
   exact(msg('Stopping environment')),
   exact(msg('Starting environment')),
   exact(msg('Downloading and verifying tested image')),

@@ -240,6 +240,16 @@ export class ProjectsController {
     return this.projects.rerunFailedJobs(id);
   }
 
+  @Post(':id/commits/:sha/rerun-failed-jobs')
+  async rerunCommitFailedJobs(
+    @Param('id') id: string,
+    @Param('sha') sha: string,
+    @CurrentUser() userId: string,
+  ) {
+    await this.projects.assertAccess(id, userId, 'write');
+    return this.projects.rerunCommitFailedJobs(id, sha);
+  }
+
   @Post(':id/stop/:env')
   async stopEnv(
     @Param('id') id: string,

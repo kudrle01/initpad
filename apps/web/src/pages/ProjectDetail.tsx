@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, KeyRound, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ import { useProjectDetail } from '@/hooks/useProjectDetail';
 import { useConfirmation } from '@/confirmation';
 import { cn } from '@/lib/utils';
 import { firstPipelineState } from '@/lib/project-readiness';
+import { useCommitRerun } from '@/hooks/useCommitRerun';
 import type { EnvName, PipelinePreset } from '@/types';
 import { t } from '@/i18n';
 
@@ -76,6 +78,8 @@ export default function ProjectDetail() {
     updatePipelinePreset,
     deleteProject,
   } = useProjectDetail();
+  const reloadAfterRerun = useCallback(() => void refreshDetails(), [refreshDetails]);
+  const commitRerun = useCommitRerun(project, reloadAfterRerun);
 
   if (notFound) {
     return (
@@ -426,6 +430,8 @@ export default function ProjectDetail() {
             deployments={deployments}
             openSha={openSha}
             onToggleCommit={toggleCommit}
+            onRerunCommit={commitRerun.onRerun}
+            rerunningCommit={commitRerun.rerunning}
           />
         </div>
 

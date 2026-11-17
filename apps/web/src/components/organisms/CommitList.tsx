@@ -1,6 +1,6 @@
 import { Fragment, useId } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, ExternalLink, History } from 'lucide-react';
+import { ChevronRight, ExternalLink, History, RotateCw } from 'lucide-react';
 import { StatusDot } from '@/components/atoms/StatusDot';
 import { StatusBadge } from '@/components/molecules/StatusBadge';
 import { cn, scmLink } from '@/lib/utils';
@@ -52,6 +52,10 @@ interface Props {
   /** Shown in a narrow column: drop the author to keep the message readable. */
   dense?: boolean;
   deploymentHistoryUrl?: string;
+  /** Re-runs the failed CI jobs of a commit; shown for failed runs when given. */
+  onRerun?: (sha: string) => void;
+  /** The commit whose re-run is being requested. */
+  rerunning?: string | null;
 }
 
 export function CommitList({
@@ -63,6 +67,8 @@ export function CommitList({
   limit,
   dense = false,
   deploymentHistoryUrl,
+  onRerun,
+  rerunning = null,
 }: Props) {
   const disclosureId = useId();
   const scmName = scmProvider === 'github' ? 'GitHub' : 'Gitea';
@@ -155,6 +161,18 @@ export function CommitList({
                 kind="ci"
                 className="pointer-events-none relative z-10 hidden sm:inline-flex"
               />
+              {onRerun && ci.label === 'CI failed' && (
+                <button
+                  type="button"
+                  onClick={() => onRerun(c.sha)}
+                  disabled={rerunning !== null}
+                  title={t('Re-run failed jobs on {provider}', { provider: scmName })}
+                  aria-label={t('Re-run failed jobs of {sha}', { sha: c.sha.slice(0, 7) })}
+                  className="relative z-10 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50"
+                >
+                  <RotateCw className={cn('h-3.5 w-3.5', rerunning === c.sha && 'animate-spin')} />
+                </button>
+              )}
             </div>
 
             {open && (

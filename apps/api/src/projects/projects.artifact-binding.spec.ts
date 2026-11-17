@@ -484,6 +484,45 @@ describe('ProjectsService immutable artifact binding', () => {
     );
   });
 
+  it('re-runs the failed jobs of any commit run, and refuses a run without failures', async () => {
+    config.ci.publicUrl = 'https://initpad.example';
+    const sha = 'c'.repeat(40);
+    const prisma = {
+      project: {
+        findUniqueOrThrow: jest.fn(async () => projectRow),
+        findUnique: jest.fn(async () => ({ ...projectRow, owner: null })),
+      },
+    };
+    const statuses = [{ context: 'build', status: 'failure', targetUrl: null }];
+    const scm = {
+      ciRunForCommit: jest.fn(async () => '555'),
+      listCommitStatuses: jest.fn(async () => statuses),
+      configureRepoRuntimeSecrets: jest.fn(async () => undefined),
+      rerunFailedJobs: jest.fn(async () => undefined),
+    };
+    const service = make(prisma, {}, { provider: jest.fn(() => scm) });
+
+    await expect(service.rerunCommitFailedJobs('project-1', sha)).resolves.toEqual({
+      runId: '555',
+    });
+    expect(scm.ciRunForCommit).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'acme/api' }),
+      sha,
+    );
+    expect(scm.rerunFailedJobs).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'acme/api' }),
+      '555',
+    );
+
+    statuses[0]!.status = 'success';
+    await expect(service.rerunCommitFailedJobs('project-1', sha)).rejects.toThrow(
+      'The latest attempt of this GitHub Actions run has no failed jobs',
+    );
+    await expect(service.rerunCommitFailedJobs('project-1', 'abc')).rejects.toThrow(
+      'A full 40-character commit SHA is required',
+    );
+  });
+
   it('does not re-run GitHub jobs while the verified build still needs publication', async () => {
     config.ci.publicUrl = 'https://initpad.example';
     const prisma = {

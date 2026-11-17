@@ -366,7 +366,28 @@ describe('GitHubScmProvider reads', () => {
     expect(fetchMock.mock.calls[0]?.[0]).not.toContain('/workflows/ci.yml/runs?');
   });
 
-  it('does not ask GitHub again for jobs of a completed run', async () => {
+  it('shows a failed run re-run on GitHub instead of its first attempt', async () => {
+    let conclusion = 'failure';
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        jobs: [{ name: 'build', status: 'completed', conclusion, html_url: 'u' }],
+      }),
+    }));
+    const { provider } = make(fetchMock);
+
+    const first = await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+    conclusion = 'success';
+    const second = await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+
+    expect(first?.[0]?.status).toBe('failure');
+    expect(second?.[0]?.status).toBe('success');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not ask GitHub again for jobs of a successful run', async () => {
     const fetchMock = jest.fn(async () => ({
       ok: true,
       status: 200,
@@ -587,6 +608,46 @@ describe('GitHubScmProvider reads', () => {
     expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
       permissions: { metadata: 'read', actions: 'read' },
     });
+  });
+
+  it('asks again while GitHub does not show a fresh artifact yet', async () => {
+    const sha = 'b'.repeat(40);
+    jest.useFakeTimers();
+    try {
+      const digest = 'a'.repeat(64);
+      const found = () =>
+        new Response(
+          JSON.stringify({
+            id: 987,
+            name: 'initpad-image.tar',
+            size_in_bytes: 123,
+            expired: false,
+            expires_at: '2026-07-21T00:00:00Z',
+            digest: `sha256:${digest}`,
+            workflow_run: { id: 456, repository_id: 101, head_sha: sha },
+          }),
+          { status: 200 },
+        );
+      const fetch = jest
+        .fn()
+        .mockResolvedValueOnce(new Response('{}', { status: 404 }))
+        .mockResolvedValueOnce(new Response('{}', { status: 404 }))
+        .mockImplementation(async () => found());
+      const { provider } = make(fetch);
+
+      const resolved = provider.resolveBuildArtifact(repository(), {
+        providerArtifactId: '987',
+        digest,
+        commitSha: sha,
+        expectedName: 'initpad-image.tar',
+      });
+      await jest.runAllTimersAsync();
+
+      await expect(resolved).resolves.toMatchObject({ providerArtifactId: '987' });
+      expect(fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('rejects artifact metadata from another commit', async () => {

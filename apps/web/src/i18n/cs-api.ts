@@ -293,6 +293,9 @@ export const csApi = {
   'Build artifact accepted': 'Build přijat',
   'Preparing deployment': 'Příprava nasazení',
   'Removing deployment': 'Odstraňuje se nasazení',
+  'A full 40-character commit SHA is required': 'Je potřeba celý 40znakový SHA commitu',
+  'This commit has no GitHub Actions run to re-run':
+    'Tento commit nemá na GitHubu žádný běh Actions, který by šel spustit znovu',
   'Stopping environment': 'Zastavuje se prostředí',
   'Starting environment': 'Spouští se prostředí',
   'Downloading and verifying tested image': 'Stahování a ověření otestovaného image',

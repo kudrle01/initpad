@@ -4,6 +4,8 @@ import { API_MESSAGE_RULES, translateApiMessage } from './api-messages';
 
 // Messages exactly as the API sends them, taken from apps/api/src.
 const REAL_MESSAGES = [
+  'A full 40-character commit SHA is required',
+  'This commit has no GitHub Actions run to re-run',
   "Projects 'api', 'web' still use the GitHub account 'acme'. Delete them before disconnecting it.",
   'Removing deployment',
   'Stopping environment',
@@ -70,6 +72,8 @@ const REAL_MESSAGES = [
 // Templates the catalog depends on; when the API rewords one, this fails and
 // the catalog must follow.
 const API_SOURCES = [
+  "'A full 40-character commit SHA is required'",
+  "'This commit has no GitHub Actions run to re-run'",
   "still use the GitHub account '${account}'. Delete them before disconnecting it.`",
   "'Removing deployment'",
   "'Stopping environment'",
