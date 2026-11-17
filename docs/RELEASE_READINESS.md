@@ -274,6 +274,7 @@ npm run audit:public-release -- --tag initpad-v0.2.37
 npm run audit:public-release -- --tag initpad-v0.2.38
 npm run audit:public-release -- --tag initpad-v0.2.40
 npm run audit:public-release -- --tag initpad-v0.2.41
+npm run audit:public-release -- --tag initpad-v0.2.42
 npm run audit:public-release -- --tag agent-v0.14.2
 npm run audit:public-release -- --tag agent-v0.14.3
 npm run audit:public-release -- --tag agent-v0.17.0
