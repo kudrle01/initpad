@@ -379,6 +379,7 @@ export default function ProjectDetail() {
         provisioning={provisioning}
         firstPipeline={firstPipelineState(project, commits, deployments)}
         canMaintain={canMaintain}
+        onRunAgain={readOnly ? undefined : () => void runAgain()}
         onDelete={() => setConfirmOpen(true)}
       />
 

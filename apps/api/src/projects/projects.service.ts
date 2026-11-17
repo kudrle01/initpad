@@ -1156,12 +1156,34 @@ export class ProjectsService {
         );
       }
       await this.provisioning.succeed(op, created.id);
+      await this.startFirstImportBuild(created.id, ownerId);
       return this.get(created.id);
     } catch (e) {
       await this.provisioning.fail(op, (e as Error).message);
       throw e;
     } finally {
       releaseLease();
+    }
+  }
+
+  /**
+   * An imported repository's head commit usually already has a CI run from
+   * before the import, when the repository had no InitPad secrets, so it never
+   * reported a build and no new run starts until the next push. Start the first
+   * dev build the way "Run again" does: recover the tested artifact of that run
+   * when it exists, otherwise queue a new run. Best effort: the import itself
+   * already succeeded, and the project page offers "Run again".
+   */
+  private async startFirstImportBuild(projectId: string, userId: string): Promise<void> {
+    try {
+      await this.runAgain(projectId, userId);
+    } catch (error) {
+      this.logger.warn({
+        event: 'project.import.first_build_failed',
+        projectId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        message: error instanceof Error ? error.message : null,
+      });
     }
   }
 

@@ -1,4 +1,4 @@
-import { Clock, GitBranch, Loader2, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Clock, GitBranch, Loader2, MoreHorizontal, RotateCw, Trash2 } from 'lucide-react';
 import { TemplateIcon } from '@/components/atoms/TemplateIcon';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +23,8 @@ interface Props {
   provisioning: ProvisioningStatus | null;
   firstPipeline: FirstPipelineState;
   canMaintain: boolean;
+  /** Present when the viewer may start a dev build. */
+  onRunAgain?: () => void;
   onDelete: () => void;
 }
 
@@ -32,6 +34,7 @@ export function ProjectSummary({
   provisioning,
   firstPipeline,
   canMaintain,
+  onRunAgain,
   onDelete,
 }: Props) {
   const created = formatDate(project.createdAt);
@@ -90,14 +93,42 @@ export function ProjectSummary({
       {provisioning && provisioning.status !== 'succeeded' && !provisioning.dismissedAt ? (
         <ProvisioningNotice provisioning={provisioning} />
       ) : (
-        <FirstPipelineNotice state={firstPipeline} />
+        <FirstPipelineNotice state={firstPipeline} onRunAgain={onRunAgain} />
       )}
     </div>
   );
 }
 
-function FirstPipelineNotice({ state }: { state: FirstPipelineState }) {
+function FirstPipelineNotice({
+  state,
+  onRunAgain,
+}: {
+  state: FirstPipelineState;
+  onRunAgain?: () => void;
+}) {
   if (state === 'none') return null;
+  if (state === 'unreported') {
+    return (
+      <Notice
+        tone="warning"
+        role="status"
+        icon={Clock}
+        className="mt-5"
+        title={t('The last build did not report to InitPad')}
+      >
+        <p>
+          {t(
+            'CI finished, but InitPad received no build from it, so nothing was deployed. This happens when the run started before InitPad was connected to the repository. Build and deploy dev to start it now.',
+          )}
+        </p>
+        {onRunAgain && (
+          <Button variant="secondary" size="sm" className="mt-3" onClick={onRunAgain}>
+            <RotateCw className="h-3.5 w-3.5" /> {t('Build and deploy dev')}
+          </Button>
+        )}
+      </Notice>
+    );
+  }
   if (state === 'overdue') {
     return (
       <Notice

@@ -1476,6 +1476,10 @@ export const cs = {
   'The repository is ready, but its CI has not reported a run. Check that the CI runner is online and that the workflow is enabled in the repository.':
     'Repozitář je připravený, ale CI zatím nenahlásilo žádný běh. Ověřte, že je CI runner online a že je workflow v repozitáři povolené.',
   'Building the first version…': 'Sestavuje se první verze…',
+  'The last build did not report to InitPad': 'Poslední build se InitPadu neohlásil',
+  'CI finished, but InitPad received no build from it, so nothing was deployed. This happens when the run started before InitPad was connected to the repository. Build and deploy dev to start it now.':
+    'CI doběhlo, ale InitPad z něj nedostal žádný build, takže se nic nenasadilo. Stává se to, když běh začal dřív, než byl repozitář připojený k InitPadu. Spusťte sestavení a nasazení dev hned teď.',
+  'Build and deploy dev': 'Sestavit a nasadit dev',
   'Preparing the project…': 'Projekt se připravuje…',
   'The first pipeline is running. Environments appear here once it finishes; this page refreshes automatically.':
     'Běží první pipeline. Prostředí se tu objeví po jejím dokončení; stránka se obnovuje automaticky.',

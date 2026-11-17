@@ -43,4 +43,9 @@ describe('firstPipelineState', () => {
     );
     expect(firstPipelineState(project(), head('failed'), [], now)).toBe('none');
   });
+
+  it('says a finished run never reported instead of spinning forever', () => {
+    expect(firstPipelineState(project(), head('success', 'success'), [], now)).toBe('unreported');
+    expect(firstPipelineState(project(), head('success', 'pending'), [], now)).toBe('running');
+  });
 });
