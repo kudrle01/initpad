@@ -346,9 +346,15 @@ export default function NewProject() {
                         {!ghStatus?.linked
                           ? t('Link GitHub before creating a hosted project.')
                           : t('Authorize a GitHub App installation for this workspace first.')}{' '}
-                        <Link to="/settings/account" className="text-link font-medium">
-                          {t('Open account settings')}
-                        </Link>
+                        {ghStatus?.linked ? (
+                          <Link to="/settings/workspace" className="text-link font-medium">
+                            {t('Open workspace settings')}
+                          </Link>
+                        ) : (
+                          <Link to="/settings/account" className="text-link font-medium">
+                            {t('Open account settings')}
+                          </Link>
+                        )}
                       </Notice>
                     )}
                     {selectedInstallation?.accountType === 'User' && !ghStatus?.credentialReady && (

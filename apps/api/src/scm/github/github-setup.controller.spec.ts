@@ -50,7 +50,7 @@ describe('GitHubSetupController', () => {
     await controller.callback('state', '42', 'install', response as never);
     expect(installations.completeSetup).toHaveBeenCalledWith('state', '42');
     expect(response.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('/settings?github=installed&account=acme'),
+      expect.stringContaining('/settings/workspace?github=installed&account=acme'),
     );
   });
 

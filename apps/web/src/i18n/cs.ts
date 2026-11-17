@@ -757,23 +757,34 @@ export const cs = {
     'Stávající projekty ani instalace GitHub App se nesmažou.',
   'GitHub account unlinked': 'Účet GitHub odpojen',
   'GitHub account': 'Účet GitHub',
-  'Sign in with GitHub and let InitPad create or import selected repositories.':
-    'Přihlašujte se přes GitHub a nechte InitPad vytvářet nebo importovat vybrané repozitáře.',
+  'Sign in with GitHub and receive access to your workspaces’ repositories.':
+    'Přihlašujte se přes GitHub a dostávejte přístup k repozitářům svých workspace.',
   Account: 'Účet',
-  'Links your GitHub identity as a sign-in method.':
-    'Propojí vaši identitu na GitHubu jako způsob přihlášení.',
   'GitHub App': 'GitHub App',
-  'Gives InitPad access to create or import selected repositories.':
-    'Dává InitPadu přístup k vytváření nebo importu vybraných repozitářů.',
+  'Gives InitPad access to create or import repositories of the connected account or organization, for this workspace only.':
+    'Dává InitPadu přístup k vytváření a importu repozitářů připojeného účtu nebo organizace, a to jen pro tento workspace.',
   Permissions: 'Oprávnění',
-  'Job retry needs Actions read and write. No organization or account permission is required.':
-    'Opakování úloh vyžaduje čtení a zápis pro Actions. Žádné oprávnění k organizaci ani účtu není potřeba.',
+  'An organization approves Members read and write, so InitPad can invite team members.':
+    'Organizace schvaluje oprávnění Members (čtení a zápis), aby InitPad mohl zvát členy týmu.',
   'Link GitHub account': 'Propojit účet GitHub',
-  'App authorized': 'Aplikace autorizována',
+  'GitHub accounts and organizations for repositories are connected per workspace in <link>workspace settings</link>.':
+    'GitHub účty a organizace s repozitáři se připojují ke každému workspace zvlášť v <link>nastavení workspace</link>.',
+  GitHub: 'GitHub',
+  'GitHub organizations whose repositories {workspace} uses. InitPad invites members to them and gives them repository access by their role.':
+    'GitHub organizace, jejichž repozitáře workspace {workspace} používá. InitPad do nich zve členy a dává jim přístup k repozitářům podle role.',
+  'GitHub accounts and organizations whose repositories {workspace} uses.':
+    'GitHub účty a organizace, jejichž repozitáře workspace {workspace} používá.',
+  'Link your GitHub account in <link>account settings</link> first. The connection then uses it to confirm you may connect the account or organization.':
+    'Nejdřív propojte svůj GitHub účet v <link>nastavení účtu</link>. Podle něj InitPad ověří, že účet nebo organizaci smíte připojit.',
+  'No GitHub organization is connected to {workspace} yet.':
+    'K workspace {workspace} zatím není připojená žádná GitHub organizace.',
+  'No GitHub account or organization is connected to {workspace} yet.':
+    'K workspace {workspace} zatím není připojený žádný GitHub účet ani organizace.',
+  'Connect organization': 'Připojit organizaci',
+  'A workspace owner or admin connects GitHub accounts and organizations.':
+    'GitHub účty a organizace připojuje vlastník nebo administrátor workspace.',
+  'Open workspace settings': 'Otevřít nastavení workspace',
   'linked {date}': 'propojeno {date}',
-  'App installation suspended': 'Instalace aplikace pozastavena',
-  'App installed': 'Aplikace nainstalována',
-  'App not installed': 'Aplikace není nainstalována',
   'Add installation': 'Přidat instalaci',
   'Install GitHub App': 'Nainstalovat GitHub App',
   'Renew authorization': 'Obnovit autorizaci',
@@ -783,7 +794,6 @@ export const cs = {
   'all repositories': 'všechny repozitáře',
   'selected repositories': 'vybrané repozitáře',
   suspended: 'pozastaveno',
-  'authorized for {workspace}': 'autorizováno pro {workspace}',
   'this workspace': 'tento workspace',
   'GitHub sign-in is available, but repository access has not been configured by the platform administrator.':
     'Přihlášení přes GitHub je dostupné, ale přístup k repozitářům správce platformy zatím nenastavil.',
@@ -1534,8 +1544,8 @@ export const cs = {
   'Choose the runtime contract this repository already follows. Import validates the repository but never rewrites its code.':
     'Zvolte běhový kontrakt, který tento repozitář už dodržuje. Import repozitář ověří, ale jeho kód nikdy nepřepíše.',
   Template: 'Šablona',
-  'No GitHub installation is authorized for this workspace. <link>Open account settings</link>':
-    'Pro tento workspace není autorizována žádná instalace GitHubu. <link>Otevřít nastavení účtu</link>',
+  'No GitHub installation is authorized for this workspace. <link>Open workspace settings</link>':
+    'K tomuto workspace není připojený žádný GitHub účet ani organizace. <link>Otevřít nastavení workspace</link>',
   'No repositories available to import.': 'K importu nejsou k dispozici žádné repozitáře.',
   'The stages a verified build moves through.': 'Stupně, kterými ověřený build prochází.',
   'Where each environment runs.': 'Kde jednotlivá prostředí běží.',
@@ -1864,7 +1874,8 @@ export const cs = {
   'Go to InitPad': 'Přejít do InitPadu',
   // pages/WorkspaceSettings.tsx
   'Workspace settings': 'Nastavení workspace',
-  'Members, policy and limits of {name}.': 'Členové, pravidla a limity workspace {name}.',
+  'Members, GitHub, policy and limits of {name}.':
+    'Členové, GitHub, pravidla a limity workspace {name}.',
   // added after the first pass
   '{projects} projects · {members} members · {servers} servers':
     'projekty {projects} · členové {members} · servery {servers}',

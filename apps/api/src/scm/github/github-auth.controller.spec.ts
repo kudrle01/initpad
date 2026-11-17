@@ -62,7 +62,7 @@ describe('GitHubAuthController setup verification', () => {
       'ghu_transient',
     );
     expect(response.redirect).toHaveBeenCalledWith(
-      'https://initpad.example/settings?github=installed&account=acme',
+      'https://initpad.example/settings/workspace?github=installed&account=acme',
     );
     expect(credentials.storeExchange).not.toHaveBeenCalled();
   });
@@ -160,7 +160,7 @@ describe('GitHubAuthController setup verification', () => {
     // Team workspaces joined before linking now receive repository access (ADR-189).
     expect(workspaces.githubAccess.syncForUser).toHaveBeenCalledWith('user-1');
     expect(response.redirect).toHaveBeenCalledWith(
-      'https://initpad.example/settings?github=linked',
+      'https://initpad.example/settings/account?github=linked',
     );
   });
 });
