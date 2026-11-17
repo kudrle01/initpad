@@ -175,6 +175,15 @@ export interface PipelineStage {
   // SCM jobs and InitPad publications are separate audit records. Missing
   // source is kept compatible with older SCM-only clients.
   source?: 'scm' | 'platform';
+  // The job's steps in workflow order, when the provider reports them.
+  steps?: PipelineStep[];
+}
+
+export interface PipelineStep {
+  name: string;
+  status: StageStatus;
+  // Link to the step in the job log.
+  url: string | null;
 }
 
 export interface Commit {

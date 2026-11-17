@@ -1493,6 +1493,8 @@ export const cs = {
   'GitHub runs the failed jobs of this commit again. When they pass, the build reports to InitPad like any other run.':
     'GitHub znovu spustí neúspěšné úlohy tohoto commitu. Když projdou, build se InitPadu ohlásí jako při každém jiném běhu.',
   'Re-run failed jobs': 'Spustit znovu',
+  'Steps of {job}': 'Kroky jobu {job}',
+  'View step log in {provider}': 'Zobrazit log kroku na {provider}',
   'Re-run failed jobs on {provider}': 'Znovu spustit neúspěšné úlohy na {provider}',
   'Re-run failed jobs of {sha}': 'Znovu spustit neúspěšné úlohy commitu {sha}',
   'Building the latest commit. Request it for production once InitPad verifies it.':

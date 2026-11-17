@@ -30,6 +30,7 @@ import {
   ScmActor,
   ScmCommit,
   ScmCommitStatus,
+  ScmJobStep,
   ScmProvider,
   ScmProvisionTarget,
   ScmRepo,
@@ -66,6 +67,40 @@ const READ_ACTIONS = { metadata: 'read', actions: 'read' };
 // Waits before asking again for an artifact GitHub does not show yet.
 export const ARTIFACT_VISIBILITY_RETRY_MS = [1000, 2000, 4000];
 const WRITE_ACTIONS = { metadata: 'read', actions: 'write' };
+
+interface GitHubJobStep {
+  name?: string;
+  status?: string;
+  conclusion?: string | null;
+  number?: number;
+}
+
+// Runner bookkeeping, not part of the workflow the user wrote.
+const RUNNER_STEP = /^(Set up job|Complete job|Post .+)$/;
+
+/** The workflow's own steps of a job, each linked to its place in the job log. */
+export function actionJobSteps(
+  steps: GitHubJobStep[] | undefined,
+  jobUrl: string | null,
+): ScmJobStep[] {
+  return (steps ?? [])
+    .filter((step) => step.name && !RUNNER_STEP.test(step.name))
+    .map((step) => ({
+      // An unnamed `uses:` step is reported as "Run owner/action@ref".
+      name: (step.name ?? '').replace(/^Run ([\w.-]+\/[\w./-]+)@\S+$/, '$1'),
+      status:
+        step.status === 'completed'
+          ? step.conclusion === 'success'
+            ? 'success'
+            : step.conclusion === 'skipped' || step.conclusion === 'neutral'
+              ? 'pending'
+              : 'failed'
+          : step.status === 'in_progress'
+            ? 'running'
+            : 'pending',
+      url: jobUrl && step.number ? `${jobUrl}#step:${step.number}:1` : jobUrl,
+    }));
+}
 const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
 const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
 const WRITE_ADMINISTRATION = { metadata: 'read', administration: 'write' };
@@ -443,6 +478,7 @@ export class GitHubScmProvider implements ScmProvider {
             status?: string;
             conclusion?: string | null;
             html_url?: string | null;
+            steps?: GitHubJobStep[];
           }>;
         }>(`/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`, actionsToken);
         const jobs = data?.jobs ?? [];
@@ -520,6 +556,7 @@ export class GitHubScmProvider implements ScmProvider {
     status?: string;
     conclusion?: string | null;
     html_url?: string | null;
+    steps?: GitHubJobStep[];
   }): ScmCommitStatus {
     let status = 'pending';
     if (job.status === 'completed') {
@@ -530,10 +567,12 @@ export class GitHubScmProvider implements ScmProvider {
             ? 'pending'
             : 'failure';
     }
+    const steps = actionJobSteps(job.steps, job.html_url ?? null);
     return {
       context: job.name ?? '',
       status,
       targetUrl: job.html_url ?? null,
+      ...(steps.length > 0 ? { steps } : {}),
     };
   }
 

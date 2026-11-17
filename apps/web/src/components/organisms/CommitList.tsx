@@ -214,6 +214,45 @@ export function CommitList({
                     </Fragment>
                   ))}
                 </div>
+                {c.pipeline.some((stage) => stage.steps?.length) && (
+                  <div className="mt-3 space-y-2.5">
+                    {c.pipeline
+                      .filter((stage) => stage.steps?.length)
+                      .map((stage) => (
+                        <div key={stage.name} className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {t('Steps of {job}', { job: stage.name })}
+                          </p>
+                          <ol className="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1.5">
+                            {stage.steps?.map((step, index) => (
+                              <li key={`${index}-${step.name}`} className="flex items-center gap-1">
+                                {index > 0 && (
+                                  <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+                                )}
+                                {step.url ? (
+                                  <a
+                                    href={scmLink(step.url, scmProvider)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={t('View step log in {provider}', { provider: scmName })}
+                                    className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground/90 hover:bg-card hover:text-foreground"
+                                  >
+                                    <StatusDot status={step.status} kind="ci" />
+                                    <span className="truncate">{step.name}</span>
+                                  </a>
+                                ) : (
+                                  <span className="inline-flex max-w-[16rem] items-center gap-1.5 px-1.5 py-0.5 text-xs">
+                                    <StatusDot status={step.status} kind="ci" />
+                                    <span className="truncate">{step.name}</span>
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+                      ))}
+                  </div>
+                )}
                 {recoveredPublication && (
                   <p className="mt-2.5 text-xs text-muted-foreground">
                     {t(
