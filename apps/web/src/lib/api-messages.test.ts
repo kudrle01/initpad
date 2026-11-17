@@ -4,6 +4,7 @@ import { API_MESSAGE_RULES, translateApiMessage } from './api-messages';
 
 // Messages exactly as the API sends them, taken from apps/api/src.
 const REAL_MESSAGES = [
+  'GitHub returned without the setup started in InitPad. Connect the account or organization from the GitHub section of workspace settings.',
   'A team workspace connects to a GitHub organization. Install the InitPad app on an organization, or use your personal workspace for repositories in your personal account.',
   "This team workspace still uses the personal GitHub account 'kudrle01'. Connect a GitHub organization to change member access.",
   "Approve the updated InitPad app permissions in the GitHub organization 'acme' (Members: read and write), then try again.",
@@ -65,6 +66,7 @@ const REAL_MESSAGES = [
 // Templates the catalog depends on; when the API rewords one, this fails and
 // the catalog must follow.
 const API_SOURCES = [
+  "'GitHub returned without the setup started in InitPad. Connect the account or organization from the GitHub section of workspace settings.'",
   "'A team workspace connects to a GitHub organization. Install the InitPad app on an organization, or use your personal workspace for repositories in your personal account.'",
   "`This team workspace still uses the personal GitHub account '${account}'. Connect a GitHub organization to change member access.`",
   "`Approve the updated InitPad app permissions in the GitHub organization '${installation.accountLogin}' (Members: read and write), then try again.`",

@@ -27,9 +27,17 @@ describe('GitHubSetupController', () => {
       {} as never,
     );
 
-    await expect(controller.start('user-1', 'workspace-1')).resolves.toEqual({
+    const startResponse = { cookie: jest.fn() };
+    await expect(
+      controller.start('user-1', startResponse as never, 'workspace-1'),
+    ).resolves.toEqual({
       installUrl: 'https://github.example/apps/initpad-cloud/installations/new?state=opaque-state',
     });
+    expect(startResponse.cookie).toHaveBeenCalledWith(
+      'initpad_gh_setup',
+      'opaque-state',
+      expect.objectContaining({ httpOnly: true, sameSite: 'lax', path: '/api/scm/github/setup' }),
+    );
     expect(workspaces.require).toHaveBeenCalledWith('user-1', 'workspace-1', 'admin');
     expect(installations.createSetup).toHaveBeenCalledWith('user-1', 'workspace-1');
   });
@@ -46,12 +54,46 @@ describe('GitHubSetupController', () => {
       {} as never,
       {} as never,
     );
-    const response = { redirect: jest.fn((url: string) => url) };
-    await controller.callback('state', '42', 'install', response as never);
+    const response = { redirect: jest.fn((url: string) => url), clearCookie: jest.fn() };
+    await controller.callback(
+      'state',
+      '42',
+      'install',
+      { cookies: {} } as never,
+      response as never,
+    );
     expect(installations.completeSetup).toHaveBeenCalledWith('state', '42');
     expect(response.redirect).toHaveBeenCalledWith(
       expect.stringContaining('/settings/workspace?github=installed&account=acme'),
     );
+  });
+
+  it('takes the setup state from its cookie when GitHub returns from an update without it', async () => {
+    const installations = {
+      inspectSetup: jest.fn(async () => ({ accountType: 'User' })),
+      completeSetup: jest.fn(async () => ({ accountLogin: 'acme' })),
+    };
+    const controller = new GitHubSetupController(
+      installations as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const response = { redirect: jest.fn((url: string) => url), clearCookie: jest.fn() };
+
+    await controller.callback(
+      undefined as never,
+      '42',
+      'update',
+      { cookies: { initpad_gh_setup: 'cookie-state' } } as never,
+      response as never,
+    );
+
+    expect(installations.completeSetup).toHaveBeenCalledWith('cookie-state', '42');
+    expect(response.clearCookie).toHaveBeenCalledWith('initpad_gh_setup', {
+      path: '/api/scm/github/setup',
+    });
   });
 
   it('recovers an already-installed personal App for the current workspace', async () => {
@@ -126,8 +168,8 @@ describe('GitHubSetupController', () => {
       {} as never,
       {} as never,
     );
-    const response = { redirect: jest.fn((url: string) => url) };
-    await controller.callback('state', '', 'request', response as never);
+    const response = { redirect: jest.fn((url: string) => url), clearCookie: jest.fn() };
+    await controller.callback('state', '', 'request', { cookies: {} } as never, response as never);
     expect(installations.markRequested).toHaveBeenCalledWith('state');
     expect(installations.completeSetup).not.toHaveBeenCalled();
     expect(response.redirect).toHaveBeenCalledWith(
@@ -155,10 +197,17 @@ describe('GitHubSetupController', () => {
     );
     const response = {
       cookie: jest.fn(),
+      clearCookie: jest.fn(),
       redirect: jest.fn((url: string) => url),
     };
 
-    await controller.callback('setup-state', '42', 'install', response as never);
+    await controller.callback(
+      'setup-state',
+      '42',
+      'install',
+      { cookies: {} } as never,
+      response as never,
+    );
     expect(oauth.authorizeSetupUrl).toHaveBeenCalledWith('setup-state', '42');
     expect(response.cookie).toHaveBeenCalledWith(
       'initpad_gh_oauth',

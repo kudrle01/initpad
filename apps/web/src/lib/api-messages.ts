@@ -203,6 +203,11 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
     String.raw`Could not remove (?<env>\w+) deployment from (?<target>.+?): (?<detail>.+)`,
     msg('Could not remove {env} deployment from {target}: {detail}'),
   ),
+  exact(
+    msg(
+      'GitHub returned without the setup started in InitPad. Connect the account or organization from the GitHub section of workspace settings.',
+    ),
+  ),
   // Team workspaces use GitHub organizations (ADR-189).
   exact(
     msg(

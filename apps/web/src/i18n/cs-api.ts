@@ -139,6 +139,8 @@ export const csApi = {
     'CI nevytvořilo nasaditelný image (výsledek CI: {status}). Otevřete logy běhu v repozitáři, opravte neúspěšnou úlohu a spusťte ji znovu.',
   'Cleanup pending: {detail}': 'Čeká se na úklid: {detail}',
   'Cleanup failed: {detail}': 'Úklid selhal: {detail}',
+  'GitHub returned without the setup started in InitPad. Connect the account or organization from the GitHub section of workspace settings.':
+    'GitHub se vrátil bez nastavení zahájeného v InitPadu. Účet nebo organizaci připojte v části GitHub v nastavení workspace.',
   'A team workspace connects to a GitHub organization. Install the InitPad app on an organization, or use your personal workspace for repositories in your personal account.':
     'Týmový workspace se připojuje ke GitHub organizaci. Nainstalujte aplikaci InitPad do organizace, nebo pro repozitáře na osobním účtu použijte osobní workspace.',
   "This team workspace still uses the personal GitHub account '{name}'. Connect a GitHub organization to change member access.":
