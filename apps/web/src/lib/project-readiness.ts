@@ -20,6 +20,7 @@ export function firstPipelineState(
   if (!project || deployments.length > 0) return 'none';
   if (project.environments.some((environment) => environment.status !== 'empty')) return 'none';
   if (project.environments.some((environment) => environment.version)) return 'none';
+  if (project.latestVerifiedArtifact) return 'none';
 
   const head = commits[0];
   const stages = head?.pipeline ?? [];

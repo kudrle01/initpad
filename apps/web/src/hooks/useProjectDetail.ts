@@ -272,12 +272,14 @@ export function useProjectDetail() {
     try {
       setProject(await api.redeploy(id, environment));
       toast.success(
-        project?.scm.provider === 'github'
-          ? t(
-              'Deploying the verified build to {environment} through InitPad — no new GitHub runner is required.',
-              { environment: environment },
-            )
-          : t('Redeploying {environment}', { environment: environment }),
+        project?.pipelinePreset === 'prod-only'
+          ? t('Building the latest commit. Request it for production once InitPad verifies it.')
+          : project?.scm.provider === 'github'
+            ? t(
+                'Deploying the verified build to {environment} through InitPad — no new GitHub runner is required.',
+                { environment: environment },
+              )
+            : t('Redeploying {environment}', { environment: environment }),
       );
     } catch (actionError) {
       toast.error((actionError as Error).message);

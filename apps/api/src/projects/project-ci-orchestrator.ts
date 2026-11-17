@@ -151,9 +151,11 @@ export class ProjectCiOrchestrator {
     if (buildArtifact === 'duplicate') return;
 
     if (!dev) {
+      // A retry tag on a pipeline without dev is a build requested for
+      // verification (ProjectsService.runAgain); verify it like a push.
       if (isRetry) {
-        this.logger.log(`Ignoring CI retry for pipeline without dev: ${repo} (${retryTag})`);
-        return;
+        const actor = await this.resolveActor(project.id);
+        await scm.deleteTag(repository, retryTag, actor).catch(() => undefined);
       }
       await this.prisma.project.update({
         where: { id: project.id },

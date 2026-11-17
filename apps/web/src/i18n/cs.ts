@@ -1488,6 +1488,11 @@ export const cs = {
   'The last build did not report to InitPad': 'Poslední build se InitPadu neohlásil',
   'CI finished, but InitPad received no build from it, so nothing was deployed. This happens when the run started before InitPad was connected to the repository. Build and deploy dev to start it now.':
     'CI doběhlo, ale InitPad z něj nedostal žádný build, takže se nic nenasadilo. Stává se to, když běh začal dřív, než byl repozitář připojený k InitPadu. Spusťte sestavení a nasazení dev hned teď.',
+  'Build and verify': 'Sestavit a ověřit',
+  'Building the latest commit. Request it for production once InitPad verifies it.':
+    'Sestavuje se poslední commit. Až ho InitPad ověří, požádejte o nasazení do produkce.',
+  'CI finished, but InitPad received no build from it, so there is nothing to request for production. This happens when the run started before InitPad was connected to the repository. Build it now to verify it.':
+    'CI doběhlo, ale InitPad z něj nedostal žádný build, takže není co požádat o nasazení do produkce. Stává se to, když běh začal dřív, než byl InitPad k repozitáři připojen. Sestavte ho teď a InitPad ho ověří.',
   'Build and deploy dev': 'Sestavit a nasadit dev',
   'Preparing the project…': 'Projekt se připravuje…',
   'The first pipeline is running. Environments appear here once it finishes; this page refreshes automatically.':
