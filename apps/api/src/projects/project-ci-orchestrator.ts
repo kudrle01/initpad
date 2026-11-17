@@ -524,6 +524,15 @@ export class ProjectCiOrchestrator {
         expectedName: 'initpad-image.tar',
       });
     } catch (error) {
+      // The workflow's curl hides the response body, so the reason is only
+      // visible here.
+      this.logger.warn({
+        event: 'ci.artifact_rejected',
+        projectId,
+        repository: repository.fullName,
+        artifactId: input.artifactId,
+        reason: (error as Error).message,
+      });
       throw new BadRequestException(`Build artifact rejected: ${(error as Error).message}`);
     }
     const replay = await this.prisma.buildArtifact.findUnique({
@@ -536,6 +545,14 @@ export class ProjectCiOrchestrator {
     });
     if (!replay) return artifact;
     if (replay.projectId !== projectId || replay.commitSha !== sha.toLowerCase()) {
+      this.logger.warn({
+        event: 'ci.artifact_rejected',
+        projectId,
+        repository: repository.fullName,
+        artifactId: artifact.providerArtifactId,
+        reason: 'bound to another deployment',
+        boundProjectId: replay.projectId,
+      });
       throw new BadRequestException('Build artifact is already bound to another deployment');
     }
     if (replay.status !== 'failed') {
