@@ -89,6 +89,7 @@ function setup(
     attachMember: jest.fn(async () => {
       if (options.attachFails) throw new ForbiddenException('Workspace member limit reached');
     }),
+    githubAccess: { assertTeamUsesOrganizations: jest.fn(async () => undefined) },
   };
   const mail = {
     isEnabled: () => options.mail ?? true,
@@ -124,7 +125,7 @@ describe('WorkspaceInvitationsService (ADR-188)', () => {
   });
 
   it('e-mails a single-use link and stores only its hash', async () => {
-    const { service, rows, mail, events } = setup();
+    const { service, rows, mail, events, workspaces } = setup();
 
     const created = await service.create('u-admin', 'w1', {
       email: ' Bob@Example.test ',
@@ -149,6 +150,8 @@ describe('WorkspaceInvitationsService (ADR-188)', () => {
     );
     expect(rows[0].tokenHash).toBe(hashToken(token));
     expect(JSON.stringify(rows)).not.toContain(token);
+    // A team still on a personal GitHub account cannot take new members (ADR-189).
+    expect(workspaces.githubAccess.assertTeamUsesOrganizations).toHaveBeenCalledWith('w1');
     expect(events[0]).toMatchObject({ action: 'workspace.invitation_created' });
   });
 

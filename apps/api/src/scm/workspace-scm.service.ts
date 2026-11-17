@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { decryptSecret } from '../common/secret';
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScmActor, ScmKind, ScmProvisionTarget, ScmRepo, ScmRepositoryRef } from './scm-provider';
 import { ScmRegistry } from './github/scm-registry';
+import { TEAM_NEEDS_ORGANIZATION } from './github/team-organization';
 
 /**
  * Resolves edition, workspace installation grants and provider identities at
@@ -23,6 +29,10 @@ export class WorkspaceScmService {
 
   provider(kind: ScmKind) {
     return this.registry.for(kind);
+  }
+
+  githubProvider() {
+    return this.registry.githubProvider();
   }
 
   async createContext(
@@ -58,6 +68,9 @@ export class WorkspaceScmService {
       );
     }
     if (installation.accountType === 'User') {
+      if (await this.isTeamWorkspace(workspaceId)) {
+        throw new ConflictException(TEAM_NEEDS_ORGANIZATION);
+      }
       const identity = await this.prisma.externalIdentity.findUnique({
         where: { provider_userId: { provider: 'github', userId } },
         select: { providerUserId: true },
@@ -84,10 +97,16 @@ export class WorkspaceScmService {
     if (kind === 'gitea') {
       return this.provider(kind).listRepositories(await this.actorFor(userId, kind));
     }
+    // A team workspace imports only from organizations (ADR-189).
+    const team = await this.isTeamWorkspace(workspaceId);
     const accesses = await this.prisma.gitHubInstallationAccess.findMany({
       where: {
         workspaceId,
-        githubInstallation: { deletedAt: null, suspendedAt: null },
+        githubInstallation: {
+          deletedAt: null,
+          suspendedAt: null,
+          ...(team ? { accountType: 'Organization' } : {}),
+        },
       },
       include: { githubInstallation: true },
       orderBy: { createdAt: 'asc' },
@@ -128,6 +147,14 @@ export class WorkspaceScmService {
     };
   }
 
+  private async isTeamWorkspace(workspaceId: string): Promise<boolean> {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { type: true },
+    });
+    return workspace?.type === 'team';
+  }
+
   async actorFor(
     userId: string,
     kind: ScmKind,
@@ -161,7 +188,12 @@ export class WorkspaceScmService {
     );
   }
 
-  async collaboratorUsername(userId: string, kind: ScmKind): Promise<string> {
+  /**
+   * The member's login at the repository's provider, or null when a GitHub
+   * member has not linked GitHub yet. Such a member keeps their workspace role
+   * and receives repository access when they link GitHub (ADR-189).
+   */
+  async collaboratorUsername(userId: string, kind: ScmKind): Promise<string | null> {
     if (kind === 'gitea') {
       return (await this.prisma.user.findUniqueOrThrow({ where: { id: userId } })).username;
     }
@@ -169,11 +201,6 @@ export class WorkspaceScmService {
       where: { provider_userId: { provider: 'github', userId } },
       select: { username: true },
     });
-    if (!identity?.username) {
-      throw new BadRequestException(
-        'Every workspace member must link GitHub before receiving repository access',
-      );
-    }
-    return identity.username;
+    return identity?.username ?? null;
   }
 }

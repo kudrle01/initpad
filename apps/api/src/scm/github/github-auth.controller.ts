@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, Res } from '@nestjs/common';
+import { Controller, Get, Optional, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { config } from '../../config';
 import { SessionsService } from '../../auth/sessions.service';
@@ -12,6 +12,7 @@ import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
 import { readStringCookie } from '../../common/request-cookie';
 import { RateLimited } from '../../auth/rate-limited.decorator';
 import { RATE_LIMITS } from '../../auth/rate-limit.policy';
+import { WorkspacesService } from '../../workspaces/workspaces.service';
 
 // "Sign in with GitHub" and account linking. Both are top-level browser
 // redirects, so the session cookie (SameSite=Lax) is available on the callback.
@@ -25,6 +26,7 @@ export class GitHubAuthController {
     private readonly sessions: SessionsService,
     private readonly installations: GitHubInstallationService,
     private readonly credentials: GitHubUserCredentialService,
+    @Optional() private readonly workspaces?: WorkspacesService,
   ) {}
 
   @Get()
@@ -112,6 +114,8 @@ export class GitHubAuthController {
       try {
         await this.identities.link(userId, 'github', ghUser.providerUserId, ghUser.login);
         await this.credentials.storeExchange(userId, exchange);
+        // Team workspaces joined before linking grant repository access now (ADR-189).
+        await this.workspaces?.githubAccess.syncForUser(userId).catch(() => undefined);
         return res.redirect(this.frontend('/settings?github=linked'));
       } catch (e) {
         return res.redirect(

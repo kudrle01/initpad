@@ -759,6 +759,12 @@ export class ProjectsService {
             collaborator.userId,
             repo.provider,
           );
+          // Without linked GitHub the member is granted access once they link it (ADR-189).
+          if (!username) continue;
+          await this.workspaces.githubAccess.ensureRepositoryOrganization(
+            repo,
+            collaborator.userId,
+          );
           const effect = `collaborator:${collaborator.userId}`;
           await this.provisioning.planEffect(operationId, effect, 'collaborator', { username });
           await this.provisioning.beginEffect(operationId, effect);
@@ -1087,6 +1093,11 @@ export class ProjectsService {
           const username = await this.workspaceScm.collaboratorUsername(
             collaborator.userId,
             repo.provider,
+          );
+          if (!username) continue;
+          await this.workspaces.githubAccess.ensureRepositoryOrganization(
+            repo,
+            collaborator.userId,
           );
           const previousAccess = await scm.getCollaboratorAccess(repo, username);
           const collaboratorEffect = `collaborator:${collaborator.userId}`;

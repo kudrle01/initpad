@@ -89,6 +89,11 @@ konfiguraci v paměti.
   smaže projekt až poté, co Gitea repozitář hlásí jako neexistující. GitHub
   webhook, který mění stav instalace nebo autorizace, se podle
   `X-GitHub-Delivery` zpracuje jen jednou (ADR-145).
+- InitPad zve členy týmového workspace do GitHub organizace jen s rolí
+  `member` a jen když GitHub žádné členství nehlásí, takže nikdy nedegraduje
+  vlastníka organizace. Z organizace odebírá jen ty, které sám pozval a žádný
+  jiný jejich workspace stejnou instalaci nepoužívá. Token pro tyto operace
+  nese jen `members: write` (ADR-189).
 - CI callbacky, webhooky a OAuth endpointy odmítnou pole jiného typu než
   řetězec; OAuth chyba neprozradí text výjimky. Web vytvoří odkaz z adresy
   zvenčí, třeba z cíle CI statusu, jen pro `http` a `https` (ADR-145).

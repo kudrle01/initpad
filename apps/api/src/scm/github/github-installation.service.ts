@@ -13,6 +13,7 @@ import {
   InstallationToken,
   VerifiedGitHubInstallation,
 } from './github-app.service';
+import { TEAM_NEEDS_ORGANIZATION } from './team-organization';
 
 const SETUP_TTL_MS = 10 * 60 * 1000;
 // An org owner approves a member's request whenever they get to it.
@@ -44,6 +45,7 @@ export interface InstallationTargetEvent {
  * may discover an installation, but only a callback state initiated by a
  * workspace owner/admin grants that workspace access to it.
  */
+
 @Injectable()
 export class GitHubInstallationService {
   private readonly logger = new Logger('GitHubInstallationService');
@@ -212,6 +214,9 @@ export class GitHubInstallationService {
     if (!membership || !WORKSPACE_ADMINS.has(membership.role)) {
       throw new ForbiddenException('Workspace admin access is required to finish GitHub setup');
     }
+    if (verified.accountType === 'User' && (await this.isTeamWorkspace(setup.workspaceId))) {
+      throw new ForbiddenException(TEAM_NEEDS_ORGANIZATION);
+    }
     // For personal GitHub accounts, the installer and target can be matched as
     // the same immutable account. Organization installs are authorized by
     // GitHub's own installation UI and the bound one-time workspace state.
@@ -290,6 +295,8 @@ export class GitHubInstallationService {
     if (!membership || !WORKSPACE_ADMINS.has(membership.role)) {
       throw new ForbiddenException('Workspace admin access is required to finish GitHub setup');
     }
+    // A team workspace connects only to organizations (ADR-189).
+    if (await this.isTeamWorkspace(workspaceId)) return null;
 
     const verified = (await this.app.listInstallations()).find(
       (installation) =>
@@ -348,6 +355,8 @@ export class GitHubInstallationService {
     if (!membership || !WORKSPACE_ADMINS.has(membership.role)) {
       throw new ForbiddenException('Workspace admin access is required to finish GitHub setup');
     }
+    // A team workspace connects only to organizations (ADR-189).
+    if (await this.isTeamWorkspace(workspaceId)) return null;
 
     const approved = await this.prisma.gitHubInstallation.findFirst({
       where: {
@@ -449,6 +458,14 @@ export class GitHubInstallationService {
 
   private hashState(state: string): string {
     return createHash('sha256').update(state).digest('hex');
+  }
+
+  private async isTeamWorkspace(workspaceId: string): Promise<boolean> {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { type: true },
+    });
+    return workspace?.type === 'team';
   }
 
   private async loadSetupCandidate(state: string, installationId: string) {
