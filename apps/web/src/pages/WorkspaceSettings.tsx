@@ -4,6 +4,7 @@ import { WorkspaceAdministrationSettings } from '@/components/organisms/settings
 import { WorkspaceMembersSettings } from '@/components/organisms/settings/WorkspaceMembersSettings';
 import { WorkspaceInvitationsSettings } from '@/components/organisms/settings/WorkspaceInvitationsSettings';
 import { WorkspaceCapacitySettings } from '@/components/organisms/settings/WorkspaceCapacitySettings';
+import { WorkspaceGitHubSettings } from '@/components/organisms/settings/WorkspaceGitHubSettings';
 import { t } from '@/i18n';
 
 export default function WorkspaceSettings() {
@@ -15,7 +16,7 @@ export default function WorkspaceSettings() {
         helpTopic="team"
         description={
           activeWorkspace
-            ? t('Members, policy and limits of {name}.', { name: activeWorkspace.name })
+            ? t('Members, GitHub, policy and limits of {name}.', { name: activeWorkspace.name })
             : undefined
         }
       />
@@ -24,6 +25,7 @@ export default function WorkspaceSettings() {
         <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
           <WorkspaceMembersSettings />
           <WorkspaceInvitationsSettings />
+          <WorkspaceGitHubSettings />
           <WorkspaceAdministrationSettings />
         </div>
         <WorkspaceCapacitySettings />

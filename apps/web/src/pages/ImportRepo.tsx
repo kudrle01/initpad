@@ -339,10 +339,10 @@ export default function ImportRepo() {
                 (hosted && ghStatus?.installations.length === 0 ? (
                   <Notice icon={Github} className="mt-3">
                     {rich(
-                      'No GitHub installation is authorized for this workspace. <link>Open account settings</link>',
+                      'No GitHub installation is authorized for this workspace. <link>Open workspace settings</link>',
                       {
                         link: (chunk) => (
-                          <Link to="/settings/account" className="text-link font-medium">
+                          <Link to="/settings/workspace" className="text-link font-medium">
                             {chunk}
                           </Link>
                         ),

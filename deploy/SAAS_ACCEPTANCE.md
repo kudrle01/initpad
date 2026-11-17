@@ -16,7 +16,7 @@ používat jako první test obnovy na produkčních datech.
 - Nastavte důvěryhodný veřejný HTTPS origin a spusťte `api` i `web` za
   zamýšleným edge proxy.
 - Dodržte jedinou podporovanou proxy cestu `klient -> veřejný edge/WAF -> web
-  proxy -> API` s `INITPAD_TRUST_PROXY_HOPS=2`. Edge musí zahodit klientské
+proxy -> API` s `INITPAD_TRUST_PROXY_HOPS=2`. Edge musí zahodit klientské
   `Forwarded` a `X-Forwarded-*` hlavičky a vytvořit vlastní řetězec z adresy
   spojení. Port webu zůstává svázaný s `127.0.0.1`, aby edge nešlo obejít.
 - Udržujte staging control plane v klidu po dobu základního load příkazu. Nesmí
@@ -56,31 +56,32 @@ repozitáře podle neměnného ID; živý průchod nenahrazují.
 Zaregistrujte samostatnou GitHub App pouze pro staging origin a nesdílejte ji s
 jiným prostředím:
 
-| Pole formuláře                                         | Hodnota                                          |
-| ------------------------------------------------------ | ------------------------------------------------ |
-| Homepage URL                                           | `https://<origin>`                               |
-| Callback URL                                           | `https://<origin>/api/auth/github/callback`      |
-| Expire user authorization tokens                       | zapnuto                                          |
-| Request user authorization (OAuth) during installation | vypnuto, jinak GitHub nepoužije Setup URL        |
-| Setup URL                                              | `https://<origin>/api/scm/github/setup/callback` |
-| Webhook                                                | aktivní, `https://<origin>/api/scm/github/webhook` |
-| Webhook secret                                         | náhodná hodnota uložená ve správci secretů       |
-| Where can this GitHub App be installed                 | Any account                                      |
+| Pole formuláře                                         | Hodnota                                               |
+| ------------------------------------------------------ | ----------------------------------------------------- |
+| Homepage URL                                           | `https://<origin>`                                    |
+| Callback URL                                           | `https://<origin>/api/auth/github/callback`           |
+| Expire user authorization tokens                       | zapnuto                                               |
+| Request user authorization (OAuth) during installation | vypnuto, jinak GitHub nepoužije Setup URL             |
+| Setup URL                                              | `https://<origin>/api/scm/github/setup/callback`      |
+| Redirect on update                                     | zapnuto, aby se vrátila i úprava existující instalace |
+| Webhook                                                | aktivní, `https://<origin>/api/scm/github/webhook`    |
+| Webhook secret                                         | náhodná hodnota uložená ve správci secretů            |
+| Where can this GitHub App be installed                 | Any account                                           |
 
 Repository permissions odpovídají tokenům, které si API vyžádá pro jednotlivé
 operace:
 
-| Oprávnění       | Úroveň         | Použití                                         |
-| --------------- | -------------- | ----------------------------------------------- |
-| Actions         | Read and write | běhy, artefakty a opakování neúspěšných jobů    |
-| Administration  | Read and write | založení a smazání repozitáře, spolupracovníci  |
-| Checks          | Read-only      | stav Check Runs                                 |
-| Commit statuses | Read-only      | klasické commit statusy                         |
-| Contents        | Read and write | scaffold, archiv revize a značky opakování      |
-| Metadata        | Read-only      | povinné pro každou App                          |
-| Packages        | Read and write | úklid balíčků odstraněného projektu             |
-| Secrets         | Read and write | Actions secrets projektu                        |
-| Workflows       | Read and write | zápis `.github/workflows`                       |
+| Oprávnění       | Úroveň         | Použití                                        |
+| --------------- | -------------- | ---------------------------------------------- |
+| Actions         | Read and write | běhy, artefakty a opakování neúspěšných jobů   |
+| Administration  | Read and write | založení a smazání repozitáře, spolupracovníci |
+| Checks          | Read-only      | stav Check Runs                                |
+| Commit statuses | Read-only      | klasické commit statusy                        |
+| Contents        | Read and write | scaffold, archiv revize a značky opakování     |
+| Metadata        | Read-only      | povinné pro každou App                         |
+| Packages        | Read and write | úklid balíčků odstraněného projektu            |
+| Secrets         | Read and write | Actions secrets projektu                       |
+| Workflows       | Read and write | zápis `.github/workflows`                      |
 
 Z account permissions nastavte pouze `Email addresses: Read-only`, aby
 přihlášení mohlo převzít ověřený e-mail. Z organization permissions nastavte
@@ -222,6 +223,7 @@ checkpointu s režimem 0600. Nekopíruje na disk žádný token ani secret.
    vyžaduje alespoň dvě zdravé lokální repliky API v Compose, prokáže, že ve
    frontě je právě jeden trvalý deploy job, přiřadí neprůhlednou identitu
    instance z odpovědi k jedné replice a restartuje pouze tuto repliku.
+
 3. Spusťte stejného Agenta a počkejte na jeho heartbeat. Poté ověřte obnovu:
 
    ```bash

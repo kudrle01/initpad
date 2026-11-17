@@ -91,7 +91,7 @@ export class GitHubSetupController {
     if (setupAction === 'request') {
       // Best effort: without a usable state the request simply stays unclaimed.
       await this.installations.markRequested(state).catch(() => undefined);
-      return res.redirect(this.frontend('/settings?github=installation_requested'));
+      return res.redirect(this.frontend('/settings/workspace?github=installation_requested'));
     }
     try {
       const candidate = await this.installations.inspectSetup(state, installationId);
@@ -109,14 +109,16 @@ export class GitHubSetupController {
       const installation = await this.installations.completeSetup(state, installationId);
       return res.redirect(
         this.frontend(
-          `/settings?github=installed&account=${encodeURIComponent(installation.accountLogin)}`,
+          `/settings/workspace?github=installed&account=${encodeURIComponent(installation.accountLogin)}`,
         ),
       );
     } catch (error) {
       const reason =
         error instanceof Error ? error.message : 'Could not authorize GitHub installation';
       return res.redirect(
-        this.frontend(`/settings?github=installation_error&reason=${encodeURIComponent(reason)}`),
+        this.frontend(
+          `/settings/workspace?github=installation_error&reason=${encodeURIComponent(reason)}`,
+        ),
       );
     }
   }

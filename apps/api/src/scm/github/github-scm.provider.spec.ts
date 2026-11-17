@@ -1017,6 +1017,25 @@ describe('GitHubScmProvider writes', () => {
     expect(JSON.parse(last[1].body as string)).toEqual({ enabled: false });
   });
 
+  it('detaches a repository that is already gone from GitHub', async () => {
+    const fetchMock = jest.fn(async () => ({ ok: false, status: 404 }));
+    const { provider } = make(fetchMock);
+
+    await expect(provider.detachRepo(repository(), actor)).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it('still fails a detach GitHub refuses for another reason', async () => {
+    const fetchMock = jest.fn(async (url: string) =>
+      url.endsWith('/actions/permissions') ? { ok: false, status: 409 } : { ok: true, status: 204 },
+    );
+    const { provider } = make(fetchMock);
+
+    await expect(provider.detachRepo(repository(), actor)).rejects.toThrow(
+      'Could not disable Actions on the detached repository',
+    );
+  });
+
   it('issues an installation token as the clone credential', async () => {
     const { provider, installations } = make(jest.fn());
     expect(await provider.issueCloneToken('acme')).toBe('ghs_x');

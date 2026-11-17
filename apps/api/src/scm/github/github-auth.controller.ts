@@ -67,7 +67,7 @@ export class GitHubAuthController {
       return res.redirect(
         this.frontend(
           verified?.mode === 'setup'
-            ? '/settings?github=installation_error&reason=GitHub%20verification%20expired%20or%20was%20interrupted'
+            ? '/settings/workspace?github=installation_error&reason=GitHub%20verification%20expired%20or%20was%20interrupted'
             : '/login?error=github_state',
         ),
       );
@@ -80,7 +80,7 @@ export class GitHubAuthController {
       return res.redirect(
         this.frontend(
           verified.mode === 'setup'
-            ? '/settings?github=installation_error&reason=Could%20not%20verify%20GitHub%20user'
+            ? '/settings/workspace?github=installation_error&reason=Could%20not%20verify%20GitHub%20user'
             : '/login?error=github_exchange',
         ),
       );
@@ -96,14 +96,16 @@ export class GitHubAuthController {
         );
         return res.redirect(
           this.frontend(
-            `/settings?github=installed&account=${encodeURIComponent(installation.accountLogin)}`,
+            `/settings/workspace?github=installed&account=${encodeURIComponent(installation.accountLogin)}`,
           ),
         );
       } catch (error) {
         const reason =
           error instanceof Error ? error.message : 'Could not authorize GitHub installation';
         return res.redirect(
-          this.frontend(`/settings?github=installation_error&reason=${encodeURIComponent(reason)}`),
+          this.frontend(
+            `/settings/workspace?github=installation_error&reason=${encodeURIComponent(reason)}`,
+          ),
         );
       }
     }
@@ -116,11 +118,11 @@ export class GitHubAuthController {
         await this.credentials.storeExchange(userId, exchange);
         // Team workspaces joined before linking grant repository access now (ADR-189).
         await this.workspaces?.githubAccess.syncForUser(userId).catch(() => undefined);
-        return res.redirect(this.frontend('/settings?github=linked'));
+        return res.redirect(this.frontend('/settings/account?github=linked'));
       } catch (e) {
         return res.redirect(
           this.frontend(
-            `/settings?github=error&reason=${encodeURIComponent((e as Error).message)}`,
+            `/settings/account?github=error&reason=${encodeURIComponent((e as Error).message)}`,
           ),
         );
       }
