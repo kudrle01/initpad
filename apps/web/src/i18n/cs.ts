@@ -1489,6 +1489,12 @@ export const cs = {
   'CI finished, but InitPad received no build from it, so nothing was deployed. This happens when the run started before InitPad was connected to the repository. Build and deploy dev to start it now.':
     'CI doběhlo, ale InitPad z něj nedostal žádný build, takže se nic nenasadilo. Stává se to, když běh začal dřív, než byl repozitář připojený k InitPadu. Spusťte sestavení a nasazení dev hned teď.',
   'Build and verify': 'Sestavit a ověřit',
+  'Re-run failed jobs of {sha}?': 'Znovu spustit neúspěšné úlohy commitu {sha}?',
+  'GitHub runs the failed jobs of this commit again. When they pass, the build reports to InitPad like any other run.':
+    'GitHub znovu spustí neúspěšné úlohy tohoto commitu. Když projdou, build se InitPadu ohlásí jako při každém jiném běhu.',
+  'Re-run failed jobs': 'Spustit znovu',
+  'Re-run failed jobs on {provider}': 'Znovu spustit neúspěšné úlohy na {provider}',
+  'Re-run failed jobs of {sha}': 'Znovu spustit neúspěšné úlohy commitu {sha}',
   'Building the latest commit. Request it for production once InitPad verifies it.':
     'Sestavuje se poslední commit. Až ho InitPad ověří, požádejte o nasazení do produkce.',
   'CI finished, but InitPad received no build from it, so there is nothing to request for production. This happens when the run started before InitPad was connected to the repository. Build it now to verify it.':

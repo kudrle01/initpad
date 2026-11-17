@@ -107,7 +107,7 @@ export class GitHubScmProvider implements ScmProvider {
     ETAG_CACHE_ENTRIES,
     ETAG_CACHE_TTL_MS,
   );
-  // Job statuses of runs whose jobs have all completed; they no longer change.
+  // Job statuses of runs whose jobs have all succeeded; they no longer change.
   private readonly terminalStatuses = new ReadCache<ScmCommitStatus[]>(
     TERMINAL_CACHE_ENTRIES,
     TERMINAL_CACHE_TTL_MS,
@@ -397,6 +397,17 @@ export class GitHubScmProvider implements ScmProvider {
     }
   }
 
+  async ciRunForCommit(repository: ScmRepositoryRef, sha: string): Promise<string | null> {
+    this.assertProvider(repository);
+    const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const token = await this.token(repository, READ_ACTIONS);
+    const runs = await this.ghJson<{ workflow_runs?: Array<{ id: number }> }>(
+      `/repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${encodeURIComponent(sha)}&event=push&per_page=1`,
+      token,
+    );
+    return runs?.workflow_runs?.[0]?.id?.toString() ?? null;
+  }
+
   async listCommitStatuses(
     repository: ScmRepositoryRef,
     sha: string,
@@ -405,7 +416,7 @@ export class GitHubScmProvider implements ScmProvider {
   ): Promise<ScmCommitStatus[] | null> {
     this.assertProvider(repository);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
-    // Completed runs never change, so their jobs are served without GitHub.
+    // Successful runs never change, so their jobs are served without GitHub.
     const terminalKey = `${repo}|${sha}|${preferredRunId ?? ''}`;
     const terminal = this.terminalStatuses.get(terminalKey);
     if (terminal) return terminal.map((status) => ({ ...status }));
@@ -437,7 +448,10 @@ export class GitHubScmProvider implements ScmProvider {
         const jobs = data?.jobs ?? [];
         if (jobs.length > 0) {
           const statuses = jobs.map((job) => this.actionJobStatus(job));
-          if (jobs.every((job) => job.status === 'completed')) {
+          // A failed or cancelled run can be re-run on GitHub under the same
+          // run ID, so only a fully successful one is final. The others are
+          // read again with an ETag, which costs no rate limit while unchanged.
+          if (jobs.every((job) => job.status === 'completed' && job.conclusion === 'success')) {
             this.terminalStatuses.set(terminalKey, statuses);
           }
           return statuses;

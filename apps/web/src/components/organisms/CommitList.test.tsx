@@ -9,6 +9,38 @@ import { CommitList } from './CommitList';
 afterEach(cleanup);
 
 describe('CommitList', () => {
+  it('offers a re-run only for a commit whose CI failed, without toggling it', async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+    const onRerun = vi.fn();
+    const commit = (sha: string, status: 'failed' | 'success') => ({
+      sha,
+      message: `Commit ${status}`,
+      author: 'Ada',
+      date: '2026-09-28T12:00:00Z',
+      pipeline: [{ name: 'build', status }],
+    });
+
+    render(
+      <CommitList
+        commits={[commit('a'.repeat(40), 'failed'), commit('b'.repeat(40), 'success')]}
+        repoUrl="https://github.com/acme/app"
+        scmProvider="github"
+        openSha={null}
+        onToggle={onToggle}
+        onRerun={onRerun}
+      />,
+    );
+
+    const buttons = screen.getAllByRole('button', { name: /re-run failed jobs of/i });
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toHaveAttribute('title', 'Re-run failed jobs on GitHub');
+
+    await user.click(buttons[0]);
+    expect(onRerun).toHaveBeenCalledWith('a'.repeat(40));
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
   it('keeps the disclosure and external commit link as separate controls', async () => {
     const user = userEvent.setup();
     const onToggle = vi.fn();

@@ -561,6 +561,11 @@ export const api = {
   runAgain: (id: string) => http<Project>(`/projects/${id}/run-again`, { method: 'POST' }),
   rerunFailedJobs: (id: string) =>
     http<{ runId: string }>(`/projects/${id}/rerun-failed-jobs`, { method: 'POST' }),
+  rerunCommitFailedJobs: (id: string, sha: string) =>
+    http<{ runId: string }>(
+      `/projects/${id}/commits/${encodeURIComponent(sha)}/rerun-failed-jobs`,
+      { method: 'POST' },
+    ),
   stopEnv: (id: string, env: EnvName) =>
     http<Project>(`/projects/${id}/stop/${env}`, { method: 'POST' }),
   startEnv: (id: string, env: EnvName) =>

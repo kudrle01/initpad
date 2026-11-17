@@ -7,6 +7,7 @@ import { ContentLoading } from '@/components/molecules/ContentLoading';
 import { LoadErrorState } from '@/components/molecules/LoadErrorState';
 import { PageHeader } from '@/components/molecules/PageHeader';
 import { CommitList } from '@/components/organisms/CommitList';
+import { useCommitRerun } from '@/hooks/useCommitRerun';
 import {
   ACTIVE_PROJECT_POLL_MS,
   IDLE_PROJECT_POLL_MS,
@@ -68,6 +69,9 @@ export default function ProjectCommits() {
     [id],
   );
 
+  const reloadAfterRerun = useCallback(() => void load(false), [load]);
+  const { onRerun, rerunning } = useCommitRerun(project, reloadAfterRerun);
+
   useEffect(() => {
     setProject(null);
     setCommits([]);
@@ -125,6 +129,8 @@ export default function ProjectCommits() {
             openSha={openSha}
             onToggle={(sha) => setOpenSha((current) => (current === sha ? null : sha))}
             deploymentHistoryUrl={`/projects/${project.id}/deployments`}
+            onRerun={onRerun}
+            rerunning={rerunning}
           />
         </Card>
       ) : null}

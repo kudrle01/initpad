@@ -16,6 +16,8 @@ interface Props {
   deployments: DeploymentOperation[];
   openSha: string | null;
   onToggleCommit: (sha: string) => void;
+  onRerunCommit?: (sha: string) => void;
+  rerunningCommit?: string | null;
 }
 
 function ViewAll({ to, label }: { to: string; label: string }) {
@@ -28,7 +30,15 @@ function ViewAll({ to, label }: { to: string; label: string }) {
   );
 }
 
-export function ProjectHistory({ project, commits, deployments, openSha, onToggleCommit }: Props) {
+export function ProjectHistory({
+  project,
+  commits,
+  deployments,
+  openSha,
+  onToggleCommit,
+  onRerunCommit,
+  rerunningCommit,
+}: Props) {
   return (
     <>
       <DetailSection
@@ -76,6 +86,8 @@ export function ProjectHistory({ project, commits, deployments, openSha, onToggl
           limit={COMMIT_PREVIEW}
           dense
           deploymentHistoryUrl={`/projects/${project.id}/deployments`}
+          onRerun={onRerunCommit}
+          rerunning={rerunningCommit}
         />
       </DetailSection>
     </>

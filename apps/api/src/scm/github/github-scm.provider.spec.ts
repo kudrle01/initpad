@@ -366,7 +366,28 @@ describe('GitHubScmProvider reads', () => {
     expect(fetchMock.mock.calls[0]?.[0]).not.toContain('/workflows/ci.yml/runs?');
   });
 
-  it('does not ask GitHub again for jobs of a completed run', async () => {
+  it('shows a failed run re-run on GitHub instead of its first attempt', async () => {
+    let conclusion = 'failure';
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        jobs: [{ name: 'build', status: 'completed', conclusion, html_url: 'u' }],
+      }),
+    }));
+    const { provider } = make(fetchMock);
+
+    const first = await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+    conclusion = 'success';
+    const second = await provider.listCommitStatuses(repository(), 'a'.repeat(40), actor, '77');
+
+    expect(first?.[0]?.status).toBe('failure');
+    expect(second?.[0]?.status).toBe('success');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not ask GitHub again for jobs of a successful run', async () => {
     const fetchMock = jest.fn(async () => ({
       ok: true,
       status: 200,

@@ -157,6 +157,8 @@ export interface ScmProvider {
   // Hosted providers may support retrying the failed jobs of the exact run
   // without creating a fake commit/tag or conflating it with a redeploy.
   rerunFailedJobs?(repository: ScmRepositoryRef, runId: string): Promise<void>;
+  /** The CI workflow run of a commit pushed to the repository, if any. */
+  ciRunForCommit?(repository: ScmRepositoryRef, sha: string): Promise<string | null>;
   listCommitStatuses(
     repository: ScmRepositoryRef,
     sha: string,
