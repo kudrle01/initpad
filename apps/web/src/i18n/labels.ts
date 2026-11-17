@@ -8,6 +8,9 @@ import { getLocale } from '@/i18n';
 const STATUS_CS: Record<string, string> = {
   running: 'běží',
   deploying: 'nasazuje se',
+  removing: 'odstraňuje se',
+  stopping: 'zastavuje se',
+  starting: 'spouští se',
   failed: 'selhalo',
   stopped: 'zastaveno',
   empty: 'prázdné',

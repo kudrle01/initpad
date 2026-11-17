@@ -203,7 +203,18 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
     String.raw`Could not remove (?<env>\w+) deployment from (?<target>.+?): (?<detail>.+)`,
     msg('Could not remove {env} deployment from {target}: {detail}'),
   ),
+  exact(
+    msg(
+      'GitHub returned without the setup started in InitPad. Connect the account or organization from the GitHub section of workspace settings.',
+    ),
+  ),
   // Team workspaces use GitHub organizations (ADR-189).
+  rule(
+    String.raw`Projects (?<projects>.+) still use the GitHub account ${NAME}\. Delete them before disconnecting it\.`,
+    msg(
+      "Projects {projects} still use the GitHub account '{name}'. Delete them before disconnecting it.",
+    ),
+  ),
   exact(
     msg(
       'A team workspace connects to a GitHub organization. Install the InitPad app on an organization, or use your personal workspace for repositories in your personal account.',
@@ -477,6 +488,9 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
   exact(msg('Assigned to control plane')),
   exact(msg('Build artifact accepted')),
   exact(msg('Preparing deployment')),
+  exact(msg('Removing deployment')),
+  exact(msg('Stopping environment')),
+  exact(msg('Starting environment')),
   exact(msg('Downloading and verifying tested image')),
   exact(msg('Fetching & extracting tested artifact')),
   exact(msg('Connecting to target')),

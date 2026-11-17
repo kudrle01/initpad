@@ -781,6 +781,15 @@ export const cs = {
   'No GitHub account or organization is connected to {workspace} yet.':
     'K workspace {workspace} zatím není připojený žádný GitHub účet ani organizace.',
   'Connect organization': 'Připojit organizaci',
+  'Disconnect {account}?': 'Odpojit {account}?',
+  '{workspace} stops using this GitHub account or organization.':
+    'Workspace {workspace} přestane tento GitHub účet nebo organizaci používat.',
+  'The InitPad app stays installed on GitHub, and other workspaces keep using it.':
+    'Aplikace InitPad zůstane na GitHubu nainstalovaná a ostatní workspace ji používají dál.',
+  'Members InitPad invited to the organization for this workspace leave it, unless another of their workspaces uses it.':
+    'Členové, které InitPad do organizace pozval kvůli tomuto workspace, z ní odejdou, pokud ji nepoužívá jiný jejich workspace.',
+  '{account} disconnected': '{account} odpojen',
+  'GitHub disconnected': 'GitHub odpojen',
   'A workspace owner or admin connects GitHub accounts and organizations.':
     'GitHub účty a organizace připojuje vlastník nebo administrátor workspace.',
   'Open workspace settings': 'Otevřít nastavení workspace',
@@ -1476,6 +1485,10 @@ export const cs = {
   'The repository is ready, but its CI has not reported a run. Check that the CI runner is online and that the workflow is enabled in the repository.':
     'Repozitář je připravený, ale CI zatím nenahlásilo žádný běh. Ověřte, že je CI runner online a že je workflow v repozitáři povolené.',
   'Building the first version…': 'Sestavuje se první verze…',
+  'The last build did not report to InitPad': 'Poslední build se InitPadu neohlásil',
+  'CI finished, but InitPad received no build from it, so nothing was deployed. This happens when the run started before InitPad was connected to the repository. Build and deploy dev to start it now.':
+    'CI doběhlo, ale InitPad z něj nedostal žádný build, takže se nic nenasadilo. Stává se to, když běh začal dřív, než byl repozitář připojený k InitPadu. Spusťte sestavení a nasazení dev hned teď.',
+  'Build and deploy dev': 'Sestavit a nasadit dev',
   'Preparing the project…': 'Projekt se připravuje…',
   'The first pipeline is running. Environments appear here once it finishes; this page refreshes automatically.':
     'Běží první pipeline. Prostředí se tu objeví po jejím dokončení; stránka se obnovuje automaticky.',

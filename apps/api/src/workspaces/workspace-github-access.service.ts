@@ -146,6 +146,54 @@ export class WorkspaceGitHubAccessService {
   }
 
   /**
+   * Releases the organization memberships a workspace created when it stops
+   * using an installation. A member InitPad invited leaves the organization
+   * unless another workspace of theirs still uses it; a member who was there
+   * before stays. Best effort: disconnecting never fails on GitHub, so a
+   * refused removal is logged and the member stays in the organization.
+   */
+  async releaseInstallation(workspaceId: string, installationId: string): Promise<void> {
+    if (!githubEdition()) return;
+    const memberships = await this.prisma.gitHubOrgMembership.findMany({
+      where: {
+        githubInstallationId: installationId,
+        user: { memberships: { some: { workspaceId } } },
+      },
+      include: { githubInstallation: { select: { id: true, accountLogin: true } } },
+    });
+    for (const membership of memberships) {
+      const stillNeeded = await this.prisma.workspaceMember.count({
+        where: {
+          userId: membership.userId,
+          workspaceId: { not: workspaceId },
+          workspace: {
+            githubInstallationAccesses: { some: { githubInstallationId: installationId } },
+          },
+        },
+      });
+      if (stillNeeded > 0) continue;
+      if (membership.invitedByInitPad) {
+        try {
+          await this.workspaceScm
+            .githubProvider()
+            .removeFromOrganization(membership.githubInstallation, membership.githubLogin);
+        } catch (error) {
+          this.logger.warn({
+            event: 'workspace.github_access.release_failed',
+            workspaceId,
+            userId: membership.userId,
+            organization: membership.githubInstallation.accountLogin,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+            detail: error instanceof ScmHttpStatusError ? (error.detail ?? null) : null,
+          });
+          continue;
+        }
+      }
+      await this.prisma.gitHubOrgMembership.delete({ where: { id: membership.id } });
+    }
+  }
+
+  /**
    * Makes the user a member of the organization. A user GitHub already lists
    * (as member, owner or pending invitee) is left untouched: inviting with the
    * `member` role would demote an owner.

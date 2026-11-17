@@ -4,11 +4,12 @@ import {
   Headers,
   Post,
   Query,
+  Req,
   Res,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../../auth/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { config } from '../../config';
@@ -20,6 +21,17 @@ import { GitHubUserCredentialService } from './github-user-credential.service';
 import { PublicEndpoint } from '../../auth/public-endpoint.decorator';
 import { RateLimited } from '../../auth/rate-limited.decorator';
 import { RATE_LIMITS } from '../../auth/rate-limit.policy';
+
+/**
+ * Holds the raw setup state in the browser that started the setup. GitHub
+ * drops `state` when it returns after an existing installation was updated
+ * ("Redirect on update"), so the callback falls back to this cookie. It only
+ * replaces the query parameter: the state is still verified, bound to its
+ * user and workspace, and consumed once.
+ */
+export const GITHUB_SETUP_STATE_COOKIE = 'initpad_gh_setup';
+const SETUP_STATE_COOKIE_PATH = '/api/scm/github/setup';
+const SETUP_STATE_LIFETIME_MS = 10 * 60 * 1000;
 
 /**
  * Starts and completes the GitHub App installation handshake (ADR-044). The
@@ -42,6 +54,7 @@ export class GitHubSetupController {
   @RateLimited(RATE_LIMITS.githubSetup)
   async start(
     @CurrentUser() userId: string,
+    @Res({ passthrough: true }) res: Response,
     @Headers('x-workspace-id') requestedWorkspaceId?: string,
   ) {
     if (!this.app.isConfigured() || !config.github.appSlug) {
@@ -50,6 +63,13 @@ export class GitHubSetupController {
     const workspace = await this.workspaces.resolve(userId, requestedWorkspaceId);
     await this.workspaces.require(userId, workspace.id, 'admin');
     const state = await this.installations.createSetup(userId, workspace.id);
+    res.cookie(GITHUB_SETUP_STATE_COOKIE, state, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: config.auth.secureCookie,
+      path: SETUP_STATE_COOKIE_PATH,
+      maxAge: SETUP_STATE_LIFETIME_MS,
+    });
     const params = new URLSearchParams({ state });
     return {
       installUrl: `${config.github.oauthBaseUrl}/apps/${config.github.appSlug}/installations/new?${params}`,
@@ -83,11 +103,20 @@ export class GitHubSetupController {
   @PublicEndpoint('authentication')
   @RateLimited(RATE_LIMITS.githubSetupCallback)
   async callback(
-    @Query('state') state: string,
+    @Query('state') queryState: string,
     @Query('installation_id') installationId: string,
     @Query('setup_action') setupAction: string,
+    @Req() req: Request,
     @Res() res: Response,
   ) {
+    const cookieState: unknown = req.cookies?.[GITHUB_SETUP_STATE_COOKIE];
+    const state =
+      typeof queryState === 'string' && queryState
+        ? queryState
+        : typeof cookieState === 'string'
+          ? cookieState
+          : '';
+    res.clearCookie(GITHUB_SETUP_STATE_COOKIE, { path: SETUP_STATE_COOKIE_PATH });
     if (setupAction === 'request') {
       // Best effort: without a usable state the request simply stays unclaimed.
       await this.installations.markRequested(state).catch(() => undefined);

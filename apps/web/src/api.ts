@@ -671,6 +671,10 @@ export const api = {
     http<void>(`/me/identities/${provider}`, { method: 'DELETE' }),
   githubStatus: () => http<GitHubStatus>('/scm/github/status'),
   startGithubSetup: () => http<{ installUrl: string }>('/scm/github/setup', { method: 'POST' }),
+  disconnectGithubInstallation: (installationId: string) =>
+    http<void>(`/scm/github/installations/${encodeURIComponent(installationId)}`, {
+      method: 'DELETE',
+    }),
   recoverGithubSetup: () =>
     http<{ recovered: boolean; accountLogin: string | null }>('/scm/github/setup/recover', {
       method: 'POST',

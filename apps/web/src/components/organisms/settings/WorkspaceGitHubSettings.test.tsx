@@ -11,8 +11,11 @@ const mocks = vi.hoisted(() => ({
   requestPending: false,
   linked: true,
   workspaceType: 'personal',
+  installations: [] as unknown[],
+  confirm: vi.fn(() => Promise.resolve(true)),
   toast: { success: vi.fn(), error: vi.fn() },
   api: {
+    disconnectGithubInstallation: vi.fn(() => Promise.resolve()),
     authConfig: vi.fn(() => Promise.resolve({ githubEnabled: true })),
     listIdentities: vi.fn(() =>
       Promise.resolve([
@@ -37,7 +40,7 @@ const mocks = vi.hoisted(() => ({
         canInstall: true,
         installation: { present: false, suspended: false },
         installationRequestPending: mocks.requestPending,
-        installations: [],
+        installations: mocks.installations,
       }),
     ),
     recoverGithubSetup: vi.fn(() => Promise.resolve({ recovered: false, accountLogin: null })),
@@ -66,7 +69,7 @@ function renderWorkspace() {
   );
 }
 vi.mock('@/api', () => ({ api: mocks.api }));
-vi.mock('@/confirmation', () => ({ useConfirmation: () => vi.fn() }));
+vi.mock('@/confirmation', () => ({ useConfirmation: () => mocks.confirm }));
 vi.mock('@/toast', () => ({ useToast: () => mocks.toast }));
 
 async function returnToWindow(statusReads: number) {
@@ -85,6 +88,31 @@ describe('WorkspaceGitHubSettings', () => {
     mocks.requestPending = false;
     mocks.linked = true;
     mocks.workspaceType = 'personal';
+    mocks.installations = [];
+  });
+
+  it('disconnects an organization from the workspace after confirmation', async () => {
+    mocks.installations = [
+      {
+        id: 'inst-1',
+        accountId: '1',
+        accountLogin: 'acme',
+        accountType: 'Organization',
+        repositorySelection: 'all',
+        suspended: false,
+        canCreate: true,
+      },
+    ];
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+
+    await waitFor(() =>
+      expect(mocks.api.disconnectGithubInstallation).toHaveBeenCalledWith('inst-1'),
+    );
+    expect(mocks.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Disconnect acme?' }),
+    );
   });
 
   it('connects organizations from a team workspace', async () => {

@@ -468,7 +468,9 @@ export class GitHubInstallationService {
 
   private async loadSetupCandidate(state: string, installationId: string) {
     if (!state || !installationId) {
-      throw new BadRequestException('Incomplete GitHub setup callback');
+      throw new BadRequestException(
+        'GitHub returned without the setup started in InitPad. Connect the account or organization from the GitHub section of workspace settings.',
+      );
     }
     const setup = await this.prisma.gitHubInstallationSetup.findUnique({
       where: { tokenHash: this.hashState(state) },

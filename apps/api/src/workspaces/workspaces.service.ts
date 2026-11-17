@@ -128,6 +128,53 @@ export class WorkspacesService {
     return workspace?.type ?? null;
   }
 
+  /**
+   * Stops a workspace from using a GitHub account or organization (ADR-189).
+   * Only this workspace loses it: the App stays installed on GitHub and other
+   * workspaces keep their access. Projects whose repositories live there
+   * would lose builds, deployments and cleanup, so they block it.
+   */
+  async disconnectGitHubInstallation(
+    userId: string,
+    workspaceId: string,
+    installationId: string,
+  ): Promise<void> {
+    await this.require(userId, workspaceId, 'admin');
+    const access = await this.prisma.gitHubInstallationAccess.findUnique({
+      where: {
+        githubInstallationId_workspaceId: { githubInstallationId: installationId, workspaceId },
+      },
+      include: { githubInstallation: { select: { accountLogin: true, accountType: true } } },
+    });
+    if (!access) throw new NotFoundException('GitHub installation not found');
+    const account = access.githubInstallation.accountLogin;
+    const projects = await this.prisma.project.findMany({
+      where: { workspaceId, scmInstallationId: installationId },
+      select: { name: true },
+      orderBy: { name: 'asc' },
+    });
+    if (projects.length > 0) {
+      throw new ConflictException(
+        `Projects ${projects.map((project) => `'${project.name}'`).join(', ')} still use the GitHub account '${account}'. Delete them before disconnecting it.`,
+      );
+    }
+    await this.githubAccess.releaseInstallation(workspaceId, installationId);
+    await this.prisma.gitHubInstallationAccess.delete({ where: { id: access.id } });
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { name: true },
+    });
+    await this.auditEvents.record({
+      workspaceId,
+      actorUserId: userId,
+      action: 'workspace.github_disconnected',
+      resourceType: 'workspace',
+      resourceId: workspaceId,
+      resourceName: workspace?.name ?? workspaceId,
+      details: { account, accountType: access.githubInstallation.accountType },
+    });
+  }
+
   // The user's role in a workspace, or null when they are not a member. Lets a
   // caller distinguish "not a member" (hide the resource with 404) from "member
   // but insufficient role" (403).

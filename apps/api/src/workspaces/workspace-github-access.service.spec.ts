@@ -220,6 +220,25 @@ describe('WorkspaceGitHubAccessService (ADR-189)', () => {
     await expect(refused.service.syncForUser('u2')).resolves.toBeUndefined();
   });
 
+  it('releases invited members when a workspace disconnects the organization', async () => {
+    const invited = setup({ stored: [{ invitedByInitPad: true }] });
+    await invited.service.releaseInstallation('w1', ORG.id);
+    expect(invited.github.removeFromOrganization).toHaveBeenCalledWith(
+      { id: ORG.id, accountLogin: 'acme' },
+      'bob-gh',
+    );
+    expect(invited.prisma.gitHubOrgMembership.delete).toHaveBeenCalled();
+
+    const elsewhere = setup({ stored: [{ invitedByInitPad: true }], otherWorkspaces: 1 });
+    await elsewhere.service.releaseInstallation('w1', ORG.id);
+    expect(elsewhere.github.removeFromOrganization).not.toHaveBeenCalled();
+
+    const refused = setup({ stored: [{ invitedByInitPad: true }] });
+    refused.github.removeFromOrganization.mockRejectedValueOnce(new Error('403'));
+    await expect(refused.service.releaseInstallation('w1', ORG.id)).resolves.toBeUndefined();
+    expect(refused.prisma.gitHubOrgMembership.delete).not.toHaveBeenCalled();
+  });
+
   it('does nothing with GitHub on the self-hosted edition', async () => {
     config.edition = 'self-hosted';
     const { service, prisma } = setup({

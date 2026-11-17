@@ -202,6 +202,51 @@ describe('ProjectsService.importExisting guards', () => {
     ).toBe(true);
   });
 
+  it('starts the first dev build after import, and an import survives its failure', async () => {
+    const prisma = {
+      project: {
+        findFirst: jest.fn(async () => null),
+        create: jest.fn(async () => ({ id: 'p1' })),
+      },
+      user: {
+        findUniqueOrThrow: jest.fn(async () => owner),
+        update: jest.fn(async () => owner),
+      },
+      workspaceMember: { findMany: jest.fn(async () => []) },
+    };
+    const scm = {
+      listRepositories: jest.fn(async () => [repository()]),
+      readFile: jest.fn(async (_repo: unknown, path: string) =>
+        path === 'Dockerfile' ? 'FROM node:22' : 'INITPAD_PLATFORM_URL INITPAD_DEPLOY_TOKEN',
+      ),
+      configureRepoSecrets: jest.fn(async () => undefined),
+      removeRepoSecrets: jest.fn(async () => undefined),
+    };
+    const service = build({
+      workspaces,
+      prisma,
+      templates: { get: jest.fn(() => template) },
+      targets: {
+        listEntities: jest.fn(async () => [dockerTarget]),
+        parseCaps: (value: string) => value.split(','),
+      },
+      scm,
+    });
+    jest.spyOn(service, 'get').mockResolvedValue({ id: 'p1' } as never);
+    const runAgain = jest
+      .spyOn(service, 'runAgain')
+      .mockRejectedValueOnce(new Error('CI callback is not public'))
+      .mockResolvedValueOnce({ id: 'p1' } as never);
+
+    await expect(
+      service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1'),
+    ).resolves.toEqual({ id: 'p1' });
+    await service.importExisting({ repositoryId: '101', templateId: 'node-api' }, 'u1');
+
+    expect(runAgain).toHaveBeenNthCalledWith(1, 'p1', 'u1');
+    expect(runAgain).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects a repository name that is not a valid project name', async () => {
     const service = build({
       workspaces,
