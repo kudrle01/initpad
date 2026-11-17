@@ -10,6 +10,7 @@
     "start:dev": "nest start --watch",
     "test": "jest",
     "test:watch": "jest --watch",
+    "mail:preview": "nest build && node scripts/mail-preview.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "postinstall": "prisma generate"
