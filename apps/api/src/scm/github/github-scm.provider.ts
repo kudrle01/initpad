@@ -550,7 +550,9 @@ export class GitHubScmProvider implements ScmProvider {
       method: 'PUT',
       body: { enabled: false },
     });
-    if (!disabled.ok) {
+    // 404: the repository is gone or no longer shared with the App, so there
+    // is nothing left to detach and deleting the project must not fail.
+    if (!disabled.ok && disabled.status !== 404) {
       throw scmStatusError(
         'GitHub',
         'disable repository Actions',
