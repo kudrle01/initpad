@@ -223,31 +223,42 @@ export function CommitList({
                           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                             {t('Steps of {job}', { job: stage.name })}
                           </p>
-                          <ol className="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1.5">
-                            {stage.steps?.map((step, index) => (
-                              <li key={`${index}-${step.name}`} className="flex items-center gap-1">
-                                {index > 0 && (
-                                  <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/70" />
-                                )}
-                                {step.url ? (
-                                  <a
-                                    href={scmLink(step.url, scmProvider)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title={t('View step log in {provider}', { provider: scmName })}
-                                    className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground/90 hover:bg-card hover:text-foreground"
+                          <ol className="mt-1.5 space-y-0.5 border-l border-border pl-2.5">
+                            {stage.steps?.map((step, index) => {
+                              const content = (
+                                <>
+                                  <span
+                                    aria-hidden="true"
+                                    className="w-4 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground"
                                   >
-                                    <StatusDot status={step.status} kind="ci" />
-                                    <span className="truncate">{step.name}</span>
-                                  </a>
-                                ) : (
-                                  <span className="inline-flex max-w-[16rem] items-center gap-1.5 px-1.5 py-0.5 text-xs">
-                                    <StatusDot status={step.status} kind="ci" />
-                                    <span className="truncate">{step.name}</span>
+                                    {index + 1}
                                   </span>
-                                )}
-                              </li>
-                            ))}
+                                  <StatusDot status={step.status} kind="ci" />
+                                  <span className="min-w-0 truncate">{step.name}</span>
+                                </>
+                              );
+                              return (
+                                <li key={`${index}-${step.name}`}>
+                                  {step.url ? (
+                                    <a
+                                      href={scmLink(step.url, scmProvider)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title={t('View step log in {provider}', {
+                                        provider: scmName,
+                                      })}
+                                      className="inline-flex max-w-full items-center gap-2 rounded-md px-1.5 py-0.5 text-xs text-foreground/90 hover:bg-card hover:text-foreground"
+                                    >
+                                      {content}
+                                    </a>
+                                  ) : (
+                                    <span className="inline-flex max-w-full items-center gap-2 px-1.5 py-0.5 text-xs">
+                                      {content}
+                                    </span>
+                                  )}
+                                </li>
+                              );
+                            })}
                           </ol>
                         </div>
                       ))}
