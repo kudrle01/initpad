@@ -8,6 +8,7 @@ import { HelpLink } from '@/components/molecules/HelpLink';
 import { SettingsSection } from '@/components/molecules/SettingsSection';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/toast';
+import { useConfirmation } from '@/confirmation';
 import { t, rich } from '@/i18n';
 import { termLabel } from '@/i18n/labels';
 import { openGithubWindow, takeGithubResult } from '@/lib/github-window';
@@ -24,7 +25,10 @@ const SETUP_PENDING_MS = 10 * 60 * 1000;
 export function WorkspaceGitHubSettings() {
   const { activeWorkspace } = useAuth();
   const toast = useToast();
+  const confirmAction = useConfirmation();
   const [enabled, setEnabled] = useState(false);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [setupBusy, setSetupBusy] = useState(false);
   const [status, setStatus] = useState<GitHubStatus | null>(null);
   const setupStartedAt = useRef<number | null>(null);
@@ -113,7 +117,7 @@ export function WorkspaceGitHubSettings() {
       window.removeEventListener('focus', refreshWhenFocused);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
-  }, [enabled, activeWorkspaceId, canAdmin, toast]);
+  }, [enabled, activeWorkspaceId, canAdmin, toast, reloadKey]);
 
   if (!enabled) return null;
 
@@ -132,6 +136,34 @@ export function WorkspaceGitHubSettings() {
       popup.close();
       toast.error((error as Error).message);
       setSetupBusy(false);
+    }
+  }
+
+  async function disconnect(installation: GitHubStatus['installations'][number]) {
+    const confirmed = await confirmAction({
+      title: t('Disconnect {account}?', { account: installation.accountLogin }),
+      description: t('{workspace} stops using this GitHub account or organization.', {
+        workspace: workspaceName,
+      }),
+      confirmLabel: t('Disconnect'),
+      tone: 'danger',
+      consequences: [
+        t('The InitPad app stays installed on GitHub, and other workspaces keep using it.'),
+        t(
+          'Members InitPad invited to the organization for this workspace leave it, unless another of their workspaces uses it.',
+        ),
+      ],
+    });
+    if (!confirmed) return;
+    setDisconnecting(installation.id);
+    try {
+      await api.disconnectGithubInstallation(installation.id);
+      toast.success(t('{account} disconnected', { account: installation.accountLogin }));
+      setReloadKey((key) => key + 1);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setDisconnecting(null);
     }
   }
 
@@ -205,6 +237,17 @@ export function WorkspaceGitHubSettings() {
                       : t('selected repositories')}
                     {installation.suspended ? ` · ${t('suspended')}` : ''}
                   </span>
+                  {canAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto"
+                      disabled={disconnecting === installation.id}
+                      onClick={() => void disconnect(installation)}
+                    >
+                      {t('Disconnect')}
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

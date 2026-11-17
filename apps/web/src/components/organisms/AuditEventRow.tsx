@@ -13,6 +13,7 @@ export const AUDIT_ACTION_LABELS: Record<string, MessageKey> = {
   'workspace.created': msg('Workspace created'),
   'workspace.updated': msg('Workspace updated'),
   'workspace.production_policy_changed': msg('Production policy changed'),
+  'workspace.github_disconnected': msg('GitHub disconnected'),
   'workspace.metrics_exported': msg('Workspace metrics exported'),
   'workspace.member_added': msg('Member added'),
   'workspace.member_role_changed': msg('Member role changed'),

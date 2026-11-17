@@ -130,6 +130,8 @@ Proveďte kroky s osobní instalací i s instalací v testovací organizaci:
     `Pozván do … na GitHubu`. Změňte roli na viewer a maintainer a ověřte
     oprávnění v nastavení repozitáře na GitHubu. Po odebrání z workspace
     zmizí z organizace; člen, který v ní byl už dřív, v ní zůstane.
+    Odpojení organizace v nastavení workspace s projekty skončí výčtem
+    projektů; bez projektů organizaci odpojí jen z tohoto workspace.
 11. **Audit.** U projektových a deployment operací ověřte v auditním logu
     aktéra a výsledek. Změny instalace přicházejí podepsaným webhookem a
     workspace audit je nezaznamenává; doložte je stavem v UI a seznamem

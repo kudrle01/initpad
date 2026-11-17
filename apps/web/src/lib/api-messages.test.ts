@@ -4,6 +4,7 @@ import { API_MESSAGE_RULES, translateApiMessage } from './api-messages';
 
 // Messages exactly as the API sends them, taken from apps/api/src.
 const REAL_MESSAGES = [
+  "Projects 'api', 'web' still use the GitHub account 'acme'. Delete them before disconnecting it.",
   'Removing deployment',
   'Stopping environment',
   'Starting environment',
@@ -69,6 +70,7 @@ const REAL_MESSAGES = [
 // Templates the catalog depends on; when the API rewords one, this fails and
 // the catalog must follow.
 const API_SOURCES = [
+  "still use the GitHub account '${account}'. Delete them before disconnecting it.`",
   "'Removing deployment'",
   "'Stopping environment'",
   "'Starting environment'",

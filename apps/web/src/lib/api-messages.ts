@@ -209,6 +209,12 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
     ),
   ),
   // Team workspaces use GitHub organizations (ADR-189).
+  rule(
+    String.raw`Projects (?<projects>.+) still use the GitHub account ${NAME}\. Delete them before disconnecting it\.`,
+    msg(
+      "Projects {projects} still use the GitHub account '{name}'. Delete them before disconnecting it.",
+    ),
+  ),
   exact(
     msg(
       'A team workspace connects to a GitHub organization. Install the InitPad app on an organization, or use your personal workspace for repositories in your personal account.',

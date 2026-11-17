@@ -1,4 +1,13 @@
-import { Controller, Get, Headers, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
 import { config } from '../../config';
@@ -72,5 +81,17 @@ export class GitHubStatusController {
       installationRequestPending,
       installations: rows,
     };
+  }
+
+  /** Disconnects a GitHub account or organization from the active workspace (ADR-189). */
+  @Delete('installations/:id')
+  @HttpCode(204)
+  async disconnect(
+    @CurrentUser() userId: string,
+    @Param('id', new ParseUUIDPipe()) installationId: string,
+    @Headers('x-workspace-id') requestedWorkspaceId?: string,
+  ): Promise<void> {
+    const workspace = await this.workspaces.resolve(userId, requestedWorkspaceId);
+    await this.workspaces.disconnectGitHubInstallation(userId, workspace.id, installationId);
   }
 }

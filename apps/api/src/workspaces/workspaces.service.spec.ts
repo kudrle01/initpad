@@ -172,6 +172,57 @@ describe('WorkspacesService tenant isolation', () => {
     );
   });
 
+  describe('disconnecting GitHub (ADR-189)', () => {
+    function setup(projects: Array<{ name: string }>) {
+      const prisma = {
+        gitHubInstallationAccess: {
+          findUnique: jest.fn(async () => ({
+            id: 'access-1',
+            githubInstallation: { accountLogin: 'acme', accountType: 'Organization' },
+          })),
+          delete: jest.fn(async () => ({})),
+        },
+        project: { findMany: jest.fn(async () => projects) },
+        workspace: { findUnique: jest.fn(async () => ({ name: 'Team' })) },
+      };
+      const audit = { record: jest.fn(async () => undefined) };
+      const service = new WorkspacesService(prisma as never, {} as never, audit);
+      jest.spyOn(service, 'require').mockResolvedValue('admin');
+      const release = jest
+        .spyOn(service.githubAccess, 'releaseInstallation')
+        .mockResolvedValue(undefined);
+      return { service, prisma, audit, release };
+    }
+
+    it('disconnects only this workspace and releases the members it invited', async () => {
+      const { service, prisma, audit, release } = setup([]);
+
+      await service.disconnectGitHubInstallation('admin', 'w1', 'inst-1');
+
+      expect(service.require).toHaveBeenCalledWith('admin', 'w1', 'admin');
+      expect(release).toHaveBeenCalledWith('w1', 'inst-1');
+      expect(prisma.gitHubInstallationAccess.delete).toHaveBeenCalledWith({
+        where: { id: 'access-1' },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'workspace.github_disconnected',
+          details: { account: 'acme', accountType: 'Organization' },
+        }),
+      );
+    });
+
+    it('refuses while projects still use the account', async () => {
+      const { service, prisma, release } = setup([{ name: 'api' }, { name: 'web' }]);
+
+      await expect(service.disconnectGitHubInstallation('admin', 'w1', 'inst-1')).rejects.toThrow(
+        "Projects 'api', 'web' still use the GitHub account 'acme'.",
+      );
+      expect(release).not.toHaveBeenCalled();
+      expect(prisma.gitHubInstallationAccess.delete).not.toHaveBeenCalled();
+    });
+  });
+
   it('refuses a role change GitHub cannot mirror on a personal account (ADR-189)', async () => {
     const savedEdition = config.edition;
     config.edition = 'saas';

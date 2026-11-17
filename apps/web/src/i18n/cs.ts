@@ -781,6 +781,15 @@ export const cs = {
   'No GitHub account or organization is connected to {workspace} yet.':
     'K workspace {workspace} zatím není připojený žádný GitHub účet ani organizace.',
   'Connect organization': 'Připojit organizaci',
+  'Disconnect {account}?': 'Odpojit {account}?',
+  '{workspace} stops using this GitHub account or organization.':
+    'Workspace {workspace} přestane tento GitHub účet nebo organizaci používat.',
+  'The InitPad app stays installed on GitHub, and other workspaces keep using it.':
+    'Aplikace InitPad zůstane na GitHubu nainstalovaná a ostatní workspace ji používají dál.',
+  'Members InitPad invited to the organization for this workspace leave it, unless another of their workspaces uses it.':
+    'Členové, které InitPad do organizace pozval kvůli tomuto workspace, z ní odejdou, pokud ji nepoužívá jiný jejich workspace.',
+  '{account} disconnected': '{account} odpojen',
+  'GitHub disconnected': 'GitHub odpojen',
   'A workspace owner or admin connects GitHub accounts and organizations.':
     'GitHub účty a organizace připojuje vlastník nebo administrátor workspace.',
   'Open workspace settings': 'Otevřít nastavení workspace',
