@@ -1,10 +1,12 @@
 import { StatusDot } from '@/components/atoms/StatusDot';
 import { cn } from '@/lib/utils';
 import { statusLabel } from '@/i18n/labels';
+import { environmentActivity } from '@/lib/environment-activity';
 
 interface EnvironmentSummary {
   name: string;
   status: string;
+  statusReason?: string | null;
   version?: string | null;
 }
 
@@ -26,13 +28,13 @@ export function EnvironmentStatusList({
         <span
           key={environment.name}
           className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground"
-          title={`${environment.name}: ${statusLabel(environment.status)}${
+          title={`${environment.name}: ${statusLabel(environmentActivity(environment))}${
             environment.version ? ` · v${environment.version.slice(0, 7)}` : ''
           }`}
         >
           <StatusDot status={environment.status} />
           {environment.name}
-          <span className="sr-only">{statusLabel(environment.status)}</span>
+          <span className="sr-only">{statusLabel(environmentActivity(environment))}</span>
         </span>
       ))}
     </span>

@@ -37,6 +37,7 @@ import type { Commit, EnvName, Project, ProviderKind } from '@/types';
 import { t, rich, formatDateTime } from '@/i18n';
 import { translateApiMessage } from '@/lib/api-messages';
 import { statusLabel } from '@/i18n/labels';
+import { environmentActivity } from '@/lib/environment-activity';
 import { AppUrlLink } from '@/components/molecules/AppUrlLink';
 
 // One stage of the pipeline. The promote control between two stages is the
@@ -272,7 +273,9 @@ export function EnvironmentPipeline({
                       >
                         <StatusBadge
                           status={waitingForRunner ? 'pending' : env.status}
-                          label={waitingForRunner ? t('queued') : undefined}
+                          label={
+                            waitingForRunner ? t('queued') : statusLabel(environmentActivity(env))
+                          }
                           kind={waitingForRunner ? 'ci' : 'deploy'}
                           className="cursor-pointer hover:bg-foreground/10"
                         />
@@ -280,7 +283,9 @@ export function EnvironmentPipeline({
                     ) : (
                       <StatusBadge
                         status={waitingForRunner ? 'pending' : env.status}
-                        label={waitingForRunner ? t('queued') : undefined}
+                        label={
+                          waitingForRunner ? t('queued') : statusLabel(environmentActivity(env))
+                        }
                         kind={waitingForRunner ? 'ci' : 'deploy'}
                       />
                     )}
