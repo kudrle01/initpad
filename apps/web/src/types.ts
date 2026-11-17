@@ -83,6 +83,11 @@ export interface WorkspaceMember {
   avatarUrl: string | null;
   role: WorkspaceRole;
   createdAt: string;
+  // Hosted edition only (ADR-189); null where repositories live in Gitea.
+  github: {
+    linked: boolean;
+    organizations: Array<{ login: string; state: 'pending' | 'active' }>;
+  } | null;
 }
 
 // A SaaS registration waits for the e-mail confirmation (ADR-188).

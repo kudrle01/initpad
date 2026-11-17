@@ -15,6 +15,7 @@ const members: WorkspaceMember[] = [
     avatarUrl: null,
     role: 'owner',
     createdAt: '2026-11-01T00:00:00.000Z',
+    github: null,
   },
   {
     userId: 'u-admin',
@@ -23,6 +24,7 @@ const members: WorkspaceMember[] = [
     avatarUrl: null,
     role: 'admin',
     createdAt: '2026-11-02T00:00:00.000Z',
+    github: null,
   },
   {
     userId: 'u-member',
@@ -31,6 +33,7 @@ const members: WorkspaceMember[] = [
     avatarUrl: null,
     role: 'member',
     createdAt: '2026-11-03T00:00:00.000Z',
+    github: null,
   },
 ];
 
@@ -73,6 +76,26 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('WorkspaceMembersSettings (audit P1.19, P3)', () => {
+  it('shows who still has to link GitHub or accept the organization invitation (ADR-189)', async () => {
+    mocks.auth.activeWorkspace = workspace('owner');
+    mocks.api.listWorkspaceMembers.mockResolvedValue([
+      members[0],
+      { ...members[1], github: { linked: false, organizations: [] } },
+      {
+        ...members[2],
+        github: { linked: true, organizations: [{ login: 'acme', state: 'pending' }] },
+      },
+    ]);
+    render(<WorkspaceMembersSettings />);
+
+    expect(await screen.findByText('GitHub not linked')).toBeInTheDocument();
+    const invitation = screen.getByText('Invited to acme on GitHub');
+    expect(invitation.closest('a')).toHaveAttribute(
+      'href',
+      'https://github.com/orgs/acme/invitation',
+    );
+  });
+
   it('lets the owner hand the workspace to an admin', async () => {
     mocks.auth.activeWorkspace = workspace('owner');
     mocks.api.transferWorkspaceOwnership.mockResolvedValue(members);

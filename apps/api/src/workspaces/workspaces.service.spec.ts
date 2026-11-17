@@ -172,6 +172,35 @@ describe('WorkspacesService tenant isolation', () => {
     );
   });
 
+  it('refuses a role change GitHub cannot mirror on a personal account (ADR-189)', async () => {
+    const savedEdition = config.edition;
+    config.edition = 'saas';
+    try {
+      const prisma = {
+        workspace: { findUnique: jest.fn(async () => ({ type: 'team' })) },
+        workspaceMember: {
+          findUnique: jest.fn(async () => ({ role: 'member', user: { username: 'bob' } })),
+          update: jest.fn(),
+        },
+        project: {
+          findMany: jest.fn(async () => [{ scmInstallation: { accountLogin: 'kudrle01' } }]),
+        },
+      };
+      const github = { setCollaborator: jest.fn() };
+      const workspaceScm = { provider: jest.fn(() => github) };
+      const service = new WorkspacesService(prisma as never, workspaceScm as never);
+      jest.spyOn(service, 'require').mockResolvedValue('admin');
+
+      await expect(service.updateMember('admin', 'w1', 'u2', { role: 'viewer' })).rejects.toThrow(
+        "still uses the personal GitHub account 'kudrle01'",
+      );
+      expect(github.setCollaborator).not.toHaveBeenCalled();
+      expect(prisma.workspaceMember.update).not.toHaveBeenCalled();
+    } finally {
+      config.edition = savedEdition;
+    }
+  });
+
   it('grants repository access when an admin adds a member', async () => {
     const prisma = {
       user: { findFirst: jest.fn(async () => ({ id: 'u2', username: 'bob' })) },

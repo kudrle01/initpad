@@ -48,6 +48,10 @@ export function GitHubIntegrationSettings() {
   const requestPending = useRef(false);
   const canAdmin = activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin';
   const activeWorkspaceId = activeWorkspace?.id;
+  // Team workspaces connect only to organizations (ADR-189).
+  const isTeam = activeWorkspace?.type === 'team';
+  const personalInstallations =
+    status?.installations.filter((installation) => installation.accountType === 'User') ?? [];
   const githubIdentities = identities.filter((identity) => identity.provider === 'github');
 
   useEffect(() => {
@@ -318,6 +322,25 @@ export function GitHubIntegrationSettings() {
         </div>
       )}
 
+      {isTeam && status?.canInstall && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          {t(
+            'A team workspace connects to a GitHub organization. InitPad invites its members to the organization and gives them repository access by their role.',
+          )}
+        </p>
+      )}
+      {isTeam && personalInstallations.length > 0 && (
+        <Notice tone="warning" className="mt-3" title={t('Connect a GitHub organization')}>
+          {t(
+            'This team workspace is connected to the personal GitHub account {account}. Its projects there keep deploying, but while the workspace has them, members cannot be invited or have their role changed. Connect a GitHub organization for new projects.',
+            {
+              account: personalInstallations
+                .map((installation) => installation.accountLogin)
+                .join(', '),
+            },
+          )}
+        </Notice>
+      )}
       {status?.installationRequestPending && (
         <p className="mt-3 text-xs text-muted-foreground">
           {t(

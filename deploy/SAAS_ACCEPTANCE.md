@@ -83,8 +83,12 @@ operace:
 | Workflows       | Read and write | zápis `.github/workflows`                       |
 
 Z account permissions nastavte pouze `Email addresses: Read-only`, aby
-přihlášení mohlo převzít ověřený e-mail. Organization permissions nejsou
-potřeba. Žádnou událost neodebírejte: `installation`, `installation_target` a
+přihlášení mohlo převzít ověřený e-mail. Z organization permissions nastavte
+pouze `Members: Read and write`: InitPad zve členy týmového workspace do
+organizace a odebírá z ní ty, které sám pozval (ADR-189). Po přidání
+oprávnění u existující App musí každá organizace nové oprávnění schválit v
+`Settings → GitHub Apps`; do té doby API u pozvánek a změn rolí vrátí 409 s
+tímto pokynem. Žádnou událost neodebírejte: `installation`, `installation_target` a
 `github_app_authorization` doručuje GitHub každé App automaticky.
 
 App ID, Client ID a slug patří do env souboru nasazení. Client secret, privátní
@@ -97,9 +101,10 @@ Proveďte kroky s osobní instalací i s instalací v testovací organizaci:
 1. **Login.** `Continue with GitHub` vytvoří nebo otevře účet. SaaS nenabízí
    heslo ani registraci a účet má ověřený e-mail.
 2. **Instalace.** Owner nebo admin workspace spustí instalaci z nastavení účtu.
-   Osobní instalace se přijme jen pro účet shodný s propojenou identitou,
-   organizační projde potvrzením přes GitHub. Instalaci vidí pouze workspace,
-   který ji autorizoval, a member ji autorizovat nemůže.
+   Osobní instalace se přijme jen pro účet shodný s propojenou identitou a
+   jen pro osobní workspace; týmový workspace ji odmítne s výzvou připojit
+   organizaci. Organizační projde potvrzením přes GitHub. Instalaci vidí pouze
+   workspace, který ji autorizoval, a member ji autorizovat nemůže.
 3. **Create.** Nový projekt v osobním účtu i v organizaci založí soukromý
    repozitář s workflow a Actions secrets; první běh je zelený.
 4. **Import.** Existující repozitář s Dockerfile a InitPad workflow projde
@@ -118,7 +123,13 @@ Proveďte kroky s osobní instalací i s instalací v testovací organizaci:
 9. **Uninstall.** Odinstalujte App. Instalace zmizí z nabídky workspace, další
    operace nad repozitářem selžou fail-closed a záznam projektu i audit
    zůstanou zachované.
-10. **Audit.** U projektových a deployment operací ověřte v auditním logu
+10. **Tým v organizaci.** V týmovém workspace s organizací pozvěte účet bez
+    propojeného GitHubu. Po přijetí ho seznam členů označí `GitHub nepropojen`.
+    Po propojení GitHubu dorazí pozvánka do organizace a seznam ukáže
+    `Pozván do … na GitHubu`. Změňte roli na viewer a maintainer a ověřte
+    oprávnění v nastavení repozitáře na GitHubu. Po odebrání z workspace
+    zmizí z organizace; člen, který v ní byl už dřív, v ní zůstane.
+11. **Audit.** U projektových a deployment operací ověřte v auditním logu
     aktéra a výsledek. Změny instalace přicházejí podepsaným webhookem a
     workspace audit je nezaznamenává; doložte je stavem v UI a seznamem
     doručení webhooku v nastavení App.

@@ -315,6 +315,7 @@ export function WorkspaceMembersSettings() {
                 >
                   @{member.username}
                 </span>
+                {isTeam && <MemberGitHubStatus github={member.github} />}
               </span>
               {canManage && member.role !== 'owner' ? (
                 <>
@@ -368,5 +369,44 @@ export function WorkspaceMembersSettings() {
         </List>
       )}
     </SettingsSection>
+  );
+}
+
+/**
+ * Where a team member stands on GitHub (ADR-189): repository access waits for
+ * a linked account, and an organization invitation for the member to accept it
+ * on GitHub. Nothing is shown on the self-hosted edition.
+ */
+function MemberGitHubStatus({ github }: { github: WorkspaceMember['github'] }) {
+  if (!github) return null;
+  if (!github.linked) {
+    return (
+      <Badge
+        variant="warning"
+        className="mt-1"
+        title={t('Gets repository access after linking GitHub')}
+      >
+        {t('GitHub not linked')}
+      </Badge>
+    );
+  }
+  const pending = github.organizations.filter((organization) => organization.state === 'pending');
+  if (pending.length === 0) return null;
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {pending.map((organization) => (
+        <a
+          key={organization.login}
+          href={`https://github.com/orgs/${encodeURIComponent(organization.login)}/invitation`}
+          target="_blank"
+          rel="noreferrer"
+          title={t('The member accepts the invitation on GitHub')}
+        >
+          <Badge variant="warning">
+            {t('Invited to {organization} on GitHub', { organization: organization.login })}
+          </Badge>
+        </a>
+      ))}
+    </span>
   );
 }

@@ -85,6 +85,7 @@ export class WorkspaceInvitationsService {
     if (workspace.type === 'personal') {
       throw new BadRequestException('Create a team workspace before inviting other members');
     }
+    await this.workspaces.githubAccess.assertTeamUsesOrganizations(workspaceId);
     const email = normalizeAccountIdentifier(input.email);
     const inviter = await this.prisma.user.findUnique({
       where: { id: userId },

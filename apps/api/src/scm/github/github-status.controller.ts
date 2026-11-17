@@ -36,6 +36,7 @@ export class GitHubStatusController {
       (await this.identities.listForUser(userId)).find((i) => i.provider === 'github') ?? null;
     const workspace = await this.workspaces.resolve(userId, requestedWorkspaceId);
     const accesses = await this.installations.listForWorkspace(workspace.id);
+    const team = (await this.workspaces.typeOf(workspace.id)) === 'team';
     const rows = accesses.map(({ githubInstallation: record }) => ({
       id: record.id,
       accountId: record.accountId,
@@ -43,9 +44,10 @@ export class GitHubStatusController {
       accountType: record.accountType,
       repositorySelection: record.repositorySelection,
       suspended: record.suspendedAt != null,
+      // A team workspace creates repositories only in organizations (ADR-189).
       canCreate:
         record.accountType === 'Organization' ||
-        (record.accountId != null && linked?.providerUserId === record.accountId),
+        (!team && record.accountId != null && linked?.providerUserId === record.accountId),
     }));
     const present = rows.length > 0;
     const suspended = present && rows.every((row) => row.suspended);

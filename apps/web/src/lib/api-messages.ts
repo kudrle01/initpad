@@ -203,6 +203,24 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
     String.raw`Could not remove (?<env>\w+) deployment from (?<target>.+?): (?<detail>.+)`,
     msg('Could not remove {env} deployment from {target}: {detail}'),
   ),
+  // Team workspaces use GitHub organizations (ADR-189).
+  exact(
+    msg(
+      'A team workspace connects to a GitHub organization. Install the InitPad app on an organization, or use your personal workspace for repositories in your personal account.',
+    ),
+  ),
+  rule(
+    String.raw`This team workspace still uses the personal GitHub account ${NAME}\. Connect a GitHub organization to change member access\.`,
+    msg(
+      "This team workspace still uses the personal GitHub account '{name}'. Connect a GitHub organization to change member access.",
+    ),
+  ),
+  rule(
+    String.raw`Approve the updated InitPad app permissions in the GitHub organization ${NAME} \(Members: read and write\), then try again\.`,
+    msg(
+      "Approve the updated InitPad app permissions in the GitHub organization '{name}' (Members: read and write), then try again.",
+    ),
+  ),
   // An upstream SCM call failed (ScmExceptionFilter); GitHub's own reason stays English.
   rule(
     String.raw`(?<provider>GitHub|Gitea) did not answer in time\. Try again in a moment\.`,
