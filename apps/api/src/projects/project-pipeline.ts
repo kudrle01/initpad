@@ -1,10 +1,17 @@
-import { Environment, PipelineStage, StageStatus, TemplateManifest } from '../domain/types';
+import {
+  Environment,
+  PipelineStage,
+  PipelineStep,
+  StageStatus,
+  TemplateManifest,
+} from '../domain/types';
 import { CI_WAITING_REASON } from './ci-state';
 
 export interface ScmPipelineStatus {
   context: string;
   status: string;
   targetUrl: string | null;
+  steps?: PipelineStep[];
 }
 
 export interface PipelineDeploymentOperation {
@@ -12,11 +19,15 @@ export interface PipelineDeploymentOperation {
   buildArtifact?: { providerRunId: string } | null;
 }
 
-function jobFromContext(context: string): string | null {
+// "ci / build (push)" (Gitea commit status) or "build" (GitHub Actions job).
+// A status of another workflow is not part of the InitPad pipeline.
+function jobFromContext(context: string): { key: string; label: string } | null {
   if (!context) return null;
   const noEvent = context.replace(/\s*\([^)]*\)\s*$/, '');
-  const job = noEvent.includes('/') ? noEvent.slice(noEvent.lastIndexOf('/') + 1) : noEvent;
-  return job.trim().toLowerCase();
+  const slash = noEvent.lastIndexOf('/');
+  if (slash >= 0 && noEvent.slice(0, slash).trim().toLowerCase() !== 'ci') return null;
+  const label = (slash >= 0 ? noEvent.slice(slash + 1) : noEvent).trim();
+  return label ? { key: label.toLowerCase(), label } : null;
 }
 
 function ciStatus(state: string): StageStatus {
@@ -33,10 +44,13 @@ const LEGACY_JOBS = new Set(['test', 'docker', 'docker build', 'deploy']);
 
 function stageDefinitions(
   template: TemplateManifest,
-  jobs: Iterable<string>,
+  jobs: Map<string, { label: string }>,
 ): { label: string; tokens: string[] }[] {
-  if (![...jobs].some((job) => LEGACY_JOBS.has(job))) {
-    return [{ label: 'build', tokens: ['build'] }];
+  if (![...jobs.keys()].some((job) => LEGACY_JOBS.has(job))) {
+    // Every job of the workflow is a stage, in the order the provider lists
+    // them; the generated workflow has a single build job.
+    if (jobs.size === 0) return [{ label: 'build', tokens: ['build'] }];
+    return [...jobs].map(([key, job]) => ({ label: job.label, tokens: [key] }));
   }
   return template.artifact === 'static'
     ? [
@@ -59,14 +73,23 @@ export function pipelineStages(
 ): PipelineStage[] {
   // Providers return newest statuses first; keep only the latest result and
   // log link for each normalized workflow job.
-  const latest = new Map<string, { status: string; url: string | null }>();
+  const latest = new Map<
+    string,
+    { label: string; status: string; url: string | null; steps?: PipelineStep[] }
+  >();
   for (const status of statuses ?? []) {
     const job = jobFromContext(status.context);
-    if (job && !latest.has(job)) {
-      latest.set(job, { status: status.status, url: status.targetUrl });
+    if (job && !latest.has(job.key)) {
+      latest.set(job.key, {
+        label: job.label,
+        status: status.status,
+        url: status.targetUrl,
+        steps: status.steps,
+      });
     }
   }
-  const definitions = stageDefinitions(template, latest.keys());
+  const definitions = stageDefinitions(template, latest);
+  const legacy = [...latest.keys()].some((job) => LEGACY_JOBS.has(job));
 
   const stages = definitions.map<PipelineStage>((definition) => {
     const hit = definition.tokens.map((token) => latest.get(token)).find(Boolean);
@@ -74,14 +97,18 @@ export function pipelineStages(
       name: definition.label,
       status: hit ? ciStatus(hit.status) : 'pending',
       url: hit?.url ?? null,
+      ...(hit?.steps?.length ? { steps: hit.steps } : {}),
     };
   });
 
-  // Jobs use `needs`, so stages behind the first unfinished one are queued.
-  let blocked = false;
-  for (const stage of stages) {
-    if (blocked && stage.status === 'running') stage.status = 'pending';
-    if (stage.status !== 'success') blocked = true;
+  // The older four jobs ran in a `needs` chain, so stages behind the first
+  // unfinished one are queued. Jobs of other workflows may run in parallel.
+  if (legacy) {
+    let blocked = false;
+    for (const stage of stages) {
+      if (blocked && stage.status === 'running') stage.status = 'pending';
+      if (stage.status !== 'success') blocked = true;
+    }
   }
   return stages;
 }

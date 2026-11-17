@@ -9,6 +9,45 @@ import { CommitList } from './CommitList';
 afterEach(cleanup);
 
 describe('CommitList', () => {
+  it('lists the steps of each job, linked to the step log', () => {
+    render(
+      <CommitList
+        commits={[
+          {
+            sha: 'c'.repeat(40),
+            message: 'Add tests',
+            author: 'Ada',
+            date: '2026-09-28T12:00:00Z',
+            pipeline: [
+              {
+                name: 'build',
+                status: 'failed',
+                url: 'https://github.com/acme/app/actions/runs/1/job/2',
+                steps: [
+                  { name: 'test', status: 'failed', url: 'https://github.com/x#step:3:1' },
+                  { name: 'build image', status: 'pending', url: null },
+                ],
+              },
+              { name: 'lint', status: 'success' },
+            ],
+          },
+        ]}
+        repoUrl="https://github.com/acme/app"
+        scmProvider="github"
+        openSha={'c'.repeat(40)}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Steps of build')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'test' })).toHaveAttribute(
+      'href',
+      'https://github.com/x#step:3:1',
+    );
+    expect(screen.getByText('build image')).toBeInTheDocument();
+    expect(screen.queryByText('Steps of lint')).not.toBeInTheDocument();
+  });
+
   it('offers a re-run only for a commit whose CI failed, without toggling it', async () => {
     const user = userEvent.setup();
     const onToggle = vi.fn();

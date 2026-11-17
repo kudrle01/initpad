@@ -7,7 +7,7 @@ import { createGzip } from 'zlib';
 import sodium from 'libsodium-wrappers';
 import * as tar from 'tar-fs';
 import { config } from '../../config';
-import { GitHubScmProvider } from './github-scm.provider';
+import { GitHubScmProvider, actionJobSteps } from './github-scm.provider';
 
 const actor = { username: 'acme', token: 'ignored' };
 const repository = (name = 'api') => ({
@@ -60,6 +60,51 @@ afterEach(() => {
   config.auth.frontendUrl = savedFrontendUrl;
   config.ci.publicUrl = savedCiPublicUrl;
   jest.restoreAllMocks();
+});
+
+describe('GitHub Actions job steps', () => {
+  it('keeps the workflow steps, linked to the job log, and names unnamed actions', () => {
+    expect(
+      actionJobSteps(
+        [
+          { name: 'Set up job', status: 'completed', conclusion: 'success', number: 1 },
+          {
+            name: 'Run actions/checkout@0123abcd',
+            status: 'completed',
+            conclusion: 'success',
+            number: 2,
+          },
+          { name: 'test', status: 'completed', conclusion: 'failure', number: 3 },
+          { name: 'build image', status: 'completed', conclusion: 'skipped', number: 4 },
+          { name: 'notify platform', status: 'in_progress', conclusion: null, number: 5 },
+          { name: 'Post Run actions/checkout@0123abcd', status: 'queued', number: 6 },
+          { name: 'Complete job', status: 'queued', number: 7 },
+        ],
+        'https://github.com/acme/api/actions/runs/1/job/2',
+      ),
+    ).toEqual([
+      {
+        name: 'actions/checkout',
+        status: 'success',
+        url: 'https://github.com/acme/api/actions/runs/1/job/2#step:2:1',
+      },
+      {
+        name: 'test',
+        status: 'failed',
+        url: 'https://github.com/acme/api/actions/runs/1/job/2#step:3:1',
+      },
+      {
+        name: 'build image',
+        status: 'pending',
+        url: 'https://github.com/acme/api/actions/runs/1/job/2#step:4:1',
+      },
+      {
+        name: 'notify platform',
+        status: 'running',
+        url: 'https://github.com/acme/api/actions/runs/1/job/2#step:5:1',
+      },
+    ]);
+  });
 });
 
 describe('GitHubScmProvider reads', () => {

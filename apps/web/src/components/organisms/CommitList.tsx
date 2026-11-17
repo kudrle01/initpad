@@ -214,6 +214,56 @@ export function CommitList({
                     </Fragment>
                   ))}
                 </div>
+                {c.pipeline.some((stage) => stage.steps?.length) && (
+                  <div className="mt-3 space-y-2.5">
+                    {c.pipeline
+                      .filter((stage) => stage.steps?.length)
+                      .map((stage) => (
+                        <div key={stage.name} className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {t('Steps of {job}', { job: stage.name })}
+                          </p>
+                          <ol className="mt-1.5 space-y-0.5 border-l border-border pl-2.5">
+                            {stage.steps?.map((step, index) => {
+                              const content = (
+                                <>
+                                  <span
+                                    aria-hidden="true"
+                                    className="w-4 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground"
+                                  >
+                                    {index + 1}
+                                  </span>
+                                  <StatusDot status={step.status} kind="ci" />
+                                  <span className="min-w-0 truncate">{step.name}</span>
+                                </>
+                              );
+                              return (
+                                <li key={`${index}-${step.name}`}>
+                                  {step.url ? (
+                                    <a
+                                      href={scmLink(step.url, scmProvider)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title={t('View step log in {provider}', {
+                                        provider: scmName,
+                                      })}
+                                      className="inline-flex max-w-full items-center gap-2 rounded-md px-1.5 py-0.5 text-xs text-foreground/90 hover:bg-card hover:text-foreground"
+                                    >
+                                      {content}
+                                    </a>
+                                  ) : (
+                                    <span className="inline-flex max-w-full items-center gap-2 px-1.5 py-0.5 text-xs">
+                                      {content}
+                                    </span>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        </div>
+                      ))}
+                  </div>
+                )}
                 {recoveredPublication && (
                   <p className="mt-2.5 text-xs text-muted-foreground">
                     {t(

@@ -100,10 +100,19 @@ export interface ScmCommit {
   date: string;
 }
 
+/** One step of a CI job, already normalized to a pipeline stage status. */
+export interface ScmJobStep {
+  name: string;
+  status: 'pending' | 'running' | 'success' | 'failed';
+  url: string | null;
+}
+
 export interface ScmCommitStatus {
   context: string;
   status: string;
   targetUrl: string | null;
+  /** The job's steps, when the provider reports them (GitHub Actions). */
+  steps?: ScmJobStep[];
 }
 
 // A repository the user can import (owns or collaborates on).

@@ -473,6 +473,14 @@ export interface PipelineStage {
   status: StageStatus;
   url?: string | null;
   source?: 'scm' | 'platform';
+  /** The job's steps in workflow order, when the SCM reports them. */
+  steps?: PipelineStep[];
+}
+
+export interface PipelineStep {
+  name: string;
+  status: StageStatus;
+  url: string | null;
 }
 
 export interface Commit {
