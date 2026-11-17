@@ -919,6 +919,16 @@ export const cs = {
     'Osobní workspace zůstává soukromý. Sdílený týmový prostor vytvoříte volbou „Přidat nový workspace“ v přepínači workspace.',
   'Loading members…': 'Načítání členů…',
   'No workspace members found.': 'Žádní členové workspace nenalezeni.',
+  'GitHub not linked': 'GitHub nepropojen',
+  'A team workspace connects to a GitHub organization. InitPad invites its members to the organization and gives them repository access by their role.':
+    'Týmový workspace se připojuje ke GitHub organizaci. InitPad do ní pozve členy týmu a dá jim přístup k repozitářům podle jejich role.',
+  'Connect a GitHub organization': 'Připojte GitHub organizaci',
+  'This team workspace is connected to the personal GitHub account {account}. Its projects there keep deploying, but while the workspace has them, members cannot be invited or have their role changed. Connect a GitHub organization for new projects.':
+    'Tento týmový workspace je připojený k osobnímu GitHub účtu {account}. Projekty na něm se dál nasazují, ale dokud je workspace má, nejde pozvat členy ani jim změnit roli. Pro nové projekty připojte GitHub organizaci.',
+  'Gets repository access after linking GitHub':
+    'Přístup k repozitářům dostane po propojení GitHubu',
+  'Invited to {organization} on GitHub': 'Pozván do {organization} na GitHubu',
+  'The member accepts the invitation on GitHub': 'Pozvánku člen přijme na GitHubu',
   'Role for {username}': 'Role uživatele {username}',
   'Remove {username}': 'Odebrat {username}',
   // components/organisms/Sidebar.tsx

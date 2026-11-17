@@ -858,6 +858,52 @@ describe('GitHubScmProvider writes', () => {
     await expect(err.provider.deleteRepo(repository(), actor)).rejects.toThrow('HTTP 500');
   });
 
+  describe('organization membership (ADR-189)', () => {
+    const org = { id: 'installation-row-1', accountLogin: 'acme' };
+
+    it('reads a membership with an organization members token and treats 404 as none', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ state: 'active', role: 'admin' }),
+        })
+        .mockResolvedValueOnce({ ok: false, status: 404 });
+      const { provider, installations } = make(fetchMock);
+
+      await expect(provider.organizationMembership(org, 'dev')).resolves.toEqual({
+        state: 'active',
+        role: 'admin',
+      });
+      await expect(provider.organizationMembership(org, 'dev')).resolves.toBeNull();
+      expect(installations.tokenForBinding).toHaveBeenCalledWith('installation-row-1', {
+        permissions: { metadata: 'read', members: 'write' },
+      });
+      const [url] = fetchMock.mock.calls[0] as [string];
+      expect(url).toContain('/orgs/acme/memberships/dev');
+    });
+
+    it('invites with the member role and removes with DELETE, tolerating a gone membership', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ state: 'pending' }) })
+        .mockResolvedValueOnce({ ok: false, status: 404 });
+      const { provider } = make(fetchMock);
+
+      await expect(provider.inviteToOrganization(org, 'dev')).resolves.toEqual({
+        state: 'pending',
+        role: 'member',
+      });
+      await expect(provider.removeFromOrganization(org, 'dev')).resolves.toBeUndefined();
+      const [, invite] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(invite.method).toBe('PUT');
+      expect(JSON.parse(invite.body as string)).toEqual({ role: 'member' });
+      const [, remove] = fetchMock.mock.calls[1] as [string, RequestInit];
+      expect(remove.method).toBe('DELETE');
+    });
+  });
+
   it("reports GitHub's reason when it rejects a collaborator grant", async () => {
     const fetchMock = jest.fn(async () => ({
       ok: false,

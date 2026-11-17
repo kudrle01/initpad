@@ -53,6 +53,7 @@ model User {
   externalIdentities         ExternalIdentity[]
   sentWorkspaceInvitations   WorkspaceInvitation[]         @relation("WorkspaceInvitationInviter")
   githubInstallationAccesses GitHubInstallationAccess[]    @relation("GitHubInstallationAuthorizedBy")
+  githubOrgMemberships       GitHubOrgMembership[]
   githubInstallationSetups   GitHubInstallationSetup[]
   auditEvents                AuditEvent[]                  @relation("AuditEventActor")
   productionRequestsMade     ProductionDeploymentRequest[] @relation("ProductionRequestRequester")
@@ -81,6 +82,7 @@ model GitHubInstallation {
   updatedAt           DateTime                   @updatedAt
   projects            Project[]
   accesses            GitHubInstallationAccess[]
+  orgMemberships      GitHubOrgMembership[]
 
   @@index([accountId])
   @@index([accountLogin])
@@ -103,6 +105,28 @@ model GitHubInstallationAccess {
   @@unique([githubInstallationId, workspaceId])
   @@index([workspaceId])
   @@index([authorizedById])
+}
+
+// A team workspace member's membership in the GitHub organization behind one
+// of the workspace's installations (ADR-189). InitPad invites a member only
+// when GitHub reports no membership, and removes one from the organization only
+// when it sent that invitation itself. The GitHub id and login are kept so the
+// membership can still be removed after the member unlinks GitHub.
+model GitHubOrgMembership {
+  id                   String             @id @default(uuid())
+  githubInstallation   GitHubInstallation @relation(fields: [githubInstallationId], references: [id], onDelete: Cascade)
+  githubInstallationId String
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId               String
+  githubUserId         String
+  githubLogin          String
+  invitedByInitPad     Boolean
+  state                String // pending | active
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@unique([githubInstallationId, userId])
+  @@index([userId])
 }
 
 // Opaque, hashed, short-lived and single-use state for the GitHub App setup

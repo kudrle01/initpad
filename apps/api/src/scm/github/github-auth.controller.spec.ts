@@ -128,6 +128,7 @@ describe('GitHubAuthController setup verification', () => {
     };
     const identities = { link: jest.fn(async () => undefined) };
     const credentials = { storeExchange: jest.fn(async () => undefined) };
+    const workspaces = { githubAccess: { syncForUser: jest.fn(async () => undefined) } };
     const controller = new GitHubAuthController(
       oauth as never,
       identities as never,
@@ -142,6 +143,7 @@ describe('GitHubAuthController setup verification', () => {
       ),
       {} as never,
       credentials as never,
+      workspaces as never,
     );
     const request = {
       cookies: { initpad_gh_oauth: 'link-nonce', initpad_token: 'session' },
@@ -155,6 +157,8 @@ describe('GitHubAuthController setup verification', () => {
 
     expect(identities.link).toHaveBeenCalledWith('user-1', 'github', '123', 'alice');
     expect(credentials.storeExchange).toHaveBeenCalledWith('user-1', exchange);
+    // Team workspaces joined before linking now receive repository access (ADR-189).
+    expect(workspaces.githubAccess.syncForUser).toHaveBeenCalledWith('user-1');
     expect(response.redirect).toHaveBeenCalledWith(
       'https://initpad.example/settings?github=linked',
     );

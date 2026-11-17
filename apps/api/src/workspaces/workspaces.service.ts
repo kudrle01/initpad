@@ -20,6 +20,7 @@ import {
   serializableCapacityTransaction,
   WorkspaceCapacityService,
 } from './workspace-capacity.service';
+import { WorkspaceGitHubAccessService } from './workspace-github-access.service';
 
 const REPOSITORY_SELECT = {
   scmProvider: true,
@@ -78,7 +79,12 @@ export class WorkspacesService {
       record: () => Promise.resolve(),
     },
     private readonly capacity: WorkspaceCapacityService = new WorkspaceCapacityService(prisma),
-  ) {}
+  ) {
+    this.githubAccess = new WorkspaceGitHubAccessService(prisma, workspaceScm);
+  }
+
+  /** Repository and GitHub organization access of members (ADR-189). */
+  readonly githubAccess: WorkspaceGitHubAccessService;
 
   async list(userId: string) {
     const memberships = await this.prisma.workspaceMember.findMany({
@@ -112,6 +118,14 @@ export class WorkspacesService {
       throw new ForbiddenException('No workspace available');
     }
     return { id: fallback.workspaceId, role: fallback.role as WorkspaceRole };
+  }
+
+  async typeOf(workspaceId: string): Promise<string | null> {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { type: true },
+    });
+    return workspace?.type ?? null;
   }
 
   // The user's role in a workspace, or null when they are not a member. Lets a
@@ -319,6 +333,10 @@ export class WorkspacesService {
       include: { user: true },
       orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
     });
+    const github = await this.githubAccess.memberStatus(
+      workspaceId,
+      rows.map((m) => m.userId),
+    );
     return rows.map((m) => ({
       userId: m.userId,
       username: m.user.username,
@@ -326,6 +344,8 @@ export class WorkspacesService {
       avatarUrl: m.user.avatarUrl,
       role: m.role as WorkspaceRole,
       createdAt: m.createdAt.toISOString(),
+      // Null on the self-hosted edition, where repositories live in Gitea.
+      github: github.get(m.userId) ?? null,
     }));
   }
 
@@ -384,6 +404,7 @@ export class WorkspacesService {
     memberUserId: string,
     role: AssignableRole,
   ): Promise<void> {
+    await this.githubAccess.assertTeamUsesOrganizations(workspaceId);
     await serializableCapacityTransaction(this.prisma, async (tx) => {
       await this.capacity.assertAvailable(workspaceId, 'members', 1, tx);
       await tx.workspaceMember.create({
@@ -391,9 +412,9 @@ export class WorkspacesService {
       });
     });
     try {
-      await this.syncRepositoryAccess(workspaceId, memberUserId, role);
+      await this.githubAccess.grant(workspaceId, memberUserId, role);
     } catch (error) {
-      await this.revokeRepositoryAccess(workspaceId, memberUserId).catch(() => undefined);
+      await this.githubAccess.revoke(workspaceId, memberUserId).catch(() => undefined);
       await this.prisma.workspaceMember.delete({
         where: { workspaceId_userId: { workspaceId, userId: memberUserId } },
       });
@@ -411,10 +432,11 @@ export class WorkspacesService {
     const member = await this.memberOrThrow(workspaceId, memberId);
     if (member.role === 'owner')
       throw new BadRequestException('Workspace owner role cannot be changed');
+    await this.githubAccess.assertTeamUsesOrganizations(workspaceId);
     try {
-      await this.syncRepositoryAccess(workspaceId, memberId, dto.role);
+      await this.githubAccess.grant(workspaceId, memberId, dto.role);
     } catch (error) {
-      await this.syncRepositoryAccess(workspaceId, memberId, member.role).catch(() => undefined);
+      await this.githubAccess.grant(workspaceId, memberId, member.role).catch(() => undefined);
       throw error;
     }
     try {
@@ -423,7 +445,7 @@ export class WorkspacesService {
         data: { role: dto.role },
       });
     } catch (error) {
-      await this.syncRepositoryAccess(workspaceId, memberId, member.role).catch(() => undefined);
+      await this.githubAccess.grant(workspaceId, memberId, member.role).catch(() => undefined);
       throw error;
     }
     await this.auditEvents.record({
@@ -446,12 +468,12 @@ export class WorkspacesService {
     const member = await this.memberOrThrow(workspaceId, memberId);
     if (member.role === 'owner') throw new BadRequestException('Workspace owner cannot be removed');
     try {
-      await this.revokeRepositoryAccess(workspaceId, memberId);
+      await this.githubAccess.revoke(workspaceId, memberId);
       await this.prisma.workspaceMember.delete({
         where: { workspaceId_userId: { workspaceId, userId: memberId } },
       });
     } catch (error) {
-      await this.syncRepositoryAccess(workspaceId, memberId, member.role).catch(() => undefined);
+      await this.githubAccess.grant(workspaceId, memberId, member.role).catch(() => undefined);
       throw error;
     }
     await this.auditEvents.record({
@@ -480,12 +502,12 @@ export class WorkspacesService {
     }
     const member = await this.memberOrThrow(workspaceId, userId);
     try {
-      await this.revokeRepositoryAccess(workspaceId, userId);
+      await this.githubAccess.revoke(workspaceId, userId);
       await this.prisma.workspaceMember.delete({
         where: { workspaceId_userId: { workspaceId, userId } },
       });
     } catch (error) {
-      await this.syncRepositoryAccess(workspaceId, userId, member.role).catch(() => undefined);
+      await this.githubAccess.grant(workspaceId, userId, member.role).catch(() => undefined);
       throw error;
     }
     await this.auditEvents.record({
@@ -606,43 +628,5 @@ export class WorkspacesService {
     });
     if (!member) throw new NotFoundException('Workspace member not found');
     return member;
-  }
-
-  private async syncRepositoryAccess(
-    workspaceId: string,
-    memberUserId: string,
-    role: string,
-  ): Promise<void> {
-    const projects = await this.prisma.project.findMany({
-      where: { workspaceId },
-      select: REPOSITORY_SELECT,
-    });
-    for (const project of projects) {
-      const repository = repositoryRef(project);
-      const username = await this.workspaceScm.collaboratorUsername(
-        memberUserId,
-        repository.provider,
-      );
-      await this.workspaceScm
-        .provider(repository.provider)
-        .setCollaborator(repository, username, role);
-    }
-  }
-
-  private async revokeRepositoryAccess(workspaceId: string, memberUserId: string): Promise<void> {
-    const projects = await this.prisma.project.findMany({
-      where: { workspaceId },
-      select: REPOSITORY_SELECT,
-    });
-    for (const project of projects) {
-      const repository = repositoryRef(project);
-      const username = await this.workspaceScm.collaboratorUsername(
-        memberUserId,
-        repository.provider,
-      );
-      await this.workspaceScm
-        .provider(repository.provider)
-        .removeCollaborator(repository, username);
-    }
   }
 }

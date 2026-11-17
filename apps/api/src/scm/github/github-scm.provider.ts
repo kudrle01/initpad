@@ -68,6 +68,19 @@ const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
 const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
 const WRITE_ADMINISTRATION = { metadata: 'read', administration: 'write' };
 const READ_ADMINISTRATION = { metadata: 'read', administration: 'read' };
+// Organization permission "Members: Read and write" (ADR-189).
+const WRITE_ORGANIZATION_MEMBERS = { metadata: 'read', members: 'write' };
+
+/** The installation row and organization login an organization call acts on. */
+export interface GitHubOrganizationInstallation {
+  id: string;
+  accountLogin: string;
+}
+
+export interface GitHubOrganizationMembershipState {
+  state: 'pending' | 'active';
+  role: 'admin' | 'member';
+}
 const DETACH_REPOSITORY = {
   metadata: 'read',
   administration: 'write',
@@ -608,6 +621,96 @@ export class GitHubScmProvider implements ScmProvider {
         await readProviderErrorDetail(res),
       );
     }
+  }
+
+  /**
+   * The user's membership in the organization behind an installation, or null
+   * when GitHub reports none. Callers check this before inviting, because
+   * setting the `member` role on an existing owner would demote them.
+   */
+  async organizationMembership(
+    installation: GitHubOrganizationInstallation,
+    login: string,
+  ): Promise<GitHubOrganizationMembershipState | null> {
+    const res = await this.gh(
+      this.organizationMembershipPath(installation, login),
+      await this.organizationToken(installation),
+      { operation: 'read organization membership' },
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw scmStatusError(
+        'GitHub',
+        'read organization membership',
+        res,
+        `Could not read the membership of '${login}' in the GitHub organization '${installation.accountLogin}'`,
+        await readProviderErrorDetail(res),
+      );
+    }
+    const body = (await res.json()) as { state?: unknown; role?: unknown };
+    return {
+      state: body.state === 'active' ? 'active' : 'pending',
+      role: body.role === 'admin' ? 'admin' : 'member',
+    };
+  }
+
+  /** Invites a user who is not in the organization yet; GitHub e-mails them the invitation. */
+  async inviteToOrganization(
+    installation: GitHubOrganizationInstallation,
+    login: string,
+  ): Promise<GitHubOrganizationMembershipState> {
+    const res = await this.gh(
+      this.organizationMembershipPath(installation, login),
+      await this.organizationToken(installation),
+      { method: 'PUT', body: { role: 'member' }, operation: 'invite organization member' },
+    );
+    if (!res.ok) {
+      throw scmStatusError(
+        'GitHub',
+        'invite organization member',
+        res,
+        `Could not invite '${login}' to the GitHub organization '${installation.accountLogin}'`,
+        await readProviderErrorDetail(res),
+      );
+    }
+    const body = (await res.json()) as { state?: unknown };
+    return { state: body.state === 'active' ? 'active' : 'pending', role: 'member' };
+  }
+
+  /** Removes a member, or cancels a pending invitation, from the organization. */
+  async removeFromOrganization(
+    installation: GitHubOrganizationInstallation,
+    login: string,
+  ): Promise<void> {
+    const res = await this.gh(
+      this.organizationMembershipPath(installation, login),
+      await this.organizationToken(installation),
+      { method: 'DELETE', operation: 'remove organization member' },
+    );
+    if (!res.ok && res.status !== 204 && res.status !== 404) {
+      throw scmStatusError(
+        'GitHub',
+        'remove organization member',
+        res,
+        `Could not remove '${login}' from the GitHub organization '${installation.accountLogin}'`,
+        await readProviderErrorDetail(res),
+      );
+    }
+  }
+
+  private organizationMembershipPath(
+    installation: GitHubOrganizationInstallation,
+    login: string,
+  ): string {
+    return `/orgs/${encodeURIComponent(installation.accountLogin)}/memberships/${encodeURIComponent(login)}`;
+  }
+
+  private async organizationToken(installation: GitHubOrganizationInstallation): Promise<string> {
+    return (
+      await this.installations.tokenForBinding(installation.id, {
+        permissions: WRITE_ORGANIZATION_MEMBERS,
+      })
+    ).token;
   }
 
   async getCollaboratorAccess(

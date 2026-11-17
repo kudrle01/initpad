@@ -16,4 +16,9 @@ export class ScmRegistry {
   for(kind: ScmKind): ScmProvider {
     return kind === 'github' ? this.github : this.gitea;
   }
+
+  /** The GitHub adapter itself, for organization operations outside ScmProvider. */
+  githubProvider(): GitHubScmProvider {
+    return this.github;
+  }
 }

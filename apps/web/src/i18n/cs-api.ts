@@ -139,6 +139,12 @@ export const csApi = {
     'CI nevytvořilo nasaditelný image (výsledek CI: {status}). Otevřete logy běhu v repozitáři, opravte neúspěšnou úlohu a spusťte ji znovu.',
   'Cleanup pending: {detail}': 'Čeká se na úklid: {detail}',
   'Cleanup failed: {detail}': 'Úklid selhal: {detail}',
+  'A team workspace connects to a GitHub organization. Install the InitPad app on an organization, or use your personal workspace for repositories in your personal account.':
+    'Týmový workspace se připojuje ke GitHub organizaci. Nainstalujte aplikaci InitPad do organizace, nebo pro repozitáře na osobním účtu použijte osobní workspace.',
+  "This team workspace still uses the personal GitHub account '{name}'. Connect a GitHub organization to change member access.":
+    'Tento týmový workspace stále používá osobní GitHub účet {name}. Pro změny přístupu členů připojte GitHub organizaci.',
+  "Approve the updated InitPad app permissions in the GitHub organization '{name}' (Members: read and write), then try again.":
+    'V GitHub organizaci {name} schvalte aktualizovaná oprávnění aplikace InitPad (Members: read and write) a zkuste to znovu.',
   '{provider} did not answer in time. Try again in a moment.':
     '{provider} neodpověděl včas. Zkuste to za chvíli znovu.',
   '{provider} could not be reached. Try again in a moment.':

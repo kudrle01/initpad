@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { encryptSecret } from '../common/secret';
 import { config } from '../config';
 import { WorkspaceScmService } from './workspace-scm.service';
@@ -63,6 +63,7 @@ describe('WorkspaceScmService', () => {
         externalIdentity: {
           findUnique: jest.fn(async () => ({ providerUserId: 'github-user-b' })),
         },
+        workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       } as never,
       {} as never,
     );
@@ -70,6 +71,54 @@ describe('WorkspaceScmService', () => {
     await expect(
       service.createContext('user-b', 'workspace-team', '00000000-0000-4000-8000-000000000001'),
     ).rejects.toThrow('Only the owner');
+  });
+
+  it('refuses a personal GitHub account as the home of a team project (ADR-189)', async () => {
+    config.edition = 'saas';
+    const service = new WorkspaceScmService(
+      {
+        gitHubInstallationAccess: {
+          findUnique: jest.fn(async () => ({
+            githubInstallation: {
+              id: 'installation-a',
+              accountId: 'github-user-a',
+              accountLogin: 'alice',
+              accountType: 'User',
+              deletedAt: null,
+              suspendedAt: null,
+            },
+          })),
+        },
+        workspace: { findUnique: jest.fn(async () => ({ type: 'team' })) },
+      } as never,
+      {} as never,
+    );
+
+    await expect(
+      service.createContext('user-a', 'workspace-team', '00000000-0000-4000-8000-000000000001'),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('imports into a team workspace only from organization installations (ADR-189)', async () => {
+    config.edition = 'saas';
+    const findMany = jest.fn(async () => []);
+    const service = new WorkspaceScmService(
+      {
+        gitHubInstallationAccess: { findMany },
+        workspace: { findUnique: jest.fn(async () => ({ type: 'team' })) },
+      } as never,
+      { for: jest.fn(() => ({ listRepositories: jest.fn(async () => []) })) } as never,
+    );
+
+    await service.listRepositories('user-a', 'workspace-team');
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          githubInstallation: expect.objectContaining({ accountType: 'Organization' }),
+        }),
+      }),
+    );
   });
 
   it('lists every active workspace-authorized installation and deduplicates repositories', async () => {
@@ -97,6 +146,7 @@ describe('WorkspaceScmService', () => {
     };
     const service = new WorkspaceScmService(
       {
+        workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
         gitHubInstallationAccess: {
           findMany: jest.fn(async () =>
             installations.map((githubInstallation) => ({ githubInstallation })),

@@ -17,6 +17,7 @@ describe('GitHubInstallationService webhook lifecycle', () => {
   it('upserts immutable account identity and mutable display data', async () => {
     let upsertArgs: Record<string, unknown> | undefined;
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallation: {
         findUnique: jest.fn(async () => null),
         upsert: jest.fn(async (args: Record<string, unknown>) => {
@@ -41,6 +42,7 @@ describe('GitHubInstallationService webhook lifecycle', () => {
 
   it('tombstones an uninstall instead of destroying its audit binding', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallation: {
         findUnique: jest.fn(async () => ({ accountId: '987654' })),
         updateMany: jest.fn(async () => ({ count: 1 })),
@@ -64,6 +66,7 @@ describe('GitHubInstallationService webhook lifecycle', () => {
 
   it('refuses to rebind an installation id to another immutable account', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallation: {
         findUnique: jest.fn(async () => ({ accountId: '111' })),
         upsert: jest.fn(),
@@ -77,6 +80,7 @@ describe('GitHubInstallationService webhook lifecycle', () => {
   it('marks the installation suspended', async () => {
     let upsertArgs: { update?: { suspendedAt?: Date } } | undefined;
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallation: {
         findUnique: jest.fn(async () => null),
         upsert: jest.fn(async (args: { update?: { suspendedAt?: Date } }) => {
@@ -103,6 +107,7 @@ describe('GitHubInstallationService webhook lifecycle', () => {
 
   it('follows an account rename by immutable id without touching lifecycle state', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallation: { updateMany: jest.fn(async () => ({ count: 1 })), upsert: jest.fn() },
     };
     const service = new GitHubInstallationService(prisma as never, {} as never);
@@ -131,6 +136,7 @@ describe('GitHubInstallationService setup authorization', () => {
   it('stores only a hash of a short-lived one-time setup state', async () => {
     let created: { data: { tokenHash: string; expiresAt: Date } } | undefined;
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       externalIdentity: { findUnique: jest.fn(async () => ({ id: 'identity-1' })) },
       gitHubInstallationSetup: {
         deleteMany: jest.fn(async () => ({ count: 0 })),
@@ -158,6 +164,7 @@ describe('GitHubInstallationService setup authorization', () => {
       gitHubInstallationAccess: { upsert: jest.fn(async () => ({})) },
     };
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallationSetup: {
         findUnique: jest.fn(async () => ({
           id: 'setup-1',
@@ -205,8 +212,48 @@ describe('GitHubInstallationService setup authorization', () => {
     );
   });
 
+  it('refuses a personal account for a team workspace (ADR-189)', async () => {
+    const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'team' })) },
+      gitHubInstallationSetup: {
+        findUnique: jest.fn(async () => ({
+          id: 'setup-1',
+          userId: 'user-1',
+          workspaceId: 'workspace-team',
+          expiresAt: new Date(Date.now() + 60_000),
+          usedAt: null,
+          requestedAt: null,
+        })),
+        findFirst: jest.fn(async () => ({ id: 'setup-1' })),
+      },
+      externalIdentity: { findUnique: jest.fn(async () => ({ providerUserId: '123' })) },
+      workspaceMember: { findUnique: jest.fn(async () => ({ role: 'owner' })) },
+      $transaction: jest.fn(),
+    };
+    const app = {
+      getInstallation: jest.fn(async () => ({
+        installationId: '42',
+        accountId: '123',
+        accountLogin: 'alice',
+        accountType: 'User',
+        repositorySelection: 'selected',
+        suspendedAt: null,
+      })),
+      listInstallations: jest.fn(async () => []),
+    };
+    const service = new GitHubInstallationService(prisma as never, app as never);
+
+    await expect(service.completeSetup('opaque-state', '42')).rejects.toThrow(
+      'A team workspace connects to a GitHub organization',
+    );
+    await expect(service.recoverPersonalSetup('user-1', 'workspace-team')).resolves.toBeNull();
+    expect(app.listInstallations).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('refuses to bind an organization without user-bound authorization', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallationSetup: {
         findUnique: jest.fn(async () => ({
           id: 'setup-1',
@@ -240,6 +287,7 @@ describe('GitHubInstallationService setup authorization', () => {
 
   it('rejects a personal installation belonging to another GitHub identity', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallationSetup: {
         findUnique: jest.fn(async () => ({
           id: 'setup-1',
@@ -278,6 +326,7 @@ describe('GitHubInstallationService setup authorization', () => {
       gitHubInstallationAccess: { upsert: jest.fn(async () => ({})) },
     };
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallationSetup: {
         findFirst: jest.fn(async () => ({
           id: 'setup-1',
@@ -322,6 +371,7 @@ describe('GitHubInstallationService setup authorization', () => {
 
   it('leaves the setup state for an org request when the personal App is already bound', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallationSetup: {
         findFirst: jest.fn(async () => ({
           id: 'setup-1',
@@ -356,6 +406,7 @@ describe('GitHubInstallationService setup authorization', () => {
 
   it('never recovers an organization installation from personal identity alone', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallationSetup: {
         findFirst: jest.fn(async () => ({
           id: 'setup-1',
@@ -389,6 +440,7 @@ describe('GitHubInstallationService setup authorization', () => {
 
   it('keeps a requested setup state claimable while the org owner decides', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallationSetup: { updateMany: jest.fn(async () => ({ count: 1 })) },
     };
     const service = new GitHubInstallationService(prisma as never, {} as never);
@@ -405,6 +457,7 @@ describe('GitHubInstallationService setup authorization', () => {
 
   it('records who requested an installation an org owner approved', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallation: {
         findUnique: jest.fn(async () => null),
         upsert: jest.fn(async () => ({})),
@@ -430,6 +483,7 @@ describe('GitHubInstallationService setup authorization', () => {
       gitHubInstallationAccess: { upsert: jest.fn(async () => ({})) },
     };
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallationSetup: {
         findFirst: jest.fn(async () => ({
           id: 'request-1',
@@ -560,6 +614,7 @@ describe('GitHubInstallationService setup authorization', () => {
 describe('GitHubInstallationService tokens', () => {
   it('mints a scoped token for an active legacy owner lookup', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallation: {
         findFirst: jest.fn(async () => ({ installationId: '42', suspendedAt: null })),
       },
@@ -581,6 +636,7 @@ describe('GitHubInstallationService tokens', () => {
 
   it('mints through the immutable project installation binding', async () => {
     const prisma = {
+      workspace: { findUnique: jest.fn(async () => ({ type: 'personal' })) },
       gitHubInstallation: {
         findUnique: jest.fn(async () => ({
           id: 'installation-row-1',
