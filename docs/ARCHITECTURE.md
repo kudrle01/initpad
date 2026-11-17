@@ -7,14 +7,14 @@ hranice v [`RELEASE_READINESS.md`](./RELEASE_READINESS.md).
 
 ## Dvě edice, stejný doménový model
 
-| Oblast | Self-hosted | Veřejný SaaS |
-|---|---|---|
-| Zdrojový kód a CI | vestavěná Gitea + Actions | GitHub + GitHub App |
-| Přihlášení | heslo, InitPad SSO do Gitey | GitHub OAuth nebo e-mail a heslo s potvrzením e-mailu (ADR-188) |
-| Docker target | InitPad Agent; vestavěný Docker jen v této edici | InitPad Agent |
-| Sdílený PHP/static hosting | SFTP compatibility target | pouze veřejně dosažitelný SFTP target; server jen za školní VPN obslouží jen self-hosted edice (ADR-157) |
-| Artifact storage | vestavěný store pro důvěryhodný single-node provoz nebo externí S3 | externí S3-compatible služba |
-| Stav | funkční a živě ověřený profil | implementované SCM základy; produkční profil ještě není vydaný |
+| Oblast                     | Self-hosted                                                        | Veřejný SaaS                                                                                             |
+| -------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Zdrojový kód a CI          | vestavěná Gitea + Actions                                          | GitHub + GitHub App                                                                                      |
+| Přihlášení                 | heslo, InitPad SSO do Gitey                                        | GitHub OAuth nebo e-mail a heslo s potvrzením e-mailu (ADR-188)                                          |
+| Docker target              | InitPad Agent; vestavěný Docker jen v této edici                   | InitPad Agent                                                                                            |
+| Sdílený PHP/static hosting | SFTP compatibility target                                          | pouze veřejně dosažitelný SFTP target; server jen za školní VPN obslouží jen self-hosted edice (ADR-157) |
+| Artifact storage           | vestavěný store pro důvěryhodný single-node provoz nebo externí S3 | externí S3-compatible služba                                                                             |
+| Stav                       | funkční a živě ověřený profil                                      | implementované SCM základy; produkční profil ještě není vydaný                                           |
 
 Workspace, role, projekty, artifacty, approvals a audit mají v obou edicích
 stejný význam. Provider se mění na hranici SCM a deployment targetu, ne
@@ -101,7 +101,10 @@ CI sestaví každý commit pouze jednou. U `dev-test-prod` se stejné SHA a
 digest povyšují z dev do testu, u `dev-prod` přímo z dev do produkční
 žádosti. `prod-only` artifact pouze převezme a ověří; nic automaticky
 nenasadí a uživatel podá produkční žádost z posledního ověřeného buildu
-výchozí větve. Přeskakování stupňů není dovoleno.
+výchozí větve. Když build poslední commit do InitPadu nedoručil (typicky
+běh před importem), **Sestavit a ověřit** převezme otestovaný artifact toho
+commitu, nebo spustí CI přes `initpad-retry-*` tag; callback ho jen ověří.
+Přeskakování stupňů není dovoleno.
 
 Produkce ve všech předvolbách prochází approval workflow; team workspace
 ve výchozím stavu vyžaduje jiného schvalovatele. Review smí provést owner,
@@ -152,14 +155,14 @@ veřejný DNS záznam nevytvoří.
 
 ## Data a zdroje pravdy
 
-| Data | Zdroj pravdy |
-|---|---|
-| Účty, workspace, role, projekty a operace | PostgreSQL |
-| Zdrojový kód a historie commitů | zvolený SCM provider |
-| Ověřené build artifacty | privátní S3-compatible storage |
-| Běžící workload | Docker target; databáze drží požadovanou a naposledy pozorovanou projekci |
-| Uživatelská bezpečnostní historie | `AuditEvent` v PostgreSQL |
-| Provozní diagnostika | strukturované API/Agent logy; volitelně OTLP traces a metrics |
+| Data                                      | Zdroj pravdy                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| Účty, workspace, role, projekty a operace | PostgreSQL                                                                |
+| Zdrojový kód a historie commitů           | zvolený SCM provider                                                      |
+| Ověřené build artifacty                   | privátní S3-compatible storage                                            |
+| Běžící workload                           | Docker target; databáze drží požadovanou a naposledy pozorovanou projekci |
+| Uživatelská bezpečnostní historie         | `AuditEvent` v PostgreSQL                                                 |
+| Provozní diagnostika                      | strukturované API/Agent logy; volitelně OTLP traces a metrics             |
 
 Audit log, deployment timeline a provozní log jsou rozdílné vrstvy.
 Audit odpovídá na „kdo změnu vyžádal“, operace na „v jakém stavu je“ a
