@@ -531,6 +531,16 @@ describe('GitHubInstallationService setup authorization', () => {
     return { service, prisma, app, tx };
   }
 
+  it('binds an approved org installation to a team workspace too (ADR-189)', async () => {
+    const { service, prisma, tx } = requestedOrgHarness();
+    prisma.workspace.findUnique.mockResolvedValue({ type: 'team' });
+
+    await expect(
+      service.recoverRequestedOrganizationSetup('user-1', 'workspace-1', async () => 'user-token'),
+    ).resolves.toMatchObject({ accountLogin: 'acme' });
+    expect(tx.gitHubInstallationAccess.upsert).toHaveBeenCalled();
+  });
+
   it('binds an approved org installation to the workspace that requested it', async () => {
     const { service, app, tx } = requestedOrgHarness();
     await expect(

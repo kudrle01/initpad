@@ -355,8 +355,6 @@ export class GitHubInstallationService {
     if (!membership || !WORKSPACE_ADMINS.has(membership.role)) {
       throw new ForbiddenException('Workspace admin access is required to finish GitHub setup');
     }
-    // A team workspace connects only to organizations (ADR-189).
-    if (await this.isTeamWorkspace(workspaceId)) return null;
 
     const approved = await this.prisma.gitHubInstallation.findFirst({
       where: {
