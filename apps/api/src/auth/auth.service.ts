@@ -28,10 +28,8 @@ import { AuditEventsService, type RecordAuditEvent } from '../audit/audit-events
 import { SessionsService, type SessionClient } from './sessions.service';
 import { repositoryRef } from '../scm/scm-provider';
 import { ControlPlaneLeaseService } from '../common/control-plane-lease.service';
+import { ACTIVATION_TTL_MS, EMAIL_VERIFY_TTL_MS, PASSWORD_RESET_TTL_MS } from '../common/link-ttl';
 
-const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
-const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
-const ACTIVATION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 const GITEA_HARDENING_LEASE = 'gitea-password-hardening';
 const GITEA_HARDENING_LEASE_TTL_MS = 2 * 60_000;
 const GITEA_HARDENING_RETRY_MS = 10 * 60_000;

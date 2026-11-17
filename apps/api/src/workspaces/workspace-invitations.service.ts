@@ -10,12 +10,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { config } from '../config';
 import { generateToken, hashToken } from '../common/token';
 import { normalizeAccountIdentifier } from '../common/account-identifier';
+import { INVITATION_TTL_MS } from '../common/link-ttl';
 import { AuditEventsService } from '../audit/audit-events.service';
 import { MailDeliveryService } from '../mail/mail-delivery.service';
 import type { AssignableRole } from './dto/member.dto';
 import { WorkspacesService, type WorkspaceRole } from './workspaces.service';
 
-export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export { INVITATION_TTL_MS };
 const INVALID_INVITATION = 'This invitation is invalid, expired or already used';
 
 export interface InvitationView {
