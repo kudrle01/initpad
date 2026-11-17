@@ -156,7 +156,7 @@ export const config = {
     sigstoreCachePath:
       process.env.INITPAD_SIGSTORE_CACHE_DIR ||
       resolve(process.cwd(), '../../.runtime/sigstore-js'),
-    platformVersion: (process.env.INITPAD_PLATFORM_VERSION || '0.2.44').trim(),
+    platformVersion: (process.env.INITPAD_PLATFORM_VERSION || '0.2.45').trim(),
     supervisorUrl: (process.env.INITPAD_SUPERVISOR_URL || '').trim(),
     supervisorSharedSecret: process.env.INITPAD_SUPERVISOR_SHARED_SECRET || '',
   },
