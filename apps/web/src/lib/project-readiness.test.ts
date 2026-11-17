@@ -21,6 +21,14 @@ function head(...statuses: Commit['pipeline'][number]['status'][]): Commit[] {
 }
 
 describe('firstPipelineState', () => {
+  it('is silent once a production-only pipeline has a verified build', () => {
+    const verified = {
+      ...project(),
+      latestVerifiedArtifact: { version: 'a'.repeat(40) },
+    } as Project;
+    expect(firstPipelineState(verified, head('success'), [], now)).toBe('none');
+  });
+
   it('waits while a fresh project has no CI activity', () => {
     expect(firstPipelineState(project(), head('pending', 'pending'), [], now)).toBe('waiting');
   });

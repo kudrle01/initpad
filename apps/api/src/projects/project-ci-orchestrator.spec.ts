@@ -116,6 +116,23 @@ describe('ProjectCiOrchestrator', () => {
     expect(ctx.scheduleDeployment).not.toHaveBeenCalled();
   });
 
+  it('verifies a requested build of a pipeline without dev and removes its retry tag', async () => {
+    const ctx = make({ dev: null });
+
+    await ctx.orchestrator.deployFromCi('acme/api', SHA, 'refs/tags/initpad-retry-abc123', TOKEN, {
+      artifactId: ARTIFACT.providerArtifactId,
+      artifactDigest: ARTIFACT.digest,
+    });
+
+    expect(ctx.ingestion.queueVerification).toHaveBeenCalled();
+    expect((ctx.scm as any).deleteTag).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'acme/api' }),
+      'initpad-retry-abc123',
+      expect.anything(),
+    );
+    expect(ctx.operations.begin).not.toHaveBeenCalled();
+  });
+
   it('captures a Gitea registry artifact without deploying when no dev stage exists', async () => {
     const giteaProject = {
       ...PROJECT,

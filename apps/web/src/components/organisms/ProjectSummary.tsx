@@ -93,7 +93,11 @@ export function ProjectSummary({
       {provisioning && provisioning.status !== 'succeeded' && !provisioning.dismissedAt ? (
         <ProvisioningNotice provisioning={provisioning} />
       ) : (
-        <FirstPipelineNotice state={firstPipeline} onRunAgain={onRunAgain} />
+        <FirstPipelineNotice
+          state={firstPipeline}
+          productionOnly={project.pipelinePreset === 'prod-only'}
+          onRunAgain={onRunAgain}
+        />
       )}
     </div>
   );
@@ -101,9 +105,11 @@ export function ProjectSummary({
 
 function FirstPipelineNotice({
   state,
+  productionOnly,
   onRunAgain,
 }: {
   state: FirstPipelineState;
+  productionOnly: boolean;
   onRunAgain?: () => void;
 }) {
   if (state === 'none') return null;
@@ -117,13 +123,18 @@ function FirstPipelineNotice({
         title={t('The last build did not report to InitPad')}
       >
         <p>
-          {t(
-            'CI finished, but InitPad received no build from it, so nothing was deployed. This happens when the run started before InitPad was connected to the repository. Build and deploy dev to start it now.',
-          )}
+          {productionOnly
+            ? t(
+                'CI finished, but InitPad received no build from it, so there is nothing to request for production. This happens when the run started before InitPad was connected to the repository. Build it now to verify it.',
+              )
+            : t(
+                'CI finished, but InitPad received no build from it, so nothing was deployed. This happens when the run started before InitPad was connected to the repository. Build and deploy dev to start it now.',
+              )}
         </p>
         {onRunAgain && (
           <Button variant="secondary" size="sm" className="mt-3" onClick={onRunAgain}>
-            <RotateCw className="h-3.5 w-3.5" /> {t('Build and deploy dev')}
+            <RotateCw className="h-3.5 w-3.5" />{' '}
+            {productionOnly ? t('Build and verify') : t('Build and deploy dev')}
           </Button>
         )}
       </Notice>

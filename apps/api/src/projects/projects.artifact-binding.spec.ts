@@ -505,4 +505,53 @@ describe('ProjectsService immutable artifact binding', () => {
     );
     expect(scm.rerunFailedJobs).not.toHaveBeenCalled();
   });
+
+  describe('a production-only pipeline', () => {
+    const sha = 'b'.repeat(40);
+    function setup(recovered: unknown) {
+      const prisma = {
+        environment: { findUnique: jest.fn(async () => null) },
+        project: {
+          findUniqueOrThrow: jest.fn(async () => ({ ...projectRow, pipelinePreset: 'prod-only' })),
+          findUnique: jest.fn(async () => ({ ...projectRow, owner: null })),
+          update: jest.fn(async () => ({})),
+        },
+      };
+      const scm = {
+        listCommits: jest.fn(async () => [{ sha }]),
+        findBuildArtifact: jest.fn(async () => recovered),
+        createRetryTag: jest.fn(async () => undefined),
+      };
+      const service = make(prisma, {}, { provider: jest.fn(() => scm) });
+      jest.spyOn(service, 'get').mockResolvedValue({ id: 'project-1' } as never);
+      jest.spyOn(service as any, 'actorForProject').mockResolvedValue(undefined);
+      jest.spyOn(service as any, 'assertGitHubCiCallback').mockReturnValue(undefined);
+      const begin = jest.spyOn((service as any).operations, 'begin');
+      const verify = jest
+        .spyOn((service as any).artifactIngestion, 'queueVerification')
+        .mockResolvedValue(undefined);
+      return { service, scm, begin, verify };
+    }
+
+    it('verifies the tested build of the head commit instead of deploying dev', async () => {
+      const artifact = { commitSha: sha, name: 'initpad-image.tar' };
+      const { service, scm, begin, verify } = setup(artifact);
+
+      await service.runAgain('project-1');
+
+      expect(verify).toHaveBeenCalledWith('project-1', expect.anything(), artifact);
+      expect(scm.createRetryTag).not.toHaveBeenCalled();
+      expect(begin).not.toHaveBeenCalled();
+    });
+
+    it('runs CI for the head commit when no tested build exists', async () => {
+      const { service, scm, begin, verify } = setup(null);
+
+      await service.runAgain('project-1');
+
+      expect(scm.createRetryTag).toHaveBeenCalledWith(expect.anything(), sha, undefined);
+      expect(verify).not.toHaveBeenCalled();
+      expect(begin).not.toHaveBeenCalled();
+    });
+  });
 });

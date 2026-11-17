@@ -1665,7 +1665,16 @@ export class ProjectsService {
       where: { projectId_name: { projectId: id, name: 'dev' } },
       include: { target: true },
     });
-    if (!env) throw new NotFoundException("Environment 'dev' not found");
+    if (!env) {
+      const pipeline = await this.prisma.project.findUniqueOrThrow({
+        where: { id },
+        select: { pipelinePreset: true },
+      });
+      if (pipeline.pipelinePreset !== 'prod-only') {
+        throw new NotFoundException("Environment 'dev' not found");
+      }
+      return this.buildWithoutDev(id);
+    }
     if (env.activeOperationId || !['empty', 'failed'].includes(env.status)) {
       throw new BadRequestException('Dev can only run again after it was cancelled or failed');
     }
@@ -1783,6 +1792,39 @@ export class ProjectsService {
       await this.operations.complete(operationId, 'failed', (e as Error).message);
       throw new BadRequestException((e as Error).message);
     }
+    return this.get(id);
+  }
+
+  // A production-only pipeline has no dev to deploy: CI verifies a build that
+  // is then requested for prod. Recover the tested build of the head commit,
+  // or run CI for it through a retry tag, which the CI callback verifies.
+  private async buildWithoutDev(id: string): Promise<Project> {
+    const project = await this.prisma.project.findUniqueOrThrow({ where: { id } });
+    const repository = repositoryRef(project);
+    const scm = this.workspaceScm.provider(repository.provider);
+    const actor = await this.actorForProject(id);
+    const commits = await scm.listCommits(repository, actor, 1);
+    const sha = commits?.[0]?.sha;
+    if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) {
+      throw new BadRequestException('No repository commit is available to run');
+    }
+    if (repository.provider === 'github' && scm.findBuildArtifact) {
+      const recovered = await scm.findBuildArtifact(repository, sha, 'initpad-image.tar');
+      if (recovered) {
+        await this.artifactIngestion.queueVerification(id, repository, recovered);
+        return this.get(id);
+      }
+      this.assertGitHubCiCallback(repository);
+    }
+    try {
+      await scm.createRetryTag(repository, sha, actor);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    await this.prisma.project.update({
+      where: { id },
+      data: { lastCommit: `ci: verifying ${sha.slice(0, 7)}` },
+    });
     return this.get(id);
   }
 
